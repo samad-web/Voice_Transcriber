@@ -1,0 +1,27 @@
+# Build context hygiene — everything here is either rebuilt inside the image,
+# host-specific, or a secret that must never land in a layer.
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+
+# Secrets: env files are injected at run time via env_file / compose, never baked.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local-only infra and tooling
+docker-compose.yml
+ngrok.yml
+supabase/.branches
+supabase/.temp
+
+# Editor / OS noise
+.git
+.gitignore
+.vscode
+.idea
+**/.DS_Store
+*.log

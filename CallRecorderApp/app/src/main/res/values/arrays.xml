@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Labels shown in the phone audio-source picker. Index-aligned with source_option_values. -->
+    <string-array name="source_option_labels">
+        <item>Auto (try all in order)</item>
+        <item>VOICE_CALL — both ends</item>
+        <item>VOICE_DOWNLINK — far end only</item>
+        <item>VOICE_UPLINK — your side only</item>
+        <item>VOICE_RECOGNITION</item>
+        <item>VOICE_COMMUNICATION</item>
+        <item>MIC</item>
+    </string-array>
+
+    <!-- MediaRecorder.AudioSource values; -1 = Auto. Index-aligned with source_option_labels. -->
+    <integer-array name="source_option_values">
+        <item>-1</item>
+        <item>4</item>
+        <item>3</item>
+        <item>2</item>
+        <item>6</item>
+        <item>7</item>
+        <item>1</item>
+    </integer-array>
+</resources>

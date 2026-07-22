@@ -1,0 +1,6 @@
+{
+  "name": "Call Intelligence Platform",
+  "description": "A responsive, clean, and minimalistic frontend prototype for the AI Call Intelligence Platform, featuring call tracking, AI-powered insights, dynamic agent builders, and a device health dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

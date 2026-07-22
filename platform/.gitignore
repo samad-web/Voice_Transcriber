@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+# Production credentials live only on the server
+.env.production
+coverage/
+.DS_Store
+
+# Supabase CLI scratch state (supabase/migrations itself IS committed)
+supabase/.branches/
+supabase/.temp/

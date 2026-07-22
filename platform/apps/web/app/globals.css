@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* The Aura UI kit lives outside the app dir — include its classes. */
+@source "../../../packages/ui/src";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}

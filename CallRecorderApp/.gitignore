@@ -1,0 +1,20 @@
+# Release signing — losing the keystore means no installed app can ever be
+# upgraded, and leaking it lets anyone ship an update as you. Keep both the
+# keystore and its passwords off the repo and backed up elsewhere.
+keystore.properties
+*.keystore
+*.jks
+
+# Build output
+build/
+app/build/
+.gradle/
+local.properties
+*.apk
+*.aab
+build_debug*.log
+
+# IDE
+.idea/
+*.iml
+.DS_Store

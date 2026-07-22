@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Call Recorder</string>
+    <string name="channel_recording">Recording</string>
+    <string name="recording_title">Recording call</string>
+    <string name="record_failed_title">Recording failed to start</string>
+    <string name="record_failed_text">Couldn\'t open an audio source for this call</string>
+    <string name="record_blocked">No audio captured — the calling app has exclusive microphone access, so this call couldn\'t be recorded (VoIP recording isn\'t possible on this device).</string>
+    <string name="record_voip">Record messenger (VoIP) calls</string>
+    <string name="recording_text">Recording • %1$s</string>
+    <string name="unknown_caller">Unknown</string>
+    <string name="enable_accessibility">Enable call detection (Accessibility)</string>
+    <string name="accessibility_desc">Detects when a call screen is open so recording can start, and reads the other party\'s name shown on screen.</string>
+    <string name="consent_notice">Recording phone or app calls may be regulated where you live. Many places require that you inform — or get consent from — everyone on the call. You are responsible for using this app lawfully. A persistent notification is shown while recording.</string>
+    <string name="recordings_header">Recordings</string>
+    <string name="recording_in_progress">recording…</string>
+    <string name="play_pause">Play or pause</string>
+    <string name="delete">Delete recording</string>
+    <string name="share_recording">Share recording</string>
+    <string name="edit_recording">Edit recording</string>
+    <string name="edit_name_hint">Name</string>
+    <string name="edit_note_hint">Note (optional)</string>
+    <string name="settings">Settings</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="enable">Enable</string>
+    <string name="more_actions">More actions</string>
+    <string name="setup_banner">Turn on call detection so calls record automatically.</string>
+    <string name="empty_title">No recordings yet</string>
+    <string name="empty_subtitle">Answered calls will appear here automatically.</string>
+    <string name="file_missing">Recording file is missing</string>
+    <string name="playback_failed">Couldn\'t play this recording</string>
+    <string name="accessibility_on">Call detection: ON</string>
+    <string name="accessibility_off">Call detection: OFF</string>
+    <string name="force_speaker_phone">Force speaker on phone calls (capture far end)</string>
+    <string name="source_picker_label">Phone audio source — test each to find both ends:</string>
+    <string name="time_progress">%1$s / %2$s</string>
+
+    <!-- QR scanner -->
+    <string name="close">Close</string>
+    <string name="scan_qr_title">Scan Activation QR</string>
+    <string name="scan_qr_hint">Point the camera at the QR code shown in the web app to activate this device.</string>
+
+    <!-- Multi-select / bulk delete -->
+    <string name="select_all">Select all</string>
+    <string name="delete_action">Delete</string>
+    <string name="selected_count">%1$d selected</string>
+    <string name="delete_selected_title">Delete recordings?</string>
+    <string name="delete_selected_message">Delete %1$d selected recording(s)? This also removes the audio files from this device.</string>
+
+    <!-- Telecaller profile / greeting -->
+    <string name="greeting_morning">Good morning</string>
+    <string name="greeting_afternoon">Good afternoon</string>
+    <string name="greeting_evening">Good evening</string>
+    <string name="greeting_line">%1$s,</string>
+    <string name="profile_telecaller">Telecaller</string>
+    <string name="profile_set_name_title">Your name</string>
+    <string name="profile_set_name_hint">e.g. Priya</string>
+    <string name="profile_menu">Profile</string>
+    <string name="find_oem_recordings">Find OEM recordings</string>
+    <string name="refresh">Refresh</string>
+    <string name="refresh_found">Added %1$d new recording(s)</string>
+    <string name="refresh_none">No new recordings</string>
+
+    <!-- OEM recording scanner -->
+    <string name="scanner_title">OEM Call Recordings</string>
+    <string name="scanner_access">Access</string>
+    <string name="scanner_all_files">All files access</string>
+    <string name="scanner_media_perm">Audio &amp; storage</string>
+    <string name="scanner_grant">Grant</string>
+    <string name="scanner_granted">Granted</string>
+    <string name="scanner_not_granted">Not granted — results will be incomplete</string>
+    <string name="scanner_locations">Locations found</string>
+    <string name="scanner_recent">Recent recordings</string>
+    <string name="scanner_rescan">Re-scan</string>
+    <string name="scanner_copy">Copy report</string>
+    <string name="scanner_stat_files">recordings</string>
+    <string name="scanner_stat_format">format</string>
+    <string name="scanner_stat_latest">latest</string>
+    <string name="scanner_found">Call recordings found</string>
+    <string name="scanner_none">No call recordings found</string>
+    <string name="scanner_none_hint">Enable Phone app → Settings → Record calls → Auto record calls, then make a test call.</string>
+    <string name="scanner_none_hint_google">This phone uses the Google Dialer, which keeps recordings in private app storage that Android blocks all other apps from reading. Only your own side can be recorded on this device.</string>
+    <string name="scanner_empty_row">none</string>
+    <string name="scanner_copied">Report copied to clipboard</string>
+    <string name="scanner_scanning">Starting scan…</string>
+    <string name="scanner_scanning_hint">Looking for the dialer\'s call-recording folder.</string>
+    <string name="scanner_phase_known">Checking known folders…</string>
+    <string name="scanner_phase_sweep">Sweeping storage…</string>
+    <string name="scanner_phase_media">Reading media library…</string>
+    <string name="scanner_sweep_detail">%1$d folders checked · %2$s</string>
+    <string name="scanner_import">Import into app</string>
+    <string name="scanner_importing">Importing…</string>
+    <string name="scanner_imported">Imported %1$d new recording(s)</string>
+    <string name="scanner_imported_none">Nothing new to import</string>
+
+    <!-- OEM ingestion setting -->
+    <string name="oem_ingest">Import phone\'s own call recordings</string>
+    <string name="oem_ingest_hint">Uses the dialer\'s recordings, which capture both sides. Enable Phone app → Settings → Record calls.</string>
+    <string name="tap_to_set_name">Tap to set your name</string>
+</resources>

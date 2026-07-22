@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG ONLY — replaces app/src/main/res/xml/network_security_config.xml in
+  debuggable builds. Permits plaintext so the emulator (10.0.2.2:4000), a
+  laptop on the LAN, and an ngrok tunnel all work while developing, and trusts
+  user-installed CAs so mitmproxy/Charles can inspect traffic.
+
+  Nothing here reaches the release APK.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

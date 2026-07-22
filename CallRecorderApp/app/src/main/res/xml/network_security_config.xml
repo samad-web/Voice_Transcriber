@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RELEASE policy: HTTPS only. Call audio and transcripts are the most sensitive
+  thing this app touches, so plaintext is refused outright rather than merely
+  discouraged, and only system CAs are trusted (a user-installed CA cannot
+  silently intercept uploads).
+
+  The debug build overrides this whole file with app/src/debug/res/xml/
+  network_security_config.xml, which permits cleartext for local dev servers.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,23 @@
+{
+  "name": "aura-platform",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:migrate": "pnpm --filter @aura/db migrate",
+    "db:seed": "pnpm --filter @aura/db seed",
+    "db:reset": "pnpm --filter @aura/db migrate && pnpm --filter @aura/db seed",
+    "setup": "pnpm install && pnpm -r build && docker compose up -d && pnpm --filter @aura/db migrate && pnpm --filter @aura/db seed",
+    "db:bootstrap-role": "pnpm --filter @aura/db bootstrap:role",
+    "db:supabase:sync": "node scripts/sync-supabase-migrations.js",
+    "db:supabase:check": "node scripts/sync-supabase-migrations.js --check"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@10.28.2"
+}

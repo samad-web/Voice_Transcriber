@@ -1,0 +1,252 @@
+{
+  "app/build.gradle.kts": {
+    "mtime": 1784653497.6961539,
+    "ast_hash": "6017ce893f3006a8818e616a614ca340",
+    "semantic_hash": "6017ce893f3006a8818e616a614ca340"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/App.kt": {
+    "mtime": 1784621179.2218957,
+    "ast_hash": "2326aa442dc36e0cda8379490580e1d8",
+    "semantic_hash": "2326aa442dc36e0cda8379490580e1d8"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/capture/AacEncoder.kt": {
+    "mtime": 1784407754.3111105,
+    "ast_hash": "94cf206d2aa67f132343917ab24782ee",
+    "semantic_hash": "94cf206d2aa67f132343917ab24782ee"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/capture/AudioCapturer.kt": {
+    "mtime": 1784546175.4526427,
+    "ast_hash": "5027f0bdcc1b292ae79763d738f36f01",
+    "semantic_hash": "5027f0bdcc1b292ae79763d738f36f01"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/capture/BluetoothScoController.kt": {
+    "mtime": 1784411520.5424905,
+    "ast_hash": "bf8e460d4a29cbf9d7af0da8b46ba07f",
+    "semantic_hash": "bf8e460d4a29cbf9d7af0da8b46ba07f"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/capture/CaptureProfile.kt": {
+    "mtime": 1784550164.869341,
+    "ast_hash": "b8c6bf6e1fae044756c64e28e445f2ef",
+    "semantic_hash": "b8c6bf6e1fae044756c64e28e445f2ef"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/capture/CaptureSettings.kt": {
+    "mtime": 1784649133.1520512,
+    "ast_hash": "5d2563118ba9d8152356f26e610f7eb5",
+    "semantic_hash": "5d2563118ba9d8152356f26e610f7eb5"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ingest/OemIngestWorker.kt": {
+    "mtime": 1784621125.6343887,
+    "ast_hash": "ddacb56ce36e5f854d25fccb6ae28ebe",
+    "semantic_hash": "ddacb56ce36e5f854d25fccb6ae28ebe"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ingest/OemRecordingIngestor.kt": {
+    "mtime": 1784649407.611243,
+    "ast_hash": "94009cdc0b4b245128279e17c6d56254",
+    "semantic_hash": "94009cdc0b4b245128279e17c6d56254"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/ActivationManager.kt": {
+    "mtime": 1784483127.8821547,
+    "ast_hash": "1aa624b95bf4afe5bf3c1e924eb43d91",
+    "semantic_hash": "1aa624b95bf4afe5bf3c1e924eb43d91"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/ActivationStore.kt": {
+    "mtime": 1784551397.3783395,
+    "ast_hash": "548a3aaee43b160c549a474856fccaec",
+    "semantic_hash": "548a3aaee43b160c549a474856fccaec"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/ConfigRefreshWorker.kt": {
+    "mtime": 1784482987.653292,
+    "ast_hash": "66899424ab205df6d21bcaa6b5eeb8e2",
+    "semantic_hash": "66899424ab205df6d21bcaa6b5eeb8e2"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/DeviceIdentity.kt": {
+    "mtime": 1784480421.8679082,
+    "ast_hash": "975ddd25779ee9b94c36e24a75afa85d",
+    "semantic_hash": "975ddd25779ee9b94c36e24a75afa85d"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/EventLog.kt": {
+    "mtime": 1784482949.5856156,
+    "ast_hash": "639b546ccf5cae4d1da239899ae514bc",
+    "semantic_hash": "639b546ccf5cae4d1da239899ae514bc"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/FileCrypto.kt": {
+    "mtime": 1784482894.2200267,
+    "ast_hash": "fd53356dde245baad69ef70fddbb7697",
+    "semantic_hash": "fd53356dde245baad69ef70fddbb7697"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/HealthReporter.kt": {
+    "mtime": 1784482964.832982,
+    "ast_hash": "ecbaae50d91826b84494127f816bca1d",
+    "semantic_hash": "ecbaae50d91826b84494127f816bca1d"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/HealthWorker.kt": {
+    "mtime": 1784482976.1054394,
+    "ast_hash": "0dd1aa123a87714efc10e09f9721b0fe",
+    "semantic_hash": "0dd1aa123a87714efc10e09f9721b0fe"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/PlatformApi.kt": {
+    "mtime": 1784488193.6563115,
+    "ast_hash": "7a867997b61f837d386634135179abd1",
+    "semantic_hash": "7a867997b61f837d386634135179abd1"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/platform/TelecallerProfile.kt": {
+    "mtime": 1784536293.5186327,
+    "ast_hash": "e2f6fe25ec83aa2b9f797434214cbafc",
+    "semantic_hash": "e2f6fe25ec83aa2b9f797434214cbafc"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/recordings/CallSource.kt": {
+    "mtime": 1784408638.6005116,
+    "ast_hash": "ff558746bf9dbea6696ac0011b06849b",
+    "semantic_hash": "ff558746bf9dbea6696ac0011b06849b"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/recordings/SourceRegistry.kt": {
+    "mtime": 1784451199.5259757,
+    "ast_hash": "41e9102ab297d5bf4b81ee4bf00be3dc",
+    "semantic_hash": "41e9102ab297d5bf4b81ee4bf00be3dc"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/service/AccessibilityStatus.kt": {
+    "mtime": 1784409525.203202,
+    "ast_hash": "b0bc38e2baedff2af39c62352442438e",
+    "semantic_hash": "b0bc38e2baedff2af39c62352442438e"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/service/CallAccessibilityService.kt": {
+    "mtime": 1784454426.4889362,
+    "ast_hash": "51b31ed9f716c75fb5a6cfbe2c8c750d",
+    "semantic_hash": "51b31ed9f716c75fb5a6cfbe2c8c750d"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/service/CallLogReader.kt": {
+    "mtime": 1784621074.865106,
+    "ast_hash": "219c212eee89de8ba34c748752be4231",
+    "semantic_hash": "219c212eee89de8ba34c748752be4231"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/service/PhoneStateReceiver.kt": {
+    "mtime": 1784621166.715241,
+    "ast_hash": "59cb19a4a883f2c7cf20024f68263fbd",
+    "semantic_hash": "59cb19a4a883f2c7cf20024f68263fbd"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/service/RecordingService.kt": {
+    "mtime": 1784551077.9364233,
+    "ast_hash": "2032bf18603fe4df058944b3fb93ab5a",
+    "semantic_hash": "2032bf18603fe4df058944b3fb93ab5a"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/storage/RecordingDao.kt": {
+    "mtime": 1784649384.0906177,
+    "ast_hash": "5c6878e67cd382a4fe6744ee0cf379c3",
+    "semantic_hash": "5c6878e67cd382a4fe6744ee0cf379c3"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/storage/RecordingDatabase.kt": {
+    "mtime": 1784481612.5675063,
+    "ast_hash": "44f96562d3cf289407d00473b3261488",
+    "semantic_hash": "44f96562d3cf289407d00473b3261488"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/storage/RecordingEntity.kt": {
+    "mtime": 1784481599.0601525,
+    "ast_hash": "a84157823075b4ab76d0791ea3d24f75",
+    "semantic_hash": "a84157823075b4ab76d0791ea3d24f75"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/transcription/Transcriber.kt": {
+    "mtime": 1784407433.3725789,
+    "ast_hash": "c401bd24103e06d8edd88dabcb182afc",
+    "semantic_hash": "c401bd24103e06d8edd88dabcb182afc"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/AdminActivationActivity.kt": {
+    "mtime": 1784536100.9142945,
+    "ast_hash": "846132e0da27bb32292d97e11f196119",
+    "semantic_hash": "846132e0da27bb32292d97e11f196119"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/LevelBarView.kt": {
+    "mtime": 1784410687.9239016,
+    "ast_hash": "d64ac7c6e54f3b228ca7c5e1499eecd5",
+    "semantic_hash": "d64ac7c6e54f3b228ca7c5e1499eecd5"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/MainActivity.kt": {
+    "mtime": 1784653580.2492425,
+    "ast_hash": "ab564967ada4051395fac99e26cec582",
+    "semantic_hash": "ab564967ada4051395fac99e26cec582"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/RecordingsAdapter.kt": {
+    "mtime": 1784536277.6857722,
+    "ast_hash": "5f99e02b1866afe250ff51406092cfb3",
+    "semantic_hash": "5f99e02b1866afe250ff51406092cfb3"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/RecordingsScannerActivity.kt": {
+    "mtime": 1784622233.0650299,
+    "ast_hash": "79c540f793d7716d22dae4932da2e5d0",
+    "semantic_hash": "79c540f793d7716d22dae4932da2e5d0"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/RecordingsViewModel.kt": {
+    "mtime": 1784536178.6852825,
+    "ast_hash": "718db2515cb773777e644f5670f66e84",
+    "semantic_hash": "718db2515cb773777e644f5670f66e84"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/scanner/QrScannerActivity.kt": {
+    "mtime": 1784536054.6278715,
+    "ast_hash": "305915219132260490d297b0d0916c75",
+    "semantic_hash": "305915219132260490d297b0d0916c75"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/ui/scanner/ScannerOverlayView.kt": {
+    "mtime": 1784536033.235576,
+    "ast_hash": "35dad0240ac00bef44016e4b3c46adae",
+    "semantic_hash": "35dad0240ac00bef44016e4b3c46adae"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/upload/TranscriptWorker.kt": {
+    "mtime": 1784488208.4150596,
+    "ast_hash": "10d72e342c71dacd7a5b459d9ce04123",
+    "semantic_hash": "10d72e342c71dacd7a5b459d9ce04123"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/upload/UploadApi.kt": {
+    "mtime": 1784542608.690606,
+    "ast_hash": "2ef4f9214d2b1e9c9e7e3337f6c35bca",
+    "semantic_hash": "2ef4f9214d2b1e9c9e7e3337f6c35bca"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/upload/UploadScheduler.kt": {
+    "mtime": 1784488169.5616045,
+    "ast_hash": "1d440ec99953de2893904318df0a4933",
+    "semantic_hash": "1d440ec99953de2893904318df0a4933"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/upload/UploadWorker.kt": {
+    "mtime": 1784542637.3405917,
+    "ast_hash": "ed585c3651438c447915ccbb9afee2af",
+    "semantic_hash": "ed585c3651438c447915ccbb9afee2af"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/util/RecordingNaming.kt": {
+    "mtime": 1784452576.6401823,
+    "ast_hash": "b2956f6feb5b90f12514055397e4e64c",
+    "semantic_hash": "b2956f6feb5b90f12514055397e4e64c"
+  },
+  "app/src/main/kotlin/com/voicetranscriber/callrecorder/util/ThemeManager.kt": {
+    "mtime": 1784466753.0433035,
+    "ast_hash": "0171edf0dfd89d51b289bbe31650a409",
+    "semantic_hash": "0171edf0dfd89d51b289bbe31650a409"
+  },
+  "build.gradle.kts": {
+    "mtime": 1784407279.941972,
+    "ast_hash": "45020c5f252951dd7f91d6765908de0a",
+    "semantic_hash": "45020c5f252951dd7f91d6765908de0a"
+  },
+  "settings.gradle.kts": {
+    "mtime": 1784407277.463627,
+    "ast_hash": "3eb7d7b464ef8640b3dd837b5c20df8c",
+    "semantic_hash": "3eb7d7b464ef8640b3dd837b5c20df8c"
+  },
+  "AI_Call_Intelligence_Platform_PRD.md": {
+    "mtime": 1784460558.8896804,
+    "ast_hash": "74abc9a39928a58ab2537ea6b1b83908",
+    "semantic_hash": "74abc9a39928a58ab2537ea6b1b83908"
+  },
+  "ARCHITECTURE.md": {
+    "mtime": 1784460478.036897,
+    "ast_hash": "906a924be0afcb39aa7cb3e2d8836b3c",
+    "semantic_hash": "906a924be0afcb39aa7cb3e2d8836b3c"
+  },
+  "FEATURES.md": {
+    "mtime": 1784411804.026433,
+    "ast_hash": "e9cf2f40123aabd832dbf4b1698158c7",
+    "semantic_hash": "e9cf2f40123aabd832dbf4b1698158c7"
+  },
+  "README.md": {
+    "mtime": 1784407490.5015821,
+    "ast_hash": "c869c3b690a11b1a873c4e646913d6f4",
+    "semantic_hash": "c869c3b690a11b1a873c4e646913d6f4"
+  }
+}

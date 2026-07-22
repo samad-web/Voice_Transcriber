@@ -1,0 +1,10 @@
+version: "3"
+# Two tunnels: the API (device enrollment/calls) and MinIO (presigned uploads).
+# Started with: ngrok start --all --config <default ngrok.yml> --config platform/ngrok.yml
+tunnels:
+  api:
+    proto: http
+    addr: 4000
+  minio:
+    proto: http
+    addr: 9000

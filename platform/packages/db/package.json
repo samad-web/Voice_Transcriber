@@ -1,0 +1,22 @@
+{
+  "name": "@aura/db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "migrate": "node migrate.js",
+    "seed": "node seed.js",
+    "verify:rls": "node verify-rls.js",
+    "bootstrap:role": "node bootstrap-role.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.8.3"
+  }
+}

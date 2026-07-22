@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Declares what our accessibility service observes. We only need window-state
+  changes (to know which call app is foreground) and the ability to retrieve the
+  active window (to read the callee's name from the declared view IDs).
+
+  NOTE: Google Play policy prohibits using the Accessibility API for call recording,
+  so an app relying on this config cannot be distributed on Play — sideload only.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_desc"
+    android:notificationTimeout="100" />

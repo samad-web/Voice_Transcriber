@@ -1,0 +1,159 @@
+# Production stack for a single VPS. Everything is behind Caddy, which is the
+# only container binding a host port and which obtains/renews Let's Encrypt
+# certificates automatically.
+#
+#   cp .env.production.example .env.production   # then fill it in
+#   docker compose --env-file .env.production -f docker-compose.prod.yml --profile setup run --rm migrate
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+#
+# --env-file is REQUIRED, not decorative: `env_file:` only populates the
+# containers, while ${VAR} substitution in THIS file reads the --env-file (or a
+# plain .env). Omit it and APP_DOMAIN et al resolve empty and the stack refuses
+# to start.
+#
+# Postgres is NOT here — the database is Supabase (see DEPLOYMENT.md §2).
+# Redis, RabbitMQ and MinIO stay local to the box and are never published.
+
+name: aura
+
+x-node-image: &node-image
+  build:
+    context: .
+    dockerfile: docker/node.Dockerfile
+  image: aura-node:latest
+  env_file: .env.production
+  restart: unless-stopped
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Consumed by docker/Caddyfile; both must have A/AAAA records pointing here
+      # BEFORE first start or the ACME challenge fails.
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env.production}
+      STORAGE_DOMAIN: ${STORAGE_DOMAIN:?set STORAGE_DOMAIN in .env.production}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.production}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certificates — losing this re-issues (rate limits!)
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+      - minio
+
+  api:
+    <<: *node-image
+    command: ["node", "apps/api/dist/main.js"]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    <<: *node-image
+    command: ["node", "apps/worker/dist/main.js"]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        # Inlined into the client bundle at build time — changing it needs a
+        # rebuild, not a restart.
+        NEXT_PUBLIC_API_URL: https://${APP_DOMAIN}
+    image: aura-web:latest
+    env_file: .env.production
+    restart: unless-stopped
+    environment:
+      # Server components talk to the API over the compose network, skipping
+      # the public hop (and the TLS handshake) entirely.
+      API_URL: http://api:4000
+    depends_on:
+      - api
+
+  # One-shot: applies packages/db/migrations to Supabase, then sets the runtime
+  # role's password from APP_DB_PASSWORD. Never runs as part of `up`.
+  migrate:
+    <<: *node-image
+    profiles: ["setup"]
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - "node packages/db/migrate.js && node packages/db/bootstrap-role.js"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - redisdata:/data
+
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+
+  # Call audio. Kept on-box (encrypted at rest by the app before upload) rather
+  # than in Supabase Storage, because the device uploads use S3 multipart
+  # presigned URLs that the API signs directly.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
+    volumes:
+      - miniodata:/data
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      - minio
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY"; do sleep 2; done
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc anonymous set none "local/$$S3_BUCKET"
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET:-aura-recordings}
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redisdata:
+  rabbitdata:
+  miniodata:

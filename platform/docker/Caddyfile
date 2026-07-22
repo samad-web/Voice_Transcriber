@@ -1,0 +1,56 @@
+# Caddy terminates TLS for the whole stack and gets certificates from Let's
+# Encrypt on first request. Both domains must already resolve to this box.
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment while testing to avoid burning Let's Encrypt rate limits:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# ── Console + API on one domain ──────────────────────────────────────────────
+# The Android app and the browser both hit https://{$APP_DOMAIN}; /v1/* is the
+# API and everything else is the Next.js console.
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	log {
+		output file /data/access-app.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+	}
+}
+
+# ── Object storage on its own domain ─────────────────────────────────────────
+# Devices upload recording parts straight to MinIO using presigned URLs the API
+# signs against S3_PUBLIC_ENDPOINT. SigV4 covers the Host header, so this domain
+# must match S3_PUBLIC_ENDPOINT exactly and Caddy must NOT rewrite the Host —
+# it doesn't by default, which is why there is no header_up here.
+{$STORAGE_DOMAIN} {
+	reverse_proxy minio:9000 {
+		# Recording parts are multi-MB; don't buffer them in the proxy.
+		flush_interval -1
+	}
+
+	log {
+		output file /data/access-storage.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+	}
+}

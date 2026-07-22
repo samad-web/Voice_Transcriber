@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Grants share access to files under getExternalFilesDir(null)/recordings -->
+    <external-files-path name="recordings" path="recordings/" />
+</paths>
