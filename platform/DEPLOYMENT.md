@@ -140,6 +140,45 @@ curl -I https://app.example.com/login             # 200, valid certificate
 curl -sI https://storage.example.com/aura-recordings | head -1   # 403 from MinIO = reachable, not public
 ```
 
+### Co-hosting behind an existing nginx
+
+The stack above assumes Caddy owns `:80`/`:443`. If the box already runs nginx for
+another site, Caddy cannot bind those ports — `up` fails with *port is already
+allocated*, and stopping nginx takes the other site down. Use the overlay instead:
+
+```bash
+docker compose --env-file .env.production \
+  -f docker-compose.prod.yml -f docker-compose.nginx.yml up -d --build
+```
+
+`docker-compose.nginx.yml` parks Caddy behind an unused profile and publishes
+web/api/minio on **loopback only** (`127.0.0.1:18080/18081/18082`), so the host's
+nginx stays the single edge and the containers are unreachable from the internet
+except through it. Check the ports are free first — `ss -ltnp | grep -E '1808[012]'`
+— and change them in the overlay if not.
+
+Then install the vhosts and let certbot add TLS:
+
+```bash
+sudo cp docker/nginx-aura.conf /etc/nginx/sites-available/aura
+sudo ln -s /etc/nginx/sites-available/aura /etc/nginx/sites-enabled/aura
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d $APP_DOMAIN -d $STORAGE_DOMAIN
+```
+
+`nginx-aura.conf` ships HTTP-only by design — certbot rewrites those blocks in
+place to add `listen 443 ssl`, the certificate paths and the `:80` redirect.
+Shipping 443 blocks first would reference cert files that don't exist yet and
+nginx would refuse to start.
+
+Two settings in it are load-bearing rather than boilerplate:
+
+* `proxy_set_header Host $host` on the storage vhost. SigV4 signs the Host
+  header; nginx's default (`$proxy_host`) rewrites it and **every** device upload
+  fails with `SignatureDoesNotMatch`.
+* `client_max_body_size 0` on the storage vhost. nginx defaults to 1 MB, which
+  rejects every multi-MB recording part with a 413.
+
 ---
 
 ## 4. First customer

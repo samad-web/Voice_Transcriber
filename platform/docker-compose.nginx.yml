@@ -1,0 +1,31 @@
+# Overlay for a VPS that ALREADY has nginx owning :80/:443 (e.g. a box shared
+# with another site). Caddy is profiled out and the services publish on
+# loopback only, so the host's nginx is the single edge and the containers are
+# unreachable from the internet except through it.
+#
+#   docker compose --env-file .env.production \
+#     -f docker-compose.prod.yml -f docker-compose.nginx.yml up -d --build
+#
+# Pair this with docker/nginx-aura.conf on the host. Everything else — Supabase,
+# Redis, RabbitMQ, MinIO, the worker — is unchanged from the standard stack.
+
+services:
+  # Not removable via an override, so park it behind a profile it never gets.
+  # `up` without --profile caddy simply skips it.
+  caddy:
+    profiles: ["caddy-unused"]
+
+  # High loopback ports chosen to avoid colliding with whatever the existing
+  # site already runs (3000/4000/9000 are common). Verify with `ss -ltnp`
+  # before the first start and change here if any are taken.
+  web:
+    ports:
+      - "127.0.0.1:18080:3000"
+
+  api:
+    ports:
+      - "127.0.0.1:18081:4000"
+
+  minio:
+    ports:
+      - "127.0.0.1:18082:9000"
