@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Bot,
@@ -65,6 +66,18 @@ function statusTone(status: string): "solid" | "muted" | "outline" | "danger" {
   return "muted";
 }
 
+/** Pipeline end states — anything else means the worker still has the call. */
+function isTerminal(status: string): boolean {
+  return status === "COMPLETE" || status.startsWith("FAILED");
+}
+
+/** Poll interval while a call is mid-pipeline. Transcription of a several-minute
+ *  call finishes in seconds, so this only ever runs a handful of times. */
+const POLL_MS = 4000;
+/** Give up after ~2 min. A call still moving after that is stuck (dead worker,
+ *  drained queue), and polling an open tab forever helps nobody. */
+const POLL_LIMIT = 30;
+
 function factValue(f: CallFact): string {
   if (f.value_text != null) return f.value_text;
   if (f.value_num != null) return String(f.value_num);
@@ -88,6 +101,8 @@ function speakerSideResolver(segments: TranscriptSegment[]) {
 }
 
 export function CallsExplorer({ calls }: { calls: CallRow[] }) {
+  const router = useRouter();
+  const pollsRef = useRef(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CallDetailData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,6 +123,7 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
     setNotes(null);
     setNoteBody("");
     setNoteError(null);
+    pollsRef.current = 0;
     setLoading(true);
     startTransition(async () => {
       const [res, notesRes] = await Promise.all([
@@ -120,6 +136,29 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
       setNotes(notesRes.error ? [] : notesRes.notes ?? []);
     });
   };
+
+  /**
+   * A call opened mid-pipeline used to sit on "No transcript yet" forever: the
+   * drawer fetched once and nothing ever re-read it, so a transcript that landed
+   * seconds later stayed invisible until the drawer was closed and reopened.
+   * Poll while the call is in a non-terminal state, and refresh the underlying
+   * table once it settles so the row's status stops disagreeing with the drawer.
+   */
+  useEffect(() => {
+    const status = detail?.call.status;
+    if (!openId || !status || isTerminal(status)) return;
+    if (pollsRef.current >= POLL_LIMIT) return;
+    const t = setTimeout(async () => {
+      pollsRef.current += 1;
+      const res = await getCallDetailAction(openId);
+      if (res.detail) {
+        setDetail(res.detail);
+        if (isTerminal(res.detail.call.status)) router.refresh();
+      }
+    }, POLL_MS);
+    return () => clearTimeout(t);
+    // detail identity changes on every poll, which is what re-arms the timer.
+  }, [openId, detail, router]);
 
   const addNote = () => {
     if (!openId || !noteBody.trim()) return;
@@ -144,6 +183,13 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
     startTransition(async () => {
       const res = await reprocessCallAction(openId);
       setReprocessMsg(res.error ? res.error : `Reprocess ${res.status ?? "queued"}`);
+      if (res.error) return;
+      pollsRef.current = 0;
+      // Re-read immediately: the call leaves COMPLETE for a pipeline state, which
+      // is what arms the poll above. Without this the drawer keeps showing the
+      // old transcript and looks like the reprocess did nothing.
+      const again = await getCallDetailAction(openId);
+      if (again.detail) setDetail(again.detail);
     });
   };
 

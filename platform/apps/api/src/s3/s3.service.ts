@@ -29,10 +29,13 @@ export class S3Service {
   });
 
   /**
-   * Public endpoint (e.g. an ngrok tunnel) — used ONLY to presign the device's
-   * multipart upload URLs so a remote phone can reach object storage. Falls back
-   * to the internal endpoint when no public endpoint is set. Keeping server reads
-   * off this endpoint avoids ngrok's browser-warning page corrupting S3 responses.
+   * Public endpoint (`S3_PUBLIC_ENDPOINT`, e.g. https://storage.<APP_DOMAIN>) —
+   * used to presign every URL that leaves the server: the device's multipart
+   * upload parts and the console's playback GET. Falls back to the internal
+   * endpoint when unset, which is what makes local dev work unconfigured.
+   *
+   * Server-side reads deliberately stay on `client` below: they run inside the
+   * compose network and should not take the public TLS/proxy hop.
    */
   private readonly publicClient = new S3Client({
     endpoint: process.env.S3_PUBLIC_ENDPOINT ?? process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -98,10 +101,28 @@ export class S3Service {
     return { bytes: head.ContentLength ?? 0 };
   }
 
-  /** Short-lived presigned GET — lets the web player stream audio without the bytes touching the API. */
-  async presignedGetUrl(key: string, expiresIn = 300): Promise<string> {
+  /**
+   * Short-lived presigned GET — lets the web player stream audio without the
+   * bytes touching the API.
+   *
+   * Signed with the PUBLIC client: this URL is handed to a browser, so it must
+   * address storage the way the browser can reach it. In production the internal
+   * endpoint is `http://minio:9000`, a Docker-network name that resolves nowhere
+   * outside the compose network — signing with it produced a URL the player
+   * could never load. (It only appeared to work in dev, where the internal
+   * endpoint happens to be localhost and the browser is on the same host.)
+   *
+   * SigV4 signs the Host header, so the endpoint used here must be exactly the
+   * host the browser requests, or MinIO rejects it with SignatureDoesNotMatch.
+   *
+   * Expiry covers playback, not just the click: the player issues Range requests
+   * for the whole session, and a signature that dies mid-file breaks seeking on
+   * any recording longer than the window. 300s was shorter than a six-minute
+   * call.
+   */
+  async presignedGetUrl(key: string, expiresIn = 1800): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.publicClient,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
