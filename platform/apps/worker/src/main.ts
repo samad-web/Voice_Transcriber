@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { consumePipeline } from "@aura/queue";
+import { warnIfSecretsUnencrypted } from "@aura/db";
 import { WorkerModule } from "./worker.module";
 import { processCall } from "./pipeline/pipeline";
 import { startReaper } from "./pipeline/reaper";
@@ -9,6 +10,7 @@ import { startOutboxDrain } from "./pipeline/outbox";
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
   app.enableShutdownHooks();
+  warnIfSecretsUnencrypted("worker");
 
   await consumePipeline(processCall);
   startReaper();

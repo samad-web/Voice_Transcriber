@@ -325,7 +325,20 @@ These are honest limitations of the current build, not deployment steps:
    Text-based diarization will still invent a "Customer" speaker — `diarized=true` is not
    evidence both sides were recorded.
 6. **Transcription is post-call**, not streaming.
-7. **Play Integrity, FCM push and HubSpot OAuth** are stubs; they need external credentials.
+7. **Play Integrity and FCM push** are stubs; they need external credentials.
+8. **CRM connectors authenticate with API keys and pasted tokens, not OAuth.** Every provider in
+   the catalogue works this way today. For HubSpot (private app token), Pipedrive, GoHighLevel,
+   Freshsales, Close, Attio, Keap, Zendesk Sell, Kylas, LeadSquared and Bitrix24 that is the
+   vendor's normal long-lived credential and nothing expires. For **Salesforce, Zoho, monday and
+   Dynamics 365 the pasted access token expires** — hours in Zoho's and Salesforce's case — and
+   deliveries start failing with 401 until someone rotates it on the integration card. Treat
+   those four as usable for pilots, not unattended production, until the OAuth refresh flow
+   lands. The schema already carries everything that flow needs: a refreshed access token is
+   just a new bearer secret.
+9. **`CRM_SECRET_KEY` is unrecoverable.** It seals every stored CRM credential with AES-256-GCM.
+   Lose it and each connected CRM must be re-authenticated by hand — back it up wherever you
+   keep `JWT_SECRET`. If the variable is unset the API and worker warn at boot and store
+   credentials in plaintext.
 
 ---
 

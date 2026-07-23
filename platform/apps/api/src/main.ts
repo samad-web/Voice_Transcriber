@@ -1,9 +1,11 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import { warnIfSecretsUnencrypted } from "@aura/db";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  warnIfSecretsUnencrypted("api");
   app.setGlobalPrefix("v1");
   app.enableCors({ origin: process.env.WEB_ORIGIN ?? "http://localhost:3000" });
   const port = Number(process.env.API_PORT ?? 4000);

@@ -21,8 +21,10 @@ import {
  * be destroyed by an infrastructure hiccup.
  */
 
-const INTEGRATION_COLUMNS = `id, endpoint, auth_type, auth_header, auth_secret,
-  headers, field_map, max_attempts, rate_limit_per_min, auth`;
+const INTEGRATION_COLUMNS = `id, provider, label, target, endpoint, method,
+  auth_type, auth_header, auth_prefix, auth_secret, headers, config,
+  body_template, id_path, pair_keys, field_map, max_attempts,
+  rate_limit_per_min, auth`;
 
 /**
  * Queue this call for every connected integration on its workspace, then try
@@ -72,10 +74,10 @@ async function attemptOne(
   integration: CrmIntegration,
   requestId: string,
 ): Promise<void> {
-  let payload: Record<string, unknown>;
+  let payload: unknown;
   try {
     const source = await buildSourceDocument(client, callId);
-    payload = mapPayload(source, integration.field_map);
+    payload = mapPayload(source, integration);
   } catch (err) {
     await client.query(
       `UPDATE crm_sync_log
@@ -106,8 +108,13 @@ async function attemptOne(
   await client.query(
     `UPDATE crm_sync_log
         SET status = $3, attempts = $4, error = $5,
-            external_id = $6, request_body = $7::jsonb,
+            -- The id the CRM assigned to the record it created. COALESCE so a
+            -- later attempt that can't parse the body doesn't erase a link we
+            -- already captured.
+            external_id = COALESCE($6, external_id),
+            request_body = $7::jsonb,
             response_status = $8, response_body = $9, request_id = $10,
+            target = $12, request_url = $13,
             last_attempt_at = now(), updated_at = now(),
             next_attempt_at = CASE WHEN $11::int IS NULL
                                    THEN NULL
@@ -119,13 +126,26 @@ async function attemptOne(
       status,
       attempts,
       result.error?.slice(0, 500) ?? null,
-      result.status ? String(result.status) : null,
+      result.externalId,
       JSON.stringify(payload),
       result.status,
       result.body || null,
       requestId,
       nextAttempt,
+      integration.target,
+      result.url || null,
     ],
+  );
+
+  // Integration-level health, so the console can show state without scanning
+  // the outbox. last_error is cleared on success rather than left to rot.
+  await client.query(
+    `UPDATE crm_integrations
+        SET last_success_at = CASE WHEN $2::bool THEN now() ELSE last_success_at END,
+            last_error      = CASE WHEN $2::bool THEN NULL ELSE $3 END,
+            updated_at      = now()
+      WHERE id = $1`,
+    [integration.id, result.ok, result.error?.slice(0, 500) ?? null],
   );
 
   if (status === "dead") {

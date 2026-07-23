@@ -40,6 +40,37 @@ TLS, Supabase for Postgres, plus the signed Android release build.
 | `.env.production.example` | Every production variable, annotated |
 | `supabase/migrations/` | Generated from `packages/db/migrations` (`pnpm db:supabase:sync`) |
 
+## CRM connectors
+
+A connector is data, not code. `packages/shared/src/crm-providers.ts` holds the
+catalogue — 19 entries covering HubSpot, Salesforce, Zoho, Pipedrive,
+GoHighLevel, Freshsales, Close, Attio, monday, Dynamics 365, Keap, Zendesk Sell,
+Bitrix24, LeadSquared, Kylas, plus Zapier/Make/n8n and a fully custom webhook.
+Each entry declares its auth scheme, the per-tenant config that completes its
+URL, and one spec per writable object (lead, contact, call activity) with an
+endpoint template, body shape, response id path and a starting field map.
+
+The worker renders that spec at send time (`apps/worker/src/pipeline/crm-dispatch.ts`)
+through the same `@aura/shared` functions the console's "test connection" uses,
+so a passing test is evidence about the real request.
+
+| To do this | Change this |
+|---|---|
+| Add a CRM | Append a `CrmProviderSpec` to `CRM_PROVIDERS` — no dispatcher change |
+| Add an object to an existing CRM | Append a target to that provider's `targets` |
+| Connect an unlisted CRM | `POST /v1/crm/integrations/custom`, or the console's "CRM not listed?" panel |
+| Reshape a payload | Edit the integration's field map, or its `body_template` |
+
+Body templates use four placeholders: `"$fields"` (the mapped object),
+`"$fieldsJson"`, `"$fieldsPairs"` (LeadSquared's Attribute/Value array) and
+`"$field:key"` for a single value — the escape hatch for nested shapes like
+Close's `contacts[].phones[].phone`. Nulls are pruned before sending, because
+several CRMs read an explicit null as "clear this field".
+
+Deliveries go through the durable outbox in `crm_sync_log`: one row per
+(call, integration), retried with exponential backoff, 4xx terminal, capped per
+integration per minute. Credentials are sealed at rest with `CRM_SECRET_KEY`.
+
 ## Design system
 
 The web app follows the "Aura" prototype in `../ui-design/`: Space Grotesk /
