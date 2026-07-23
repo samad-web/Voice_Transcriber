@@ -5,9 +5,7 @@ import { FlaskConical, Play } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { testAgentAction, type AgentTestResult } from "./actions";
 import type { AgentRow } from "./agent-studio";
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
+import { inputClass } from "@/lib/form";
 
 export function AgentSandbox({ agents }: { agents: AgentRow[] }) {
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");

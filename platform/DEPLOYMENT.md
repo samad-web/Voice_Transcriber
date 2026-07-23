@@ -106,6 +106,35 @@ supabase link --project-ref <ref> && supabase db push
 `bootstrap-role.js` afterwards.
 </details>
 
+### 2b. Console sign-in (Supabase Auth)
+
+The web console signs operators in with Supabase Auth — the same project that hosts the
+database, using its GoTrue auth server rather than the `users` table. In the dashboard:
+
+| Where | Setting |
+| --- | --- |
+| Authentication → Providers → Email | **Enabled** |
+| Authentication → Providers → Email | **Allow new users to sign up: OFF** |
+| Authentication → URL Configuration | Site URL = `https://<APP_DOMAIN>` |
+| Authentication → Users → Add user | Create the operator account, e.g. `support@sirahdigital.in` |
+
+Signup is deliberately closed: the console has no registration form, but leaving the provider's
+signup endpoint open would let anyone with the (public) anon key create an account, and **any
+authenticated Supabase user can reach the console**. Create operator accounts from the
+dashboard.
+
+Then copy Project Settings → API into `.env.production`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon public key>
+```
+
+Both are `NEXT_PUBLIC_*`, so they are baked into the image at build time — same rebuild rule as
+`NEXT_PUBLIC_API_URL` (§7.3). Leaving either blank ships a console with **no sign-in gate at
+all**: `/login` reports that auth is unconfigured and every page stays reachable. That fallback
+exists so local dev works without a project; it must never be how production is deployed.
+
 ---
 
 ## 3. Deploy the stack
@@ -280,8 +309,11 @@ tests and disastrous in production.
 These are honest limitations of the current build, not deployment steps:
 
 1. **`ADMIN_API_KEY` is effectively a root credential.** It authenticates every `/v1/admin/*`
-   call and crosses tenant boundaries. Real identity (OIDC/MFA) is unbuilt. Keep the key on the
-   server only, never in a browser or a phone.
+   call and crosses tenant boundaries. Keep the key on the server only, never in a browser or a
+   phone. Supabase Auth (§2b) gates who can open the console, but the console's own server
+   components still read the API with this key — a signed-in operator is implicitly an admin,
+   and the API itself does not yet verify the Supabase session. Per-role API authorisation is
+   still unbuilt.
 2. **The console is single-tenant apart from `/instances`.** Per-tenant pages read `DEV_ORG_ID`.
    Operating a second customer today means changing that variable and rebuilding the web image.
 3. **`NEXT_PUBLIC_API_URL` is baked at image build time.** Changing the domain requires

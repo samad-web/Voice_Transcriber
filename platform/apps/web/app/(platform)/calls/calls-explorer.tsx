@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { BrutalButton, MonoLabel, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
+import { inputClass } from "@/lib/form";
 import {
   addCallNoteAction,
   getCallAudioAction,
@@ -517,7 +518,7 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
 
                       <div className="space-y-2">
                         <textarea
-                          className="w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none h-20 leading-relaxed"
+                          className={`${inputClass} h-20 leading-relaxed`}
                           placeholder="Add a note about this call…"
                           value={noteBody}
                           onChange={(e) => setNoteBody(e.target.value)}

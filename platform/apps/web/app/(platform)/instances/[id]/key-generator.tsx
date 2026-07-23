@@ -5,9 +5,7 @@ import { AlertTriangle, KeyRound } from "lucide-react";
 import { BrutalButton, Card } from "@aura/ui";
 import { EnrollmentCredentials, type Credentials } from "../enrollment-credentials";
 import { mintKeyAction } from "./actions";
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
+import { inputClass } from "@/lib/form";
 
 /** Issue an additional enrollment key when the customer onboards more handsets. */
 export function KeyGenerator({
@@ -54,7 +52,7 @@ export function KeyGenerator({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
               Key TTL (minutes)

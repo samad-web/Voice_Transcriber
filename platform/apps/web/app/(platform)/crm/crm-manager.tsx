@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Link2, Plug, Plus, Trash2, Webhook } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { connectWebhookAction, updateFieldMapAction } from "./actions";
+import { inputClass } from "@/lib/form";
 
 export interface Integration {
   id: string;
@@ -12,9 +13,6 @@ export interface Integration {
   status: string;
   field_map: Record<string, string> | null;
 }
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
 
 function statusTone(status: string): "solid" | "muted" | "danger" {
   if (status === "active" || status === "connected") return "solid";

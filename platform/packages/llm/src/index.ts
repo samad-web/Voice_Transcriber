@@ -5,6 +5,52 @@ import {
   validateExtraction,
 } from "@aura/shared";
 
+/**
+ * Retry a Gemini call through transient upstream failures.
+ *
+ * "This model is currently experiencing high demand" (503 UNAVAILABLE) and 429
+ * are capacity signals, not bad requests — the same payload succeeds moments
+ * later. Without this a spike marks the call FAILED_ASR / FAILED_ANALYZE
+ * permanently and someone has to notice and reprocess by hand, which is exactly
+ * the kind of silent data loss the pipeline is supposed to prevent.
+ *
+ * 4xx other than 429 is NOT retried: a malformed request will never start
+ * working, and retrying it just burns quota.
+ */
+export async function withGeminiRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = 4,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = (err as { status?: number })?.status;
+      const message = err instanceof Error ? err.message : String(err);
+      const transient =
+        status === 429 ||
+        status === 500 ||
+        status === 502 ||
+        status === 503 ||
+        status === 504 ||
+        /UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|overloaded|deadline/i.test(message);
+      if (!transient || attempt === maxAttempts) throw err;
+
+      // 2s, 6s, 18s plus jitter, so concurrent workers don't retry in lockstep.
+      const delayMs = 2000 * 3 ** (attempt - 1) + Math.floor(Math.random() * 750);
+      console.warn(
+        `${label}: transient upstream error (attempt ${attempt}/${maxAttempts}), ` +
+          `retrying in ${Math.round(delayMs / 1000)}s — ${message.slice(0, 140)}`,
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 export interface AnalyzeResult {
   output: Record<string, unknown>;
   validationStatus: "valid" | "repaired" | "failed";
@@ -92,26 +138,30 @@ export async function analyzeTranscript(
   const jsonSchema = compileToJsonSchema(schema);
 
   const run = async (repairNote?: string) => {
-    const response = await ai.models.generateContent({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts: [
+    const response = await withGeminiRetry(
+      () =>
+        ai.models.generateContent({
+          model,
+          contents: [
             {
-              text:
-                `${systemPrompt}\n\nCall transcript:\n${transcript}\n\n` +
-                `Extract the requested fields. Base every value strictly on the transcript.` +
-                (repairNote ? `\n\nYour previous output was invalid: ${repairNote}. Fix it.` : ""),
+              role: "user",
+              parts: [
+                {
+                  text:
+                    `${systemPrompt}\n\nCall transcript:\n${transcript}\n\n` +
+                    `Extract the requested fields. Base every value strictly on the transcript.` +
+                    (repairNote ? `\n\nYour previous output was invalid: ${repairNote}. Fix it.` : ""),
+                },
+              ],
             },
           ],
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: jsonSchema,
-      },
-    });
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: jsonSchema,
+          },
+        }),
+      "analyzeTranscript",
+    );
     return {
       output: JSON.parse(response.text ?? "{}") as Record<string, unknown>,
       tokensIn: response.usageMetadata?.promptTokenCount ?? 0,
@@ -268,13 +318,17 @@ export async function analyzeConversation(
 
   const usedModel = process.env.GEMINI_ANALYZE_MODEL ?? "gemini-2.5-flash";
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-  const response = await ai.models.generateContent({
-    model: usedModel,
-    contents: [
-      { role: "user", parts: [{ text: `${system}\n\nJSON shape:\n${shape}\n\n${userContent}` }] },
-    ],
-    config: { responseMimeType: "application/json" },
-  });
+  const response = await withGeminiRetry(
+    () =>
+      ai.models.generateContent({
+        model: usedModel,
+        contents: [
+          { role: "user", parts: [{ text: `${system}\n\nJSON shape:\n${shape}\n\n${userContent}` }] },
+        ],
+        config: { responseMimeType: "application/json" },
+      }),
+    "analyzeConversation",
+  );
   const raw = JSON.parse(response.text ?? "{}") as Partial<ConversationIntelligence> & {
     labels?: unknown;
   };

@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { withGeminiRetry } from "@aura/llm";
 
 export interface AsrSegment {
   speaker: string;
@@ -41,25 +42,29 @@ export async function transcribe(audio: Buffer, mimeType: string): Promise<AsrRe
 async function geminiTranscribe(audio: Buffer, mimeType: string): Promise<AsrResult> {
   const model = process.env.GEMINI_ASR_MODEL ?? "gemini-2.5-flash";
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-  const response = await ai.models.generateContent({
-    model,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data: audio.toString("base64") } },
+  const response = await withGeminiRetry(
+    () =>
+      ai.models.generateContent({
+        model,
+        contents: [
           {
-            text:
-              "Transcribe this phone call with speaker diarization. " +
-              "Detect the language. Return ONLY JSON matching: " +
-              '{"language": "<iso639-1>", "segments": [{"speaker": "S1|S2", ' +
-              '"text": "...", "startMs": 0, "endMs": 0}]}',
+            role: "user",
+            parts: [
+              { inlineData: { mimeType, data: audio.toString("base64") } },
+              {
+                text:
+                  "Transcribe this phone call with speaker diarization. " +
+                  "Detect the language. Return ONLY JSON matching: " +
+                  '{"language": "<iso639-1>", "segments": [{"speaker": "S1|S2", ' +
+                  '"text": "...", "startMs": 0, "endMs": 0}]}',
+              },
+            ],
           },
         ],
-      },
-    ],
-    config: { responseMimeType: "application/json" },
-  });
+        config: { responseMimeType: "application/json" },
+      }),
+    "geminiTranscribe",
+  );
   const parsed = JSON.parse(response.text ?? "{}") as { language?: string; segments?: AsrSegment[] };
   const segments = parsed.segments ?? [];
   return {

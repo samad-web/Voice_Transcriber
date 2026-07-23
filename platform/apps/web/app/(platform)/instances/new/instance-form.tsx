@@ -6,9 +6,7 @@ import { AlertTriangle, ArrowRight, Building2 } from "lucide-react";
 import { BrutalButton, Card, MonoLabel } from "@aura/ui";
 import { EnrollmentCredentials } from "../enrollment-credentials";
 import { createTenantAction, type ProvisionResult } from "./actions";
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
+import { inputClass } from "@/lib/form";
 
 const CONSENT_POLICIES = [
   { value: "tone", label: "Announcement tone" },
@@ -72,7 +70,7 @@ export function InstanceForm() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
               Consent Policy
@@ -104,7 +102,7 @@ export function InstanceForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
               Key TTL (minutes)

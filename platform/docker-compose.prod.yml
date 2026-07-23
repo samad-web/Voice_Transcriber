@@ -75,9 +75,12 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
       args:
-        # Inlined into the client bundle at build time — changing it needs a
-        # rebuild, not a restart.
+        # Inlined into the client bundle at build time — changing any of these
+        # needs a rebuild, not a restart.
         NEXT_PUBLIC_API_URL: https://${APP_DOMAIN}
+        # Supabase Auth — omit and the console ships with sign-in disabled.
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     image: aura-web:latest
     env_file: .env.production
     restart: unless-stopped

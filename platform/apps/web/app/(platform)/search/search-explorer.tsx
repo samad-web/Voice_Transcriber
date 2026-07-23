@@ -6,9 +6,7 @@ import { FileText, Search } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { searchTranscriptsAction, type SearchResult } from "./actions";
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
+import { inputClass } from "@/lib/form";
 
 /**
  * Renders a ts_headline snippet safely: `<b>…</b>` highlight spans become bold

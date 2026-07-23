@@ -4,6 +4,7 @@ import { analyzeConversation, analyzeTranscript } from "@aura/llm";
 import type { PipelineMessage } from "@aura/queue";
 import { ExtractionSchema } from "@aura/shared";
 import { transcribe } from "./asr";
+import { enqueueDispatch } from "./outbox";
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -244,55 +245,12 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
 
     // ── crm-dispatch ─────────────────────────────────────────────────────
     if (!(await advance("ANALYZING", "SYNCING"))) return;
-    // Generic webhook connector: POST call summary + facts to the tenant URL.
-    // Failures are logged in crm_sync_log and NEVER block completion (§6.2).
-    // TODO (checklist §2.3): HubSpot connector with field mapping + backoff retries.
+    // Queue the lead for every connected integration and try once immediately.
+    // Anything that doesn't land is left due in crm_sync_log for the outbox
+    // drain to retry with backoff, so a CRM outage delays delivery rather than
+    // losing it. Failures NEVER block completion (§6.2).
     try {
-      const {
-        rows: [integration],
-      } = await client.query(
-        `SELECT ci.id, ci.auth FROM crm_integrations ci
-          JOIN calls c ON c.workspace_id = ci.workspace_id
-         WHERE c.id = $1 AND ci.provider = 'generic_webhook' AND ci.status = 'connected'
-         LIMIT 1`,
-        [callId],
-      );
-      if (integration) {
-        const {
-          rows: [payload],
-        } = await client.query(
-          `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
-                  t.text AS transcript,
-                  (SELECT jsonb_object_agg(f.field_key,
-                            COALESCE(to_jsonb(f.value_num), to_jsonb(f.value_bool), to_jsonb(f.value_text)))
-                     FROM call_facts f WHERE f.call_id = c.id) AS facts
-             FROM calls c LEFT JOIN transcripts t ON t.call_id = c.id
-            WHERE c.id = $1`,
-          [callId],
-        );
-        const url = (integration.auth as { url?: string }).url;
-        let status = "failed";
-        let error: string | null = null;
-        let httpStatus: number | null = null;
-        try {
-          const res = await fetch(url!, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ event: "call.completed", call: payload }),
-            signal: AbortSignal.timeout(10_000),
-          });
-          httpStatus = res.status;
-          status = res.ok ? "synced" : "failed";
-          if (!res.ok) error = `webhook returned ${res.status}`;
-        } catch (err) {
-          error = err instanceof Error ? err.message : String(err);
-        }
-        await client.query(
-          `INSERT INTO crm_sync_log (org_id, call_id, integration_id, status, external_id, error, attempts)
-           VALUES ($1, $2, $3, $4, $5, $6, 1)`,
-          [orgId, callId, integration.id, status, httpStatus ? String(httpStatus) : null, error],
-        );
-      }
+      await enqueueDispatch(client, orgId, callId);
     } catch (err) {
       console.error(`call ${callId}: crm-dispatch error (non-blocking):`, err);
     }

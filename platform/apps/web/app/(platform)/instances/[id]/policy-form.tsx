@@ -4,9 +4,7 @@ import { useState, useTransition } from "react";
 import { ShieldCheck } from "lucide-react";
 import { BrutalButton, Card } from "@aura/ui";
 import { updatePolicyAction } from "./actions";
-
-const selectClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-xs text-black font-bold uppercase focus:outline-none";
+import { selectClass } from "@/lib/form";
 
 export function PolicyForm({
   orgId,

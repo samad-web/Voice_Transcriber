@@ -5,6 +5,7 @@ import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { activateAgentAction, createAgentAction, type AgentFieldInput } from "./actions";
+import { inputClass } from "@/lib/form";
 
 export interface AgentRow {
   id: string;
@@ -15,8 +16,6 @@ export interface AgentRow {
   created_at: string;
 }
 
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
 const FIELD_TYPES = ["string", "number", "boolean", "enum", "datetime", "string[]"] as const;
 
 const EMPTY_FIELD: AgentFieldInput = { key: "", type: "string", description: "", required: false };

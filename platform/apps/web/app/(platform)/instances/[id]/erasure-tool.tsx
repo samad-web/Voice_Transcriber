@@ -4,9 +4,7 @@ import { useState, useTransition } from "react";
 import { ShieldX } from "lucide-react";
 import { BrutalButton, Card, ConsolePanel, MonoLabel } from "@aura/ui";
 import { triggerErasureAction, type ErasureReceipt } from "./actions";
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-mono text-black focus:outline-none";
+import { monoInputClass as inputClass } from "@/lib/form";
 
 export function ErasureTool({ orgId }: { orgId: string }) {
   const [callId, setCallId] = useState("");

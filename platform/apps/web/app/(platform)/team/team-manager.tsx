@@ -10,6 +10,7 @@ import {
   removeMemberAction,
   updateMemberAction,
 } from "./actions";
+import { inputClass, selectClass } from "@/lib/form";
 
 export interface Member {
   userId: string;
@@ -27,11 +28,6 @@ export interface Workspace {
   name: string;
   created_at: string;
 }
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
-const selectClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-xs text-black font-bold uppercase focus:outline-none";
 
 const ROLES = ["owner", "admin", "manager", "analyst", "viewer"] as const;
 

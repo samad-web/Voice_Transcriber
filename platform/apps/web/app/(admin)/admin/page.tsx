@@ -48,13 +48,13 @@ export default async function AdminPage() {
   ]);
 
   return (
-    <main className="min-h-screen p-8 space-y-6">
+    <main className="min-h-dvh p-4 sm:p-6 md:p-8 space-y-6">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 bg-black text-white flex items-center justify-center font-bold font-display text-xl select-none">
+        <div className="w-10 h-10 bg-black text-white flex items-center justify-center font-bold font-display text-xl select-none shrink-0">
           A
         </div>
-        <div>
-          <h1 className="text-4xl font-display font-black uppercase tracking-tighter leading-none">
+        <div className="min-w-0">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-display font-black uppercase tracking-tighter leading-none">
             Platform Admin
           </h1>
           <span className="text-[10px] font-mono font-bold text-neutral-400 block tracking-[0.2em] uppercase mt-1">

@@ -5,6 +5,7 @@ import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./actions";
+import { inputClass } from "@/lib/form";
 
 export interface ApiKey {
   id: string;
@@ -13,9 +14,6 @@ export interface ApiKey {
   last_used_at: string | null;
   created_at: string;
 }
-
-const inputClass =
-  "w-full p-2.5 border-2 border-black bg-neutral-50 rounded-none text-sm font-sans text-black focus:outline-none";
 
 export function ApiKeysManager({ keys }: { keys: ApiKey[] }) {
   const [name, setName] = useState("");
