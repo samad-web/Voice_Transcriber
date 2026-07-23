@@ -8,6 +8,7 @@ import { DeleteInstance } from "./delete-instance";
 import { DeviceActions } from "./device-actions";
 import { ErasureTool } from "./erasure-tool";
 import { KeyGenerator } from "./key-generator";
+import { OwnerAccounts, type OwnerRow } from "./owner-accounts";
 import { PolicyForm } from "./policy-form";
 
 interface Org {
@@ -76,9 +77,10 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
   const org = await apiGetAs<Org>("/v1/org", orgId);
   if (!org?.id) notFound();
 
-  const [list, audit] = await Promise.all([
+  const [list, audit, ownerData] = await Promise.all([
     apiGetAs<{ instances: InstanceRow[] }>("/v1/instances", orgId),
     apiGetAs<{ entries: AuditEntry[] }>("/v1/org/audit", orgId),
+    apiGetAs<{ owners: OwnerRow[]; authConfigured: boolean }>("/v1/owners", orgId),
   ]);
   const instances = list?.instances ?? [];
 
@@ -143,6 +145,11 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
+          <OwnerAccounts
+            orgId={orgId}
+            owners={ownerData?.owners ?? []}
+            authConfigured={ownerData?.authConfigured ?? false}
+          />
           <PolicyForm orgId={orgId} initial={org} />
           <ErasureTool orgId={orgId} />
         </div>

@@ -30,7 +30,7 @@ const s3 = new S3Client({
 const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
 
 /**
- * Cascading erasure (§2.6, GDPR Art. 17 / DPDP): S3 object → transcript →
+ * Cascading erasure (§2.6, GDPR Art. 17 / DPDP): S3 object → lead → transcript →
  * ai_outputs → call_facts → crm_sync_log → call row, then a signed receipt
  * recorded in the audit log. CRM-pushed copies are best-effort/logged (TODO
  * with the HubSpot connector). Per-subject (phone-hash) fan-out lands later.
@@ -51,7 +51,9 @@ export class ErasureController {
       const {
         rows: [rec],
       } = await client.query(
-        "SELECT s3_key FROM recordings WHERE call_id = $1",
+        `SELECT r.s3_key, c.remote_number_hash
+           FROM calls c LEFT JOIN recordings r ON r.call_id = c.id
+          WHERE c.id = $1`,
         [callId],
       );
 
@@ -60,6 +62,19 @@ export class ErasureController {
         await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: rec.s3_key }));
         purged.push("s3_audio_object");
       }
+
+      // The lead carries the subject's name and everything the call said about
+      // them, so erasing the call without it would leave the data behind under
+      // a different table name. Matched on the contact hash — one erasure
+      // request removes the prospect, not just this one conversation.
+      const leadRes = await client.query(
+        `DELETE FROM leads
+          WHERE first_call_id = $1 OR last_call_id = $1
+             OR ($2::text IS NOT NULL AND contact_number_hash = $2)`,
+        [callId, rec?.remote_number_hash ?? null],
+      );
+      if ((leadRes.rowCount ?? 0) > 0) purged.push("lead_rows");
+
       for (const [table, label] of [
         ["transcripts", "transcript_rows"],
         ["ai_outputs", "ai_output_rows"],

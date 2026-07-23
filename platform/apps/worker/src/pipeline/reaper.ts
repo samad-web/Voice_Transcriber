@@ -49,6 +49,25 @@ export async function reapExpired(): Promise<number> {
           [org.id, call.id],
         );
       }
+
+      // Leads age out on their OWN clock, not their source call's. A deal the
+      // owner is still working must survive the recording that started it
+      // (0010 nulls the call link rather than cascading), but a lead nobody
+      // has touched for the retention window is still tenant data holding a
+      // contact name, so it goes.
+      const dormant = await client.query(
+        `DELETE FROM leads WHERE last_activity_at < now() - make_interval(days => $1)
+         RETURNING id`,
+        [org.retention_days],
+      );
+      if ((dormant.rowCount ?? 0) > 0) {
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
+           VALUES ($1, 'system', 'reaper', 'retention.reap', 'lead', $2::jsonb)`,
+          [org.id, JSON.stringify({ count: dormant.rowCount })],
+        );
+      }
+
       return expired.length;
     });
   }

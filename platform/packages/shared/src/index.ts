@@ -4,3 +4,4 @@ export * from "./entities";
 export * from "./device-api";
 export * from "./crm-template";
 export * from "./crm-providers";
+export * from "./leads";

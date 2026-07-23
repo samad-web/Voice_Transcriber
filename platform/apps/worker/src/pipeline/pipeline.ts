@@ -4,6 +4,7 @@ import { analyzeConversation, analyzeTranscript } from "@aura/llm";
 import type { PipelineMessage } from "@aura/queue";
 import { ExtractionSchema } from "@aura/shared";
 import { transcribe } from "./asr";
+import { upsertLead } from "./leads";
 import { enqueueDispatch } from "./outbox";
 
 const s3 = new S3Client({
@@ -245,6 +246,22 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
 
     // ── crm-dispatch ─────────────────────────────────────────────────────
     if (!(await advance("ANALYZING", "SYNCING"))) return;
+
+    // Lead projection first: it is a local write, so the owner's board is
+    // populated even if the tenant has no CRM connected at all. Non-blocking
+    // for the same reason as dispatch — a qualification bug must not strand
+    // calls in SYNCING.
+    try {
+      const lead = await upsertLead(client, orgId, callId);
+      console.log(
+        lead.leadId
+          ? `call ${callId}: lead ${lead.leadId} ${lead.reason}`
+          : `call ${callId}: no lead — ${lead.reason}`,
+      );
+    } catch (err) {
+      console.error(`call ${callId}: lead projection error (non-blocking):`, err);
+    }
+
     // Queue the lead for every connected integration and try once immediately.
     // Anything that doesn't land is left due in crm_sync_log for the outbox
     // drain to retry with backoff, so a CRM outage delays delivery rather than

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Lock, Menu, User, X } from "lucide-react";
-import { NAV_ITEMS, navItemFor } from "@/lib/nav";
+import { NAV_ITEMS, OWNER_NAV_ITEMS, navItemFor, type NavArea } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 /**
@@ -13,10 +13,22 @@ import { SignOutButton } from "@/components/sign-out-button";
  * bar plus a slide-in drawer. Without this the app had no way to change page on
  * a phone at all.
  */
-export function MobileNav({ email }: { email?: string | null }) {
+export function MobileNav({
+  email,
+  /** See <Sidebar>: the nav array holds icon components and cannot be a prop. */
+  area = "platform",
+  title = "Aura Platform",
+  subtitle = "Call Intelligence",
+}: {
+  email?: string | null;
+  area?: NavArea;
+  title?: string;
+  subtitle?: string;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const current = navItemFor(pathname);
+  const items = area === "owner" ? OWNER_NAV_ITEMS : NAV_ITEMS;
+  const current = navItemFor(pathname, items);
 
   // Navigating (or resizing up into the sidebar breakpoint) must not leave the
   // drawer mounted over the page.
@@ -79,12 +91,12 @@ export function MobileNav({ email }: { email?: string | null }) {
               transition={{ type: "spring", damping: 32, stiffness: 320 }}
             >
               <div className="flex items-center justify-between border-b-2 border-black p-4">
-                <div>
-                  <span className="text-sm font-display font-black uppercase tracking-tight leading-none block">
-                    Aura Platform
+                <div className="min-w-0 pr-2">
+                  <span className="text-sm font-display font-black uppercase tracking-tight leading-none block truncate">
+                    {title}
                   </span>
                   <span className="text-[9px] font-mono font-bold text-neutral-400 block tracking-[0.2em] uppercase mt-1">
-                    Call Intelligence
+                    {subtitle}
                   </span>
                 </div>
                 <button
@@ -98,7 +110,7 @@ export function MobileNav({ email }: { email?: string | null }) {
               </div>
 
               <div className="flex-1 p-3 space-y-1">
-                {NAV_ITEMS.map((item) => {
+                {items.map((item) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (

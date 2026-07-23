@@ -3,6 +3,8 @@ import {
   BarChart3,
   Building2,
   KeyRound,
+  LayoutGrid,
+  ListFilter,
   Phone,
   Plug,
   Search,
@@ -10,6 +12,9 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+
+/** The two consoles: the platform operator's, and one customer's own. */
+export type NavArea = "platform" | "owner";
 
 export interface NavItem {
   href: string;
@@ -42,9 +47,32 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/usage", label: "Usage", icon: BarChart3, title: "Usage & Billing" },
 ];
 
+/**
+ * The customer owner's console. Three pages, no operator surface: an owner can
+ * never reach Instances, API keys or another tenant's data, because those
+ * routes are not in their nav and the layout redirects them away besides.
+ */
+export const OWNER_NAV_ITEMS: NavItem[] = [
+  { href: "/owner", label: "Dashboard", icon: Activity, title: "Dashboard", context: "Instance" },
+  {
+    href: "/owner/board",
+    label: "Lead Board",
+    icon: LayoutGrid,
+    title: "Lead Board",
+    context: "Pipeline",
+  },
+  {
+    href: "/owner/leads",
+    label: "All Leads",
+    icon: ListFilter,
+    title: "All Leads",
+    context: "Pipeline",
+  },
+];
+
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */
-export function navItemFor(pathname: string): NavItem | undefined {
-  return NAV_ITEMS.filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`)).sort(
-    (a, b) => b.href.length - a.href.length,
-  )[0];
+export function navItemFor(pathname: string, items: NavItem[] = NAV_ITEMS): NavItem | undefined {
+  return items
+    .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0];
 }

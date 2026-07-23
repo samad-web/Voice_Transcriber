@@ -26,6 +26,26 @@ ASR/transcription and analyze both run on **Gemini** — set `GEMINI_API_KEY` in
 `.env`. Provider precedence is `ASR_STUB`/`ANALYZE_STUB` → Gemini; the stubs emit
 clearly-fake output and must stay `0` outside tests.
 
+## Two consoles
+
+| Route group | Who signs in | What they see |
+|---|---|---|
+| `app/(platform)` | Platform operator | Every tenant: instances, devices, agents, CRM, billing. Per-tenant pages resolve their org from `DEV_ORG_ID`; `/instances` is the multi-tenant view. |
+| `app/(owner)` | One customer's owner | `/owner` dashboard (telecaller performance + pipeline), `/owner/board` (kanban), `/owner/leads` (list). Locked to their own org. |
+
+An owner login is created from the instance page and is a Supabase Auth user
+bound to one org via `users.sso_subject` → `memberships`. `lib/owner-context.ts`
+resolves the session to that org on the server, so no page in the owner console
+takes an org id from the request. See DEPLOYMENT.md §2c.
+
+**Leads** are the pipeline those pages work in. The worker projects one per
+qualified extraction (`apps/worker/src/pipeline/leads.ts`), deduped on the
+counterparty number so repeat calls enrich a prospect instead of forking it.
+What qualifies is the agent's `lead_rules`; the default is "extraction validated
+and something came back filled", which rejects wrong numbers without any tenant
+setup. Board columns are tenant data too (`organizations.lead_stages`), so
+renaming or adding a stage is a row edit, not a migration.
+
 ## Deploying
 
 See **[DEPLOYMENT.md](DEPLOYMENT.md)** — single VPS, Docker Compose, Caddy for

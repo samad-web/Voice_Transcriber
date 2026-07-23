@@ -1,0 +1,131 @@
+/** Shapes returned by /v1/owner/* and /v1/leads — shared by all three pages. */
+
+export interface Stage {
+  key: string;
+  label: string;
+  terminal?: "won" | "lost";
+}
+
+export interface Lead {
+  id: string;
+  title: string;
+  stage: string;
+  status: "open" | "won" | "lost";
+  score: string | number | null;
+  value_num: string | number | null;
+  summary: string | null;
+  next_action: string | null;
+  notes: string | null;
+  facts: Record<string, unknown>;
+  contact_name: string | null;
+  contact_number_prefix: string | null;
+  contact_number_last3: string | null;
+  call_count: number;
+  last_activity_at: string;
+  stage_changed_at: string;
+  created_at: string;
+  telecaller_device_id: string | null;
+  last_call_id: string | null;
+  telecaller: string | null;
+}
+
+export interface BoardColumn extends Stage {
+  count: number;
+  value: number;
+  leads: Lead[];
+}
+
+export interface LeadCall {
+  id: string;
+  direction: string;
+  started_at: string;
+  duration_s: number;
+  status: string;
+  telecaller: string | null;
+}
+
+export interface Telecaller {
+  id: string;
+  label: string | null;
+  telecaller_name: string | null;
+  status: string;
+  last_seen_at: string | null;
+  calls: number;
+  talk_seconds: number;
+  last_call_at: string | null;
+  leads: number;
+  won: number;
+  pipeline_value: number;
+}
+
+export interface Overview {
+  org: { id: string; name: string };
+  window: { days: number };
+  leads: {
+    total: number;
+    open: number;
+    won: number;
+    lost: number;
+    created_in_window: number;
+    pipeline_value: number;
+    won_value: number;
+  };
+  calls: { total: number; complete: number; total_seconds: number };
+  funnel: Array<Stage & { count: number; value: number }>;
+  stages: Stage[];
+  telecallers: Telecaller[];
+  byDay: Array<{ day: string; calls: number; leads: number }>;
+  recent: Array<{
+    id: string;
+    title: string;
+    stage: string;
+    status: string;
+    value_num: string | number | null;
+    last_activity_at: string;
+    telecaller: string | null;
+  }>;
+}
+
+/** numeric columns arrive from pg as strings; one place to make them numbers. */
+export function num(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Compact money formatting — a board card has no room for "1,250,000". */
+export function formatValue(value: string | number | null | undefined): string {
+  const n = num(value);
+  if (n === null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
+  return n.toLocaleString();
+}
+
+export function formatDuration(seconds: number): string {
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+/** "3 days ago" without pulling in a date library. */
+export function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diff = Date.now() - then;
+  const mins = Math.round(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+export function contactLabel(lead: Lead): string {
+  if (lead.contact_number_prefix) return `${lead.contact_number_prefix}…`;
+  if (lead.contact_number_last3) return `…${lead.contact_number_last3}`;
+  return "no number";
+}

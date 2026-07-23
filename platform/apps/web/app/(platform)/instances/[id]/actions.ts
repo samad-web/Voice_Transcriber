@@ -137,6 +137,100 @@ export async function deleteInstanceAction(
   }
 }
 
+export interface OwnerResult {
+  error?: string;
+  /** Returned exactly once, on creation or reset. */
+  password?: string | null;
+  email?: string;
+  /** True when an existing account was attached instead of a new one created. */
+  linkedExisting?: boolean;
+}
+
+/**
+ * Create a console login for this customer's owner.
+ *
+ * The API provisions the Supabase Auth user and the org membership together,
+ * and hands back the password once — the same one-time contract as an
+ * enrollment key, since nothing stores it in readable form afterwards.
+ */
+export async function createOwnerAction(input: {
+  orgId: string;
+  email: string;
+  name?: string;
+  recordingsListen: boolean;
+}): Promise<OwnerResult> {
+  try {
+    const res = await fetch(`${API_URL}/v1/owners`, {
+      method: "POST",
+      headers: orgHeaders(input.orgId),
+      cache: "no-store",
+      body: JSON.stringify({
+        email: input.email.trim(),
+        name: input.name?.trim() || undefined,
+        recordingsListen: input.recordingsListen,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = body?.message ?? body?.error ?? body;
+      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
+    }
+    revalidatePath(`/instances/${input.orgId}`);
+    return {
+      password: body.password ?? null,
+      email: body.owner?.email,
+      linkedExisting: Boolean(body.linkedExisting),
+    };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** Issue a fresh password for an owner who has lost theirs. Shown once. */
+export async function resetOwnerPasswordAction(
+  orgId: string,
+  userId: string,
+): Promise<OwnerResult> {
+  try {
+    const res = await fetch(`${API_URL}/v1/owners/${userId}/password`, {
+      method: "POST",
+      headers: orgHeaders(orgId),
+      cache: "no-store",
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = body?.message ?? body;
+      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
+    }
+    return { password: body.password };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** Remove an owner's access to this instance. */
+export async function revokeOwnerAction(
+  orgId: string,
+  userId: string,
+): Promise<{ error?: string; loginDeleted?: boolean }> {
+  try {
+    const res = await fetch(`${API_URL}/v1/owners/${userId}`, {
+      method: "DELETE",
+      headers: orgHeaders(orgId),
+      cache: "no-store",
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = body?.message ?? body;
+      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
+    }
+    revalidatePath(`/instances/${orgId}`);
+    return { loginDeleted: Boolean(body.loginDeleted) };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 export interface ErasureReceipt {
   error?: string;
   status?: string;

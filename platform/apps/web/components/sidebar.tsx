@@ -3,11 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock, User } from "lucide-react";
-import { NAV_ITEMS } from "@/lib/nav";
+import { NAV_ITEMS, OWNER_NAV_ITEMS, type NavArea } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
-export function Sidebar({ email }: { email?: string | null }) {
+export function Sidebar({
+  email,
+  /** Which nav to render. The array itself cannot be passed in: its `icon`
+   *  entries are components, and a server layout cannot serialise those. */
+  area = "platform",
+  /** Rail heading. The owner console shows their company name here. */
+  title = "Aura Platform",
+  subtitle = "Call Intelligence",
+}: {
+  email?: string | null;
+  area?: NavArea;
+  title?: string;
+  subtitle?: string;
+}) {
   const pathname = usePathname();
+  const items = area === "owner" ? OWNER_NAV_ITEMS : NAV_ITEMS;
 
   return (
     <aside className="hidden md:flex flex-col w-60 lg:w-64 bg-white border-r-2 border-black p-5 shrink-0 justify-between sticky top-0 h-dvh overflow-y-auto">
@@ -18,16 +32,16 @@ export function Sidebar({ email }: { email?: string | null }) {
           </div>
           <div className="min-w-0">
             <h1 className="text-sm font-display font-black text-black tracking-tight leading-none uppercase truncate">
-              Aura Platform
+              {title}
             </h1>
             <span className="text-[9px] font-mono font-bold text-neutral-400 block tracking-[0.2em] uppercase mt-1">
-              Call Intelligence
+              {subtitle}
             </span>
           </div>
         </div>
 
         <nav className="space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {items.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (

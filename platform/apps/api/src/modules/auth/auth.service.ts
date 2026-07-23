@@ -73,6 +73,55 @@ export class AuthService {
     };
   }
 
+  /**
+   * Resolve an external identity (Supabase Auth subject, or the email it signed
+   * in with) to the orgs it belongs to.
+   *
+   * Matching on the subject is authoritative; email is the fallback for an
+   * account provisioned before the subject was linked. Runs on the admin pool
+   * because the whole point is to discover WHICH org context to use — there is
+   * none yet to scope the query with.
+   */
+  async contextFor(identity: { subject?: string; email?: string }): Promise<{
+    memberships: Array<{
+      orgId: string;
+      orgName: string;
+      orgStatus: string;
+      role: string;
+      recordingsListen: boolean;
+      recordingsExport: boolean;
+      workspaceId: string | null;
+    }>;
+    user: { id: string; email: string; name: string | null; status: string } | null;
+  }> {
+    const {
+      rows: [user],
+    } = await this.db.adminPool().query(
+      `SELECT id, email, name, status FROM users
+        WHERE ($1::text IS NOT NULL AND sso_subject = $1)
+           OR ($2::text IS NOT NULL AND lower(email) = lower($2))
+        ORDER BY (sso_subject = $1) DESC NULLS LAST
+        LIMIT 1`,
+      [identity.subject ?? null, identity.email ?? null],
+    );
+    if (!user || user.status !== "active") return { memberships: [], user: null };
+
+    const { rows } = await this.db.adminPool().query(
+      `SELECT m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
+              m.recordings_listen AS "recordingsListen",
+              m.recordings_export AS "recordingsExport",
+              (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
+                ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId"
+         FROM memberships m
+         JOIN organizations o ON o.id = m.org_id
+        WHERE m.user_id = $1
+        ORDER BY m.created_at ASC`,
+      [user.id],
+    );
+
+    return { memberships: rows, user };
+  }
+
   /** Resolve a session bearer token to a principal (used by the guard). */
   async principalFromToken(token: string): Promise<Principal | null> {
     const {

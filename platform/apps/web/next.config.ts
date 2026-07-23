@@ -6,7 +6,11 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
   // Ships a self-contained server bundle with only the traced dependencies —
   // what docker/web.Dockerfile copies into the runtime image.
-  output: "standalone",
+  //
+  // Tracing symlinks pnpm's store, which needs a privilege Windows only grants
+  // to an admin shell or with Developer Mode on; the image build (Linux) is
+  // unaffected. Set NEXT_SKIP_STANDALONE=1 to verify a build locally.
+  output: process.env.NEXT_SKIP_STANDALONE === "1" ? undefined : "standalone",
   // Fleet & MDM became Instances — devices are now viewed inside their customer,
   // and compliance (policy / erasure / audit) moved onto the instance detail page.
   async redirects() {

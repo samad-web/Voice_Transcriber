@@ -13,6 +13,7 @@ import { CrmModule } from "./modules/crm/crm.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { OwnerModule } from "./modules/owner/owner.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -36,6 +37,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     AnalyticsModule,
     BillingModule,
     AdminModule,
+    OwnerModule,
   ],
 })
 export class AppModule {}

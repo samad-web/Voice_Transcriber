@@ -135,6 +135,38 @@ Both are `NEXT_PUBLIC_*`, so they are baked into the image at build time — sam
 all**: `/login` reports that auth is unconfigured and every page stays reachable. That fallback
 exists so local dev works without a project; it must never be how production is deployed.
 
+### 2c. Owner logins (per-instance customer access)
+
+Each customer gets their own sign-in, created from the operator console at
+**Instances → \<customer\> → Owner Logins**. An owner sees `/owner` only — their dashboard, lead
+board and lead list, scoped to their org — and is redirected away from every operator page.
+
+That provisioning calls Supabase's admin API, which the anon key cannot reach, so the **API**
+(not the web app) needs the service-role key in `.env.production`:
+
+```
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role secret>   # Project Settings → API
+```
+
+The service-role key bypasses RLS completely. Keep it server-side: never in a `NEXT_PUBLIC_*`
+variable, never in the web image. With it blank the console still lists owners but cannot create
+them, and says so.
+
+Optionally restrict who may reach the operator console:
+
+```
+PLATFORM_OPERATOR_EMAILS=support@sirahdigital.in
+```
+
+An owner (anyone with a membership) always lands on `/owner` regardless. This list only decides
+which *membership-less* accounts count as platform staff; blank means any signed-in non-owner
+does, which is the behaviour before owner logins existed.
+
+How the binding works: the console resolves the signed-in Supabase user through
+`GET /v1/auth/context`, which matches `users.sso_subject` and returns their org. The org a page
+renders is therefore derived on the server from a verified session — never from a URL or header.
+
 ---
 
 ## 3. Deploy the stack
@@ -229,6 +261,10 @@ web image. The console's per-tenant pages (dashboard, calls, agents, search, usa
 api-keys, crm) still resolve their org from those variables rather than from the signed-in
 session; only `/instances` is genuinely multi-tenant. See §7.
 
+Finally, give the customer their own login: **Instances → \<customer\> → Owner Logins → Create
+owner login** (§2c). The password is shown once. They sign in at the same `/login` and land on
+`/owner`, which is scoped to their org by the session — no `DEV_ORG_ID` involved.
+
 ---
 
 ## 5. Android release APK
@@ -314,8 +350,19 @@ These are honest limitations of the current build, not deployment steps:
    components still read the API with this key — a signed-in operator is implicitly an admin,
    and the API itself does not yet verify the Supabase session. Per-role API authorisation is
    still unbuilt.
-2. **The console is single-tenant apart from `/instances`.** Per-tenant pages read `DEV_ORG_ID`.
-   Operating a second customer today means changing that variable and rebuilding the web image.
+
+   This matters most for **owner logins** (§2c): an owner's tenant scoping is enforced in the web
+   tier, where the org is resolved from a verified session and never from the request, and the
+   admin key stays server-side so a browser cannot call the API directly. It is a sound boundary
+   as long as the console is the only client. Anything that hands an owner a token for the API
+   itself needs the guard to verify the Supabase JWT and pin the org from `users.sso_subject`
+   first — `AdminKeyGuard` already does exactly this for its own session tokens, so it is a
+   branch to add, not a redesign.
+2. **The operator console is single-tenant apart from `/instances`.** Its per-tenant pages read
+   `DEV_ORG_ID`, so operating a second customer from them means changing that variable and
+   rebuilding the web image. The **owner** console (`/owner`, §2c) is not affected — it resolves
+   its org from the signed-in session, so every customer's owner sees their own instance without
+   any per-tenant configuration.
 3. **`NEXT_PUBLIC_API_URL` is baked at image build time.** Changing the domain requires
    `up -d --build`, not a restart.
 4. **MinIO is a single container on a single disk.** Volume `miniodata` holds every recording;
