@@ -37,6 +37,10 @@ object OemRecordingIngestor {
     /** Matches a trailing `_yyMMdd_HHmmss`. Greedy head so a callee may contain `_`. */
     private val STAMPED_NAME = Regex("""^(.*)_(\d{6})_(\d{6})$""")
 
+    /** Transsion (Infinix / Tecno / itel): `yyyyMMdd_HHmmss` with no callee in the name — the
+     *  counterparty number is the parent folder (Music/PhoneRecord/<number>/) instead. */
+    private val PLAIN_STAMP = Regex("""^(\d{8})_(\d{6})$""")
+
     /** Samsung's prefix; stripped case-insensitively so other locales still parse. */
     private val CALL_PREFIX = Regex("""^call\s+recording\s+""", RegexOption.IGNORE_CASE)
 
@@ -72,6 +76,16 @@ object OemRecordingIngestor {
         val now = System.currentTimeMillis()
         var ingested = 0
 
+        // Backlog floor. On the very first ingest, anchor it a few days back so a call made
+        // just before this build installed still imports, while a handset that already holds
+        // years of history (a Transsion phone can have tens of thousands of files under
+        // Music/PhoneRecord) does not dump the entire archive as leads. Never advanced after —
+        // the recording DB (`known`) is what stops re-processing what was already sent.
+        if (settings.oemIngestSince == 0L) {
+            settings.oemIngestSince = now - CaptureSettings.BACKLOG_GRACE_MS
+        }
+        val since = settings.oemIngestSince
+
         val files = candidateFiles(context)
         // Proof this handset records calls itself. Set from the FILES, not from a successful
         // insert, so it still latches when everything is already ingested.
@@ -86,6 +100,8 @@ object OemRecordingIngestor {
             if (file.length() <= 0) continue
 
             val parsed = parseName(file)
+            // Historical backlog on a phone that recorded calls long before enrollment — skip.
+            if (parsed.startedAt < since) continue
             // The filename has no direction, so enrich from the call log by timestamp. Using
             // the nearest entry (not simply the latest) keeps a backlog import accurate.
             val info = CallLogReader.nearest(context, parsed.startedAt)
@@ -157,9 +173,24 @@ object OemRecordingIngestor {
 
     /** All call-recording files across the configured folders, newest first. */
     private fun candidateFiles(context: Context): List<File> = folders(context)
-        .flatMap { dir -> dir.listFiles()?.asList().orEmpty() }
+        .flatMap { dir -> filesUnder(dir) }
         .filter { it.isFile && isAudio(it.name) && isCallRecording(it) }
         .sortedByDescending { it.lastModified() }
+
+    /**
+     * Files directly in [dir] plus files one level down. Transsion (Infinix/Tecno/itel) nests
+     * each call under a per-number folder — Music/PhoneRecord/<number>/<file> — while Samsung
+     * and the rest are flat, where the extra level simply finds nothing. Deliberately one
+     * level only: a full walk of external storage would be slow and could pull in unrelated
+     * media.
+     */
+    private fun filesUnder(dir: File): List<File> {
+        val direct = dir.listFiles()?.asList().orEmpty()
+        val nested = direct
+            .filter { it.isDirectory }
+            .flatMap { it.listFiles()?.asList().orEmpty() }
+        return direct + nested
+    }
 
     private fun folders(context: Context): List<File> {
         val root = Environment.getExternalStorageDirectory()
@@ -188,14 +219,41 @@ object OemRecordingIngestor {
      */
     private fun parseName(file: File): Parsed {
         val base = file.nameWithoutExtension
-        val m = STAMPED_NAME.find(base) ?: return Parsed(base.ifEmpty { null }, file.lastModified())
-        val callee = m.groupValues[1].replaceFirst(CALL_PREFIX, "").trim().ifEmpty { null }
-        val startedAt = runCatching {
-            // Two-digit year: SimpleDateFormat pivots around the current century, which is
-            // correct for anything the dialer has written.
-            SimpleDateFormat("yyMMddHHmmss", Locale.US)
-                .parse(m.groupValues[2] + m.groupValues[3])?.time
-        }.getOrNull() ?: file.lastModified()
-        return Parsed(callee, startedAt)
+
+        // Samsung and most OEMs: `<callee>_yyMMdd_HHmmss`.
+        STAMPED_NAME.find(base)?.let { m ->
+            val callee = m.groupValues[1].replaceFirst(CALL_PREFIX, "").trim().ifEmpty { null }
+            val startedAt = runCatching {
+                // Two-digit year: SimpleDateFormat pivots around the current century, which is
+                // correct for anything the dialer has written.
+                SimpleDateFormat("yyMMddHHmmss", Locale.US)
+                    .parse(m.groupValues[2] + m.groupValues[3])?.time
+            }.getOrNull() ?: file.lastModified()
+            return Parsed(callee ?: numberFromParent(file), startedAt)
+        }
+
+        // Transsion (Infinix/Tecno/itel): `yyyyMMdd_HHmmss`, no callee in the name — the number
+        // is the parent folder (Music/PhoneRecord/<number>/).
+        PLAIN_STAMP.find(base)?.let { m ->
+            val startedAt = runCatching {
+                SimpleDateFormat("yyyyMMddHHmmss", Locale.US)
+                    .parse(m.groupValues[1] + m.groupValues[2])?.time
+            }.getOrNull() ?: file.lastModified()
+            return Parsed(numberFromParent(file), startedAt)
+        }
+
+        // Unknown convention: parent-folder number if there is one, else the bare name; mtime
+        // for timing.
+        return Parsed(numberFromParent(file) ?: base.ifEmpty { null }, file.lastModified())
     }
+
+    /**
+     * The counterparty number when recordings are nested as `<root>/…/<number>/<file>` — the
+     * immediate parent folder name, accepted only when it reads as a phone number so a flat
+     * OEM layout (parent = "Call", "PhoneRecord", …) is never mistaken for one.
+     */
+    private fun numberFromParent(file: File): String? =
+        file.parentFile?.name?.trim()?.takeIf { p ->
+            p.length in 3..20 && p.all { it.isDigit() || it == '+' }
+        }
 }

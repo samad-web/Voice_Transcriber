@@ -101,6 +101,18 @@ class CaptureSettings(context: Context) {
         get() = prefs.getString(KEY_OEM_FOLDERS, DEFAULT_OEM_FOLDERS) ?: DEFAULT_OEM_FOLDERS
         set(value) = prefs.edit().putString(KEY_OEM_FOLDERS, value).apply()
 
+    /**
+     * Epoch-ms floor on a recording's START time: OEM files older than this are ignored.
+     * Enrolling a handset that already holds years of history — a Transsion phone can have
+     * tens of thousands of files under Music/PhoneRecord — must import calls from setup
+     * onward, not dump the whole archive as leads. Seeded once on the first ingest to a few
+     * days before now (see BACKLOG_GRACE_MS) so a test call made just before install still
+     * comes through, while last year's calls do not.
+     */
+    var oemIngestSince: Long
+        get() = prefs.getLong(KEY_OEM_INGEST_SINCE, 0L)
+        set(value) = prefs.edit().putLong(KEY_OEM_INGEST_SINCE, value).apply()
+
     fun profileFor(kind: ProfileKind): CaptureProfile = when (kind) {
         ProfileKind.PHONE -> {
             // Base tries VOICE_CALL first (clean both-ends where the OEM allows it), then
@@ -142,6 +154,7 @@ class CaptureSettings(context: Context) {
                 "Recordings/Call Recordings," +       // Realme / Oppo ColorOS
                 "Music/Recordings/Call Recordings," + // Oppo (older ColorOS)
                 "PhoneRecord," +
+                "Music/PhoneRecord," +                // Transsion (Infinix / Tecno / itel), nested per-number
                 "CallRecordings"
 
         private const val KEY_PHONE_SPEAKER = "forceSpeakerForPhone"
@@ -150,6 +163,11 @@ class CaptureSettings(context: Context) {
         private const val KEY_PREFER_OEM = "preferOemRecordings"
         private const val KEY_OEM_SEEN = "oemRecordingSeen"
         private const val KEY_OEM_FOLDERS = "oemFolders"
+        private const val KEY_OEM_INGEST_SINCE = "oemIngestSince"
+
+        /** How far before first-ingest to still import: a test call made just before the
+         *  update installs must come through, but the historical backlog must not. */
+        const val BACKLOG_GRACE_MS = 3L * 24 * 60 * 60 * 1000  // 3 days
         private const val KEY_VOIP = "recordVoipCalls"
         private const val KEY_ANNOUNCE = "announceRecording"
         private const val KEY_ENCRYPT = "encryptAtRest"
