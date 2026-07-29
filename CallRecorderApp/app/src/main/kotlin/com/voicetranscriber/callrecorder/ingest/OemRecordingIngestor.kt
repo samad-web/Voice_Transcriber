@@ -29,6 +29,10 @@ import java.util.Locale
  * where <callee> is a phone number OR a contact name that may contain spaces and emoji.
  * The embedded timestamp is the call START; the file's mtime is when it was finalized on
  * hang-up, which we use as the end time.
+ *
+ * Verified on Xiaomi 24048RN6CI / Android 16 (HyperOS):
+ *   /storage/emulated/0/Recordings/sound_recorder/call_rec/<display>(<number>)_yyyyMMddHHmmss.mp3
+ * — a different folder, a fused 14-digit stamp, and the number alongside the display name.
  */
 object OemRecordingIngestor {
 
@@ -40,6 +44,15 @@ object OemRecordingIngestor {
     /** Transsion (Infinix / Tecno / itel): `yyyyMMdd_HHmmss` with no callee in the name — the
      *  counterparty number is the parent folder (Music/PhoneRecord/<number>/) instead. */
     private val PLAIN_STAMP = Regex("""^(\d{8})_(\d{6})$""")
+
+    /** Xiaomi HyperOS: `<display>_yyyyMMddHHmmss` — one unseparated 14-digit stamp. */
+    private val FUSED_STAMP = Regex("""^(.*)_(\d{14})$""")
+
+    /**
+     * Xiaomi writes the callee as `<display>(<number>)` — `Ravi Kumar(8754258581)` for a saved
+     * contact, `8754258581(8754258581)` for an unknown one.
+     */
+    private val NAME_WITH_NUMBER = Regex("""^(.*)\((\+?[\d\s-]{3,20})\)$""")
 
     /** Samsung's prefix; stripped case-insensitively so other locales still parse. */
     private val CALL_PREFIX = Regex("""^call\s+recording\s+""", RegexOption.IGNORE_CASE)
@@ -228,6 +241,22 @@ object OemRecordingIngestor {
                 // correct for anything the dialer has written.
                 SimpleDateFormat("yyMMddHHmmss", Locale.US)
                     .parse(m.groupValues[2] + m.groupValues[3])?.time
+            }.getOrNull() ?: file.lastModified()
+            return Parsed(callee ?: numberFromParent(file), startedAt)
+        }
+
+        // Xiaomi HyperOS: `<display>(<number>)_yyyyMMddHHmmss`. The parenthesised number is
+        // authoritative; the display collapses to it when the contact isn't saved, in which
+        // case there's no point carrying `8754258581(8754258581)` around.
+        FUSED_STAMP.find(base)?.let { m ->
+            val display = m.groupValues[1].replaceFirst(CALL_PREFIX, "").trim()
+            val callee = NAME_WITH_NUMBER.find(display)?.let { d ->
+                val name = d.groupValues[1].trim()
+                val number = d.groupValues[2].trim()
+                if (name.isEmpty() || name == number) number else display
+            } ?: display.ifEmpty { null }
+            val startedAt = runCatching {
+                SimpleDateFormat("yyyyMMddHHmmss", Locale.US).parse(m.groupValues[2])?.time
             }.getOrNull() ?: file.lastModified()
             return Parsed(callee ?: numberFromParent(file), startedAt)
         }

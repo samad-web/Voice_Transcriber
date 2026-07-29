@@ -47,6 +47,8 @@ const ConnectProviderBody = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   maxAttempts: z.number().int().min(1).max(20).default(6),
   rateLimitPerMin: z.number().int().min(1).max(6000).optional(),
+  /** Send only calls the agent qualified as a lead, rather than every call. */
+  onlyQualified: z.boolean().default(false),
 });
 
 /**
@@ -73,6 +75,8 @@ const CustomIntegrationBody = z.object({
   fieldMap: z.record(z.string(), z.string()).default({}),
   maxAttempts: z.number().int().min(1).max(20).default(6),
   rateLimitPerMin: z.number().int().min(1).max(6000).default(60),
+  /** Send only calls the agent qualified as a lead, rather than every call. */
+  onlyQualified: z.boolean().default(false),
 });
 
 // Every field optional — this is a partial update of an existing integration.
@@ -92,6 +96,7 @@ const UpdateIntegrationBody = z.object({
   maxAttempts: z.number().int().min(1).max(20).optional(),
   rateLimitPerMin: z.number().int().min(1).max(6000).optional(),
   status: z.enum(["connected", "disconnected", "error"]).optional(),
+  onlyQualified: z.boolean().optional(),
 });
 
 /**
@@ -103,7 +108,7 @@ const SAFE_COLUMNS = `id, workspace_id, provider, label, target, endpoint, metho
   auth_type, auth_header, auth_prefix,
   (auth_secret IS NOT NULL) AS has_auth_secret, headers, config, body_template,
   id_path, pair_keys, field_map, max_attempts, rate_limit_per_min, status,
-  last_success_at, last_error, created_at, updated_at`;
+  only_qualified, last_success_at, last_error, created_at, updated_at`;
 
 /**
  * CRM configuration (§2.3).
@@ -203,9 +208,10 @@ export class CrmController {
            (org_id, workspace_id, provider, label, target, auth, endpoint, method,
             auth_type, auth_header, auth_prefix, auth_secret, headers, config,
             body_template, id_path, pair_keys, field_map, max_attempts,
-            rate_limit_per_min, status)
+            rate_limit_per_min, status, only_qualified)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12,
-                 $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18::jsonb, $19, $20, 'connected')
+                 $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18::jsonb, $19, $20, 'connected',
+                 $21)
          RETURNING ${SAFE_COLUMNS}`,
         [
           orgId,
@@ -230,6 +236,7 @@ export class CrmController {
           JSON.stringify(fieldMap),
           cfg.maxAttempts,
           cfg.rateLimitPerMin ?? provider.rateLimitPerMin,
+          cfg.onlyQualified,
         ],
       );
       await this.audit(client, orgId, "crm.connect", integration.id);
@@ -260,9 +267,10 @@ export class CrmController {
            (org_id, workspace_id, provider, label, target, auth, endpoint, method,
             auth_type, auth_header, auth_prefix, auth_secret, headers, config,
             body_template, id_path, pair_keys, field_map, max_attempts,
-            rate_limit_per_min, status)
+            rate_limit_per_min, status, only_qualified)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12,
-                 $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18::jsonb, $19, $20, 'connected')
+                 $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18::jsonb, $19, $20, 'connected',
+                 $21)
          RETURNING ${SAFE_COLUMNS}`,
         [
           orgId,
@@ -285,6 +293,7 @@ export class CrmController {
           JSON.stringify(cfg.fieldMap),
           cfg.maxAttempts,
           cfg.rateLimitPerMin,
+          cfg.onlyQualified,
         ],
       );
       await this.audit(client, orgId, "crm.connect", integration.id);
@@ -350,6 +359,7 @@ export class CrmController {
             body_template      = CASE WHEN $15::text IS NULL THEN body_template
                                       ELSE $15::jsonb END,
             id_path            = COALESCE($16, id_path),
+            only_qualified     = COALESCE($17, only_qualified),
             -- Clear the stale failure when an operator fixes the config, so the
             -- console doesn't keep showing an error the change already resolved.
             last_error         = CASE WHEN $10 = 'connected' THEN NULL ELSE last_error END,
@@ -373,6 +383,7 @@ export class CrmController {
           p.config ? JSON.stringify(p.config) : null,
           p.bodyTemplate === undefined ? null : JSON.stringify(p.bodyTemplate),
           p.idPath ?? null,
+          p.onlyQualified ?? null,
         ],
       );
       if (!integration) throw new NotFoundException("crm integration not found in this org");

@@ -24,7 +24,7 @@ import {
 const INTEGRATION_COLUMNS = `id, provider, label, target, endpoint, method,
   auth_type, auth_header, auth_prefix, auth_secret, headers, config,
   body_template, id_path, pair_keys, field_map, max_attempts,
-  rate_limit_per_min, auth`;
+  rate_limit_per_min, auth, only_qualified`;
 
 /**
  * Queue this call for every connected integration on its workspace, then try
@@ -33,17 +33,25 @@ const INTEGRATION_COLUMNS = `id, provider, label, target, endpoint, method,
  *
  * ON CONFLICT resets an existing row rather than inserting a second:
  * reprocessing a call must redeliver the same lead, not queue a duplicate.
+ *
+ * `qualified` says whether the lead projection accepted this call. Integrations
+ * marked only_qualified are skipped when it didn't: a connector writing into a
+ * CRM's lead table should not receive no-answers and wrong numbers. Integrations
+ * without the flag still get every completed call, which is what a connector
+ * acting as a call log wants.
  */
 export async function enqueueDispatch(
   client: DbClient,
   orgId: string,
   callId: string,
+  qualified: boolean,
 ): Promise<void> {
   const { rows: integrations } = await client.query<CrmIntegration>(
     `SELECT ${INTEGRATION_COLUMNS} FROM crm_integrations ci
       WHERE ci.status = 'connected'
-        AND ci.workspace_id = (SELECT workspace_id FROM calls WHERE id = $1)`,
-    [callId],
+        AND ci.workspace_id = (SELECT workspace_id FROM calls WHERE id = $1)
+        AND ($2::boolean OR NOT ci.only_qualified)`,
+    [callId, qualified],
   );
   if (integrations.length === 0) return;
 

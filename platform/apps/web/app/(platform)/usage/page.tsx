@@ -1,7 +1,9 @@
 import { Clock, Cpu, FileText, Phone, Smartphone } from "lucide-react";
 import { Card, MonoLabel, ProgressBar, StatCard, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { apiGet } from "@/lib/server-api";
+import { TenantSwitcher } from "@/components/tenant-switcher";
+import { apiGetAs } from "@/lib/server-api";
+import { resolveTenantScope } from "@/lib/tenant-scope";
 
 interface UsageData {
   // The API returns a {start,end} range; tolerate a plain string too.
@@ -54,10 +56,22 @@ function formatPeriod(period: UsageData["period"]): string | null {
   return start && end ? `${start} – ${end}` : start || end || null;
 }
 
-export default async function UsagePage() {
+/**
+ * Metering and invoices for ONE customer. This page pinned itself to the
+ * environment's dev org, which on a billing screen is the most expensive
+ * possible default: every tenant's page showed the same tenant's consumption.
+ */
+export default async function UsagePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ org?: string }>;
+}) {
+  const { org } = await searchParams;
+  const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
+
   const [usage, billing] = await Promise.all([
-    apiGet<UsageData>("/v1/usage"),
-    apiGet<{ invoices: Invoice[] }>("/v1/billing/invoices"),
+    apiGetAs<UsageData>("/v1/usage", orgId),
+    apiGetAs<{ invoices: Invoice[] }>("/v1/billing/invoices", orgId),
   ]);
 
   const periodLabel = usage ? formatPeriod(usage.period) : null;
@@ -67,7 +81,9 @@ export default async function UsagePage() {
 
   return (
     <>
-      <PageHeader title="Usage & Billing" />
+      <PageHeader title="Usage & Billing" context={activeTenant?.name ?? "Workspace"} />
+
+      <TenantSwitcher tenants={tenants} activeOrgId={orgId} basePath="/usage" />
 
       {usage === null ? (
         <Card>

@@ -6,12 +6,19 @@ function pad(n: number) {
   return String(n).padStart(2, "0");
 }
 
+/** Which part of the instant to show. `time` exists so a table can put the date
+ *  and the clock time on separate lines of one column and keep both scannable. */
+export type TimeMode = "datetime" | "date" | "time";
+
 /** Locale/ICU-independent timestamp for SSR + first client paint (no mismatch). */
-function isoStable(iso: string, dateOnly: boolean): string {
+function isoStable(iso: string, mode: TimeMode): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-  return dateOnly ? date : `${date} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  if (mode === "date") return date;
+  if (mode === "time") return time;
+  return `${date} ${time}`;
 }
 
 /**
@@ -28,17 +35,23 @@ export function LocalTime({
 }: {
   iso: string;
   className?: string;
-  mode?: "datetime" | "date";
+  mode?: TimeMode;
 }) {
-  const dateOnly = mode === "date";
   const [local, setLocal] = useState<string | null>(null);
   useEffect(() => {
     const d = new Date(iso);
-    setLocal(dateOnly ? d.toLocaleDateString() : d.toLocaleString());
-  }, [iso, dateOnly]);
+    if (Number.isNaN(d.getTime())) return;
+    setLocal(
+      mode === "date"
+        ? d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })
+        : mode === "time"
+          ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+          : d.toLocaleString(),
+    );
+  }, [iso, mode]);
   return (
     <time className={className} dateTime={iso} suppressHydrationWarning>
-      {local ?? isoStable(iso, dateOnly)}
+      {local ?? isoStable(iso, mode)}
     </time>
   );
 }

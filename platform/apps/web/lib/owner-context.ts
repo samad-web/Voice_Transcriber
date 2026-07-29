@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { API_URL, DEV_ORG_ID, DEV_WORKSPACE_ID, adminHeaders, apiGetAs } from "@/lib/server-api";
+import { API_URL, DEV_ORG_ID, DEV_WORKSPACE_ID, apiGetAs, crossTenantHeaders } from "@/lib/server-api";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { getSessionUser } from "@/lib/supabase/server";
 
@@ -89,7 +89,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     const params = new URLSearchParams({ subject: user.id });
     if (user.email) params.set("email", user.email);
     const res = await fetch(`${API_URL}/v1/auth/context?${params}`, {
-      headers: adminHeaders,
+      headers: crossTenantHeaders,
       cache: "no-store",
     });
     if (res.ok) memberships = ((await res.json()) as ContextResponse).memberships ?? [];

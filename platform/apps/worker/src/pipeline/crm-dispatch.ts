@@ -72,6 +72,8 @@ export interface CrmIntegration {
   max_attempts: number;
   rate_limit_per_min: number;
   auth: { url?: string } | null;
+  /** Send only calls that qualified as a lead — see enqueueDispatch (0011). */
+  only_qualified: boolean;
 }
 
 /** Dotted-path lookup into the source document the field_map refers to. */
@@ -104,6 +106,7 @@ interface SourceRow {
   remote_name: string | null;
   remote_number_prefix: string | null;
   remote_number_last3: string | null;
+  remote_number_full: string | null;
   agent_id: string | null;
   agent_version: number | null;
   workspace_id: string;
@@ -127,6 +130,7 @@ export async function buildSourceDocument(
   } = await client.query<SourceRow>(
     `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
             c.remote_name, c.remote_number_prefix, c.remote_number_last3,
+            c.remote_number_full,
             c.agent_id, c.agent_version, c.workspace_id,
             d.instance_id,
             t.text AS transcript_text, t.language, t.intelligence, t.diarized,
@@ -174,6 +178,9 @@ export async function buildSourceDocument(
       remoteName: row.remote_name,
       remoteNumberPrefix: row.remote_number_prefix,
       remoteNumberLast3: row.remote_number_last3,
+      // NULL unless the org opted in (0011) — a field map that references it on
+      // a non-opted-in tenant simply sends nothing, rather than a partial number.
+      remoteNumber: row.remote_number_full,
       workspaceId: row.workspace_id,
     },
     facts,

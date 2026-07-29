@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminHeaders, API_URL } from "@/lib/server-api";
+import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
+
+/** Omitted orgId keeps the dev-org default; the pages pass the selected tenant. */
+const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
 
 export interface CreatedKey {
   error?: string;
@@ -11,11 +14,11 @@ export interface CreatedKey {
   key?: string;
 }
 
-export async function createApiKeyAction(name: string): Promise<CreatedKey> {
+export async function createApiKeyAction(name: string, orgId?: string): Promise<CreatedKey> {
   try {
     const res = await fetch(`${API_URL}/v1/apikeys`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: headersFor(orgId),
       cache: "no-store",
       body: JSON.stringify({ name }),
     });
@@ -31,11 +34,14 @@ export async function createApiKeyAction(name: string): Promise<CreatedKey> {
   }
 }
 
-export async function revokeApiKeyAction(id: string): Promise<{ error?: string }> {
+export async function revokeApiKeyAction(
+  id: string,
+  orgId?: string,
+): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/apikeys/${id}`, {
       method: "DELETE",
-      headers: adminHeaders,
+      headers: headersFor(orgId),
       cache: "no-store",
     });
     if (!res.ok) return { error: `API ${res.status}` };

@@ -9,6 +9,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -28,6 +29,22 @@ const CompleteCallBody = z.object({
   uploadId: z.string().min(1),
   parts: z.array(z.object({ n: z.number().int().min(1), etag: z.string().min(1) })).min(1),
   sha256: z.string().length(64),
+});
+
+/**
+ * Filters for the Call Explorer. All optional — bare GET keeps the old
+ * behaviour. `status` takes either an exact pipeline state or one of two
+ * buckets: `in_pipeline` (still moving) and `failed` (any FAILED_* stage).
+ * The buckets matter because "in pipeline" spans five states — matching one
+ * of them exactly would hide the rest and read as "no stuck calls".
+ */
+const ListCallsQuery = z.object({
+  instanceId: z.string().uuid().optional(),
+  deviceId: z.string().uuid().optional(),
+  status: z.string().min(1).max(64).optional(),
+  direction: z.enum(["incoming", "outgoing"]).optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 @Controller("calls")
@@ -55,7 +72,7 @@ export class CallsController {
         rows: [ctx],
       } = await client.query(
         `SELECT d.status AS device_status, i.workspace_id,
-                o.status AS org_status, o.consent_policy
+                o.status AS org_status, o.consent_policy, o.store_full_number
            FROM devices d
            JOIN instances i ON i.id = d.instance_id
            JOIN organizations o ON o.id = d.org_id
@@ -77,13 +94,16 @@ export class CallsController {
             : "failed";
 
       // Keep only privacy-lite fragments of the number: a 5-digit leading prefix
-      // for the call label, the last 3, and a hash for matching. Never the full
-      // number.
+      // for the call label, the last 3, and a hash for matching.
       const digits = (call.remoteNumber ?? "").replace(/\D/g, "");
       const numberPrefix = digits ? digits.slice(0, 5) : null;
       const numberLast3 = digits.length >= 3 ? digits.slice(-3) : null;
       const numberHash = digits ? createHash("sha256").update(digits).digest("hex") : null;
       const remoteName = call.remoteName?.trim() || null;
+      // The full number is retained ONLY for an org that opted in (0011), which
+      // is what makes a CRM lead callable. Everyone else keeps the fragments
+      // above and nothing more — the column stays NULL.
+      const numberFull = ctx.store_full_number && digits ? digits : null;
 
       const {
         rows: [row],
@@ -91,8 +111,9 @@ export class CallsController {
         `INSERT INTO calls
            (org_id, workspace_id, device_id, direction, started_at, duration_s,
             audio_source_used, status, consent_status,
-            remote_number_prefix, remote_number_last3, remote_number_hash, remote_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'AWAITING_AUDIO', $8, $9, $10, $11, $12)
+            remote_number_prefix, remote_number_last3, remote_number_hash, remote_name,
+            remote_number_full)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'AWAITING_AUDIO', $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
           orgId,
@@ -107,6 +128,7 @@ export class CallsController {
           numberLast3,
           numberHash,
           remoteName,
+          numberFull,
         ],
       );
 
@@ -179,21 +201,71 @@ export class CallsController {
     return result;
   }
 
-  /** Listing for the web Call Explorer. */
+  /**
+   * Listing for the web Call Explorer.
+   *
+   * Every row carries the instance it belongs to. Without that the console
+   * could show a flat pile of calls but never answer "what did THIS customer
+   * record", which is the question the Instances page exists to ask — so the
+   * instance join is part of the contract, not an optimisation.
+   */
   @Get()
   @UseGuards(AdminKeyGuard)
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
+  async list(@Headers("x-org-id") orgHeader: string | undefined, @Query() query: unknown) {
     const orgId = orgIdFromHeader(orgHeader);
+    const parsed = ListCallsQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { instanceId, deviceId, status, direction, limit, offset } = parsed.data;
+
+    // Identical predicate for the page and the count, so "showing 100 of 3,412"
+    // can never disagree with the rows underneath it.
+    const where = `WHERE ($1::uuid IS NULL OR i.id = $1::uuid)
+            AND ($2::uuid IS NULL OR d.id = $2::uuid)
+            AND ($3::text IS NULL OR
+                 CASE $3::text
+                   -- TRANSCRIPTION_OFF is terminal by choice, so it belongs in
+                   -- neither bucket: counting it as in-flight would show work
+                   -- that is never coming.
+                   WHEN 'in_pipeline' THEN c.status NOT IN ('COMPLETE', 'TRANSCRIPTION_OFF')
+                                       AND c.status NOT LIKE 'FAILED%'
+                   WHEN 'failed'      THEN c.status LIKE 'FAILED%'
+                   ELSE c.status = $3::text
+                 END)
+            AND ($4::text IS NULL OR c.direction = $4::text)`;
+    const filters = [
+      instanceId ?? null,
+      deviceId ?? null,
+      status ?? null,
+      direction ?? null,
+    ];
+
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT c.id, c.direction, c.started_at, c.duration_s, c.audio_source_used,
-                c.status, c.consent_status, d.label AS device_label,
+                c.status, c.consent_status, c.error_message,
+                c.pipeline_attempts, c.next_attempt_at,
+                c.device_id, d.label AS device_label,
+                i.id AS instance_id, i.name AS instance_name,
                 c.remote_number_prefix, c.remote_number_last3, c.remote_name
-           FROM calls c JOIN devices d ON d.id = c.device_id
+           FROM calls c
+           JOIN devices d   ON d.id = c.device_id
+           JOIN instances i ON i.id = d.instance_id
+          ${where}
           ORDER BY c.started_at DESC
-          LIMIT 100`,
+          LIMIT $5 OFFSET $6`,
+        [...filters, limit, offset],
       );
-      return { calls: rows };
+      const {
+        rows: [count],
+      } = await client.query(
+        `SELECT count(*)::int AS total
+           FROM calls c
+           JOIN devices d   ON d.id = c.device_id
+           JOIN instances i ON i.id = d.instance_id
+          ${where}`,
+        filters,
+      );
+      return { calls: rows, total: count?.total ?? 0, limit, offset };
     });
   }
 
@@ -282,15 +354,27 @@ export class CallsController {
         rows: [call],
       } = await client.query(`SELECT status FROM calls WHERE id = $1`, [callId]);
       if (!call) throw new NotFoundException("call not found");
-      if (call.status !== "COMPLETE" && !String(call.status).startsWith("FAILED_")) {
+      // TRANSCRIPTION_OFF is reprocessable on purpose: turning transcription
+      // back on and pressing Reprocess is how a customer's backlog gets picked
+      // up, so it must be rewindable like any other terminal state.
+      const terminal =
+        call.status === "COMPLETE" ||
+        call.status === "TRANSCRIPTION_OFF" ||
+        String(call.status).startsWith("FAILED_");
+      if (!terminal) {
         throw new ConflictException(
-          `call is ${call.status}; only COMPLETE or FAILED_* calls can be reprocessed`,
+          `call is ${call.status}; only COMPLETE, TRANSCRIPTION_OFF or FAILED_* calls can be reprocessed`,
         );
       }
 
+      // A person deciding to retry resets the automatic budget: they may well
+      // have fixed the cause, and inheriting the attempt count from the old
+      // problem would let one more failure permanently retire the call.
       await client.query(
-        `UPDATE calls SET status = 'UPLOADED'
-          WHERE id = $1 AND (status = 'COMPLETE' OR status LIKE 'FAILED_%')`,
+        `UPDATE calls
+            SET status = 'UPLOADED', pipeline_attempts = 0, next_attempt_at = NULL
+          WHERE id = $1
+            AND (status IN ('COMPLETE', 'TRANSCRIPTION_OFF') OR status LIKE 'FAILED_%')`,
         [callId],
       );
       await client.query(

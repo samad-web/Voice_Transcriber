@@ -1,19 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminHeaders, API_URL } from "@/lib/server-api";
+import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
-export async function addMemberAction(input: {
-  email: string;
-  name: string;
-  role: string;
-  recordingsListen?: boolean;
-  recordingsExport?: boolean;
-}): Promise<{ error?: string }> {
+/** Omitted orgId keeps the dev-org default; the pages pass the selected tenant. */
+const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
+
+export async function addMemberAction(
+  input: {
+    email: string;
+    name: string;
+    role: string;
+    recordingsListen?: boolean;
+    recordingsExport?: boolean;
+  },
+  orgId?: string,
+): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/members`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: headersFor(orgId),
       cache: "no-store",
       body: JSON.stringify(input),
     });
@@ -28,17 +34,20 @@ export async function addMemberAction(input: {
   }
 }
 
-export async function updateMemberAction(input: {
-  userId: string;
-  role?: string;
-  recordingsListen?: boolean;
-  recordingsExport?: boolean;
-}): Promise<{ error?: string }> {
+export async function updateMemberAction(
+  input: {
+    userId: string;
+    role?: string;
+    recordingsListen?: boolean;
+    recordingsExport?: boolean;
+  },
+  orgId?: string,
+): Promise<{ error?: string }> {
   try {
     const { userId, ...patch } = input;
     const res = await fetch(`${API_URL}/v1/members/${userId}`, {
       method: "PATCH",
-      headers: adminHeaders,
+      headers: headersFor(orgId),
       cache: "no-store",
       body: JSON.stringify(patch),
     });
@@ -50,11 +59,14 @@ export async function updateMemberAction(input: {
   }
 }
 
-export async function removeMemberAction(userId: string): Promise<{ error?: string }> {
+export async function removeMemberAction(
+  userId: string,
+  orgId?: string,
+): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/members/${userId}`, {
       method: "DELETE",
-      headers: adminHeaders,
+      headers: headersFor(orgId),
       cache: "no-store",
     });
     if (!res.ok) return { error: `API ${res.status}` };
@@ -65,11 +77,14 @@ export async function removeMemberAction(userId: string): Promise<{ error?: stri
   }
 }
 
-export async function createWorkspaceAction(name: string): Promise<{ error?: string }> {
+export async function createWorkspaceAction(
+  name: string,
+  orgId?: string,
+): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/workspaces`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: headersFor(orgId),
       cache: "no-store",
       body: JSON.stringify({ name }),
     });

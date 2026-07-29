@@ -11,11 +11,17 @@ export function PolicyForm({
   initial,
 }: {
   orgId: string;
-  initial: { consent_policy: string; on_consent_failure: string; retention_days: number };
+  initial: {
+    consent_policy: string;
+    on_consent_failure: string;
+    retention_days: number;
+    store_full_number?: boolean;
+  };
 }) {
   const [consentPolicy, setConsentPolicy] = useState(initial.consent_policy);
   const [onConsentFailure, setOnConsentFailure] = useState(initial.on_consent_failure);
   const [retentionDays, setRetentionDays] = useState(String(initial.retention_days));
+  const [storeFullNumber, setStoreFullNumber] = useState(initial.store_full_number ?? false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -28,6 +34,7 @@ export function PolicyForm({
         consentPolicy,
         onConsentFailure,
         retentionDays: Number(retentionDays),
+        storeFullNumber,
       });
       if (res.error) {
         setError(res.error);
@@ -92,6 +99,23 @@ export function PolicyForm({
           onChange={(e) => setRetentionDays(e.target.value)}
         />
       </div>
+
+      <label className="flex items-start gap-2.5 cursor-pointer border-2 border-neutral-200 p-3">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-black shrink-0"
+          checked={storeFullNumber}
+          onChange={(e) => setStoreFullNumber(e.target.checked)}
+        />
+        <span className="text-xs font-sans text-neutral-700 leading-relaxed">
+          <span className="font-display font-bold uppercase text-black block text-xs">
+            Store full phone numbers
+          </span>
+          Off by default: only a 5-digit prefix, the last 3 digits and a hash are kept, which
+          cannot be dialled. Turn on so leads pushed to this customer&apos;s CRM are callable.
+          Applies to calls recorded from now on.
+        </span>
+      </label>
 
       <div className="flex items-center gap-3">
         <BrutalButton shadow disabled={pending} onClick={save}>

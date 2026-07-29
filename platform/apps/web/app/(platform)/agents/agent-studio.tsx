@@ -5,7 +5,7 @@ import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { activateAgentAction, createAgentAction, type AgentFieldInput } from "./actions";
-import { inputClass } from "@/lib/form";
+import { inputClass, selectClass } from "@/lib/form";
 
 export interface AgentRow {
   id: string;
@@ -20,7 +20,18 @@ const FIELD_TYPES = ["string", "number", "boolean", "enum", "datetime", "string[
 
 const EMPTY_FIELD: AgentFieldInput = { key: "", type: "string", description: "", required: false };
 
-export function AgentStudio({ agents }: { agents: AgentRow[] }) {
+export function AgentStudio({
+  agents,
+  orgId,
+  workspaces,
+}: {
+  agents: AgentRow[];
+  orgId?: string;
+  /** The tenant's own workspaces — an agent must be created in one of these,
+   *  never in the environment's DEV_WORKSPACE_ID. */
+  workspaces: Array<{ id: string; name: string }>;
+}) {
+  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
   const [name, setName] = useState("");
   const [systemPrompt, setSystemPrompt] = useState(
     "You are an expert call analyst. Extract the requested fields strictly from the transcript.",
@@ -44,7 +55,14 @@ export function AgentStudio({ agents }: { agents: AgentRow[] }) {
           key: f.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_"),
           enumValues: f.type === "enum" ? f.enumValues?.filter(Boolean) : undefined,
         }));
-      const res = await createAgentAction({ name, systemPrompt, fields: clean, activate });
+      const res = await createAgentAction({
+        name,
+        systemPrompt,
+        fields: clean,
+        activate,
+        workspaceId,
+        orgId,
+      });
       setError(res.error ?? null);
       if (!res.error) {
         setName("");
@@ -91,7 +109,7 @@ export function AgentStudio({ agents }: { agents: AgentRow[] }) {
                     <button
                       onClick={() =>
                         startTransition(() =>
-                          activateAgentAction({ agentId: agent.id, version: agent.version }).then(() => undefined),
+                          activateAgentAction({ agentId: agent.id, version: agent.version, orgId }).then(() => undefined),
                         )
                       }
                       className="text-[10px] font-mono text-black underline hover:text-neutral-600 font-bold uppercase tracking-wider"
@@ -122,6 +140,27 @@ export function AgentStudio({ agents }: { agents: AgentRow[] }) {
             </label>
             <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lead Qualifier" />
           </div>
+
+          {/* Only worth a control when there is a choice to make; with one
+              workspace the value is already pinned to the right tenant. */}
+          {workspaces.length > 1 ? (
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
+                Workspace
+              </label>
+              <select
+                className={selectClass}
+                value={workspaceId}
+                onChange={(e) => setWorkspaceId(e.target.value)}
+              >
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">

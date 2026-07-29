@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { withGeminiRetry } from "@aura/llm";
+import { geminiThinking, withGeminiRetry } from "@aura/llm";
 
 export interface AsrSegment {
   speaker: string;
@@ -61,7 +61,7 @@ async function geminiTranscribe(audio: Buffer, mimeType: string): Promise<AsrRes
             ],
           },
         ],
-        config: { responseMimeType: "application/json" },
+        config: { responseMimeType: "application/json", thinkingConfig: geminiThinking() },
       }),
     "geminiTranscribe",
   );

@@ -115,11 +115,16 @@ class UploadWorker(
             val durationS = ((recording.endedAt ?: recording.startedAt) - recording.startedAt)
                 .coerceAtLeast(0) / 1000
 
-            // callee holds the resolved contact name OR the raw number. Send the raw
-            // string as remoteNumber (server keeps only the first 5 digits) and, when
-            // it's clearly a name (has letters), also as remoteName for the call label.
+            // callee holds the resolved contact name OR the raw number — and on Xiaomi both,
+            // as `Ravi Kumar(8754258581)`. Split that so the label is the name alone and the
+            // number still reaches the server (which keeps only the digits it's allowed to).
+            // Otherwise send the raw string as remoteNumber and, when it's clearly a name
+            // (has letters), also as remoteName.
             val callee = recording.callee?.trim()
-            val calleeIsName = callee?.any { it.isLetter() } == true
+            val paren = callee?.let { NAME_WITH_NUMBER.find(it) }
+            val calleeName = paren?.groupValues?.get(1)?.trim()?.ifEmpty { null }
+                ?: callee?.takeIf { c -> c.any { it.isLetter() } }
+            val calleeNumber = paren?.groupValues?.get(2)?.trim() ?: callee
 
             val created = UploadApi.createCall(
                 baseUrl = baseUrl,
@@ -134,8 +139,8 @@ class UploadWorker(
                 // Reflects whether the record-announcement tone is enabled (played at
                 // capture start; see RecordingService.playConsentTone).
                 consentPlayed = CaptureSettings(applicationContext).announceRecording,
-                remoteNumber = callee,
-                remoteName = if (calleeIsName) callee else null,
+                remoteNumber = calleeNumber,
+                remoteName = calleeName,
             )
 
             val parts = ArrayList<UploadApi.PartResult>()
@@ -214,6 +219,9 @@ class UploadWorker(
     companion object {
         private const val TAG = "UploadWorker"
         private const val MAX_RUN_ATTEMPTS = 5
+
+        /** Xiaomi's `<display>(<number>)` callee — see OemRecordingIngestor. */
+        private val NAME_WITH_NUMBER = Regex("""^(.*)\((\+?[\d\s-]{3,20})\)$""")
 
         private const val STATE_UPLOADING = "UPLOADING"
         private const val STATE_UPLOADED = "UPLOADED"

@@ -15,7 +15,7 @@ export interface ApiKey {
   created_at: string;
 }
 
-export function ApiKeysManager({ keys }: { keys: ApiKey[] }) {
+export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string }) {
   const [name, setName] = useState("");
   const [created, setCreated] = useState<CreatedKey | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function ApiKeysManager({ keys }: { keys: ApiKey[] }) {
     startTransition(async () => {
       setError(null);
       setCopied(false);
-      const res = await createApiKeyAction(name.trim());
+      const res = await createApiKeyAction(name.trim(), orgId);
       if (res.error) {
         setError(res.error);
         setCreated(null);
@@ -40,7 +40,7 @@ export function ApiKeysManager({ keys }: { keys: ApiKey[] }) {
     startTransition(async () => {
       if (!window.confirm("Revoke this API key? Any integration using it stops working immediately."))
         return;
-      await revokeApiKeyAction(id);
+      await revokeApiKeyAction(id, orgId);
     });
 
   const copyKey = async () => {

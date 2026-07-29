@@ -1,6 +1,6 @@
 import { Activity, Building2, Server } from "lucide-react";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
-import { apiGet } from "@/lib/server-api";
+import { apiGetAdmin } from "@/lib/server-api";
 
 /**
  * Platform-admin console (us, not customers). TODO: gate behind platform_admin
@@ -19,14 +19,16 @@ interface Tenant {
 interface HealthStage {
   name: string;
   status?: string;
-  queued?: number;
-  in_flight?: number;
-  note?: string;
+  inFlight?: number;
+  failed?: number;
+  oldestInFlight?: string | null;
 }
 
 interface Health {
   stages: HealthStage[];
-  note?: string;
+  queue?: { name: string; depth: number | null; reachable: boolean };
+  awaitingAudio?: number;
+  stuckAfterSeconds?: number;
 }
 
 function tenantTone(status: string): "solid" | "muted" | "danger" {
@@ -36,15 +38,17 @@ function tenantTone(status: string): "solid" | "muted" | "danger" {
 }
 
 function stageTone(status?: string): "solid" | "muted" | "danger" {
-  if (status === "healthy" || status === "ok") return "solid";
-  if (status === "degraded" || status === "down" || status === "error") return "danger";
+  if (status === "ok") return "solid";
+  // A stalled stage is the one worth waking someone for: the worker is holding
+  // a call rather than merely erroring on it.
+  if (status === "stalled" || status === "degraded") return "danger";
   return "muted";
 }
 
 export default async function AdminPage() {
   const [tenantData, health] = await Promise.all([
-    apiGet<{ tenants: Tenant[] }>("/v1/admin/tenants"),
-    apiGet<Health>("/v1/admin/health"),
+    apiGetAdmin<{ tenants: Tenant[] }>("/v1/admin/tenants"),
+    apiGetAdmin<Health>("/v1/admin/health"),
   ]);
 
   return (
@@ -156,21 +160,33 @@ export default async function AdminPage() {
                       <StatusChip tone={stageTone(s.status)}>{s.status ?? "unknown"}</StatusChip>
                     </div>
                     <div className="flex gap-4 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
-                      <span>queued {s.queued ?? 0}</span>
-                      <span>in-flight {s.in_flight ?? 0}</span>
+                      <span>in-flight {s.inFlight ?? 0}</span>
+                      <span className={s.failed ? "text-red-700" : undefined}>
+                        failed {s.failed ?? 0}
+                      </span>
                     </div>
-                    {s.note ? (
-                      <p className="text-[10px] font-sans text-neutral-500">{s.note}</p>
+                    {s.oldestInFlight ? (
+                      <p className="text-[10px] font-sans text-neutral-500">
+                        oldest since {new Date(s.oldestInFlight).toLocaleString()}
+                      </p>
                     ) : null}
                   </div>
                 ))}
               </div>
             )}
 
-            {health?.note ? (
-              <p className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider font-bold border-t-2 border-neutral-200 pt-3">
-                {health.note}
-              </p>
+            {health ? (
+              <div className="flex flex-wrap items-center gap-3 border-t-2 border-neutral-200 pt-3 text-[11px] font-mono uppercase tracking-wider font-bold">
+                <StatusChip tone={health.queue?.reachable ? "solid" : "danger"}>
+                  queue {health.queue?.reachable ? `${health.queue.depth} waiting` : "unreachable"}
+                </StatusChip>
+                <span className="text-neutral-400">
+                  awaiting audio {health.awaitingAudio ?? 0}
+                </span>
+                <span className="text-neutral-400">
+                  stalled after {Math.round((health.stuckAfterSeconds ?? 0) / 60)}m
+                </span>
+              </div>
             ) : null}
           </Card>
         </div>

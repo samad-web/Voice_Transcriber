@@ -2,9 +2,12 @@ import {
   type CanActivate,
   type ExecutionContext,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { z } from "zod";
 import type { Principal, PrincipalRequest } from "./auth-principal";
+import { OrgRegistryService } from "./org-registry.service";
 import { AuthService } from "../modules/auth/auth.service";
 
 /**
@@ -21,7 +24,10 @@ import { AuthService } from "../modules/auth/auth.service";
  */
 @Injectable()
 export class AdminKeyGuard implements CanActivate {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly orgs: OrgRegistryService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<PrincipalRequest>();
@@ -31,6 +37,19 @@ export class AdminKeyGuard implements CanActivate {
       const orgId = Array.isArray(req.headers["x-org-id"])
         ? req.headers["x-org-id"][0]
         : req.headers["x-org-id"];
+
+      // The admin key is a cross-tenant credential, so `x-org-id` picks the
+      // tenant and is trusted. Trusted is not the same as unchecked: an id that
+      // names no org would otherwise pass into withOrg and come back as an
+      // empty-but-successful read, which reads as "no data" rather than "wrong
+      // id". Only validated when present — the cross-tenant admin endpoints
+      // legitimately send no org header at all.
+      if (orgId !== undefined && z.string().uuid().safeParse(orgId).success) {
+        if (!(await this.orgs.exists(orgId))) {
+          throw new NotFoundException(`no organization with id ${orgId}`);
+        }
+      }
+
       req.principal = {
         userId: "admin-key",
         orgId: orgId ?? "",

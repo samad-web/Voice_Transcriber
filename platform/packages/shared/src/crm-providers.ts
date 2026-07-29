@@ -89,6 +89,9 @@ export const CRM_SOURCE_PATHS: Array<{ path: string; label: string }> = [
   { path: "call.remoteName", label: "Contact name from the handset" },
   { path: "call.remoteNumberPrefix", label: "Number prefix (masked)" },
   { path: "call.remoteNumberLast3", label: "Last 3 digits" },
+  // NULL unless the org opted in to storing it (migration 0011). Map this when
+  // the destination needs a number someone can actually ring back.
+  { path: "call.remoteNumber", label: "Full number (opt-in orgs only)" },
   { path: "transcript.text", label: "Full transcript" },
   { path: "transcript.language", label: "Detected language" },
   { path: "intelligence.summary", label: "2–3 sentence summary" },

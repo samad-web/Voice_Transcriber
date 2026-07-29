@@ -51,6 +51,24 @@ export async function withGeminiRetry<T>(
   throw lastErr;
 }
 
+/**
+ * Reasoning budget for every Gemini call in the pipeline.
+ *
+ * gemini-2.5-flash has thinking ON by default with a dynamic budget, and
+ * thinking tokens bill at the OUTPUT rate — the most expensive line on the
+ * invoice. Neither of our jobs needs reasoning: ASR is dictation, and analyze
+ * copies values out of a transcript into a fixed schema. Left at the default,
+ * a call silently pays for hundreds of hidden tokens per request.
+ *
+ * 0 disables it (flash-lite is already 0 and ignores this). Raise
+ * GEMINI_THINKING_BUDGET if a tenant's extraction quality genuinely needs it;
+ * -1 restores Gemini's dynamic budget.
+ */
+export function geminiThinking(): { thinkingBudget: number } {
+  const raw = Number(process.env.GEMINI_THINKING_BUDGET ?? 0);
+  return { thinkingBudget: Number.isFinite(raw) ? raw : 0 };
+}
+
 export interface AnalyzeResult {
   output: Record<string, unknown>;
   validationStatus: "valid" | "repaired" | "failed";
@@ -158,6 +176,7 @@ export async function analyzeTranscript(
           config: {
             responseMimeType: "application/json",
             responseSchema: jsonSchema,
+            thinkingConfig: geminiThinking(),
           },
         }),
       "analyzeTranscript",
@@ -325,7 +344,7 @@ export async function analyzeConversation(
         contents: [
           { role: "user", parts: [{ text: `${system}\n\nJSON shape:\n${shape}\n\n${userContent}` }] },
         ],
-        config: { responseMimeType: "application/json" },
+        config: { responseMimeType: "application/json", thinkingConfig: geminiThinking() },
       }),
     "analyzeConversation",
   );

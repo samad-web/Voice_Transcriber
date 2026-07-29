@@ -148,8 +148,9 @@ class CaptureSettings(context: Context) {
             "Recordings/Call," +                      // Samsung One UI (confirmed, SM-M136B)
                 "Call," +                             // Samsung (legacy)
                 "Sounds," +                           // Samsung (older still)
-                "MIUI/sound_recorder/call_rec," +     // Xiaomi / Redmi / POCO
-                "Recordings/CallRecord," +            // Xiaomi HyperOS
+                "MIUI/sound_recorder/call_rec," +     // Xiaomi / Redmi / POCO (MIUI)
+                "Recordings/sound_recorder/call_rec," + // Xiaomi HyperOS (confirmed, Redmi 24048RN6CI / Android 16)
+                "Recordings/CallRecord," +            // Xiaomi HyperOS (earlier builds)
                 "Record/Call," +                      // Vivo, OnePlus, some Oppo
                 "Recordings/Call Recordings," +       // Realme / Oppo ColorOS
                 "Music/Recordings/Call Recordings," + // Oppo (older ColorOS)

@@ -60,10 +60,13 @@ export function IntegrationCard({
   integration,
   provider,
   sourcePaths,
+  orgId,
 }: {
   integration: Integration;
   provider?: CrmProviderSpec;
   sourcePaths: Array<{ path: string; label: string }>;
+  /** Tenant this integration belongs to; omitted means DEV_ORG_ID. */
+  orgId?: string;
 }) {
   const [open, setOpen] = useState<"none" | "map" | "log" | "secret">("none");
   const [test, setTest] = useState<TestResult | null>(null);
@@ -77,7 +80,7 @@ export function IntegrationCard({
     startTransition(async () => {
       setTestError(null);
       setTest(null);
-      const res = await testIntegrationAction(integration.id, dryRun);
+      const res = await testIntegrationAction(integration.id, dryRun, orgId);
       if (res.error) setTestError(res.error);
       else setTest(res.result ?? null);
     });
@@ -91,13 +94,14 @@ export function IntegrationCard({
       ) {
         return;
       }
-      await deleteIntegrationAction(integration.id);
+      await deleteIntegrationAction(integration.id, orgId);
     });
 
   const toggleStatus = () =>
     startTransition(() =>
       updateIntegrationAction({
         id: integration.id,
+        orgId,
         status: integration.status === "connected" ? "disconnected" : "connected",
       }).then(() => undefined),
     );
@@ -196,10 +200,14 @@ export function IntegrationCard({
       {test ? <TestPanel result={test} /> : null}
 
       {open === "map" ? (
-        <FieldMapEditor integration={integration} sourcePaths={sourcePaths} />
+        <FieldMapEditor integration={integration} sourcePaths={sourcePaths} orgId={orgId} />
       ) : null}
-      {open === "log" ? <DeliveryLog integrationId={integration.id} dead={dead} /> : null}
-      {open === "secret" ? <SecretRotator integration={integration} provider={provider} /> : null}
+      {open === "log" ? (
+        <DeliveryLog integrationId={integration.id} dead={dead} orgId={orgId} />
+      ) : null}
+      {open === "secret" ? (
+        <SecretRotator integration={integration} provider={provider} orgId={orgId} />
+      ) : null}
     </Card>
   );
 }
@@ -261,9 +269,11 @@ function TestPanel({ result }: { result: TestResult }) {
 function FieldMapEditor({
   integration,
   sourcePaths,
+  orgId,
 }: {
   integration: Integration;
   sourcePaths: Array<{ path: string; label: string }>;
+  orgId?: string;
 }) {
   const initial = Object.entries(integration.field_map ?? {}).map(([key, value]) => ({
     key,
@@ -284,7 +294,7 @@ function FieldMapEditor({
       const fieldMap = Object.fromEntries(
         pairs.filter((p) => p.key.trim()).map((p) => [p.key.trim(), p.value.trim()]),
       );
-      const res = await updateIntegrationAction({ id: integration.id, fieldMap });
+      const res = await updateIntegrationAction({ id: integration.id, orgId, fieldMap });
       if (res.error) setError(res.error);
       else {
         setSaved(true);
@@ -365,9 +375,11 @@ function FieldMapEditor({
 function SecretRotator({
   integration,
   provider,
+  orgId,
 }: {
   integration: Integration;
   provider?: CrmProviderSpec;
+  orgId?: string;
 }) {
   const [secret, setSecret] = useState("");
   const [saved, setSaved] = useState(false);
@@ -379,6 +391,7 @@ function SecretRotator({
       setError(null);
       const res = await updateIntegrationAction({
         id: integration.id,
+        orgId,
         authSecret: secret.trim(),
       });
       if (res.error) setError(res.error);
@@ -424,7 +437,15 @@ function SecretRotator({
   );
 }
 
-function DeliveryLog({ integrationId, dead }: { integrationId: string; dead: number }) {
+function DeliveryLog({
+  integrationId,
+  dead,
+  orgId,
+}: {
+  integrationId: string;
+  dead: number;
+  orgId?: string;
+}) {
   const [rows, setRows] = useState<Delivery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -434,11 +455,11 @@ function DeliveryLog({ integrationId, dead }: { integrationId: string; dead: num
     () =>
       startTransition(async () => {
         setError(null);
-        const res = await listDeliveriesAction(integrationId);
+        const res = await listDeliveriesAction(integrationId, orgId);
         if (res.error) setError(res.error);
         else setRows(res.deliveries ?? []);
       }),
-    [integrationId],
+    [integrationId, orgId],
   );
 
   // Fetch when the panel opens rather than with the page: an operator expands
@@ -450,13 +471,13 @@ function DeliveryLog({ integrationId, dead }: { integrationId: string; dead: num
 
   const retry = (id: string) =>
     startTransition(async () => {
-      await retryDeliveryAction(id);
+      await retryDeliveryAction(id, orgId);
       load();
     });
 
   const retryAll = () =>
     startTransition(async () => {
-      await retryDeadAction(integrationId);
+      await retryDeadAction(integrationId, orgId);
       load();
     });
 

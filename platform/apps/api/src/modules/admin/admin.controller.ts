@@ -1,8 +1,30 @@
 import { BadRequestException, Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import { PIPELINE_QUEUE, queueDepth } from "@aura/queue";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { DbService } from "../../db/db.service";
+
+/**
+ * Each pipeline stage as the state machine expresses it: the status a call sits
+ * in while the stage runs, and the terminal status it lands on when that stage
+ * throws. Derived from the CHECK constraint in migration 0001 — keep in step
+ * with it.
+ */
+const PIPELINE_STAGES = [
+  { name: "transcode", active: "TRANSCODING", failed: "FAILED_TRANSCODE" },
+  { name: "transcribe", active: "TRANSCRIBING", failed: "FAILED_ASR" },
+  { name: "analyze", active: "ANALYZING", failed: "FAILED_ANALYZE" },
+  { name: "crm_sync", active: "SYNCING", failed: "FAILED_CRM" },
+] as const;
+
+/**
+ * How long a call may sit in one stage before the stage is called stalled.
+ * A pipeline run is seconds-to-a-minute even on a long recording, so ten
+ * minutes is far outside normal and means the worker died holding the call
+ * rather than that it is busy.
+ */
+const STUCK_AFTER_MS = 10 * 60 * 1000;
 
 const CreateTenantBody = z.object({
   /** Customer company name — this is what the web calls an "instance". */
@@ -122,18 +144,57 @@ export class AdminController {
     return { tenants: rows };
   }
 
+  /**
+   * Pipeline health across every tenant.
+   *
+   * Each stage is judged on what the state machine actually holds right now:
+   * how many calls sit in that stage, how many failed there, and whether
+   * anything has been stuck in it beyond `STUCK_AFTER`. A stage with failures
+   * is `degraded`; one holding a call longer than a pipeline run could
+   * plausibly take is `stalled` — that is the signal worth paging on, because
+   * it means the worker died mid-call rather than merely erroring.
+   */
   @Get("health")
   async health() {
-    // Best-effort placeholder: pipeline stage health + queue depth need the
-    // queue/broker wired in before these report real numbers.
+    const admin = this.db.adminPool();
+
+    const { rows: live } = await admin.query(
+      `SELECT status,
+              count(*)::int AS n,
+              min(updated_at) AS oldest
+         FROM calls
+        GROUP BY status`,
+    );
+    const by = new Map(live.map((r) => [r.status as string, r]));
+    const countOf = (status: string) => Number(by.get(status)?.n ?? 0);
+    const oldestOf = (status: string) => by.get(status)?.oldest as Date | undefined;
+
+    const now = Date.now();
+    const stuck = (status: string) => {
+      const oldest = oldestOf(status);
+      return oldest ? now - new Date(oldest).getTime() > STUCK_AFTER_MS : false;
+    };
+
+    const stages = PIPELINE_STAGES.map(({ name, active, failed }) => {
+      const inFlight = countOf(active);
+      const failures = countOf(failed);
+      const stalled = stuck(active);
+      return {
+        name,
+        status: stalled ? "stalled" : failures > 0 ? "degraded" : "ok",
+        inFlight,
+        failed: failures,
+        oldestInFlight: oldestOf(active) ?? null,
+      };
+    });
+
+    const depth = await queueDepth();
+
     return {
-      stages: [
-        { name: "transcode", status: "unknown" },
-        { name: "transcribe", status: "unknown" },
-        { name: "analyze", status: "unknown" },
-        { name: "crm_sync", status: "unknown" },
-      ],
-      note: "queue depth wiring pending",
+      stages,
+      queue: { name: PIPELINE_QUEUE, depth, reachable: depth !== null },
+      awaitingAudio: countOf("AWAITING_AUDIO"),
+      stuckAfterSeconds: STUCK_AFTER_MS / 1000,
     };
   }
 }

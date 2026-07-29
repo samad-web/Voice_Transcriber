@@ -16,6 +16,18 @@ const PolicyBody = z.object({
   consentPolicy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]).optional(),
   onConsentFailure: z.enum(["record_and_flag", "do_not_record"]).optional(),
   retentionDays: z.number().int().min(1).max(3650).optional(),
+  /**
+   * Opt in to retaining the counterparty's full number (0011). Off by default:
+   * without it the platform keeps only a prefix, the last 3 digits and a hash,
+   * which is enough to label and dedup a call but not to ring anyone back. Turn
+   * it on for a tenant whose CRM hand-off has to produce callable leads.
+   */
+  storeFullNumber: z.boolean().optional(),
+  /**
+   * Off keeps ingesting this instance's calls but skips ASR and analysis (0014).
+   * Distinct from suspending the org, which refuses the upload entirely.
+   */
+  transcriptionEnabled: z.boolean().optional(),
 });
 
 /** Org-level compliance policy (§2.6): consent regime + retention window. */
@@ -31,7 +43,8 @@ export class TenancyController {
       const {
         rows: [org],
       } = await client.query(
-        `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region
+        `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
+                store_full_number, transcription_enabled
            FROM organizations WHERE id = $1`,
         [orgId],
       );
@@ -53,10 +66,20 @@ export class TenancyController {
         `UPDATE organizations SET
            consent_policy = COALESCE($2, consent_policy),
            on_consent_failure = COALESCE($3, on_consent_failure),
-           retention_days = COALESCE($4, retention_days)
+           retention_days = COALESCE($4, retention_days),
+           store_full_number = COALESCE($5, store_full_number),
+           transcription_enabled = COALESCE($6, transcription_enabled)
          WHERE id = $1
-         RETURNING consent_policy, on_consent_failure, retention_days`,
-        [orgId, p.consentPolicy ?? null, p.onConsentFailure ?? null, p.retentionDays ?? null],
+         RETURNING consent_policy, on_consent_failure, retention_days, store_full_number,
+                   transcription_enabled`,
+        [
+          orgId,
+          p.consentPolicy ?? null,
+          p.onConsentFailure ?? null,
+          p.retentionDays ?? null,
+          p.storeFullNumber ?? null,
+          p.transcriptionEnabled ?? null,
+        ],
       );
       // Policy changes must reach devices: bump every instance's config version.
       await client.query(

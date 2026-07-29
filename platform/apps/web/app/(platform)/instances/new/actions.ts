@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminHeaders, API_URL } from "@/lib/server-api";
+import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 
 export interface ProvisionResult {
   error?: string;
@@ -27,7 +27,7 @@ export async function createTenantAction(input: {
   try {
     const res = await fetch(`${API_URL}/v1/admin/tenants`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: crossTenantHeaders,
       cache: "no-store",
       body: JSON.stringify({
         name: input.name,

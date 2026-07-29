@@ -38,6 +38,34 @@ export async function mintKeyAction(input: {
   }
 }
 
+/**
+ * Turn transcription on or off for an instance. Rides the existing org policy
+ * endpoint — it is one more org-level setting, and reusing it means the change
+ * is audited and bumps device config versions like every other policy edit.
+ */
+export async function setTranscriptionEnabledAction(input: {
+  orgId: string;
+  enabled: boolean;
+}): Promise<{ error?: string }> {
+  try {
+    const res = await fetch(`${API_URL}/v1/org/policy`, {
+      method: "PATCH",
+      headers: orgHeaders(input.orgId),
+      cache: "no-store",
+      body: JSON.stringify({ transcriptionEnabled: input.enabled }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    revalidatePath(`/instances/${input.orgId}`);
+    revalidatePath(`/instances/${input.orgId}/calls`);
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 async function deviceAction(
   orgId: string,
   deviceId: string,
@@ -75,6 +103,7 @@ export async function updatePolicyAction(input: {
   consentPolicy: string;
   onConsentFailure: string;
   retentionDays: number;
+  storeFullNumber?: boolean;
 }): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/org/policy`, {
@@ -85,6 +114,7 @@ export async function updatePolicyAction(input: {
         consentPolicy: input.consentPolicy,
         onConsentFailure: input.onConsentFailure,
         retentionDays: input.retentionDays,
+        storeFullNumber: input.storeFullNumber,
       }),
     });
     if (!res.ok) return { error: `API ${res.status}` };

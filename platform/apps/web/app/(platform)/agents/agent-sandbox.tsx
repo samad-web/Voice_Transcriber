@@ -7,7 +7,7 @@ import { testAgentAction, type AgentTestResult } from "./actions";
 import type { AgentRow } from "./agent-studio";
 import { inputClass } from "@/lib/form";
 
-export function AgentSandbox({ agents }: { agents: AgentRow[] }) {
+export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: string }) {
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
   const [callId, setCallId] = useState("");
   const [version, setVersion] = useState("");
@@ -21,6 +21,7 @@ export function AgentSandbox({ agents }: { agents: AgentRow[] }) {
         agentId,
         callId: callId.trim(),
         version: version.trim() ? Number(version) : undefined,
+        orgId,
       });
       setResult(res);
     });

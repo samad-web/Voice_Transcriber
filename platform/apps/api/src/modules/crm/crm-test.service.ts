@@ -79,6 +79,9 @@ function syntheticSource(): Record<string, unknown> {
       remoteName: "Aura Test Contact",
       remoteNumberPrefix: "+9198765XXX",
       remoteNumberLast3: "321",
+      // Only opted-in orgs send this for real (0011); the sample always carries
+      // one so a field map referencing it can be tested before the first call.
+      remoteNumber: "919876543321",
       workspaceId: "00000000-0000-4000-8000-000000000002",
     },
     facts: {
@@ -280,6 +283,7 @@ export class CrmTestService {
     const { rows } = await client.query<Record<string, unknown>>(
       `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
               c.remote_name, c.remote_number_prefix, c.remote_number_last3,
+              c.remote_number_full,
               c.agent_id, c.agent_version, c.workspace_id,
               t.text AS transcript_text, t.language, t.intelligence, t.diarized,
               (SELECT jsonb_object_agg(f.field_key,
@@ -303,6 +307,7 @@ export class CrmTestService {
         remoteName: row.remote_name,
         remoteNumberPrefix: row.remote_number_prefix,
         remoteNumberLast3: row.remote_number_last3,
+        remoteNumber: row.remote_number_full,
         workspaceId: row.workspace_id,
       },
       facts: row.facts ?? {},

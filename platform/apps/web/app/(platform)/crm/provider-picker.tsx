@@ -29,10 +29,13 @@ type MarketFilter = (typeof MARKET_FILTERS)[number]["id"];
 export function ProviderPicker({
   providers,
   workspaceId,
+  orgId,
   onConnected,
 }: {
   providers: CrmProviderSpec[];
   workspaceId: string;
+  /** Tenant to connect for; omitted means the environment's DEV_ORG_ID. */
+  orgId?: string;
   onConnected: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -54,6 +57,7 @@ export function ProviderPicker({
       <ConnectForm
         provider={selected}
         workspaceId={workspaceId}
+        orgId={orgId}
         onBack={() => setSelected(null)}
         onConnected={() => {
           setSelected(null);
@@ -137,11 +141,13 @@ export function ProviderPicker({
 function ConnectForm({
   provider,
   workspaceId,
+  orgId,
   onBack,
   onConnected,
 }: {
   provider: CrmProviderSpec;
   workspaceId: string;
+  orgId?: string;
   onBack: () => void;
   onConnected: () => void;
 }) {
@@ -165,6 +171,7 @@ function ConnectForm({
       setError(null);
       const res = await connectProviderAction({
         workspaceId,
+        orgId,
         provider: provider.id,
         target: targetId,
         label: label.trim() || undefined,

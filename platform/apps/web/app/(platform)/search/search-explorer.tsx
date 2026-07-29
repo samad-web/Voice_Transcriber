@@ -31,7 +31,14 @@ function Highlight({ snippet }: { snippet: string }) {
   );
 }
 
-export function SearchExplorer() {
+export function SearchExplorer({
+  /** Tenant whose transcripts are searched — RLS scopes results to it. */
+  orgId,
+  tenantName,
+}: {
+  orgId: string;
+  tenantName?: string;
+}) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +48,7 @@ export function SearchExplorer() {
   const run = () =>
     startTransition(async () => {
       setError(null);
-      const res = await searchTranscriptsAction(q);
+      const res = await searchTranscriptsAction(q, orgId);
       setSearched(true);
       if (res.error) {
         setError(res.error);
@@ -61,8 +68,9 @@ export function SearchExplorer() {
           </h4>
         </div>
         <p className="text-xs text-neutral-400 font-sans font-medium">
-          Search every diarized transcript across the workspace. Matches are ranked and
-          highlighted from the call record.
+          Search every diarized transcript for{" "}
+          <span className="text-black font-bold">{tenantName ?? "this tenant"}</span>. Matches are
+          ranked and highlighted from the call record.
         </p>
 
         <form
@@ -107,7 +115,14 @@ export function SearchExplorer() {
             </Card>
           ) : (
             results.map((r) => (
-              <Link key={r.callId} href="/calls" className="block">
+              // Deep-link to the matched call, not the bare call log: the whole
+              // point of a hit is that specific conversation, and landing on an
+              // unfiltered list made the operator hunt for it by timestamp.
+              <Link
+                key={r.callId}
+                href={`/instances/${orgId}/calls?call=${r.callId}`}
+                className="block"
+              >
                 <Card className="hover:bg-neutral-50 transition-colors space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-mono text-xs font-bold text-black">
@@ -121,7 +136,7 @@ export function SearchExplorer() {
                     <Highlight snippet={r.snippet} />
                   </p>
                   <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                    rank {r.rank.toFixed(4)} · open in Call Log →
+                    rank {r.rank.toFixed(4)} · open this call →
                   </span>
                 </Card>
               </Link>

@@ -85,7 +85,18 @@ export default async function InstancesPage() {
                       <span className="text-[10px] font-mono text-neutral-400">{tenant.id}</span>
                     </td>
                     <td className="py-4 px-4 font-mono text-xs">{tenant.device_count}</td>
-                    <td className="py-4 px-4 font-mono text-xs">{tenant.call_count}</td>
+                    <td className="py-4 px-4 font-mono text-xs">
+                      {tenant.call_count > 0 ? (
+                        <Link
+                          href={`/instances/${tenant.id}/calls`}
+                          className="font-bold underline hover:text-black"
+                        >
+                          {tenant.call_count}
+                        </Link>
+                      ) : (
+                        <span className="text-neutral-400">0</span>
+                      )}
+                    </td>
                     <td className="py-4 px-4 font-mono text-xs">
                       {tenant.consent_policy.replace(/_/g, " ")}
                     </td>

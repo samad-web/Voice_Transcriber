@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -36,7 +36,10 @@ export interface CallRow {
   audio_source_used: string | null;
   status: string;
   consent_status: string;
+  device_id?: string | null;
   device_label: string | null;
+  instance_id?: string | null;
+  instance_name?: string | null;
   remote_number_prefix?: string | null;
   remote_number_last3?: string | null;
   remote_name?: string | null;
@@ -63,12 +66,18 @@ function humanize(s: string): string {
 function statusTone(status: string): "solid" | "muted" | "outline" | "danger" {
   if (status === "COMPLETE") return "solid";
   if (status.startsWith("FAILED")) return "danger";
+  // Deliberately not transcribed — not a success, not a fault.
+  if (status === "TRANSCRIPTION_OFF") return "outline";
   return "muted";
 }
 
-/** Pipeline end states — anything else means the worker still has the call. */
+/** Pipeline end states — anything else means the worker still has the call.
+ *  TRANSCRIPTION_OFF counts: nothing is coming, so the drawer must stop
+ *  polling for a transcript that was never going to be produced. */
 function isTerminal(status: string): boolean {
-  return status === "COMPLETE" || status.startsWith("FAILED");
+  return (
+    status === "COMPLETE" || status === "TRANSCRIPTION_OFF" || status.startsWith("FAILED")
+  );
 }
 
 /** Poll interval while a call is mid-pipeline. Transcription of a several-minute
@@ -100,7 +109,25 @@ function speakerSideResolver(segments: TranscriptSegment[]) {
   };
 }
 
-export function CallsExplorer({ calls }: { calls: CallRow[] }) {
+export function CallsExplorer({
+  calls,
+  /** Tenant these calls belong to. Omitted on the standalone /calls page, which
+   *  still reads the environment's dev org; required everywhere the operator is
+   *  looking at a specific customer, or the drawer reads the wrong tenant. */
+  orgId,
+  /** Show which instance each call came from — off when the table is already
+   *  scoped to one instance and the column would repeat a single value. */
+  showInstance = false,
+  /** Open this call's drawer on arrival — how a search hit or any deep link
+   *  lands on the conversation itself. The drawer fetches by id, so the call
+   *  need not be on the current page of the table. */
+  initialCallId,
+}: {
+  calls: CallRow[];
+  orgId?: string;
+  showInstance?: boolean;
+  initialCallId?: string;
+}) {
   const router = useRouter();
   const pollsRef = useRef(0);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -114,28 +141,40 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const openDrawer = (callId: string) => {
-    setOpenId(callId);
-    setDetail(null);
-    setError(null);
-    setAudioUrl(null);
-    setReprocessMsg(null);
-    setNotes(null);
-    setNoteBody("");
-    setNoteError(null);
-    pollsRef.current = 0;
-    setLoading(true);
-    startTransition(async () => {
-      const [res, notesRes] = await Promise.all([
-        getCallDetailAction(callId),
-        getCallNotesAction(callId),
-      ]);
-      setLoading(false);
-      if (res.error) setError(res.error);
-      else setDetail(res.detail ?? null);
-      setNotes(notesRes.error ? [] : notesRes.notes ?? []);
-    });
-  };
+  const openDrawer = useCallback(
+    (callId: string) => {
+      setOpenId(callId);
+      setDetail(null);
+      setError(null);
+      setAudioUrl(null);
+      setReprocessMsg(null);
+      setNotes(null);
+      setNoteBody("");
+      setNoteError(null);
+      pollsRef.current = 0;
+      setLoading(true);
+      startTransition(async () => {
+        const [res, notesRes] = await Promise.all([
+          getCallDetailAction(callId, orgId),
+          getCallNotesAction(callId, orgId),
+        ]);
+        setLoading(false);
+        if (res.error) setError(res.error);
+        else setDetail(res.detail ?? null);
+        setNotes(notesRes.error ? [] : notesRes.notes ?? []);
+      });
+    },
+    [orgId],
+  );
+
+  // Deep link (e.g. a search hit). Guarded by a ref so closing the drawer does
+  // not immediately reopen it while `?call=` is still in the URL.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!initialCallId || deepLinked.current) return;
+    deepLinked.current = true;
+    openDrawer(initialCallId);
+  }, [initialCallId, openDrawer]);
 
   /**
    * A call opened mid-pipeline used to sit on "No transcript yet" forever: the
@@ -146,31 +185,39 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
    */
   useEffect(() => {
     const status = detail?.call.status;
-    if (!openId || !status || isTerminal(status)) return;
+    // A failed call with a retry pending is not settled — the sweeper will move
+    // it without anyone touching the page, so keep watching until it lands.
+    const retryPending = Boolean(detail?.call.next_attempt_at);
+    if (!openId || !status || (isTerminal(status) && !retryPending)) return;
     if (pollsRef.current >= POLL_LIMIT) return;
     const t = setTimeout(async () => {
       pollsRef.current += 1;
-      const res = await getCallDetailAction(openId);
+      const res = await getCallDetailAction(openId, orgId);
       if (res.detail) {
         setDetail(res.detail);
-        if (isTerminal(res.detail.call.status)) router.refresh();
+        // Refresh the table only once the call has actually settled. A failed
+        // call still awaiting a retry is not settled, and refreshing on every
+        // poll would re-render the whole page each tick for no new information.
+        const settled =
+          isTerminal(res.detail.call.status) && !res.detail.call.next_attempt_at;
+        if (settled) router.refresh();
       }
     }, POLL_MS);
     return () => clearTimeout(t);
     // detail identity changes on every poll, which is what re-arms the timer.
-  }, [openId, detail, router]);
+  }, [openId, detail, router, orgId]);
 
   const addNote = () => {
     if (!openId || !noteBody.trim()) return;
     setNoteError(null);
     startTransition(async () => {
-      const res = await addCallNoteAction(openId, noteBody.trim());
+      const res = await addCallNoteAction(openId, noteBody.trim(), orgId);
       if (res.error) {
         setNoteError(res.error);
         return;
       }
       setNoteBody("");
-      const refreshed = await getCallNotesAction(openId);
+      const refreshed = await getCallNotesAction(openId, orgId);
       setNotes(refreshed.error ? notes : refreshed.notes ?? []);
     });
   };
@@ -181,14 +228,14 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
     if (!openId) return;
     setReprocessMsg(null);
     startTransition(async () => {
-      const res = await reprocessCallAction(openId);
+      const res = await reprocessCallAction(openId, orgId);
       setReprocessMsg(res.error ? res.error : `Reprocess ${res.status ?? "queued"}`);
       if (res.error) return;
       pollsRef.current = 0;
       // Re-read immediately: the call leaves COMPLETE for a pipeline state, which
       // is what arms the poll above. Without this the drawer keeps showing the
       // old transcript and looks like the reprocess did nothing.
-      const again = await getCallDetailAction(openId);
+      const again = await getCallDetailAction(openId, orgId);
       if (again.detail) setDetail(again.detail);
     });
   };
@@ -197,7 +244,7 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
     if (!openId) return;
     setAudioUrl(null);
     startTransition(async () => {
-      const res = await getCallAudioAction(openId);
+      const res = await getCallAudioAction(openId, orgId);
       if (res.error) setError(res.error);
       else setAudioUrl(res.url ?? null);
     });
@@ -211,10 +258,14 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
   return (
     <>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[750px] text-left border-collapse">
+        <table
+          className={`w-full ${showInstance ? "min-w-[1000px]" : "min-w-[870px]"} text-left border-collapse`}
+        >
           <thead>
             <tr className="bg-neutral-100 border-b-2 border-black font-mono text-[10px] text-black font-bold uppercase tracking-wider">
               <th className="py-3.5 px-5">Call</th>
+              <th className="py-3.5 px-4">Date &amp; Time</th>
+              {showInstance ? <th className="py-3.5 px-4">Instance</th> : null}
               <th className="py-3.5 px-4">Device</th>
               <th className="py-3.5 px-4">Duration</th>
               <th className="py-3.5 px-4">Source</th>
@@ -248,13 +299,32 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
                       <span className="text-sm font-bold text-black block font-sans">
                         {callLabel(c)}
                       </span>
-                      <LocalTime
-                        iso={c.started_at}
-                        className="text-[10px] text-neutral-400 font-mono block"
-                      />
+                      <span className="text-[10px] text-neutral-400 font-mono block">
+                        #{c.id.slice(0, 8)}
+                      </span>
                     </div>
                   </div>
                 </td>
+                {/* Date over time, both monospaced so the column scans down the
+                    page. Previously this was a 10px caption under the caller
+                    name — present, but not something you could read a log by. */}
+                <td className="py-4 px-4 whitespace-nowrap">
+                  <LocalTime
+                    iso={c.started_at}
+                    mode="date"
+                    className="block font-mono text-xs font-bold text-black"
+                  />
+                  <LocalTime
+                    iso={c.started_at}
+                    mode="time"
+                    className="block font-mono text-[11px] text-neutral-500"
+                  />
+                </td>
+                {showInstance ? (
+                  <td className="py-4 px-4 text-xs font-sans font-bold">
+                    {c.instance_name ?? "—"}
+                  </td>
+                ) : null}
                 <td className="py-4 px-4 text-xs font-sans font-bold">{c.device_label ?? "—"}</td>
                 <td className="py-4 px-4 font-mono text-xs font-bold">
                   {formatDuration(c.duration_s)}
@@ -336,6 +406,25 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
                         {call.device_label ?? "unknown device"} · src{" "}
                         {call.audio_source_used ?? "—"} · <LocalTime iso={call.started_at} />
                       </p>
+                      {/* Why it broke, next to the fact that it broke — otherwise
+                          triage means SSH-ing to read worker logs. */}
+                      {call.error_message ? (
+                        <div className="border-2 border-red-600 bg-red-50 p-3 space-y-1">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-red-700 block">
+                            Failure reason
+                          </span>
+                          <p className="text-xs font-mono text-red-900 leading-relaxed break-words">
+                            {call.error_message}
+                          </p>
+                          {/* Whether anyone needs to act. A pending retry means
+                              this resolves itself; no retry means it will not. */}
+                          <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-red-700 pt-1">
+                            {call.next_attempt_at
+                              ? `Retrying automatically · attempt ${(call.pipeline_attempts ?? 0) + 1} · next ${new Date(call.next_attempt_at).toLocaleTimeString()}`
+                              : `Gave up after ${call.pipeline_attempts ?? 0} attempt${(call.pipeline_attempts ?? 0) === 1 ? "" : "s"} — reprocess to try again`}
+                          </p>
+                        </div>
+                      ) : null}
                     </section>
 
                     {/* Call intelligence: intent + sentiment + outcome */}
@@ -472,6 +561,16 @@ export function CallsExplorer({ calls }: { calls: CallRow[] }) {
                         <div className="p-3 border-2 border-black bg-neutral-50 text-xs font-sans leading-relaxed whitespace-pre-wrap">
                           {detail.transcript.text}
                         </div>
+                      ) : call.status === "TRANSCRIPTION_OFF" ? (
+                        // "No transcript yet" would imply one is coming.
+                        <p className="text-xs font-sans text-neutral-600 leading-relaxed border-2 border-neutral-300 bg-neutral-50 p-3">
+                          <span className="font-mono font-bold uppercase text-[10px] tracking-wider text-black block mb-1">
+                            Transcription is off for this instance
+                          </span>
+                          The call and its recording were stored, but ASR and analysis were
+                          skipped. Turn transcription back on for this instance, then Reprocess to
+                          transcribe it.
+                        </p>
                       ) : (
                         <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-3">
                           No transcript yet

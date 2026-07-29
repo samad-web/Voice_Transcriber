@@ -40,9 +40,12 @@ function roleTone(role: string): "solid" | "muted" | "outline" {
 export function TeamManager({
   members,
   workspaces,
+  orgId,
 }: {
   members: Member[];
   workspaces: Workspace[];
+  /** Tenant these members belong to; omitted falls back to the dev org. */
+  orgId?: string;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -63,7 +66,7 @@ export function TeamManager({
         role,
         recordingsListen: listen,
         recordingsExport: exportPerm,
-      });
+      }, orgId);
       if (res.error) setError(res.error);
       else {
         setEmail("");
@@ -72,23 +75,23 @@ export function TeamManager({
     });
 
   const changeRole = (userId: string, nextRole: string) =>
-    startTransition(() => updateMemberAction({ userId, role: nextRole }).then(() => undefined));
+    startTransition(() => updateMemberAction({ userId, role: nextRole }, orgId).then(() => undefined));
 
   const togglePerm = (m: Member, key: "recordingsListen" | "recordingsExport") =>
     startTransition(() =>
-      updateMemberAction({ userId: m.userId, [key]: !m[key] }).then(() => undefined),
+      updateMemberAction({ userId: m.userId, [key]: !m[key] }, orgId).then(() => undefined),
     );
 
   const remove = (userId: string) =>
     startTransition(async () => {
       if (!window.confirm("Remove this member from the workspace?")) return;
-      await removeMemberAction(userId);
+      await removeMemberAction(userId, orgId);
     });
 
   const createWorkspace = () =>
     startTransition(async () => {
       setWsError(null);
-      const res = await createWorkspaceAction(wsName.trim());
+      const res = await createWorkspaceAction(wsName.trim(), orgId);
       if (res.error) setWsError(res.error);
       else setWsName("");
     });

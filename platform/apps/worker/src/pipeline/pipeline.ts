@@ -19,12 +19,48 @@ const s3 = new S3Client({
 const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
 
 /**
+ * Below this many seconds a recording is a ring-out, a misdial or an instant
+ * hangup — there is no speech in it, but it still costs a full audio-in Gemini
+ * round trip plus the analyze calls to conclude exactly that. On a telecalling
+ * floor these are a large share of call volume, so gating them is the cheapest
+ * saving available. Set to 0 to transcribe everything.
+ */
+const MIN_TRANSCRIBE_SECONDS = Number(process.env.MIN_TRANSCRIBE_SECONDS ?? 5);
+
+/**
+ * How many times a call may fail before it stops retrying itself and waits for
+ * a human. With the backoff below that spans roughly half an hour of trying,
+ * which covers a provider rate-limit, a restart or a network blip without
+ * hammering a provider that is genuinely rejecting us.
+ */
+export const MAX_PIPELINE_ATTEMPTS = Number(process.env.PIPELINE_MAX_ATTEMPTS ?? 5);
+
+/**
+ * 30s, 2m, 8m, 32m… capped at an hour — the same shape the CRM outbox uses.
+ * The first retry is deliberately quick: the common case is a transient
+ * provider error that has already cleared by the time we ask again.
+ */
+export function retryBackoffSeconds(attempt: number): number {
+  return Math.min(30 * 4 ** Math.max(0, attempt - 1), 3600);
+}
+
+/**
  * Pipeline stages (design doc §6.2). Each stage advances the Postgres state
  * machine under an optimistic status check, so replays are idempotent and the
  * queue is only a wake-up signal. Terminal states: COMPLETE or FAILED_{STAGE}.
  */
 export async function processCall({ callId, orgId }: PipelineMessage): Promise<void> {
   await withOrgContext(orgId, async (client) => {
+    // Failures so far. Read up front so `fail` can name the attempt it is
+    // recording and pick the matching backoff.
+    const {
+      rows: [priorRow],
+    } = await client.query<{ pipeline_attempts: number }>(
+      "SELECT pipeline_attempts FROM calls WHERE id = $1",
+      [callId],
+    );
+    const attempts = Number(priorRow?.pipeline_attempts ?? 0);
+
     const advance = async (from: string, to: string) => {
       const res = await client.query(
         "UPDATE calls SET status = $3 WHERE id = $1 AND status = $2 RETURNING id",
@@ -33,13 +69,91 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
       return (res.rowCount ?? 0) > 0;
     };
 
-    const fail = async (stage: string, err: unknown) => {
-      await client.query("UPDATE calls SET status = $2 WHERE id = $1", [
-        callId,
-        `FAILED_${stage}`,
-      ]);
-      console.error(`call ${callId} failed at ${stage}:`, err);
+    /** Provider errors carry the useful detail; cap it so one huge stack trace
+     *  cannot bloat the row, and keep the head where the cause usually is. */
+    const reasonOf = (err: unknown): string => {
+      const raw = err instanceof Error ? err.message : String(err);
+      const text = raw.trim() || "unknown error";
+      return text.length > 500 ? `${text.slice(0, 500)}…` : text;
     };
+
+    /**
+     * Record the failure AND schedule the next attempt, unless the call has
+     * used up its budget. The status stays FAILED_* either way — the call
+     * really is failed right now; `next_attempt_at` is what distinguishes
+     * "we'll try again shortly" from "this needs a person".
+     */
+    const fail = async (stage: string, err: unknown) => {
+      const {
+        rows: [row],
+      } = await client.query<{ pipeline_attempts: number }>(
+        `UPDATE calls
+            SET status = $2,
+                error_message = $3,
+                pipeline_attempts = pipeline_attempts + 1,
+                next_attempt_at = CASE
+                  WHEN pipeline_attempts + 1 < $4
+                  THEN now() + make_interval(secs => $5)
+                  ELSE NULL
+                END
+          WHERE id = $1
+        RETURNING pipeline_attempts`,
+        [
+          callId,
+          `FAILED_${stage}`,
+          reasonOf(err),
+          MAX_PIPELINE_ATTEMPTS,
+          // Computed from the attempt this failure becomes, read before the
+          // update inside the same statement — hence the +1 mirrored here.
+          retryBackoffSeconds(attempts + 1),
+        ],
+      );
+
+      const used = row?.pipeline_attempts ?? attempts + 1;
+      if (used < MAX_PIPELINE_ATTEMPTS) {
+        console.error(
+          `call ${callId} failed at ${stage} (attempt ${used}/${MAX_PIPELINE_ATTEMPTS}), ` +
+            `retrying in ${retryBackoffSeconds(used)}s:`,
+          err,
+        );
+      } else {
+        console.error(
+          `call ${callId} failed at ${stage} and gave up after ${used} attempt(s):`,
+          err,
+        );
+      }
+    };
+
+    /**
+     * Transcription switched off for this instance (0014).
+     *
+     * Checked before the transcode advance so the call settles immediately
+     * rather than walking the stages. Everything the console needs — the call
+     * row, the number, the duration, the uploaded audio — already landed at
+     * admission, so the customer's call log stays complete; only the paid
+     * stages are skipped.
+     *
+     * Lead projection and CRM dispatch are skipped too. Both derive from the
+     * analysis that did not run, so they would at best deliver an empty record
+     * to the customer's real CRM — an outbound side effect nobody asked for and
+     * which cannot be recalled.
+     */
+    const {
+      rows: [orgRow],
+    } = await client.query<{ transcription_enabled: boolean }>(
+      "SELECT transcription_enabled FROM organizations WHERE id = $1",
+      [orgId],
+    );
+    if (orgRow && orgRow.transcription_enabled === false) {
+      if (await advance("UPLOADED", "TRANSCRIPTION_OFF")) {
+        await client.query(
+          "UPDATE calls SET error_message = NULL, next_attempt_at = NULL, pipeline_attempts = 0 WHERE id = $1",
+          [callId],
+        );
+        console.log(`call ${callId}: transcription disabled for this instance — stored, not transcribed`);
+      }
+      return;
+    }
 
     // ── transcode ────────────────────────────────────────────────────────
     // TODO (checklist §2.3): ffmpeg → 16 kHz mono Opus + device-envelope
@@ -50,40 +164,65 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
       return;
     }
 
+    // A retry starts clean: leaving the previous reason attached would make a
+    // call that later completes still read as broken in the drawer. The pending
+    // retry is cleared too — this run IS that retry, and leaving the timestamp
+    // set would let the sweeper claim the call again while it is mid-flight.
+    await client.query(
+      "UPDATE calls SET error_message = NULL, next_attempt_at = NULL WHERE id = $1",
+      [callId],
+    );
+
     // ── asr (Gemini) ─────────────────────────────────────────────────────
     if (!(await advance("TRANSCODING", "TRANSCRIBING"))) return;
-    try {
-      const {
-        rows: [rec],
-      } = await client.query("SELECT s3_key FROM recordings WHERE call_id = $1", [callId]);
-      const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: rec.s3_key }));
-      const audio = Buffer.from(await object.Body!.transformToByteArray());
 
-      const result = await transcribe(audio, "audio/mp4");
-      // Reprocess re-runs this stage; replace any prior transcript so a call keeps
-      // exactly one (otherwise the drawer can show a stale duplicate).
-      await client.query("DELETE FROM transcripts WHERE call_id = $1", [callId]);
-      await client.query(
-        `INSERT INTO transcripts (org_id, call_id, language, engine, text, segments, diarized)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          orgId,
-          callId,
-          result.language,
-          result.engine,
-          result.text,
-          JSON.stringify(result.segments),
-          result.diarized,
-        ],
+    // A duration of 0 means the device never reported one, not that the call
+    // was empty — those still go through ASR rather than being dropped on a
+    // missing field.
+    const {
+      rows: [durRow],
+    } = await client.query("SELECT duration_s FROM calls WHERE id = $1", [callId]);
+    const durationS = Number(durRow?.duration_s ?? 0);
+    const tooShort = durationS > 0 && durationS < MIN_TRANSCRIBE_SECONDS;
+
+    if (tooShort) {
+      console.log(
+        `call ${callId}: ${durationS}s is under MIN_TRANSCRIBE_SECONDS=${MIN_TRANSCRIBE_SECONDS} — skipping ASR + analyze`,
       );
-      await client.query(
-        `INSERT INTO usage_events (org_id, kind, quantity, unit, ref_id)
-         VALUES ($1, 'asr_seconds', (SELECT duration_s FROM calls WHERE id = $2), 'seconds', $2)`,
-        [orgId, callId],
-      );
-    } catch (err) {
-      await fail("ASR", err);
-      return;
+    } else {
+      try {
+        const {
+          rows: [rec],
+        } = await client.query("SELECT s3_key FROM recordings WHERE call_id = $1", [callId]);
+        const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: rec.s3_key }));
+        const audio = Buffer.from(await object.Body!.transformToByteArray());
+
+        const result = await transcribe(audio, "audio/mp4");
+        // Reprocess re-runs this stage; replace any prior transcript so a call keeps
+        // exactly one (otherwise the drawer can show a stale duplicate).
+        await client.query("DELETE FROM transcripts WHERE call_id = $1", [callId]);
+        await client.query(
+          `INSERT INTO transcripts (org_id, call_id, language, engine, text, segments, diarized)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            orgId,
+            callId,
+            result.language,
+            result.engine,
+            result.text,
+            JSON.stringify(result.segments),
+            result.diarized,
+          ],
+        );
+        await client.query(
+          `INSERT INTO usage_events (org_id, kind, quantity, unit, ref_id)
+           VALUES ($1, 'asr_seconds', (SELECT duration_s FROM calls WHERE id = $2), 'seconds', $2)`,
+          [orgId, callId],
+        );
+      } catch (err) {
+        await fail("ASR", err);
+        return;
+      }
     }
 
     // ── analyze ──────────────────────────────────────────────────────────
@@ -175,10 +314,13 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
          ORDER BY a.version DESC LIMIT 1`,
         [callId],
       );
-      if (agent) {
-        const {
-          rows: [transcript],
-        } = await client.query("SELECT text FROM transcripts WHERE call_id = $1", [callId]);
+      const {
+        rows: [transcript],
+      } = await client.query("SELECT text FROM transcripts WHERE call_id = $1", [callId]);
+      // No transcript means the call was gated as too short, or ASR genuinely
+      // heard nothing. Running the agent over that can only invent field
+      // values, and it is billed either way — so skip it.
+      if (agent && transcript?.text) {
         const schema = ExtractionSchema.parse(agent.field_schema);
         const result = await analyzeTranscript(agent.system_prompt, schema, transcript.text);
 
@@ -251,8 +393,13 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
     // populated even if the tenant has no CRM connected at all. Non-blocking
     // for the same reason as dispatch — a qualification bug must not strand
     // calls in SYNCING.
+    // Drives the only_qualified filter below. A projection that throws leaves
+    // this false, so a lead-only connector stays silent rather than sending a
+    // call whose qualification was never actually established.
+    let qualified = false;
     try {
       const lead = await upsertLead(client, orgId, callId);
+      qualified = lead.leadId !== null;
       console.log(
         lead.leadId
           ? `call ${callId}: lead ${lead.leadId} ${lead.reason}`
@@ -267,12 +414,19 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
     // drain to retry with backoff, so a CRM outage delays delivery rather than
     // losing it. Failures NEVER block completion (§6.2).
     try {
-      await enqueueDispatch(client, orgId, callId);
+      await enqueueDispatch(client, orgId, callId, qualified);
     } catch (err) {
       console.error(`call ${callId}: crm-dispatch error (non-blocking):`, err);
     }
 
     await advance("SYNCING", "COMPLETE");
+    // The call made it through, so its failure history stops counting: a future
+    // reprocess gets a full retry budget rather than inheriting attempts from a
+    // problem that has already been resolved.
+    await client.query(
+      "UPDATE calls SET pipeline_attempts = 0, next_attempt_at = NULL WHERE id = $1",
+      [callId],
+    );
     console.log(`call ${callId}: COMPLETE`);
   });
 }

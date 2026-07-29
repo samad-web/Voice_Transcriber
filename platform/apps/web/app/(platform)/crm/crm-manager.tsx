@@ -24,24 +24,55 @@ export function CrmManager({
   integrations,
   providers,
   sourcePaths,
-  defaultWorkspaceId,
+  workspaces,
+  orgId,
 }: {
   integrations: Integration[];
   providers: CrmProviderSpec[];
   sourcePaths: Array<{ path: string; label: string }>;
-  defaultWorkspaceId: string;
+  /**
+   * Workspaces a connector may deliver into. A tenant with more than one
+   * instance has more than one workspace, and defaulting to the first silently
+   * routed leads to whichever instance happened to sort first.
+   */
+  workspaces: Array<{ id: string; name: string }>;
+  /** The tenant being configured — supplied by every caller. */
+  orgId?: string;
 }) {
   const router = useRouter();
   const [showCustom, setShowCustom] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
 
   const byId = new Map(providers.map((p) => [p.id, p]));
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
       <div className="space-y-6">
+        {workspaces.length > 1 ? (
+          <Card className="space-y-2">
+            <MonoLabel>Deliver leads into</MonoLabel>
+            <select
+              className={selectClass}
+              value={workspaceId}
+              onChange={(e) => setWorkspaceId(e.target.value)}
+            >
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-neutral-500 font-sans">
+              This tenant has several workspaces. New connectors are created against the one
+              selected here.
+            </p>
+          </Card>
+        ) : null}
+
         <ProviderPicker
           providers={providers}
-          workspaceId={defaultWorkspaceId}
+          workspaceId={workspaceId}
+          orgId={orgId}
           onConnected={() => router.refresh()}
         />
 
@@ -60,7 +91,8 @@ export function CrmManager({
           </p>
           {showCustom ? (
             <CustomWebhookForm
-              workspaceId={defaultWorkspaceId}
+              workspaceId={workspaceId}
+              orgId={orgId}
               onDone={() => {
                 setShowCustom(false);
                 router.refresh();
@@ -96,6 +128,7 @@ export function CrmManager({
               integration={integration}
               provider={byId.get(integration.provider)}
               sourcePaths={sourcePaths}
+              orgId={orgId}
             />
           ))
         )}
@@ -115,9 +148,11 @@ const AUTH_TYPES = [
 
 function CustomWebhookForm({
   workspaceId,
+  orgId,
   onDone,
 }: {
   workspaceId: string;
+  orgId?: string;
   onDone: () => void;
 }) {
   const [label, setLabel] = useState("");
@@ -126,6 +161,7 @@ function CustomWebhookForm({
   const [authHeader, setAuthHeader] = useState("X-API-Key");
   const [authPrefix, setAuthPrefix] = useState("");
   const [secret, setSecret] = useState("");
+  const [onlyQualified, setOnlyQualified] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -137,12 +173,14 @@ function CustomWebhookForm({
       setError(null);
       const res = await connectCustomAction({
         workspaceId,
+        orgId,
         label: label.trim() || undefined,
         webhookUrl: url.trim(),
         authType,
         authHeader: authHeader.trim() || undefined,
         authPrefix: authPrefix || undefined,
         authSecret: secret.trim() || undefined,
+        onlyQualified,
       });
       if (res.error) setError(res.error);
       else onDone();
@@ -217,6 +255,22 @@ function CustomWebhookForm({
           onChange={(e) => setSecret(e.target.value)}
         />
       ) : null}
+
+      <label className="flex items-start gap-2.5 cursor-pointer border-2 border-neutral-200 p-3">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-black shrink-0"
+          checked={onlyQualified}
+          onChange={(e) => setOnlyQualified(e.target.checked)}
+        />
+        <span className="text-xs font-sans text-neutral-700 leading-relaxed">
+          <span className="font-display font-bold uppercase text-black block text-xs">
+            Qualified leads only
+          </span>
+          Send only calls the AI agent qualified as a lead. Leave off to receive every completed
+          call, including no-answers and wrong numbers.
+        </span>
+      </label>
 
       {error ? (
         <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">

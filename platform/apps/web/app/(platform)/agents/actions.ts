@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { adminHeaders, API_URL, DEV_WORKSPACE_ID } from "@/lib/server-api";
+import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
+
+/** Omitted orgId keeps the dev-org default; the page passes the selected tenant. */
+const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
 
 export interface AgentFieldInput {
   key: string;
@@ -16,14 +19,21 @@ export async function createAgentAction(input: {
   systemPrompt: string;
   fields: AgentFieldInput[];
   activate: boolean;
+  /**
+   * Workspace the agent belongs to. Previously hardcoded to the environment's
+   * DEV_WORKSPACE_ID, so an agent authored while viewing customer B was
+   * written into customer A's workspace — where it then ran against A's calls.
+   */
+  workspaceId: string;
+  orgId?: string;
 }): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/agents`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: headersFor(input.orgId),
       cache: "no-store",
       body: JSON.stringify({
-        workspaceId: DEV_WORKSPACE_ID,
+        workspaceId: input.workspaceId,
         name: input.name,
         systemPrompt: input.systemPrompt,
         fieldSchema: { fields: input.fields },
@@ -57,11 +67,12 @@ export async function testAgentAction(input: {
   agentId: string;
   callId: string;
   version?: number;
+  orgId?: string;
 }): Promise<AgentTestResult> {
   try {
     const res = await fetch(`${API_URL}/v1/agents/${input.agentId}/test`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: headersFor(input.orgId),
       cache: "no-store",
       body: JSON.stringify({
         callId: input.callId,
@@ -81,11 +92,12 @@ export async function testAgentAction(input: {
 export async function activateAgentAction(input: {
   agentId: string;
   version: number;
+  orgId?: string;
 }): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${API_URL}/v1/agents/${input.agentId}/activate`, {
       method: "POST",
-      headers: adminHeaders,
+      headers: headersFor(input.orgId),
       cache: "no-store",
       body: JSON.stringify({ version: input.version }),
     });

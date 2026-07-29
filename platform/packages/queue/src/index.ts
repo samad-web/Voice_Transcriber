@@ -55,6 +55,26 @@ export async function consumePipeline(
   });
 }
 
+/**
+ * Messages waiting in the pipeline queue, for the health panel. Uses a passive
+ * assert so a broker that is up but has never seen the queue reports 0 rather
+ * than creating it as a side effect of a health check. Returns null when the
+ * broker is unreachable — the caller renders that as "unknown", which is a
+ * different and more useful signal than a fake 0.
+ */
+export async function queueDepth(): Promise<number | null> {
+  try {
+    const ch = await getChannel();
+    const info = await ch.checkQueue(PIPELINE_QUEUE);
+    return info.messageCount;
+  } catch {
+    // A failed checkQueue kills the channel; drop it so the next call redials
+    // instead of reusing a broken one.
+    channel = undefined;
+    return null;
+  }
+}
+
 export async function closeQueue(): Promise<void> {
   await channel?.close().catch(() => undefined);
   await connection?.close().catch(() => undefined);
