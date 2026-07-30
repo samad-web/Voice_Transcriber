@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -18,7 +17,7 @@ import { DeviceConfig, DeviceRegisterRequest } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
 import { issueNonce, verifyNonce } from "../../common/device-nonce";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
@@ -231,24 +230,24 @@ export class DevicesController {
 
   /** Remote logout — device keeps its data but can no longer record or auth. */
   @Post(":id/logout")
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard)
   async logout(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    return this.setDeviceStatus(orgIdFromHeader(orgHeader), id, "logged_out");
+    return this.setDeviceStatus(orgId, id, "logged_out");
   }
 
   /** Remote wipe — device must delete local recordings + keys on next contact. */
   @Post(":id/wipe")
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard)
   async wipe(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
     // TODO (checklist §3.5): push FCM message so the device acts immediately
     // instead of on next config poll.
-    return this.setDeviceStatus(orgIdFromHeader(orgHeader), id, "wiped");
+    return this.setDeviceStatus(orgId, id, "wiped");
   }
 
   private setDeviceStatus(orgId: string, deviceId: string, status: "logged_out" | "wiped") {
@@ -269,9 +268,8 @@ export class DevicesController {
 
   /** Fleet listing for the web Devices page. */
   @Get()
-  @UseGuards(AdminKeyGuard)
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT id, instance_id, label, fingerprint, os_version, app_version,

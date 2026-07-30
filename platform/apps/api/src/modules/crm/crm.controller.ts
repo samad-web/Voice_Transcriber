@@ -4,7 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -24,7 +23,7 @@ import {
   renderTemplate,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { CrmTestService } from "./crm-test.service";
 
@@ -119,7 +118,7 @@ const SAFE_COLUMNS = `id, workspace_id, provider, label, target, endpoint, metho
  * adding an unlisted one is a POST to /custom.
  */
 @Controller("crm")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class CrmController {
   constructor(
     private readonly db: DbService,
@@ -138,8 +137,7 @@ export class CrmController {
 
   /** Connect a catalogue provider — the normal path. */
   @Post("integrations")
-  async connect(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async connect(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = ConnectProviderBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const cfg = parsed.data;
@@ -246,8 +244,7 @@ export class CrmController {
 
   /** Hand-specified connector for a CRM the catalogue doesn't cover. */
   @Post("integrations/custom")
-  async connectCustom(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async connectCustom(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CustomIntegrationBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const cfg = parsed.data;
@@ -302,8 +299,7 @@ export class CrmController {
   }
 
   @Get("integrations")
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT ${SAFE_COLUMNS},
@@ -327,11 +323,10 @@ export class CrmController {
    */
   @Patch("integrations/:id")
   async updateIntegration(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = UpdateIntegrationBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -394,10 +389,9 @@ export class CrmController {
 
   @Delete("integrations/:id")
   async remove(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       // Audit before the delete: the row the audit entry points at is about to
       // stop existing, and an unexplained gap is worse than a dangling id.
@@ -418,11 +412,10 @@ export class CrmController {
    */
   @Post("integrations/:id/test")
   async test(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const dryRun = z.object({ dryRun: z.boolean().default(false) }).safeParse(body ?? {});
     return this.tester.test(orgId, id, dryRun.success ? dryRun.data.dryRun : false);
   }
@@ -430,12 +423,11 @@ export class CrmController {
   /** Recent deliveries for one integration — the operator's debugging view. */
   @Get("integrations/:id/deliveries")
   async deliveries(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Query("status") status: string | undefined,
     @Query("limit") limit: string | undefined,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
     const filter = ["pending", "synced", "failed", "dead"].includes(status ?? "") ? status : null;
 
@@ -464,10 +456,9 @@ export class CrmController {
    */
   @Post("deliveries/:id/retry")
   async retry(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [row],
@@ -490,10 +481,9 @@ export class CrmController {
   /** Requeue every dead delivery for an integration — the "I fixed it" button. */
   @Post("integrations/:id/retry-dead")
   async retryDead(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const { rowCount } = await client.query(
         `UPDATE crm_sync_log

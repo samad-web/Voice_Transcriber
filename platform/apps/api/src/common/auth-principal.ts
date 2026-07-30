@@ -13,6 +13,11 @@ export interface Principal {
 
 export interface PrincipalRequest extends Request {
   principal?: Principal;
+  /**
+   * The tenant this request is scoped to, pinned by `TenantGuard` and read via
+   * `@OrgId()`. Unset on `@CrossTenant()` routes, which have no single org.
+   */
+  tenantOrgId?: string;
 }
 
 export const PERMISSIONS = ["recordings:listen", "recordings:export"] as const;

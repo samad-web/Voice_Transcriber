@@ -3,13 +3,12 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   Post,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const CreateWorkspaceBody = z.object({
@@ -18,13 +17,12 @@ const CreateWorkspaceBody = z.object({
 
 /** Workspaces (§2 tenancy): the org-scoped container calls + devices belong to. */
 @Controller("workspaces")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class WorkspacesController {
   constructor(private readonly db: DbService) {}
 
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT id, name, created_at FROM workspaces ORDER BY created_at DESC`,
@@ -34,8 +32,7 @@ export class WorkspacesController {
   }
 
   @Post()
-  async create(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateWorkspaceBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { name } = parsed.data;

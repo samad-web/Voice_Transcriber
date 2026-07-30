@@ -4,7 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -14,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 // Platform_admin is reserved for internal staff — tenant self-service is limited
@@ -39,13 +38,12 @@ const UpdateMemberBody = z.object({
 /** Members (§3.4): users + their org/workspace membership, roles, and the two
  * orthogonal privacy-weight permissions (recordings_listen / recordings_export). */
 @Controller("members")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class MembersController {
   constructor(private readonly db: DbService) {}
 
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       // memberships is RLS-scoped to the org; users is a global platform table.
       const { rows } = await client.query(
@@ -62,8 +60,7 @@ export class MembersController {
   }
 
   @Post()
-  async create(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateMemberBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { email, name, role, workspaceId, recordingsListen, recordingsExport } = parsed.data;
@@ -117,11 +114,10 @@ export class MembersController {
 
   @Patch(":userId")
   async update(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = UpdateMemberBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -151,10 +147,9 @@ export class MembersController {
 
   @Delete(":userId")
   async remove(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       // RLS scopes this DELETE to the current org; the global user row is left intact.
       const res = await client.query("DELETE FROM memberships WHERE user_id = $1", [userId]);

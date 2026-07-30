@@ -66,6 +66,75 @@ export async function setTranscriptionEnabledAction(input: {
   }
 }
 
+/**
+ * Rewind a backlog of terminal calls for one instance.
+ *
+ * Used when transcription is switched back on: the calls that arrived while it
+ * was off are sitting in TRANSCRIPTION_OFF with their audio intact, and this is
+ * what picks them up. `sinceDays: null` means the entire history, which is why
+ * the caller is made to choose rather than defaulting to it — a dormant instance
+ * can hold months of stored audio and transcribing it costs real money.
+ */
+export async function reprocessBacklogAction(input: {
+  orgId: string;
+  statuses: string[];
+  sinceDays: number | null;
+}): Promise<{ requeued?: number; error?: string }> {
+  const { orgId, ...rest } = input;
+  try {
+    const res = await fetch(`${API_URL}/v1/calls/reprocess-backlog`, {
+      method: "POST",
+      headers: orgHeaders(orgId),
+      cache: "no-store",
+      body: JSON.stringify(rest),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = (await res.json()) as { requeued?: number };
+    revalidatePath(`/instances/${orgId}`);
+    revalidatePath(`/instances/${orgId}/calls`);
+    return { requeued: data.requeued ?? 0 };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Language, output mode and vocabulary for one instance.
+ *
+ * Rides the same org policy endpoint as the transcription toggle, for the same
+ * reasons: audited, and it bumps device config versions with every other policy
+ * edit. `null` for language or mode clears the setting back to the deployment
+ * default — distinct from omitting the field, which leaves it untouched.
+ */
+export async function setAsrSettingsAction(input: {
+  orgId: string;
+  asrLanguage?: string | null;
+  asrMode?: string | null;
+  vocabulary?: string[];
+}): Promise<{ error?: string }> {
+  const { orgId, ...rest } = input;
+  try {
+    const res = await fetch(`${API_URL}/v1/org/policy`, {
+      method: "PATCH",
+      headers: orgHeaders(orgId),
+      cache: "no-store",
+      body: JSON.stringify(rest),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    revalidatePath(`/instances/${orgId}`);
+    revalidatePath(`/instances/${orgId}/calls`);
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 async function deviceAction(
   orgId: string,
   deviceId: string,

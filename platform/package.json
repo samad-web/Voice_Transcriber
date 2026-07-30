@@ -6,6 +6,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "tenancy:check": "node scripts/check-tenancy.js",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "db:migrate": "pnpm --filter @aura/db migrate",

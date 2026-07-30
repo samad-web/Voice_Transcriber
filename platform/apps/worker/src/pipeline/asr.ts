@@ -40,7 +40,9 @@ export async function transcribe(audio: Buffer, mimeType: string): Promise<AsrRe
 }
 
 async function geminiTranscribe(audio: Buffer, mimeType: string): Promise<AsrResult> {
-  const model = process.env.GEMINI_ASR_MODEL ?? "gemini-2.5-flash";
+  // NOT gemini-2.5-flash: Google retired it for new users and the API answers
+  // `404 … no longer available`, which is not retryable and fails every call.
+  const model = process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash";
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
   const response = await withGeminiRetry(
     () =>

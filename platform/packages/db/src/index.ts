@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { Pool, type PoolClient } from "pg";
 
+/**
+ * Re-exported so callers can type a helper that takes the client
+ * `withOrgContext` hands them, without depending on `pg` directly — the apps
+ * talk to Postgres only through this package.
+ */
+export type { PoolClient } from "pg";
+
 export * from "./secrets";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);

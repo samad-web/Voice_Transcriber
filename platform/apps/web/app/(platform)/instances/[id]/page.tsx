@@ -15,6 +15,7 @@ import { ErasureTool } from "./erasure-tool";
 import { KeyGenerator } from "./key-generator";
 import { OwnerAccounts, type OwnerRow } from "./owner-accounts";
 import { PolicyForm } from "./policy-form";
+import { AsrSettings } from "./asr-settings";
 import { TranscriptionToggle } from "./transcription-toggle";
 
 interface Org {
@@ -27,6 +28,9 @@ interface Org {
   region: string;
   store_full_number: boolean;
   transcription_enabled: boolean;
+  asr_language: string | null;
+  asr_mode: string | null;
+  vocabulary: string[] | null;
 }
 
 interface InstanceRow {
@@ -215,6 +219,12 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
             orgId={orgId}
             owners={ownerData?.owners ?? []}
             authConfigured={ownerData?.authConfigured ?? false}
+          />
+          <AsrSettings
+            orgId={orgId}
+            asrLanguage={org.asr_language ?? null}
+            asrMode={org.asr_mode ?? null}
+            vocabulary={org.vocabulary ?? []}
           />
           <TranscriptionToggle
             orgId={orgId}

@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Headers,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -10,7 +9,7 @@ import { createHash, createHmac } from "node:crypto";
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const ErasureBody = z.object({
@@ -36,13 +35,12 @@ const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
  * with the HubSpot connector). Per-subject (phone-hash) fan-out lands later.
  */
 @Controller("erasure-requests")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class ErasureController {
   constructor(private readonly db: DbService) {}
 
   @Post()
-  async erase(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async erase(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = ErasureBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { callId } = parsed.data;

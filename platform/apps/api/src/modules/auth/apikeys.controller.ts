@@ -4,7 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -14,7 +13,7 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const CreateApiKeyBody = z.object({
@@ -27,13 +26,12 @@ const CreateApiKeyBody = z.object({
  * so the UI can identify keys without ever holding the secret again.
  */
 @Controller("apikeys")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class ApiKeysController {
   constructor(private readonly db: DbService) {}
 
   @Post()
-  async create(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateApiKeyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { name } = parsed.data;
@@ -62,8 +60,7 @@ export class ApiKeysController {
   }
 
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT id, name, prefix, last_used_at, created_at
@@ -75,10 +72,9 @@ export class ApiKeysController {
 
   @Delete(":id")
   async revoke(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const res = await client.query("DELETE FROM api_keys WHERE id = $1", [id]);
       if ((res.rowCount ?? 0) === 0) throw new NotFoundException("api key not found");

@@ -1,18 +1,17 @@
-import { Controller, Get, Headers, UseGuards } from "@nestjs/common";
+import { Controller, Get, UseGuards } from "@nestjs/common";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /** Usage metering + billing surface (§2.7 / §10). usage_events is the durable
  * ledger; invoices are stubbed until metering feeds a billing provider. */
 @Controller()
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class BillingController {
   constructor(private readonly db: DbService) {}
 
   @Get("usage")
-  async usage(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async usage(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       // `end` is a reserved word — alias to period_end and reshape in JS.
       const {

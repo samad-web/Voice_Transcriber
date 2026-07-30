@@ -5,7 +5,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   NotFoundException,
   Param,
   Post,
@@ -17,7 +16,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const s3 = new S3Client({
@@ -56,13 +55,12 @@ const KEY_COLUMNS = `id, expires_at, max_uses, use_count, created_at,
  * hash is stored. The web activation page renders it as copy-once + QR.
  */
 @Controller("instances")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class InstancesController {
   constructor(private readonly db: DbService) {}
 
   @Post()
-  async create(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateInstanceBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { workspaceId, name, tokenTtlMinutes, tokenMaxUses } = parsed.data;
@@ -113,8 +111,7 @@ export class InstancesController {
   }
 
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT i.id, i.workspace_id, i.name, i.config_version, i.created_at,
@@ -129,10 +126,9 @@ export class InstancesController {
   /** Everything the instance detail page needs in one round trip. */
   @Get(":id")
   async detail(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id") instanceId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [instance],
@@ -177,11 +173,10 @@ export class InstancesController {
    */
   @Delete(":id")
   async remove(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id") instanceId: string,
     @Query("purgeCalls") purgeCallsRaw?: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const purgeCalls = purgeCallsRaw === "true";
 
     return this.db.withOrg(orgId, async (client) => {
@@ -274,11 +269,10 @@ export class InstancesController {
    */
   @Post(":id/keys")
   async mintKey(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id") instanceId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = MintKeyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { tokenTtlMinutes, tokenMaxUses } = parsed.data;

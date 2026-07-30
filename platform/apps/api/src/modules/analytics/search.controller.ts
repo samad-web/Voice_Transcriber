@@ -2,13 +2,12 @@ import {
   BadRequestException,
   Controller,
   Get,
-  Headers,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
@@ -17,13 +16,12 @@ import { DbService } from "../../db/db.service";
  * matches scoped to the caller's org via the join to `calls`.
  */
 @Controller("search")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class SearchController {
   constructor(private readonly db: DbService) {}
 
   @Get()
-  async search(@Headers("x-org-id") orgHeader: string | undefined, @Query("q") q: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async search(@OrgId() orgId: string, @Query("q") q: unknown) {
     const parsed = z.string().min(1).safeParse(q);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const query = parsed.data;

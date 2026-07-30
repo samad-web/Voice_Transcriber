@@ -5,7 +5,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -14,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { SupabaseAdminService } from "./supabase-admin.service";
 
@@ -38,11 +37,12 @@ const OWNER_ROLE = "org_admin";
  * column the identity model always intended to carry an external subject — the
  * OIDC swap later replaces who mints the subject, not this wiring.
  *
- * Org-scoped by x-org-id like every other tenant endpoint, so the operator
- * console manages a customer's owners from that customer's instance page.
+ * Tenant-scoped by `TenantGuard` like every other tenant endpoint, so the
+ * operator console manages a customer's owners from that customer's instance
+ * page.
  */
 @Controller("owners")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class OwnersController {
   constructor(
     private readonly db: DbService,
@@ -50,8 +50,7 @@ export class OwnersController {
   ) {}
 
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT u.id AS "userId", u.email, u.name, u.status,
@@ -79,8 +78,7 @@ export class OwnersController {
    * auth user is deleted again rather than left orphaned with a live password.
    */
   @Post()
-  async create(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateOwnerBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { email, name, recordingsListen, recordingsExport } = parsed.data;
@@ -195,10 +193,9 @@ export class OwnersController {
   /** Issue a fresh password. Shown once, like the original. */
   @Post(":userId/password")
   async resetPassword(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const subject = await this.db.withOrg(orgId, async (client) => {
       const {
         rows: [row],
@@ -238,10 +235,9 @@ export class OwnersController {
    */
   @Delete(":userId")
   async revoke(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
 
     const outcome = await this.db.withOrg(orgId, async (client) => {
       const {

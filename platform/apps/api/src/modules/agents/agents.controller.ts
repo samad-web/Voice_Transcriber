@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -14,7 +13,7 @@ import { z } from "zod";
 import { ExtractionSchema } from "@aura/shared";
 import { analyzeTranscript } from "@aura/llm";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const AgentBody = z.object({
@@ -36,13 +35,12 @@ const TestBody = z.object({ callId: z.string().uuid(), version: z.number().int()
  * active agent per workspace. TODO: instance.default_agent_id routing.
  */
 @Controller("agents")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class AgentsController {
   constructor(private readonly db: DbService) {}
 
   @Post()
-  async create(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = AgentBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const a = parsed.data;
@@ -77,11 +75,10 @@ export class AgentsController {
   /** Editing = new immutable version. */
   @Post(":id/versions")
   async newVersion(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) agentId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = NewVersionBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const a = parsed.data;
@@ -130,11 +127,10 @@ export class AgentsController {
 
   @Post(":id/activate")
   async activate(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) agentId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = ActivateBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
@@ -166,8 +162,7 @@ export class AgentsController {
   }
 
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT id, workspace_id, name, version, field_schema, labels, is_active, created_at
@@ -184,11 +179,10 @@ export class AgentsController {
    */
   @Post(":id/test")
   async test(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) agentId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = TestBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { callId, version } = parsed.data;

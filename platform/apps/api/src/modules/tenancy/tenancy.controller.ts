@@ -3,14 +3,22 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   Patch,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+
+/** Sarvam's BCP-47 set, plus the sentinel that forces auto-detect. Mirrors the
+ *  CHECK constraint in migration 0016 — both are generated from the same list
+ *  in the sense that they must be changed together. */
+const ASR_LANGUAGES = [
+  "unknown", "en-IN", "hi-IN", "bn-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN",
+  "pa-IN", "ta-IN", "te-IN", "gu-IN", "as-IN", "ur-IN", "ne-IN", "kok-IN",
+  "ks-IN", "sd-IN", "sa-IN", "sat-IN", "mni-IN", "brx-IN", "mai-IN", "doi-IN",
+] as const;
 
 const PolicyBody = z.object({
   consentPolicy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]).optional(),
@@ -28,23 +36,38 @@ const PolicyBody = z.object({
    * Distinct from suspending the org, which refuses the upload entirely.
    */
   transcriptionEnabled: z.boolean().optional(),
+  /**
+   * What this instance's agents actually speak (0016). Auto-detect is only
+   * right when we genuinely don't know — it has mislabelled a Tamil call as
+   * Spanish, losing the whole transcript. `unknown` forces auto-detect back on.
+   */
+  asrLanguage: z.enum(ASR_LANGUAGES).nullable().optional(),
+  /**
+   * Saaras output format. `codemix` is the one that keeps an English brand name
+   * out of Indic script — "RD Interlock" instead of "ஆர்டி இன்டர்லாக்".
+   */
+  asrMode: z.enum(["transcribe", "translate", "verbatim", "translit", "codemix"]).nullable().optional(),
+  /**
+   * Proper nouns and domain terms in their correct spelling. Handed to the
+   * analyse stages, not to ASR — the batch speech API takes no hotword list.
+   */
+  vocabulary: z.array(z.string().trim().min(1).max(120)).max(200).optional(),
 });
 
 /** Org-level compliance policy (§2.6): consent regime + retention window. */
 @Controller("org")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class TenancyController {
   constructor(private readonly db: DbService) {}
 
   @Get()
-  async get(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async get(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [org],
       } = await client.query(
         `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
-                store_full_number, transcription_enabled
+                store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary
            FROM organizations WHERE id = $1`,
         [orgId],
       );
@@ -53,8 +76,7 @@ export class TenancyController {
   }
 
   @Patch("policy")
-  async updatePolicy(@Headers("x-org-id") orgHeader: string | undefined, @Body() body: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async updatePolicy(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = PolicyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -63,15 +85,22 @@ export class TenancyController {
       const {
         rows: [org],
       } = await client.query(
+        // asr_language and asr_mode use CASE, not COALESCE: NULL is a MEANINGFUL
+        // value for them ("follow the deployment default"), so COALESCE would
+        // make clearing a setting impossible — the write would silently keep
+        // the old one. The boolean says whether the field was sent at all.
         `UPDATE organizations SET
            consent_policy = COALESCE($2, consent_policy),
            on_consent_failure = COALESCE($3, on_consent_failure),
            retention_days = COALESCE($4, retention_days),
            store_full_number = COALESCE($5, store_full_number),
-           transcription_enabled = COALESCE($6, transcription_enabled)
+           transcription_enabled = COALESCE($6, transcription_enabled),
+           asr_language = CASE WHEN $7::boolean THEN $8::text ELSE asr_language END,
+           asr_mode = CASE WHEN $9::boolean THEN $10::text ELSE asr_mode END,
+           vocabulary = COALESCE($11::text[], vocabulary)
          WHERE id = $1
          RETURNING consent_policy, on_consent_failure, retention_days, store_full_number,
-                   transcription_enabled`,
+                   transcription_enabled, asr_language, asr_mode, vocabulary`,
         [
           orgId,
           p.consentPolicy ?? null,
@@ -79,6 +108,11 @@ export class TenancyController {
           p.retentionDays ?? null,
           p.storeFullNumber ?? null,
           p.transcriptionEnabled ?? null,
+          p.asrLanguage !== undefined,
+          p.asrLanguage ?? null,
+          p.asrMode !== undefined,
+          p.asrMode ?? null,
+          p.vocabulary ?? null,
         ],
       );
       // Policy changes must reach devices: bump every instance's config version.
@@ -97,8 +131,7 @@ export class TenancyController {
 
   /** Immutable audit ledger (§2.6) for the web Compliance page. */
   @Get("audit")
-  async audit(@Headers("x-org-id") orgHeader: string | undefined) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async audit(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT id, actor_type, actor_id, action, target_type, target_id, ip, meta, created_at

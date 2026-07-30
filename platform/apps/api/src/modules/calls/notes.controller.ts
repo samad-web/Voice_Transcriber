@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -12,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const CreateNoteBody = z.object({
@@ -22,16 +21,15 @@ const CreateNoteBody = z.object({
 /** Reviewer notes attached to a call (§4 Call Explorer). Separate controller so
  * the device-facing CallsController stays focused; shares the /v1/calls prefix. */
 @Controller("calls")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class NotesController {
   constructor(private readonly db: DbService) {}
 
   @Get(":id/notes")
   async list(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT id, body, author, created_at
@@ -44,11 +42,10 @@ export class NotesController {
 
   @Post(":id/notes")
   async create(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = CreateNoteBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 

@@ -327,13 +327,34 @@ service.
 
 ## 6. ASR / analyze provider
 
-**Gemini** is the only provider, in both `apps/worker/src/pipeline/asr.ts` and
-`packages/llm/src/index.ts`. Precedence is `ASR_STUB`/`ANALYZE_STUB` → **Gemini**; set
-`GEMINI_API_KEY` and both stages route there.
+Precedence is `ASR_STUB`/`ANALYZE_STUB` → **Sarvam** → **Gemini**. Set `SARVAM_API_KEY` and both
+stages route there; leave it unset and both fall back to Gemini. `ANALYZE_PROVIDER`
+(`auto`|`gemini`|`sarvam`) decouples the two, so analyze can sit on Gemini while ASR stays on
+Sarvam — useful because they have very different failure modes.
 
-ASR transcribes and diarizes in one call, so its segments carry speaker labels and timestamps.
-Analyze then *labels* those segments (role + intent) rather than re-splitting the text — it never
-overwrites what ASR produced.
+**Sarvam (Saaras v3)** is the default for Indic call audio: measurably better on Tamil, and the
+only option that gives real acoustic diarization. It runs on the **batch** API, because
+diarization and audio over 30s are batch-only. That makes ASR asynchronous — `processCall` submits
+the job, records `calls.asr_job_id` and stops at `TRANSCRIBING`; `startAsrPoller` finishes the
+call when the job lands. **Requires migration 0015.** Per-instance language/mode/vocabulary
+requires **0016**.
+
+Set the instance's `asr_mode` to `codemix` for any customer whose calls mix English into an Indic
+language: the default `transcribe` mode transliterates English, turning "RD Interlock" into
+"ஆர்டி இன்டர்லாக்" — unusable as a CRM value.
+
+**sarvam-105b** (the only chat model left; 30b is deprecated) is a *reasoning* model. Reasoning
+bills as output and counts against `max_tokens`, and on the **starter** tier the ceiling is 4096 —
+enough that roughly one request in five overruns it and returns nothing. `SARVAM_LABEL_CHUNK`,
+`SARVAM_REASONING_EFFORT` and `SARVAM_MAX_ATTEMPTS` exist purely to survive that; raise the first
+and drop the last after a plan upgrade.
+
+**Gemini** transcribes and diarizes in one call, inline, with no migration requirement. Never
+point `GEMINI_*_MODEL` at a `-latest` alias or at `gemini-2.5-flash`: the alias moves underneath a
+running deployment, and 2.5-flash is retired for new users and answers `404`.
+
+Either way, analyze *labels* ASR's segments (role + intent) rather than re-splitting the text — it
+never overwrites what ASR produced.
 
 `ASR_STUB` / `ANALYZE_STUB` must be `0`. They emit clearly-fake transcripts, which is useful in
 tests and disastrous in production.

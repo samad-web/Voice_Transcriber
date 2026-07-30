@@ -4,7 +4,6 @@ import {
   Controller,
   ConflictException,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -21,7 +20,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { PermissionsGuard, RequirePermission } from "../../common/permissions.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 
@@ -38,6 +37,31 @@ const CompleteCallBody = z.object({
  * The buckets matter because "in pipeline" spans five states — matching one
  * of them exactly would hide the rest and read as "no stuck calls".
  */
+/**
+ * Bulk rewind. Only terminal states are accepted — an in-flight call must never
+ * be rewound out from under the worker, and allowing arbitrary statuses here
+ * would make that a one-typo mistake.
+ */
+const ReprocessBacklogBody = z.object({
+  statuses: z
+    .array(
+      z.enum([
+        "TRANSCRIPTION_OFF",
+        "COMPLETE",
+        "FAILED_TRANSCODE",
+        "FAILED_ASR",
+        "FAILED_ANALYZE",
+        "FAILED_CRM",
+      ]),
+    )
+    .min(1),
+  /** How far back to reach. Omitted or null means the whole history — which for
+   *  a dormant instance can be a lot of paid audio, so the console always asks. */
+  sinceDays: z.number().int().min(1).max(3650).nullable().optional(),
+  /** Backstop against a single click sweeping thousands of calls into the queue. */
+  limit: z.number().int().min(1).max(1000).default(500),
+});
+
 const ListCallsQuery = z.object({
   instanceId: z.string().uuid().optional(),
   deviceId: z.string().uuid().optional(),
@@ -210,9 +234,8 @@ export class CallsController {
    * instance join is part of the contract, not an optimisation.
    */
   @Get()
-  @UseGuards(AdminKeyGuard)
-  async list(@Headers("x-org-id") orgHeader: string | undefined, @Query() query: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListCallsQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { instanceId, deviceId, status, direction, limit, offset } = parsed.data;
@@ -271,12 +294,11 @@ export class CallsController {
 
   /** Detail: call + transcript + AI output for the drawer. */
   @Get(":id")
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard)
   async detail(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [call],
@@ -311,13 +333,13 @@ export class CallsController {
    * recording is itself a privacy event. 404 when no audio exists.
    */
   @Get(":id/audio")
-  @UseGuards(AdminKeyGuard, PermissionsGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, PermissionsGuard)
   @RequirePermission("recordings:listen")
   async audio(
     @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
   ) {
-    const orgId = orgIdFromHeader(req.headers["x-org-id"]);
     const actorId = req.principal?.userId ?? "unknown";
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -343,12 +365,11 @@ export class CallsController {
    * an in-flight call is never disturbed; the queue is just the wake-up.
    */
   @Post(":id/reprocess")
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard)
   async reprocess(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const result = await this.db.withOrg(orgId, async (client) => {
       const {
         rows: [call],
@@ -388,5 +409,62 @@ export class CallsController {
     // Source of truth is the DB flip above; the queue is only a wake-up.
     await publishPipeline({ callId, orgId });
     return result;
+  }
+
+  /**
+   * Rewind a whole backlog in one request.
+   *
+   * Exists because the single-call endpoint is the wrong shape for the two jobs
+   * operators actually have: "transcription was off for a week, now catch up"
+   * and "a provider outage failed 40 calls, run them again". Doing that from the
+   * console meant one HTTP round trip per call, which is slow, half-finishes
+   * when the tab closes, and gives no total to sanity-check first.
+   *
+   * `sinceDays` is the guard rail. Switching transcription back on for a
+   * long-dormant instance can otherwise sweep up months of stored audio and
+   * spend real money on it — so the console asks how far back to go and the
+   * answer lands here, rather than "all" being the only thing the API can do.
+   *
+   * Claiming is the same optimistic UPDATE as the single-call path, so a call
+   * already in flight is never disturbed and two operators pressing this at once
+   * cannot enqueue the same call twice.
+   */
+  @Post("reprocess-backlog")
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  async reprocessBacklog(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = ReprocessBacklogBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { statuses, sinceDays, limit } = parsed.data;
+
+    const claimed = await this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `UPDATE calls
+            SET status = 'UPLOADED', pipeline_attempts = 0, next_attempt_at = NULL
+          WHERE id IN (
+            SELECT id FROM calls
+             WHERE org_id = $1
+               AND status = ANY($2::text[])
+               AND ($3::int IS NULL OR started_at >= now() - make_interval(days => $3))
+             ORDER BY started_at DESC
+             LIMIT $4
+          )
+        RETURNING id`,
+        [orgId, statuses, sinceDays ?? null, limit],
+      );
+      if (rows.length > 0) {
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+           VALUES ($1, 'user', 'dev-admin', 'call.reprocess_backlog', 'organization', $1, $2::jsonb)`,
+          [orgId, JSON.stringify({ statuses, sinceDays, count: rows.length })],
+        );
+      }
+      return rows.map((r) => r.id);
+    });
+
+    // Published after the claim commits, so a call is never enqueued without
+    // having been rewound. A publish that throws leaves the call in UPLOADED for
+    // the stuck-upload sweep to re-wake rather than losing it.
+    for (const callId of claimed) await publishPipeline({ callId, orgId });
+    return { requeued: claimed.length, statuses, sinceDays: sinceDays ?? null };
   }
 }

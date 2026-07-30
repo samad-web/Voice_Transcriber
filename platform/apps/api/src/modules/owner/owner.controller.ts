@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -14,7 +13,7 @@ import {
 import { z } from "zod";
 import { parseLeadStages } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const WindowQuery = z.object({
@@ -36,16 +35,15 @@ const TelecallerBody = z.object({
  * can be given to a customer without exposing the operator surface.
  */
 @Controller("owner")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class OwnerController {
   constructor(private readonly db: DbService) {}
 
   @Get("overview")
   async overview(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Query() query: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { days } = parsed.data;
@@ -181,11 +179,10 @@ export class OwnerController {
    */
   @Patch("telecallers/:deviceId")
   async setTelecaller(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("deviceId", ParseUUIDPipe) deviceId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = TelecallerBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const name = parsed.data.name.trim() || null;

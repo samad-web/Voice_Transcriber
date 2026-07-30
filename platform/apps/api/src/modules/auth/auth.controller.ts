@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { AuthService } from "./auth.service";
 
@@ -60,7 +61,8 @@ export class AuthController {
    * than 404, so the caller cannot use it to probe which accounts exist.
    */
   @Get("context")
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  @CrossTenant()
   async context(@Query() query: unknown) {
     const parsed = ContextQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -69,7 +71,8 @@ export class AuthController {
 
   /** Who am I — proves the session + surfaces role/permissions to the web app. */
   @Get("me")
-  @UseGuards(AdminKeyGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  @CrossTenant()
   me(@Req() req: PrincipalRequest) {
     return { principal: req.principal };
   }

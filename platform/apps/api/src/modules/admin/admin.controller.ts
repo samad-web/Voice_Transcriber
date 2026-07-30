@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { PIPELINE_QUEUE, queueDepth } from "@aura/queue";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
@@ -43,7 +44,8 @@ const CreateTenantBody = z.object({
  * is no single org context. Guarded by the same dev AdminKeyGuard for now.
  */
 @Controller("admin")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
+@CrossTenant()
 export class AdminController {
   constructor(private readonly db: DbService) {}
 

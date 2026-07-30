@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -16,7 +15,7 @@ import { z } from "zod";
 import { parseLeadStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
-import { orgIdFromHeader } from "../../common/org-context";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const ListQuery = z.object({
@@ -63,7 +62,7 @@ const LEAD_COLUMNS = `
  * without a migration and the API still rejects a stage that doesn't exist.
  */
 @Controller("leads")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class LeadsController {
   constructor(private readonly db: DbService) {}
 
@@ -79,8 +78,7 @@ export class LeadsController {
 
   /** List view: filtered, sorted, paginated. */
   @Get()
-  async list(@Headers("x-org-id") orgHeader: string | undefined, @Query() query: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { stage, status, telecallerId, q, sort, limit, offset } = parsed.data;
@@ -137,8 +135,7 @@ export class LeadsController {
 
   /** Board view: every column, with its true count and the top N cards. */
   @Get("board")
-  async board(@Headers("x-org-id") orgHeader: string | undefined, @Query() query: unknown) {
-    const orgId = orgIdFromHeader(orgHeader);
+  async board(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = BoardQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
@@ -183,10 +180,9 @@ export class LeadsController {
   /** Detail: the lead plus every call from that contact. */
   @Get(":id")
   async detail(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) leadId: string,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [lead],
@@ -231,10 +227,10 @@ export class LeadsController {
   @Patch(":id")
   async update(
     @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) leadId: string,
     @Body() body: unknown,
   ) {
-    const orgId = orgIdFromHeader(req.headers["x-org-id"]);
     const parsed = UpdateLeadBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;

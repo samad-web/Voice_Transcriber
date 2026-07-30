@@ -1,14 +1,14 @@
-import { BadRequestException, Controller, Get, Headers, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
-import { orgIdFromHeader } from "../../common/org-context";
+import { CrossTenant, OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const OverviewQuery = z.object({ instanceId: z.string().uuid().optional() });
 
 /** Core analytics (§4.2 Platform Hub) + usage summary (§2.7 metering). */
 @Controller("analytics")
-@UseGuards(AdminKeyGuard)
+@UseGuards(AdminKeyGuard, TenantGuard)
 export class AnalyticsController {
   constructor(private readonly db: DbService) {}
 
@@ -19,10 +19,9 @@ export class AnalyticsController {
    */
   @Get("overview")
   async overview(
-    @Headers("x-org-id") orgHeader: string | undefined,
+    @OrgId() orgId: string,
     @Query() query: unknown,
   ) {
-    const orgId = orgIdFromHeader(orgHeader);
     const parsed = OverviewQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const instanceId = parsed.data.instanceId ?? null;
@@ -83,6 +82,7 @@ export class AnalyticsController {
    * the totals so the number is always attributable.
    */
   @Get("fleet")
+  @CrossTenant()
   async fleet() {
     const admin = this.db.adminPool();
 
