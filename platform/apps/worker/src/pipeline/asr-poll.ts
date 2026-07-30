@@ -49,6 +49,18 @@ const CLAIM_SQL = `
      AND status = 'TRANSCRIBING'
   RETURNING id`;
 
+/**
+ * Fail the claim fast when another worker already holds the row.
+ *
+ * Without this the UPDATE waits on the lock for the full statement_timeout —
+ * on Supabase that is tens of seconds of a pooled connection doing nothing,
+ * and it surfaces as a scary `canceling statement due to statement timeout`
+ * rather than the truth, which is simply "someone else got there first".
+ * Losing the race is the normal, correct outcome for a second worker; two
+ * seconds is plenty to distinguish it from a genuinely slow write.
+ */
+const CLAIM_LOCK_TIMEOUT_MS = Number(process.env.ASR_CLAIM_LOCK_TIMEOUT_MS ?? 2000);
+
 export async function pollAsrJobs(limit = 100): Promise<number> {
   if (!sarvamAsrConfigured()) return 0;
 
@@ -101,8 +113,22 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
     }
 
     await withOrgContext(row.org_id, async (client) => {
-      const claim = await client.query(CLAIM_SQL, [row.id, row.asr_job_id]);
+      await client.query(`SET LOCAL lock_timeout = ${CLAIM_LOCK_TIMEOUT_MS}`);
+      let claim;
+      try {
+        claim = await client.query(CLAIM_SQL, [row.id, row.asr_job_id]);
+      } catch (err) {
+        // 55P03 lock_not_available / 57014 cancelled: another worker holds the
+        // row and is already driving this call. Nothing to do and nothing wrong.
+        const code = (err as { code?: string })?.code;
+        if (code === "55P03" || code === "57014") return;
+        throw err;
+      }
       if ((claim.rowCount ?? 0) === 0) return;
+      // The claim is committed only when this callback returns, so the row stays
+      // locked for the whole of runPostAsrStages below. That is what makes the
+      // single-flight guard in startAsrPoller load-bearing rather than tidy.
+      await client.query("SET LOCAL lock_timeout = 0");
 
       const attempts = await priorAttempts(client, row.id);
       const helpers = stageHelpers(client, row.id, attempts);
@@ -136,7 +162,28 @@ async function failCall(row: PendingJob, err: Error): Promise<void> {
 
 export function startAsrPoller(): NodeJS.Timeout {
   const interval = Number(process.env.ASR_POLL_INTERVAL_MS ?? 15_000);
+  /**
+   * One sweep at a time.
+   *
+   * A tick is not a quick status check — collecting a finished job runs the
+   * whole back half of the pipeline, which on a long call means a dozen chunked
+   * analyze requests and several minutes inside one transaction. A bare
+   * setInterval starts the next tick anyway, and the ticks then fight over the
+   * same row: the first holds its lock while it works, the rest block on it
+   * until Postgres kills them with `canceling statement due to statement
+   * timeout ... while locking tuple`. That failure rolls the claim back, so the
+   * job is picked up again on the next tick and the provider is paid twice for
+   * exactly the same work — which is what it did in production before this
+   * guard existed.
+   */
+  let running = false;
   return setInterval(() => {
-    void pollAsrJobs().catch((err) => console.error("asr poll:", err));
+    if (running) return;
+    running = true;
+    void pollAsrJobs()
+      .catch((err) => console.error("asr poll:", err))
+      .finally(() => {
+        running = false;
+      });
   }, interval);
 }
