@@ -56,6 +56,15 @@ export interface CallDetailData {
     pipeline_attempts?: number | null;
     /** When the automatic retry is due. Null means no retry is pending. */
     next_attempt_at?: string | null;
+    /**
+     * Contact history for the number on the other end. All null when the number
+     * was withheld — there is nothing to count, and claiming "first contact"
+     * for every anonymous caller would be worse than saying nothing.
+     */
+    calls_in?: number | null;
+    calls_out?: number | null;
+    sequence?: number | null;
+    is_follow_up?: boolean | null;
   };
   transcript: {
     text: string;

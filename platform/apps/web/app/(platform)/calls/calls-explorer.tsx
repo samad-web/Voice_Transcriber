@@ -43,6 +43,27 @@ export interface CallRow {
   remote_number_prefix?: string | null;
   remote_number_last3?: string | null;
   remote_name?: string | null;
+  /**
+   * Contact history, computed per call by the API. All null when the number was
+   * withheld — there is no history to count, and showing "1st call" for every
+   * anonymous caller would be a lie repeated once per row.
+   */
+  calls_in?: number | null;
+  calls_out?: number | null;
+  sequence?: number | null;
+  is_follow_up?: boolean | null;
+}
+
+/** "3 in / 2 out", or null when the number was withheld. */
+function contactHistory(c: CallRow): string | null {
+  if (c.calls_in == null && c.calls_out == null) return null;
+  return `${c.calls_in ?? 0} in / ${c.calls_out ?? 0} out`;
+}
+
+/** "2nd call", "3rd call"… — the ordinal reads faster than "sequence: 3". */
+function ordinalCall(n: number): string {
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th";
+  return `${n}${suffix} call`;
 }
 
 function formatDuration(s: number) {
@@ -298,9 +319,23 @@ export function CallsExplorer({
                     <div>
                       <span className="text-sm font-bold text-black block font-sans">
                         {callLabel(c)}
+                        {/* A repeat caller is the single most useful thing to
+                            spot while scanning a log, so it sits on the name
+                            rather than in a column you have to look for. */}
+                        {c.is_follow_up ? (
+                          <span className="ml-2 align-middle inline-block border-2 border-black bg-black px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider text-white">
+                            Follow-up
+                          </span>
+                        ) : null}
                       </span>
                       <span className="text-[10px] text-neutral-400 font-mono block">
                         #{c.id.slice(0, 8)}
+                        {contactHistory(c) ? (
+                          <span className="ml-2 text-neutral-500">
+                            {c.sequence && c.sequence > 1 ? `${ordinalCall(c.sequence)} · ` : ""}
+                            {contactHistory(c)}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                   </div>
@@ -400,6 +435,19 @@ export function CallsExplorer({
                         ) : null}
                         {call.pipeline_status ? (
                           <StatusChip tone="solid">Stage: {humanize(call.pipeline_status)}</StatusChip>
+                        ) : null}
+                        {/* How well we know this caller. Worth surfacing next to
+                            the status chips: "we have spoken 4 times" changes how
+                            you read everything below it. */}
+                        {call.is_follow_up ? (
+                          <StatusChip tone="solid">
+                            Follow-up · {call.sequence ? ordinalCall(call.sequence) : "repeat"}
+                          </StatusChip>
+                        ) : contactHistory(call) ? (
+                          <StatusChip tone="muted">First contact</StatusChip>
+                        ) : null}
+                        {contactHistory(call) ? (
+                          <StatusChip tone="outline">{contactHistory(call)}</StatusChip>
                         ) : null}
                       </div>
                       <p className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider font-bold">

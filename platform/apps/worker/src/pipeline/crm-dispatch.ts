@@ -227,6 +227,20 @@ export async function buildSourceDocument(
     contact: {
       key: row.remote_number_hash,
       label: row.remote_name ?? null,
+      /**
+       * A readable number for humans, assembled from the fragments that are
+       * stored even when the full number is not.
+       *
+       * This is the only phone-ish value that exists for calls ingested before
+       * an org opted in to `store_full_number` — that flag is not retroactive,
+       * because the digits were never written. Sending it means a CRM row for a
+       * historical call still shows something a person can recognise, instead
+       * of an empty field next to `call.remoteNumber`.
+       */
+      masked:
+        row.remote_number_prefix || row.remote_number_last3
+          ? `${row.remote_number_prefix ?? "…"}…${row.remote_number_last3 ?? ""}`
+          : null,
       callsIn: Number(row.contact_calls_in ?? 0),
       callsOut: Number(row.contact_calls_out ?? 0),
       callsTotal: Number(row.contact_calls_in ?? 0) + Number(row.contact_calls_out ?? 0),
