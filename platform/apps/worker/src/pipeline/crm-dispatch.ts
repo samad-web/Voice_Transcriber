@@ -241,11 +241,19 @@ export async function buildSourceDocument(
         row.remote_number_prefix || row.remote_number_last3
           ? `${row.remote_number_prefix ?? "…"}…${row.remote_number_last3 ?? ""}`
           : null,
-      callsIn: Number(row.contact_calls_in ?? 0),
-      callsOut: Number(row.contact_calls_out ?? 0),
-      callsTotal: Number(row.contact_calls_in ?? 0) + Number(row.contact_calls_out ?? 0),
-      sequence: Number(row.contact_sequence ?? 1),
-      isFollowUp: Number(row.contact_sequence ?? 1) > 1,
+      // NULL, not 0, when the number was withheld: there is no history to
+      // count, and pruneBody drops nulls so the CRM field stays empty instead
+      // of displaying "0 calls" against a call that obviously happened. Zero is
+      // a claim; absent is the truth.
+      callsIn: row.remote_number_hash ? Number(row.contact_calls_in ?? 0) : null,
+      callsOut: row.remote_number_hash ? Number(row.contact_calls_out ?? 0) : null,
+      callsTotal: row.remote_number_hash
+        ? Number(row.contact_calls_in ?? 0) + Number(row.contact_calls_out ?? 0)
+        : null,
+      sequence: row.remote_number_hash ? Number(row.contact_sequence ?? 1) : null,
+      // Not "unknown": we cannot show it is a repeat, so it is not flagged as
+      // one. A false here is a safe default for a boolean column downstream.
+      isFollowUp: row.remote_number_hash ? Number(row.contact_sequence ?? 1) > 1 : false,
     },
     facts,
     transcript: {
