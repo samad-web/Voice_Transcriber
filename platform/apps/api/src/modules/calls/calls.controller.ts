@@ -315,10 +315,14 @@ export class CallsController {
       const {
         rows: [count],
       } = await client.query(
+        // The join is not optional here even though the count selects nothing
+        // from it: `where` is shared with the page query above and references
+        // h.sequence for the follow-up filter.
         `SELECT count(*)::int AS total
            FROM calls c
            JOIN devices d   ON d.id = c.device_id
            JOIN instances i ON i.id = d.instance_id
+           ${CONTACT_HISTORY_JOIN}
           ${where}`,
         filters,
       );
