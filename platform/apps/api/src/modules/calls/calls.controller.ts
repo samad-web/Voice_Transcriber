@@ -62,11 +62,36 @@ const ReprocessBacklogBody = z.object({
   limit: z.number().int().min(1).max(1000).default(500),
 });
 
+/**
+ * How often we have dealt with the person on the other end, and where this call
+ * sits in that history.
+ *
+ * A LATERAL rather than stored columns: retention and erasure sweeps delete
+ * calls, so a counter written at ingest would silently drift away from what the
+ * table actually holds. The (workspace_id, remote_number_hash) index from 0001
+ * makes recomputing it cheap, and the answer is always true of the data now.
+ *
+ * A call whose number was withheld has a NULL hash and gets no history at all —
+ * every such call would otherwise look like the same mystery customer ringing
+ * back, which is worse than admitting we do not know.
+ */
+const CONTACT_HISTORY_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT count(*) FILTER (WHERE x.direction = 'incoming')::int AS calls_in,
+           count(*) FILTER (WHERE x.direction = 'outgoing')::int AS calls_out,
+           count(*) FILTER (WHERE (x.started_at, x.id) <= (c.started_at, c.id))::int AS sequence
+      FROM calls x
+     WHERE x.workspace_id = c.workspace_id
+       AND x.remote_number_hash = c.remote_number_hash
+  ) h ON c.remote_number_hash IS NOT NULL`;
+
 const ListCallsQuery = z.object({
   instanceId: z.string().uuid().optional(),
   deviceId: z.string().uuid().optional(),
   status: z.string().min(1).max(64).optional(),
   direction: z.enum(["incoming", "outgoing"]).optional(),
+  /** "true" = repeat contacts only (the follow-up list), "false" = first-time only. */
+  followUp: z.enum(["true", "false"]).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -238,7 +263,7 @@ export class CallsController {
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListCallsQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { instanceId, deviceId, status, direction, limit, offset } = parsed.data;
+    const { instanceId, deviceId, status, direction, followUp, limit, offset } = parsed.data;
 
     // Identical predicate for the page and the count, so "showing 100 of 3,412"
     // can never disagree with the rows underneath it.
@@ -254,12 +279,18 @@ export class CallsController {
                    WHEN 'failed'      THEN c.status LIKE 'FAILED%'
                    ELSE c.status = $3::text
                  END)
-            AND ($4::text IS NULL OR c.direction = $4::text)`;
+            AND ($4::text IS NULL OR c.direction = $4::text)
+            -- The follow-up list. COALESCE so a call with a withheld number
+            -- counts as a first contact rather than falling out of BOTH sides
+            -- of the filter and becoming invisible either way it is set.
+            AND ($5::text IS NULL OR
+                 ($5::text = 'true') = (COALESCE(h.sequence, 1) > 1))`;
     const filters = [
       instanceId ?? null,
       deviceId ?? null,
       status ?? null,
       direction ?? null,
+      followUp ?? null,
     ];
 
     return this.db.withOrg(orgId, async (client) => {
@@ -269,13 +300,16 @@ export class CallsController {
                 c.pipeline_attempts, c.next_attempt_at,
                 c.device_id, d.label AS device_label,
                 i.id AS instance_id, i.name AS instance_name,
-                c.remote_number_prefix, c.remote_number_last3, c.remote_name
+                c.remote_number_prefix, c.remote_number_last3, c.remote_name,
+                h.calls_in, h.calls_out, h.sequence,
+                h.sequence > 1 AS is_follow_up
            FROM calls c
            JOIN devices d   ON d.id = c.device_id
            JOIN instances i ON i.id = d.instance_id
+           ${CONTACT_HISTORY_JOIN}
           ${where}
           ORDER BY c.started_at DESC
-          LIMIT $5 OFFSET $6`,
+          LIMIT $6 OFFSET $7`,
         [...filters, limit, offset],
       );
       const {
@@ -302,7 +336,14 @@ export class CallsController {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [call],
-      } = await client.query(`SELECT * FROM calls WHERE id = $1`, [callId]);
+      } = await client.query(
+        `SELECT c.*, h.calls_in, h.calls_out, h.sequence,
+                h.sequence > 1 AS is_follow_up
+           FROM calls c
+           ${CONTACT_HISTORY_JOIN}
+          WHERE c.id = $1`,
+        [callId],
+      );
       if (!call) throw new NotFoundException("call not found");
       const { rows: transcripts } = await client.query(
         `SELECT language, engine, text, segments, diarized, intelligence

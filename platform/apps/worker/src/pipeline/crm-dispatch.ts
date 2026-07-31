@@ -107,6 +107,10 @@ interface SourceRow {
   remote_number_prefix: string | null;
   remote_number_last3: string | null;
   remote_number_full: string | null;
+  remote_number_hash: string | null;
+  contact_calls_in: string | number | null;
+  contact_calls_out: string | number | null;
+  contact_sequence: string | number | null;
   agent_id: string | null;
   agent_version: number | null;
   workspace_id: string;
@@ -130,9 +134,32 @@ export async function buildSourceDocument(
   } = await client.query<SourceRow>(
     `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
             c.remote_name, c.remote_number_prefix, c.remote_number_last3,
-            c.remote_number_full,
+            c.remote_number_full, c.remote_number_hash,
             c.agent_id, c.agent_version, c.workspace_id,
             d.instance_id,
+            -- Contact history, counted live rather than stored on the row.
+            -- Retention and erasure sweeps delete calls, so a stored counter
+            -- would drift; the (workspace_id, remote_number_hash) index makes
+            -- recomputing it cheap. NULL hash (number withheld) yields no
+            -- history, which is the honest answer rather than "first call".
+            (SELECT count(*) FILTER (WHERE x.direction = 'incoming')
+               FROM calls x
+              WHERE x.workspace_id = c.workspace_id
+                AND x.remote_number_hash IS NOT NULL
+                AND x.remote_number_hash = c.remote_number_hash) AS contact_calls_in,
+            (SELECT count(*) FILTER (WHERE x.direction = 'outgoing')
+               FROM calls x
+              WHERE x.workspace_id = c.workspace_id
+                AND x.remote_number_hash IS NOT NULL
+                AND x.remote_number_hash = c.remote_number_hash) AS contact_calls_out,
+            -- Where THIS call sits in that history. Ties broken by id so two
+            -- calls sharing a timestamp still get distinct, stable ordinals.
+            (SELECT count(*)
+               FROM calls x
+              WHERE x.workspace_id = c.workspace_id
+                AND x.remote_number_hash IS NOT NULL
+                AND x.remote_number_hash = c.remote_number_hash
+                AND (x.started_at, x.id) <= (c.started_at, c.id)) AS contact_sequence,
             t.text AS transcript_text, t.language, t.intelligence, t.diarized,
             r.s3_key,
             (SELECT jsonb_object_agg(f.field_key,
@@ -182,6 +209,29 @@ export async function buildSourceDocument(
       // a non-opted-in tenant simply sends nothing, rather than a partial number.
       remoteNumber: row.remote_number_full,
       workspaceId: row.workspace_id,
+    },
+    /**
+     * The caller, across calls.
+     *
+     * Until this existed the payload carried nothing that identified WHO rang:
+     * `callId` is unique per call and `customerName` is LLM-extracted and often
+     * absent, so a receiving CRM had no way to tell two deliveries apart from
+     * two different customers. `key` is the number hash — stable, already
+     * indexed, and not reversible into a dialable number, so it can be sent to
+     * a third party without widening what we disclose about callers.
+     *
+     * `isFollowUp` is simply "we have spoken before": the second and later call
+     * on the same number, whoever placed it. It needs no model and cannot be
+     * wrong in the way an inferred outcome can.
+     */
+    contact: {
+      key: row.remote_number_hash,
+      label: row.remote_name ?? null,
+      callsIn: Number(row.contact_calls_in ?? 0),
+      callsOut: Number(row.contact_calls_out ?? 0),
+      callsTotal: Number(row.contact_calls_in ?? 0) + Number(row.contact_calls_out ?? 0),
+      sequence: Number(row.contact_sequence ?? 1),
+      isFollowUp: Number(row.contact_sequence ?? 1) > 1,
     },
     facts,
     transcript: {
