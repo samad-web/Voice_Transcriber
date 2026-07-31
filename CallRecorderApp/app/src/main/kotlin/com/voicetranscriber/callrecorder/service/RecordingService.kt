@@ -127,11 +127,21 @@ class RecordingService : Service() {
                     } else {
                         null
                     }
-                    val name = info?.name ?: info?.number ?: entity.callee
+                    // `label` names the FILE and should stay readable; `callee` is
+                    // the record we upload from and must not lose the number.
+                    // These were one value, so a saved contact meant the digits
+                    // from the call log were dropped and the call reached the
+                    // server — and the customer's CRM — with no way to ring back.
+                    // `Name(number)` is the form UploadWorker already splits.
+                    val label = info?.name ?: info?.number ?: entity.callee
                     val direction = info?.direction ?: entity.direction
+                    val callee = when {
+                        info?.name != null && info.number != null -> "${info.name}(${info.number})"
+                        else -> info?.number ?: label
+                    }
 
                     // Rename the file to "<name> <date time>.m4a" — for phone AND VoIP.
-                    val newPath = RecordingNaming.renameToReadable(entity.filePath, name, entity.startedAt)
+                    val newPath = RecordingNaming.renameToReadable(entity.filePath, label, entity.startedAt)
 
                     // Keep the recording as a plaintext .m4a by default so the rep can
                     // play and share it locally. If at-rest encryption is enabled, store
@@ -152,7 +162,7 @@ class RecordingService : Service() {
                         } else {
                             newPath
                         }
-                    dao.updateResolved(id, storedPath, name, direction)
+                    dao.updateResolved(id, storedPath, callee, direction)
 
                     // DB write is durable now — hand the recording to the upload subsystem.
                     // (Enqueued AFTER the save so we never lose a recording; the worker

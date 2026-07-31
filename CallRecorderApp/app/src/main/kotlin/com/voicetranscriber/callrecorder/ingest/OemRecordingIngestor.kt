@@ -119,10 +119,31 @@ object OemRecordingIngestor {
             // the nearest entry (not simply the latest) keeps a backlog import accurate.
             val info = CallLogReader.nearest(context, parsed.startedAt)
 
+            // Name and number are two different facts, and the old precedence
+            // — filename, then log name, then log number — collapsed them into
+            // one slot where the first hit won. A contact saved on the handset
+            // put its NAME in the filename, so `info.number` was never reached
+            // and the call reached the server with no digits at all: the CRM
+            // then held a lead nobody could ring back.
+            //
+            // Take each from the best source it has, and hand them on in
+            // Xiaomi's `Name(number)` form, which UploadWorker already splits
+            // back into remoteName + remoteNumber.
+            val fromFile = parsed.callee?.let { NAME_WITH_NUMBER.find(it) }
+            val calleeName = fromFile?.groupValues?.get(1)?.trim()?.ifEmpty { null }
+                ?: parsed.callee?.takeIf { s -> s.any { it.isLetter() } }
+                ?: info?.name
+            val calleeNumber = fromFile?.groupValues?.get(2)?.trim()
+                ?: parsed.callee?.takeIf { s -> s.any { it.isDigit() } && s.none { it.isLetter() } }
+                ?: info?.number
+
             val entity = RecordingEntity(
                 filePath = file.absolutePath,
                 sourceId = SourceRegistry.telephony().id,
-                callee = parsed.callee ?: info?.name ?: info?.number,
+                callee = when {
+                    calleeName != null && calleeNumber != null -> "$calleeName($calleeNumber)"
+                    else -> calleeNumber ?: calleeName
+                },
                 startedAt = parsed.startedAt,
                 // The dialer finalizes the file on hang-up. A non-null endedAt is also what
                 // makes UploadWorker consider the row ready to send.
