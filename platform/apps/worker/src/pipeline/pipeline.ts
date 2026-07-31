@@ -45,6 +45,44 @@ export function retryBackoffSeconds(attempt: number): number {
   return Math.min(30 * 4 ** Math.max(0, attempt - 1), 3600);
 }
 
+/**
+ * Values that mean "the transcript did not say" but arrive as strings.
+ *
+ * Asked for a field the call never mentions, models write the *word* rather
+ * than JSON null — `"null"`, `"not_discussed"`, `"N/A"`. Left alone these are
+ * projected into call_facts as ordinary text, and call_facts is what the CRM
+ * payload is built from, so a customer's system ends up holding a contact
+ * literally named "null". Absent must look absent by the time it leaves here.
+ *
+ * Only the exact token counts: a genuine answer of "none of the above" is real
+ * content and is not on this list.
+ */
+const ABSENT_TOKENS = new Set([
+  "null",
+  "none",
+  "n/a",
+  "na",
+  "nil",
+  "unknown",
+  "not_discussed",
+  "not discussed",
+  "not_stated",
+  "not stated",
+  "not_mentioned",
+  "not mentioned",
+  "not_provided",
+  "not provided",
+  "unspecified",
+  "",
+]);
+
+function isAbsent(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return ABSENT_TOKENS.has(value.trim().toLowerCase());
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
 /** Provider errors carry the useful detail; cap it so one huge stack trace
  *  cannot bloat the row, and keep the head where the cause usually is. */
 function reasonOf(err: unknown): string {
@@ -337,7 +375,10 @@ export async function runPostAsrStages(
       if (result.validationStatus !== "failed") {
         for (const field of schema.fields) {
           const value = result.output[field.key];
-          if (value === undefined || value === null) continue;
+          // Skipped, not written as NULL: a fact that was never established
+          // should be missing from the projection entirely, so the CRM payload
+          // omits the key rather than sending an empty one.
+          if (isAbsent(value)) continue;
           await client.query(
             `INSERT INTO call_facts (org_id, call_id, field_key, value_text, value_num, value_bool)
              VALUES ($1, $2, $3, $4, $5, $6)
