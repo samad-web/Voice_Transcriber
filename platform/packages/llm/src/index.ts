@@ -308,6 +308,8 @@ export async function analyzeConversation(
   transcript: string,
   segments?: DiarizedSegment[],
   vocabulary?: string[] | null,
+  /** "incoming" | "outgoing". A real prior on which voice is the Agent. */
+  direction?: string | null,
 ): Promise<ConversationIntelligence> {
   const base: ConversationIntelligence = {
     language: "und",
@@ -352,7 +354,7 @@ export async function analyzeConversation(
   // cannot hold a whole call's labels in one reply. Gemini has no such limit and
   // keeps the single-request path below, which is cheaper and needs no stitching.
   if (sarvamChatConfigured() && label) {
-    return sarvamConversation(text, usable, vocabulary, base);
+    return sarvamConversation(text, usable, vocabulary, base, direction);
   }
 
   const roleRules =
@@ -611,20 +613,34 @@ export async function analyzeConversation(
  * writes anything. So the work is broken into pieces each of whose ANSWER is
  * small: chunks of ~30 segment labels, then one pass for the call-level reading.
  *
- * Every request carries the full transcript as context, and each labelling
- * request is also shown the last few roles already decided. Both exist to stop
- * the Agent and Customer swapping over at a chunk boundary — the one failure
- * mode chunking introduces that a single request could never have.
+ * WHO IS WHO IS DECIDED ONCE, FOR THE WHOLE CALL.
  *
- * A chunk that still fails after its retries loses only its own labels: those
- * segments keep ASR's speaker tag via the S2→Customer fallback, and the rest of
- * the call is unaffected. Partial labelling beats no analysis.
+ * The first version made role a per-chunk judgement, and in production it drifted
+ * badly: within one call the party saying "our pricing is by stone count" was
+ * labelled Customer while the party asking "do you bring everything?" was labelled
+ * Agent, and a question in one chunk was answered by the same speaker in the next.
+ * A ten-segment window simply is not enough to tell a buyer from a seller, and
+ * Gemini never showed this because it saw all 146 segments at once.
+ *
+ * The insight that fixes it: Sarvam has already separated the speakers
+ * ACOUSTICALLY and reliably. Nothing needs to re-derive that per segment. There
+ * is exactly one open question — which acoustic tag is the Agent — so it gets
+ * one request, with the whole transcript and the call's direction, and a
+ * one-token answer. Every segment's role then follows from its ASR tag, which
+ * makes drift impossible by construction rather than by prompting.
+ *
+ * Chunks are left with intent only, which is a genuinely local property, and
+ * their answers get smaller as a bonus — more headroom under the output ceiling.
+ *
+ * A chunk that fails loses only its own intents; roles are unaffected because
+ * they never depended on it.
  */
 async function sarvamConversation(
   text: string,
   usable: DiarizedSegment[],
   vocabulary: string[] | null | undefined,
   base: ConversationIntelligence,
+  direction?: string | null,
 ): Promise<ConversationIntelligence> {
   const model = sarvamChatModel();
   const glossary = glossaryBlock(vocabulary);
@@ -650,6 +666,77 @@ async function sarvamConversation(
     "Customer answers, asks about price/product and raises objections. Roles " +
     "must stay consistent for the whole call.";
 
+  // ── pass 1: which acoustic speaker is the Agent? ─────────────────────────
+  //
+  // Distinct ASR tags, in the order they first speak. Two is the normal case;
+  // anything else means diarization did not separate the call and there is no
+  // mapping to make, so the per-segment fallback below is used instead.
+  const tags: string[] = [];
+  for (const s of usable) {
+    const tag = String(s.speaker ?? "");
+    if (tag && !tags.includes(tag)) tags.push(tag);
+  }
+
+  /**
+   * Who the recording belongs to is a real prior, not a guess. These calls are
+   * captured on the telecaller's own handset: on an outgoing call they dial and
+   * speak first, on an incoming one they answer it. Either way the first voice
+   * is usually the Agent — which is also the fallback if this pass fails.
+   */
+  const directionHint =
+    direction === "incoming"
+      ? "This call came IN to the business, so the first voice is normally the Agent answering the phone."
+      : direction === "outgoing"
+        ? "The business dialled OUT, so the first voice is normally the Agent."
+        : "";
+
+  let agentTag: string | null = tags[0] ?? null;
+  if (tags.length === 2) {
+    // A transcript with the acoustic tag on every line — this is the only view
+    // from which the question is answerable, and it is cheap to send.
+    const tagged = usable
+      .map((s) => `${s.speaker}: ${s.text.trim()}`)
+      .join("\n")
+      .slice(0, 12000);
+    try {
+      const res = await sarvamChat({
+        prompt:
+          `Below is ONE phone call for a telecalling / sales business. The ` +
+          `speech recogniser has already separated the two voices as ` +
+          `${tags[0]} and ${tags[1]}.\n\n` +
+          `Decide which of the two is the AGENT — the telecaller or sales rep ` +
+          `working for the business. The Agent quotes prices, describes what ` +
+          `their company supplies, and says things like "we deliver" or "our ` +
+          `rate is". The CUSTOMER asks what it costs, asks whether they do the ` +
+          `work, and raises objections. ${directionHint}\n\n` +
+          `Answer with ONLY {"agent":"${tags[0]}"} or {"agent":"${tags[1]}"}.` +
+          `${glossary}\n\n${tagged}`,
+        jsonSchema: {
+          type: "object",
+          properties: { agent: { type: "string", enum: tags } },
+          required: ["agent"],
+        },
+        label: "analyzeConversation.roles",
+      });
+      tokensIn += res.tokensIn;
+      tokensOut += res.tokensOut;
+      const pick = (JSON.parse(res.text || "{}") as { agent?: unknown }).agent;
+      if (typeof pick === "string" && tags.includes(pick)) agentTag = pick;
+    } catch (err) {
+      // Falls back to "first voice is the Agent", which the direction prior says
+      // is right most of the time. A wrong-but-consistent mapping is still far
+      // better than roles that flip mid-call.
+      console.error("analyzeConversation: role pass failed, using first-speaker default:", err);
+    }
+  }
+
+  const roleOf = (seg: DiarizedSegment): "Agent" | "Customer" => {
+    const tag = String(seg.speaker ?? "");
+    if (agentTag && tag) return tag === agentTag ? "Agent" : "Customer";
+    return /2$/.test(tag) ? "Customer" : "Agent";
+  };
+
+  // ── pass 2..n: intent per segment, chunked ───────────────────────────────
   const labelSchema = {
     type: "object",
     properties: {
@@ -659,36 +746,29 @@ async function sarvamConversation(
           type: "object",
           properties: {
             i: { type: "integer" },
-            speaker: { type: "string", enum: ["Agent", "Customer"] },
             intent: { type: "string" },
           },
-          required: ["i", "speaker", "intent"],
+          required: ["i", "intent"],
         },
       },
     },
     required: ["labels"],
   };
 
-  const decided = new Map<number, { speaker: "Agent" | "Customer"; intent: string | null }>();
+  const decided = new Map<number, string | null>();
 
   for (let start = 0; start < usable.length; start += SARVAM_LABEL_CHUNK) {
     const slice = usable.slice(start, start + SARVAM_LABEL_CHUNK);
-    // Continuity: the tail of what has already been decided, so a chunk starts
-    // from the same reading of who is who rather than guessing afresh.
-    const recent = [...decided.entries()]
-      .slice(-4)
-      .map(([i, v]) => `  ${i}: ${v.speaker} — ${usable[i]?.text?.slice(0, 60) ?? ""}`)
-      .join("\n");
     const prompt =
       `You are labelling segments of ONE phone call for a telecalling team. ` +
       `${roleRules}\n` +
-      `For EVERY index given below, return the speaker and a short 2-5 word ` +
-      `intent (e.g. "greeting", "price objection", "asking availability", ` +
-      `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"speaker":"Agent","intent":"greeting"}]}` +
+      `The speaker of each segment is already known and is given to you — do ` +
+      `NOT second-guess it. Return only a short 2-5 word intent for each index ` +
+      `(e.g. "greeting", "price objection", "asking availability", ` +
+      `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"intent":"greeting"}]}` +
       `${glossary}\n\n${context}\n\n` +
-      (recent ? `Roles already decided for earlier segments:\n${recent}\n\n` : "") +
       `Label exactly these segments:\n${JSON.stringify(
-        slice.map((s, k) => ({ i: start + k, text: s.text.trim() })),
+        slice.map((s, k) => ({ i: start + k, speaker: roleOf(s), text: s.text.trim() })),
       )}`;
 
     try {
@@ -700,20 +780,17 @@ async function sarvamConversation(
       tokensIn += res.tokensIn;
       tokensOut += res.tokensOut;
       const parsed = JSON.parse(res.text || "{}") as {
-        labels?: Array<{ i?: unknown; speaker?: unknown; intent?: unknown }>;
+        labels?: Array<{ i?: unknown; intent?: unknown }>;
       };
       for (const l of parsed.labels ?? []) {
         const i = Number(l?.i);
         if (!Number.isInteger(i) || i < 0 || i >= usable.length) continue;
-        decided.set(i, {
-          speaker: l.speaker === "Customer" ? "Customer" : "Agent",
-          intent: l.intent ? String(l.intent) : null,
-        });
+        decided.set(i, l.intent ? String(l.intent) : null);
       }
     } catch (err) {
       console.error(
-        `analyzeConversation: label chunk ${start}-${start + slice.length - 1} failed, ` +
-          `those segments keep their ASR speaker tag:`,
+        `analyzeConversation: intent chunk ${start}-${start + slice.length - 1} failed, ` +
+          `those segments keep their role but lose their intent:`,
         err,
       );
     }
@@ -770,17 +847,14 @@ async function sarvamConversation(
     console.error("analyzeConversation: call-level pass failed:", err);
   }
 
-  const turns: ConversationTurn[] = usable.map((seg, i) => {
-    const hit = decided.get(i);
-    return {
-      speaker:
-        hit?.speaker ??
-        (/2$/.test(String(seg.speaker ?? "")) ? "Customer" : "Agent"),
-      text: seg.text.trim(),
-      intent: hit?.intent ?? null,
-      index: i,
-    };
-  });
+  // Role comes from the one global mapping, never from the chunk — so a chunk
+  // that failed costs an intent, not a swapped speaker.
+  const turns: ConversationTurn[] = usable.map((seg, i) => ({
+    speaker: roleOf(seg),
+    text: seg.text.trim(),
+    intent: decided.get(i) ?? null,
+    index: i,
+  }));
 
   return {
     language: raw.language || "und",

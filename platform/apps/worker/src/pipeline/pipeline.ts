@@ -246,6 +246,17 @@ export async function runPostAsrStages(
   );
   const vocabulary = vocabRow?.vocabulary ?? [];
 
+  // Who dialled. The recording comes off the telecaller's own handset, so this
+  // is a genuine prior on which voice is the Agent — and the analyser's role
+  // decision is the one thing a reader notices immediately when it is wrong.
+  const {
+    rows: [dirRow],
+  } = await client.query<{ direction: string | null }>(
+    "SELECT direction FROM calls WHERE id = $1",
+    [callId],
+  );
+  const direction = dirRow?.direction ?? null;
+
   try {
     // Conversation intelligence: diarize (Agent/Customer) + per-turn intent +
     // call-level intent/sentiment/outcome. Always on, non-blocking — a failure
@@ -267,7 +278,7 @@ export async function runPostAsrStages(
           startMs?: number;
           endMs?: number;
         }> = Array.isArray(t.segments) ? t.segments : [];
-        const intel = await analyzeConversation(t.text, asrSegments, vocabulary);
+        const intel = await analyzeConversation(t.text, asrSegments, vocabulary, direction);
         const segments = intel.turns.map((turn) => {
           const src = turn.index === null ? undefined : asrSegments[turn.index];
           return {
