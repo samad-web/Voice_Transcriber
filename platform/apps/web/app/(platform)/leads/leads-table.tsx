@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { BrutalButton, Card, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
-import { convertLeadAction, type ConvertResult, type Lead } from "./actions";
+import { convertLeadAction, deleteLeadsAction, type ConvertResult, type Lead } from "./actions";
 import { RejectPanel } from "./reject-panel";
 
 /**
@@ -19,7 +19,38 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
   const [converted, setConverted] = useState<Set<string>>(new Set());
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejected, setRejected] = useState<Set<string>>(new Set());
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  const [confirmAll, setConfirmAll] = useState(false);
+  const [deleteNote, setDeleteNote] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  /**
+   * Deleting is not rejecting, and the copy has to keep them apart. Rejecting
+   * records a decision and messages the person; this removes the row, which is
+   * what an erasure request needs and what clearing test data needs.
+   */
+  const runDelete = (scope: "selected" | "all", ids?: string[]) =>
+    start(async () => {
+      setDeleteNote(null);
+      const res = await deleteLeadsAction({ scope, ids });
+      if (res.error) {
+        setDeleteNote(res.error);
+        return;
+      }
+      setConfirmAll(false);
+      if (scope === "all") setGone(new Set(initial.map((l) => l.id)));
+      else ids?.forEach((id) => setGone((g) => new Set(g).add(id)));
+      const parts = [`${res.deleted} enquiry(ies) deleted`];
+      if (res.slotsReleased) parts.push(`${res.slotsReleased} booked slot(s) released`);
+      if (res.orphanedCalendarEvents?.length) {
+        parts.push(
+          `${res.orphanedCalendarEvents.length} Google Calendar event(s) still exist and must be removed by hand`,
+        );
+      }
+      setDeleteNote(`${parts.join(" · ")}.`);
+    });
+
+  const visible = initial.filter((l) => !gone.has(l.id));
 
   if (initial.length === 0) {
     return (
@@ -34,7 +65,51 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {initial.map((lead) => {
+      {/* Bulk delete. Two presses, and the second one names the number, because
+          this is the only irreversible action on the page and the row count is
+          the fact an operator needs to sanity-check before pressing it. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg-subtle px-4 py-3">
+        <p className="text-xs text-text-muted">
+          {visible.length} enquiry{visible.length === 1 ? "" : "s"} shown. Deleting removes them
+          from the database, releases any call they had booked, and cannot be undone.
+        </p>
+        {confirmAll ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => runDelete("all")}
+              className="h-9 rounded-md bg-danger px-3 text-sm font-medium text-danger-fg hover:opacity-90"
+            >
+              {pending ? "Deleting…" : `Yes, delete all ${visible.length}`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmAll(false)}
+              className="h-9 rounded-md border border-border px-3 text-sm font-medium text-text-muted hover:bg-surface-hover"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={pending || visible.length === 0}
+            onClick={() => setConfirmAll(true)}
+            className="h-9 rounded-md border border-danger/40 px-3 text-sm font-medium text-danger-text hover:bg-danger/5"
+          >
+            Delete all
+          </button>
+        )}
+      </div>
+
+      {deleteNote ? (
+        <p role="status" className="rounded-md border border-border bg-bg-subtle p-3 text-xs text-text">
+          {deleteNote}
+        </p>
+      ) : null}
+
+      {visible.map((lead) => {
         const done = converted.has(lead.id);
         const isRejected = rejected.has(lead.id);
         return (
@@ -96,6 +171,18 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                     className="h-10 rounded-md border border-border px-3 text-sm font-medium text-text-muted hover:bg-surface-hover hover:text-danger-text"
                   >
                     {rejectingId === lead.id ? "Cancel" : "Reject"}
+                  </button>
+                  {/* Per-row delete, for the single test lead or the one
+                      erasure request. Plain text, not a button: it should be
+                      reachable without competing with the two actions that are
+                      part of the normal workflow. */}
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => runDelete("selected", [lead.id])}
+                    className="h-10 px-2 text-sm font-medium text-text-muted underline underline-offset-2 hover:text-danger-text"
+                  >
+                    Delete
                   </button>
                   <BrutalButton
                     onClick={() => {

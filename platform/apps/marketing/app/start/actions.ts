@@ -271,6 +271,8 @@ export interface BookResultPayload {
   ok: boolean;
   dayLabel?: string;
   timeLabel?: string;
+  /** Google Meet link, when Google Calendar is configured and returned one. */
+  meetingUrl?: string | null;
   error?: string;
 }
 
@@ -302,7 +304,7 @@ export async function bookSlotAction(slotId: string): Promise<BookResultPayload>
       return { ok: false, error: "Someone just took that time. Please pick another." };
     }
     await clearFunnelSession();
-    return { ok: true, dayLabel: res.dayLabel, timeLabel: res.timeLabel };
+    return { ok: true, dayLabel: res.dayLabel, timeLabel: res.timeLabel, meetingUrl: res.meetingUrl };
   } catch (err) {
     console.error("[funnel] bookSlot failed", err);
     return { ok: false, error: "We could not confirm that time. Please try again." };

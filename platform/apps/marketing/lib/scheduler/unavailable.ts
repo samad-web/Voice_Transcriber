@@ -30,7 +30,7 @@ export class UnavailableScheduler implements Scheduler {
     return [];
   }
 
-  async book(): Promise<{ eventId: string }> {
+  async book(): Promise<{ eventId: string; meetingUrl?: string | null }> {
     throw new Error(
       `UnavailableScheduler cannot book: ${this.reason}. ` +
         "Reaching this means a caller invented a slot, no slot can come from availableSlots().",

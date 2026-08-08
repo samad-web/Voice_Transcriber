@@ -69,7 +69,21 @@ export interface Scheduler {
    * caller's success path renders a booking confirmation to a human who will
    * then show up.
    */
-  book(slot: Slot, submission: FunnelSubmission): Promise<{ eventId: string }>;
+  book(
+    slot: Slot,
+    submission: FunnelSubmission,
+  ): Promise<{
+    eventId: string;
+    /**
+     * The Google Meet URL, when Google returned one.
+     *
+     * Nullable on purpose. A conference is requested on every insert, but the
+     * response does not always carry one back, and the meeting is real and in
+     * the calendar either way. Failing a booking over a missing video link
+     * would be the tail wagging the dog.
+     */
+    meetingUrl?: string | null;
+  }>;
 
   /**
    * Whether this implementation can talk to a real calendar at all.

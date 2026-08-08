@@ -197,6 +197,58 @@ export async function convertLeadAction(input: {
   return { ...provisioned, orgName: provisioned.name };
 }
 
+export interface DeleteLeadsResult {
+  deleted?: number;
+  slotsReleased?: number;
+  orphanedCalendarEvents?: string[];
+  error?: string;
+}
+
+/**
+ * Delete enquiries permanently.
+ *
+ * Not the same as rejecting. Rejecting records a decision and tells the person;
+ * this removes them from the database, which is what a DPDP erasure request
+ * requires and what clearing out test data needs.
+ *
+ * `scope` is passed through explicitly rather than inferred from whether `ids`
+ * is empty: an empty array meaning "everything" is the kind of default that
+ * deletes a table by accident.
+ */
+export async function deleteLeadsAction(input: {
+  scope: "selected" | "all";
+  ids?: string[];
+}): Promise<DeleteLeadsResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/leads/delete`, {
+      method: "POST",
+      headers: crossTenantHeaders,
+      cache: "no-store",
+      body: JSON.stringify({ scope: input.scope, ids: input.ids }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = await res.json();
+    revalidatePath("/leads");
+    // Deleting can hand booked time back, so the diary changed too.
+    revalidatePath("/slots");
+    return {
+      deleted: data.deleted ?? 0,
+      slotsReleased: data.slotsReleased ?? 0,
+      orphanedCalendarEvents: data.orphanedCalendarEvents ?? [],
+    };
+  } catch {
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+  }
+}
+
 export interface RejectResult {
   ok?: boolean;
   queuedEmail?: boolean;

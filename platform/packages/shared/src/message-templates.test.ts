@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -51,6 +51,38 @@ describe("fillTemplate", () => {
 
   it("replaces every occurrence, not just the first", () => {
     expect(fillTemplate("{{name}} / {{name}}", { name: "R K" })).toBe("R K / R K");
+  });
+
+  describe("optional placeholders drop their sentence", () => {
+    // {{meet_link}} only exists when Google Calendar produced one. Falling back
+    // to the neutral word would send "Join here: there ." to a real customer,
+    // which is worse than saying nothing about joining at all.
+    const body =
+      "Hi {{first_name}}, your call is confirmed for {{slot}}. " +
+      "Join here: {{meet_link}} . If that stops working, reply here.";
+
+    it("keeps the sentence when the link exists", () => {
+      const out = fillTemplate(body, {
+        first_name: "Ramesh",
+        slot: "Tue 6:30 pm",
+        meet_link: "https://meet.google.com/abc-defg-hij",
+      });
+      expect(out).toContain("https://meet.google.com/abc-defg-hij");
+      expect(out).toContain("If that stops working");
+    });
+
+    it("removes the whole sentence when it does not", () => {
+      const out = fillTemplate(body, { first_name: "Ramesh", slot: "Tue 6:30 pm" });
+      expect(out).toBe("Hi Ramesh, your call is confirmed for Tue 6:30 pm. If that stops working, reply here.");
+      // The two failures this guards against, stated explicitly.
+      expect(out).not.toContain("there");
+      expect(out).not.toContain("Join here");
+    });
+
+    it("leaves no double space where the sentence was", () => {
+      const out = fillTemplate(body, { first_name: "Ramesh", slot: "Tue 6:30 pm" });
+      expect(out).not.toMatch(/ {2,}/);
+    });
   });
 });
 
@@ -189,10 +221,15 @@ describe("the migration seed matches the built-in copy", () => {
    * "original wording" from an existing one, and "Restore original" would put
    * back copy that was never what the database had.
    */
-  const sql = readFileSync(
-    join(__dirname, "..", "..", "db", "migrations", "0026_message_templates.sql"),
-    "utf8",
-  );
+  // EVERY migration, not just 0026. A seeded body can legitimately be changed
+  // by a later migration (0029 rewrote booking_confirmed to offer the Meet
+  // link), and pinning to the original file would report drift the moment that
+  // happened correctly.
+  const dir = join(__dirname, "..", "..", "db", "migrations");
+  const sql = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => readFileSync(join(dir, f), "utf8"))
+    .join("\n");
 
   // Collapse SQL string concatenation (`'part one ' ||\n 'part two'`) into one
   // literal, THEN unescape doubled quotes. Order matters: unescaping first

@@ -41,6 +41,7 @@ export const PLACEHOLDER_HELP: Record<string, string> = {
   first_name: "Their first name, or “there” if we don’t have a usable one",
   name: "Their full name as they typed it",
   slot: "The booked call time, e.g. “Tue 12 Aug, 6:30 pm”",
+  meet_link: "The Google Meet link, when the calendar produced one",
 };
 
 export interface MessageTemplateSpec {
@@ -105,13 +106,13 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     key: "booking_confirmed",
     label: "Booked a call",
     when: "Sent the moment someone picks a slot on the website.",
-    allowedPlaceholders: ["first_name", "name", "slot"],
+    allowedPlaceholders: ["first_name", "name", "slot", "meet_link"],
     live: false,
     blockedBy:
       "Booking works, but it sends nothing. This copy is new — the stage has never had a message.",
     whatsapp:
       "Hi {{first_name}}, your call with Aura is confirmed for {{slot}}. " +
-      "We'll call you on this number. If that time stops working, reply here and we'll move it.",
+      "Join here: {{meet_link}} . If that time stops working, reply here and we'll move it.",
   },
   {
     key: "reminder_followup",
@@ -150,6 +151,17 @@ export function placeholdersIn(body: string): string[] {
 }
 
 /**
+ * Placeholders that may legitimately have no value, where the right answer is
+ * to DELETE THE SENTENCE rather than substitute anything.
+ *
+ * `{{meet_link}}` is the case. A Meet URL exists only when Google Calendar is
+ * configured and returned one, and the neutral-word fallback below would
+ * otherwise produce "Join here: there ." on a real customer's phone — which is
+ * worse than saying nothing about joining at all.
+ */
+const OPTIONAL_PLACEHOLDERS = new Set(["meet_link"]);
+
+/**
  * Substitute placeholders. Never leaves `{{…}}` in the output.
  *
  * `first_name` and `name` fall back to "there" rather than to an empty string,
@@ -157,12 +169,29 @@ export function placeholdersIn(body: string): string[] {
  * tells the reader they are talking to a script. Anything unresolved — which
  * `validateTemplateBody` should have caught at save time — is replaced with the
  * same neutral word rather than left as literal braces on someone's phone.
+ *
+ * An OPTIONAL placeholder with no value takes its whole sentence with it. The
+ * sentence is found by scanning to the nearest full stop on either side, which
+ * is crude and adequate: these are two-line WhatsApp messages, not prose.
  */
 export function fillTemplate(body: string, vars: Record<string, string | undefined>): string {
-  return body.replace(PLACEHOLDER_RE, (_full, namePart: string) => {
-    const value = vars[namePart];
-    return value && value.trim() ? value.trim() : "there";
-  });
+  let text = body;
+
+  for (const name of OPTIONAL_PLACEHOLDERS) {
+    const value = vars[name];
+    if (value && value.trim()) continue;
+    const token = new RegExp(`[^.!?]*\{\{\s*${name}\s*\}\}[^.!?]*[.!?]\s*`, "g");
+    text = text.replace(token, "");
+  }
+
+  return text
+    .replace(PLACEHOLDER_RE, (_full, namePart: string) => {
+      const value = vars[namePart];
+      return value && value.trim() ? value.trim() : "there";
+    })
+    // Removing a sentence can leave a double space behind it.
+    .replace(/ {2,}/g, " ")
+    .trim();
 }
 
 /**

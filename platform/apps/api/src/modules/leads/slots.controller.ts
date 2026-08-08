@@ -341,19 +341,72 @@ export class SlotsController {
    * time, because the unique index that reserves `starts_at` ignores cancelled
    * rows.
    */
+  /**
+   * Cancel a slot, booked or not.
+   *
+   * ── THIS USED TO 500 ON EXACTLY THE SLOTS THAT MATTER ────────────────────
+   *
+   * It set `status = 'cancelled'` and nothing else, which trips 0023's
+   * constraint `(status = 'booked') = (booked_at IS NOT NULL)`: a cancelled row
+   * still carrying `booked_at` satisfies neither side. So cancelling an OPEN
+   * slot worked and cancelling a BOOKED one threw a check-constraint error,
+   * surfaced in the console as a bare "API 500" with no hint that the booking
+   * was the problem. An operator could not cancel the one kind of slot they
+   * most need to.
+   *
+   * The booking fields are therefore cleared alongside the status, and the
+   * booking that was destroyed is RETURNED rather than silently dropped: a
+   * human agreed to that time and is still expecting the call, and the console
+   * has to be able to say so.
+   */
   @Delete(":id")
   async cancel(@Param("id") id: string) {
     if (!z.string().uuid().safeParse(id).success) {
       throw new BadRequestException("slot id must be a uuid");
     }
+
+    // Read first: `UPDATE ... RETURNING` yields the NEW row, so the booking
+    // details would come back already blanked.
+    const { rows: before } = await this.db.adminPool().query<{
+      booked_name: string | null;
+      submission_id: string | null;
+      calendar_event_id: string | null;
+    }>(
+      `SELECT booked_name, submission_id, calendar_event_id
+         FROM marketing.booking_slots
+        WHERE id = $1 AND status <> 'cancelled'`,
+      [id],
+    );
+    if (before.length === 0) throw new NotFoundException("slot not found, or already cancelled");
+
     const { rows } = await this.db.adminPool().query(
       `UPDATE marketing.booking_slots
-          SET status = 'cancelled'
+          SET status            = 'cancelled',
+              submission_id     = NULL,
+              booked_at         = NULL,
+              booked_name       = NULL,
+              calendar_event_id = NULL,
+              calendar_error    = NULL
         WHERE id = $1 AND status <> 'cancelled'
       RETURNING id, starts_at, status`,
       [id],
     );
     if (rows.length === 0) throw new NotFoundException("slot not found, or already cancelled");
-    return { slot: rows[0] };
+
+    const had = before[0]!;
+    return {
+      slot: rows[0],
+      // Non-null when the cancellation destroyed a real appointment. The
+      // console warns; nothing here contacts the person, because an automatic
+      // "your call is cancelled" with no reason attached is worse than a human
+      // sending one.
+      cancelledBooking: had.submission_id
+        ? {
+            name: had.booked_name,
+            submissionId: had.submission_id,
+            calendarEventId: had.calendar_event_id,
+          }
+        : null,
+    };
   }
 }

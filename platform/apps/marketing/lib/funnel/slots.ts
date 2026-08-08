@@ -78,7 +78,18 @@ export async function listOpenSlots(
 }
 
 export type BookResult =
-  | { ok: true; dayLabel: string; timeLabel: string }
+  | {
+      ok: true;
+      dayLabel: string;
+      timeLabel: string;
+      /**
+       * The Google Meet link, when there is one. Absent whenever Google
+       * Calendar is unconfigured or returned no conference, which is the
+       * common case today - the confirmation drops the join line rather than
+       * rendering an empty link.
+       */
+      meetingUrl?: string | null;
+    }
   | { ok: false; reason: "taken" };
 
 /**
@@ -124,9 +135,14 @@ export async function bookSlot(
 
   // The slot is now genuinely claimed. Mirroring it into Google Calendar comes
   // second and cannot undo it — see syncBookingToCalendar.
-  await syncBookingToCalendar(slotId, submissionId, row.starts_at, row.ends_at);
+  const meetingUrl = await syncBookingToCalendar(
+    slotId,
+    submissionId,
+    row.starts_at,
+    row.ends_at,
+  );
 
-  return { ok: true, dayLabel: row.day_label, timeLabel: row.time_label };
+  return { ok: true, dayLabel: row.day_label, timeLabel: row.time_label, meetingUrl };
 }
 
 /**
@@ -161,9 +177,9 @@ async function syncBookingToCalendar(
   submissionId: string,
   startsAt: Date,
   endsAt: Date,
-): Promise<void> {
+): Promise<string | null> {
   const scheduler = getScheduler();
-  if (!scheduler.configured) return;
+  if (!scheduler.configured) return null;
 
   try {
     // The scheduler titles the event and invites the attendee, so it needs more
@@ -190,15 +206,20 @@ async function syncBookingToCalendar(
       // an erasure request landing mid-booking is the only realistic cause.
       // Recorded rather than thrown: the slot is still legitimately taken.
       await recordCalendarOutcome(slotId, null, "submission not found when creating the event");
-      return;
+      return null;
     }
 
-    const { eventId } = await scheduler.book({ start: startsAt, end: endsAt }, submission);
-    await recordCalendarOutcome(slotId, eventId, null);
+    const { eventId, meetingUrl } = await scheduler.book(
+      { start: startsAt, end: endsAt },
+      submission,
+    );
+    await recordCalendarOutcome(slotId, eventId, null, meetingUrl ?? null);
+    return meetingUrl ?? null;
   } catch (err) {
     const message = (err as Error).message ?? String(err);
     console.error(`[funnel] calendar sync failed for slot ${slotId}:`, message);
     await recordCalendarOutcome(slotId, null, message);
+    return null;
   }
 }
 
@@ -214,14 +235,16 @@ async function recordCalendarOutcome(
   slotId: string,
   eventId: string | null,
   error: string | null,
+  meetingUrl: string | null = null,
 ): Promise<void> {
   try {
     await query(
       `UPDATE marketing.booking_slots
           SET calendar_event_id = $2,
-              calendar_error    = $3
+              calendar_error    = $3,
+              meeting_url       = $4
         WHERE id = $1`,
-      [slotId, eventId, error ? error.slice(0, 500) : null],
+      [slotId, eventId, error ? error.slice(0, 500) : null, meetingUrl],
     );
   } catch (err) {
     console.error(

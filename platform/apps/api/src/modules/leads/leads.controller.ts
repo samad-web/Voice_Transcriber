@@ -51,6 +51,16 @@ const RejectBody = z.object({
   actor: z.string().min(1).max(200).optional(),
 });
 
+const DeleteBody = z.object({
+  /**
+   * No default, on purpose. A DELETE that means "all" when the caller omitted a
+   * field is the accident this endpoint exists to not have.
+   */
+  scope: z.enum(["selected", "all"]),
+  /** Required for `selected`. Capped so one call cannot be aimed at everything. */
+  ids: z.array(z.string().uuid()).min(1).max(500).optional(),
+});
+
 const ListQuery = z.object({
   /** `open` hides already-converted enquiries, which is the default working view. */
   state: z.enum(["all", "open", "converted"]).optional(),
@@ -245,6 +255,121 @@ export class LeadsController {
         releasedSlots: released.map((r) => ({ id: r.id, startsAt: r.starts_at })),
         orphanedCalendarEvents: released
           .map((r) => r.calendar_event_id)
+          .filter((v): v is string => Boolean(v)),
+      };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Delete enquiries permanently.
+   *
+   * ── WHY DELETE AND NOT ARCHIVE ───────────────────────────────────────────
+   *
+   * Because the enquirer can require it. A DPDP erasure request is not
+   * satisfied by a hidden row, and neither is a test lead you want gone from
+   * your own list. `rejected` already exists for "we decided no"; this is for
+   * "this should not be in the database".
+   *
+   * The FK cascade does the rest: `funnel_contact_history` and
+   * `funnel_followups` are ON DELETE CASCADE, so the answers and any queued
+   * message go with it. `booking_slots.submission_id` is ON DELETE SET NULL and
+   * that is deliberate (an erasure must not delete the operator's calendar out
+   * from under them), which leaves two things to handle by hand below.
+   *
+   * ── SCOPE IS EXPLICIT, NEVER IMPLIED ─────────────────────────────────────
+   *
+   * `scope` has no default. A DELETE that quietly means "all" when the caller
+   * forgot a parameter is the shape of accident this endpoint must not have,
+   * and `ids` is capped so a single call cannot be pointed at an unbounded set
+   * by mistake.
+   */
+  @Post("delete")
+  async remove(@Body() body: unknown) {
+    const parsed = DeleteBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { scope, ids } = parsed.data;
+
+    if (scope === "selected" && (!ids || ids.length === 0)) {
+      throw new BadRequestException("scope 'selected' needs at least one id");
+    }
+
+    const client = await this.db.adminPool().connect();
+    try {
+      await client.query("BEGIN");
+
+      // Which rows are in scope. `converted` is excluded from BOTH scopes and
+      // is not overridable: that row is the provenance of a live customer
+      // relationship, and the audit_log entry written when it converted points
+      // at an id that would no longer exist.
+      const where =
+        scope === "all"
+          ? `converted_org_id IS NULL`
+          : `id = ANY($1::uuid[]) AND converted_org_id IS NULL`;
+      const params = scope === "all" ? [] : [ids];
+
+      const { rows: targets } = await client.query<{ id: string }>(
+        `SELECT id FROM marketing.funnel_submissions WHERE ${where}`,
+        params,
+      );
+
+      if (targets.length === 0) {
+        await client.query("COMMIT");
+        return { deleted: 0, slotsReleased: 0, orphanedCalendarEvents: [] };
+      }
+      const targetIds = targets.map((t) => t.id);
+
+      // 1. Hand back any booked time. SET NULL would leave the slot marked
+      //    booked with nobody attached, so it would neither be offered to
+      //    anyone nor happen.
+      const { rows: slots } = await client.query<{
+        id: string;
+        calendar_event_id: string | null;
+      }>(
+        `SELECT id, calendar_event_id
+           FROM marketing.booking_slots
+          WHERE submission_id = ANY($1::uuid[]) AND status = 'booked'`,
+        [targetIds],
+      );
+      if (slots.length > 0) {
+        await client.query(
+          `UPDATE marketing.booking_slots
+              SET status='open', submission_id=NULL, booked_at=NULL, booked_name=NULL,
+                  calendar_event_id=NULL, calendar_error=NULL
+            WHERE id = ANY($1::uuid[])`,
+          [slots.map((s) => s.id)],
+        );
+      }
+
+      // 2. Scrub the name off any slot this person ever booked, including ones
+      //    already cancelled or past. `booked_name` is plain text that SET NULL
+      //    does not touch, so deleting the submission while leaving it is the
+      //    appearance of erasure rather than erasure.
+      await client.query(
+        `UPDATE marketing.booking_slots
+            SET booked_name = NULL
+          WHERE submission_id = ANY($1::uuid[]) AND booked_name IS NOT NULL`,
+        [targetIds],
+      );
+
+      const { rowCount } = await client.query(
+        `DELETE FROM marketing.funnel_submissions WHERE id = ANY($1::uuid[])`,
+        [targetIds],
+      );
+
+      await client.query("COMMIT");
+      return {
+        deleted: rowCount ?? 0,
+        slotsReleased: slots.length,
+        // The API cannot delete a Google Calendar event; the calendar client
+        // lives in the marketing app. Returned so the console can say so
+        // rather than letting the event outlive the person.
+        orphanedCalendarEvents: slots
+          .map((s) => s.calendar_event_id)
           .filter((v): v is string => Boolean(v)),
       };
     } catch (err) {

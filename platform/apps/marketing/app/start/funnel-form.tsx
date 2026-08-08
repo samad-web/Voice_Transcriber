@@ -697,7 +697,11 @@ function Outcome({ outcome }: { outcome: Outcome }) {
  */
 function SlotPicker() {
   const [slots, setSlots] = useState<OpenSlot[] | null>(null);
-  const [booked, setBooked] = useState<{ dayLabel: string; timeLabel: string } | null>(null);
+  const [booked, setBooked] = useState<{
+    dayLabel: string;
+    timeLabel: string;
+    meetingUrl: string | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -720,6 +724,25 @@ function SlotPicker() {
         <p className="mt-1 text-sm" style={{ color: "var(--mk-muted)" }}>
           We&rsquo;ll send a confirmation to the details you gave us.
         </p>
+
+        {/* Shown only when Google actually returned a link. Rendering a "Join"
+            button that goes nowhere is worse than not offering one, and the
+            link is genuinely absent whenever the calendar is unconfigured. */}
+        {booked.meetingUrl ? (
+          <p className="mt-3 text-sm">
+            <a
+              href={booked.meetingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold underline underline-offset-2"
+            >
+              Join on Google Meet
+            </a>{" "}
+            <span style={{ color: "var(--mk-muted)" }}>
+              (the same link is in your calendar invite)
+            </span>
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -757,7 +780,11 @@ function SlotPicker() {
                       const res = await bookSlotAction(s.id);
                       if (res.ok) {
                         setError(null);
-                        setBooked({ dayLabel: res.dayLabel!, timeLabel: res.timeLabel! });
+                        setBooked({
+                          dayLabel: res.dayLabel!,
+                          timeLabel: res.timeLabel!,
+                          meetingUrl: res.meetingUrl ?? null,
+                        });
                         // The conversion, fired only once the slot is actually
                         // claimed. Not on reaching the picker and not on the
                         // /booked page: the first only means somebody

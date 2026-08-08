@@ -98,7 +98,10 @@ export class GoogleCalendarScheduler implements Scheduler {
       .slice(0, this.config.maxSlots);
   }
 
-  async book(slot: Slot, submission: FunnelSubmission): Promise<{ eventId: string }> {
+  async book(
+    slot: Slot,
+    submission: FunnelSubmission,
+  ): Promise<{ eventId: string; meetingUrl?: string | null }> {
     /**
      * Re-check free/busy immediately before inserting.
      *
@@ -140,6 +143,20 @@ export class GoogleCalendarScheduler implements Scheduler {
       start: { dateTime: slot.start.toISOString(), timeZone: this.config.timeZone },
       end: { dateTime: slot.end.toISOString(), timeZone: this.config.timeZone },
       ...(attendees ? { attendees } : {}),
+      // Ask Google to mint a Meet link for this event.
+      //
+      // `createRequest` is the only way to get one: a Meet URL cannot be
+      // constructed or guessed, and setting `hangoutLink` directly is ignored.
+      // The requestId is idempotency — repeating it returns the SAME conference
+      // rather than creating a second one, which matters because this event id
+      // is itself a dedupe key and a retry must not produce two links for one
+      // meeting.
+      conferenceData: {
+        createRequest: {
+          requestId: eventIdFor(submission.id, slot.start),
+          conferenceSolutionKey: { type: "hangoutsMeet" },
+        },
+      },
       // Google's own dedupe key. If our retry logic ever re-sends the same
       // booking, this makes the second insert a 409 rather than a duplicate
       // meeting. Must be base32hex-ish and 5-1024 chars; the submission id with
@@ -147,9 +164,18 @@ export class GoogleCalendarScheduler implements Scheduler {
       id: eventIdFor(submission.id, slot.start),
     };
 
-    const query = attendees ? "?sendUpdates=all" : "";
-    const res = await this.fetchJson<{ id?: string }>(
-      `${CALENDAR_API}/calendars/${encodeURIComponent(this.config.calendarId)}/events${query}`,
+    // `conferenceDataVersion=1` is REQUIRED. Without it Google silently drops
+    // the conferenceData block and returns a perfectly valid event with no Meet
+    // link, which is the failure that looks like the feature simply not working.
+    const params = new URLSearchParams({ conferenceDataVersion: "1" });
+    if (attendees) params.set("sendUpdates", "all");
+
+    const res = await this.fetchJson<{
+      id?: string;
+      hangoutLink?: string;
+      conferenceData?: { entryPoints?: Array<{ entryPointType?: string; uri?: string }> };
+    }>(
+      `${CALENDAR_API}/calendars/${encodeURIComponent(this.config.calendarId)}/events?${params}`,
       { method: "POST", body: JSON.stringify(body) },
     );
 
@@ -158,7 +184,15 @@ export class GoogleCalendarScheduler implements Scheduler {
       // to a human who will then show up.
       throw new Error("Calendar accepted the insert but returned no event id");
     }
-    return { eventId: res.id };
+
+    // `hangoutLink` is the convenient field but is not always populated on the
+    // insert response, so the entryPoints array is the fallback. A missing link
+    // is NOT an error: the meeting is real and in the calendar either way, and
+    // failing the booking over a video URL would be the tail wagging the dog.
+    const entry = res.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video");
+    const meetingUrl = res.hangoutLink ?? entry?.uri ?? null;
+
+    return { eventId: res.id, meetingUrl };
   }
 
   /* ── Google plumbing ─────────────────────────────────────────────────── */
