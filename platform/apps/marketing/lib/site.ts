@@ -5,14 +5,35 @@
  * nothing that would push a content page out of static rendering.
  */
 
-/** Public origin of the marketing site. Apex/www — NOT aura.sirahagents.com,
- *  which stays the console + API host (doc 16 §4: enrolled handsets carry that
- *  URL in their activation payload). */
+/**
+ * Public origin of the marketing site.
+ *
+ * CHANGED 2026-08-09. This used to be the apex, with a note that it was
+ * emphatically NOT aura.sirahagents.com. The apex turned out to resolve to a
+ * different server entirely (3.146.153.124), so there was nowhere to publish;
+ * aura.sirahagents.com is the host we actually control, and it now serves both.
+ * The split is by path, in nginx:
+ *
+ *   /v1/*     the API           — UNCHANGED, and it must stay that way
+ *   /admin*   the console       — Next `basePath`, see apps/web/next.config.ts
+ *   /         this site
+ *
+ * The /v1 line is the load-bearing one. Enrolled handsets carry this hostname
+ * in their activation payload and upload recordings to it; they cannot be
+ * re-pointed remotely, so that prefix is effectively permanent.
+ */
 export const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://www.sirahagents.com";
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://aura.sirahagents.com";
 
-/** The live console. Existing customers sign in here. */
-export const CONSOLE_URL = "https://aura.sirahagents.com";
+/**
+ * The live console. Existing customers sign in here.
+ *
+ * Includes the /admin prefix, because the console is served under it — so
+ * `${CONSOLE_URL}/login` resolves to /admin/login. Without the prefix that link
+ * lands on THIS site's 404, which is a particularly bad way to greet a customer
+ * trying to sign in.
+ */
+export const CONSOLE_URL = "https://aura.sirahagents.com/admin";
 
 /**
  * The console door — an address, not a button.

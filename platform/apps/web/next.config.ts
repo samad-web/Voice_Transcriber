@@ -3,6 +3,27 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@aura/ui"],
+  /**
+   * The console lives under /admin, sharing aura.sirahagents.com with the
+   * marketing site (owner's decision, 2026-08-09: the apex points at a
+   * different server, and this is the domain we control).
+   *
+   * `basePath`, NOT an nginx rewrite. Next bakes the prefix into every
+   * generated link, every Server Action endpoint and — the part a rewrite
+   * cannot fix — the `/_next/static/...` asset URLs. Stripping /admin at the
+   * proxy would serve HTML that then asks for its JavaScript at the root, where
+   * the marketing site answers with its own 404 page, and the console would
+   * render unstyled and inert with no error anywhere.
+   *
+   * WHAT MUST NOT MOVE: `/v1/*` on this host. Enrolled handsets carry
+   * aura.sirahagents.com in their activation payload and POST recordings to it,
+   * so nginx routes /v1 to the API ahead of everything else. Changing that
+   * bricks every phone in the field, and they cannot be re-pointed remotely.
+   *
+   * Configurable so local development stays at the root: `pnpm dev` serves the
+   * console on :3000 with no prefix, and only the container build sets it.
+   */
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || undefined,
   outputFileTracingRoot: path.join(__dirname, "../.."),
   // Ships a self-contained server bundle with only the traced dependencies —
   // what docker/web.Dockerfile copies into the runtime image.

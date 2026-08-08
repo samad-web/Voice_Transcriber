@@ -78,6 +78,15 @@ services:
         # Inlined into the client bundle at build time — changing any of these
         # needs a rebuild, not a restart.
         NEXT_PUBLIC_API_URL: https://${APP_DOMAIN}
+        # The console is served under /admin, because the marketing site now
+        # holds the root of this same host. Next bakes this into every link,
+        # every Server Action endpoint and every /_next/static asset URL, so it
+        # is a BUILD arg — a restart with it changed does nothing.
+        #
+        # Defaults to /admin. Set it to an empty string to serve the console at
+        # the root again, which is what a deployment without a marketing site
+        # would want.
+        NEXT_PUBLIC_BASE_PATH: ${CONSOLE_BASE_PATH-/admin}
         # Supabase Auth — omit and the console ships with sign-in disabled.
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}

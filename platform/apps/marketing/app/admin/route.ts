@@ -20,6 +20,18 @@ import { CONSOLE_URL } from "@/lib/site";
  * This is not an access control. It hides the door from a visitor who has no
  * reason to open it; the console's own Supabase auth and the operator allowlist
  * are what actually protect what is behind it.
+ *
+ * ── IN PRODUCTION THIS NEVER RUNS, AS OF 2026-08-09 ────────────────────────
+ *
+ * The console moved onto this same hostname under /admin, and nginx matches
+ * `location ^~ /admin` before anything reaches this app — so the console
+ * answers /admin directly and no redirect is involved.
+ *
+ * It is kept because LOCAL DEVELOPMENT has no nginx: the marketing site runs on
+ * :3200 and the console on :3000, two origins with nothing in front of them,
+ * and this is what connects them. Deleting it would make /admin a 404 on every
+ * developer's machine while working fine in production, which is the worst
+ * direction for that kind of difference to run.
  */
 export function GET(): Response {
   return Response.redirect(`${CONSOLE_URL}/login`, 307);
