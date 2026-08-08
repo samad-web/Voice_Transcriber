@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Loader2, X } from "lucide-react";
-import { BrutalButton, MonoLabel, StatusChip } from "@aura/ui";
+import { X } from "lucide-react";
+import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { fetchLeadAction, updateLeadAction } from "./actions";
 import {
   contactLabel,
@@ -14,6 +14,19 @@ import {
   type LeadCall,
   type Stage,
 } from "./types";
+
+/*
+ * The <textarea> chrome, kept identical to the kit's CONTROL_BASE by hand.
+ *
+ * @aura/ui has no Textarea primitive yet (doc 18 §2 lists it as deliberately
+ * deferred under "build only what a page uses"), and control-styles.ts is not
+ * exported from the package index. This is the one console textarea, so it is
+ * copied rather than left on the old 2px black border — which would be the only
+ * brutalist edge left in the drawer. When Textarea lands, delete this.
+ */
+const TEXTAREA_CLASS =
+  "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
+  "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
 
 /**
  * One lead, opened from either view.
@@ -113,39 +126,43 @@ export function LeadDrawer({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden />
+      {/* The scrim is a shadow over the page, not a surface: it stays a literal
+          black wash in both modes rather than flipping with the theme. */}
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} aria-hidden />
       <aside
         role="dialog"
         aria-label={`Lead ${lead.title}`}
-        className="fixed right-0 top-0 h-dvh w-full sm:w-[30rem] bg-white border-l-4 border-black z-50 flex flex-col overflow-y-auto"
+        className="fixed right-0 top-0 z-50 flex h-dvh w-full flex-col overflow-y-auto border-l border-border bg-surface shadow-lg sm:w-[30rem]"
       >
-        <div className="sticky top-0 bg-white border-b-2 border-black p-4 sm:p-5 flex items-start justify-between gap-3">
+        <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-border bg-surface p-4 sm:p-5">
           <div className="min-w-0">
             <MonoLabel>{contactLabel(lead)}</MonoLabel>
-            <h2 className="text-xl font-display font-black uppercase tracking-tight leading-tight mt-1 break-words">
+            <h2 className="mt-1 text-xl leading-tight font-semibold break-words text-text">
               {lead.title}
             </h2>
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusChip tone={lead.status === "won" ? "solid" : "muted"}>
                 {lead.status}
               </StatusChip>
-              <span className="text-[10px] font-mono text-neutral-400 font-bold uppercase tracking-wider">
+              <span className="text-xs text-text-muted tabular-nums">
                 {lead.call_count} call{lead.call_count === 1 ? "" : "s"} ·{" "}
                 {relativeTime(lead.last_activity_at)}
               </span>
             </div>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={onClose}
             aria-label="Close"
-            className="p-1.5 border-2 border-black text-black rounded-none hover:bg-black hover:text-white shrink-0"
+            className="shrink-0 px-2"
           >
-            <X className="h-4 w-4" />
-          </button>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
 
-        <div className="p-4 sm:p-5 space-y-5">
+        <div className="space-y-5 p-4 sm:p-5">
           <div className="space-y-2">
             <MonoLabel>Stage</MonoLabel>
             <div className="flex flex-wrap gap-1.5">
@@ -154,12 +171,16 @@ export function LeadDrawer({
                   key={stage.key}
                   type="button"
                   disabled={pending || stage.key === lead.stage}
+                  // aria-pressed, not colour alone: the current stage is also
+                  // the disabled one, and "disabled" is not a synonym for
+                  // "selected" to a screen reader.
+                  aria-pressed={stage.key === lead.stage}
                   onClick={() => apply({ stage: stage.key })}
-                  className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1.5 border-2 border-black transition-colors ${
+                  className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out disabled:cursor-default ${
                     stage.key === lead.stage
-                      ? "bg-black text-white"
-                      : "bg-white text-neutral-500 hover:text-black hover:bg-neutral-50"
-                  } disabled:cursor-default`}
+                      ? "border-transparent bg-accent-subtle text-accent-text"
+                      : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+                  }`}
                 >
                   {stage.label}
                 </button>
@@ -170,20 +191,18 @@ export function LeadDrawer({
           {lead.summary ? (
             <div className="space-y-1.5">
               <MonoLabel>What the call was about</MonoLabel>
-              <p className="text-sm font-sans text-neutral-700 leading-relaxed">{lead.summary}</p>
+              <p className="text-sm leading-relaxed text-text">{lead.summary}</p>
             </div>
           ) : null}
 
           {facts.length > 0 ? (
             <div className="space-y-2">
               <MonoLabel>Extracted details</MonoLabel>
-              <dl className="divide-y-2 divide-neutral-100 border-2 border-neutral-200">
+              <dl className="divide-y divide-border rounded-md border border-border">
                 {facts.map(([key, value]) => (
                   <div key={key} className="flex items-start justify-between gap-3 px-3 py-2">
-                    <dt className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                      {key.replace(/_/g, " ")}
-                    </dt>
-                    <dd className="text-xs font-sans text-black text-right break-words min-w-0">
+                    <dt className="text-xs text-text-muted">{key.replace(/_/g, " ")}</dt>
+                    <dd className="min-w-0 text-right text-xs break-words text-text">
                       {typeof value === "boolean"
                         ? value
                           ? "Yes"
@@ -198,55 +217,52 @@ export function LeadDrawer({
 
           <div className="space-y-3">
             <MonoLabel>Owner notes</MonoLabel>
-            <label className="block">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                Deal value
-              </span>
-              <input
+            {/* FormField, not a bare <label> wrapper: it owns the for/id pairing
+                and the aria-describedby wiring, which is exactly the part that
+                was missing from the hand-rolled version. */}
+            <FormField label="Deal value" name="lead-value">
+              <Input
                 value={draft.value}
                 onChange={(e) => setDraft({ ...draft, value: e.target.value })}
                 inputMode="decimal"
                 placeholder="—"
-                className="mt-1 w-full px-3 py-2 text-sm font-mono border-2 border-black rounded-none focus:outline-none focus:ring-2 focus:ring-black"
+                className="tabular-nums"
               />
-            </label>
-            <label className="block">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                Next action
-              </span>
-              <input
+            </FormField>
+            <FormField label="Next action" name="lead-next-action">
+              <Input
                 value={draft.nextAction}
                 onChange={(e) => setDraft({ ...draft, nextAction: e.target.value })}
                 maxLength={500}
                 placeholder="Call back Tuesday with a quote"
-                className="mt-1 w-full px-3 py-2 text-sm font-sans border-2 border-black rounded-none focus:outline-none focus:ring-2 focus:ring-black"
               />
-            </label>
-            <label className="block">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                Notes
-              </span>
+            </FormField>
+            <FormField label="Notes" name="lead-notes">
               <textarea
                 value={draft.notes}
                 onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
                 rows={4}
                 maxLength={5000}
-                className="mt-1 w-full px-3 py-2 text-sm font-sans border-2 border-black rounded-none focus:outline-none focus:ring-2 focus:ring-black resize-y"
+                className={TEXTAREA_CLASS}
               />
-            </label>
+            </FormField>
             <div className="flex items-center gap-3">
-              <BrutalButton onClick={saveDetails} disabled={pending} shadow>
-                {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              <Button type="button" onClick={saveDetails} loading={pending}>
                 Save
-              </BrutalButton>
+              </Button>
               {saved && !pending ? (
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
+                // role=status, not a silent span: the only confirmation that a
+                // save landed is this word appearing.
+                <span role="status" className="text-xs text-text-muted">
                   Saved
                 </span>
               ) : null}
             </div>
             {error ? (
-              <p className="text-xs font-mono font-bold text-red-600 border-2 border-red-600 bg-red-50 p-2">
+              <p
+                role="alert"
+                className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
+              >
                 {error}
               </p>
             ) : null}
@@ -255,26 +271,22 @@ export function LeadDrawer({
           <div className="space-y-2">
             <MonoLabel>Call history</MonoLabel>
             {calls === null ? (
-              <p className="text-[10px] font-mono font-bold uppercase text-neutral-400 py-3">
-                Loading…
-              </p>
+              <p className="py-3 text-xs text-text-muted">Loading…</p>
             ) : calls.length === 0 ? (
-              <p className="text-[10px] font-mono font-bold uppercase text-neutral-400 py-3">
-                No calls on record
-              </p>
+              <p className="py-3 text-xs text-text-muted">No calls on record</p>
             ) : (
-              <div className="divide-y-2 divide-neutral-100 border-2 border-neutral-200">
+              <div className="divide-y divide-border rounded-md border border-border">
                 {calls.map((call) => (
-                  <div key={call.id} className="px-3 py-2 flex items-center justify-between gap-3">
+                  <div key={call.id} className="flex items-center justify-between gap-3 px-3 py-2">
                     <div className="min-w-0">
-                      <span className="text-xs font-sans text-black block">
+                      <span className="block text-xs text-text">
                         {new Date(call.started_at).toLocaleString()}
                       </span>
-                      <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">
+                      <span className="text-xs text-text-muted">
                         {call.direction} · {call.telecaller ?? "unknown handset"}
                       </span>
                     </div>
-                    <span className="text-[10px] font-mono font-bold text-neutral-500 shrink-0">
+                    <span className="shrink-0 text-xs text-text-muted tabular-nums">
                       {formatDuration(call.duration_s)}
                     </span>
                   </div>
@@ -283,26 +295,26 @@ export function LeadDrawer({
             )}
           </div>
 
-          <dl className="grid grid-cols-2 gap-3 pt-2 border-t-2 border-neutral-200 text-[10px] font-mono">
+          <dl className="grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">
             <div>
-              <dt className="text-neutral-400 uppercase tracking-wider font-bold">Value</dt>
-              <dd className="text-black font-bold mt-0.5">{formatValue(lead.value_num)}</dd>
-            </div>
-            <div>
-              <dt className="text-neutral-400 uppercase tracking-wider font-bold">Telecaller</dt>
-              <dd className="text-black font-bold mt-0.5 break-words">
-                {lead.telecaller ?? "—"}
+              <dt className="text-text-muted">Value</dt>
+              <dd className="mt-0.5 font-medium text-text tabular-nums">
+                {formatValue(lead.value_num)}
               </dd>
             </div>
             <div>
-              <dt className="text-neutral-400 uppercase tracking-wider font-bold">First seen</dt>
-              <dd className="text-black font-bold mt-0.5">
+              <dt className="text-text-muted">Telecaller</dt>
+              <dd className="mt-0.5 font-medium break-words text-text">{lead.telecaller ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-text-muted">First seen</dt>
+              <dd className="mt-0.5 font-medium text-text tabular-nums">
                 {new Date(lead.created_at).toLocaleDateString()}
               </dd>
             </div>
             <div>
-              <dt className="text-neutral-400 uppercase tracking-wider font-bold">Confidence</dt>
-              <dd className="text-black font-bold mt-0.5">
+              <dt className="text-text-muted">Confidence</dt>
+              <dd className="mt-0.5 font-medium text-text tabular-nums">
                 {num(lead.score) === null ? "—" : `${Math.round(num(lead.score)! * 100)}%`}
               </dd>
             </div>

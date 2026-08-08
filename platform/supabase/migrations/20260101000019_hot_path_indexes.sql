@@ -1,0 +1,142 @@
+-- 0019_hot_path_indexes.sql — the five indexes the hot paths have been missing
+-- since 0001.
+--
+-- Nothing here changes a row, a column or a constraint. Every statement adds an
+-- index for a query that already runs, on every call or on a 30-second timer,
+-- and that is a sequential scan today. They were not forgotten so much as never
+-- felt: at the platform's current size a seq scan is free. Three of the five
+-- degrade with a tenant's LIFETIME corpus rather than with concurrent load,
+-- which is the shape that looks healthy in staging forever and then does not.
+--
+-- ── Why no CREATE INDEX CONCURRENTLY, on a live database ─────────────────────
+-- Because this runner cannot express it. packages/db/migrate.js:37-40 wraps each
+-- migration file in BEGIN / <file> / COMMIT, and CONCURRENTLY is rejected inside
+-- a transaction block (SQLSTATE 25001, "cannot run inside a transaction block").
+-- The first statement would abort, migrate.js:44 would ROLLBACK, set exitCode=1
+-- and break the loop — so 0019 would neither apply nor be recorded, and the
+-- operator would be reading a transaction-block error rather than an index
+-- problem. `supabase db push` wraps a file the same way, so the CLI route is not
+-- an escape hatch either. Making CONCURRENTLY available means teaching the
+-- runner to execute a nominated file outside a transaction, which changes its
+-- failure semantics (a half-applied file stops being impossible) and is a change
+-- to the runner, not to this file.
+--
+-- What that costs here: a plain CREATE INDEX takes a SHARE lock on the table.
+-- Concurrent SELECTs are unaffected; concurrent INSERT/UPDATE/DELETE wait. And
+-- because all five run inside the runner's single transaction, each lock is held
+-- until the COMMIT at the end of the file, not released after its own statement.
+-- At the current table sizes (~150 calls platform-wide) every build is
+-- sub-millisecond and the whole file is a blip on the device ingest path.
+--
+-- RE-READ THIS BEFORE ADDING A SIXTH INDEX. Once `calls` is in the millions the
+-- identical file is a multi-minute write outage across `calls`, `recordings`,
+-- `transcripts` and `ai_outputs` simultaneously — and POST /v1/calls/:id/complete
+-- is on that path with no sweeper that recovers a stranded AWAITING_AUDIO row.
+-- The answer at that point is a runner that can run a file outside a
+-- transaction, not a bigger maintenance window.
+
+-- Fail fast instead of queueing. A pending SHARE lock does not merely wait
+-- behind a long-running transaction: it queues AHEAD of every writer that
+-- arrives after it, so one idle-in-transaction session turns a five-second
+-- migration into a table-wide write stall for as long as that session lives.
+-- Five seconds, then the statement errors and the runner rolls the file back.
+-- Every statement below is IF NOT EXISTS, so the remedy is to re-run the
+-- migration once the blocker is gone — never to repair a partial apply.
+SET LOCAL lock_timeout = '5s';
+
+-- ── transcripts (call_id) ────────────────────────────────────────────────────
+-- transcripts carries exactly two indexes today: PRIMARY KEY (id) and
+-- transcripts_fts (GIN on tsv). Neither can answer `WHERE call_id = $1`, and
+-- every access to this table in the codebase is by call_id:
+--   worker/pipeline/pipeline.ts:202 (DELETE, persistTranscript), :268, :309,
+--     :321, :349  — one successful call touches it five times
+--   worker/pipeline/leads.ts:103 · worker/pipeline/crm-dispatch.ts:172
+--   worker/pipeline/reaper.ts:43 (retention DELETE, per expired call)
+--   api/modules/calls/calls.controller.ts:366 (call detail)
+--   api/modules/agents/agents.controller.ts:203
+--   api/modules/tenancy/erasure.controller.ts:83
+-- So the per-call cost is O(the tenant's entire transcript corpus) × 5, which
+-- grows with how long the customer has been a customer.
+--
+-- Deliberately NOT UNIQUE even though persistTranscript is DELETE-then-INSERT
+-- and one row per call is the intent: a unique index fails the whole migration
+-- outright against any pre-existing duplicate, and whether production holds one
+-- cannot be established without querying production. Uniqueness is a separate
+-- change that starts with a count.
+CREATE INDEX IF NOT EXISTS transcripts_call ON transcripts (call_id);
+
+-- ── recordings (call_id) ─────────────────────────────────────────────────────
+-- recordings carries only PRIMARY KEY (id). Same shape as transcripts — every
+-- read and every delete is by call_id:
+--   api/modules/calls/calls.controller.ts:231 (POST /v1/calls/:id/complete),
+--     :254, :404 (audio download)
+--   worker/pipeline/pipeline.ts:564 · worker/pipeline/crm-dispatch.ts:173
+--   worker/pipeline/reaper.ts:31 (the LEFT JOIN) and :43 (the DELETE)
+--   api/modules/tenancy/erasure.controller.ts:53, :83
+--   api/modules/devices/instances.controller.ts:213
+-- The one that decides the priority is calls.controller.ts:231: it is on the
+-- device ingest path, it is @SkipThrottle(), and a failure there strands the
+-- call in AWAITING_AUDIO with the bytes already in S3 — retry.ts sweeps FAILED_%
+-- and UPLOADED, so nothing recovers it. Making the hottest device write scale
+-- with the corpus is the worst of the three call_id gaps.
+CREATE INDEX IF NOT EXISTS recordings_call ON recordings (call_id);
+
+-- ── ai_outputs (call_id, created_at DESC) ────────────────────────────────────
+-- ai_outputs carries only PRIMARY KEY (id).
+--   worker/pipeline/leads.ts:98 · worker/pipeline/crm-dispatch.ts:169
+--   api/modules/devices/device-telemetry.controller.ts:107
+--   api/modules/calls/calls.controller.ts:371
+--   api/modules/tenancy/erasure.controller.ts:83 · worker/pipeline/reaper.ts:43
+--
+-- Two columns rather than one, on purpose. The three hottest readers are all
+-- correlated subqueries of the form
+--   (SELECT … FROM ai_outputs WHERE call_id = c.id ORDER BY created_at DESC LIMIT 1)
+-- — "the latest output for this call". A bare (call_id) index removes the scan
+-- but leaves a sort of every output row for that call; (call_id, created_at DESC)
+-- makes it a single index seek that stops at the first tuple. Today each one is
+-- a sequential scan PLUS that sort, executed once per lead projection, once per
+-- CRM delivery, and once per handset polling its own call result on the
+-- device-authed, unthrottled GET /v1/devices/me/calls/:callId.
+CREATE INDEX IF NOT EXISTS ai_outputs_call_created ON ai_outputs (call_id, created_at DESC);
+
+-- ── calls (org_id, started_at DESC) ──────────────────────────────────────────
+-- Serves the single most-executed read in the console: the Call Explorer list at
+-- api/modules/calls/calls.controller.ts:308-326 and its paired count at :333,
+-- both `ORDER BY c.started_at DESC LIMIT/OFFSET`. Also worker/pipeline/reaper.ts:29
+-- (`started_at < now() - retention`, hourly per active org),
+-- api/modules/analytics/analytics.controller.ts:54 and
+-- api/modules/owner/owner.controller.ts:140 (both a 7/30-day started_at range).
+--
+-- calls_ws_started (org_id, workspace_id, started_at DESC) from 0001:162 looks
+-- like it should already cover this, and cannot. Under RLS the effective
+-- predicate on a tenant-pool query is org_id = current_setting('app.org_id') and
+-- NOTHING on workspace_id — the controller narrows by instance_id and device_id
+-- through joins, never by workspace. With an equality on column 1 and no
+-- predicate on column 2, Postgres cannot emit started_at-ordered rows from that
+-- index: it has to visit every workspace_id group and sort, so the LIMIT 100
+-- saves nothing. RLS is what supplies the leading org_id equality here, and that
+-- is precisely what justifies this index — without that fact it reads as a
+-- duplicate of 0001:162.
+CREATE INDEX IF NOT EXISTS calls_org_started ON calls (org_id, started_at DESC);
+
+-- ── calls (updated_at) WHERE status = 'UPLOADED' ─────────────────────────────
+-- Serves requeueStuckUploads (worker/pipeline/retry.ts:88-96), fired every 30s
+-- by startRetrySweeper (:110-114): a full sequential scan of the whole
+-- multi-tenant calls table plus a sort, on getAdminPool() with no org predicate,
+-- 2,880 times a day, forever.
+--
+-- calls_status (org_id, status) WHERE status NOT IN ('COMPLETE') from 0001:163
+-- cannot serve it: its leading column is org_id and this query deliberately has
+-- none — it sweeps every tenant at once.
+--
+-- Partial rather than a composite (status, updated_at). UPLOADED is a transient
+-- state a call passes through in seconds, so the qualifying set is a handful of
+-- rows and usually zero; the partial index stays a few pages forever, while the
+-- composite would be the size of the whole table and would need maintaining on
+-- every status transition of every call. Both answer the query; this one answers
+-- it for roughly 1% of the write cost.
+--
+-- NOTE: the sibling sweep on the same 30s tick, retryDueCalls (retry.ts:33), is
+-- ALREADY served by calls_retry_due (next_attempt_at) WHERE next_attempt_at IS
+-- NOT NULL from 0013:40. Do not add a second index for it.
+CREATE INDEX IF NOT EXISTS calls_stuck_uploads ON calls (updated_at) WHERE status = 'UPLOADED';

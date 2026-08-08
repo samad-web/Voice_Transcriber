@@ -241,9 +241,16 @@ function PasswordReveal({ email, password }: { email: string; password: string }
       <BrutalButton
         variant="secondary"
         className="w-full"
-        onClick={async () => {
-          await navigator.clipboard.writeText(password);
-          setCopied(true);
+        // Sync, not `async` — see api-keys-manager.tsx: React discards an event
+        // handler's return value, so an async onClick turns a rejected
+        // clipboard write (insecure origin, denied permission) into an
+        // unhandled rejection. This password is shown once and never
+        // recovered, so a failed copy must un-claim COPIED, not keep it.
+        onClick={() => {
+          void navigator.clipboard
+            .writeText(password)
+            .then(() => setCopied(true))
+            .catch(() => setCopied(false));
         }}
       >
         {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

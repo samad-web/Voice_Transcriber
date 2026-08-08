@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
-import { Board } from "./board";
 import type { BoardColumn, Stage } from "../types";
+import { Board } from "./board";
 
 export const metadata: Metadata = { title: "Lead Board — Aura" };
 
@@ -22,7 +22,7 @@ export default async function BoardPage() {
         <PageHeader title="Lead Board" context="Pipeline" />
         <Card>
           <MonoLabel>Data unavailable</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             The platform API did not answer. If this persists, contact your provider.
           </p>
         </Card>
@@ -33,7 +33,7 @@ export default async function BoardPage() {
   return (
     <>
       <PageHeader title="Lead Board" context="Pipeline" />
-      <p className="text-xs font-mono text-neutral-500 -mt-2">
+      <p className="-mt-2 text-sm text-text-muted">
         Drag a card to move it, or open one to edit. On a phone, tap a card and
         pick a stage.
       </p>

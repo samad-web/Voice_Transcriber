@@ -4,8 +4,16 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, Settings2 } from "lucide-react";
 import type { CrmProviderSpec } from "@aura/shared";
-import { BrutalButton, Card, MonoLabel } from "@aura/ui";
-import { inputClass, monoInputClass, selectClass } from "@/lib/form";
+import {
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+} from "@aura/ui";
 import { connectCustomAction } from "./actions";
 import { IntegrationCard, type Integration } from "./integration-card";
 import { ProviderPicker } from "./provider-picker";
@@ -46,26 +54,23 @@ export function CrmManager({
   const byId = new Map(providers.map((p) => [p.id, p]));
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
       <div className="space-y-6">
         {workspaces.length > 1 ? (
-          <Card className="space-y-2">
-            <MonoLabel>Deliver leads into</MonoLabel>
-            <select
-              className={selectClass}
-              value={workspaceId}
-              onChange={(e) => setWorkspaceId(e.target.value)}
+          <Card>
+            <FormField
+              label="Deliver leads into"
+              name="crm-workspace"
+              hint="This tenant has several workspaces. New connectors are created against the one selected here."
             >
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-neutral-500 font-sans">
-              This tenant has several workspaces. New connectors are created against the one
-              selected here.
-            </p>
+              <Select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
           </Card>
         ) : null}
 
@@ -78,19 +83,21 @@ export function CrmManager({
 
         <Card className="space-y-3">
           <button
+            type="button"
             onClick={() => setShowCustom((v) => !v)}
-            className="flex items-center gap-2 w-full text-left"
+            aria-expanded={showCustom}
+            aria-controls="crm-custom-endpoint"
+            className="flex w-full cursor-pointer items-center gap-2 rounded-sm text-left"
           >
-            <Settings2 className="h-4 w-4" />
-            <h4 className="text-sm font-display font-black text-black uppercase tracking-tight">
-              CRM not listed?
-            </h4>
+            <Settings2 aria-hidden="true" className="h-4 w-4 text-text-muted" />
+            <h4 className="text-sm font-semibold text-text">CRM not listed?</h4>
           </button>
-          <p className="text-xs text-neutral-500 font-sans">
+          <p className="text-sm text-text-muted">
             Point Aura at any HTTPS endpoint and shape the payload yourself with a field map.
           </p>
           {showCustom ? (
             <CustomWebhookForm
+              panelId="crm-custom-endpoint"
               workspaceId={workspaceId}
               orgId={orgId}
               onDone={() => {
@@ -99,9 +106,9 @@ export function CrmManager({
               }}
             />
           ) : (
-            <BrutalButton variant="secondary" onClick={() => setShowCustom(true)}>
+            <Button type="button" variant="secondary" onClick={() => setShowCustom(true)}>
               Configure a custom endpoint
-            </BrutalButton>
+            </Button>
           )}
         </Card>
       </div>
@@ -109,18 +116,15 @@ export function CrmManager({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <MonoLabel>Connected integrations</MonoLabel>
-          <span className="text-[10px] font-mono font-bold uppercase text-neutral-400">
-            {integrations.length} total
-          </span>
+          <span className="text-xs text-text-muted tabular-nums">{integrations.length} total</span>
         </div>
 
         {integrations.length === 0 ? (
-          <Card className="flex flex-col items-center py-12 gap-3">
-            <Link2 className="h-8 w-8 text-neutral-300" />
-            <p className="text-xs font-mono font-bold uppercase text-neutral-400 text-center px-6">
-              Nothing connected — pick a CRM to start pushing call facts
-            </p>
-          </Card>
+          <EmptyState
+            icon={<Link2 className="h-8 w-8" />}
+            title="Nothing connected yet"
+            description="Pick a CRM from the catalogue to start pushing call facts — or point Aura at your own HTTPS endpoint."
+          />
         ) : (
           integrations.map((integration) => (
             <IntegrationCard
@@ -147,10 +151,12 @@ const AUTH_TYPES = [
 ];
 
 function CustomWebhookForm({
+  panelId,
   workspaceId,
   orgId,
   onDone,
 }: {
+  panelId: string;
   workspaceId: string;
   orgId?: string;
   onDone: () => void;
@@ -187,105 +193,101 @@ function CustomWebhookForm({
     });
 
   return (
-    <div className="space-y-3 border-t-2 border-neutral-200 pt-3">
-      <div className="space-y-1.5">
-        <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-          Name
-        </label>
-        <input
-          className={inputClass}
+    <div id={panelId} className="space-y-3 border-t border-border pt-3">
+      <FormField label="Name" name="custom-label">
+        <Input
           placeholder="e.g. Ops dashboard"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
-      </div>
+      </FormField>
 
-      <div className="space-y-1.5">
-        <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-          Endpoint URL
-        </label>
-        <input
-          className={monoInputClass}
+      <FormField label="Endpoint URL" name="custom-url" required>
+        <Input
+          className="font-mono"
+          type="url"
+          inputMode="url"
           placeholder="https://hooks.example.com/aura"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-      </div>
+      </FormField>
 
-      <div className="space-y-1.5">
-        <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-          Auth
-        </label>
-        <select
-          className={selectClass}
-          value={authType}
-          onChange={(e) => setAuthType(e.target.value)}
-        >
+      <FormField label="Auth" name="custom-auth-type">
+        <Select value={authType} onChange={(e) => setAuthType(e.target.value)}>
           {AUTH_TYPES.map((a) => (
             <option key={a.value} value={a.value}>
               {a.label}
             </option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </FormField>
 
+      {/* These three appear and disappear with the auth scheme, so each needs
+          its own label rather than the shared placeholder-as-label the v1 form
+          relied on — a field that materialises unlabelled mid-form is the
+          worst case for WCAG 3.3.2. */}
       {needsHeaderName ? (
-        <input
-          className={monoInputClass}
-          placeholder={authType === "query" ? "query parameter name" : "header name"}
-          value={authHeader}
-          onChange={(e) => setAuthHeader(e.target.value)}
-        />
+        <FormField
+          label={authType === "query" ? "Query parameter name" : "Header name"}
+          name="custom-auth-header"
+        >
+          <Input
+            className="font-mono"
+            value={authHeader}
+            onChange={(e) => setAuthHeader(e.target.value)}
+          />
+        </FormField>
       ) : null}
       {authType === "header_prefix" ? (
-        <input
-          className={monoInputClass}
-          placeholder="prefix, e.g. “Token token=” (keep the trailing space if needed)"
-          value={authPrefix}
-          onChange={(e) => setAuthPrefix(e.target.value)}
-        />
+        <FormField
+          label="Header prefix"
+          name="custom-auth-prefix"
+          hint="Keep the trailing space if the scheme needs one."
+        >
+          <Input
+            className="font-mono"
+            placeholder="e.g. “Token token=”"
+            value={authPrefix}
+            onChange={(e) => setAuthPrefix(e.target.value)}
+          />
+        </FormField>
       ) : null}
       {needsSecret ? (
-        <input
-          className={monoInputClass}
-          type="password"
-          autoComplete="off"
-          placeholder="credential"
-          value={secret}
-          onChange={(e) => setSecret(e.target.value)}
-        />
+        <FormField label="Credential" name="custom-secret" required>
+          <Input
+            className="font-mono"
+            type="password"
+            autoComplete="off"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+          />
+        </FormField>
       ) : null}
 
-      <label className="flex items-start gap-2.5 cursor-pointer border-2 border-neutral-200 p-3">
-        <input
-          type="checkbox"
-          className="mt-0.5 h-4 w-4 accent-black shrink-0"
+      <div className="rounded-md border border-border p-3">
+        <Checkbox
+          label="Qualified leads only"
+          description="Send only calls the AI agent qualified as a lead. Leave off to receive every completed call, including no-answers and wrong numbers."
           checked={onlyQualified}
           onChange={(e) => setOnlyQualified(e.target.checked)}
         />
-        <span className="text-xs font-sans text-neutral-700 leading-relaxed">
-          <span className="font-display font-bold uppercase text-black block text-xs">
-            Qualified leads only
-          </span>
-          Send only calls the AI agent qualified as a lead. Leave off to receive every completed
-          call, including no-answers and wrong numbers.
-        </span>
-      </label>
+      </div>
 
       {error ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
+        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
           {error}
         </p>
       ) : null}
 
-      <BrutalButton
-        shadow
+      <Button
+        type="button"
         className="w-full"
         disabled={pending || !url.trim() || (needsSecret && !secret.trim())}
         onClick={submit}
       >
-        {pending ? "CONNECTING…" : "CONNECT ENDPOINT"}
-      </BrutalButton>
+        {pending ? "Connecting…" : "Connect endpoint"}
+      </Button>
     </div>
   );
 }

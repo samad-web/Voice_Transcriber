@@ -73,8 +73,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml \
   --profile setup run --rm migrate
 ```
 
-That runs `packages/db/migrate.js` (all seven migrations, in order, each in its own
-transaction) and then `packages/db/bootstrap-role.js`, which replaces the dev password baked
+That runs `packages/db/migrate.js` (every `packages/db/migrations/*.sql` not yet in
+`schema_migrations`, in filename order, each wrapped in its own `BEGIN`/`COMMIT` — which is why no
+migration may use `CREATE INDEX CONCURRENTLY`) and then `packages/db/bootstrap-role.js`, which
+replaces the dev password baked
 into `0001_init.sql` with `APP_DB_PASSWORD` and refuses to continue if the role can bypass RLS.
 
 Then prove isolation actually holds against the real database:
@@ -153,15 +155,31 @@ The service-role key bypasses RLS completely. Keep it server-side: never in a `N
 variable, never in the web image. With it blank the console still lists owners but cannot create
 them, and says so.
 
-Optionally restrict who may reach the operator console:
+**`PLATFORM_OPERATOR_EMAILS` is REQUIRED in production.** It is the allowlist of who may reach the
+operator console, and it fails **closed**:
 
 ```
 PLATFORM_OPERATOR_EMAILS=support@sirahdigital.in
 ```
 
-An owner (anyone with a membership) always lands on `/owner` regardless. This list only decides
-which *membership-less* accounts count as platform staff; blank means any signed-in non-owner
-does, which is the behaviour before owner logins existed.
+Comma-separated; the parser trims and lower-cases, so spaces and case do not matter.
+
+**Blank means NOBODY** — `/dashboard`, `/instances` and `/admin` render the "No console access"
+card for *every* account, including yours. This inverted in Stage 0 (`isOperator()`,
+`apps/web/lib/owner-context.ts`). It used to mean "any signed-in non-owner is an operator", which
+was the hole: the anon key ships in the browser bundle and Supabase enables `/auth/v1/signup` by
+default, so a stranger could self-sign-up and read every tenant. Do not deploy the console without
+this variable set, and set it in the **same** deploy as the code — not after.
+
+An owner (anyone with a membership) always lands on `/owner` and is unaffected either way;
+`(owner)/layout.tsx` gates on membership, not on this list. Being listed here *wins over* holding a
+membership — a listed email stays an operator even after you provision yourself an owner login on a
+test tenant, which is what stops that from locking you out of the operator console.
+
+Consumed by the **web** service via `env_file`. It is a runtime variable, so changing it needs
+`up -d`, not a rebuild. When it is blank the web tier logs
+`[auth] PLATFORM_OPERATOR_EMAILS is unset …` at startup and again from `instrumentation.ts`,
+because the symptom — a correct login seeing a refusal card — does not name its own cause.
 
 How the binding works: the console resolves the signed-in Supabase user through
 `GET /v1/auth/context`, which matches `users.sso_subject` and returns their org. The org a page
@@ -191,7 +209,17 @@ Secrets to generate (never reuse the examples):
 openssl rand -base64 36 | tr -d '/+=' | head -c 40    # per secret
 ```
 
-`ADMIN_API_KEY`, `JWT_SECRET`, `APP_DB_PASSWORD`, `RABBITMQ_PASSWORD`, `S3_SECRET_ACCESS_KEY`.
+`ADMIN_API_KEY`, `JWT_SECRET`, `APP_DB_PASSWORD`, `RABBITMQ_PASSWORD`, `S3_SECRET_ACCESS_KEY`, and
+`CRM_SECRET_KEY` — the last one as `openssl rand -hex 32`, because it is an AES-256 key rather than
+a password.
+
+**The API refuses to start** if `ADMIN_API_KEY`, `JWT_SECRET`, `CRM_SECRET_KEY` or
+`APP_DATABASE_URL` is unset or still holds a published example value: `assertRequiredEnv()`
+(`apps/api/src/config/assert-env.ts`) is the first statement of `bootstrap()` and throws, so the
+container restart-loops instead of serving behind a key anyone can read from this repository. It
+reports *every* offender in one error — one pass over `.env.production`, not four deploys. The web
+tier does the same for `ADMIN_API_KEY` and the two `NEXT_PUBLIC_SUPABASE_*` values
+(`apps/web/instrumentation.ts`). A crash loop at this point is the assertion working.
 
 ### Smoke test
 
@@ -363,14 +391,26 @@ tests and disastrous in production.
 
 ## 7. Known gaps — read before onboarding a real customer
 
-These are honest limitations of the current build, not deployment steps:
+These are honest limitations of the current build, not deployment steps. Stage 0 closed several
+that used to be listed here; what remains is stated against the code as it stands today.
+
+**Closed by Stage 0 — do not re-derive them from an older copy of this file.** The `dev-admin-key`
+fallback is gone from the API (`resolveAdminKey()` returns `null` under `NODE_ENV=production`, so a
+missing variable denies rather than accepting a published string) and from the web tier
+(`lib/server-api.ts`, same rule). `assertRequiredEnv()` and `instrumentation.ts` refuse to boot in
+production on a missing or example credential. `isOperator()` now denies by default (§2c). `main.ts`
+has `helmet()`, a 1 MB JSON body limit, `trust proxy 1`, a comma-separated CORS allowlist and a
+global throttler (100/min default; 5/min on `POST /v1/auth/login`, 10/min on
+`POST /v1/devices/register`). `verify-rls.js` derives its table set from `information_schema` and
+fails by name on any `org_id` table lacking FORCE RLS or a `WITH CHECK` policy, so a future
+migration cannot add an unprotected tenant table quietly.
 
 1. **`ADMIN_API_KEY` is effectively a root credential.** It authenticates every `/v1/admin/*`
    call and crosses tenant boundaries. Keep the key on the server only, never in a browser or a
-   phone. Supabase Auth (§2b) gates who can open the console, but the console's own server
-   components still read the API with this key — a signed-in operator is implicitly an admin,
-   and the API itself does not yet verify the Supabase session. Per-role API authorisation is
-   still unbuilt.
+   phone. Supabase Auth (§2b) plus `PLATFORM_OPERATOR_EMAILS` (§2c) gate who can open the console,
+   but the console's own server components still read the API with this key — a signed-in operator
+   is implicitly an admin, and the API itself does not yet verify the Supabase session. Per-role
+   API authorisation is still unbuilt.
 
    This matters most for **owner logins** (§2c): an owner's tenant scoping is enforced in the web
    tier, where the org is resolved from a verified session and never from the request, and the
@@ -379,22 +419,40 @@ These are honest limitations of the current build, not deployment steps:
    itself needs the guard to verify the Supabase JWT and pin the org from `users.sso_subject`
    first — `AdminKeyGuard` already does exactly this for its own session tokens, so it is a
    branch to add, not a redesign.
-2. **The operator console is single-tenant apart from `/instances`.** Its per-tenant pages read
+
+   The same premise is what makes owner-role enforcement **advisory**. The console tells the API
+   who is asking via `x-caller-owner-role` / `x-caller-user-id`, and the API trusts those headers
+   because only the console holds the admin key. Omitting `x-caller-owner-role` leaves the
+   principal's persona `null`, which `OwnerRoleGuard` treats as "pass" — so anyone holding the
+   admin key satisfies every `@RequireOwnerRole` by sending no header at all. That is one leaked
+   env var away from mattering, which is why §1 above is the item and not this one.
+2. **`JWT_SECRET` still has a published dev fallback in the API.** Four sites read
+   `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"` (`common/device-auth.guard.ts`,
+   `common/device-nonce.ts`, `modules/devices/devices.controller.ts`,
+   `modules/tenancy/erasure.controller.ts`). It is **not** live exposure — `assertRequiredEnv()`
+   rejects that literal and an unset variable in production, so the process cannot reach those
+   lines carrying it — but the boot assertion is the only thing standing there, whereas
+   `ADMIN_API_KEY` has two independent defences. `device-auth.guard.ts` reads `org_id`,
+   `instance_id` and the device id straight off the JWT payload with no database re-check, so a
+   forged token is call ingest and transcript reads for any device in any tenant.
+3. **The operator console is single-tenant apart from `/instances`.** Its per-tenant pages read
    `DEV_ORG_ID`, so operating a second customer from them means changing that variable and
    rebuilding the web image. The **owner** console (`/owner`, §2c) is not affected — it resolves
    its org from the signed-in session, so every customer's owner sees their own instance without
    any per-tenant configuration.
-3. **`NEXT_PUBLIC_API_URL` is baked at image build time.** Changing the domain requires
-   `up -d --build`, not a restart.
-4. **MinIO is a single container on a single disk.** Volume `miniodata` holds every recording;
+4. **`NEXT_PUBLIC_API_URL` is baked at image build time.** Changing the domain requires
+   `up -d --build`, not a restart. `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   follow the same rule (§2b), which is why an image built without `--env-file` ships sign-in
+   disabled no matter what the runtime environment says.
+5. **MinIO is a single container on a single disk.** Volume `miniodata` holds every recording;
    back it up (see §8). No replication, no lifecycle rules.
-5. **Both-ends call capture is device-dependent.** On the tested phone `VOICE_CALL` is blocked,
+6. **Both-ends call capture is device-dependent.** On the tested phone `VOICE_CALL` is blocked,
    so the rep must tap Speaker manually or the transcript will contain only their side.
    Text-based diarization will still invent a "Customer" speaker — `diarized=true` is not
    evidence both sides were recorded.
-6. **Transcription is post-call**, not streaming.
-7. **Play Integrity and FCM push** are stubs; they need external credentials.
-8. **CRM connectors authenticate with API keys and pasted tokens, not OAuth.** Every provider in
+7. **Transcription is post-call**, not streaming.
+8. **Play Integrity and FCM push** are stubs; they need external credentials.
+9. **CRM connectors authenticate with API keys and pasted tokens, not OAuth.** Every provider in
    the catalogue works this way today. For HubSpot (private app token), Pipedrive, GoHighLevel,
    Freshsales, Close, Attio, Keap, Zendesk Sell, Kylas, LeadSquared and Bitrix24 that is the
    vendor's normal long-lived credential and nothing expires. For **Salesforce, Zoho, monday and
@@ -403,10 +461,17 @@ These are honest limitations of the current build, not deployment steps:
    those four as usable for pilots, not unattended production, until the OAuth refresh flow
    lands. The schema already carries everything that flow needs: a refreshed access token is
    just a new bearer secret.
-9. **`CRM_SECRET_KEY` is unrecoverable.** It seals every stored CRM credential with AES-256-GCM.
-   Lose it and each connected CRM must be re-authenticated by hand — back it up wherever you
-   keep `JWT_SECRET`. If the variable is unset the API and worker warn at boot and store
-   credentials in plaintext.
+10. **`CRM_SECRET_KEY` is unrecoverable.** It seals every stored CRM credential with AES-256-GCM.
+    Lose it and each connected CRM must be re-authenticated by hand — back it up wherever you
+    keep `JWT_SECRET`. It is now a **fatal** boot check in the API (§3), so "unset" is a crash
+    loop rather than silent plaintext storage; the worker still only warns. Rows written before
+    the key existed stay plaintext and keep working — `decryptSecret()` returns an unprefixed
+    value unchanged — so setting a fresh key is safe and does not strand existing credentials.
+11. **Automated coverage stops at unit tests.** `pnpm -r test` covers `packages/{shared,db,llm}`
+    and `apps/worker`; there is no test runner in `apps/api` and no integration job in CI, so the
+    guard stack, tenant isolation over HTTP and the device-auth path are verified by review and by
+    `verify-rls.js` against a scratch database, not by a test. Treat a green CI as "nothing
+    obviously regressed", not as "isolation still holds".
 
 ---
 

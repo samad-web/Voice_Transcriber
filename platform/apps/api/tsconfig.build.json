@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  // `nest build` uses this file by default; `tsc --noEmit` (the `typecheck`
+  // script) still uses tsconfig.json and therefore still typechecks the specs.
+  //
+  // Without this, the 5 guard suites and the Jest harness compiled into
+  // apps/api/dist, and docker/node.Dockerfile copies apps/api/dist wholesale
+  // into the production runtime image — which is installed --prod and so has no
+  // @nestjs/testing to satisfy their requires. Nothing loads them today, so it
+  // was dead weight rather than a fault; it should not be shipped either way.
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "dist", "node_modules"]
+}

@@ -1,0 +1,228 @@
+# CI (08_ROAD_TO_10.md §1.4). The first automated verification this repo has
+# ever had: 8,000 lines of TypeScript, live customers, and until now nothing ran
+# on a push except a human's memory.
+#
+# Four jobs, deliberately independent so a red lint does not hide a red schema:
+#
+#   static   lint, format, typecheck, and the tenancy grep
+#   unit     pnpm -r test
+#   db       migrations + the RLS invariant check, against an EPHEMERAL Postgres
+#   build    both production images actually build
+#
+# There is NO deploy job and there should not be one yet. Deployment is manual
+# (see platform/DEPLOYMENT.md) and stays that way until Stage 1.6 gives us a
+# staging environment to deploy through first.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Node 22 matches platform/docker/node.Dockerfile's `FROM node:22-alpine`, and
+# pnpm matches `packageManager` in platform/package.json. CI proving a build on
+# a version production does not run is worse than not proving it.
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.28.2"
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  static:
+    name: Lint, format, typecheck, tenancy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm before setup-node: `cache: pnpm` needs the binary on PATH to
+      # locate the store.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: platform/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # @aura/* resolve through `main`/`types` to dist, not src, so both tsc and
+      # the type-aware lint rules need the shared packages compiled first. The
+      # apps are deliberately not built here — the `build` job proves those, in
+      # the images that actually ship.
+      - name: Build workspace packages
+        run: pnpm --filter "./packages/*" build
+
+      # TODO(stage-1): flip `continue-on-error` to false once the first lint and
+      # format cleanup pass has landed. This is ~20,000 lines that have never
+      # been linted or formatted; failing the build on day one guarantees the
+      # whole team learns to ignore a red X, which costs more than the lint is
+      # worth. The output is still on every run, so the backlog is visible.
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Format check
+        run: pnpm format:check
+        continue-on-error: true
+
+      # Everything below here is a hard failure.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Wired in at last. `check-tenancy.js` has existed and been enforced by
+      # nobody since 2026-07-29: it greps the API surface for the pre-TenantGuard
+      # shape (a handler reading x-org-id itself, AdminKeyGuard without
+      # TenantGuard, the removed orgIdFromHeader helper). It is pure filesystem
+      # work — no database, no network.
+      - name: Tenancy invariants
+        run: pnpm tenancy:check
+
+  # ---------------------------------------------------------------------------
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: platform/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Build workspace packages
+        run: pnpm --filter "./packages/*" build
+      # `pnpm test` at the root is `pnpm -r --if-present test`. The --if-present
+      # is scaffolding, not a preference: no package has a `test` script yet
+      # (Stage 1.2/1.3 adds them), and without it this job is red before a
+      # single test exists, which is the fastest way to teach a team to ignore
+      # CI. TODO(stage-1): drop --if-present from platform/package.json once
+      # every package has a test script, so a package that loses one fails here.
+      - name: Test
+        run: pnpm test
+
+  # ---------------------------------------------------------------------------
+  db:
+    name: Migrations + RLS invariants
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+
+    # postgres:16-alpine mirrors docker-compose.yml. The container is created
+    # for this job and destroyed with it: it has no data, no backups and no
+    # route to anything.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: aura_dev_password
+          POSTGRES_DB: callintel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # ========================================================================
+    # THE ONLY DATABASE THIS JOB CAN REACH IS THE SERVICE CONTAINER ABOVE.
+    #
+    # Both URLs are literals pointing at 127.0.0.1:5432 — the port mapping of
+    # that container — and are set here at job scope, so no step can inherit a
+    # different one. Production Supabase credentials are not referenced, and
+    # must never be added: nothing in this job needs a secret, so there is no
+    # legitimate reason for `secrets.*` to appear anywhere below.
+    #
+    # This matters because the steps are destructive by design.
+    # `pnpm --filter @aura/db verify:rls` seeds two organizations and then runs
+    # DELETE FROM organizations WHERE name LIKE 'rls-test-%', which cascades to
+    # every tenant table. Against the live database that is a customer-data
+    # incident; against this container it is the point of the test. verify-rls.js
+    # carries its own host allowlist as a second, independent guard.
+    #
+    # aura_app does not need creating here — migration 0001 creates the role
+    # itself, with the dev password, which is why APP_DATABASE_URL can be a
+    # literal too.
+    # ========================================================================
+    env:
+      DATABASE_URL: postgresql://aura:aura_dev_password@127.0.0.1:5432/callintel
+      APP_DATABASE_URL: postgresql://aura_app:aura_app_password@127.0.0.1:5432/callintel
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: platform/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      # The supabase/migrations tree must stay byte-identical to
+      # packages/db/migrations — production runs the Supabase copy, so a drift
+      # between them means CI verifies a schema that production does not have.
+      - name: Supabase migration copies are in sync
+        run: pnpm db:supabase:check
+
+      # migrate.js and verify-rls.js are plain CJS — no build step required.
+      - name: Run migrations
+        run: pnpm --filter @aura/db migrate
+
+      # Enumerates every public table carrying org_id and fails, by name, on any
+      # that lacks FORCE RLS or a real org_isolation policy. A migration that
+      # adds a tenant table and forgets its policy dies here instead of leaking
+      # one customer's data to another in production.
+      - name: Verify RLS invariants
+        run: pnpm --filter @aura/db verify:rls
+
+      # Re-running migrations must be a no-op. The migrate job runs on every
+      # deploy, so "applied twice" is the normal case, not an edge case.
+      - name: Migrations are idempotent
+        run: pnpm --filter @aura/db migrate
+
+  # ---------------------------------------------------------------------------
+  build:
+    name: Docker images
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both images build from the platform/ context. This proves they compile;
+      # it does not push anything anywhere — there is no registry login here on
+      # purpose.
+      - name: Build node image (api + worker + migrate)
+        run: docker build -f docker/node.Dockerfile -t aura-node:ci .
+
+      # NEXT_PUBLIC_* are inlined at build time. CI passes placeholders because
+      # the point here is that the Next build succeeds — a CI image is never
+      # deployed, and baking a real domain in would only invite someone to try.
+      - name: Build web image (console)
+        run: |
+          docker build -f docker/web.Dockerfile -t aura-web:ci \
+            --build-arg NEXT_PUBLIC_API_URL=http://localhost:4000 \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL= \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY= \
+            .

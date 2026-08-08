@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  // See apps/api/tsconfig.build.json. Same reason: the vitest suites under
+  // src/pipeline were being emitted into apps/worker/dist and copied into the
+  // production image. `typecheck` still covers them via tsconfig.json.
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "dist", "node_modules"]
+}

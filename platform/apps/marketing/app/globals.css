@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* The design-system v2 token contract (doc 16 §1), defined ONCE in @aura/ui and
+   shared with the console. The temporary app/tokens.css mirror this used to
+   import has been deleted — two copies of the contract had already drifted on
+   eight values and two names. Do not reintroduce a local token file. */
+@import "@aura/ui/theme.css";
+
+/* @aura/ui's components live outside this app dir — include their classes in
+   the Tailwind scan so a primitive's utilities are not tree-shaken away. */
+@source "../../../packages/ui/src";
+
+/* The marketing-only brand register — gradient, display type, pill CTAs — built
+   on top of the shared tokens rather than replacing them. See brand.css for
+   which reference contributed what. */
+@import "./brand.css";
+
+/* ── Focus (doc 16 §1.5) ──────────────────────────────────────────────────
+   Load-bearing, because this system has no thick borders to fall back on.
+   Applied globally and never removed. `:focus-visible` only, so a mouse click
+   does not leave a ring behind. */
+/* NOTE: do NOT add `border-radius` here. This rule is unlayered, and an
+   unlayered declaration beats everything in Tailwind's `@layer utilities`
+   regardless of source order — so a radius set here would override
+   `rounded-md` / `rounded-lg` / `rounded-full` on every element while it is
+   focused, collapsing the corners of every button and card the moment a
+   keyboard user reaches it. The outline already follows the element's own
+   border-radius in every browser that supports :focus-visible. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Motion (doc 16 §1.4) ─────────────────────────────────────────────────
+   Every transition and animation collapses to instantaneous when the visitor
+   has asked for reduced motion. One rule, so no component can forget. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Anchor targets must not land under the sticky header. */
+:target {
+  scroll-margin-top: 5rem;
+}
+
+/* Ids, counts and timestamps line up in a column. Doc 16 §1.2. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  NotFoundException,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -33,6 +34,9 @@ const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
  * ai_outputs → call_facts → crm_sync_log → call row, then a signed receipt
  * recorded in the audit log. CRM-pushed copies are best-effort/logged (TODO
  * with the HubSpot connector). Per-subject (phone-hash) fan-out lands later.
+ *
+ * A call the caller's org cannot see is a 404 and mints nothing — see the note
+ * on the lookup below for why that ordering is the whole contract.
  */
 @Controller("erasure-requests")
 @UseGuards(AdminKeyGuard, TenantGuard)
@@ -54,6 +58,22 @@ export class ErasureController {
           WHERE c.id = $1`,
         [callId],
       );
+
+      // Resolve the call BEFORE anything is erased and, more importantly, before
+      // anything is signed. `withOrg` means RLS hides another tenant's call, so a
+      // miss here is "not yours or not there" — and every DELETE below is keyed on
+      // call_id alone, so without this the handler ran its whole cascade against
+      // zero rows and still minted an HMAC-signed receipt saying COMPLETED. Report
+      // 12 §3.6: a receipt that overstates what was deleted is worse than one that
+      // admits a gap, and a signed artefact must never be issued on a path that
+      // resolved nothing. LEFT JOIN, so a call with no recording still yields a
+      // row — `!rec` means the CALL is absent, not the audio.
+      //
+      // Consequence worth knowing: erasure is no longer idempotent. Re-sending a
+      // request for an already-erased call now 404s instead of returning a second
+      // empty receipt. That is the intended reading — the only truthful receipt
+      // for that call is the one already in audit_log.
+      if (!rec) throw new NotFoundException("call not found in this org");
 
       const purged: string[] = [];
       if (rec?.s3_key) {

@@ -1,0 +1,116 @@
+# Ephemeral infrastructure for the integration suite (08_ROAD_TO_10 §1.3).
+#
+# ── WHY THE PORTS LOOK ODD — DO NOT "TIDY" THEM BACK ────────────────────────
+#
+# A developer on this project runs the real dev stack (docker-compose.yml) at
+# the same time as this one: postgres 5433, rabbitmq 5672/15672, minio
+# 9000/9001, api 4000, web 3000/3001. Every port below is deliberately moved out
+# of that range so `docker compose -f docker-compose.test.yml up` never has to
+# be preceded by tearing the dev stack down — and, far more importantly, so the
+# integration suite can never silently connect to the DEV database and start
+# deleting rows a developer is mid-way through debugging.
+#
+# The port IS the safety mechanism, not a convenience. tests/setup/env.ts
+# refuses to run against 5432 or 5433 by name for exactly this reason, so
+# "fixing" a port here to match the dev stack turns the whole suite red rather
+# than quietly repointing it. The same literals are used by the CI `integration`
+# job (.github/workflows/ci.yml), so local and CI are one topology, not two.
+#
+#   55432  postgres   (dev: 5433, system postgres: 5432)
+#   55672  rabbitmq   (dev: 5672)
+#   55673  rabbitmq management UI, for debugging a red run (dev: 15672)
+#   59000  minio S3   (dev: 9000)
+#   59001  minio console (dev: 9001)
+#
+# ── WHY THERE IS NO api / worker SERVICE HERE ───────────────────────────────
+#
+# This file provides INFRASTRUCTURE ONLY. The harness spawns the API and worker
+# itself, from the built `dist/`, as child processes (tests/setup/processes.ts).
+# That is deliberate: those two processes need a precisely controlled
+# environment — ASR_STUB=1, ANALYZE_STUB=1, a low PIPELINE_MAX_ATTEMPTS, and an
+# explicit value for EVERY variable the code reads — because @nestjs/config
+# loads `platform/.env` at boot and fills in any variable the harness leaves
+# unset (see tests/setup/env.ts for the full argument). Baking them in here
+# would put half of that environment in a YAML file the test cannot see.
+#
+# ── EPHEMERALITY ────────────────────────────────────────────────────────────
+#
+# tmpfs everywhere, no named volumes. `docker compose -p aura-test down`
+# leaves nothing behind: no dangling volume to be reused by the next run and
+# quietly carry a previous run's migrations, and no disk state to be confused
+# with the dev stack's `pgdata`/`miniodata` volumes.
+name: aura-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: aura_dev_password
+      POSTGRES_DB: callintel
+      # The suite recreates the schema from packages/db/migrations on every run,
+      # so durability is worthless here and fsync costs real wall-clock time on
+      # ~19 migrations plus a two-tenant seed.
+      PGDATA: /var/lib/postgresql/data
+    command: >-
+      postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura -d callintel"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    # Plain alpine, not -management: the suite never reads the management API.
+    # The management image is ~4x the pull and adds seconds to a cold CI run.
+    image: rabbitmq:3-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: aura
+      RABBITMQ_DEFAULT_PASS: aura_dev_password
+    ports:
+      - "55672:5672"
+    tmpfs:
+      - /var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: aura_minio
+      MINIO_ROOT_PASSWORD: aura_minio_password
+    ports:
+      - "59000:9000"
+      - "59001:9001"
+    tmpfs:
+      - /data
+    healthcheck:
+      # `mc ready local` is the supported readiness probe; curl is not installed
+      # in this image and the /minio/health/live path needs an HTTP client.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Creates the bucket the API and worker expect. Runs to completion and exits 0;
+  # `depends_on: service_completed_successfully` is what makes `up --wait` block
+  # on the bucket existing rather than merely on MinIO being up.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >-
+      /bin/sh -c "
+      mc alias set test http://minio:9000 aura_minio aura_minio_password &&
+      mc mb --ignore-existing test/aura-recordings-test &&
+      exit 0
+      "

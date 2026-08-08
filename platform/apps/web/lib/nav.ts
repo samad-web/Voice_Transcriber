@@ -1,5 +1,6 @@
 import {
   Activity,
+  CalendarDays,
   BarChart3,
   Building2,
   KeyRound,
@@ -12,6 +13,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import type { OwnerRole } from "@aura/shared";
 
 /** The two consoles: the platform operator's, and one customer's own. */
 export type NavArea = "platform" | "owner";
@@ -27,6 +29,8 @@ export interface NavItem {
   title: string;
   /** PageHeader eyebrow; defaults to "Workspace" like PageHeader itself. */
   context?: string;
+  /** Owner-console personas (design doc §9) that may see this item. Omitted = every persona. */
+  ownerRoles?: OwnerRole[];
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -34,6 +38,20 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/calls", label: "Call Log Explorer", icon: Phone, title: "Call Log Explorer" },
   { href: "/search", label: "Search", icon: Search, title: "Transcript Search" },
   { href: "/agents", label: "AI Agent Studio", icon: Sparkles, title: "AI Agent Studio" },
+  {
+    href: "/slots",
+    label: "Booking Slots",
+    icon: CalendarDays,
+    title: "Booking Slots",
+    context: "Platform",
+  },
+  {
+    href: "/leads",
+    label: "Funnel Leads",
+    icon: ListFilter,
+    title: "Funnel Leads",
+    context: "Platform",
+  },
   {
     href: "/instances",
     label: "Instances",
@@ -60,6 +78,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: LayoutGrid,
     title: "Lead Board",
     context: "Pipeline",
+    // Telecaller's nav is Dashboard + All Leads (self-filtered) + their own
+    // team profile once that route lands (design doc §9) — not the full board.
+    ownerRoles: ["owner", "manager"],
   },
   {
     href: "/owner/leads",
@@ -69,6 +90,11 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Pipeline",
   },
 ];
+
+/** Which of `OWNER_NAV_ITEMS` a given owner-console persona may see. */
+export function ownerNavItemsFor(role: OwnerRole): NavItem[] {
+  return OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role));
+}
 
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */
 export function navItemFor(pathname: string, items: NavItem[] = NAV_ITEMS): NavItem | undefined {

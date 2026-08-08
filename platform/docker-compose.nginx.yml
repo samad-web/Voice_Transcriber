@@ -29,3 +29,10 @@ services:
   minio:
     ports:
       - "127.0.0.1:18082:9000"
+
+  # The public marketing site, on its own loopback port and its own nginx vhost
+  # (the apex + www, not aura.*). Same reasoning as the others: bound to
+  # loopback, so the host's nginx stays the only edge.
+  marketing:
+    ports:
+      - "127.0.0.1:18083:3000"

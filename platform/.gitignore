@@ -15,3 +15,6 @@ coverage/
 # Supabase CLI scratch state (supabase/migrations itself IS committed)
 supabase/.branches/
 supabase/.temp/
+
+# Written by scripts/apply-marketing-schema.sh. Never commit.
+.marketing-role-password

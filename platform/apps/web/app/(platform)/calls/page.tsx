@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Phone } from "lucide-react";
-import { Card, MonoLabel } from "@aura/ui";
+import { Card, EmptyState, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
 import { TenantSwitcher } from "@/components/tenant-switcher";
@@ -39,6 +39,10 @@ export default async function CallsPage({
 
   return (
     <>
+      {/* Title text is deliberately verbatim from NAV_ITEMS: (platform)/loading.tsx
+          renders the nav's title for real while the page streams, so any drift
+          here shows up as the heading changing under the reader. Sentence-casing
+          the console's titles is a change to lib/nav.ts, not to this page. */}
       <PageHeader title="Call Log Explorer" />
 
       <TenantSwitcher tenants={tenants} activeOrgId={orgId} basePath="/calls" />
@@ -58,8 +62,13 @@ export default async function CallsPage({
           <Link
             key={tab.label}
             href={tab.href}
-            className={`border-2 border-black px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider ${
-              tab.active ? "bg-black text-white" : "bg-white text-black hover:bg-neutral-100"
+            // aria-current, not colour alone: the active tab is an accent fill
+            // and a colour-blind or greyscale reader gets nothing from that.
+            aria-current={tab.active ? "page" : undefined}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-out ${
+              tab.active
+                ? "border-accent bg-accent text-accent-fg"
+                : "border-border-strong bg-surface text-text hover:bg-surface-hover"
             }`}
           >
             {tab.label}
@@ -70,21 +79,27 @@ export default async function CallsPage({
       {data === null ? (
         <Card>
           <MonoLabel>API offline</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+          <p className="mt-2 text-sm text-text-muted">
+            Could not reach the API — start it with{" "}
+            <code className="font-mono">pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : data.calls.length === 0 ? (
-        <Card className="flex flex-col items-center py-12 gap-3">
-          <Phone className="h-8 w-8 text-neutral-300" />
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-            {onlyFollowUps
-              ? "No repeat callers yet — every call here is a first contact"
+        <EmptyState
+          icon={<Phone className="h-8 w-8" />}
+          title={
+            onlyFollowUps
+              ? "No repeat callers yet"
               : activeTenant
                 ? `No calls ingested for ${activeTenant.name} yet`
-                : "No calls ingested yet — enroll a device and record the first call"}
-          </p>
-        </Card>
+                : "No calls ingested yet"
+          }
+          description={
+            onlyFollowUps
+              ? "Every call in this log is a first contact. A caller who rings back a second time appears here."
+              : "Enroll a device on this tenant and record the first call — it lands here within a minute of the call ending."
+          }
+        />
       ) : (
         <>
           <Pager

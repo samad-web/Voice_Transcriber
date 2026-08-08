@@ -124,15 +124,37 @@ export class MembersController {
 
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
+        // `org_id = $5` is defence in depth, not the primary control. Today the
+        // primary control is RLS: withOrg runs on getPool() as `aura_app`, which
+        // 0001 creates NOBYPASSRLS, and memberships carries FORCE ROW LEVEL
+        // SECURITY with both USING and WITH CHECK on org_id — so the statement is
+        // already narrowed to the current tenant and cannot reach another org's
+        // row. What it did NOT have was any org predicate of its own, and a
+        // person's membership set is inherently cross-org: the same user_id is
+        // the same human in every tenant they belong to. Swap `withOrg` for
+        // `adminPool()` here for any reason (a debugging change, a pre-tenant
+        // flow, a copy-paste) and this single statement silently regrades that
+        // human's role in EVERY org at once, with no error and a 200 response.
+        // One line makes that impossible independently of the database's
+        // configuration, which is where a control this consequential belongs.
+        //
+        // Still no scope_type/scope_id filter, and that is deliberate: a user may
+        // hold an org-scope row and workspace-scope rows in the same tenant, and
+        // "set this person's role here" means all of them. The plural
+        // `{ memberships: rows }` response is that intent. See 0018's header,
+        // which is why owner_role is a separate column rather than a reuse of
+        // `role` — an operator's team edit must never regrade a live owner
+        // console login.
         `UPDATE memberships SET
            role = COALESCE($2, role),
            recordings_listen = COALESCE($3, recordings_listen),
            recordings_export = COALESCE($4, recordings_export)
          WHERE user_id = $1
+           AND org_id = $5
          RETURNING id, user_id AS "userId", scope_type AS "scopeType", scope_id AS "scopeId",
                    role, recordings_listen AS "recordingsListen",
                    recordings_export AS "recordingsExport"`,
-        [userId, p.role ?? null, p.recordingsListen ?? null, p.recordingsExport ?? null],
+        [userId, p.role ?? null, p.recordingsListen ?? null, p.recordingsExport ?? null, orgId],
       );
       if (rows.length === 0) throw new NotFoundException("member not found in this org");
 
@@ -151,8 +173,15 @@ export class MembersController {
     @Param("userId", ParseUUIDPipe) userId: string,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      // RLS scopes this DELETE to the current org; the global user row is left intact.
-      const res = await client.query("DELETE FROM memberships WHERE user_id = $1", [userId]);
+      // RLS scopes this DELETE to the current org; the global user row is left
+      // intact. `org_id = $2` restates that in the statement itself for the same
+      // reason as the PATCH above — an unqualified `WHERE user_id = $1` on
+      // memberships is one pool swap away from deleting a human's access to
+      // every tenant they belong to.
+      const res = await client.query("DELETE FROM memberships WHERE user_id = $1 AND org_id = $2", [
+        userId,
+        orgId,
+      ]);
       if ((res.rowCount ?? 0) === 0) throw new NotFoundException("member not found in this org");
 
       await client.query(

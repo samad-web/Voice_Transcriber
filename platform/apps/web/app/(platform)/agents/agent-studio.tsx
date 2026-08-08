@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
-import { activateAgentAction, createAgentAction, type AgentFieldInput } from "./actions";
 import { inputClass, selectClass } from "@/lib/form";
+import { activateAgentAction, createAgentAction, type AgentFieldInput } from "./actions";
 
 export interface AgentRow {
   id: string;

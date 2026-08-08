@@ -1,7 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireOperator } from "@/lib/operator-guard";
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
+
+/**
+ * Operator-only, asserted per action rather than by the `(platform)` layout.
+ * Each export below is an independently-addressable POST endpoint that takes a
+ * tenant from its caller and sends the root admin key; the layout's
+ * `isOperator()` gates rendering and never runs on invocation. See
+ * lib/operator-guard.ts.
+ */
 
 /** Omitted orgId keeps the dev-org default; the page passes the selected tenant. */
 const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
@@ -27,6 +36,11 @@ export async function createAgentAction(input: {
   workspaceId: string;
   orgId?: string;
 }): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/agents`, {
       method: "POST",
@@ -70,6 +84,11 @@ export async function testAgentAction(input: {
   orgId?: string;
 }): Promise<AgentTestResult> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/agents/${input.agentId}/test`, {
       method: "POST",
       headers: headersFor(input.orgId),
@@ -94,6 +113,11 @@ export async function activateAgentAction(input: {
   version: number;
   orgId?: string;
 }): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/agents/${input.agentId}/activate`, {
       method: "POST",

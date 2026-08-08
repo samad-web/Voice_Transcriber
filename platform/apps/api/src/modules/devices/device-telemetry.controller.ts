@@ -10,6 +10,7 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
 import { z } from "zod";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
 import { DbService } from "../../db/db.service";
@@ -33,6 +34,11 @@ const EventsBody = z.object({
  */
 @Controller("devices/me")
 @UseGuards(DeviceAuthGuard)
+// Not throttled (checklist 08 §0.7): every route here is a periodic beacon from
+// the handset fleet, and a tenant's phones share one office/NAT source IP, so a
+// per-IP limit would silently blind fleet monitoring for the largest customers
+// first. Each request already carries a signed device token.
+@SkipThrottle()
 export class DeviceTelemetryController {
   constructor(private readonly db: DbService) {}
 

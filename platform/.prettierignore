@@ -1,0 +1,32 @@
+# Prettier scope. Note the settings themselves (.prettierrc.json) were inferred
+# from the existing 20k lines rather than chosen: double quotes, semicolons,
+# 2-space indent, trailing commas, and printWidth 100 (96% of lines already fit
+# under 90, 98% under 100 — the default 80 would rewrite ~1,200 lines for no
+# reason). The one setting that is a decision, not an observation, is
+# "endOfLine": "lf", which is the other half of /.gitattributes.
+
+# Build output
+node_modules/
+dist/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+
+# Generated / not ours to format
+pnpm-lock.yaml
+
+# Migrations are the schema's audit trail: every file is applied-once and
+# recorded in schema_migrations by hash-free filename, and the supabase/ copies
+# must stay byte-identical to packages/db/migrations (scripts/sync-supabase-
+# migrations.js --check enforces that). Reformatting either side breaks the
+# comparison and rewrites history that has already run in production.
+packages/db/migrations/
+supabase/
+
+# Infrastructure config with its own syntax rules.
+docker/Caddyfile
+docker/*.conf
+*.env
+.env*

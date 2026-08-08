@@ -1,4 +1,5 @@
 import type { Request } from "express";
+import type { OwnerRole } from "@aura/shared";
 
 /** The authenticated actor behind a platform request (admin key OR session). */
 export interface Principal {
@@ -9,6 +10,13 @@ export interface Principal {
   recordingsExport: boolean;
   /** True when authenticated via the dev x-admin-key rather than a user session. */
   viaAdminKey: boolean;
+  /**
+   * Owner-console persona (design doc §9) — independent of `role` above,
+   * which is the operator-side tenant role. Null when the caller never
+   * asserted one: a bare admin-key script/test, or a session whose
+   * membership predates personas.
+   */
+  ownerRole: OwnerRole | null;
 }
 
 export interface PrincipalRequest extends Request {

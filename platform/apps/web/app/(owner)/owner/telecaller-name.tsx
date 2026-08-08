@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Check, Pencil, X } from "lucide-react";
+import { Button, Input } from "@aura/ui";
 import { setTelecallerNameAction } from "./actions";
 
 /**
@@ -37,7 +38,7 @@ export function TelecallerName({
   if (editing) {
     return (
       <div className="flex items-center gap-1.5">
-        <input
+        <Input
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -48,29 +49,40 @@ export function TelecallerName({
           maxLength={120}
           placeholder="Telecaller name"
           aria-label="Telecaller name"
-          className="w-40 px-2 py-1 text-sm font-sans border-2 border-black rounded-none focus:outline-none focus:ring-2 focus:ring-black"
+          // <Input> is w-full by design; this one sits inside a table cell.
+          invalid={Boolean(error)}
+          className="w-40"
         />
-        <button
+        <Button
           type="button"
+          size="sm"
           onClick={save}
-          disabled={pending}
+          loading={pending}
           aria-label="Save name"
-          className="p-1 border-2 border-black bg-black text-white disabled:opacity-40"
+          className="px-2"
         >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-        <button
+          {pending ? null : <Check className="h-3.5 w-3.5" aria-hidden="true" />}
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={() => {
             setValue(name ?? "");
             setEditing(false);
           }}
           aria-label="Cancel"
-          className="p-1 border-2 border-black bg-white text-black"
+          className="px-2"
         >
-          <X className="h-3.5 w-3.5" />
-        </button>
-        {error ? <span className="text-[10px] font-mono text-red-600">{error}</span> : null}
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
+        {/* role=alert: the failure arrives after a round trip, so it has to be
+            announced rather than only appear. */}
+        {error ? (
+          <span role="alert" className="text-xs font-medium text-danger-text">
+            {error}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -79,15 +91,18 @@ export function TelecallerName({
     <button
       type="button"
       onClick={() => setEditing(true)}
-      className="group text-left"
+      className="group rounded-sm text-left"
       title="Rename telecaller"
     >
-      <span className="font-display font-bold text-black flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-text">
         {name || deviceLabel || "Unnamed handset"}
-        <Pencil className="h-3 w-3 text-neutral-300 group-hover:text-black" />
+        <Pencil
+          aria-hidden="true"
+          className="h-3 w-3 text-text-subtle transition-colors duration-150 ease-out group-hover:text-text"
+        />
       </span>
       {name && deviceLabel ? (
-        <span className="text-[10px] font-mono text-neutral-400">{deviceLabel}</span>
+        <span className="block text-xs text-text-muted">{deviceLabel}</span>
       ) : null}
     </button>
   );

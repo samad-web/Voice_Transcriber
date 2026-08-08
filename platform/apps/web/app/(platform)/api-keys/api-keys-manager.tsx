@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
-import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./actions";
 import { inputClass } from "@/lib/form";
+import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./actions";
 
 export interface ApiKey {
   id: string;
@@ -43,10 +43,20 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
       await revokeApiKeyAction(id, orgId);
     });
 
-  const copyKey = async () => {
-    if (!created?.key) return;
-    await navigator.clipboard.writeText(created.key);
-    setCopied(true);
+  // Sync handler, not `async`: React drops whatever an event handler returns, so
+  // an async onClick hands it a promise nobody owns and a rejected clipboard
+  // write (insecure origin, permission denied — both real for a console reached
+  // over plain http or inside an iframe) surfaces only as an unhandled
+  // rejection. Resolve it here instead, and on failure clear `copied` rather
+  // than leave the button claiming COPIED from an earlier successful click —
+  // this secret is shown exactly once, so a false "copied" loses it.
+  const copyKey = () => {
+    const key = created?.key;
+    if (!key) return;
+    void navigator.clipboard
+      .writeText(key)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
   };
 
   return (

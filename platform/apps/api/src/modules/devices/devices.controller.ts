@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { createHash, createVerify, randomBytes } from "node:crypto";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import * as jwt from "jsonwebtoken";
 import { z } from "zod";
 import { DeviceConfig, DeviceRegisterRequest } from "@aura/shared";
@@ -39,6 +40,12 @@ export class DevicesController {
    * that has not completed this flow can never record.
    */
   @Post("register")
+  // 10/min per IP (checklist 08 §0.7). Enrollment is unauthenticated apart from
+  // the one-time key in the body, so it is where an attacker would sit guessing
+  // enrollment tokens; each attempt also costs an admin-pool query. Ten is
+  // comfortably above the human pace of scanning QR codes onto handsets, which
+  // is the only legitimate way this route is called.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async register(@Body() body: unknown) {
     const parsed = DeviceRegisterRequest.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -117,6 +124,14 @@ export class DevicesController {
 
   /** Step 1 of device auth: hand out a short-lived nonce to sign. */
   @Post("challenge")
+  // Not throttled (checklist 08 §0.7). Device access tokens live 15 minutes
+  // (DEVICE_JWT_TTL_SECONDS), so a tenant's whole fleet re-runs challenge +
+  // authenticate on a loop, and a fleet shares one office/NAT source IP — a
+  // per-IP limit would stop the biggest customers recording first. The real
+  // gate is the ECDSA signature over the nonce in `authenticate`, which no
+  // volume of requests helps an attacker forge. `challenge` itself is an HMAC
+  // over the device id with no database access.
+  @SkipThrottle()
   challenge(@Body() body: unknown) {
     const parsed = ChallengeBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -130,6 +145,10 @@ export class DevicesController {
    * is the server half of the activation gate.
    */
   @Post("authenticate")
+  // Not throttled — same reasoning as `challenge` above: whole fleets re-auth
+  // every 15 minutes from a shared source IP, and possession of the Keystore
+  // private key is the gate.
+  @SkipThrottle()
   async authenticate(@Body() body: unknown) {
     const parsed = AuthenticateBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -190,6 +209,10 @@ export class DevicesController {
    */
   @Get("me/config")
   @UseGuards(DeviceAuthGuard)
+  // Not throttled: polled by every handset in the fleet, from a shared source
+  // IP, and it is the gate the client checks before capture — rate-limiting it
+  // stops recording. Already authenticated by a signed device token.
+  @SkipThrottle()
   async config(@Req() req: DeviceRequest) {
     const { deviceId, orgId } = req.device;
     return this.db.withOrg(orgId, async (client) => {

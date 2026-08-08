@@ -1,0 +1,81 @@
+# Line endings — one rule for the whole repo (08_ROAD_TO_10.md §1.1).
+#
+# The tree currently holds a MIX of CRLF and LF: the analytics/calls/crm/tenancy
+# controllers are CRLF, almost everything else is LF. That has already cost a
+# real debugging cycle — a codemod whose regex was anchored on `";\n` silently
+# skipped every CRLF file and reported success. Normalising in the index removes
+# the class of bug entirely, and pairs with Prettier's `"endOfLine": "lf"`
+# (platform/.prettierrc.json) which keeps new writes consistent.
+#
+# `text=auto` lets Git decide text-vs-binary by content; `eol=lf` then pins the
+# checked-out ending on every platform, Windows included. Nothing here needs
+# CRLF in the working tree: there are no .bat/.cmd files and no gradlew wrapper.
+#
+# NOTE FOR WHOEVER LANDS THIS: the working tree is not rewritten until someone
+# runs `git add --renormalize .` and commits the result. Do that on a quiet
+# tree, as its own commit, with no other work in flight — it touches every
+# CRLF file and will conflict with anything open.
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# Binary — never diffed, never merged, never EOL-converted.
+#
+# `text=auto` guesses from content and is usually right, but a guess that goes
+# wrong on a keystore or an APK corrupts the artifact irrecoverably, so the
+# formats we actually produce or carry are declared explicitly. Most of these
+# are .gitignore'd today (CallRecorderApp/.gitignore excludes *.jks/*.apk, and
+# app/build/ output); the declarations exist so that the day one is force-added
+# or an ignore rule is relaxed, it lands intact.
+# ---------------------------------------------------------------------------
+
+# Android build output and release signing material (CallRecorderApp/).
+*.apk       binary
+*.aab       binary
+*.dex       binary
+*.aar       binary
+*.jar       binary
+*.so        binary
+*.jks       binary
+*.keystore  binary
+*.p12       binary
+*.bin       binary
+
+# Documents — "Build docs/" carries PDFs alongside the markdown.
+*.pdf       binary
+*.docx      binary
+*.xlsx      binary
+*.pptx      binary
+
+# Images and fonts (Android drawables, console assets).
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+
+# Audio and video. This is a call-recording product: OEM captures and test
+# fixtures are exactly the files a stray CRLF conversion would silently ruin.
+*.amr       binary
+*.3gp       binary
+*.m4a       binary
+*.aac       binary
+*.mp3       binary
+*.wav       binary
+*.ogg       binary
+*.opus      binary
+*.flac      binary
+*.mp4       binary
+
+# Archives.
+*.zip       binary
+*.gz        binary
+*.tgz       binary
+*.bz2       binary
+*.xz        binary
+*.7z        binary

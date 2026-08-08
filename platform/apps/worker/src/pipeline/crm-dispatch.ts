@@ -2,6 +2,7 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { decryptSecret } from "@aura/db";
 import {
+  isFilled,
   pluckPath,
   pruneBody,
   renderBody,
@@ -178,7 +179,14 @@ export async function buildSourceDocument(
 
   const facts = row.facts ?? {};
   const intelligence = row.intelligence ?? {};
-  const filled = Object.values(facts).filter((v) => v !== null && v !== "").length;
+  // `isFilled`, not a local test, because this number is half of the confidence
+  // the receiver is told. A local `v !== null && v !== ""` counted a
+  // whitespace-only string and the literal "[]" (how call_facts stores an empty
+  // string[]) as answers — exactly what a model emits for "not mentioned" — so a
+  // call qualifyLead scores as ZERO filled fields arrived in the customer's CRM
+  // at confidence 1.0, overstating precisely the leads that deserve least trust.
+  // One definition of "the call said something", shared with qualifyLead.
+  const filled = Object.values(facts).filter(isFilled).length;
 
   // A signed link rather than a permanent one: the bucket is private, and a URL
   // that never expires is a credential handed to a third party.

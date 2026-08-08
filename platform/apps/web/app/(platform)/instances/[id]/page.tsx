@@ -2,7 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Boxes, KeyRound, Phone, Smartphone, Timer } from "lucide-react";
 import type { CrmProviderSpec } from "@aura/shared";
-import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
+import {
+  Card,
+  EmptyState,
+  MonoLabel,
+  StatCard,
+  StatusChip,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
 import { apiGetAs } from "@/lib/server-api";
@@ -104,6 +115,21 @@ const KEY_TONE = {
   exhausted: "muted",
 } as const;
 
+/**
+ * The strip above each of the three panel tables. Shared so the three cannot
+ * drift: same 1px rule, same subtle fill, same label weight.
+ */
+const PANEL_HEAD =
+  "flex items-center justify-between gap-2 border-b border-border bg-bg-subtle px-5 py-3";
+
+/**
+ * Scroll wrapper for a panel table. Mirrors the kit's <Table> accessibility —
+ * tabIndex + role="region" so a wide table's right-hand columns are reachable
+ * without a mouse (WCAG 2.1.1) — while keeping the min-width the kit's wrapper
+ * cannot express, since that has to sit on the <table> itself.
+ */
+const SCROLLER = "overflow-x-auto";
+
 /** `id` is the customer's org id — the tenant boundary the instance lives in. */
 export default async function InstanceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: orgId } = await params;
@@ -162,9 +188,9 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
 
       <Link
         href="/instances"
-        className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 hover:text-black"
+        className="inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-text-muted transition-colors duration-150 ease-out hover:text-text"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
         All instances
       </Link>
 
@@ -178,7 +204,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
           />
         </Link>
         <StatCard
-          label="Recorded Time"
+          label="Recorded time"
           value={`${recordedMinutes} min`}
           icon={<Timer className="h-4 w-4" />}
           footer={<span>{callStats?.complete ?? 0} complete</span>}
@@ -189,7 +215,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
           icon={<Smartphone className="h-4 w-4" />}
         />
         <StatCard
-          label="Active Keys"
+          label="Active keys"
           value={String(activeKeys)}
           icon={<KeyRound className="h-4 w-4" />}
         />
@@ -201,14 +227,14 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
           <MonoLabel>Tenant</MonoLabel>
           <StatusChip tone={org.status === "active" ? "solid" : "muted"}>{org.status}</StatusChip>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <span className="text-neutral-400 block uppercase text-[10px] font-bold">Org ID</span>
-            <span className="break-all">{org.id}</span>
+            <span className="block text-xs text-text-muted">Org ID</span>
+            <span className="font-mono text-xs break-all text-text">{org.id}</span>
           </div>
           <div>
-            <span className="text-neutral-400 block uppercase text-[10px] font-bold">Region</span>
-            <span>{org.region}</span>
+            <span className="block text-xs text-text-muted">Region</span>
+            <span className="font-mono text-xs text-text">{org.region}</span>
           </div>
         </div>
       </Card>
@@ -236,18 +262,18 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
         </div>
 
         <Card shadow className="space-y-3">
-          <MonoLabel>Immutable Audit Ledger</MonoLabel>
-          <div className="max-h-[32rem] overflow-y-auto divide-y-2 divide-neutral-100">
+          <MonoLabel>Immutable audit ledger</MonoLabel>
+          <div className="max-h-[32rem] divide-y divide-border overflow-y-auto">
             {(audit?.entries ?? []).length === 0 ? (
-              <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-6 text-center">
-                No audit entries yet
-              </p>
+              <p className="py-6 text-center text-sm text-text-muted">No audit entries yet</p>
             ) : (
               audit!.entries.map((e) => (
-                <div key={e.id} className="py-2.5 flex items-center justify-between gap-3">
-                  <div>
-                    <span className="font-mono text-xs font-bold text-black block">{e.action}</span>
-                    <span className="text-[10px] text-neutral-400 font-mono">
+                <div key={e.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <span className="block font-mono text-xs font-medium text-text">
+                      {e.action}
+                    </span>
+                    <span className="font-mono text-xs text-text-muted tabular-nums">
                       {e.actor_type}:{e.actor_id.slice(0, 12)} ·{" "}
                       {new Date(e.created_at).toLocaleString()}
                     </span>
@@ -263,12 +289,10 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
       </div>
 
       {catalogue && instances[0] ? (
-        <div className="space-y-4 border-t-2 border-black pt-6">
+        <div className="space-y-4 border-t border-border pt-6">
           <div>
-            <h3 className="text-xl font-display font-black uppercase tracking-tight">
-              Lead Delivery
-            </h3>
-            <p className="text-xs text-neutral-500 font-sans font-medium mt-0.5">
+            <h3 className="text-xl font-semibold text-text">Lead delivery</h3>
+            <p className="mt-0.5 text-sm text-text-muted">
               Where this customer&apos;s calls are pushed. Scoped to {org.name} — nothing here
               affects another tenant.
             </p>
@@ -284,82 +308,79 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
       ) : null}
 
       {instances.length === 0 ? (
-        <Card className="flex flex-col items-center py-12 gap-3">
-          <Boxes className="h-8 w-8 text-neutral-300" />
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-            This instance has no enrollment target — reprovision the customer
-          </p>
-        </Card>
+        <EmptyState
+          icon={<Boxes className="h-8 w-8" />}
+          title="This tenant has no enrollment target"
+          description="There is no instance to enroll a handset against. Reprovision the customer to create one."
+        />
       ) : null}
 
       {instances.map((inst, i) => {
         const detail = details[i];
         const calls = recentCalls[i]?.calls ?? [];
         return (
-          <div key={inst.id} className="space-y-6 border-t-2 border-black pt-6">
-            <div className="flex items-baseline justify-between gap-3 flex-wrap">
-              <h3 className="text-xl font-display font-black uppercase tracking-tight">
-                {inst.name}
-              </h3>
-              <span className="text-[10px] font-mono text-neutral-400 break-all">
-                instance {inst.id} · config v{inst.config_version}
+          <div key={inst.id} className="space-y-6 border-t border-border pt-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h3 className="text-xl font-semibold text-text">{inst.name}</h3>
+              <span className="font-mono text-xs break-all text-text-muted tabular-nums">
+                Instance {inst.id} · config v{inst.config_version}
               </span>
             </div>
 
             <Card className="overflow-hidden p-0">
-              <div className="px-5 py-3.5 border-b-2 border-black bg-neutral-50 flex items-center justify-between gap-2">
+              <div className={PANEL_HEAD}>
                 <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4" />
-                  <span className="text-xs font-display font-bold uppercase tracking-wider">
-                    Recent Calls
-                  </span>
+                  <Phone aria-hidden="true" className="h-4 w-4 text-text-muted" />
+                  <span className="text-sm font-medium text-text">Recent calls</span>
                 </div>
                 <Link
                   href={`/instances/${orgId}/calls?instance=${inst.id}`}
-                  className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 hover:text-black underline"
+                  className="rounded-sm text-sm font-medium text-accent-text underline underline-offset-2 hover:text-accent"
                 >
                   View all
+                  {/* Three "View all" links on one page; name the target so a
+                      screen reader's link list is not three identical rows. */}
+                  <span className="sr-only"> calls for {inst.name}</span>
                 </Link>
               </div>
               {calls.length === 0 ? (
-                <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-8 text-center">
+                <p className="py-8 text-center text-sm text-text-muted">
                   No calls recorded on this instance yet
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[600px] text-left border-collapse">
-                    <thead>
-                      <tr className="bg-neutral-100 border-b-2 border-neutral-200 font-mono text-[10px] text-black font-bold uppercase tracking-wider">
-                        <th className="py-3 px-5">Call</th>
-                        <th className="py-3 px-4">Device</th>
-                        <th className="py-3 px-4">Duration</th>
-                        <th className="py-3 px-4">Status</th>
+                <div tabIndex={0} role="region" aria-label={`Recent calls, ${inst.name}`} className={SCROLLER}>
+                  <table className="w-full min-w-[600px] border-collapse text-left text-sm">
+                    <caption className="sr-only">Recent calls for {inst.name}</caption>
+                    <TableHead>
+                      <tr>
+                        <TableHeaderCell>Call</TableHeaderCell>
+                        <TableHeaderCell>Device</TableHeaderCell>
+                        <TableHeaderCell>Duration</TableHeaderCell>
+                        <TableHeaderCell>Status</TableHeaderCell>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                    </TableHead>
+                    <TableBody>
                       {calls.map((c) => (
-                        <tr key={c.id} className="hover:bg-neutral-50">
-                          <td className="py-3.5 px-5">
-                            <span className="font-sans font-bold text-black block">
+                        <TableRow key={c.id}>
+                          <TableCell>
+                            <span className="block text-sm font-medium text-text">
                               {callLabel(c)}
                             </span>
                             <LocalTime
                               iso={c.started_at}
-                              className="text-[10px] text-neutral-400 font-mono"
+                              className="text-xs text-text-muted tabular-nums"
                             />
-                          </td>
-                          <td className="py-3.5 px-4 text-xs font-sans font-bold">
-                            {c.device_label ?? "—"}
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-xs font-bold">
+                          </TableCell>
+                          <TableCell className="text-xs">{c.device_label ?? "—"}</TableCell>
+                          <TableCell className="text-xs tabular-nums">
                             {formatDuration(c.duration_s)}
-                          </td>
-                          <td className="py-3.5 px-4">
+                          </TableCell>
+                          <TableCell>
                             <StatusChip tone={CALL_TONE(c.status)}>{c.status}</StatusChip>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
+                    </TableBody>
                   </table>
                 </div>
               )}
@@ -368,111 +389,109 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
             <KeyGenerator orgId={orgId} instanceId={inst.id} instanceName={inst.name} />
 
             <Card className="overflow-hidden p-0">
-              <div className="px-5 py-3.5 border-b-2 border-black bg-neutral-50 flex items-center gap-2">
-                <KeyRound className="h-4 w-4" />
-                <span className="text-xs font-display font-bold uppercase tracking-wider">
-                  Enrollment Keys
-                </span>
+              <div className={PANEL_HEAD}>
+                <div className="flex items-center gap-2">
+                  <KeyRound aria-hidden="true" className="h-4 w-4 text-text-muted" />
+                  <span className="text-sm font-medium text-text">Enrollment keys</span>
+                </div>
               </div>
               {!detail || detail.keys.length === 0 ? (
-                <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-8 text-center">
-                  No keys issued
-                </p>
+                <p className="py-8 text-center text-sm text-text-muted">No keys issued</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[600px] text-left border-collapse">
-                    <thead>
-                      <tr className="bg-neutral-100 border-b-2 border-neutral-200 font-mono text-[10px] text-black font-bold uppercase tracking-wider">
-                        <th className="py-3 px-5">Issued</th>
-                        <th className="py-3 px-4">Expires</th>
-                        <th className="py-3 px-4">Uses</th>
-                        <th className="py-3 px-4">Status</th>
+                <div tabIndex={0} role="region" aria-label={`Enrollment keys, ${inst.name}`} className={SCROLLER}>
+                  <table className="w-full min-w-[600px] border-collapse text-left text-sm">
+                    <caption className="sr-only">Enrollment keys for {inst.name}</caption>
+                    <TableHead>
+                      <tr>
+                        <TableHeaderCell>Issued</TableHeaderCell>
+                        <TableHeaderCell>Expires</TableHeaderCell>
+                        <TableHeaderCell>Uses</TableHeaderCell>
+                        <TableHeaderCell>Status</TableHeaderCell>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                    </TableHead>
+                    <TableBody>
                       {detail.keys.map((key) => (
-                        <tr key={key.id} className="hover:bg-neutral-50">
-                          <td className="py-3.5 px-5 font-mono text-xs">
+                        <TableRow key={key.id}>
+                          <TableCell className="font-mono text-xs tabular-nums">
                             {new Date(key.created_at).toLocaleString()}
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-xs">
+                          </TableCell>
+                          <TableCell className="font-mono text-xs tabular-nums">
                             {new Date(key.expires_at).toLocaleString()}
-                          </td>
-                          <td className="py-3.5 px-4 font-mono text-xs">
+                          </TableCell>
+                          <TableCell className="font-mono text-xs tabular-nums">
                             {key.use_count}/{key.max_uses}
-                          </td>
-                          <td className="py-3.5 px-4">
+                          </TableCell>
+                          <TableCell>
                             <StatusChip tone={KEY_TONE[key.status]}>{key.status}</StatusChip>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
+                    </TableBody>
                   </table>
                 </div>
               )}
             </Card>
 
             <Card className="overflow-hidden p-0">
-              <div className="px-5 py-3.5 border-b-2 border-black bg-neutral-50 flex items-center gap-2">
-                <Smartphone className="h-4 w-4" />
-                <span className="text-xs font-display font-bold uppercase tracking-wider">
-                  Devices
-                </span>
+              <div className={PANEL_HEAD}>
+                <div className="flex items-center gap-2">
+                  <Smartphone aria-hidden="true" className="h-4 w-4 text-text-muted" />
+                  <span className="text-sm font-medium text-text">Devices</span>
+                </div>
               </div>
               {!detail || detail.devices.length === 0 ? (
-                <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-8 text-center">
+                <p className="py-8 text-center text-sm text-text-muted">
                   No devices enrolled — issue a key above to enroll the first handset
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[880px] text-left border-collapse">
-                    <thead>
-                      <tr className="bg-neutral-100 border-b-2 border-neutral-200 font-mono text-[10px] text-black font-bold uppercase tracking-wider">
-                        <th className="py-3 px-5">Device</th>
-                        <th className="py-3 px-4">Fingerprint</th>
-                        <th className="py-3 px-4">Capability</th>
-                        <th className="py-3 px-4">Last Seen</th>
-                        <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-4 text-right">Actions</th>
+                <div tabIndex={0} role="region" aria-label={`Devices, ${inst.name}`} className={SCROLLER}>
+                  <table className="w-full min-w-[880px] border-collapse text-left text-sm">
+                    <caption className="sr-only">Enrolled devices for {inst.name}</caption>
+                    <TableHead>
+                      <tr>
+                        <TableHeaderCell>Device</TableHeaderCell>
+                        <TableHeaderCell>Fingerprint</TableHeaderCell>
+                        <TableHeaderCell>Capability</TableHeaderCell>
+                        <TableHeaderCell>Last seen</TableHeaderCell>
+                        <TableHeaderCell>Status</TableHeaderCell>
+                        <TableHeaderCell>Actions</TableHeaderCell>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                    </TableHead>
+                    <TableBody>
                       {detail.devices.map((device) => (
-                        <tr key={device.id} className="hover:bg-neutral-50">
-                          <td className="py-4 px-5">
-                            <span className="font-display font-bold text-black block">
+                        <TableRow key={device.id}>
+                          <TableCell>
+                            <span className="block text-sm font-medium text-text">
                               {device.label ?? "Unlabeled device"}
                             </span>
-                            <span className="text-[10px] font-mono text-neutral-400">
-                              {device.id}
-                            </span>
-                          </td>
-                          <td className="py-4 px-4 font-mono text-xs">
+                            <span className="font-mono text-xs text-text-muted">{device.id}</span>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
                             {device.fingerprint ?? "—"}
-                          </td>
-                          <td className="py-4 px-4 font-mono text-xs">
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
                             {device.capture_capability ?? "unprobed"}
-                          </td>
-                          <td className="py-4 px-4 font-mono text-xs">
+                          </TableCell>
+                          <TableCell className="font-mono text-xs tabular-nums">
                             {device.last_seen_at
                               ? new Date(device.last_seen_at).toLocaleString()
                               : "—"}
-                          </td>
-                          <td className="py-4 px-4">
+                          </TableCell>
+                          <TableCell>
                             <StatusChip tone={DEVICE_TONE[device.status]}>
                               {device.status}
                             </StatusChip>
-                          </td>
-                          <td className="py-4 px-4 text-right">
+                          </TableCell>
+                          <TableCell>
                             <DeviceActions
                               orgId={orgId}
                               deviceId={device.id}
                               status={device.status}
                             />
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
+                    </TableBody>
                   </table>
                 </div>
               )}

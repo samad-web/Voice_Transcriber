@@ -5,3 +5,7 @@ export * from "./device-api";
 export * from "./crm-template";
 export * from "./crm-providers";
 export * from "./leads";
+export * from "./roles";
+export * from "./funnel";
+export * from "./funnel-retention";
+export * from "./message-templates";

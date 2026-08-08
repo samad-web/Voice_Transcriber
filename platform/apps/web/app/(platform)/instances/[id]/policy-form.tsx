@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { ShieldCheck } from "lucide-react";
 import { BrutalButton, Card } from "@aura/ui";
-import { updatePolicyAction } from "./actions";
 import { selectClass } from "@/lib/form";
+import { updatePolicyAction } from "./actions";
 
 export function PolicyForm({
   orgId,

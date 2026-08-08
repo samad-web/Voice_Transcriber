@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireOperator } from "@/lib/operator-guard";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 
 export interface ProvisionResult {
@@ -16,6 +17,11 @@ export interface ProvisionResult {
 /**
  * Provision a customer company: org (RLS tenant) + workspace + instance + the
  * first one-time enrollment key. The key comes back exactly once.
+ *
+ * Operator-only, asserted here rather than relying on the `(platform)` layout:
+ * this is an independently-addressable POST endpoint and the layout runs only on
+ * a render (see lib/operator-guard.ts). Unguarded, any signed-in account could
+ * create tenants at will — and it sends the cross-tenant root key to do it.
  */
 export async function createTenantAction(input: {
   name: string;
@@ -24,6 +30,11 @@ export async function createTenantAction(input: {
   ttlMinutes: number;
   maxUses: number;
 }): Promise<ProvisionResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/admin/tenants`, {
       method: "POST",

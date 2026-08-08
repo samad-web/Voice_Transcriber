@@ -33,10 +33,13 @@ export function TenantSwitcher({
             key={t.id}
             href={`${basePath}?org=${t.id}`}
             aria-current={t.id === activeOrgId ? "page" : undefined}
-            className={`px-3 py-1.5 border-2 border-black text-[10px] font-mono font-bold uppercase tracking-wider ${
+            className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
+              // "Selected" is a sanctioned accent use (doc 16 §1.1). Everything
+              // else in this row stays neutral so the chosen tenant is the only
+              // coloured thing on the strip.
               t.id === activeOrgId
-                ? "bg-black text-white"
-                : "bg-white text-black hover:bg-neutral-100"
+                ? "border-transparent bg-accent-subtle text-accent-text"
+                : "border-border-strong bg-surface text-text hover:bg-surface-hover hover:border-text-subtle"
             }`}
           >
             {t.name}

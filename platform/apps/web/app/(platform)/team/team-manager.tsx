@@ -4,13 +4,13 @@ import { useState, useTransition } from "react";
 import { Plus, Trash2, UserPlus, Users } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
+import { inputClass, selectClass } from "@/lib/form";
 import {
   addMemberAction,
   createWorkspaceAction,
   removeMemberAction,
   updateMemberAction,
 } from "./actions";
-import { inputClass, selectClass } from "@/lib/form";
 
 export interface Member {
   userId: string;

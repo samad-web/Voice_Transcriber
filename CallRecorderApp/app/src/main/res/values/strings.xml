@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Call Recorder</string>
+    <string name="app_name">Aura</string>
+    <string name="developed_by">Developed by Sirah Digital</string>
     <string name="channel_recording">Recording</string>
     <string name="recording_title">Recording call</string>
     <string name="record_failed_title">Recording failed to start</string>

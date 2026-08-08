@@ -9,6 +9,10 @@ import { formatDuration, formatValue, num, relativeTime, type Overview } from ".
 
 export const metadata: Metadata = { title: "Dashboard — Aura" };
 
+/** The "see everything" link that sits opposite a panel's own label. */
+const PANEL_LINK =
+  "rounded-sm text-xs font-medium text-text-muted transition-colors duration-150 ease-out hover:text-text";
+
 /**
  * The owner's landing page: how the desk is performing and what the pipeline
  * is worth, over a rolling window. Everything here is scoped by the session's
@@ -29,7 +33,7 @@ export default async function OwnerDashboardPage({
         <PageHeader title="Dashboard" context="Instance" />
         <Card>
           <MonoLabel>Data unavailable</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             The platform API did not answer. If this persists, contact your provider.
           </p>
         </Card>
@@ -47,14 +51,19 @@ export default async function OwnerDashboardPage({
     <>
       <PageHeader title={data.org.name || "Dashboard"} context="Instance" />
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         <MonoLabel className="mr-1">Window</MonoLabel>
         {[7, 30, 90].map((d) => (
           <Link
             key={d}
             href={`/owner?days=${d}`}
-            className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 border-2 border-black ${
-              d === days ? "bg-black text-white" : "bg-white text-neutral-500 hover:text-black"
+            aria-current={d === days ? "true" : undefined}
+            // Selected window = accent, the same "you are here" signal the
+            // sidebar and the lead filters use.
+            className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors duration-150 ease-out ${
+              d === days
+                ? "border-transparent bg-accent-subtle text-accent-text"
+                : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
             }`}
           >
             {d} days
@@ -62,15 +71,15 @@ export default async function OwnerDashboardPage({
         ))}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
-          label="Open Leads"
+          label="Open leads"
           value={String(leads.open)}
           icon={<Target className="h-5 w-5" />}
           footer={<span>{leads.created_in_window} new in {days}d</span>}
         />
         <StatCard
-          label="Pipeline Value"
+          label="Pipeline value"
           value={formatValue(leads.pipeline_value)}
           icon={<Banknote className="h-5 w-5" />}
           footer={<span>across open leads</span>}
@@ -94,14 +103,11 @@ export default async function OwnerDashboardPage({
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
         <Card shadow className="space-y-4">
           <div className="flex items-baseline justify-between gap-3">
             <MonoLabel>Pipeline by stage</MonoLabel>
-            <Link
-              href="/owner/board"
-              className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 hover:text-black"
-            >
+            <Link href="/owner/board" className={PANEL_LINK}>
               Open board →
             </Link>
           </div>
@@ -110,29 +116,34 @@ export default async function OwnerDashboardPage({
           ) : (
             <div className="space-y-2.5">
               {funnel.map((stage) => (
-                <Link
-                  key={stage.key}
-                  href={`/owner/leads?stage=${stage.key}`}
-                  className="block group"
-                >
-                  <div className="flex items-center justify-between gap-3 text-xs font-mono font-bold">
-                    <span className="uppercase tracking-wider text-neutral-500 group-hover:text-black">
+                <Link key={stage.key} href={`/owner/leads?stage=${stage.key}`} className="group block">
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-text-muted transition-colors duration-150 ease-out group-hover:text-text">
                       {stage.label}
                     </span>
-                    <span className="text-black shrink-0">
+                    <span className="shrink-0 font-medium text-text tabular-nums">
                       {stage.count}
                       {stage.value > 0 ? (
-                        <span className="text-neutral-400 font-normal">
+                        <span className="font-normal text-text-muted">
                           {" "}
                           · {formatValue(stage.value)}
                         </span>
                       ) : null}
                     </span>
                   </div>
-                  <div className="mt-1.5 h-3 w-full bg-neutral-100 border border-black overflow-hidden">
+                  {/* aria-hidden: the bar is a picture of the count that is
+                      already written beside it in text, so announcing a second
+                      unlabelled meter would just read the row twice. */}
+                  <div
+                    aria-hidden="true"
+                    className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-border"
+                  >
                     <div
-                      className={`h-full ${
-                        stage.terminal === "lost" ? "bg-neutral-400" : "bg-black"
+                      // Lost stays neutral rather than red: a lost lead is a
+                      // normal outcome, not a fault condition, and semantic
+                      // colour is for status only (doc 16 §1.1).
+                      className={`h-full rounded-full ${
+                        stage.terminal === "lost" ? "bg-border-strong" : "bg-accent"
                       }`}
                       style={{ width: `${(stage.count / funnelMax) * 100}%` }}
                     />
@@ -146,38 +157,36 @@ export default async function OwnerDashboardPage({
         <Card shadow className="space-y-4">
           <MonoLabel>Calls and new leads — last {days} days</MonoLabel>
           {byDay.length === 0 ? (
-            <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-10 text-center">
-              No activity in this window
-            </p>
+            <p className="py-10 text-center text-sm text-text-muted">No activity in this window</p>
           ) : (
             <>
-              <div className="flex items-end gap-1 h-40">
+              <div className="flex h-40 items-end gap-1">
                 {byDay.map((d) => (
-                  <div key={d.day} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                    <div className="w-full flex items-end justify-center gap-0.5 h-32">
+                  <div key={d.day} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                    <div className="flex h-32 w-full items-end justify-center gap-0.5">
                       <div
                         title={`${d.calls} calls`}
-                        className="w-1/2 bg-neutral-300 border border-black"
+                        className="w-1/2 rounded-t-sm bg-border-strong"
                         style={{ height: `${(d.calls / maxDay) * 100}%` }}
                       />
                       <div
                         title={`${d.leads} leads`}
-                        className="w-1/2 bg-black border border-black"
+                        className="w-1/2 rounded-t-sm bg-accent"
                         style={{ height: `${(d.leads / maxDay) * 100}%` }}
                       />
                     </div>
-                    <span className="text-[8px] font-mono text-neutral-400 font-bold truncate w-full text-center">
+                    <span className="w-full truncate text-center text-xs text-text-muted tabular-nums">
                       {new Date(d.day).toLocaleDateString(undefined, { day: "numeric" })}
                     </span>
                   </div>
                 ))}
               </div>
-              <div className="flex items-center gap-4 pt-2 border-t border-neutral-200">
-                <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
-                  <span className="w-3 h-3 bg-neutral-300 border border-black" /> Calls
+              <div className="flex items-center gap-4 border-t border-border pt-3">
+                <span className="flex items-center gap-1.5 text-xs text-text-muted">
+                  <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-border-strong" /> Calls
                 </span>
-                <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
-                  <span className="w-3 h-3 bg-black border border-black" /> Leads
+                <span className="flex items-center gap-1.5 text-xs text-text-muted">
+                  <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-accent" /> Leads
                 </span>
               </div>
             </>
@@ -186,36 +195,50 @@ export default async function OwnerDashboardPage({
       </div>
 
       <Card className="overflow-hidden p-0">
-        <div className="px-5 py-3.5 border-b-2 border-black bg-neutral-50 flex items-center justify-between gap-3">
-          <span className="text-xs font-display font-bold uppercase tracking-wider">
-            Telecaller performance
-          </span>
-          <span className="text-[10px] font-mono text-neutral-400 font-bold uppercase tracking-wider">
-            last {days} days
-          </span>
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
+          <span className="text-sm font-medium text-text">Telecaller performance</span>
+          <span className="text-xs text-text-muted tabular-nums">last {days} days</span>
         </div>
         {telecallers.length === 0 ? (
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-10 text-center">
-            No handsets enrolled yet
-          </p>
+          <p className="py-10 text-center text-sm text-text-muted">No handsets enrolled yet</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left border-collapse">
-              <thead>
-                <tr className="bg-neutral-100 border-b-2 border-neutral-200 font-mono text-[10px] text-black font-bold uppercase tracking-wider">
-                  <th className="py-3 px-5">Telecaller</th>
-                  <th className="py-3 px-4 text-right">Calls</th>
-                  <th className="py-3 px-4 text-right">Talk time</th>
-                  <th className="py-3 px-4 text-right">Leads</th>
-                  <th className="py-3 px-4 text-right">Won</th>
-                  <th className="py-3 px-4 text-right">Pipeline</th>
-                  <th className="py-3 px-4">Last call</th>
+          // tabIndex+role so the horizontal scroll is reachable without a mouse
+          // (WCAG 2.1.1) — the kit's <Table> does the same, but it draws its own
+          // border and this table already sits inside a bordered Card.
+          <div tabIndex={0} role="region" aria-label="Telecaller performance" className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+              <thead className="bg-bg-subtle">
+                <tr>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-xs font-medium text-text-muted">
+                    Telecaller
+                  </th>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
+                    Calls
+                  </th>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium whitespace-nowrap text-text-muted">
+                    Talk time
+                  </th>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
+                    Leads
+                  </th>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
+                    Won
+                  </th>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
+                    Pipeline
+                  </th>
+                  <th scope="col" className="border-b border-border px-4 py-2.5 text-xs font-medium whitespace-nowrap text-text-muted">
+                    Last call
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y-2 divide-neutral-100 text-sm">
+              <tbody className="divide-y divide-border">
                 {telecallers.map((t) => (
-                  <tr key={t.id} className="hover:bg-neutral-50">
-                    <td className="py-3.5 px-5">
+                  <tr
+                    key={t.id}
+                    className="transition-colors duration-150 ease-out hover:bg-surface-hover"
+                  >
+                    <td className="px-4 py-3 align-middle text-text">
                       <TelecallerName
                         deviceId={t.id}
                         name={t.telecaller_name}
@@ -227,16 +250,22 @@ export default async function OwnerDashboardPage({
                         </StatusChip>
                       ) : null}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono text-xs">{t.calls}</td>
-                    <td className="py-3.5 px-4 text-right font-mono text-xs">
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
+                      {t.calls}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
                       {formatDuration(t.talk_seconds)}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-display font-bold">{t.leads}</td>
-                    <td className="py-3.5 px-4 text-right font-mono text-xs">{t.won}</td>
-                    <td className="py-3.5 px-4 text-right font-mono text-xs">
+                    <td className="px-4 py-3 text-right align-middle font-medium text-text tabular-nums">
+                      {t.leads}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
+                      {t.won}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
                       {formatValue(t.pipeline_value)}
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-neutral-500">
+                    <td className="px-4 py-3 align-middle text-text-muted tabular-nums">
                       {relativeTime(t.last_call_at)}
                     </td>
                   </tr>
@@ -250,36 +279,29 @@ export default async function OwnerDashboardPage({
       <Card shadow className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
           <MonoLabel>Latest activity</MonoLabel>
-          <Link
-            href="/owner/leads"
-            className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 hover:text-black"
-          >
+          <Link href="/owner/leads" className={PANEL_LINK}>
             All leads →
           </Link>
         </div>
         {data.recent.length === 0 ? (
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-6 text-center">
-            No leads yet
-          </p>
+          <p className="py-6 text-center text-sm text-text-muted">No leads yet</p>
         ) : (
-          <div className="divide-y-2 divide-neutral-100">
+          <div className="divide-y divide-border">
             {data.recent.map((lead) => (
               <Link
                 key={lead.id}
                 href={`/owner/leads?focus=${lead.id}`}
-                className="py-2.5 flex items-center justify-between gap-3 hover:bg-neutral-50"
+                className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2.5 transition-colors duration-150 ease-out hover:bg-surface-hover"
               >
                 <div className="min-w-0">
-                  <span className="font-display font-bold text-black block truncate">
-                    {lead.title}
-                  </span>
-                  <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider">
+                  <span className="block truncate font-medium text-text">{lead.title}</span>
+                  <span className="text-xs text-text-muted">
                     {lead.telecaller ?? "unassigned"} · {relativeTime(lead.last_activity_at)}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
                   {num(lead.value_num) === null ? null : (
-                    <span className="font-mono text-xs font-bold">
+                    <span className="text-xs font-medium text-text tabular-nums">
                       {formatValue(lead.value_num)}
                     </span>
                   )}
@@ -302,9 +324,9 @@ export default async function OwnerDashboardPage({
  */
 function EmptyPipeline() {
   return (
-    <div className="py-8 text-center space-y-2">
-      <p className="text-xs font-mono font-bold uppercase text-neutral-400">No leads yet</p>
-      <p className="text-xs text-neutral-500 font-sans max-w-sm mx-auto leading-relaxed">
+    <div className="space-y-2 py-8 text-center">
+      <p className="text-sm font-medium text-text">No leads yet</p>
+      <p className="mx-auto max-w-sm text-sm leading-relaxed text-text-muted">
         A lead appears here once a recorded call is transcribed and the AI agent
         extracts something usable from it. If calls are arriving but no leads
         are, the extraction agent may need tuning.

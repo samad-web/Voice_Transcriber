@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireOperator } from "@/lib/operator-guard";
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
@@ -9,6 +10,13 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
  * `orgId` keeps the old dev-org behaviour for the standalone /calls page;
  * passing it is what makes the instance-scoped explorer work at all, since
  * reading a call under the wrong org context is a 404 under RLS.
+ *
+ * That freedom is exactly why each of these opens with `requireOperator()`.
+ * These are the actions that hand back transcripts and presigned recording
+ * audio, under an org id the caller chose, using the root admin key — and a
+ * Server Action is an independently-addressable POST endpoint, so the
+ * `(platform)` layout's operator gate (a render-time check) never runs for one.
+ * See lib/operator-guard.ts.
  */
 const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
 
@@ -88,6 +96,11 @@ export async function getCallDetailAction(
   orgId?: string,
 ): Promise<{ detail?: CallDetailData; error?: string }> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/calls/${callId}`, {
       headers: headersFor(orgId),
       cache: "no-store",
@@ -103,6 +116,11 @@ export async function reprocessCallAction(
   callId: string,
   orgId?: string,
 ): Promise<{ status?: string; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/calls/${callId}/reprocess`, {
       method: "POST",
@@ -125,6 +143,11 @@ export async function getCallAudioAction(
   callId: string,
   orgId?: string,
 ): Promise<{ url?: string; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/calls/${callId}/audio`, {
       headers: headersFor(orgId),
@@ -150,6 +173,11 @@ export async function getCallNotesAction(
   orgId?: string,
 ): Promise<{ notes?: CallNote[]; error?: string }> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/calls/${callId}/notes`, {
       headers: headersFor(orgId),
       cache: "no-store",
@@ -167,6 +195,11 @@ export async function addCallNoteAction(
   body: string,
   orgId?: string,
 ): Promise<{ note?: CallNote; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/calls/${callId}/notes`, {
       method: "POST",

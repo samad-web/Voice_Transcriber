@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { type OwnerRole, resolveOwnerRole } from "@aura/shared";
 import { API_URL, DEV_ORG_ID, DEV_WORKSPACE_ID, apiGetAs, crossTenantHeaders } from "@/lib/server-api";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { getSessionUser } from "@/lib/supabase/server";
@@ -15,10 +16,13 @@ import { getSessionUser } from "@/lib/supabase/server";
  * Two kinds of principal come out of this:
  *
  *   owner    — has a membership. Locked to that org; sees /owner only.
- *   operator — signed in with no membership at all. This is the platform staff
- *              account, and it keeps the behaviour the console has always had
- *              (org from DEV_ORG_ID, full operator nav). Owners are strictly a
- *              narrowing: adding one can never widen anyone's access.
+ *   operator — signed in with no membership at all. A *candidate* for platform
+ *              staff, nothing more: `kind` is a classification, not a grant.
+ *              Reaching the operator console (org from DEV_ORG_ID, full
+ *              operator nav) additionally requires passing `isOperator()`,
+ *              which checks PLATFORM_OPERATOR_EMAILS and denies by default.
+ *              Owners are strictly a narrowing: adding one can never widen
+ *              anyone's access.
  */
 
 export interface OwnerMembership {
@@ -26,6 +30,8 @@ export interface OwnerMembership {
   orgName: string;
   orgStatus: string;
   role: string;
+  /** Owner-console persona (design doc §9) — Owner/Manager/Telecaller. */
+  ownerRole: OwnerRole;
   recordingsListen: boolean;
   recordingsExport: boolean;
   workspaceId: string | null;
@@ -34,24 +40,51 @@ export interface OwnerMembership {
 export interface Principal {
   email: string;
   subject: string;
+  /** The platform `users.id` (distinct from `subject`, the Supabase sso_subject). */
+  userId: string | null;
   kind: "owner" | "operator";
   /** The tenant an owner is pinned to. Null for the operator. */
   membership: OwnerMembership | null;
 }
 
 /**
- * Optional allowlist of operator emails. When set, a signed-in user who is not
- * an owner AND not on the list gets nothing — useful once real customers have
- * logins and a stray Supabase signup should not land in the operator console.
- * Unset (the default) keeps local dev and the existing deployment working.
+ * The allowlist of platform-operator emails. REQUIRED in production.
+ *
+ * This used to be optional, and an empty list meant "everybody": any signed-in
+ * account holding zero memberships was an operator. Supabase's anon key ships
+ * in the browser bundle and /auth/v1/signup is on by default, so that chain ran
+ * stranger → self-signup → sign in → no membership → operator → every tenant's
+ * calls, transcripts and recording audio (road map §0.1).
+ *
+ * It now fails CLOSED: empty list means NOBODY is an operator. The one
+ * exception is the documented local-dev mode where auth is unconfigured
+ * entirely — see `isOperator` below.
  */
 const OPERATOR_EMAILS = (process.env.PLATFORM_OPERATOR_EMAILS ?? "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 
+// Say it once, loudly, at server startup rather than only at the moment someone
+// is refused: an empty list with auth configured means the operator console is
+// closed to everyone, including us, and the symptom (a "No console access" card
+// for a correct login) does not name its own cause.
+if (AUTH_ENABLED && OPERATOR_EMAILS.length === 0) {
+  console.error(
+    "[auth] PLATFORM_OPERATOR_EMAILS is unset while Supabase auth is enabled — " +
+      "the platform-operator console (/dashboard, /instances, /admin) is now closed to EVERY account. " +
+      "Set PLATFORM_OPERATOR_EMAILS to a comma-separated list of operator emails in the web tier's " +
+      "environment (platform/.env.production, consumed by the `web` service in docker-compose.prod.yml) " +
+      "and redeploy.",
+  );
+}
+
+interface RawMembership extends Omit<OwnerMembership, "ownerRole"> {
+  ownerRole: string | null;
+}
+
 interface ContextResponse {
-  memberships: OwnerMembership[];
+  memberships: RawMembership[];
   user: { id: string; email: string; name: string | null } | null;
 }
 
@@ -71,12 +104,14 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     return {
       email: "",
       subject: "",
+      userId: null,
       kind: "operator",
       membership: {
         orgId: DEV_ORG_ID,
         orgName: "",
         orgStatus: "active",
         role: "org_admin",
+        ownerRole: "owner",
         recordingsListen: true,
         recordingsExport: true,
         workspaceId: DEV_WORKSPACE_ID,
@@ -84,7 +119,8 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     };
   }
 
-  let memberships: OwnerMembership[] = [];
+  let rawMemberships: RawMembership[] = [];
+  let userId: string | null = null;
   try {
     const params = new URLSearchParams({ subject: user.id });
     if (user.email) params.set("email", user.email);
@@ -92,11 +128,20 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       headers: crossTenantHeaders,
       cache: "no-store",
     });
-    if (res.ok) memberships = ((await res.json()) as ContextResponse).memberships ?? [];
+    if (res.ok) {
+      const body = (await res.json()) as ContextResponse;
+      rawMemberships = body.memberships ?? [];
+      userId = body.user?.id ?? null;
+    }
   } catch {
     // API down. Fall through as an unbound session rather than a hard error —
     // the pages themselves already render an "API offline" state.
   }
+
+  const memberships: OwnerMembership[] = rawMemberships.map((m) => ({
+    ...m,
+    ownerRole: resolveOwnerRole(m.ownerRole),
+  }));
 
   // One owner, one instance. A user with several memberships (staff who own
   // more than one tenant) gets their first; an instance switcher is the
@@ -112,15 +157,31 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
   return {
     email: user.email,
     subject: user.id,
+    userId,
     kind: membership && !listedOperator ? "owner" : "operator",
     membership,
   };
 });
 
-/** True when this session may use the platform-operator console. */
+/**
+ * True when this session may use the platform-operator console — every tenant's
+ * data, cross-tenant. Deny by default; this is the only gate in front of it.
+ */
 export function isOperator(principal: Principal | null): boolean {
   if (!principal || principal.kind !== "operator") return false;
-  if (OPERATOR_EMAILS.length === 0) return true;
+
+  // Auth unconfigured is the documented local-dev mode (see supabase/config):
+  // there is no session, so there is no email to check an allowlist against —
+  // getPrincipal() above synthesised this principal itself with an empty email.
+  // Deliberate and narrow: it requires NEXT_PUBLIC_SUPABASE_URL/ANON_KEY to be
+  // absent, which is never true of a deployed console.
+  if (!AUTH_ENABLED) return true;
+
+  // Fail closed. An empty allowlist means nobody, not everybody — a missing env
+  // var must lock us out, not let strangers in. The console-wide symptom is
+  // announced at module load above so the cause is never a mystery.
+  if (OPERATOR_EMAILS.length === 0) return false;
+
   return OPERATOR_EMAILS.includes(principal.email.toLowerCase());
 }
 
@@ -141,5 +202,8 @@ export async function getOwner(): Promise<(Principal & { membership: OwnerMember
 export async function ownerGet<T>(path: string): Promise<T | null> {
   const owner = await getOwner();
   if (!owner) return null;
-  return apiGetAs<T>(path, owner.membership.orgId);
+  return apiGetAs<T>(path, owner.membership.orgId, {
+    ownerRole: owner.membership.ownerRole,
+    userId: owner.userId,
+  });
 }

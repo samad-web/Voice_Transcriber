@@ -150,13 +150,14 @@ export class OwnersController {
           rows: [membership],
         } = await client.query(
           `INSERT INTO memberships
-             (org_id, user_id, scope_type, scope_id, role, recordings_listen, recordings_export)
-           VALUES ($1, $2, 'org', $3, $4, $5, $6)
+             (org_id, user_id, scope_type, scope_id, role, owner_role, recordings_listen, recordings_export)
+           VALUES ($1, $2, 'org', $3, $4, 'owner', $5, $6)
            ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE SET
              role = EXCLUDED.role,
+             owner_role = EXCLUDED.owner_role,
              recordings_listen = EXCLUDED.recordings_listen,
              recordings_export = EXCLUDED.recordings_export
-           RETURNING role, recordings_listen AS "recordingsListen",
+           RETURNING role, owner_role AS "ownerRole", recordings_listen AS "recordingsListen",
                      recordings_export AS "recordingsExport"`,
           // scope_id is a separate param from org_id even though they hold the
           // same value: reusing one placeholder for two columns trips 42P08.
@@ -243,14 +244,32 @@ export class OwnersController {
       const {
         rows: [user],
       } = await client.query("SELECT sso_subject FROM users WHERE id = $1", [userId]);
-      const res = await client.query("DELETE FROM memberships WHERE user_id = $1", [userId]);
+      // `org_id = $2` on both deletes below. RLS already confines them to this
+      // tenant (withOrg → getPool() → the NOBYPASSRLS `aura_app` role; both
+      // memberships and sessions carry FORCE RLS with USING + WITH CHECK on
+      // org_id), so this changes no behaviour today. It matters because THIS
+      // handler deliberately mixes pools: fifteen lines below, the "does this
+      // human hold a membership anywhere else" question runs on `adminPool()`
+      // with RLS off, and it is correct that it does. An unqualified
+      // `WHERE user_id = $1` sitting that close to an RLS-bypassing client is a
+      // copy-paste away from revoking a person from every tenant at once and
+      // then, seeing no remaining memberships, deleting their Supabase login too.
+      const res = await client.query("DELETE FROM memberships WHERE user_id = $1 AND org_id = $2", [
+        userId,
+        orgId,
+      ]);
       if ((res.rowCount ?? 0) === 0) {
         throw new NotFoundException("owner not found in this instance");
       }
 
       // Any session already issued to them is bound to this org; drop it so
-      // revocation is immediate rather than "at token expiry".
-      await client.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+      // revocation is immediate rather than "at token expiry". Scoped to this
+      // org on purpose — a person who owns two instances keeps their session on
+      // the other one, matching the login-deletion rule below.
+      await client.query("DELETE FROM sessions WHERE user_id = $1 AND org_id = $2", [
+        userId,
+        orgId,
+      ]);
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)

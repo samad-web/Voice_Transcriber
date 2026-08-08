@@ -32,29 +32,38 @@ export function Pager({
 
   if (total <= pageSize) {
     return (
-      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
+      <p className="text-xs text-text-muted tabular-nums">
         {total} call{total === 1 ? "" : "s"}
       </p>
     );
   }
 
+  // Matches <Button variant="secondary" size="sm"> geometry. These are real
+  // links (deep-linkable pages), so they cannot be the Button primitive, but a
+  // pager that does not line up with the buttons beside it reads as a bug.
+  const stepBase =
+    "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors duration-150 ease-out";
+
   const step = (label: string, to: number, enabled: boolean) =>
     enabled ? (
       <Link
         href={hrefFor(to)}
-        className="px-3 py-1.5 border-2 border-black bg-white text-black hover:bg-neutral-100 text-[10px] font-mono font-bold uppercase tracking-wider"
+        className={`${stepBase} border-border-strong bg-surface text-text hover:bg-surface-hover hover:border-text-subtle`}
       >
         {label}
       </Link>
     ) : (
-      <span className="px-3 py-1.5 border-2 border-neutral-200 text-neutral-300 text-[10px] font-mono font-bold uppercase tracking-wider">
+      // aria-disabled rather than a bare <span>: the control still occupies its
+      // place in the row, and its unavailability is announced rather than only
+      // shown as a paler grey.
+      <span aria-disabled="true" className={`${stepBase} border-border text-text-subtle`}>
         {label}
       </span>
     );
 
   return (
-    <div className="flex items-center justify-between gap-3 flex-wrap">
-      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-xs text-text-muted tabular-nums">
         {first}–{last} of {total} · page {current}/{pages}
       </p>
       <div className="flex items-center gap-2">

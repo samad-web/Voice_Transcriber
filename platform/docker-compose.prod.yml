@@ -91,6 +91,68 @@ services:
     depends_on:
       - api
 
+  # The public marketing site. Separate image, separate container, separate
+  # credential from the console — see docker/marketing.Dockerfile for why.
+  marketing:
+    build:
+      context: .
+      dockerfile: docker/marketing.Dockerfile
+      args:
+        # Baked into the bundle: canonical URLs, Open Graph tags, sitemap.xml.
+        # A wrong value here ships a sitemap advertising the wrong origin, and
+        # only a rebuild fixes it.
+        NEXT_PUBLIC_SITE_URL: https://${SITE_DOMAIN}
+        NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER:-}
+    image: aura-marketing:latest
+    restart: unless-stopped
+    # ── DELIBERATELY NOT `env_file: .env.production` ──────────────────────
+    #
+    # Every other service here loads that file wholesale. This one must not:
+    # it holds ADMIN_API_KEY (a cross-tenant root credential), the Supabase
+    # service-role key, the S3 secret and the Evolution API key — none of
+    # which this container has any use for.
+    #
+    # This is the one container serving unauthenticated traffic from the open
+    # internet, so it gets an explicit allowlist instead. The point of running
+    # the funnel on a narrow `aura_marketing` role is to bound what a
+    # compromise yields; handing the same container the root admin key would
+    # throw that away for the convenience of one less line of YAML.
+    environment:
+      # Connects as `aura_marketing`: USAGE on the marketing schema only, no
+      # access to `public`, NOBYPASSRLS, no DELETE. Not the app's DATABASE_URL.
+      FUNNEL_DATABASE_URL: ${FUNNEL_DATABASE_URL}
+      # Signs the two-hour funnel session cookie that carries step 1 into step 2.
+      FUNNEL_COOKIE_SECRET: ${FUNNEL_COOKIE_SECRET}
+      # Salts the one-way IP hash used for rate limiting. Rotating it resets
+      # every rate-limit window, which is a nuisance, not a breach.
+      FUNNEL_HASH_SALT: ${FUNNEL_HASH_SALT}
+      # Supabase requires TLS; ssl.js turns it on for any non-loopback host.
+      DB_SSL: ${DB_SSL:-1}
+      # ── Google Calendar ────────────────────────────────────────────────
+      # Without all three, getScheduler() returns UnavailableScheduler and a
+      # booking is recorded in the database but never mirrored to a calendar —
+      # which is silent, because the visitor still gets a valid confirmation.
+      # The private key is a real secret and the only one here that is not a
+      # database credential; it is scoped to one calendar, not the Workspace.
+      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-}
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:-}
+      # Optional, and the difference between an event on the team's calendar and
+      # an event the LEAD is actually invited to — a service account cannot add
+      # attendees without domain-wide delegation acting as a real mailbox.
+      GOOGLE_CALENDAR_IMPERSONATE_SUBJECT: ${GOOGLE_CALENDAR_IMPERSONATE_SUBJECT:-}
+      # Booking slot generation defaults. All optional.
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Kolkata}
+      SCHEDULER_SLOT_MINUTES: ${SCHEDULER_SLOT_MINUTES:-}
+      SCHEDULER_DAY_START: ${SCHEDULER_DAY_START:-}
+      SCHEDULER_DAY_END: ${SCHEDULER_DAY_END:-}
+      SCHEDULER_WEEKDAYS: ${SCHEDULER_WEEKDAYS:-}
+      SCHEDULER_MIN_NOTICE_MINUTES: ${SCHEDULER_MIN_NOTICE_MINUTES:-}
+      SCHEDULER_MAX_SLOTS: ${SCHEDULER_MAX_SLOTS:-}
+    # No `depends_on`. The marketing site does not call the API, and a content
+    # page that will not start because a worker is unhealthy is a marketing
+    # outage caused by something the visitor cannot see.
+
   # One-shot: applies packages/db/migrations to Supabase, then sets the runtime
   # role's password from APP_DB_PASSWORD. Never runs as part of `up`.
   migrate:

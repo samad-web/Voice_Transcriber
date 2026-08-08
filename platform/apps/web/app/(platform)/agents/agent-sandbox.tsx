@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { FlaskConical, Play } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { inputClass } from "@/lib/form";
 import { testAgentAction, type AgentTestResult } from "./actions";
 import type { AgentRow } from "./agent-studio";
-import { inputClass } from "@/lib/form";
 
 export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: string }) {
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");

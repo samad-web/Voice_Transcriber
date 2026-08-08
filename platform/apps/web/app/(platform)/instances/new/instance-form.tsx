@@ -4,9 +4,9 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, Building2 } from "lucide-react";
 import { BrutalButton, Card, MonoLabel } from "@aura/ui";
+import { inputClass } from "@/lib/form";
 import { EnrollmentCredentials } from "../enrollment-credentials";
 import { createTenantAction, type ProvisionResult } from "./actions";
-import { inputClass } from "@/lib/form";
 
 const CONSENT_POLICIES = [
   { value: "tone", label: "Announcement tone" },

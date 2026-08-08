@@ -59,7 +59,7 @@ export default async function DashboardPage({
         <PageHeader title="Platform Hub" />
         <Card>
           <MonoLabel>API offline</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             Start the API with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
@@ -258,7 +258,7 @@ export default async function DashboardPage({
         ) : (
           <Card>
             <MonoLabel>Tenant unreadable</MonoLabel>
-            <p className="text-sm text-neutral-600 mt-2 font-sans">
+            <p className="mt-2 text-sm text-text-muted">
               Could not read analytics for this tenant.
             </p>
           </Card>

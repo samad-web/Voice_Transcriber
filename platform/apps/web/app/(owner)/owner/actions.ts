@@ -13,7 +13,11 @@ import type { Lead, LeadCall, Stage } from "./types";
  */
 async function ownerHeaders(): Promise<Record<string, string> | null> {
   const owner = await getOwner();
-  return owner ? orgHeaders(owner.membership.orgId) : null;
+  if (!owner) return null;
+  return orgHeaders(owner.membership.orgId, {
+    ownerRole: owner.membership.ownerRole,
+    userId: owner.userId,
+  });
 }
 
 export interface ActionResult {

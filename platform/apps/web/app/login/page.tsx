@@ -3,7 +3,7 @@ import { Card, MonoLabel } from "@aura/ui";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "Sign In — Aura Platform" };
+export const metadata: Metadata = { title: "Sign in — Aura Platform" };
 
 const HIGHLIGHTS = [
   "Call capture across your enrolled device fleet",
@@ -24,23 +24,23 @@ export default async function LoginPage({
   const { next } = await searchParams;
 
   return (
-    <main className="min-h-dvh flex items-center justify-center p-4 sm:p-6">
-      <div className="w-full max-w-md lg:max-w-4xl grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-center">
+    <main className="flex min-h-dvh items-center justify-center p-4 sm:p-6">
+      <div className="grid w-full max-w-md grid-cols-1 items-center gap-6 lg:max-w-4xl lg:grid-cols-2 lg:gap-8">
         {/* Brand panel — desktop only; phones get the compact header in the card. */}
-        <div className="hidden lg:flex flex-col gap-6 pr-2">
+        <div className="hidden flex-col gap-6 pr-2 lg:flex">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-black text-white flex items-center justify-center font-bold font-display text-2xl select-none">
+            <div className="flex h-12 w-12 shrink-0 select-none items-center justify-center rounded-md bg-text text-2xl font-semibold text-bg">
               A
             </div>
             <div>
-              <h1 className="text-xl font-display font-black uppercase tracking-tighter leading-none">
-                Aura Platform
-              </h1>
-              <MonoLabel className="mt-1.5">Call Intelligence</MonoLabel>
+              <h1 className="text-xl leading-tight font-semibold text-text">Aura Platform</h1>
+              <MonoLabel className="mt-1">Call intelligence</MonoLabel>
             </div>
           </div>
 
-          <p className="text-4xl xl:text-5xl font-display font-black uppercase tracking-tighter leading-[0.95]">
+          {/* The brand line. Kept verbatim; only the type it is set in changed —
+              the brutalist uppercase display face is retired (doc 16 §1.2). */}
+          <p className="text-4xl leading-tight font-semibold tracking-tight text-text xl:text-5xl">
             Every call,
             <br />
             accounted for.
@@ -48,8 +48,13 @@ export default async function LoginPage({
 
           <ul className="space-y-2.5">
             {HIGHLIGHTS.map((h) => (
-              <li key={h} className="flex items-start gap-2.5 text-sm font-sans text-neutral-600">
-                <span className="w-2 h-2 bg-black shrink-0 mt-1.5" />
+              <li key={h} className="flex items-start gap-2.5 text-sm text-text-muted">
+                {/* Decorative bullet: aria-hidden so the list is read as three
+                    items, not three items each prefixed by a graphic. */}
+                <span
+                  aria-hidden="true"
+                  className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                />
                 <span>{h}</span>
               </li>
             ))}
@@ -59,26 +64,22 @@ export default async function LoginPage({
         <Card shadow className="w-full space-y-5">
           {/* Compact brand lockup — the panel above replaces it from lg up. */}
           <div className="flex items-center gap-3 lg:hidden">
-            <div className="w-10 h-10 bg-black text-white flex items-center justify-center font-bold font-display text-xl select-none">
+            <div className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-md bg-text text-xl font-semibold text-bg">
               A
             </div>
             <div>
-              <h1 className="text-sm font-display font-black uppercase tracking-tight leading-none">
-                Aura Platform
-              </h1>
-              <MonoLabel className="mt-1">Call Intelligence</MonoLabel>
+              <h1 className="text-sm leading-tight font-semibold text-text">Aura Platform</h1>
+              <MonoLabel className="mt-0.5">Call intelligence</MonoLabel>
             </div>
           </div>
 
           <div className="hidden lg:block">
-            <h2 className="text-2xl font-display font-black uppercase tracking-tight leading-none">
-              Sign In
-            </h2>
-            <MonoLabel className="mt-1.5">Workspace access</MonoLabel>
+            <h2 className="text-2xl leading-tight font-semibold text-text">Sign in</h2>
+            <MonoLabel className="mt-1">Workspace access</MonoLabel>
           </div>
 
           {AUTH_ENABLED ? null : (
-            <p className="text-xs font-mono font-bold uppercase text-black border-2 border-black bg-yellow-100 p-3 leading-relaxed">
+            <p className="rounded-md border border-warning bg-warning-subtle p-3 text-sm leading-relaxed text-warning-text">
               Supabase auth not configured — set NEXT_PUBLIC_SUPABASE_URL and
               NEXT_PUBLIC_SUPABASE_ANON_KEY, then restart the web app.
             </p>

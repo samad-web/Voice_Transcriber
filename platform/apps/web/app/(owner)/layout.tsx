@@ -21,8 +21,20 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row">
-      <Sidebar email={owner.email} area="owner" title={company} subtitle="Sales Pipeline" />
-      <MobileNav email={owner.email} area="owner" title={company} subtitle="Sales Pipeline" />
+      <Sidebar
+        email={owner.email}
+        area="owner"
+        ownerRole={owner.membership.ownerRole}
+        title={company}
+        subtitle="Sales Pipeline"
+      />
+      <MobileNav
+        email={owner.email}
+        area="owner"
+        ownerRole={owner.membership.ownerRole}
+        title={company}
+        subtitle="Sales Pipeline"
+      />
       <main className="flex-1 min-w-0 flex flex-col p-4 sm:p-5 md:p-8 space-y-5 sm:space-y-6">
         {children}
       </main>

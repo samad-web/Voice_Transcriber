@@ -28,14 +28,14 @@ export default async function AgentsPage({
       {data === null ? (
         <Card>
           <MonoLabel>API offline</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : workspaces.length === 0 ? (
         <Card>
           <MonoLabel>No workspace</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             {activeTenant?.name ?? "This tenant"} has no workspace, so an agent has nowhere to
             live. Create one under Team first.
           </p>

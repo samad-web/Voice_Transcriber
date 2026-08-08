@@ -5,8 +5,8 @@ import Link from "next/link";
 import { FileText, Search } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
-import { searchTranscriptsAction, type SearchResult } from "./actions";
 import { inputClass } from "@/lib/form";
+import { searchTranscriptsAction, type SearchResult } from "./actions";
 
 /**
  * Renders a ts_headline snippet safely: `<b>…</b>` highlight spans become bold

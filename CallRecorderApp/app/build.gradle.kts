@@ -34,8 +34,8 @@ android {
         // Bump versionCode on EVERY release build that leaves this machine —
         // Android refuses to install an APK whose code is lower than the one
         // already on the device.
-        versionCode = 2
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.0.1"
     }
 
     signingConfigs {

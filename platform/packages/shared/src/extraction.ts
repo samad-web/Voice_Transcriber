@@ -16,28 +16,79 @@ export const ExtractionFieldType = z.enum([
 ]);
 export type ExtractionFieldType = z.infer<typeof ExtractionFieldType>;
 
-export const ExtractionField = z.object({
-  key: z
-    .string()
-    .regex(/^[a-z][a-z0-9_]*$/, "snake_case identifier required")
-    .max(64),
-  type: ExtractionFieldType,
-  description: z.string().max(500),
-  required: z.boolean().default(false),
-  enumValues: z.array(z.string().max(100)).max(32).optional(),
-  validation: z
-    .object({
-      min: z.number().optional(),
-      max: z.number().optional(),
-    })
-    .optional(),
-});
+export const ExtractionField = z
+  .object({
+    key: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*$/, "snake_case identifier required")
+      .max(64),
+    type: ExtractionFieldType,
+    description: z.string().max(500),
+    required: z.boolean().default(false),
+    enumValues: z.array(z.string().max(100)).max(32).optional(),
+    validation: z
+      .object({
+        min: z.number().optional(),
+        max: z.number().optional(),
+      })
+      .optional(),
+  })
+  /**
+   * An enum with no options is unsatisfiable, so it is rejected where the agent
+   * author can still do something about it.
+   *
+   * Left through, it compiles to `{ enum: [] }` and validates against an empty
+   * list: EVERY call for that agent then validates as failed, and the default
+   * lead rules treat a failed validation as "not a lead" (leads.ts). One
+   * un-filled dropdown in the agent editor and the tenant's board goes silently
+   * dry — no error, no failed call, just nothing arriving. The message names the
+   * field because the editor shows it against that row.
+   */
+  .superRefine((field, ctx) => {
+    if (field.type === "enum" && (field.enumValues?.length ?? 0) === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["enumValues"],
+        message: `enum field "${field.key}" must list at least one option — an enum with no options can never be satisfied, so every call for this agent would fail validation`,
+      });
+    }
+  });
 export type ExtractionField = z.infer<typeof ExtractionField>;
 
 export const ExtractionSchema = z.object({
   fields: z.array(ExtractionField).max(64),
 });
 export type ExtractionSchema = z.infer<typeof ExtractionSchema>;
+
+/**
+ * The same schema, for reading an agent version that was STORED before the rule
+ * above existed.
+ *
+ * Agents are versioned and immutable (entities.ts), so a saved version cannot be
+ * corrected in place — and a call being analysed months later must not blow up
+ * on a config that was legal when it was written. Reading therefore degrades an
+ * optionless enum to an unconstrained string instead of throwing: the field
+ * stops being a validation trap and starts collecting whatever the caller
+ * actually said, which is what the author meant by leaving the options blank.
+ * Nothing else about the stored version is altered.
+ *
+ * Use this for anything loaded out of `agents.field_schema`; use
+ * ExtractionSchema for anything an author is submitting.
+ */
+export const StoredExtractionSchema = z.preprocess((raw) => {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const fields = (raw as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) return raw;
+  return {
+    ...raw,
+    fields: fields.map((field) => {
+      if (typeof field !== "object" || field === null) return field;
+      const f = field as { type?: unknown; enumValues?: unknown };
+      const options = Array.isArray(f.enumValues) ? f.enumValues : [];
+      return f.type === "enum" && options.length === 0 ? { ...f, type: "string" } : field;
+    }),
+  };
+}, ExtractionSchema);
 
 /** Compile the tenant-defined fields into a JSON Schema for LLM structured output. */
 export function compileToJsonSchema(schema: ExtractionSchema): Record<string, unknown> {
@@ -71,6 +122,27 @@ export function compileToJsonSchema(schema: ExtractionSchema): Record<string, un
   }
 
   return { type: "object", properties, required };
+}
+
+/**
+ * ISO-8601 calendar date, optionally with a time and an offset.
+ *
+ * `Date.parse` alone is not this check, despite reading like it: it accepts a
+ * bare year, so a model that answers `quotation_date` with the QUANTITY —
+ * "5000" — validated cleanly and landed in the customer's CRM as the year 5000.
+ * The shape is asserted first and `Date.parse` only confirms the components are
+ * a real date ("2026-13-01" matches the shape and is not a date).
+ *
+ * Deliberately permissive about what a model legitimately returns: date-only,
+ * seconds omitted, fractional seconds, offset present or absent, and a space in
+ * place of the "T" (RFC 3339 §5.6 allows it and models emit it). All of those
+ * are unambiguous dates; a bare number is not.
+ */
+const ISO_DATETIME =
+  /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+export function isIsoDateTime(value: unknown): boolean {
+  return typeof value === "string" && ISO_DATETIME.test(value) && !Number.isNaN(Date.parse(value));
 }
 
 /**
@@ -116,7 +188,7 @@ export function validateExtraction(
         }
         break;
       case "datetime":
-        if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+        if (!isIsoDateTime(value)) {
           errors.push(`"${field.key}" must be an ISO datetime string`);
         }
         break;

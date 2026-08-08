@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
+import { SkipThrottle } from "@nestjs/throttler";
 import { z } from "zod";
 import { CreateCallRequest } from "@aura/shared";
 import { publishPipeline } from "@aura/queue";
@@ -110,6 +111,13 @@ export class CallsController {
    */
   @Post()
   @UseGuards(DeviceAuthGuard)
+  // Not throttled (checklist 08 §0.7). This is the ingest path: a handset that
+  // is refused here does not retry politely, it accumulates a backlog or drops
+  // the recording. A tenant's fleet shares one office/NAT source IP and a phone
+  // that has been offline flushes its queue in a burst, which is exactly the
+  // shape a per-IP limit punishes. Already gated by a signed device token, and
+  // capacity is bounded by the tenant/device admission checks below.
+  @SkipThrottle()
   async create(@Req() req: DeviceRequest, @Body() body: unknown) {
     const parsed = CreateCallRequest.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -200,6 +208,10 @@ export class CallsController {
   /** §6.1: verify the upload landed, flip to UPLOADED, wake the pipeline. */
   @Post(":id/complete")
   @UseGuards(DeviceAuthGuard)
+  // Not throttled — the second half of ingest. Losing this call after the bytes
+  // are already in S3 strands the recording in AWAITING_AUDIO with no sweeper
+  // that recovers it, so it is the worst possible request to rate-limit.
+  @SkipThrottle()
   async complete(
     @Req() req: DeviceRequest,
     @Param("id", ParseUUIDPipe) callId: string,
@@ -497,10 +509,17 @@ export class CallsController {
         [orgId, statuses, sinceDays ?? null, limit],
       );
       if (rows.length > 0) {
+        // orgId is bound TWICE, as $1 and $2, and that is not redundancy.
+        // org_id is uuid and target_id is text; reusing one placeholder for both
+        // makes Postgres deduce two types for the same parameter and abort the
+        // statement with "inconsistent types deduced for parameter $1" — which
+        // rolled the whole transaction back, so the rewind above never committed
+        // and the endpoint answered 500. Same two-binding shape as the other
+        // org-targeted audit row (tenancy.controller.ts:125).
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-           VALUES ($1, 'user', 'dev-admin', 'call.reprocess_backlog', 'organization', $1, $2::jsonb)`,
-          [orgId, JSON.stringify({ statuses, sinceDays, count: rows.length })],
+           VALUES ($1, 'user', 'dev-admin', 'call.reprocess_backlog', 'organization', $2, $3::jsonb)`,
+          [orgId, orgId, JSON.stringify({ statuses, sinceDays, count: rows.length })],
         );
       }
       return rows.map((r) => r.id);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { GripVertical, Phone } from "lucide-react";
-import { MonoLabel } from "@aura/ui";
+import { EmptyState, MonoLabel } from "@aura/ui";
 import { LeadDrawer } from "../lead-drawer";
 import { updateLeadAction } from "../actions";
 import {
@@ -109,22 +109,23 @@ export function Board({ columns: initial, stages }: { columns: BoardColumn[]; st
 
   return (
     <>
+      {/* role=alert: a rejected drop has already snapped the card back, so this
+          text is the only account of why — it has to be announced, not just
+          shown. The danger border is a second channel on top of the words. */}
       {error ? (
-        <p className="text-xs font-mono font-bold uppercase text-red-600 border-2 border-red-600 bg-red-50 p-3">
+        <p
+          role="alert"
+          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
+        >
           {error}
         </p>
       ) : null}
 
       {total === 0 ? (
-        <div className="border-2 border-black bg-white p-10 text-center space-y-2">
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-            Nothing in the pipeline yet
-          </p>
-          <p className="text-xs text-neutral-500 font-sans max-w-md mx-auto leading-relaxed">
-            Cards appear automatically when a recorded call is transcribed and
-            the AI agent extracts a usable enquiry from it.
-          </p>
-        </div>
+        <EmptyState
+          title="Nothing in the pipeline yet"
+          description="Cards appear automatically when a recorded call is transcribed and the AI agent extracts a usable enquiry from it."
+        />
       ) : null}
 
       {/* One horizontal scroller; columns keep a fixed width so a busy stage
@@ -145,39 +146,46 @@ export function Board({ columns: initial, stages }: { columns: BoardColumn[]; st
               if (leadId) void move(leadId, column.key);
               setDragging(null);
             }}
-            className={`w-[17rem] shrink-0 flex flex-col border-2 border-black bg-neutral-50 transition-colors ${
-              over === column.key ? "bg-neutral-200" : ""
+            // The drop target is a "selected" state, which doc 16 §1.1 lists as
+            // a sanctioned accent use. It is also the only feedback a dragging
+            // user gets, so it needs the accent border as well as the tint —
+            // a tint alone is nearly invisible in dark mode.
+            className={`flex w-[17rem] shrink-0 flex-col rounded-md border transition-colors duration-150 ease-out ${
+              over === column.key
+                ? "border-accent bg-accent-subtle"
+                : "border-border bg-bg-subtle"
             }`}
           >
-            <header className="px-3 py-2.5 border-b-2 border-black bg-white flex items-center justify-between gap-2">
+            <header className="flex items-center justify-between gap-2 rounded-t-md border-b border-border bg-surface px-3 py-2.5">
               <div className="min-w-0">
-                <span className="text-xs font-display font-bold uppercase tracking-wider truncate block">
+                <span className="block truncate text-sm font-medium text-text">
                   {column.label}
                 </span>
                 {column.value > 0 ? (
-                  <span className="text-[10px] font-mono text-neutral-400 font-bold">
+                  <span className="text-xs text-text-muted tabular-nums">
                     {formatValue(column.value)}
                   </span>
                 ) : null}
               </div>
               <span
-                className={`text-[10px] font-mono font-bold px-2 py-0.5 border border-black shrink-0 ${
+                className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums ${
+                  // Won is the one stage worth marking in colour; lost is
+                  // deliberately quiet rather than red, because a lost lead is
+                  // a normal outcome and not an error to be flagged.
                   column.terminal === "won"
-                    ? "bg-black text-white"
+                    ? "border-transparent bg-success-subtle text-success-text"
                     : column.terminal === "lost"
-                      ? "bg-neutral-200 text-black"
-                      : "bg-white text-black"
+                      ? "border-border bg-surface-hover text-text-muted"
+                      : "border-border bg-surface text-text"
                 }`}
               >
                 {column.count}
               </span>
             </header>
 
-            <div className="flex-1 p-2 space-y-2 min-h-[8rem] max-h-[calc(100dvh-16rem)] overflow-y-auto">
+            <div className="max-h-[calc(100dvh-16rem)] min-h-[8rem] flex-1 space-y-2 overflow-y-auto p-2">
               {column.leads.length === 0 ? (
-                <p className="text-[10px] font-mono font-bold uppercase text-neutral-300 text-center py-6">
-                  Empty
-                </p>
+                <p className="py-6 text-center text-xs text-text-subtle">Empty</p>
               ) : null}
 
               {column.leads.map((lead) => (
@@ -190,52 +198,55 @@ export function Board({ columns: initial, stages }: { columns: BoardColumn[]; st
                     setDragging(lead.id);
                   }}
                   onDragEnd={() => setDragging(null)}
-                  className={`bg-white border-2 border-black p-2.5 cursor-grab active:cursor-grabbing ${
+                  className={`cursor-grab rounded-md border border-border bg-surface p-2.5 shadow-sm transition-opacity duration-150 ease-out active:cursor-grabbing ${
                     dragging === lead.id ? "opacity-40" : ""
                   }`}
                 >
                   <button
                     type="button"
                     onClick={() => setOpen(lead)}
-                    className="w-full text-left"
+                    className="w-full rounded-sm text-left"
                     aria-label={`Open ${lead.title}`}
                   >
                     <div className="flex items-start gap-1.5">
-                      <GripVertical className="h-3.5 w-3.5 text-neutral-300 shrink-0 mt-0.5" />
-                      <span className="font-display font-bold text-sm text-black leading-tight break-words min-w-0">
+                      <GripVertical
+                        aria-hidden="true"
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-subtle"
+                      />
+                      <span className="min-w-0 text-sm font-medium leading-snug break-words text-text">
                         {lead.title}
                       </span>
                     </div>
 
                     {lead.next_action ? (
-                      <p className="text-[11px] font-sans text-neutral-600 mt-1.5 line-clamp-2 leading-snug">
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-snug text-text-muted">
                         {lead.next_action}
                       </p>
                     ) : lead.summary ? (
-                      <p className="text-[11px] font-sans text-neutral-500 mt-1.5 line-clamp-2 leading-snug">
+                      <p className="mt-1.5 line-clamp-2 text-xs leading-snug text-text-muted">
                         {lead.summary}
                       </p>
                     ) : null}
 
-                    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-neutral-200">
-                      <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-neutral-400 truncate">
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+                      <span className="truncate text-xs text-text-muted">
                         {lead.telecaller ?? contactLabel(lead)}
                       </span>
-                      <span className="flex items-center gap-1.5 shrink-0">
+                      <span className="flex shrink-0 items-center gap-1.5">
                         {lead.call_count > 1 ? (
-                          <span className="flex items-center gap-0.5 text-[9px] font-mono font-bold text-neutral-400">
-                            <Phone className="h-2.5 w-2.5" />
+                          <span className="flex items-center gap-0.5 text-xs text-text-muted tabular-nums">
+                            <Phone aria-hidden="true" className="h-3 w-3" />
                             {lead.call_count}
                           </span>
                         ) : null}
                         {num(lead.value_num) === null ? null : (
-                          <span className="text-[10px] font-mono font-bold text-black">
+                          <span className="text-xs font-medium text-text tabular-nums">
                             {formatValue(lead.value_num)}
                           </span>
                         )}
                       </span>
                     </div>
-                    <span className="text-[9px] font-mono text-neutral-300 block mt-1">
+                    <span className="mt-1 block text-xs text-text-subtle">
                       {relativeTime(lead.last_activity_at)}
                     </span>
                   </button>

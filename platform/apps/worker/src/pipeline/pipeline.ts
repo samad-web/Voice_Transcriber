@@ -425,6 +425,25 @@ export async function runPostAsrStages(
   }
 
   // ── crm-dispatch ─────────────────────────────────────────────────────
+  //
+  // FAILED_CRM stays deliberately unreachable, and that is not an oversight —
+  // read this before "finishing" it the way FAILED_TRANSCODE was finished.
+  //
+  // A delivery failure is not this call's outcome: the transcript, the facts
+  // and the lead all exist and are correct, so the call is genuinely COMPLETE.
+  // Dispatch already has its own durable retry — crm_sync_log holds the pending
+  // send with its own attempts, backoff and terminal 'dead' state, drained by
+  // drainOutbox and re-drivable from the console. Failing the call would put a
+  // SECOND retry machine over the same work, and the two do not compose:
+  // retryDueCalls rewinds a FAILED_% call all the way to UPLOADED, so every
+  // CRM retry would re-run ASR and analyze (paying both providers again) and
+  // re-enqueue dispatch — turning one undelivered lead into duplicate rows in
+  // the customer's CRM, which is not retractable.
+  //
+  // So what the status is FOR is the stage failing to RUN, not the delivery
+  // failing: a worker killed while the call sits in SYNCING leaves work nothing
+  // will ever finish, and `failStalledCalls` in retry.ts is the one caller that
+  // lands FAILED_CRM. A delivery outcome never does.
   if (!(await advance("ANALYZING", "SYNCING"))) return;
 
   // Lead projection first: it is a local write, so the owner's board is
@@ -519,46 +538,72 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
     }
 
     // ── transcode ────────────────────────────────────────────────────────
-    // TODO (checklist §2.3): ffmpeg → 16 kHz mono Opus + device-envelope
-    // decrypt. The client already records 16 kHz mono AAC, so pass-through
-    // is acceptable until encryption-at-rest lands.
     if (!(await advance("UPLOADED", "TRANSCODING"))) {
       console.log(`call ${callId}: not in UPLOADED, skipping (idempotent replay)`);
       return;
     }
 
-    // A retry starts clean: leaving the previous reason attached would make a
-    // call that later completes still read as broken in the drawer. The pending
-    // retry is cleared too — this run IS that retry, and leaving the timestamp
-    // set would let the sweeper claim the call again while it is mid-flight.
-    // Any ASR job from a previous run goes with it: this run submits its own,
-    // and a stale id would have the poller waiting on the wrong job.
-    await client.query(
-      `UPDATE calls
-          SET error_message = NULL, next_attempt_at = NULL,
-              asr_job_id = NULL, asr_job_started_at = NULL
-        WHERE id = $1`,
-      [callId],
-    );
+    /**
+     * The claim above stays OUTSIDE the try on purpose: until it returns true
+     * this run does not own the call, and stamping a status onto a row another
+     * worker is holding would fail its work, not ours.
+     *
+     * Everything the stage actually does goes inside. It is a pass-through
+     * today so nothing in it throws — but ffmpeg and envelope-decrypt (§2.3)
+     * are precisely the kind of code that does, and without this catch a throw
+     * escapes processCall entirely: no error_message, no attempt increment, no
+     * next_attempt_at. The call then strands in TRANSCODING, where neither
+     * sweeper in retry.ts looks (`FAILED_%` due, and `UPLOADED`) — silent,
+     * permanent loss of a recording the customer already paid to store.
+     * Routing through the same fail() every other stage uses makes a transcode
+     * failure behave identically to an ASR one, and is what makes the
+     * long-declared FAILED_TRANSCODE status reachable at all.
+     */
+    try {
+      // TODO (checklist §2.3): ffmpeg → 16 kHz mono Opus + device-envelope
+      // decrypt. The client already records 16 kHz mono AAC, so pass-through
+      // is acceptable until encryption-at-rest lands.
+
+      // A retry starts clean: leaving the previous reason attached would make a
+      // call that later completes still read as broken in the drawer. The pending
+      // retry is cleared too — this run IS that retry, and leaving the timestamp
+      // set would let the sweeper claim the call again while it is mid-flight.
+      // Any ASR job from a previous run goes with it: this run submits its own,
+      // and a stale id would have the poller waiting on the wrong job.
+      await client.query(
+        `UPDATE calls
+            SET error_message = NULL, next_attempt_at = NULL,
+                asr_job_id = NULL, asr_job_started_at = NULL
+          WHERE id = $1`,
+        [callId],
+      );
+    } catch (err) {
+      await fail("TRANSCODE", err);
+      return;
+    }
 
     // ── asr ──────────────────────────────────────────────────────────────
     if (!(await advance("TRANSCODING", "TRANSCRIBING"))) return;
 
-    // A duration of 0 means the device never reported one, not that the call
-    // was empty — those still go through ASR rather than being dropped on a
-    // missing field.
-    const {
-      rows: [durRow],
-    } = await client.query("SELECT duration_s FROM calls WHERE id = $1", [callId]);
-    const durationS = Number(durRow?.duration_s ?? 0);
-    const tooShort = durationS > 0 && durationS < MIN_TRANSCRIBE_SECONDS;
+    // The duration read is INSIDE the try with the rest of the stage: it runs
+    // after the call is already in TRANSCRIBING, so a blip on that one query
+    // used to throw straight out of processCall and strand the call in a state
+    // no sweeper claimed. It is an ASR-stage failure like any other.
+    try {
+      // A duration of 0 means the device never reported one, not that the call
+      // was empty — those still go through ASR rather than being dropped on a
+      // missing field.
+      const {
+        rows: [durRow],
+      } = await client.query("SELECT duration_s FROM calls WHERE id = $1", [callId]);
+      const durationS = Number(durRow?.duration_s ?? 0);
+      const tooShort = durationS > 0 && durationS < MIN_TRANSCRIBE_SECONDS;
 
-    if (tooShort) {
-      console.log(
-        `call ${callId}: ${durationS}s is under MIN_TRANSCRIBE_SECONDS=${MIN_TRANSCRIBE_SECONDS} — skipping ASR + analyze`,
-      );
-    } else {
-      try {
+      if (tooShort) {
+        console.log(
+          `call ${callId}: ${durationS}s is under MIN_TRANSCRIBE_SECONDS=${MIN_TRANSCRIBE_SECONDS} — skipping ASR + analyze`,
+        );
+      } else {
         const {
           rows: [rec],
         } = await client.query("SELECT s3_key FROM recordings WHERE call_id = $1", [callId]);
@@ -590,10 +635,10 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
 
         const result = await transcribe(audio, "audio/mp4");
         await persistTranscript(client, orgId, callId, result);
-      } catch (err) {
-        await fail("ASR", err);
-        return;
       }
+    } catch (err) {
+      await fail("ASR", err);
+      return;
     }
 
     await runPostAsrStages(client, orgId, callId, helpers);

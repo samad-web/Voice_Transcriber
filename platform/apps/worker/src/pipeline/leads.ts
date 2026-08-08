@@ -1,5 +1,6 @@
 import {
   entryStage,
+  isFilled,
   parseLeadRules,
   parseLeadStages,
   qualifyLead,
@@ -25,6 +26,7 @@ import { confidenceScore, type DbClient } from "./crm-dispatch";
 interface CallRow {
   workspace_id: string;
   device_id: string | null;
+  telecaller_id: string | null;
   remote_name: string | null;
   remote_number_hash: string | null;
   remote_number_prefix: string | null;
@@ -85,7 +87,7 @@ export async function upsertLead(
   const {
     rows: [row],
   } = await client.query<CallRow>(
-    `SELECT c.workspace_id, c.device_id, c.remote_name, c.remote_number_hash,
+    `SELECT c.workspace_id, c.device_id, d.telecaller_id, c.remote_name, c.remote_number_hash,
             c.remote_number_prefix, c.remote_number_last3, c.started_at,
             c.agent_id, c.agent_version,
             COALESCE(a.lead_rules, '{}'::jsonb) AS lead_rules,
@@ -100,6 +102,7 @@ export async function upsertLead(
        JOIN organizations o   ON o.id = c.org_id
        LEFT JOIN agents a     ON a.id = c.agent_id AND a.version = c.agent_version
        LEFT JOIN transcripts t ON t.call_id = c.id
+       LEFT JOIN devices d    ON d.id = c.device_id
       WHERE c.id = $1`,
     [callId],
   );
@@ -113,10 +116,13 @@ export async function upsertLead(
   }
 
   // Only filled values are written, so the ON CONFLICT merge below (`||`) can
-  // never blank a fact an earlier call established.
+  // never blank a fact an earlier call established. `isFilled` rather than a
+  // local test for the same reason mergeFacts uses it: "   " and the literal
+  // "[]" are how a model says "not mentioned", and jsonb `||` would happily
+  // overwrite a real budget from the first call with one of them.
   const incomingFacts: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(facts)) {
-    if (value !== null && value !== undefined && value !== "") incomingFacts[key] = value;
+    if (isFilled(value)) incomingFacts[key] = value;
   }
 
   const stages = parseLeadStages(row.lead_stages);
@@ -149,6 +155,7 @@ export async function upsertLead(
     row.agent_id,                // $15
     row.agent_version,           // $16
     activityAt,                  // $17
+    row.telecaller_id,           // $18
   ];
 
   // A numberless call (the handset had no call-log permission) has no dedup
@@ -184,14 +191,17 @@ export async function upsertLead(
     `INSERT INTO leads
        (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
         contact_number_last3, title, stage, score, value_num, summary, facts,
-        telecaller_device_id, first_call_id, last_call_id, agent_id, agent_version,
+        telecaller_device_id, telecaller_id, first_call_id, last_call_id, agent_id, agent_version,
         last_activity_at, call_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $14, $15, $16, $17,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $18, $14, $14, $15, $16, $17,
              GREATEST(1, (SELECT count(*)::int FROM calls c
                            WHERE c.workspace_id = $2 AND c.remote_number_hash = $4)))
      ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
      DO UPDATE SET
-       -- Stage and status are the owner's, never the pipeline's.
+       -- Stage and status are the owner's, never the pipeline's. telecaller_id
+       -- is deliberately absent here too, same as telecaller_device_id: it is
+       -- a write-once snapshot of who first qualified the lead, and must never
+       -- move to whoever's device happens to make the next call.
        contact_name = COALESCE(leads.contact_name, EXCLUDED.contact_name),
        -- Upgrade the heading only when this call is what finally named them.
        title = CASE

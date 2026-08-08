@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, TriangleAlert } from "lucide-react";
 import { BrutalButton, Card, MonoLabel } from "@aura/ui";
-import { deleteInstanceAction, type DeleteInstanceResult } from "./actions";
 import { monoInputClass as inputClass } from "@/lib/form";
+import { deleteInstanceAction, type DeleteInstanceResult } from "./actions";
 
 /**
  * Two-step decommission. The first click attempts the safe delete; the API

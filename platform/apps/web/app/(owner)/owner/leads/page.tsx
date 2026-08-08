@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Card, MonoLabel } from "@aura/ui";
+import { Card, MonoLabel, Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
-import { LeadsTable } from "./leads-table";
 import type { Lead, Stage } from "../types";
+import { LeadsTable } from "./leads-table";
 
 export const metadata: Metadata = { title: "All Leads — Aura" };
 
@@ -50,7 +50,7 @@ export default async function LeadsPage({
         <PageHeader title="All Leads" context="Pipeline" />
         <Card>
           <MonoLabel>Data unavailable</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             The platform API did not answer. If this persists, contact your provider.
           </p>
         </Card>
@@ -78,11 +78,11 @@ export default async function LeadsPage({
 
 function TableSkeleton() {
   return (
-    <div className="border-2 border-black bg-white p-5 space-y-3 animate-pulse">
-      <div className="h-3 w-32 bg-neutral-200" />
+    <Card className="space-y-3">
+      <Skeleton className="h-3 w-32" />
       {[0, 1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className="h-10 bg-neutral-100 border border-neutral-200" />
+        <Skeleton key={i} className="h-10 w-full" />
       ))}
-    </div>
+    </Card>
   );
 }

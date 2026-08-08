@@ -6,9 +6,31 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { z } from "zod";
+import { OwnerRole } from "@aura/shared";
 import type { Principal, PrincipalRequest } from "./auth-principal";
 import { OrgRegistryService } from "./org-registry.service";
 import { AuthService } from "../modules/auth/auth.service";
+
+/**
+ * The admin key this process will accept, or null when there is none.
+ *
+ * The dev literal is a convenience for `pnpm dev` and nothing else, so it only
+ * exists outside production (checklist 08 §0.2). In production an unset or empty
+ * ADMIN_API_KEY yields null and every admin-key request is rejected, instead of
+ * silently falling back to a string published in this repository — which would
+ * be a root credential for every tenant on the open internet. `config/assert-env`
+ * already refuses to boot in that state; this is the second line, so the hole
+ * cannot reappear via a code path that skips bootstrap.
+ *
+ * Empty counts as unset: `x-admin-key:` with no value arrives as "" and `??`
+ * alone would happily match it against an empty ADMIN_API_KEY.
+ */
+export function resolveAdminKey(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = env.ADMIN_API_KEY?.trim();
+  if (configured) return configured;
+  if (env.NODE_ENV === "production") return null;
+  return "dev-admin-key";
+}
 
 /**
  * Platform request auth. Accepts EITHER:
@@ -32,11 +54,9 @@ export class AdminKeyGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<PrincipalRequest>();
 
-    const adminKey = process.env.ADMIN_API_KEY ?? "dev-admin-key";
-    if (req.headers["x-admin-key"] === adminKey) {
-      const orgId = Array.isArray(req.headers["x-org-id"])
-        ? req.headers["x-org-id"][0]
-        : req.headers["x-org-id"];
+    const adminKey = resolveAdminKey();
+    if (adminKey !== null && firstHeader(req.headers["x-admin-key"]) === adminKey) {
+      const orgId = firstHeader(req.headers["x-org-id"]);
 
       // The admin key is a cross-tenant credential, so `x-org-id` picks the
       // tenant and is trusted. Trusted is not the same as unchecked: an id that
@@ -50,13 +70,38 @@ export class AdminKeyGuard implements CanActivate {
         }
       }
 
+      // The web server is the only holder of the admin key, so these two
+      // caller-asserted headers don't cross a trust boundary — they carry
+      // forward a fact (the signed-in owner's own identity/persona) it
+      // already resolved server-side moments earlier, via /v1/auth/context.
+      // Absent (any caller that hasn't been updated: seed scripts, ops
+      // tooling) falls back to today's behaviour untouched.
+      //
+      // SECURITY (08 §2.5): these two headers make owner-role enforcement
+      // ADVISORY, not enforced. The principal's persona is whatever the caller
+      // says it is, and OMITTING x-caller-owner-role leaves ownerRole null,
+      // which OwnerRoleGuard treats as "unchecked, pass" (owner-role.guard.ts).
+      // So any holder of the admin key — which is the whole platform's root
+      // credential — bypasses every @RequireOwnerRole by simply not sending a
+      // header, and can equally claim `owner` on a request the real user is
+      // only a `viewer` for. The premise "the web server is the only holder of
+      // the admin key" is the entire trust boundary; it is one leaked env var
+      // from being false, and 08 §0.2/§0.3 exist because that has to be assumed.
+      // Fixing it means the API resolving the caller's persona itself from the
+      // session/OIDC subject rather than accepting it as a header. NOT changed
+      // here: apps/web sends these headers today and every owner route depends
+      // on the null-means-pass behaviour (see server-api.ts Caller).
+      const callerUserId = z.string().uuid().safeParse(firstHeader(req.headers["x-caller-user-id"]));
+      const callerOwnerRole = OwnerRole.safeParse(firstHeader(req.headers["x-caller-owner-role"]));
+
       req.principal = {
-        userId: "admin-key",
+        userId: callerUserId.success ? callerUserId.data : "admin-key",
         orgId: orgId ?? "",
         role: "platform_admin",
         recordingsListen: true,
         recordingsExport: true,
         viaAdminKey: true,
+        ownerRole: callerOwnerRole.success ? callerOwnerRole.data : null,
       };
       return true;
     }
@@ -74,4 +119,9 @@ export class AdminKeyGuard implements CanActivate {
 
     throw new UnauthorizedException("x-admin-key header or a valid session bearer token required");
   }
+}
+
+/** Express lower-cases repeated headers into an array; every header read here wants the first value. */
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

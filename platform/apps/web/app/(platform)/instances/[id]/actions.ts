@@ -1,8 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireOperator } from "@/lib/operator-guard";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 import type { Credentials } from "../enrollment-credentials";
+
+/**
+ * The most dangerous file in the console: every action here takes an `orgId`
+ * from its caller and sends the root admin key at it, and several of them
+ * destroy data — erasure, device wipe, instance deletion — or mint an
+ * enrollment credential for a handset.
+ *
+ * So every exported function opens with `requireOperator()`, before anything
+ * else. Each one is an independently-addressable POST endpoint that the
+ * `(platform)` layout's operator gate never runs for; the layout decides what a
+ * browser is *shown*, not what may be *invoked*. See lib/operator-guard.ts.
+ */
 
 /** Mint an extra enrollment key for an existing instance. Shown once. */
 export async function mintKeyAction(input: {
@@ -11,6 +24,11 @@ export async function mintKeyAction(input: {
   ttlMinutes: number;
   maxUses: number;
 }): Promise<Credentials & { error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/instances/${input.instanceId}/keys`, {
       method: "POST",
@@ -48,6 +66,11 @@ export async function setTranscriptionEnabledAction(input: {
   enabled: boolean;
 }): Promise<{ error?: string }> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/org/policy`, {
       method: "PATCH",
       headers: orgHeaders(input.orgId),
@@ -80,6 +103,11 @@ export async function reprocessBacklogAction(input: {
   statuses: string[];
   sinceDays: number | null;
 }): Promise<{ requeued?: number; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const { orgId, ...rest } = input;
   try {
     const res = await fetch(`${API_URL}/v1/calls/reprocess-backlog`, {
@@ -115,6 +143,11 @@ export async function setAsrSettingsAction(input: {
   asrMode?: string | null;
   vocabulary?: string[];
 }): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const { orgId, ...rest } = input;
   try {
     const res = await fetch(`${API_URL}/v1/org/policy`, {
@@ -155,11 +188,28 @@ async function deviceAction(
   }
 }
 
-export async function logoutDeviceAction(orgId: string, deviceId: string) {
+export async function logoutDeviceAction(
+  orgId: string,
+  deviceId: string,
+): Promise<{ status?: string; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   return deviceAction(orgId, deviceId, "logout");
 }
 
-export async function wipeDeviceAction(orgId: string, deviceId: string) {
+/** Remote wipe. Destructive and irreversible for the handset it lands on. */
+export async function wipeDeviceAction(
+  orgId: string,
+  deviceId: string,
+): Promise<{ status?: string; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   return deviceAction(orgId, deviceId, "wipe");
 }
 
@@ -174,6 +224,11 @@ export async function updatePolicyAction(input: {
   retentionDays: number;
   storeFullNumber?: boolean;
 }): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/org/policy`, {
       method: "PATCH",
@@ -213,6 +268,11 @@ export async function deleteInstanceAction(
   instanceId: string,
   purgeCalls = false,
 ): Promise<DeleteInstanceResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(
       `${API_URL}/v1/instances/${instanceId}${purgeCalls ? "?purgeCalls=true" : ""}`,
@@ -259,6 +319,11 @@ export async function createOwnerAction(input: {
   recordingsListen: boolean;
 }): Promise<OwnerResult> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/owners`, {
       method: "POST",
       headers: orgHeaders(input.orgId),
@@ -291,6 +356,11 @@ export async function resetOwnerPasswordAction(
   userId: string,
 ): Promise<OwnerResult> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/owners/${userId}/password`, {
       method: "POST",
       headers: orgHeaders(orgId),
@@ -312,6 +382,11 @@ export async function revokeOwnerAction(
   orgId: string,
   userId: string,
 ): Promise<{ error?: string; loginDeleted?: boolean }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/owners/${userId}`, {
       method: "DELETE",
@@ -345,6 +420,11 @@ export async function triggerErasureAction(
   orgId: string,
   callId: string,
 ): Promise<ErasureReceipt> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/erasure-requests`, {
       method: "POST",

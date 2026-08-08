@@ -1,18 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlertCircle, Loader2, Lock } from "lucide-react";
-import { BrutalButton } from "@aura/ui";
-import { inputClass } from "@/lib/form";
+import { AlertCircle, Lock } from "lucide-react";
+import { Button, FormField, Input } from "@aura/ui";
 import { signInAction } from "./actions";
-
-/** MonoLabel's look, as a <span> — a <p> is not valid inside a <label>. */
-const labelClass =
-  "block text-[10px] font-mono text-neutral-400 uppercase tracking-[0.2em] font-bold";
-
-const fieldClass =
-  `${inputClass} py-3 placeholder:text-neutral-400 focus:bg-white ` +
-  "focus:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-shadow disabled:opacity-50";
 
 /**
  * Supabase email + password sign-in.
@@ -20,6 +11,13 @@ const fieldClass =
  * Uses a real <form> so browser password managers and the mobile keyboard's
  * "Go" key both work; the submit runs the server action, which sets the session
  * cookies and redirects on success (so there is no success state to render).
+ *
+ * v2 note: the fields are <FormField> + <Input> rather than `inputClass` from
+ * lib/form. That drops the last hard offset shadow in the console
+ * (`focus:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]`, doc 18 §3) and replaces it
+ * with the kit's global :focus-visible ring — which is the affordance the whole
+ * v2 system now leans on. lib/form is left alone; other route groups still use
+ * it and are being migrated separately.
  */
 export function LoginForm({ next, configured }: { next?: string; configured: boolean }) {
   const [error, setError] = useState<string | null>(null);
@@ -37,66 +35,50 @@ export function LoginForm({ next, configured }: { next?: string; configured: boo
     });
   };
 
+  const disabled = pending || !configured;
+
   return (
     <form action={onSubmit} className="space-y-4">
-      <div className="space-y-1.5">
-        <label htmlFor="email" className={labelClass}>
-          Email
-        </label>
-        <input
+      <FormField label="Email" name="email" required>
+        <Input
           id="email"
-          name="email"
           type="email"
-          required
           autoComplete="username"
           inputMode="email"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          disabled={pending || !configured}
+          disabled={disabled}
           placeholder="you@company.com"
-          className={fieldClass}
         />
-      </div>
+      </FormField>
 
-      <div className="space-y-1.5">
-        <label htmlFor="password" className={labelClass}>
-          Password
-        </label>
-        <input
+      <FormField label="Password" name="password" required>
+        <Input
           id="password"
-          name="password"
           type="password"
-          required
           autoComplete="current-password"
-          disabled={pending || !configured}
+          disabled={disabled}
           placeholder="••••••••"
-          className={fieldClass}
         />
-      </div>
+      </FormField>
 
-      <BrutalButton type="submit" className="w-full" shadow disabled={pending || !configured}>
-        {pending ? (
-          <span className="inline-flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
-          </span>
-        ) : (
-          "Sign In"
-        )}
-      </BrutalButton>
+      <Button type="submit" size="lg" className="w-full" loading={pending} disabled={disabled}>
+        {pending ? "Signing in…" : "Sign in"}
+      </Button>
 
       {error ? (
         <p
           role="alert"
-          className="flex items-start gap-2 text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3"
+          className="flex items-start gap-2 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
         >
-          <AlertCircle className="h-4 w-4 shrink-0 mt-px" />
+          <AlertCircle aria-hidden="true" className="mt-px h-4 w-4 shrink-0" />
           <span className="break-words">{error}</span>
         </p>
       ) : null}
 
-      <p className="flex items-center gap-1.5 text-[10px] font-mono text-neutral-400 uppercase tracking-wider font-bold pt-1">
-        <Lock className="h-3 w-3 shrink-0" />
+      <p className="flex items-center gap-1.5 pt-1 text-xs text-text-muted">
+        <Lock aria-hidden="true" className="h-3 w-3 shrink-0" />
         <span>Secured by Supabase Auth</span>
       </p>
     </form>

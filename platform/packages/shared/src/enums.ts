@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-/** Pipeline state machine — the database is the source of truth (design doc §6.2). */
+/**
+ * Pipeline state machine — the database is the source of truth (design doc §6.2).
+ *
+ * Order and membership mirror `calls_status_check` as migration 0014 redefines
+ * it, value for value, so the two read side by side in a diff. enums.test.ts
+ * asserts that against the migration itself: this file is what every fixture is
+ * built from, so a union that omits a live status produces tests that pass while
+ * the code is wrong.
+ */
 export const CallStatus = z.enum([
   "AWAITING_AUDIO",
   "UPLOADED",
@@ -9,6 +17,10 @@ export const CallStatus = z.enum([
   "ANALYZING",
   "SYNCING",
   "COMPLETE",
+  // Transcription switched off for the instance (0014): terminal, but not a
+  // failure — the call row and its audio are complete, only the paid stages
+  // were skipped. Written at worker pipeline.ts.
+  "TRANSCRIPTION_OFF",
   "FAILED_TRANSCODE",
   "FAILED_ASR",
   "FAILED_ANALYZE",
@@ -49,5 +61,14 @@ export const UploadState = z.enum([
 ]);
 export type UploadState = z.infer<typeof UploadState>;
 
-export const CrmSyncStatus = z.enum(["pending", "synced", "failed"]);
+/**
+ * Outbox delivery state — `crm_sync_log_status_check` as 0008 redefines it.
+ *
+ * 'dead' is the NORMAL terminal state, not an edge case: the outbox writes it
+ * for a terminal 4xx and for an exhausted attempt budget (worker outbox.ts), and
+ * it is what distinguishes "gave up" from a 'failed'/'pending' delivery still
+ * awaiting retry. Omitting it here made every fixture built from this file
+ * describe a state machine the worker does not have.
+ */
+export const CrmSyncStatus = z.enum(["pending", "synced", "failed", "dead"]);
 export type CrmSyncStatus = z.infer<typeof CrmSyncStatus>;

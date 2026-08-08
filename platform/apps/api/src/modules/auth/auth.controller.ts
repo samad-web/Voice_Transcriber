@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
@@ -31,6 +32,12 @@ export class AuthController {
 
   /** Dev credential login → session bearer token (OIDC swaps in here later). */
   @Post("login")
+  // 5/min per IP (checklist 08 §0.7). This is the only endpoint on the platform
+  // that turns a guess into a session, and it is also expensive to guess at:
+  // AuthService.login matches on `lower(u.email)` while the only index on the
+  // column is UNIQUE(email) over the raw value, so every attempt sequentially
+  // scans `users`. The limit caps both the brute force and the scan.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(@Body() body: unknown) {
     const parsed = LoginBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);

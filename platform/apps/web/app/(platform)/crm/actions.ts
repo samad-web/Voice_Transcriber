@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireOperator } from "@/lib/operator-guard";
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
@@ -13,6 +14,13 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
  * the request targets that tenant, which is what the per-instance CRM section
  * needs: a platform operator manages customers other than DEV_ORG_ID, and
  * before this the console could only ever configure one of them.
+ *
+ * Which makes `requireOperator()` the first statement of every export below.
+ * The `orgId` is attacker-controlled by construction, the credential behind it
+ * is the root admin key, and these actions hold a tenant's CRM secrets and their
+ * delivery payloads. A Server Action is an independently-addressable POST
+ * endpoint, so the operator check in `(platform)/layout.tsx` — which runs during
+ * a render — is not on this path at all. See lib/operator-guard.ts.
  */
 
 async function call<T>(
@@ -61,6 +69,11 @@ export async function connectProviderAction(input: {
   onlyQualified?: boolean;
   orgId?: string;
 }): Promise<{ error?: string; id?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const { orgId, ...body } = input;
   const res = await call<{ id: string }>("/v1/crm/integrations", {
     method: "POST",
@@ -87,6 +100,11 @@ export async function connectCustomAction(input: {
   onlyQualified?: boolean;
   orgId?: string;
 }): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const { orgId, ...body } = input;
   const res = await call("/v1/crm/integrations/custom", { method: "POST", body, orgId });
   if (res.error) return { error: res.error };
@@ -106,6 +124,11 @@ export async function updateIntegrationAction(input: {
   onlyQualified?: boolean;
   orgId?: string;
 }): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const { id, orgId, ...body } = input;
   const res = await call(`/v1/crm/integrations/${id}`, { method: "PATCH", body, orgId });
   if (res.error) return { error: res.error };
@@ -117,6 +140,11 @@ export async function deleteIntegrationAction(
   id: string,
   orgId?: string,
 ): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const res = await call(`/v1/crm/integrations/${id}`, { method: "DELETE", orgId });
   if (res.error) return { error: res.error };
   refresh(orgId);
@@ -143,6 +171,11 @@ export async function testIntegrationAction(
   dryRun: boolean,
   orgId?: string,
 ): Promise<{ error?: string; result?: TestResult }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const res = await call<TestResult>(`/v1/crm/integrations/${id}/test`, {
     method: "POST",
     body: { dryRun },
@@ -177,6 +210,11 @@ export async function listDeliveriesAction(
   id: string,
   orgId?: string,
 ): Promise<{ error?: string; deliveries?: Delivery[] }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const res = await call<{ deliveries: Delivery[] }>(
     `/v1/crm/integrations/${id}/deliveries?limit=25`,
     { method: "GET", orgId },
@@ -189,6 +227,11 @@ export async function retryDeliveryAction(
   deliveryId: string,
   orgId?: string,
 ): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const res = await call(`/v1/crm/deliveries/${deliveryId}/retry`, { method: "POST", orgId });
   if (res.error) return { error: res.error };
   refresh(orgId);
@@ -199,6 +242,11 @@ export async function retryDeadAction(
   id: string,
   orgId?: string,
 ): Promise<{ error?: string; requeued?: number }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   const res = await call<{ requeued: number }>(`/v1/crm/integrations/${id}/retry-dead`, {
     method: "POST",
     orgId,

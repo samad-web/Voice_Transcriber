@@ -27,7 +27,7 @@ export default async function TeamPage({
       {members === null && workspaces === null ? (
         <Card>
           <MonoLabel>API offline</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
+          <p className="mt-2 text-sm text-text-muted">
             Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>

@@ -38,14 +38,28 @@ export function EnrollmentCredentials({
       adminKey: result.adminKey,
       ...(serverUrl?.trim() ? { serverUrl: serverUrl.trim() } : {}),
     });
-    QRCode.toDataURL(payload, { margin: 1, width: 240 }).then(setQrDataUrl);
+    // `void` + a rejection handler: a floating promise here would be an
+    // unhandled rejection AND would leave the previous credential's QR on
+    // screen, because nothing clears state that was never rewritten. Someone
+    // scanning a stale QR enrolls the handset against the wrong instance, so
+    // failing back to the placeholder is the only safe outcome.
+    void QRCode.toDataURL(payload, { margin: 1, width: 240 })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(null));
     setCopied(false);
   }, [result.instanceId, result.adminKey, serverUrl]);
 
-  const copyKey = async () => {
-    if (!result.adminKey) return;
-    await navigator.clipboard.writeText(result.adminKey);
-    setCopied(true);
+  // Sync, not `async` — see api-keys-manager.tsx: an async onClick hands React a
+  // promise it discards, so a rejected clipboard write would only ever appear as
+  // an unhandled rejection. The admin key is shown once; a button still saying
+  // COPIED after a failed re-copy is how it gets lost.
+  const copyKey = () => {
+    const key = result.adminKey;
+    if (!key) return;
+    void navigator.clipboard
+      .writeText(key)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
   };
 
   return (
@@ -82,7 +96,9 @@ export function EnrollmentCredentials({
 
       <div className="flex items-start gap-4 pt-2 border-t-2 border-neutral-200">
         {qrDataUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
+          // A raw <img>, not next/image, on purpose: the source is an in-memory
+          // data: URI generated a few lines up, so there is nothing for the
+          // image optimizer to fetch, cache or resize.
           <img
             src={qrDataUrl}
             alt="Enrollment QR for the Android admin screen"

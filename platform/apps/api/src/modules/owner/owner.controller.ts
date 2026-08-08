@@ -14,6 +14,7 @@ import { z } from "zod";
 import { parseLeadStages } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
+import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { DbService } from "../../db/db.service";
 
 const WindowQuery = z.object({
@@ -35,7 +36,7 @@ const TelecallerBody = z.object({
  * can be given to a customer without exposing the operator surface.
  */
 @Controller("owner")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
 export class OwnerController {
   constructor(private readonly db: DbService) {}
 
@@ -176,8 +177,15 @@ export class OwnerController {
    * The device label is hardware ("Nokia G21 #2"); this is who is holding it,
    * and it is what the dashboard ranks. Kept here rather than on the devices
    * controller because it is the one device field an owner may edit.
+   *
+   * Also keeps the `telecallers` identity table (0017) in sync: a device gets
+   * linked to a telecaller row the first time it is named, and that row's
+   * display name is updated on every rename after. Clearing the name (empty
+   * string) leaves the linkage untouched — the identity persists even if the
+   * label is temporarily blanked.
    */
   @Patch("telecallers/:deviceId")
+  @RequireOwnerRole("owner", "manager")
   async setTelecaller(
     @OrgId() orgId: string,
     @Param("deviceId", ParseUUIDPipe) deviceId: string,
@@ -189,13 +197,37 @@ export class OwnerController {
 
     return this.db.withOrg(orgId, async (client) => {
       const {
+        rows: [before],
+      } = await client.query(
+        `SELECT telecaller_id FROM devices WHERE id = $1`,
+        [deviceId],
+      );
+      if (!before) throw new NotFoundException("device not found in this org");
+
+      if (name) {
+        if (before.telecaller_id) {
+          await client.query(`UPDATE telecallers SET display_name = $2 WHERE id = $1`, [
+            before.telecaller_id,
+            name,
+          ]);
+        } else {
+          await client.query(
+            `WITH inserted AS (
+               INSERT INTO telecallers (org_id, display_name) VALUES ($1, $2) RETURNING id
+             )
+             UPDATE devices SET telecaller_id = (SELECT id FROM inserted) WHERE id = $3`,
+            [orgId, name, deviceId],
+          );
+        }
+      }
+
+      const {
         rows: [device],
       } = await client.query(
         `UPDATE devices SET telecaller_name = $2 WHERE id = $1
-         RETURNING id, label, telecaller_name`,
+         RETURNING id, label, telecaller_name, telecaller_id`,
         [deviceId, name],
       );
-      if (!device) throw new NotFoundException("device not found in this org");
       return { device };
     });
   }

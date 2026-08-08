@@ -5,8 +5,15 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import { OwnerRole } from "@aura/shared";
 import { DbService } from "../../db/db.service";
 import type { Principal } from "../../common/auth-principal";
+
+/** Null when the row's `owner_role` is unset or predates personas. */
+function parseOwnerRole(raw: unknown): OwnerRole | null {
+  const parsed = OwnerRole.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
 
 const SESSION_TTL_DAYS = 7;
 
@@ -40,7 +47,7 @@ export class AuthService {
       rows: [row],
     } = await this.db.adminPool().query(
       `SELECT u.id AS user_id, u.password_hash, u.status,
-              m.org_id, m.role, m.recordings_listen, m.recordings_export
+              m.org_id, m.role, m.owner_role, m.recordings_listen, m.recordings_export
          FROM users u
          JOIN memberships m ON m.user_id = u.id
         WHERE lower(u.email) = lower($1)
@@ -69,6 +76,7 @@ export class AuthService {
         recordingsListen: row.recordings_listen,
         recordingsExport: row.recordings_export,
         viaAdminKey: false,
+        ownerRole: parseOwnerRole(row.owner_role),
       },
     };
   }
@@ -88,6 +96,7 @@ export class AuthService {
       orgName: string;
       orgStatus: string;
       role: string;
+      ownerRole: string | null;
       recordingsListen: boolean;
       recordingsExport: boolean;
       workspaceId: string | null;
@@ -108,6 +117,7 @@ export class AuthService {
 
     const { rows } = await this.db.adminPool().query(
       `SELECT m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
+              m.owner_role AS "ownerRole",
               m.recordings_listen AS "recordingsListen",
               m.recordings_export AS "recordingsExport",
               (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
@@ -127,7 +137,7 @@ export class AuthService {
     const {
       rows: [row],
     } = await this.db.adminPool().query(
-      `SELECT s.user_id, s.org_id, m.role, m.recordings_listen, m.recordings_export
+      `SELECT s.user_id, s.org_id, m.role, m.owner_role, m.recordings_listen, m.recordings_export
          FROM sessions s
          JOIN memberships m ON m.user_id = s.user_id AND m.org_id = s.org_id
         WHERE s.token_hash = $1 AND s.expires_at > now()
@@ -142,6 +152,7 @@ export class AuthService {
       recordingsListen: row.recordings_listen,
       recordingsExport: row.recordings_export,
       viaAdminKey: false,
+      ownerRole: parseOwnerRole(row.owner_role),
     };
   }
 

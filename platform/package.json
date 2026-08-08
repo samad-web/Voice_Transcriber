@@ -6,6 +6,16 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r --if-present test",
+    "test:watch": "pnpm -r --parallel --if-present test:watch",
+    "test:integration": "pnpm -r build && vitest run --config vitest.integration.config.ts",
+    "test:integration:only": "vitest run --config vitest.integration.config.ts",
+    "test:integration:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "test:integration:down": "docker compose -f docker-compose.test.yml down -v",
     "tenancy:check": "node scripts/check-tenancy.js",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
@@ -18,7 +28,16 @@
     "db:supabase:check": "node scripts/sync-supabase-migrations.js --check"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@eslint/js": "^9.17.0",
+    "@types/pg": "^8.11.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-import": "^2.31.0",
+    "globals": "^15.14.0",
+    "pg": "^8.13.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^3.2.0"
   },
   "packageManager": "pnpm@10.28.2"
 }

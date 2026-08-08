@@ -1,7 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireOperator } from "@/lib/operator-guard";
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
+
+/**
+ * Operator-only, asserted per action. Membership and workspace edits against a
+ * tenant the caller names — the shape that must never be reachable without an
+ * identity check. The `(platform)` layout cannot supply one: it gates rendering,
+ * and a Server Action is invoked directly. See lib/operator-guard.ts.
+ */
 
 /** Omitted orgId keeps the dev-org default; the pages pass the selected tenant. */
 const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
@@ -16,6 +24,11 @@ export async function addMemberAction(
   },
   orgId?: string,
 ): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/members`, {
       method: "POST",
@@ -44,6 +57,11 @@ export async function updateMemberAction(
   orgId?: string,
 ): Promise<{ error?: string }> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const { userId, ...patch } = input;
     const res = await fetch(`${API_URL}/v1/members/${userId}`, {
       method: "PATCH",
@@ -64,6 +82,11 @@ export async function removeMemberAction(
   orgId?: string,
 ): Promise<{ error?: string }> {
   try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
     const res = await fetch(`${API_URL}/v1/members/${userId}`, {
       method: "DELETE",
       headers: headersFor(orgId),
@@ -81,6 +104,11 @@ export async function createWorkspaceAction(
   name: string,
   orgId?: string,
 ): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
   try {
     const res = await fetch(`${API_URL}/v1/workspaces`, {
       method: "POST",

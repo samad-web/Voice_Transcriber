@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { AlertTriangle, KeyRound } from "lucide-react";
 import { BrutalButton, Card } from "@aura/ui";
+import { inputClass } from "@/lib/form";
 import { EnrollmentCredentials, type Credentials } from "../enrollment-credentials";
 import { mintKeyAction } from "./actions";
-import { inputClass } from "@/lib/form";
 
 /** Issue an additional enrollment key when the customer onboards more handsets. */
 export function KeyGenerator({

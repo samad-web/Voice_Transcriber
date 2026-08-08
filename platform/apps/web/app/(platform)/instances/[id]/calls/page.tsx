@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Activity, ArrowLeft, Phone, Timer } from "lucide-react";
-import { Card, MonoLabel, StatCard } from "@aura/ui";
+import { Card, EmptyState, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
 import { apiGetAs } from "@/lib/server-api";
@@ -102,8 +102,10 @@ export default async function InstanceCallsPage({
   };
 
   const chip = (isActive: boolean) =>
-    `px-3 py-1.5 border-2 border-black text-[10px] font-mono font-bold uppercase tracking-wider ${
-      isActive ? "bg-black text-white" : "bg-white text-black hover:bg-neutral-100"
+    `rounded-md border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-out ${
+      isActive
+        ? "border-accent bg-accent text-accent-fg"
+        : "border-border-strong bg-surface text-text hover:bg-surface-hover"
     }`;
 
   return (
@@ -112,9 +114,9 @@ export default async function InstanceCallsPage({
 
       <Link
         href={`/instances/${orgId}`}
-        className="inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 hover:text-black"
+        className="inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-text-muted transition-colors duration-150 ease-out hover:text-text"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
         Back to {org.name}
       </Link>
 
@@ -126,12 +128,12 @@ export default async function InstanceCallsPage({
           footer={<span>{stats?.failed ?? 0} failed</span>}
         />
         <StatCard
-          label="Recorded Time"
+          label="Recorded time"
           value={`${minutes} min`}
           icon={<Timer className="h-4 w-4" />}
         />
         <StatCard
-          label="Capture Success"
+          label="Capture success"
           value={successRate}
           icon={<Activity className="h-4 w-4" />}
           footer={
@@ -146,13 +148,20 @@ export default async function InstanceCallsPage({
         <div className="space-y-2">
           <MonoLabel>Instance</MonoLabel>
           <div className="flex flex-wrap gap-2">
-            <Link href={href({ instance: undefined })} className={chip(!instanceId)}>
+            <Link
+              href={href({ instance: undefined })}
+              aria-current={!instanceId ? "page" : undefined}
+              className={chip(!instanceId)}
+            >
               All instances
             </Link>
             {instances.map((inst) => (
               <Link
                 key={inst.id}
                 href={href({ instance: inst.id })}
+                // aria-current, not the accent fill alone: an active filter that
+                // is only a colour is invisible to a colour-blind operator.
+                aria-current={instanceId === inst.id ? "page" : undefined}
                 className={chip(instanceId === inst.id)}
               >
                 {inst.name}
@@ -169,6 +178,7 @@ export default async function InstanceCallsPage({
             <Link
               key={f.label}
               href={href({ status: f.key })}
+              aria-current={(status ?? undefined) === f.key ? "page" : undefined}
               className={chip((status ?? undefined) === f.key)}
             >
               {f.label}
@@ -180,19 +190,25 @@ export default async function InstanceCallsPage({
       {list === null ? (
         <Card>
           <MonoLabel>API offline</MonoLabel>
-          <p className="text-sm text-neutral-600 mt-2 font-sans">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+          <p className="mt-2 text-sm text-text-muted">
+            Could not reach the API — start it with{" "}
+            <code className="font-mono">pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : calls.length === 0 ? (
-        <Card className="flex flex-col items-center py-12 gap-3">
-          <Phone className="h-8 w-8 text-neutral-300" />
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-            {status || instanceId
+        <EmptyState
+          icon={<Phone className="h-8 w-8" />}
+          title={
+            status || instanceId
               ? "No calls match this filter"
-              : `No calls recorded for ${active?.name ?? org.name} yet`}
-          </p>
-        </Card>
+              : `No calls recorded for ${active?.name ?? org.name} yet`
+          }
+          description={
+            status || instanceId
+              ? "Widen the filter above — or clear it to see every call on this tenant."
+              : "Enroll a device on this tenant and record a call; it appears here once the pipeline finishes."
+          }
+        />
       ) : (
         <>
           <Pager
