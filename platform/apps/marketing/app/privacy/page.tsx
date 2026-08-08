@@ -115,16 +115,22 @@ export default function PrivacyPage() {
         fonts are served from our own servers rather than Google&rsquo;s.
       </p>
       <p>
-        <strong>We do use the Meta (Facebook) advertising pixel.</strong> It loads on every page
-        and tells Meta that a browser visited this site, and separately when someone books a call
-        with us. We use it to measure which of our advertisements bring people here and to show
-        advertisements to people who have visited. Meta receives your IP address and a cookie
-        identifier as part of this, and Meta may link that to a Facebook or Instagram account it
-        already holds. We do not send it your name, email address or phone number.
+        <strong>We use the Meta (Facebook) advertising pixel, and only if you accept it.</strong>{" "}
+        We ask before it loads; until you say yes, no script runs and no request reaches Meta.
+        Declining is remembered and we do not ask again. Nothing on this site needs it, so
+        declining changes nothing about how it works.
       </p>
       <p>
-        You can stop it by blocking third-party cookies or by using a tracker-blocking extension;
-        the site works normally either way. Meta&rsquo;s own controls are at{" "}
+        <strong>Lawful basis:</strong> your consent, given by pressing Accept. An advertising
+        tracker is not necessary for this site to function, so we do not treat it as something
+        you can be assumed to have agreed to.
+      </p>
+      <p>
+        When it is on, it tells Meta that a browser visited a page here, and separately when
+        someone books a call. Meta receives your IP address and a cookie identifier, and may link
+        those to a Facebook or Instagram account it already holds. We do not send it your name,
+        email address or phone number. You can withdraw consent at any time by clearing this
+        site&rsquo;s storage in your browser, and Meta&rsquo;s own controls are at{" "}
         <a href="https://www.facebook.com/adpreferences" rel="nofollow noreferrer">
           facebook.com/adpreferences
         </a>

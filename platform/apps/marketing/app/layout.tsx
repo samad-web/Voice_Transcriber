@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SiteHeader, SkipLink } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { ConsentBanner } from "@/components/consent-banner";
 import { MetaPixel } from "@/components/meta-pixel";
 import { BRAND, SITE_URL } from "@/lib/site";
 
@@ -60,10 +61,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteHeader />
         <main id="main">{children}</main>
         <SiteFooter />
-        {/* Renders nothing unless NEXT_PUBLIC_META_PIXEL_ID is set, so local
-            and preview builds do not fire PageView into the live dataset. Read
-            the header of this component before shipping it: it changes what the
-            privacy policy can truthfully say, and it loads without consent. */}
+        {/* The banner asks; the pixel loads only after a yes. Both render
+            nothing when NEXT_PUBLIC_META_PIXEL_ID is unset, so a deployment
+            with no pixel does not ask a question it has no reason to ask. */}
+        <ConsentBanner />
         <MetaPixel />
       </body>
     </html>

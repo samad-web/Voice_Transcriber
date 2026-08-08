@@ -264,6 +264,51 @@ export default function SecurityPage() {
         </div>
       </Section>
 
+      {/* The pixel disclosure lives HERE, not only in the privacy policy.
+          /privacy is gated behind lib/legal.ts until the company facts exist,
+          so it currently 404s — and the pixel is live. Putting the disclosure
+          only there would mean the site tracks visitors and tells them nothing
+          until an unrelated blocker clears. This page is published today.
+          The consent banner links to #advertising below. */}
+      <Section id="advertising" tone="subtle" labelledBy="adv-heading">
+        <SectionHeading
+          id="adv-heading"
+          as="h2"
+          title="Advertising and tracking"
+          lead="One third-party tracker, and it does not load unless you say yes."
+        />
+        <Prose className="mt-6">
+          <p>
+            We use the <strong>Meta (Facebook) advertising pixel</strong> to measure which of our
+            advertisements bring people to this site, and to show advertisements to people who
+            have visited. It tells Meta that a browser visited a page here, and separately when
+            someone books a call.
+          </p>
+          <p>
+            <strong>It does not load until you accept it.</strong> Until then no script runs and
+            no request reaches Meta at all. If you decline, we remember that and do not ask
+            again. Nothing on this site needs it, so declining changes nothing about how it
+            works.
+          </p>
+          <p>
+            When it is on, Meta receives your IP address and a cookie identifier, and may link
+            those to a Facebook or Instagram account it already holds. We do not send it your
+            name, email address or phone number. You can change your mind at any time by clearing
+            this site&rsquo;s storage in your browser, and Meta&rsquo;s own controls are at{" "}
+            <TextLink href="https://www.facebook.com/adpreferences">
+              facebook.com/adpreferences
+            </TextLink>
+            .
+          </p>
+          <p>
+            Beyond that, there is no analytics package, no session recorder, no embedded video
+            and no chat widget on this site, and our fonts are served from our own servers rather
+            than Google&rsquo;s. The one cookie we set ourselves carries step 1 of the enquiry
+            form into step 2, lasts two hours, and is not used to track you.
+          </p>
+        </Prose>
+      </Section>
+
       <Section id="consent-pointer" labelledBy="cp-heading">
         <h2 id="cp-heading" className="sr-only">
           Related

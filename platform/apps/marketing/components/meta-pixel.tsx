@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Script from "next/script";
+import { CONSENT_EVENT, readConsent, type ConsentChoice } from "@/lib/consent-state";
 
 /**
  * Meta (Facebook) Pixel.
@@ -23,16 +25,21 @@ import Script from "next/script";
  * ships before the policy does, the site is tracking visitors while telling
  * them nothing, which is the wrong order.
  *
- * ── CONSENT IS A DECISION NOBODY HAS MADE YET ──────────────────────────────
+ * ── IT DOES NOT LOAD UNTIL THE VISITOR AGREES ──────────────────────────────
  *
- * An advertising pixel is not "strictly necessary", so under the DPDP Act and
- * the GDPR it normally needs consent BEFORE it loads, not a notice afterwards.
- * This component does not implement that: it loads on every page view. That was
- * the instruction, and it is a live compliance exposure rather than a
- * theoretical one, so it is written down here rather than left implicit.
+ * An advertising pixel is not "strictly necessary", so under India's DPDP Act
+ * and the GDPR it needs consent BEFORE it runs, not a notice afterwards. It
+ * shipped without a gate on 2026-08-09 and this closes that, same day.
  *
- * Making it consent-gated is a small change to this file plus a banner — the
- * hard part is deciding to, not building it.
+ * Nothing here renders while the answer is unknown or denied: no script tag, no
+ * `noscript` tracking pixel, no request to Meta at all. The common pattern is to
+ * load the tracker and ask afterwards, which makes the question decorative and
+ * the consent worthless; if the answer arrives later, the `CONSENT_EVENT`
+ * listener mounts the script then, with no page reload.
+ *
+ * The `noscript` <img> is inside the gate too, and that is not an oversight to
+ * fix — it is a tracking request in its own right, and a visitor with
+ * JavaScript disabled is precisely the one who cannot have clicked Accept.
  */
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID?.trim();
@@ -44,7 +51,18 @@ declare global {
 }
 
 export function MetaPixel() {
-  if (!PIXEL_ID) return null;
+  const [choice, setChoice] = useState<ConsentChoice>("unknown");
+
+  useEffect(() => {
+    setChoice(readConsent());
+    const onChange = (e: Event) => setChoice((e as CustomEvent).detail as ConsentChoice);
+    window.addEventListener(CONSENT_EVENT, onChange);
+    return () => window.removeEventListener(CONSENT_EVENT, onChange);
+  }, []);
+
+  // Two independent gates. The id is a deployment decision (production only);
+  // the choice is the visitor's. Either one alone is enough to load nothing.
+  if (!PIXEL_ID || choice !== "granted") return null;
 
   return (
     <>
