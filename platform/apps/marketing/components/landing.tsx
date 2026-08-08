@@ -210,9 +210,13 @@ function Problem() {
               scenario attributed to nobody. It replaced
               "You want to fix what isn't working. Nobody can tell you what
               that is." */}
+          {/* The gradient sits on "400 calls", not on the second sentence.
+              The number is the thing that makes an owner stop, and one
+              highlight per heading is the whole point of having one, so it
+              moved rather than being added alongside. */}
           <h2 className="mk-display mk-h2">
-            Your team made 400 calls last month.{" "}
-            <span className="mk-gradient-text">You listened to none of them.</span>
+            Your team made <span className="mk-gradient-text">400 calls</span> last month. You
+            listened to none of them.
           </h2>
         </div>
         <div className="space-y-5">
