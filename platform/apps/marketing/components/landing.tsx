@@ -203,8 +203,16 @@ function Problem() {
       <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
         <div>
           <p className="mk-eyebrow mb-4">The problem</p>
+          {/* Restored 2026-08-09 at the owner's request, from the earlier
+              version in components/home/problem.tsx. The 400 figure is
+              illustrative and reads as such in context ("your team"); doc 10
+              §15 bans invented numbers presented as proof, and this is a
+              scenario attributed to nobody. It replaced
+              "You want to fix what isn't working. Nobody can tell you what
+              that is." */}
           <h2 className="mk-display mk-h2">
-            You want to fix what isn&rsquo;t working. <span className="mk-gradient-text">Nobody can tell you what that is.</span>
+            Your team made 400 calls last month.{" "}
+            <span className="mk-gradient-text">You listened to none of them.</span>
           </h2>
         </div>
         <div className="space-y-5">
@@ -216,13 +224,13 @@ function Problem() {
           <p className="mk-lede">
             What you actually need is someone to sit through every call, consolidate
             it, and hand you the answer. That is a full-time job nobody has time to do
-            &mdash; which is why it never gets done.
+           , which is why it never gets done.
           </p>
           <ul className="mt-8 space-y-4">
             {[
               "You cannot see which days convert and which ones your team wastes",
               "You cannot see which telecaller closes and which one only dials",
-              "The objection that killed the deal was handled well by somebody — and nobody else heard it",
+              "The objection that killed the deal was handled well by somebody, and nobody else heard it",
             ].map((t) => (
               <li key={t} className="flex gap-3 text-[0.9375rem]">
                 <span
@@ -322,7 +330,7 @@ const OUTCOMES = [
   },
   {
     t: "Which telecaller actually converts",
-    d: "Not who dialled the most. Who turned calls into leads — and, because every call is written down, what they say that the others do not.",
+    d: "Not who dialled the most. Who turned calls into leads, and, because every call is written down, what they say that the others do not.",
   },
   {
     t: "The objections, counted",
@@ -396,7 +404,7 @@ function FinalCta() {
           style={{ color: "rgb(255 255 255 / 0.92)" }}
         >
           Tell us how your team sells today. We&rsquo;ll come back with what Aura would have
-          pulled out of a week of your calls &mdash; the objections, the commitments, and who
+          pulled out of a week of your calls, the objections, the commitments, and who
           on your team is actually converting.
         </p>
 

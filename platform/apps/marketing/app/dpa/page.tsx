@@ -304,7 +304,7 @@ export default function DpaPage() {
         limitations to apply.
       </p>
 
-      <h2 id="annex-a">Annex A — sub-processors</h2>
+      <h2 id="annex-a">Annex A: sub-processors</h2>
       <LegalTable>
         <thead>
           <tr>
@@ -343,10 +343,10 @@ export default function DpaPage() {
         servers above. It is not with a third-party storage provider.
       </p>
 
-      <h2 id="annex-b">Annex B — technical and organisational measures</h2>
+      <h2 id="annex-b">Annex B: technical and organisational measures</h2>
       <p>
         Stated as mechanisms rather than adjectives. Aura holds{" "}
-        <strong>no security certification</strong> — no SOC 2, no ISO 27001 — and does not claim
+        <strong>no security certification</strong>, no SOC 2, no ISO 27001, and does not claim
         one.
       </p>
 

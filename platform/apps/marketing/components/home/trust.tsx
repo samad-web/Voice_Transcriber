@@ -33,7 +33,7 @@ import { ButtonLink } from "../ui/button";
 const CLAIMS = [
   {
     title: "Encrypted in transit, always",
-    body: "Recordings leave the handset over TLS only — the app ships with a network policy that refuses plaintext HTTP outright. Optional AES-256-GCM at-rest encryption on the device itself can be switched on per fleet.",
+    body: "Recordings leave the handset over TLS only, the app ships with a network policy that refuses plaintext HTTP outright. Optional AES-256-GCM at-rest encryption on the device itself can be switched on per fleet.",
   },
   {
     title: "Isolated in the database, not in code",
@@ -41,11 +41,11 @@ const CLAIMS = [
   },
   {
     title: "Deleted on your schedule",
-    body: "Your organisation sets a retention window — 90 days out of the box. When it expires, a scheduled job deletes the audio, the transcript and everything derived from it.",
+    body: "Your organisation sets a retention window, 90 days out of the box. When it expires, a scheduled job deletes the audio, the transcript and everything derived from it.",
   },
   {
     title: "Erasure you can prove",
-    body: "Erasing one call removes the recording from storage and cascades through the transcript, the AI output, the extracted fields, the lead and the CRM delivery log — then writes a signed receipt into your audit log.",
+    body: "Erasing one call removes the recording from storage and cascades through the transcript, the AI output, the extracted fields, the lead and the CRM delivery log, then writes a signed receipt into your audit log.",
   },
   {
     title: "An audit log you can read",
@@ -53,7 +53,7 @@ const CLAIMS = [
   },
   {
     title: "No surprise sub-processors",
-    body: "The services that touch your data are named, along with where they run — including the parts that are not yet in India.",
+    body: "The services that touch your data are named, along with where they run, including the parts that are not yet in India.",
   },
 ];
 

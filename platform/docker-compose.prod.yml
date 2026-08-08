@@ -112,6 +112,9 @@ services:
         # only a rebuild fixes it.
         NEXT_PUBLIC_SITE_URL: https://${SITE_DOMAIN}
         NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER:-}
+        # Meta Pixel. Unset means no pixel loads and the Lead event is a
+        # no-op, which is what preview and local builds want.
+        NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
     image: aura-marketing:latest
     restart: unless-stopped
     # ── DELIBERATELY NOT `env_file: .env.production` ──────────────────────

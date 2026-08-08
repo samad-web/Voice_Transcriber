@@ -50,7 +50,7 @@ export function CustomCrm() {
             Already have a CRM
           </h3>
           <p className="mt-4 text-lg text-text-muted">
-            Aura pushes every qualified call straight into it — {CONNECTOR_COUNT}{" "}
+            Aura pushes every qualified call straight into it, {CONNECTOR_COUNT}{" "}
             connectors, your field names, your pipeline stages.
           </p>
           <p className="mt-4 text-base text-text-muted">
@@ -78,8 +78,7 @@ export function CustomCrm() {
             A CRM built around your business, not around a template.
           </p>
           <p className="mt-3 text-base text-text-muted">
-            Most CRMs make you describe your business in someone else&rsquo;s words —
-            deals, opportunities, sales cycles. We build yours around what you
+            Most CRMs make you describe your business in someone else&rsquo;s words, deals, opportunities, sales cycles. We build yours around what you
             actually track: brick type and quantity, site location, quotation status,
             follow-up date. Whatever your calls are already about.
           </p>

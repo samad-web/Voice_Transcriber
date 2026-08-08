@@ -51,6 +51,9 @@ ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 # component checks for it rather than emitting a broken wa.me link.
 ARG NEXT_PUBLIC_WHATSAPP_NUMBER
 ENV NEXT_PUBLIC_WHATSAPP_NUMBER=$NEXT_PUBLIC_WHATSAPP_NUMBER
+# Meta Pixel id. Absent means no pixel and no Lead event.
+ARG NEXT_PUBLIC_META_PIXEL_ID
+ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter "@aura/marketing..." build
 

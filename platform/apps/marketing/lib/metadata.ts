@@ -15,7 +15,7 @@ export function pageMetadata(opts: {
   path: string;
 }): Metadata {
   const url = `${SITE_URL}${opts.path}`;
-  const fullTitle = opts.path === "/" ? opts.title : `${opts.title} — ${BRAND}`;
+  const fullTitle = opts.path === "/" ? opts.title : `${opts.title}, ${BRAND}`;
 
   return {
     title: opts.title,

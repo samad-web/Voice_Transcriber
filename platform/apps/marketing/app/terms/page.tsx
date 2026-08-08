@@ -126,8 +126,8 @@ export default function TermsPage() {
 
       <Candid title="These systems make mistakes.">
         <p>
-          Transcripts will contain errors. Extracted fields — quantities, prices, dates,
-          commitments — will sometimes be wrong, and the system will occasionally state something
+          Transcripts will contain errors. Extracted fields, quantities, prices, dates,
+          commitments, will sometimes be wrong, and the system will occasionally state something
           confidently that the call did not contain. Accuracy varies with audio quality,
           background noise, accent, code-switching and line quality.
         </p>
@@ -248,7 +248,7 @@ export default function TermsPage() {
       </p>
       <p>
         This does not apply to information that is public through no fault of the recipient, was
-        already known, is independently developed, or must be disclosed by law — and where the law
+        already known, is independently developed, or must be disclosed by law, and where the law
         compels disclosure, the recipient will give notice first if permitted.
       </p>
 

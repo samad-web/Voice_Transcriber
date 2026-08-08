@@ -10,11 +10,11 @@ import { FeatureCard } from "../ui/content";
 const OUTCOMES = [
   {
     title: "Know why you lose",
-    body: "The objection behind every dead deal, counted — so you can tell the difference between a price problem and a follow-up problem.",
+    body: "The objection behind every dead deal, counted, so you can tell the difference between a price problem and a follow-up problem.",
   },
   {
     title: "Your fields, not ours",
-    body: "Tell Aura what matters in your business — brick type, site location, quotation status — and it pulls exactly that from every call.",
+    body: "Tell Aura what matters in your business (brick type, site location, quotation status) and it pulls exactly that from every call.",
   },
   {
     title: "No more manual entry",
@@ -22,7 +22,7 @@ const OUTCOMES = [
   },
   {
     title: "See who's actually selling",
-    body: "Not who logged the most calls — who moved the most pipeline, and why.",
+    body: "Not who logged the most calls, who moved the most pipeline, and why.",
   },
   {
     title: "Nothing gets dropped",
@@ -30,7 +30,7 @@ const OUTCOMES = [
   },
   {
     title: "Built for how India actually sells",
-    body: "Tamil, Hindi, Telugu and English — including the half-and-half sentences your team really speaks.",
+    body: "Tamil, Hindi, Telugu and English, including the half-and-half sentences your team really speaks.",
   },
 ];
 

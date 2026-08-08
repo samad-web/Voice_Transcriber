@@ -35,7 +35,7 @@ export function SiteHeader() {
   return (
     <header className="mk-header">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-6">
-        <Link href="/" className="mk-brand" aria-label={`${BRAND} — home`}>
+        <Link href="/" className="mk-brand" aria-label={`${BRAND}, home`}>
           <Logo size={30} />
           <span>{BRAND}</span>
         </Link>

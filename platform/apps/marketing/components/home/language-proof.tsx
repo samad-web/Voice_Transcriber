@@ -37,7 +37,7 @@ export function LanguageProof() {
       <SectionHeading
         id="languages-heading"
         eyebrow="Language"
-        title="Tamil, Hindi, Telugu and English — including the half-and-half sentences"
+        title="Tamil, Hindi, Telugu and English, including the half-and-half sentences"
         lead="A transcription product that only works in clean English does not work in an Indian sales office."
       />
 
@@ -52,9 +52,9 @@ export function LanguageProof() {
 
       <div className="mt-8">
         <Placeholder
-          label="Side-by-side transcript excerpts — Tamil / Hindi original with English translation"
+          label="Side-by-side transcript excerpts, Tamil / Hindi original with English translation"
           asset="cleared excerpts from real calls, or excerpts from a scripted call recorded with our own team"
-          blockedOn="publication consent (doc 10 §11) — a fabricated transcript would undermine this section's only job"
+          blockedOn="publication consent (doc 10 §11), a fabricated transcript would undermine this section's only job"
           minHeight="16rem"
         />
       </div>

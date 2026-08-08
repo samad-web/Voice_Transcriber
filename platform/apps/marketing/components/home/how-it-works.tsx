@@ -14,7 +14,7 @@ import { StepFlow } from "../ui/content";
 const STEPS = [
   {
     title: "The call happens",
-    body: "Your telecaller uses the same phone and the same number as always. The handset's own recorder captures both sides — nothing about the call changes.",
+    body: "Your telecaller uses the same phone and the same number as always. The handset's own recorder captures both sides, nothing about the call changes.",
   },
   {
     title: "It uploads itself",
@@ -22,7 +22,7 @@ const STEPS = [
   },
   {
     title: "It gets transcribed and read",
-    body: "The conversation is transcribed with speaker labels, then read against the fields you told Aura matter in your business — not a generic template.",
+    body: "The conversation is transcribed with speaker labels, then read against the fields you told Aura matter in your business, not a generic template.",
   },
   {
     title: "It arrives where you work",

@@ -122,7 +122,7 @@ export class GoogleCalendarScheduler implements Scheduler {
       : undefined;
 
     const body = {
-      summary: `Aura intro call — ${submission.name}`,
+      summary: `Aura intro call, ${submission.name}`,
       description: [
         `Booked from the Aura funnel.`,
         ``,
@@ -181,7 +181,7 @@ export class GoogleCalendarScheduler implements Scheduler {
       // Fail CLOSED. An unreadable calendar means we do not know what is free,
       // and the one thing we must never do is offer a slot we cannot vouch for.
       throw new Error(
-        `freeBusy did not return a readable calendar for ${this.config.calendarId} — ` +
+        `freeBusy did not return a readable calendar for ${this.config.calendarId}, ` +
           "check the calendar is shared with the service account",
       );
     }

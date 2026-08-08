@@ -19,6 +19,7 @@ import {
   validatePhone,
 } from "@aura/shared";
 import { CONSENT_SUPPORTING_TEXT, CONTACT_CONSENT_TEXT, WHATSAPP_SAME_QUESTION } from "@/lib/funnel/consent";
+import { trackLead } from "@/components/meta-pixel";
 import {
   bookSlotAction,
   listOpenSlotsAction,
@@ -757,6 +758,14 @@ function SlotPicker() {
                       if (res.ok) {
                         setError(null);
                         setBooked({ dayLabel: res.dayLabel!, timeLabel: res.timeLabel! });
+                        // The conversion, fired only once the slot is actually
+                        // claimed. Not on reaching the picker and not on the
+                        // /booked page: the first only means somebody
+                        // qualified, and the second is reachable by typing the
+                        // URL. Counting either would teach the ad account to
+                        // buy near-misses. Safe to call when the pixel is
+                        // unconfigured — it is a no-op.
+                        trackLead();
                       } else {
                         setError(res.error ?? "That time is no longer available.");
                         // Re-fetch: whatever went is gone, and showing it again

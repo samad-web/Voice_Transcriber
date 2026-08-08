@@ -31,7 +31,7 @@ export const FAQ: FaqItem[] = [
   },
   {
     q: "Which phones does this work on?",
-    a: "Samsung, Xiaomi, Redmi, POCO, Realme, Oppo, Vivo and OnePlus handsets all write call recordings to a folder Aura can read. Pixel, Motorola and Nokia phones use the Google Dialer, which keeps recordings in private app storage that Android blocks every other app from reading — those handsets cannot be used. That is confirmed on hardware and it is not something we can fix.",
+    a: "Samsung, Xiaomi, Redmi, POCO, Realme, Oppo, Vivo and OnePlus handsets all write call recordings to a folder Aura can read. Pixel, Motorola and Nokia phones use the Google Dialer, which keeps recordings in private app storage that Android blocks every other app from reading, those handsets cannot be used. That is confirmed on hardware and it is not something we can fix.",
   },
   {
     q: "Can Aura record WhatsApp or other internet calls?",
@@ -39,7 +39,7 @@ export const FAQ: FaqItem[] = [
   },
   {
     q: "What languages does it handle?",
-    a: "Tamil, Hindi, Telugu and English, including sentences that switch between them mid-way — which is how most sales calls in South India actually sound.",
+    a: "Tamil, Hindi, Telugu and English, including sentences that switch between them mid-way, which is how most sales calls in South India actually sound.",
   },
   {
     q: "Who can see our calls?",
@@ -55,7 +55,7 @@ export const FAQ: FaqItem[] = [
   },
   {
     q: "Does it work with our CRM?",
-    a: "There are 15 CRM connectors, including Zoho, LeadSquared, Kylas, Freshsales, HubSpot, Salesforce and Bitrix24, plus Zapier, Make, n8n and plain webhooks for anything else. You map your own field names — Aura does not force your data into someone else's schema.",
+    a: "There are 15 CRM connectors, including Zoho, LeadSquared, Kylas, Freshsales, HubSpot, Salesforce and Bitrix24, plus Zapier, Make, n8n and plain webhooks for anything else. You map your own field names, Aura does not force your data into someone else's schema.",
   },
   {
     q: "What if we don't have a CRM at all?",

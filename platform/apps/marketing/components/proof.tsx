@@ -54,7 +54,7 @@ export const TESTIMONIALS: Testimonial[] = [
     // If either is shaky, cut the number and keep the sentence. "Our conversion
     // rate went up" with a real name still outperforms no testimonial at all.
     quote:
-      "Our conversion rate is five times what it was. We are not calling more people — " +
+      "Our conversion rate is five times what it was. We are not calling more people, " +
       "we finally know which calls are worth following up.",
     company: "RD Interlock Bricks",
   },

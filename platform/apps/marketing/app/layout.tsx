@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SiteHeader, SkipLink } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { MetaPixel } from "@/components/meta-pixel";
 import { BRAND, SITE_URL } from "@/lib/site";
 
 /**
@@ -59,6 +60,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteHeader />
         <main id="main">{children}</main>
         <SiteFooter />
+        {/* Renders nothing unless NEXT_PUBLIC_META_PIXEL_ID is set, so local
+            and preview builds do not fire PageView into the live dataset. Read
+            the header of this component before shipping it: it changes what the
+            privacy policy can truthfully say, and it loads without consent. */}
+        <MetaPixel />
       </body>
     </html>
   );

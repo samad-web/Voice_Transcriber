@@ -28,7 +28,7 @@ export function Integrations() {
         id="integrations-heading"
         eyebrow="Integrations"
         title={`${CONNECTOR_COUNT} CRM connectors, mapped to your field names`}
-        lead="Aura writes into the system you already use. You choose which of your fields each piece of the call lands in — nothing is forced into someone else's schema."
+        lead="Aura writes into the system you already use. You choose which of your fields each piece of the call lands in, nothing is forced into someone else's schema."
       />
 
       <div className="mt-10">
@@ -41,7 +41,7 @@ export function Integrations() {
       </div>
 
       <p className="mt-6 max-w-3xl text-base text-text-muted">
-        Four of these — Zoho, Salesforce, monday and Dynamics 365 — currently connect
+        Four of these (Zoho, Salesforce, monday and Dynamics 365) currently connect
         with an access token you generate and paste in, and those tokens expire. The
         automatic refresh is still being built, so setting one up today means someone
         rotating a credential. We would rather you knew that before the call than

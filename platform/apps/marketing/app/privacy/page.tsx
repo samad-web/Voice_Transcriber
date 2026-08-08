@@ -111,12 +111,26 @@ export default function PrivacyPage() {
 
       <h3 id="what-we-collect">3. What we collect, and why</h3>
       <p>
-        We collect nothing from you by simply reading this website. There is no analytics
-        package, no advertising pixel, no session recorder, no embedded video, no chat widget and
-        no social media button anywhere on this site. Our fonts are served from our own servers,
-        so loading a page here does not tell Google, Meta or anyone else that you were here.
+        There is no session recorder, no embedded video and no chat widget on this site, and our
+        fonts are served from our own servers rather than Google&rsquo;s.
       </p>
-      <p>We collect personal data only when you give it to us.</p>
+      <p>
+        <strong>We do use the Meta (Facebook) advertising pixel.</strong> It loads on every page
+        and tells Meta that a browser visited this site, and separately when someone books a call
+        with us. We use it to measure which of our advertisements bring people here and to show
+        advertisements to people who have visited. Meta receives your IP address and a cookie
+        identifier as part of this, and Meta may link that to a Facebook or Instagram account it
+        already holds. We do not send it your name, email address or phone number.
+      </p>
+      <p>
+        You can stop it by blocking third-party cookies or by using a tracker-blocking extension;
+        the site works normally either way. Meta&rsquo;s own controls are at{" "}
+        <a href="https://www.facebook.com/adpreferences" rel="nofollow noreferrer">
+          facebook.com/adpreferences
+        </a>
+        .
+      </p>
+      <p>Beyond that, we collect personal data only when you give it to us.</p>
 
       <h3 id="enquiry-form">3.1 When you fill in our enquiry form</h3>
       <LegalTable>
@@ -182,8 +196,6 @@ export default function PrivacyPage() {
 
       <h3 id="what-we-dont">3.3 What we do not collect on this website</h3>
       <ul>
-        <li>We do not build a profile of you.</li>
-        <li>We do not track you across other websites.</li>
         <li>We do not buy contact data about you from anyone.</li>
         <li>
           We do not sell, rent, or share your details with any third party for their own
@@ -193,7 +205,7 @@ export default function PrivacyPage() {
       </ul>
 
       <h3 id="cookies">4. Cookies</h3>
-      <p>One cookie. That is the whole list.</p>
+      <p>One cookie of our own.</p>
       <LegalTable>
         <thead>
           <tr>
@@ -221,9 +233,10 @@ export default function PrivacyPage() {
         contains no personal data and is not used to track you.
       </p>
       <p>
-        We do not use it for analytics or advertising, because we do not do either. This cookie
-        is strictly necessary for the form to work, which is why you are not asked to consent to
-        it separately.
+        We do not use it for analytics or advertising. It is strictly necessary for the form to
+        work, which is why you are not asked to consent to it separately. The Meta pixel
+        described in §3 sets its own cookies, which are not ours and are not covered by that
+        exemption.
       </p>
 
       <h3 id="retention">5. How long we keep your enquiry</h3>

@@ -94,7 +94,7 @@ const TIERS: Tier[] = [
     shape: "Up to 25 handsets",
     included: [
       "Everything in Starter",
-      "Telecaller performance — calls, talk time, leads and pipeline value per handset",
+      "Telecaller performance, calls, talk time, leads and pipeline value per handset",
     ],
     roadmap: ["Objection and price intelligence", "WhatsApp digests"],
   },
@@ -113,7 +113,7 @@ export function Pricing() {
         id="pricing-heading"
         eyebrow="Pricing"
         title="Priced per handset, per month"
-        lead="That is the unit you already think in, and it is the one that drives the real cost — a handset makes calls, and calls cost transcription and AI time."
+        lead="That is the unit you already think in, and it is the one that drives the real cost, a handset makes calls, and calls cost transcription and AI time."
       />
 
       <div className="mt-10 grid gap-6 lg:grid-cols-3">
@@ -124,7 +124,7 @@ export function Pricing() {
               <h3 className="text-xl font-semibold text-text">{t.name}</h3>
               <p className="mt-1 text-base text-text-muted">{t.shape}</p>
               <p className="mt-4 text-2xl font-semibold text-text">
-                ₹—{" "}
+                ₹, {" "}
                 <span className="text-base font-normal text-text-muted">
                   per handset / month
                 </span>
@@ -154,7 +154,7 @@ export function Pricing() {
                     id={roadmapLabelId}
                     className="inline-flex items-center rounded-full border border-border bg-bg-subtle px-2.5 py-0.5 text-xs font-medium text-text-muted"
                   >
-                    Coming soon — not in the product today
+                    Coming soon, not in the product today
                   </p>
                   <ul className="mt-3 space-y-2">
                     {t.roadmap.map((item) => (
@@ -172,7 +172,7 @@ export function Pricing() {
 
       <p className="mt-6 max-w-3xl text-base text-text-muted">
         Ticked rows work in the product you would be switched on to this week.
-        Anything under "Coming soon" is on the roadmap and is not built yet — we
+        Anything under "Coming soon" is on the roadmap and is not built yet, we
         would rather tell you that here than after you have paid for it.
       </p>
 
@@ -184,8 +184,7 @@ export function Pricing() {
           Every plan will include a fair-use call allowance with a stated overage
           rate, because transcription and AI time are the real cost and pretending
           otherwise ends in a bill nobody expected. We are not publishing the
-          per-handset figures until the platform can meter and enforce them —
-          until then, ask, and you will get a straight answer for your team size
+          per-handset figures until the platform can meter and enforce them, until then, ask, and you will get a straight answer for your team size
           on the first message.
         </p>
         <div className="mt-5">

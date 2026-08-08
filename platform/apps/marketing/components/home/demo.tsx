@@ -23,7 +23,7 @@ export function DemoPlaceholder() {
       />
       <div className="mt-10">
         <Placeholder
-          label="Interactive pipeline demo — audio, transcript, extraction"
+          label="Interactive pipeline demo, audio, transcript, extraction"
           asset="an anonymised, consented call recording run through the real pipeline and frozen as a JSON fixture"
           blockedOn="consent from both parties, or a scripted re-record with our own team (doc 10 §11)"
           minHeight="34rem"
