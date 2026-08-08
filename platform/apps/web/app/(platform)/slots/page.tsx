@@ -26,6 +26,17 @@ import { SlotCalendar } from "./slot-calendar";
  * the SALES TEAM's zone rather than the visitor's — the operator is choosing
  * when they personally are free, so the grid has to be in their local time.
  */
+/**
+ * Never cached. The whole point of this page is that it is current: a booking
+ * made a minute ago has to be on it, and a cached render would show an empty
+ * diary to someone who has just been told a call is booked. `requireOperator()`
+ * reads cookies and would opt this out of static rendering anyway, but that is
+ * an implementation detail of the guard rather than a property of this page —
+ * stating it here means a future refactor of the guard cannot silently start
+ * serving stale bookings.
+ */
+export const dynamic = "force-dynamic";
+
 export default async function SlotsPage() {
   const timeZone = process.env.SCHEDULER_TIMEZONE?.trim() || "Asia/Kolkata";
 

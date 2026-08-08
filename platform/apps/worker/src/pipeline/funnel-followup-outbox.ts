@@ -290,16 +290,31 @@ export async function drainFollowUps(limit = 100): Promise<number> {
     );
 
     if (status === "dead") {
+      // The CHANNEL's transport, not `dispatcher.name`. A WhatsApp message that
+      // dead-lettered used to be reported as having failed "via log-only",
+      // because that is the EMAIL dispatcher's name and it was interpolated
+      // regardless of which channel the row was on. Anyone reading that log
+      // would go looking at mail configuration for a WhatsApp problem.
+      const via = row.channel === "whatsapp" ? getWhatsAppSender().name : dispatcher.name;
       console.error(
         `funnel follow-up ${row.id}: gave up after ${attempts} attempt(s) via ` +
-          `${dispatcher.name} — ${result.ok ? "" : result.error}`,
+          `${via} — ${result.ok ? "" : result.error}`,
       );
     }
     processed++;
   }
 
   if (processed > 0) {
-    console.log(`funnel follow-up: attempted ${processed} message(s) via ${dispatcher.name}`);
+    // Counted per channel for the same reason: "attempted 1 message(s) via
+    // log-only" was printed after a WhatsApp message had genuinely been
+    // delivered through Evolution, which reads as a failure and is not one.
+    const wa = due.filter((r) => r.channel === "whatsapp").length;
+    const mail = due.length - wa;
+    const parts = [
+      wa > 0 ? `${wa} via ${getWhatsAppSender().name}` : null,
+      mail > 0 ? `${mail} via ${dispatcher.name}` : null,
+    ].filter(Boolean);
+    console.log(`funnel follow-up: attempted ${processed} message(s) — ${parts.join(", ")}`);
   }
   return processed;
 }

@@ -128,13 +128,34 @@ export class EvolutionGoSender implements WhatsAppSender {
     // contractual. Parsed defensively across the shapes it is known to take —
     // and a successful send whose id we cannot read is STILL a successful send,
     // so it must never be reported as a failure and retried.
+    // `data.Info.ID` first, because that is what a real 200 actually contains.
+    // Confirmed 2026-08-09 from a live send: Evolution GO returns whatsmeow's
+    // envelope, `{"data":{"Info":{"ID":…,"Chat":"…@s.whatsapp.net","Sender":…,
+    // "IsFromMe":true,…}}}`. The earlier guesses below are kept as fallbacks —
+    // the spec types this as an untyped `gin.H`, so the shape is not
+    // contractual and a version bump could move it.
     let id = "";
     try {
       const json = JSON.parse(text) as {
-        data?: { id?: string; key?: { id?: string }; Id?: string; ID?: string };
+        data?: {
+          Info?: { ID?: string; Id?: string; id?: string };
+          id?: string;
+          key?: { id?: string };
+          Id?: string;
+          ID?: string;
+        };
         id?: string;
       };
-      id = json.data?.id ?? json.data?.key?.id ?? json.data?.Id ?? json.data?.ID ?? json.id ?? "";
+      id =
+        json.data?.Info?.ID ??
+        json.data?.Info?.Id ??
+        json.data?.Info?.id ??
+        json.data?.id ??
+        json.data?.key?.id ??
+        json.data?.Id ??
+        json.data?.ID ??
+        json.id ??
+        "";
     } catch {
       /* non-JSON success body; keep the empty id */
     }
