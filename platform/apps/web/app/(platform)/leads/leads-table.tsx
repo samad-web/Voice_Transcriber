@@ -90,23 +90,20 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
   const countFor = (id: Filter) =>
     id === "all" ? present.length : present.filter((l) => l.status === id).length;
 
-  if (initial.length === 0) {
-    return (
-      <Card>
-        <p className="text-sm font-medium text-text">No open enquiries.</p>
-        <p className="mt-1 text-xs text-text-muted">
-          New submissions from the marketing site appear here as they arrive.
-        </p>
-      </Card>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-3">
       {/* Each filter carries its own count, so "how many didn't qualify" is
           answered without pressing anything. A tab that would show nothing is
           disabled rather than hidden — a disappearing tab reads as a bug, and
-          the zero is itself the answer to the question. */}
+          the zero is itself the answer to the question.
+
+          RENDERED EVEN WHEN THERE ARE NO LEADS AT ALL. An early return used to
+          replace this whole block with the empty-state card, which hid the
+          filters at precisely the moment someone goes looking for them — an
+          operator asking "where do I see the ones that didn't qualify?" saw no
+          answer and reasonably concluded the feature was missing. Four tabs
+          reading (0) say what the empty card cannot: the views exist, and they
+          are empty because nothing has come in. */}
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => {
           const n = countFor(f.id);
@@ -132,7 +129,11 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
 
       {/* Bulk delete. Two presses, and the second one names the number, because
           this is the only irreversible action on the page and the row count is
-          the fact an operator needs to sanity-check before pressing it. */}
+          the fact an operator needs to sanity-check before pressing it.
+
+          Hidden when there is nothing to delete: a destructive control offering
+          to remove zero rows is noise on an empty page. */}
+      {present.length > 0 ? (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg-subtle px-4 py-3">
         <p className="text-xs text-text-muted">
           {visible.length} enquiry{visible.length === 1 ? "" : "s"} shown. Deleting removes them
@@ -180,11 +181,28 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
           </button>
         )}
       </div>
+      ) : null}
 
       {deleteNote ? (
         <p role="status" className="rounded-md border border-border bg-bg-subtle p-3 text-xs text-text">
           {deleteNote}
         </p>
+      ) : null}
+
+      {/* The empty state now sits UNDER the tabs rather than replacing them, and
+          says which of two different situations this is: nothing has come in at
+          all, or nothing matches the tab currently selected. */}
+      {visible.length === 0 ? (
+        <Card>
+          <p className="text-sm font-medium text-text">
+            {present.length === 0 ? "No enquiries yet." : "Nothing in this view."}
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            {present.length === 0
+              ? "Submissions from the marketing site appear here as they arrive, qualified or not."
+              : "Every enquiry so far falls under one of the other tabs."}
+          </p>
+        </Card>
       ) : null}
 
       {visible.map((lead) => {
