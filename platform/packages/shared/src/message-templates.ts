@@ -109,7 +109,11 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     allowedPlaceholders: ["first_name", "name", "slot", "meet_link"],
     live: false,
     blockedBy:
-      "Booking works, but it sends nothing. This copy is new — the stage has never had a message.",
+      "OFF BY DECISION, not by omission — the owner asked on 2026-08-09 that nobody " +
+      "who books a call be messaged. Booking works and sends nothing. Editing this " +
+      "copy changes what WOULD be sent if it were switched on; it does not switch it on. " +
+      "Turning it on means calling enqueueFollowUp(..., 'booking_confirmed', 'whatsapp') " +
+      "from the worker — the website role holds no grant on the outbox and cannot do it.",
     whatsapp:
       "Hi {{first_name}}, your call with Aura is confirmed for {{slot}}. " +
       "Join here: {{meet_link}} . If that time stops working, reply here and we'll move it.",
