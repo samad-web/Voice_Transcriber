@@ -158,6 +158,11 @@ services:
       # an event the LEAD is actually invited to — a service account cannot add
       # attendees without domain-wide delegation acting as a real mailbox.
       GOOGLE_CALENDAR_IMPERSONATE_SUBJECT: ${GOOGLE_CALENDAR_IMPERSONATE_SUBJECT:-}
+      # Calendars consulted for availability but never written to. Required when
+      # GOOGLE_CALENDAR_ID is a calendar the service account owns rather than the
+      # team's real one — otherwise the picker sees only its own empty calendar
+      # and offers times the team is already busy. Read access is enough.
+      GOOGLE_BUSY_CALENDAR_IDS: ${GOOGLE_BUSY_CALENDAR_IDS:-}
       # Booking slot generation defaults. All optional.
       SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Kolkata}
       SCHEDULER_SLOT_MINUTES: ${SCHEDULER_SLOT_MINUTES:-}

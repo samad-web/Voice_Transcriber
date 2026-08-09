@@ -29,7 +29,21 @@ export { UnavailableScheduler } from "./unavailable";
    Optional:
      GOOGLE_CALENDAR_IMPERSONATE_SUBJECT     Workspace mailbox to act as. Without
                                              it the lead gets NO calendar invite
+                                             AND NO MEET LINK is requested — a
+                                             bare service account has no Meet
+                                             entitlement and Google rejects the
+                                             whole insert if one is asked for
                                              (see google-calendar.ts note 4).
+     GOOGLE_BUSY_CALENDAR_IDS   Comma-separated calendars consulted for
+                                availability but never written to. Needed when
+                                GOOGLE_CALENDAR_ID is a calendar the service
+                                account owns rather than the team's real one:
+                                without it the picker knows only about its own
+                                empty calendar and offers times the team is
+                                already busy. READ ACCESS IS ENOUGH, which is
+                                the point — a domain that refuses to share a
+                                calendar for writing will usually still share
+                                it for reading.
      SCHEDULER_TIMEZONE      default Asia/Kolkata — the sales team's zone, and
                              the only one the business hours below mean anything
                              in. Not the visitor's and not the server's.
@@ -78,6 +92,10 @@ function readConfig(): GoogleCalendarConfig | { missing: string } {
     // A PEM pasted into a .env keeps its newlines as the two characters \ and n.
     privateKey: rawKey.includes("\\n") ? rawKey.replace(/\\n/g, "\n") : rawKey,
     impersonateSubject: process.env.GOOGLE_CALENDAR_IMPERSONATE_SUBJECT?.trim() || undefined,
+    busyCalendarIds: (process.env.GOOGLE_BUSY_CALENDAR_IDS ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
     timeZone: process.env.SCHEDULER_TIMEZONE?.trim() || "Asia/Kolkata",
     slotMinutes: positiveInt(process.env.SCHEDULER_SLOT_MINUTES, 30),
     dayStartMinutes,
