@@ -54,6 +54,12 @@ ENV NEXT_PUBLIC_WHATSAPP_NUMBER=$NEXT_PUBLIC_WHATSAPP_NUMBER
 # Meta Pixel id. Absent means no pixel and no Lead event.
 ARG NEXT_PUBLIC_META_PIXEL_ID
 ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
+# Google Tag Manager container, GTM-XXXXXXX. Absent means no container loads.
+# Both of these are read at BUILD time by Next and inlined into the client
+# bundle, so setting them on the running container does nothing at all — a
+# changed id needs a rebuild, not a restart.
+ARG NEXT_PUBLIC_GTM_ID
+ENV NEXT_PUBLIC_GTM_ID=$NEXT_PUBLIC_GTM_ID
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter "@aura/marketing..." build
 

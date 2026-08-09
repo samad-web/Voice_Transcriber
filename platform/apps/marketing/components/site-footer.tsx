@@ -38,17 +38,20 @@ const LIVE = [
 ];
 
 /**
- * The three legal documents, split by whether they can actually be published.
+ * The legal documents that are actually publishable.
  *
  * DERIVED, not hand-listed. Each page carries a `ready` flag from lib/legal.ts,
  * which is false while any company fact it needs is unset — and the pages
- * themselves 404 on the same flag. So the footer cannot link a 404, and cannot
- * keep saying "not yet published" about a document that went live, because both
- * facts come from one place. The previous hand-maintained PENDING array was one
- * edit away from either failure.
+ * themselves 404 on the same flag. So the footer cannot link a 404, and a
+ * document that goes live appears here without anyone remembering to add it.
+ *
+ * Unready documents are now simply ABSENT. They used to be listed greyed out as
+ * "in legal review, not yet published", which was honest but drew the eye to
+ * three things the site does not have; a visitor reads it as missing paperwork
+ * rather than as work in progress. /security carries the substantive
+ * data-handling disclosure in the meantime, and it is linked above.
  */
 const legalLive = LEGAL_PAGES.filter((p) => p.ready);
-const legalPending = LEGAL_PAGES.filter((p) => !p.ready);
 
 export function SiteFooter() {
   const year = new Date().getFullYear();
@@ -94,11 +97,6 @@ export function SiteFooter() {
               {legalLive.map((l) => (
                 <li key={l.href}>
                   <FooterLink href={l.href}>{l.label}</FooterLink>
-                </li>
-              ))}
-              {legalPending.map((l) => (
-                <li key={l.href} className="text-base text-text-muted">
-                  {l.label} <span className="text-sm">(in legal review, not yet published)</span>
                 </li>
               ))}
             </ul>

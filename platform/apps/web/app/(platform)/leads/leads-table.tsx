@@ -13,7 +13,38 @@ import { RejectPanel } from "./reject-panel";
  * form post that re-rendered the page would show the key once in a flash and
  * then lose it on the next navigation, and the key cannot be re-fetched.
  */
+/**
+ * How the funnel's own verdict reads to an operator.
+ *
+ * `status` is set by qualify() in packages/shared/src/funnel.ts and by the
+ * convert/reject endpoints. It was returned by the API from the start and shown
+ * nowhere, so a disqualified enquiry looked identical to a qualified one and the
+ * only way to tell them apart was to read the budget field and re-apply the
+ * rules from memory.
+ *
+ * "Didn't qualify" rather than "Disqualified": these are people, the operator
+ * may well call them anyway, and the funnel's rules are a filter for who gets
+ * offered a slot automatically — not a judgement anyone should read as final.
+ */
+const STATUS_LABELS: Record<string, { label: string; tone: "solid" | "muted" | "danger" }> = {
+  qualified: { label: "Qualified", tone: "solid" },
+  disqualified: { label: "Didn’t qualify", tone: "muted" },
+  contact_captured: { label: "Didn’t finish", tone: "muted" },
+  converted: { label: "Converted", tone: "solid" },
+  rejected: { label: "Rejected", tone: "danger" },
+};
+
+type Filter = "all" | "qualified" | "disqualified" | "contact_captured";
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "qualified", label: "Qualified" },
+  { id: "disqualified", label: "Didn’t qualify" },
+  { id: "contact_captured", label: "Didn’t finish" },
+];
+
 export function LeadsTable({ initial }: { initial: Lead[] }) {
+  const [filter, setFilter] = useState<Filter>("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [converted, setConverted] = useState<Set<string>>(new Set());
@@ -50,7 +81,14 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
       setDeleteNote(`${parts.join(" · ")}.`);
     });
 
-  const visible = initial.filter((l) => !gone.has(l.id));
+  // Filtering is client-side on purpose: the list is capped at 200 rows by the
+  // API, all of them are already here, and a round trip per tab would make a
+  // free switch feel like a page load.
+  const present = initial.filter((l) => !gone.has(l.id));
+  const visible = filter === "all" ? present : present.filter((l) => l.status === filter);
+
+  const countFor = (id: Filter) =>
+    id === "all" ? present.length : present.filter((l) => l.status === id).length;
 
   if (initial.length === 0) {
     return (
@@ -65,6 +103,33 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Each filter carries its own count, so "how many didn't qualify" is
+          answered without pressing anything. A tab that would show nothing is
+          disabled rather than hidden — a disappearing tab reads as a bug, and
+          the zero is itself the answer to the question. */}
+      <div className="flex flex-wrap gap-1.5">
+        {FILTERS.map((f) => {
+          const n = countFor(f.id);
+          const active = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              disabled={n === 0 && f.id !== "all"}
+              onClick={() => setFilter(f.id)}
+              className={
+                "h-9 rounded-md border px-3 text-sm font-medium transition-colors disabled:opacity-40 " +
+                (active
+                  ? "border-accent bg-accent/10 text-text"
+                  : "border-border text-text-muted hover:bg-surface-hover hover:text-text")
+              }
+            >
+              {f.label} ({n})
+            </button>
+          );
+        })}
+      </div>
+
       {/* Bulk delete. Two presses, and the second one names the number, because
           this is the only irreversible action on the page and the row count is
           the fact an operator needs to sanity-check before pressing it. */}
@@ -75,13 +140,26 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
         </p>
         {confirmAll ? (
           <div className="flex items-center gap-2">
+            {/* The scope FOLLOWS THE FILTER. `scope: "all"` on the API means
+                every enquiry in the table, not every row on screen — so with a
+                filter applied it would delete the ones being looked at plus all
+                the ones being hidden. Filtered views delete by explicit id
+                instead, which is exactly the rows the count names. */}
             <button
               type="button"
               disabled={pending}
-              onClick={() => runDelete("all")}
+              onClick={() =>
+                filter === "all"
+                  ? runDelete("all")
+                  : runDelete("selected", visible.map((l) => l.id))
+              }
               className="h-9 rounded-md bg-danger px-3 text-sm font-medium text-danger-fg hover:opacity-90"
             >
-              {pending ? "Deleting…" : `Yes, delete all ${visible.length}`}
+              {pending
+                ? "Deleting…"
+                : filter === "all"
+                  ? `Yes, delete all ${visible.length}`
+                  : `Yes, delete these ${visible.length}`}
             </button>
             <button
               type="button"
@@ -98,7 +176,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
             onClick={() => setConfirmAll(true)}
             className="h-9 rounded-md border border-danger/40 px-3 text-sm font-medium text-danger-text hover:bg-danger/5"
           >
-            Delete all
+            {filter === "all" ? "Delete all" : "Delete these"}
           </button>
         )}
       </div>
@@ -118,6 +196,15 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-semibold text-text">{lead.name}</p>
+                  {/* The funnel's verdict, from the stored row. Suppressed once
+                      this session has converted or rejected the lead, because
+                      those chips are rendered below from local state and are
+                      newer than the `status` the page was loaded with. */}
+                  {!done && !isRejected && STATUS_LABELS[lead.status] ? (
+                    <StatusChip tone={STATUS_LABELS[lead.status].tone}>
+                      {STATUS_LABELS[lead.status].label}
+                    </StatusChip>
+                  ) : null}
                   {done ? <StatusChip tone="solid">Converted</StatusChip> : null}
                   {isRejected ? <StatusChip tone="danger">Rejected</StatusChip> : null}
                   {lead.wants_custom_crm === "yes" ? (

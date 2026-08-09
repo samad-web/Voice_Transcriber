@@ -4,3 +4,11 @@ graphify-out/
 
 # Claude Code machine-local settings (permissions etc.) — never commit
 .claude/settings.local.json
+
+# Google service-account key files. They land in the repo root because that is
+# where a browser download gets dragged, and they are untracked-but-not-ignored
+# by default, which means `git add -A` commits a live private key. The name is
+# always <project-id>-<key-id>.json.
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
+gcp-*.json
+service-account*.json

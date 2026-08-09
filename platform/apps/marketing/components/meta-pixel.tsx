@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Script from "next/script";
-import { CONSENT_EVENT, readConsent, type ConsentChoice } from "@/lib/consent-state";
 
 /**
  * Meta (Facebook) Pixel.
@@ -25,21 +23,22 @@ import { CONSENT_EVENT, readConsent, type ConsentChoice } from "@/lib/consent-st
  * ships before the policy does, the site is tracking visitors while telling
  * them nothing, which is the wrong order.
  *
- * ── IT DOES NOT LOAD UNTIL THE VISITOR AGREES ──────────────────────────────
+ * ── IT FIRES ON LOAD, WITH NO CONSENT PROMPT ───────────────────────────────
  *
- * An advertising pixel is not "strictly necessary", so under India's DPDP Act
- * and the GDPR it needs consent BEFORE it runs, not a notice afterwards. It
- * shipped without a gate on 2026-08-09 and this closes that, same day.
+ * Changed 2026-08-09 on the owner's instruction, reversing the gate added
+ * earlier the same day. The pixel and GTM now load for every visitor as soon as
+ * the page is interactive.
  *
- * Nothing here renders while the answer is unknown or denied: no script tag, no
- * `noscript` tracking pixel, no request to Meta at all. The common pattern is to
- * load the tracker and ask afterwards, which makes the question decorative and
- * the consent worthless; if the answer arrives later, the `CONSENT_EVENT`
- * listener mounts the script then, with no page reload.
+ * What that trades away, recorded here because the code no longer shows it:
+ * an advertising pixel is not "strictly necessary", so India's DPDP Act 2023
+ * and the GDPR both expect consent BEFORE it runs rather than a notice
+ * afterwards. Firing unprompted is the common practice and it is the site
+ * owner's call as data controller, but it is a compliance exposure that the
+ * disclosure on /security mitigates and does not remove.
  *
- * The `noscript` <img> is inside the gate too, and that is not an oversight to
- * fix — it is a tracking request in its own right, and a visitor with
- * JavaScript disabled is precisely the one who cannot have clicked Accept.
+ * The consent banner was REMOVED rather than left in place. A banner whose
+ * Decline button no longer stops anything is worse than no banner: it tells the
+ * visitor a falsehood in writing. /security still describes what the pixel does.
  */
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID?.trim();
@@ -47,22 +46,14 @@ const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID?.trim();
 declare global {
   interface Window {
     fbq?: ((...args: unknown[]) => void) & { queue?: unknown[] };
+    dataLayer?: unknown[];
   }
 }
 
 export function MetaPixel() {
-  const [choice, setChoice] = useState<ConsentChoice>("unknown");
-
-  useEffect(() => {
-    setChoice(readConsent());
-    const onChange = (e: Event) => setChoice((e as CustomEvent).detail as ConsentChoice);
-    window.addEventListener(CONSENT_EVENT, onChange);
-    return () => window.removeEventListener(CONSENT_EVENT, onChange);
-  }, []);
-
-  // Two independent gates. The id is a deployment decision (production only);
-  // the choice is the visitor's. Either one alone is enough to load nothing.
-  if (!PIXEL_ID || choice !== "granted") return null;
+  // The one remaining gate is the deployment's, not the visitor's: no id means
+  // no pixel, which keeps localhost and preview builds out of the ad dataset.
+  if (!PIXEL_ID) return null;
 
   return (
     <>
@@ -113,6 +104,11 @@ export function trackLead(): void {
   if (typeof window === "undefined") return;
   try {
     window.fbq?.("track", "Lead");
+    // GTM's own conversion signal. Pushed unconditionally: `dataLayer` is a
+    // plain array that the GTM snippet drains when it loads, so a push made
+    // before or without GTM is harmless rather than lost. Build a "Custom
+    // Event" trigger on `aura_lead` in the GTM container to fire tags from it.
+    (window.dataLayer ??= []).push({ event: "aura_lead" });
   } catch {
     // Analytics must never be able to break a booking that has already
     // happened. The row is in the database either way.
