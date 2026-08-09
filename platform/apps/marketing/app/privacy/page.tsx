@@ -111,28 +111,37 @@ export default function PrivacyPage() {
 
       <h3 id="what-we-collect">3. What we collect, and why</h3>
       <p>
-        There is no session recorder, no embedded video and no chat widget on this site, and our
-        fonts are served from our own servers rather than Google&rsquo;s.
+        There is no chat widget on this site, and our fonts are served from our own servers
+        rather than Google&rsquo;s.
       </p>
       <p>
-        <strong>We use the Meta (Facebook) advertising pixel, and only if you accept it.</strong>{" "}
-        We ask before it loads; until you say yes, no script runs and no request reaches Meta.
-        Declining is remembered and we do not ask again. Nothing on this site needs it, so
-        declining changes nothing about how it works.
+        <strong>
+          We use the Meta (Facebook) advertising pixel, Google Tag Manager and Microsoft Clarity,
+          and none of them wait for your consent.
+        </strong>{" "}
+        They load on every page view, for every visitor, as soon as the page is interactive. We
+        do not ask first, and there is no control on this site to opt out.
       </p>
       <p>
-        <strong>Lawful basis:</strong> your consent, given by pressing Accept. An advertising
-        tracker is not necessary for this site to function, so we do not treat it as something
-        you can be assumed to have agreed to.
+        <strong>Lawful basis:</strong> legitimate interest, as the site owner, in measuring
+        advertising performance and understanding how the site is used. We are not relying on
+        your consent for these three.
       </p>
       <p>
-        When it is on, it tells Meta that a browser visited a page here, and separately when
-        someone books a call. Meta receives your IP address and a cookie identifier, and may link
-        those to a Facebook or Instagram account it already holds. We do not send it your name,
-        email address or phone number. You can withdraw consent at any time by clearing this
-        site&rsquo;s storage in your browser, and Meta&rsquo;s own controls are at{" "}
+        The Meta pixel and Google Tag Manager tell Meta and Google that a browser visited a page
+        here, and separately when someone books a call. They receive your IP address and a cookie
+        identifier, and Meta may link those to a Facebook or Instagram account it already holds.
+        Microsoft Clarity records how visitors use this site — page views, clicks and scrolling —
+        as session recordings and heatmaps, and receives your IP address, browser and device
+        details. Clarity masks form input by default; we do not configure it to record what you
+        type into the enquiry form. We do not send any of the three your name, email address or
+        phone number. Their own controls are at{" "}
         <a href="https://www.facebook.com/adpreferences" rel="nofollow noreferrer">
           facebook.com/adpreferences
+        </a>{" "}
+        and{" "}
+        <a href="https://clarity.microsoft.com/" rel="nofollow noreferrer">
+          clarity.microsoft.com
         </a>
         .
       </p>
@@ -240,9 +249,9 @@ export default function PrivacyPage() {
       </p>
       <p>
         We do not use it for analytics or advertising. It is strictly necessary for the form to
-        work, which is why you are not asked to consent to it separately. The Meta pixel
-        described in §3 sets its own cookies, which are not ours and are not covered by that
-        exemption.
+        work, which is why you are not asked to consent to it separately. The Meta pixel, Google
+        Tag Manager and Microsoft Clarity described in §3 set their own cookies, which are not
+        ours and are not covered by that exemption.
       </p>
 
       <h3 id="retention">5. How long we keep your enquiry</h3>

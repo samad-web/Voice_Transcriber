@@ -5,6 +5,7 @@ import { SiteHeader, SkipLink } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { MetaPixel } from "@/components/meta-pixel";
 import { GoogleTagManager } from "@/components/google-tag-manager";
+import { MicrosoftClarity } from "@/components/microsoft-clarity";
 import { BRAND, SITE_URL } from "@/lib/site";
 
 /**
@@ -61,15 +62,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteHeader />
         <main id="main">{children}</main>
         <SiteFooter />
-        {/* Both fire on load. Each renders nothing unless its own id is set at
-            BUILD time (NEXT_PUBLIC_META_PIXEL_ID / NEXT_PUBLIC_GTM_ID), so a
-            developer machine or preview build sends no events anywhere.
+        {/* All three fire on load. Each renders nothing unless its own id is
+            set at BUILD time (NEXT_PUBLIC_META_PIXEL_ID / NEXT_PUBLIC_GTM_ID /
+            NEXT_PUBLIC_CLARITY_PROJECT_ID), so a developer machine or preview
+            build sends no events anywhere.
 
             The consent banner that used to sit here was removed when the gate
             came off: a Decline button that stops nothing is a written promise
             the site does not keep. /security still discloses what these do. */}
         <MetaPixel />
         <GoogleTagManager />
+        <MicrosoftClarity />
       </body>
     </html>
   );

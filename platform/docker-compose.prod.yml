@@ -112,12 +112,14 @@ services:
         # only a rebuild fixes it.
         NEXT_PUBLIC_SITE_URL: https://${SITE_DOMAIN}
         NEXT_PUBLIC_WHATSAPP_NUMBER: ${NEXT_PUBLIC_WHATSAPP_NUMBER:-}
-        # Meta Pixel and Google Tag Manager. Unset means neither loads and the
-        # Lead event is a no-op, which is what preview and local builds want.
-        # Both fire on page load with no consent prompt (owner's decision,
-        # 2026-08-09) — see the note in components/meta-pixel.tsx.
+        # Meta Pixel, Google Tag Manager and Microsoft Clarity. Unset means
+        # none of them load and the Lead event is a no-op, which is what
+        # preview and local builds want. All three fire on page load with no
+        # consent prompt (owner's decision, 2026-08-09) — see the note in
+        # components/meta-pixel.tsx.
         NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
         NEXT_PUBLIC_GTM_ID: ${NEXT_PUBLIC_GTM_ID:-}
+        NEXT_PUBLIC_CLARITY_PROJECT_ID: ${NEXT_PUBLIC_CLARITY_PROJECT_ID:-}
     image: aura-marketing:latest
     restart: unless-stopped
     # ── DELIBERATELY NOT `env_file: .env.production` ──────────────────────

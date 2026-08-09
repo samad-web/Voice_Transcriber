@@ -264,47 +264,63 @@ export default function SecurityPage() {
         </div>
       </Section>
 
-      {/* The pixel disclosure lives HERE, not only in the privacy policy.
+      {/* The tracking disclosure lives HERE, not only in the privacy policy.
           /privacy is gated behind lib/legal.ts until the company facts exist,
-          so it currently 404s — and the pixel is live. Putting the disclosure
-          only there would mean the site tracks visitors and tells them nothing
-          until an unrelated blocker clears. This page is published today.
-          The consent banner links to #advertising below. */}
+          so it currently 404s — and these trackers are live. Putting the
+          disclosure only there would mean the site tracks visitors and tells
+          them nothing until an unrelated blocker clears. This page is
+          published today.
+
+          Updated 2026-08-09: the consent gate and banner were removed
+          (owner's instruction, see components/meta-pixel.tsx) and Microsoft
+          Clarity was added alongside the Meta pixel and GTM. This section no
+          longer says "does not load until you accept it" or "no session
+          recorder" — both stopped being true the same day, and a disclosure
+          page that still claimed otherwise would be worse than no page. */}
       <Section id="advertising" tone="subtle" labelledBy="adv-heading">
         <SectionHeading
           id="adv-heading"
           as="h2"
           title="Advertising and tracking"
-          lead="One third-party tracker, and it does not load unless you say yes."
+          lead="Three third-party trackers, and they load for every visitor."
         />
         <Prose className="mt-6">
           <p>
-            We use the <strong>Meta (Facebook) advertising pixel</strong> to measure which of our
-            advertisements bring people to this site, and to show advertisements to people who
-            have visited. It tells Meta that a browser visited a page here, and separately when
-            someone books a call.
+            We use the <strong>Meta (Facebook) advertising pixel</strong> and{" "}
+            <strong>Google Tag Manager</strong> to measure which of our advertisements bring
+            people to this site, and to show advertisements to people who have visited. They
+            tell Meta and Google that a browser visited a page here, and separately when someone
+            books a call.
           </p>
           <p>
-            <strong>It does not load until you accept it.</strong> Until then no script runs and
-            no request reaches Meta at all. If you decline, we remember that and do not ask
-            again. Nothing on this site needs it, so declining changes nothing about how it
-            works.
+            We also use <strong>Microsoft Clarity</strong> to record how visitors use this site —
+            page views, clicks and scrolling, replayed as session recordings and aggregated into
+            heatmaps. Clarity masks form input by default; we do not configure it to record what
+            you type into the enquiry form.
           </p>
           <p>
-            When it is on, Meta receives your IP address and a cookie identifier, and may link
-            those to a Facebook or Instagram account it already holds. We do not send it your
-            name, email address or phone number. You can change your mind at any time by clearing
-            this site&rsquo;s storage in your browser, and Meta&rsquo;s own controls are at{" "}
+            <strong>None of these wait for your consent before loading.</strong> They start on
+            every page view, for every visitor, as soon as the page is interactive. We do not ask
+            first and there is no control on this site to opt out — Meta&rsquo;s and
+            Microsoft&rsquo;s own controls, linked below, are the way to limit what each of them
+            does with your data.
+          </p>
+          <p>
+            The Meta pixel and Google Tag Manager receive your IP address and a cookie
+            identifier, and Meta may link those to a Facebook or Instagram account it already
+            holds. Microsoft Clarity receives your IP address, browser and device details, and
+            the masked interaction data described above. We do not send any of them your name,
+            email address or phone number through these trackers. Meta&rsquo;s controls are at{" "}
             <TextLink href="https://www.facebook.com/adpreferences">
               facebook.com/adpreferences
-            </TextLink>
-            .
+            </TextLink>{" "}
+            and Microsoft&rsquo;s at{" "}
+            <TextLink href="https://clarity.microsoft.com/">clarity.microsoft.com</TextLink>.
           </p>
           <p>
-            Beyond that, there is no analytics package, no session recorder, no embedded video
-            and no chat widget on this site, and our fonts are served from our own servers rather
-            than Google&rsquo;s. The one cookie we set ourselves carries step 1 of the enquiry
-            form into step 2, lasts two hours, and is not used to track you.
+            Beyond that, there is no chat widget on this site, and our fonts are served from our
+            own servers rather than Google&rsquo;s. The one cookie we set ourselves carries step 1
+            of the enquiry form into step 2, lasts two hours, and is not used to track you.
           </p>
         </Prose>
       </Section>

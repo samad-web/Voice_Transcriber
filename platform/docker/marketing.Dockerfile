@@ -55,11 +55,14 @@ ENV NEXT_PUBLIC_WHATSAPP_NUMBER=$NEXT_PUBLIC_WHATSAPP_NUMBER
 ARG NEXT_PUBLIC_META_PIXEL_ID
 ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
 # Google Tag Manager container, GTM-XXXXXXX. Absent means no container loads.
-# Both of these are read at BUILD time by Next and inlined into the client
-# bundle, so setting them on the running container does nothing at all — a
-# changed id needs a rebuild, not a restart.
+# All three of these are read at BUILD time by Next and inlined into the
+# client bundle, so setting them on the running container does nothing at
+# all — a changed id needs a rebuild, not a restart.
 ARG NEXT_PUBLIC_GTM_ID
 ENV NEXT_PUBLIC_GTM_ID=$NEXT_PUBLIC_GTM_ID
+# Microsoft Clarity project id. Absent means no session recording loads.
+ARG NEXT_PUBLIC_CLARITY_PROJECT_ID
+ENV NEXT_PUBLIC_CLARITY_PROJECT_ID=$NEXT_PUBLIC_CLARITY_PROJECT_ID
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter "@aura/marketing..." build
 
