@@ -370,9 +370,23 @@ export function qualify(answers: QualificationAnswers): QualificationResult {
   return {
     status,
     routeToHuman,
-    // No longer `&& !routeToHuman`. Someone who earned a slot on budget and
-    // intent keeps it whether or not they also asked for information.
-    mayBookSlot: status === "qualified",
+    /**
+     * EVERYONE who finishes the questions may book. Changed 2026-08-10 on the
+     * owner's instruction, from `status === "qualified"`.
+     *
+     * The qualifier no longer decides who gets a conversation, only how the
+     * conversation is described in the console. Someone below the budget floor
+     * may still be worth thirty minutes, and the previous rule sent them away
+     * with a "we'll be in touch" that nothing ever acted on — the follow-up
+     * templates for that path have never been live, so a disqualified enquirer
+     * heard from us exactly never.
+     *
+     * `status` is untouched and still drives the chips and filters in the
+     * console, so an operator can see at a glance that a booked call came from
+     * someone who did not qualify — and reject it, which now releases the slot
+     * AND deletes the calendar event.
+     */
+    mayBookSlot: true,
     reasons,
   };
 }

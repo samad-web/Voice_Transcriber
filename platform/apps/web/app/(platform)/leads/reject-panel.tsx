@@ -41,7 +41,8 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
     queuedEmail?: boolean;
     queuedWhatsapp?: boolean;
     releasedSlots?: Array<{ id: string; startsAt: string }>;
-    orphanedCalendarEvents?: string[];
+    cancelledCalendarEvents?: string[];
+    orphanedCalendarEvents?: Array<{ eventId: string; error: string }>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -105,16 +106,29 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
           </p>
         ) : null}
 
-        {/* Only reachable once Google Calendar is configured. The API cannot
-            delete the event — the calendar client lives in the marketing app —
-            so this is honest about what is left to do rather than leaving an
-            event to outlive the booking silently. */}
+        {/* The meeting is now cancelled in Google as part of rejecting, rather
+            than handed back as a chore. Said out loud because the operator is
+            about to stop thinking about this lead, and "the call is off" is the
+            fact they need before they do. */}
+        {result.cancelledCalendarEvents && result.cancelledCalendarEvents.length > 0 ? (
+          <p className="mt-2 text-xs text-text-muted">
+            {result.cancelledCalendarEvents.length === 1
+              ? "The calendar event was cancelled."
+              : `${result.cancelledCalendarEvents.length} calendar events were cancelled.`}
+          </p>
+        ) : null}
+
+        {/* Only when Google actually refused. Rare, and the one case where a
+            human still has to go and look. */}
         {result.orphanedCalendarEvents && result.orphanedCalendarEvents.length > 0 ? (
           <p className="mt-2 rounded-md border border-warning/40 bg-warning-subtle p-2.5 text-xs text-warning-text">
             <strong className="font-semibold">Remove the calendar event by hand.</strong> The slot
-            was released here, but the Google Calendar event still exists and we cannot delete it
-            from this console:{" "}
-            <code>{result.orphanedCalendarEvents.join(", ")}</code>
+            was released and we tried to cancel the meeting, but Google refused:{" "}
+            {result.orphanedCalendarEvents.map((e) => (
+              <code key={e.eventId} className="mr-2">
+                {e.eventId} ({e.error})
+              </code>
+            ))}
           </p>
         ) : null}
 

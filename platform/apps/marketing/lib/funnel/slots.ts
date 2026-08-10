@@ -39,6 +39,16 @@ export interface OpenSlot {
 }
 
 /**
+ * How far ahead a slot must be before anyone can take it.
+ *
+ * FOUR HOURS, set 2026-08-10 on the owner's instruction (was two). Overridable
+ * with SCHEDULER_MIN_NOTICE_MINUTES, and this is the floor the code assumes
+ * when nothing is set — the two places that need it agree because they both
+ * read this constant rather than repeating a number.
+ */
+export const DEFAULT_NOTICE_MINUTES = 240;
+
+/**
  * The next few genuinely bookable slots.
  *
  * `starts_at > now() + notice` is not decoration. Offering a slot twenty minutes
@@ -48,7 +58,7 @@ export interface OpenSlot {
  */
 export async function listOpenSlots(
   timeZone: string,
-  noticeMinutes = 120,
+  noticeMinutes = DEFAULT_NOTICE_MINUTES,
   limit = 12,
 ): Promise<OpenSlot[]> {
   const rows = await query<{
@@ -103,12 +113,27 @@ export type BookResult =
  * The loser is told plainly that the time went. Silently booking them into the
  * next slot instead would be the kind of helpfulness nobody asked for, and they
  * would turn up at the wrong time.
+ *
+ * ── THE NOTICE WINDOW IS CHECKED HERE TOO, NOT ONLY IN listOpenSlots ───────
+ *
+ * The claim used to guard on `starts_at > now()`, which only rules out a slot
+ * that has already begun. The picker is rendered once and can sit on screen for
+ * as long as the visitor likes — read the page at 09:00, choose 13:00, submit
+ * at 12:30 — so the minimum-notice rule was enforceable only at the moment the
+ * list was drawn, and a booking inside the window was reachable by doing
+ * nothing more unusual than hesitating. Both queries now apply the same
+ * interval, so the guarantee holds at the point it actually matters.
+ *
+ * A slot lost this way returns `taken`, which is the honest answer from the
+ * visitor's side: the time is no longer available to them, and the picker
+ * re-renders with what is.
  */
 export async function bookSlot(
   slotId: string,
   submissionId: string,
   name: string,
   timeZone: string,
+  noticeMinutes = DEFAULT_NOTICE_MINUTES,
 ): Promise<BookResult> {
   const rows = await query<{
     day_label: string;
@@ -123,11 +148,11 @@ export async function bookSlot(
             booked_name = $3
       WHERE id = $1
         AND status = 'open'
-        AND starts_at > now()
+        AND starts_at > now() + make_interval(mins => $5)
     RETURNING to_char(starts_at AT TIME ZONE $4, 'Dy, DD Mon') AS day_label,
               to_char(starts_at AT TIME ZONE $4, 'HH24:MI')    AS time_label,
               starts_at, ends_at`,
-    [slotId, submissionId, name.slice(0, 200), timeZone],
+    [slotId, submissionId, name.slice(0, 200), timeZone, noticeMinutes],
   );
 
   if (rows.length === 0) return { ok: false, reason: "taken" };

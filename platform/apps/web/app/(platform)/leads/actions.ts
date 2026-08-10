@@ -208,7 +208,10 @@ export async function convertLeadAction(input: {
 export interface DeleteLeadsResult {
   deleted?: number;
   slotsReleased?: number;
-  orphanedCalendarEvents?: string[];
+  /** Events Google no longer holds — cancelled now, or already gone. */
+  cancelledCalendarEvents?: string[];
+  /** Still present in Google, and a human has to remove them. */
+  orphanedCalendarEvents?: { eventId: string; error: string }[];
   error?: string;
 }
 
@@ -250,6 +253,7 @@ export async function deleteLeadsAction(input: {
     return {
       deleted: data.deleted ?? 0,
       slotsReleased: data.slotsReleased ?? 0,
+      cancelledCalendarEvents: data.cancelledCalendarEvents ?? [],
       orphanedCalendarEvents: data.orphanedCalendarEvents ?? [],
     };
   } catch {
@@ -264,7 +268,10 @@ export interface RejectResult {
   /** Booked calls handed back to the diary. Usually none. */
   releasedSlots?: Array<{ id: string; startsAt: string }>;
   /** Google Calendar events the API could not delete — see the reject panel. */
-  orphanedCalendarEvents?: string[];
+  /** Events Google no longer holds — cancelled now, or already gone. */
+  cancelledCalendarEvents?: string[];
+  /** Still present in Google, and a human has to remove them. */
+  orphanedCalendarEvents?: { eventId: string; error: string }[];
   error?: string;
 }
 
@@ -313,6 +320,7 @@ export async function rejectLeadAction(input: {
       queuedEmail: Boolean(data.queuedEmail),
       queuedWhatsapp: Boolean(data.queuedWhatsapp),
       releasedSlots: data.releasedSlots ?? [],
+      cancelledCalendarEvents: data.cancelledCalendarEvents ?? [],
       orphanedCalendarEvents: data.orphanedCalendarEvents ?? [],
     };
   } catch {

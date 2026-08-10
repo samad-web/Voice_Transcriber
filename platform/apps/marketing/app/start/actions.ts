@@ -20,7 +20,7 @@ import { consentEvidence } from "@/lib/funnel/consent";
 import { funnelConfigured, query } from "@/lib/funnel/db";
 import { captureContact, recordQualification } from "@/lib/funnel/repository";
 import { clearFunnelSession, getFunnelSession, setFunnelSession } from "@/lib/funnel/session";
-import { bookSlot, listOpenSlots, type OpenSlot } from "@/lib/funnel/slots";
+import { DEFAULT_NOTICE_MINUTES, bookSlot, listOpenSlots, type OpenSlot } from "@/lib/funnel/slots";
 
 /**
  * The funnel's two server actions.
@@ -215,12 +215,15 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
   const outcome =
     result.status === "qualified" ? "qualified" : result.routeToHuman ? "triage" : "disqualified";
 
-  // The session is cleared for everyone EXCEPT a qualified visitor, who is about
-  // to be offered a slot and needs the submission id to attach the booking to.
-  // Clearing it here would have made the very next action fail with "your
-  // session expired" on the one path that has somewhere left to go. It is
-  // cleared by bookSlotAction instead, once the booking lands.
-  if (outcome !== "qualified") await clearFunnelSession();
+  // The session is NO LONGER cleared here for anybody.
+  //
+  // It used to be cleared for everyone except a qualified visitor, because they
+  // were the only ones offered a slot. Now that `mayBookSlot` is true for
+  // everyone (owner's instruction, 2026-08-10), clearing it on the
+  // disqualified path would drop the submission id that the very next action
+  // needs, and the picker would answer "your session expired" to precisely the
+  // people the change was made for. `bookSlotAction` clears it once a booking
+  // lands, as it always did.
 
   return { ok: true, outcome };
 }
@@ -233,12 +236,20 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
 
 
 /* ── Booking ────────────────────────────────────────────────────────────────
-   Only a qualified visitor reaches these, and only because they still hold the
-   signed session cookie from step 1. There is no slot id in the DOM that maps
+   Anyone who finishes step 2 reaches these, qualified or not (owner's call,
+   2026-08-10), and only because they still hold the signed session cookie
+   from step 1. There is no slot id in the DOM that maps
    to anything without it. */
 
 const TEAM_TIME_ZONE = process.env.SCHEDULER_TIMEZONE?.trim() || "Asia/Kolkata";
-const NOTICE_MINUTES = Number(process.env.SCHEDULER_MIN_NOTICE_MINUTES ?? 120) || 120;
+/**
+ * Minimum notice before a slot can be taken. FOUR HOURS by default, raised
+ * from two on 2026-08-10. The number itself lives in lib/funnel/slots.ts so
+ * the listing query and the claim query cannot disagree about it.
+ */
+const NOTICE_MINUTES =
+  Number(process.env.SCHEDULER_MIN_NOTICE_MINUTES ?? DEFAULT_NOTICE_MINUTES) ||
+  DEFAULT_NOTICE_MINUTES;
 
 export interface SlotsResult {
   slots: OpenSlot[];
@@ -299,7 +310,9 @@ export async function bookSlotAction(slotId: string): Promise<BookResultPayload>
   }
 
   try {
-    const res = await bookSlot(slotId, session.sid, name, TEAM_TIME_ZONE);
+    // Same notice window the picker was drawn with, so a slot that has slipped
+    // inside it while the page sat open is refused rather than silently taken.
+    const res = await bookSlot(slotId, session.sid, name, TEAM_TIME_ZONE, NOTICE_MINUTES);
     if (!res.ok) {
       return { ok: false, error: "Someone just took that time. Please pick another." };
     }

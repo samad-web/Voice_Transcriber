@@ -131,9 +131,12 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
       else ids?.forEach((id) => setGone((g) => new Set(g).add(id)));
       const parts = [`${res.deleted} enquiry(ies) deleted`];
       if (res.slotsReleased) parts.push(`${res.slotsReleased} booked slot(s) released`);
+      if (res.cancelledCalendarEvents?.length) {
+        parts.push(`${res.cancelledCalendarEvents.length} calendar event(s) cancelled`);
+      }
       if (res.orphanedCalendarEvents?.length) {
         parts.push(
-          `${res.orphanedCalendarEvents.length} Google Calendar event(s) still exist and must be removed by hand`,
+          `${res.orphanedCalendarEvents.length} Google Calendar event(s) could NOT be cancelled and must be removed by hand`,
         );
       }
       setDeleteNote(`${parts.join(" · ")}.`);

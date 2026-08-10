@@ -202,7 +202,9 @@ describe("qualify — tell_me_more flags a human but no longer vetoes a slot", (
     });
     expect(r.routeToHuman).toBe(true);
     expect(r.status).toBe("disqualified");
-    expect(r.mayBookSlot).toBe(false);
+    // Booking is no longer gated on qualifying (owner's call, 2026-08-10).
+    // The status still says what the funnel thought of them.
+    expect(r.mayBookSlot).toBe(true);
   });
 
   it("NO LONGER overrides a qualifying budget — the case that prompted the change", () => {
@@ -233,7 +235,7 @@ describe("qualify — tell_me_more flags a human but no longer vetoes a slot", (
       wantsCustomCrm: "tell_me_more",
     });
     expect(r.status).toBe("disqualified");
-    expect(r.mayBookSlot).toBe(false);
+    expect(r.mayBookSlot).toBe(true);
     expect(r.reasons).toEqual(["route_to_human_tell_me_more"]);
   });
 
@@ -285,10 +287,14 @@ describe("qualify — exhaustive invariants over all 288 combinations", () => {
     }
   });
 
-  it("mayBookSlot is exactly 'qualified'", () => {
+  it("mayBookSlot is true for EVERY answer set, qualified or not", () => {
+    // It used to be `status === "qualified"`. The gate was removed on the
+    // owner's instruction: the qualifier now describes a lead rather than
+    // deciding whether they get a conversation. Asserted over the whole
+    // cartesian product so no future answer combination can quietly reinstate
+    // a path where somebody finishes the form and is offered nothing.
     for (const c of all) {
-      const r = qualify(c);
-      expect(r.mayBookSlot, JSON.stringify(c)).toBe(r.status === "qualified");
+      expect(qualify(c).mayBookSlot, JSON.stringify(c)).toBe(true);
     }
   });
 

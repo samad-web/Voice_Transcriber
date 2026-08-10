@@ -652,23 +652,24 @@ export function FunnelForm() {
 }
 
 /* ── Outcome screens ──────────────────────────────────────────────────────
-   Three, not two. And no decoy calendar: when the scheduler is unconfigured a
-   qualified visitor sees the contact screen, never a slot that is not real
-   (doc 16 §0.4). That rule is absolute. */
+   Three, not two — the wording still differs by outcome even though all three
+   are now offered a slot. And no decoy calendar: when the scheduler is
+   unconfigured the visitor sees the contact screen, never a slot that is not
+   real (doc 16 §0.4). That rule is absolute. */
 
 function Outcome({ outcome }: { outcome: Outcome }) {
   const copy = {
     qualified: {
-      h: "Thanks, we'll be in touch to book a time.",
-      p: "Someone from the team will reach out shortly to set up a walkthrough with your calls in mind.",
+      h: "Thanks, let's book a time.",
+      p: "Pick a slot below and we'll walk through what your calls are saying.",
     },
     triage: {
       h: "Thanks, we'll answer that properly.",
-      p: "You asked about a custom build. Someone who can actually scope it will get back to you, rather than putting you on a sales call.",
+      p: "You asked about a custom build. Pick a time below and someone who can actually scope it will take the call.",
     },
     disqualified: {
       h: "Thanks for sharing your details.",
-      p: "Our team will reach out to you shortly.",
+      p: "Pick a time below if you'd like to talk it through, and we'll take it from there.",
     },
   }[outcome];
 
@@ -684,9 +685,18 @@ function Outcome({ outcome }: { outcome: Outcome }) {
         {copy.p}
       </p>
 
-      {/* Only a qualified visitor is offered the diary. "Tell me more" is
-          routed to a human on purpose and must never take a slot (doc 16 §3.2). */}
-      {outcome === "qualified" ? <SlotPicker /> : null}
+      {/* EVERY outcome is offered the diary, since 2026-08-10 (owner's
+          instruction). It used to be qualified-only, on the reasoning that
+          "tell me more" belonged with a human rather than on a sales call —
+          but nothing was ever queued for the other two paths, so in practice
+          a disqualified enquirer was told "we'll be in touch" and then heard
+          nothing at all. A slot they can choose themselves is a better answer
+          than a promise the system does not keep.
+
+          The picker still renders nothing when there is no real availability,
+          which is the rule that has not moved: a time that cannot be honoured
+          must never appear (doc 16 §0.4). */}
+      <SlotPicker />
     </div>
   );
 }

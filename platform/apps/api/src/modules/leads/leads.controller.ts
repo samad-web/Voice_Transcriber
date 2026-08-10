@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { deleteCalendarEvents } from "./google-calendar-delete";
 
 /**
  * Marketing funnel leads — the platform-operator surface.
@@ -268,17 +269,35 @@ export class LeadsController {
       // rejected_by and rejection_reason, added by migration 0024 for exactly
       // this. Who did it, when, and why, on the record it concerns.
       await client.query("COMMIT");
+
+      // ── Cancel the meeting in Google ──────────────────────────────────
+      //
+      // AFTER the commit, never inside it. A delete inside the transaction
+      // would mean a later rollback leaves the event cancelled against a slot
+      // that is still booked — a meeting that vanished from the calendar while
+      // the database still expects it, which nobody would notice until the
+      // person turned up. Committing first inverts that into the recoverable
+      // failure: the event survives against a released slot, which is visible
+      // and is reported below.
+      //
+      // This used to hand the id back and tell the operator to delete it by
+      // hand. Nobody does that, so the team kept an appointment with someone
+      // they had just declined.
+      const eventIds = released
+        .map((r) => r.calendar_event_id)
+        .filter((v): v is string => Boolean(v));
+      const calendar = await deleteCalendarEvents(eventIds);
+
       return {
         lead: rows[0],
         queuedEmail,
         queuedWhatsapp,
-        // What the operator got back, and what they still have to clean up by
-        // hand. `orphanedCalendarEvents` is only non-empty once Google Calendar
-        // is configured; until then every booking has a null event id.
         releasedSlots: released.map((r) => ({ id: r.id, startsAt: r.starts_at })),
-        orphanedCalendarEvents: released
-          .map((r) => r.calendar_event_id)
-          .filter((v): v is string => Boolean(v)),
+        cancelledCalendarEvents: calendar.deleted,
+        // Only what genuinely still needs a human. Empty in the normal case,
+        // and empty too when no calendar is configured, because then no event
+        // was ever created.
+        orphanedCalendarEvents: calendar.failed,
       };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
@@ -385,15 +404,20 @@ export class LeadsController {
       );
 
       await client.query("COMMIT");
+
+      // Cancel the meetings too, after the commit — same reasoning as reject.
+      // Deleting the person while leaving their call in the team's diary is the
+      // same bug in a worse place: an erasure request that leaves their name on
+      // a calendar event has not erased them.
+      const calendar = await deleteCalendarEvents(
+        slots.map((s) => s.calendar_event_id).filter((v): v is string => Boolean(v)),
+      );
+
       return {
         deleted: rowCount ?? 0,
         slotsReleased: slots.length,
-        // The API cannot delete a Google Calendar event; the calendar client
-        // lives in the marketing app. Returned so the console can say so
-        // rather than letting the event outlive the person.
-        orphanedCalendarEvents: slots
-          .map((s) => s.calendar_event_id)
-          .filter((v): v is string => Boolean(v)),
+        cancelledCalendarEvents: calendar.deleted,
+        orphanedCalendarEvents: calendar.failed,
       };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
