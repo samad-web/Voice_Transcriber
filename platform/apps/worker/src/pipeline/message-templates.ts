@@ -106,6 +106,19 @@ export type WhatsAppVars = {
   name: string;
   /** Only for `booking_confirmed`. Absent elsewhere. */
   slot?: string;
+  /**
+   * The Google Meet URL, when the calendar produced one. Only for
+   * `booking_confirmed`.
+   *
+   * Genuinely optional, and not merely "usually present": a booking made while
+   * the calendar is misconfigured, or before domain-wide delegation was
+   * authorised, is a real booking with no Meet link at all. `fillTemplate`
+   * treats `meet_link` as an OPTIONAL placeholder and deletes the sentence
+   * containing it rather than substituting a word, so those people get a
+   * correct confirmation that simply does not mention joining online — instead
+   * of "Join on Google Meet here: there ." on their phone.
+   */
+  meetLink?: string;
 };
 
 export type RenderedMessage =
@@ -139,6 +152,7 @@ export async function renderWhatsAppMessage(
       first_name: firstNameOf(vars.name),
       name: vars.name,
       slot: vars.slot,
+      meet_link: vars.meetLink,
     }),
   };
 }

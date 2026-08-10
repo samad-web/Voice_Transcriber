@@ -7,6 +7,7 @@ import {
   checkWhatsAppNumbersAction,
   convertLeadAction,
   deleteLeadsAction,
+  sendBookingConfirmationAction,
   type ConvertResult,
   type Lead,
 } from "./actions";
@@ -112,6 +113,13 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
   );
   const [waNote, setWaNote] = useState<string | null>(null);
   const [waPending, startWa] = useTransition();
+  /** Scoped to one lead id, so a note never appears under the wrong row. */
+  const [sendNote, setSendNote] = useState<{
+    id: string;
+    text: string;
+    tone: "good" | "warn" | "bad";
+  } | null>(null);
+  const [sendPending, startSend] = useTransition();
 
   /**
    * Deleting is not rejecting, and the copy has to keep them apart. Rejecting
@@ -442,23 +450,78 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                   </p>
                 )}
 
-                {/* The join link, only when Google actually returned one. It is
-                    null on every booking made while the calendar is configured
-                    without domain-wide delegation, because a bare service
-                    account cannot mint a Meet link — so this is absent far more
-                    often than present, and an empty "Join:" label would read as
-                    a broken link rather than an absent feature. */}
-                {lead.booked_meeting_url ? (
-                  <p className="mt-2 text-xs">
-                    <a
-                      href={lead.booked_meeting_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-accent underline underline-offset-2"
+                {/* The join link, only when Google actually returned one.
+                    Present on every booking made since domain-wide delegation
+                    was authorised (2026-08-10); null on the ones before it,
+                    because a bare service account cannot mint a Meet link. An
+                    empty "Join" that goes nowhere would read as a broken link
+                    rather than an absent one, so it is omitted entirely. */}
+                {lead.booked_starts_at ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                    {lead.booked_meeting_url ? (
+                      <a
+                        href={lead.booked_meeting_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent underline underline-offset-2"
+                      >
+                        Join the call
+                      </a>
+                    ) : (
+                      <span className="text-text-muted">No Meet link on this booking</span>
+                    )}
+
+                    {/* Manual send. The worker confirms every NEW booking by
+                        itself, so this is for a resend and for the bookings
+                        that predate the feature — those were settled by
+                        migration 0032 precisely so nobody was messaged
+                        retrospectively, which means the automatic sweep will
+                        never pick them up and only a person can decide to. */}
+                    <button
+                      type="button"
+                      disabled={sendPending}
+                      onClick={() => {
+                        setSendNote(null);
+                        startSend(async () => {
+                          const res = await sendBookingConfirmationAction({ leadId: lead.id });
+                          if (res.error) {
+                            setSendNote({ id: lead.id, text: res.error, tone: "bad" });
+                            return;
+                          }
+                          setSendNote({
+                            id: lead.id,
+                            // Says which message actually went. A confirmation
+                            // with no join link is still correct copy — the
+                            // sentence is removed rather than left blank — but
+                            // an operator pressing this to get somebody their
+                            // link needs to know that is not what they sent.
+                            text: res.hasMeetLink
+                              ? "Queued — they'll get the time and the Meet link on WhatsApp within a minute."
+                              : "Queued, but this booking has no Meet link, so the message confirms the time only.",
+                            tone: res.hasMeetLink ? "good" : "warn",
+                          });
+                        });
+                      }}
+                      className="rounded-md border border-border px-2.5 py-1 font-medium text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-40"
                     >
-                      Join the call
-                    </a>
-                  </p>
+                      {sendPending ? "Sending…" : "Send on WhatsApp"}
+                    </button>
+
+                    {sendNote?.id === lead.id ? (
+                      <span
+                        role="status"
+                        className={
+                          sendNote.tone === "bad"
+                            ? "text-danger-text"
+                            : sendNote.tone === "warn"
+                              ? "text-warning-text"
+                              : "text-text-muted"
+                        }
+                      >
+                        {sendNote.text}
+                      </span>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 

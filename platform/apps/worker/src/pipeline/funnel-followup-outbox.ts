@@ -81,6 +81,21 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 /**
+ * The zone booked times are stated in.
+ *
+ * Read exactly the way the website reads it — `SCHEDULER_TIMEZONE` or
+ * Asia/Kolkata — including the empty-string handling, because compose passes
+ * these as `${VAR:-}` and `??` keeps the empty string. That precise mistake
+ * silently disabled the calendar on 2026-08-10; here it would hand Postgres
+ * `AT TIME ZONE ''` and throw on every send instead, which is louder but no
+ * more correct.
+ */
+function bookingTimeZone(): string {
+  const raw = process.env.SCHEDULER_TIMEZONE;
+  return raw && raw.trim() ? raw.trim() : "Asia/Kolkata";
+}
+
+/**
  * Queue a follow-up. Idempotent per (submission, template).
  *
  * `ON CONFLICT DO NOTHING`, NOT the CRM outbox's `DO UPDATE`: re-processing a
@@ -191,17 +206,49 @@ export async function drainFollowUps(limit = 100): Promise<number> {
     email: string;
     phone_e164: string | null;
     whatsapp_e164: string | null;
+    slot_label: string | null;
+    meeting_url: string | null;
   }>(
+    /**
+     * The LATERAL join supplies `booking_confirmed` with the two things only a
+     * booking knows: when the call is, and the Meet link.
+     *
+     * LATERAL with LIMIT 1 rather than a plain join, because a person can hold
+     * more than one slot over time — a cancelled booking and its replacement
+     * both point at the same submission — and a plain join would fan the outbox
+     * row out into one copy per slot, sending the same confirmation twice.
+     * Ordered by `booked_at DESC` so it is the most recent booking that gets
+     * described, which is the one they just made.
+     *
+     * The slot label is formatted in SQL, in the booking timezone, with the
+     * SAME `to_char` masks the website used to tell them the time
+     * (apps/marketing/lib/funnel/slots.ts). A WhatsApp message that names a
+     * different hour from the confirmation screen — because one rendered in IST
+     * and the other in the container's UTC — would be read as a second,
+     * conflicting appointment.
+     */
     `SELECT f.id, f.submission_id, f.template, f.channel, f.attempts,
-            s.name, s.email, s.phone_e164, s.whatsapp_e164
+            s.name, s.email, s.phone_e164, s.whatsapp_e164,
+            b.slot_label, b.meeting_url
        FROM marketing.funnel_followups f
        JOIN marketing.funnel_submissions s ON s.id = f.submission_id
+       LEFT JOIN LATERAL (
+         SELECT to_char(bs.starts_at AT TIME ZONE $2, 'Dy, DD Mon')
+                  || ' at '
+                  || to_char(bs.starts_at AT TIME ZONE $2, 'HH24:MI') AS slot_label,
+                bs.meeting_url
+           FROM marketing.booking_slots bs
+          WHERE bs.submission_id = s.id
+            AND bs.status = 'booked'
+          ORDER BY bs.booked_at DESC
+          LIMIT 1
+       ) b ON true
       WHERE f.status = 'pending'
         AND f.next_attempt_at IS NOT NULL
         AND f.next_attempt_at <= now()
       ORDER BY f.next_attempt_at
       LIMIT $1`,
-    [limit],
+    [limit, bookingTimeZone()],
   );
   if (due.length === 0) return 0;
 
@@ -230,7 +277,15 @@ export async function drainFollowUps(limit = 100): Promise<number> {
           // switched off. Both are terminal: retrying a template an operator
           // deliberately disabled would send the message they told us not to,
           // as soon as the backoff happened to land after they re-enabled it.
-          const rendered = await renderWhatsAppMessage(row.template, { name: row.name });
+          const rendered = await renderWhatsAppMessage(row.template, {
+            name: row.name,
+            // Passed for every template, used only by the ones whose copy
+            // names them. `validateTemplateBody` already refuses `{{slot}}` or
+            // `{{meet_link}}` in a stage that has no booking, so an unused
+            // value here cannot leak into the wrong message.
+            slot: row.slot_label ?? undefined,
+            meetLink: row.meeting_url ?? undefined,
+          });
           if (!rendered.ok) {
             result = { ok: false, error: rendered.reason, terminal: true };
           } else {

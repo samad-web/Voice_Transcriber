@@ -107,13 +107,16 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     label: "Booked a call",
     when: "Sent the moment someone picks a slot on the website.",
     allowedPlaceholders: ["first_name", "name", "slot", "meet_link"],
-    live: false,
-    blockedBy:
-      "OFF BY DECISION, not by omission — the owner asked on 2026-08-09 that nobody " +
-      "who books a call be messaged. Booking works and sends nothing. Editing this " +
-      "copy changes what WOULD be sent if it were switched on; it does not switch it on. " +
-      "Turning it on means calling enqueueFollowUp(..., 'booking_confirmed', 'whatsapp') " +
-      "from the worker — the website role holds no grant on the outbox and cannot do it.",
+    // Live since 2026-08-10, reversing the 2026-08-09 decision not to message
+    // bookers. The worker sweep in booking-confirmations.ts queues it; migration
+    // 0032 settled the bookings that predate it so nobody who booked under the
+    // old promise is messaged retrospectively.
+    live: true,
+    // Must stay character-identical to the body migration 0029 wrote into
+    // `marketing.message_templates`, which is what production actually sends —
+    // the stored row wins over this fallback. message-templates.test.ts holds
+    // the two together; rewording here alone would change nothing that is sent
+    // and quietly break "Restore original".
     whatsapp:
       "Hi {{first_name}}, your call with Aura is confirmed for {{slot}}. " +
       "Join here: {{meet_link}} . If that time stops working, reply here and we'll move it.",

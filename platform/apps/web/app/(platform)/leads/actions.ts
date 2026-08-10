@@ -329,6 +329,57 @@ export async function rejectLeadAction(input: {
   }
 }
 
+export interface SendConfirmationResult {
+  ok?: true;
+  /** False when the booking has no Meet link — the message goes without one. */
+  hasMeetLink?: boolean;
+  meetingUrl?: string | null;
+  error?: string;
+}
+
+/**
+ * Send a booked lead their confirmation — and their Meet link — on WhatsApp.
+ *
+ * The worker does this automatically for every new booking. This is the manual
+ * path, for a resend and for the bookings that predate the feature (migration
+ * 0032 settled those as deliberately-not-sent, so the automatic sweep will
+ * never pick them up).
+ */
+export async function sendBookingConfirmationAction(input: {
+  leadId: string;
+}): Promise<SendConfirmationResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const actor = (await getPrincipal())?.email || "console";
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/leads/${input.leadId}/send-confirmation`, {
+      method: "POST",
+      headers: crossTenantHeaders,
+      cache: "no-store",
+      body: JSON.stringify({ actor }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      // The API's own words: "no booked call", "no phone number". Both are
+      // things the operator can act on, so they are shown rather than replaced
+      // with a generic failure.
+      return { error: `${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = await res.json();
+    revalidatePath("/leads");
+    return {
+      ok: true,
+      hasMeetLink: Boolean(data.hasMeetLink),
+      meetingUrl: data.meetingUrl ?? null,
+    };
+  } catch {
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+  }
+}
+
 /* ── WhatsApp message copy ─────────────────────────────────────────────────
  *
  * The words sent to an enquirer at each stage, editable without a deploy.

@@ -10,6 +10,7 @@ import { startReaper } from "./pipeline/reaper";
 import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
+import { startBookingConfirmations } from "./pipeline/booking-confirmations";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
@@ -61,12 +62,18 @@ async function bootstrap() {
   // closes the matching slot, so an hour blocked out by hand stops being
   // offered to visitors. Silent no-op without Google credentials.
   startCalendarBusySync();
+  // Queues the WhatsApp confirmation — with the Meet link — for anyone who has
+  // booked and not had one. It lives here rather than in the booking itself
+  // because the public marketing role holds no grant on the outbox; see the
+  // module header.
+  startBookingConfirmations();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
   console.log(
     `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
-      "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups",
+      "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
+      "+ booking confirmations",
   );
 }
 

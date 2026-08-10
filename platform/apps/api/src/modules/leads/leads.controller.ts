@@ -62,6 +62,10 @@ const DeleteBody = z.object({
   ids: z.array(z.string().uuid()).min(1).max(500).optional(),
 });
 
+const SendConfirmationBody = z.object({
+  actor: z.string().min(1).max(200).optional(),
+});
+
 const ListQuery = z.object({
   /** `open` hides already-converted enquiries, which is the default working view. */
   state: z.enum(["all", "open", "converted"]).optional(),
@@ -151,6 +155,115 @@ export class LeadsController {
    * unsolicited critique of somebody's business is not a kindness, and a
    * written reason is a reason to argue with.
    */
+  /**
+   * Send this lead their booking confirmation on WhatsApp, now.
+   *
+   * ── WHY IT EXISTS ALONGSIDE THE AUTOMATIC SWEEP ────────────────────────────
+   *
+   * The worker confirms every NEW booking unaided. Two cases it deliberately
+   * will not touch, and both need a human to be able to act:
+   *
+   *   · bookings that predate the feature, which migration 0032 settled as
+   *     'dead' precisely so nobody was messaged retrospectively — but the
+   *     operator may still want to send one particular person their link;
+   *   · a genuine resend, when the first message failed, or the person says
+   *     they never got it.
+   *
+   * ── WHY IT DELETES BEFORE INSERTING ────────────────────────────────────────
+   *
+   * The outbox's unique key makes `enqueueFollowUp` idempotent per (submission,
+   * template, channel), which is right for the automatic path and wrong here:
+   * with an existing row — 'dead' from 0032, 'sent' from an earlier send — an
+   * INSERT ... ON CONFLICT DO NOTHING would return quietly and send nothing,
+   * while the console reported success. Pressing a button labelled "Send" and
+   * having nothing sent, with no error, is the worst of the available
+   * behaviours. Deleting first makes the resend real.
+   *
+   * The delete is scoped to this one (submission, 'booking_confirmed',
+   * 'whatsapp') row, so a queued rejection or reminder for the same person is
+   * untouched.
+   */
+  @Post(":id/send-confirmation")
+  async sendConfirmation(@Param("id") id: string, @Body() body: unknown) {
+    if (!z.string().uuid().safeParse(id).success) {
+      throw new BadRequestException("lead id must be a uuid");
+    }
+    const parsed = SendConfirmationBody.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    const client = await this.db.adminPool().connect();
+    try {
+      await client.query("BEGIN");
+
+      // The booking is what makes this message meaningful, so it is read first
+      // and its absence is a refusal rather than an empty send. Most recent
+      // booking, matching what the worker's drain describes.
+      const { rows } = await client.query<{
+        name: string;
+        to_number: string | null;
+        starts_at: string;
+        meeting_url: string | null;
+      }>(
+        `SELECT s.name,
+                COALESCE(s.whatsapp_e164, s.phone_e164) AS to_number,
+                b.starts_at,
+                b.meeting_url
+           FROM marketing.funnel_submissions s
+           JOIN marketing.booking_slots b ON b.submission_id = s.id AND b.status = 'booked'
+          WHERE s.id = $1
+          ORDER BY b.booked_at DESC
+          LIMIT 1`,
+        [id],
+      );
+
+      const lead = rows[0];
+      if (!lead) {
+        throw new NotFoundException("this lead has no booked call, so there is nothing to confirm");
+      }
+      // Caught here rather than left to dead-letter after six attempts in the
+      // outbox, where it would read as a delivery failure instead of missing
+      // data the operator can actually do something about.
+      if (!lead.to_number) {
+        throw new BadRequestException("this lead has no phone number to message");
+      }
+
+      await client.query(
+        `DELETE FROM marketing.funnel_followups
+          WHERE submission_id = $1 AND template = 'booking_confirmed' AND channel = 'whatsapp'`,
+        [id],
+      );
+
+      await client.query(
+        `INSERT INTO marketing.funnel_followups
+           (submission_id, template, channel, status, attempts, next_attempt_at)
+         VALUES ($1, 'booking_confirmed', 'whatsapp', 'pending', 0, now())`,
+        [id],
+      );
+
+      await client.query("COMMIT");
+
+      return {
+        queued: true,
+        to: lead.to_number,
+        startsAt: lead.starts_at,
+        /**
+         * Reported so the console can say which message is actually going out.
+         * With no Meet link the copy is still correct — `fillTemplate` removes
+         * the sentence rather than substituting a word — but it confirms a time
+         * without a way to join, and an operator pressing this to get someone a
+         * link deserves to be told that is not what happened.
+         */
+        hasMeetLink: Boolean(lead.meeting_url),
+        meetingUrl: lead.meeting_url,
+      };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   @Post(":id/reject")
   async reject(@Param("id") id: string, @Body() body: unknown) {
     if (!z.string().uuid().safeParse(id).success) {

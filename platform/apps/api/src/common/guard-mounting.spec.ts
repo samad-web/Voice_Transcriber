@@ -141,6 +141,7 @@ const CROSS_TENANT = [
   // tenant for TenantGuard to scope these to. They still carry AdminKeyGuard,
   // which is the credential that actually gates them.
   "GET /admin/leads",
+  "POST /admin/leads/:id/send-confirmation",
   "POST /admin/leads/:id/reject",
   "POST /admin/leads/delete",
   "POST /admin/leads/:id/link",
@@ -245,13 +246,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 90 routes, partitioned 57 tenant / 21 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 91 routes, partitioned 57 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten. They are
     // asserted as a set, not just a total, so moving a route BETWEEN classes
     // (dropping TenantGuard from a tenant route, say) fails even though the
     // total is unchanged.
-    expect(ROUTES).toHaveLength(90);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(90);
+    expect(ROUTES).toHaveLength(91);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(91);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -263,18 +264,18 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
     expect(tenantScoped).toHaveLength(57);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(90);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(91);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 78 principal routes", () => {
-    // 57 tenant-scoped + 6 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 79 principal routes", () => {
+    // 57 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(78);
+    expect(principalRoutes).toHaveLength(79);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
