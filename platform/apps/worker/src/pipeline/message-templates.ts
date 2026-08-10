@@ -1,5 +1,6 @@
 import { getAdminPool } from "@aura/db";
 import {
+  capitalizeName,
   fillTemplate,
   firstNameOf,
   getMessageTemplateSpec,
@@ -150,7 +151,10 @@ export async function renderWhatsAppMessage(
     ok: true,
     text: fillTemplate(body, {
       first_name: firstNameOf(vars.name),
-      name: vars.name,
+      // Capitalised for the same reason as first_name: a template using the
+      // full name would otherwise render "Hi aakash kummar," from a form typed
+      // in lower case on a phone.
+      name: capitalizeName(vars.name),
       slot: vars.slot,
       meet_link: vars.meetLink,
     }),

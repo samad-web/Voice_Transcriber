@@ -208,14 +208,41 @@ export function fillTemplate(body: string, vars: Record<string, string | undefin
 }
 
 /**
- * First word of a name, if it is usable as a greeting.
+ * Capitalise the first letter of each word, and change nothing else.
+ *
+ * People type their name into a web form in whatever case is convenient —
+ * "aakash kummar" is extremely common on a phone keyboard — and "Hi aakash,"
+ * reads as sloppy in a message from a company they are considering paying.
+ *
+ * ── WHY ONLY THE FIRST LETTER ──────────────────────────────────────────────
+ *
+ * The tempting version lowercases the rest, turning "AAKASH" into "Aakash".
+ * It also turns "McDonald" into "Mcdonald", "D'Souza" into "D'souza" and
+ * "MD Imran" into "Md Imran" — mangling names that were typed correctly in
+ * order to fix ones that were not. Getting somebody's name wrong in the first
+ * word of a sales message is worse than leaving it shouty, so the rest of each
+ * word is left exactly as the person typed it.
+ *
+ * Word-initial after whitespace only. Hyphenated and apostrophed names are left
+ * alone for the same reason: every rule that reaches inside a word is wrong for
+ * somebody.
+ */
+export function capitalizeName(name: string): string {
+  // \p{L} rather than [a-z]: Tamil, Devanagari and accented Latin all appear in
+  // this funnel, and a plain ASCII test would silently skip them. Scripts
+  // without letter case are unaffected — toUpperCase() is a no-op there.
+  return name.replace(/(^|\s)(\p{L})/gu, (_m, lead: string, letter: string) => lead + letter.toUpperCase());
+}
+
+/**
+ * First word of a name, capitalised, if it is usable as a greeting.
  *
  * A single letter is not — "Hi R," reads as a mail merge that went wrong — so
  * it falls through to the neutral form.
  */
 export function firstNameOf(name: string): string | undefined {
   const first = name.trim().split(/\s+/)[0];
-  return first && first.length >= 2 ? first : undefined;
+  return first && first.length >= 2 ? capitalizeName(first) : undefined;
 }
 
 export const MESSAGE_BODY_MAX = 1200;

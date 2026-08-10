@@ -6,6 +6,7 @@ import {
   MESSAGE_TEMPLATES,
   MESSAGE_TEMPLATE_KEYS,
   PLACEHOLDER_HELP,
+  capitalizeName,
   fillTemplate,
   firstNameOf,
   getMessageTemplateSpec,
@@ -86,9 +87,56 @@ describe("fillTemplate", () => {
   });
 });
 
+describe("capitalizeName", () => {
+  it("capitalises the first letter of each word", () => {
+    // The case this exists for: a name typed on a phone keyboard.
+    expect(capitalizeName("aakash kummar")).toBe("Aakash Kummar");
+    expect(capitalizeName("imam")).toBe("Imam");
+  });
+
+  it("leaves the rest of each word exactly as typed", () => {
+    // Lowercasing the remainder would fix "AAKASH" and break all of these.
+    // Getting somebody's name wrong in the first word of a sales message is
+    // worse than leaving it shouty.
+    expect(capitalizeName("McDonald")).toBe("McDonald");
+    expect(capitalizeName("D'Souza")).toBe("D'Souza");
+    expect(capitalizeName("MD Imran")).toBe("MD Imran");
+    expect(capitalizeName("AAKASH")).toBe("AAKASH");
+  });
+
+  it("handles names that are already correct", () => {
+    expect(capitalizeName("Ramesh Kumar")).toBe("Ramesh Kumar");
+  });
+
+  it("does not corrupt scripts without letter case", () => {
+    // This funnel is Tamil-Nadu facing, so a name in Tamil is ordinary input
+    // rather than an edge case. It must come back byte-identical.
+    expect(capitalizeName("ராமேஷ் குமார்")).toBe("ராமேஷ் குமார்");
+  });
+
+  it("survives empty and whitespace input", () => {
+    expect(capitalizeName("")).toBe("");
+    expect(capitalizeName("   ")).toBe("   ");
+  });
+});
+
 describe("firstNameOf", () => {
   it("takes the first word", () => {
     expect(firstNameOf("Ramesh Kumar")).toBe("Ramesh");
+  });
+
+  it("capitalises it", () => {
+    // The seam that actually reaches a phone: the greeting in every template.
+    expect(firstNameOf("aakash kummar")).toBe("Aakash");
+    expect(fillTemplate("Hi {{first_name}},", { first_name: firstNameOf("aakash") })).toBe(
+      "Hi Aakash,",
+    );
+  });
+
+  it("leaves the neutral fallback lower case", () => {
+    // "Hi There," would be the capitalisation rule leaking somewhere it does
+    // not belong — `there` is an ordinary word mid-sentence, not a name.
+    expect(fillTemplate("Hi {{first_name}},", { first_name: firstNameOf("R") })).toBe("Hi there,");
   });
 
   it("rejects a single letter, which reads as a broken mail merge", () => {
