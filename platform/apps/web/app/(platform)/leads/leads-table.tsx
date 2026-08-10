@@ -3,7 +3,13 @@
 import { useState, useTransition } from "react";
 import { describeAnswers } from "@aura/shared";
 import { BrutalButton, Card, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
-import { convertLeadAction, deleteLeadsAction, type ConvertResult, type Lead } from "./actions";
+import {
+  checkWhatsAppNumbersAction,
+  convertLeadAction,
+  deleteLeadsAction,
+  type ConvertResult,
+  type Lead,
+} from "./actions";
 import { RejectPanel } from "./reject-panel";
 
 /**
@@ -56,6 +62,20 @@ function formatSlot(iso: string): string {
   });
 }
 
+/**
+ * The number a message would actually be sent to.
+ *
+ * `whatsapp_e164` when the enquirer gave a different one, otherwise the phone
+ * number. Checking `phone_e164` when they nominated a separate WhatsApp number
+ * would verify a number nothing will ever message.
+ */
+function messagingNumber(lead: Lead): string {
+  return lead.whatsapp_e164?.trim() || lead.phone_e164;
+}
+
+/** Digits only — the API compares this way, and so must the lookup key. */
+const digitsOf = (value: string) => value.replace(/\D/g, "");
+
 type Filter = "all" | "qualified" | "disqualified" | "contact_captured";
 
 const FILTERS: { id: Filter; label: string }[] = [
@@ -77,6 +97,21 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
   const [confirmAll, setConfirmAll] = useState(false);
   const [deleteNote, setDeleteNote] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  /**
+   * WhatsApp reachability, keyed by digits rather than by lead id: two leads
+   * can legitimately share a number (the same person enquiring twice is the
+   * common case) and one lookup should answer for both.
+   *
+   * `undefined` for a number means "not checked yet", which is deliberately
+   * distinct from `false` — an unchecked number must never render as a warning,
+   * because the operator would read it as a verified problem.
+   */
+  const [waChecks, setWaChecks] = useState<Map<string, { onWhatsApp: boolean; verifiedName?: string }>>(
+    new Map(),
+  );
+  const [waNote, setWaNote] = useState<string | null>(null);
+  const [waPending, startWa] = useTransition();
 
   /**
    * Deleting is not rejecting, and the copy has to keep them apart. Rejecting
@@ -102,6 +137,38 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
         );
       }
       setDeleteNote(`${parts.join(" · ")}.`);
+    });
+
+  /**
+   * Check the numbers of the leads currently ON SCREEN.
+   *
+   * Scoped to the filtered view rather than the whole list, so an operator
+   * looking at "Didn't qualify" checks those and not 200 others. Nothing is
+   * sent to anybody — this is a presence lookup and the person sees nothing —
+   * but it is still traffic on an unofficial WhatsApp client, so it is a
+   * deliberate button press rather than something that fires on page load.
+   */
+  const runWhatsAppCheck = (leads: Lead[]) =>
+    startWa(async () => {
+      setWaNote(null);
+      const res = await checkWhatsAppNumbersAction(leads.map(messagingNumber));
+      if (res.error) return setWaNote(res.error);
+      if (res.configured === false) {
+        return setWaNote(
+          "No WhatsApp instance is connected to this deployment, so numbers cannot be checked.",
+        );
+      }
+      const next = new Map(waChecks);
+      for (const r of res.results ?? []) {
+        next.set(digitsOf(r.number), { onWhatsApp: r.onWhatsApp, verifiedName: r.verifiedName });
+      }
+      setWaChecks(next);
+      const missing = (res.results ?? []).filter((r) => !r.onWhatsApp).length;
+      setWaNote(
+        missing === 0
+          ? `All ${res.results?.length ?? 0} number(s) are on WhatsApp.`
+          : `${missing} of ${res.results?.length ?? 0} number(s) are NOT on WhatsApp — messages to those will never arrive.`,
+      );
     });
 
   // Filtering is client-side on purpose: the list is capped at 200 rows by the
@@ -206,6 +273,25 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
       </div>
       ) : null}
 
+      {/* Reachability check. Deliberately a button, not automatic: it is a
+          lookup on an unofficial WhatsApp client, and firing it on every page
+          load is the sort of traffic that gets an account rate-limited. */}
+      {visible.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={waPending}
+            onClick={() => runWhatsAppCheck(visible)}
+            className="h-9 rounded-md border border-border px-3 text-sm font-medium text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-50"
+          >
+            {waPending
+              ? "Checking WhatsApp…"
+              : `Check WhatsApp for ${visible.length} number${visible.length === 1 ? "" : "s"}`}
+          </button>
+          {waNote ? <p className="text-xs text-text-muted">{waNote}</p> : null}
+        </div>
+      ) : null}
+
       {deleteNote ? (
         <p role="status" className="rounded-md border border-border bg-bg-subtle p-3 text-xs text-text">
           {deleteNote}
@@ -236,6 +322,9 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
         // once is the same problem more slowly.
         const showAnswers = answersFor === lead.id;
         const answers = describeAnswers(lead);
+        // undefined = not checked. Never rendered as a warning — an operator
+        // would read an unchecked number as a verified problem.
+        const wa = waChecks.get(digitsOf(messagingNumber(lead)));
         return (
           <Card key={lead.id}>
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -267,6 +356,14 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                       behind the qualified filter would make that invisible. */}
                   {lead.booked_starts_at ? (
                     <StatusChip tone="solid">Call {formatSlot(lead.booked_starts_at)} IST</StatusChip>
+                  ) : null}
+                  {/* Only after a check has actually run for this number. */}
+                  {wa ? (
+                    <StatusChip tone={wa.onWhatsApp ? "muted" : "danger"}>
+                      {wa.onWhatsApp
+                        ? `On WhatsApp${wa.verifiedName ? ` · ${wa.verifiedName}` : ""}`
+                        : "Not on WhatsApp"}
+                    </StatusChip>
                   ) : null}
                 </div>
 

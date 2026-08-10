@@ -12,7 +12,7 @@
  * cannot be fooled by formatting.
  *
  * The four route classes are exhaustive and their sizes are asserted: 57
- * tenant-scoped, 18 cross-tenant, 6 device-authenticated, 6 unguarded = 87. A
+ * tenant-scoped, 19 cross-tenant, 6 device-authenticated, 6 unguarded = 88. A
  * new route lands in one of those buckets and moves a count, so "I added an
  * endpoint and forgot the guards" is a red test rather than a live hole.
  *
@@ -59,6 +59,7 @@ import { InstancesController } from "../modules/devices/instances.controller";
 import { LeadsController as FunnelLeadsController } from "../modules/leads/leads.controller";
 import { MessageTemplatesController } from "../modules/leads/message-templates.controller";
 import { SlotsController } from "../modules/leads/slots.controller";
+import { WhatsAppCheckController } from "../modules/leads/whatsapp-check.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
@@ -100,6 +101,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   FunnelLeadsController,
   SlotsController,
   MessageTemplatesController,
+  WhatsAppCheckController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -148,6 +150,9 @@ const CROSS_TENANT = [
   "GET /admin/message-templates",
   "PUT /admin/message-templates/:key",
   "POST /admin/message-templates/:key/reset",
+  // Presence lookup on the WhatsApp network for numbers an enquirer typed.
+  // Same reasoning as the rest of the funnel: no org exists yet to scope to.
+  "POST /admin/whatsapp/check",
 ];
 
 /** §2.3 — one route on the whole platform. */
@@ -233,13 +238,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 87 routes, partitioned 57 tenant / 18 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 88 routes, partitioned 57 tenant / 19 cross-tenant / 6 device / 6 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten. They are
     // asserted as a set, not just a total, so moving a route BETWEEN classes
     // (dropping TenantGuard from a tenant route, say) fails even though the
     // total is unchanged.
-    expect(ROUTES).toHaveLength(87);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(87);
+    expect(ROUTES).toHaveLength(88);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(88);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -251,10 +256,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
     expect(tenantScoped).toHaveLength(57);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(87);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(88);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 75 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 76 principal routes", () => {
     // 57 tenant-scoped + 6 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
@@ -262,7 +267,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(75);
+    expect(principalRoutes).toHaveLength(76);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

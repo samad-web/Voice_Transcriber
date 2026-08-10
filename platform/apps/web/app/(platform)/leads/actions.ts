@@ -448,3 +448,64 @@ export async function resetMessageTemplateAction(input: {
     return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   WhatsApp reachability
+
+   Every message this platform sends an enquirer goes over WhatsApp, and the
+   number came from a form they typed it into. A landline, a typo, or a number
+   with no WhatsApp account is indistinguishable from a good one until a
+   rejection or a confirmation is queued against it and quietly fails. This
+   answers that before it happens.
+
+   A check sends NOTHING — it is a presence lookup, and the person sees nothing.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+export interface NumberCheck {
+  number: string;
+  onWhatsApp: boolean;
+  verifiedName?: string;
+}
+
+export interface WhatsAppCheckResult {
+  /** False when the deployment has no Evolution instance wired up at all. */
+  configured?: boolean;
+  results?: NumberCheck[];
+  error?: string;
+}
+
+export async function checkWhatsAppNumbersAction(
+  numbers: string[],
+): Promise<WhatsAppCheckResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+
+  // Deduped before it leaves the console. Two leads can share a number — the
+  // same person enquiring twice is the common case — and checking it twice is
+  // avoidable traffic on an unofficial client we would rather not get banned.
+  const unique = [...new Set(numbers.map((n) => n.trim()).filter(Boolean))].slice(0, 50);
+  if (unique.length === 0) return { configured: true, results: [] };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/whatsapp/check`, {
+      method: "POST",
+      headers: crossTenantHeaders,
+      cache: "no-store",
+      body: JSON.stringify({ numbers: unique }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 404) {
+        return { error: "The WhatsApp check endpoint is not available. Is the API on the current build?" };
+      }
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = await res.json();
+    return { configured: data.configured, results: data.results ?? [] };
+  } catch {
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+  }
+}
