@@ -55,6 +55,13 @@ export const DEFAULT_NOTICE_MINUTES = 240;
  * from now produces a booking nobody on the team sees in time, which is worse
  * than offering nothing — the visitor believes they have an appointment and the
  * calendar agrees, and only the human is missing.
+ *
+ * `external_busy_at IS NULL` is the other half, and it comes from the opposite
+ * direction: the worker's calendar sweep sets it on any open slot the team is
+ * already busy for in Google (migration 0030). Without it the funnel offers
+ * times that look free here and are not free to the human who has to show up.
+ * Applied to the CLAIM as well, for the same reason the notice window is — the
+ * picker can sit open while a sweep runs behind it.
  */
 export async function listOpenSlots(
   timeZone: string,
@@ -73,6 +80,7 @@ export async function listOpenSlots(
             EXTRACT(EPOCH FROM (ends_at - starts_at))/60       AS duration_minutes
        FROM marketing.booking_slots
       WHERE status = 'open'
+        AND external_busy_at IS NULL
         AND starts_at > now() + make_interval(mins => $2)
       ORDER BY starts_at
       LIMIT $3`,
@@ -148,6 +156,7 @@ export async function bookSlot(
             booked_name = $3
       WHERE id = $1
         AND status = 'open'
+        AND external_busy_at IS NULL
         AND starts_at > now() + make_interval(mins => $5)
     RETURNING to_char(starts_at AT TIME ZONE $4, 'Dy, DD Mon') AS day_label,
               to_char(starts_at AT TIME ZONE $4, 'HH24:MI')    AS time_label,

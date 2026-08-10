@@ -9,6 +9,7 @@ import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
 import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
+import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
@@ -55,6 +56,11 @@ async function bootstrap() {
   // commitment, and a deployment quietly running a different one is the exact
   // mismatch it exists to close.
   startFunnelRetentionSweep();
+
+  // Pulls Google the OTHER way: anything the team is already busy for
+  // closes the matching slot, so an hour blocked out by hand stops being
+  // offered to visitors. Silent no-op without Google credentials.
+  startCalendarBusySync();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
