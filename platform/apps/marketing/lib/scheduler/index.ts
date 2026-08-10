@@ -59,6 +59,34 @@ export { UnavailableScheduler } from "./unavailable";
                              picker.
    ──────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * An optional env var, treating EMPTY AS ABSENT.
+ *
+ * ── THE BUG THIS EXISTS TO KILL ────────────────────────────────────────────
+ *
+ * docker-compose.prod.yml passes the optional scheduler settings as
+ * `${SCHEDULER_DAY_START:-}`, which does not leave the variable unset — it sets
+ * it to the EMPTY STRING. `process.env.X ?? "10:00"` then keeps the empty
+ * string, because `??` only falls back on null and undefined, and
+ * `parseClock("")` throws.
+ *
+ * getScheduler() catches that throw and returns UnavailableScheduler, so a
+ * perfectly good Google configuration was discarded because an unrelated
+ * OPTIONAL setting was blank. Every booking then recorded
+ * calendar_event_id NULL with calendar_error NULL — the fingerprint of "no
+ * calendar configured" — while the credentials were sitting right there and
+ * working. Found on 2026-08-10 after three bookings failed to reach Google.
+ *
+ * `||` would have been enough for the strings, but this is explicit so nobody
+ * reintroduces `??` later thinking it is the modern spelling of the same thing.
+ * For env vars, where "" is what a shell hands you for "not set", they are not
+ * the same thing at all.
+ */
+function envOr(name: string, fallback: string): string {
+  const raw = process.env[name];
+  return raw && raw.trim() ? raw.trim() : fallback;
+}
+
 function readConfig(): GoogleCalendarConfig | { missing: string } {
   const calendarId = process.env.GOOGLE_CALENDAR_ID?.trim();
   const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
@@ -74,13 +102,13 @@ function readConfig(): GoogleCalendarConfig | { missing: string } {
     return { missing: missing.join(", ") };
   }
 
-  const dayStartMinutes = parseClock(process.env.SCHEDULER_DAY_START ?? "10:00");
-  const dayEndMinutes = parseClock(process.env.SCHEDULER_DAY_END ?? "18:00");
+  const dayStartMinutes = parseClock(envOr("SCHEDULER_DAY_START", "10:00"));
+  const dayEndMinutes = parseClock(envOr("SCHEDULER_DAY_END", "18:00"));
   if (dayEndMinutes <= dayStartMinutes) {
     throw new Error("SCHEDULER_DAY_END must be after SCHEDULER_DAY_START");
   }
 
-  const weekdays = (process.env.SCHEDULER_WEEKDAYS ?? "1,2,3,4,5")
+  const weekdays = envOr("SCHEDULER_WEEKDAYS", "1,2,3,4,5")
     .split(",")
     .map((d) => Number(d.trim()))
     .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);

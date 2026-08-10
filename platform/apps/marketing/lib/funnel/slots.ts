@@ -213,7 +213,35 @@ async function syncBookingToCalendar(
   endsAt: Date,
 ): Promise<string | null> {
   const scheduler = getScheduler();
-  if (!scheduler.configured) return null;
+  if (!scheduler.configured) {
+    /**
+     * Two very different situations arrive here, and conflating them is what
+     * made this invisible for three bookings.
+     *
+     *   Nobody configured a calendar  — expected, and correctly silent. The
+     *                                   DB-backed booking system works alone.
+     *   A calendar IS configured and was REJECTED — a misconfiguration. The
+     *                                   booking looks identical to the visitor
+     *                                   and the row looks identical to an
+     *                                   operator: event id NULL, error NULL.
+     *
+     * The second is now recorded, so "booked but not in the calendar" points at
+     * a cause instead of at nothing. The trigger was an OPTIONAL setting passed
+     * as an empty string by docker-compose; the Google credentials were fine
+     * the whole time and nothing said otherwise.
+     */
+    const configured = Boolean(
+      process.env.GOOGLE_CALENDAR_ID?.trim() &&
+        process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() &&
+        process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+    );
+    if (configured) {
+      const why = (scheduler as { reason?: string }).reason ?? "scheduler unavailable";
+      console.error(`[funnel] Google Calendar is configured but unusable: ${why}`);
+      await recordCalendarOutcome(slotId, null, `calendar configured but unusable: ${why}`);
+    }
+    return null;
+  }
 
   try {
     // The scheduler titles the event and invites the attendee, so it needs more

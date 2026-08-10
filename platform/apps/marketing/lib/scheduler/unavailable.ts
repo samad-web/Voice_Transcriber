@@ -23,8 +23,14 @@ import type { Scheduler, Slot } from "./types";
 export class UnavailableScheduler implements Scheduler {
   readonly configured = false;
 
-  /** The reason config is missing, surfaced in logs so an operator can fix it. */
-  constructor(private readonly reason: string = "Google Calendar is not configured") {}
+  /**
+   * Why there is no calendar. PUBLIC, because the caller has to tell two very
+   * different situations apart: nobody configured one (fine, expected), versus
+   * one is configured and was rejected (a misconfiguration that silently cost
+   * three real bookings on 2026-08-10). Only the second is worth recording
+   * against a booking as an error.
+   */
+  constructor(readonly reason: string = "Google Calendar is not configured") {}
 
   async availableSlots(): Promise<Slot[]> {
     return [];
