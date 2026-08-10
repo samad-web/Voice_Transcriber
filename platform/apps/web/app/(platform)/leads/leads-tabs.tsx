@@ -8,16 +8,34 @@ import { WhatsAppTemplates } from "./whatsapp-templates";
 import { CriteriaEditor } from "./criteria-editor";
 
 /**
- * Two views of the same funnel: the people, and what we say to them.
+ * Three views of the same funnel: the people, what we say to them, and who
+ * counts as a lead.
  *
- * A tab rather than a separate page in the sidebar. The two belong together —
- * an operator about to press Reject is exactly the person who should be able to
+ * A tab rather than a separate page in the sidebar. They belong together — an
+ * operator about to press Reject is exactly the person who should be able to
  * check the wording of a rejection first — and a nav item nobody looks for is a
  * feature nobody finds.
  *
- * Client-side switching over both payloads, both fetched on the server. The
- * templates are five short rows; a round trip to reveal them would be slower
- * than fetching them up front and buys nothing.
+ * Client-side switching over payloads all fetched on the server. The templates
+ * are five short rows; a round trip to reveal them would be slower than
+ * fetching them up front and buys nothing.
+ *
+ * ── EVERY PANEL STAYS MOUNTED ──────────────────────────────────────────────
+ *
+ * `hidden`, not a conditional render. This started as
+ * `tab === "criteria" ? <CriteriaEditor/> : …`, which UNMOUNTS the editor the
+ * moment you leave the tab and takes its unsaved state with it.
+ *
+ * CriteriaEditor deliberately holds edits locally until Save is pressed — a
+ * half-built rule must never briefly become the live definition of a qualified
+ * lead. Combined with an unmount, that meant switching tabs silently discarded
+ * the change, and coming back showed the server's value again. Reported on
+ * 2026-08-10 as "the qualification toggle turns itself back on": it was never
+ * off, the edit was thrown away, and nothing said so.
+ *
+ * Keeping them mounted costs one hidden subtree of already-fetched data and
+ * removes a class of bug where any editor added here later loses work the same
+ * way.
  */
 export function LeadsTabs({
   leads,
@@ -41,6 +59,7 @@ export function LeadsTabs({
   criteriaError?: string;
 }) {
   const [tab, setTab] = useState<TabId>("leads");
+  const [criteriaDirty, setCriteriaDirty] = useState(false);
 
   return (
     <div className="flex flex-col gap-4">
@@ -53,36 +72,53 @@ export function LeadsTabs({
         </Tab>
         {/* Third, and last, because it is the one an operator visits least and
             the one with the widest blast radius: editing it changes how every
-            future enquiry is sorted. */}
+            future enquiry is sorted.
+
+            The label reports the SAVED state, not the edited one, so it cannot
+            claim the funnel has stopped filtering while that change is still
+            sitting unsaved in the panel. The dot says there is a change; the
+            word says what is actually running. */}
         <Tab id="criteria" current={tab} onSelect={setTab}>
           Qualification{criteria.enabled ? "" : " (off)"}
+          {criteriaDirty ? (
+            <span className="ml-1.5 text-accent" title="Unsaved changes" aria-label="unsaved changes">
+              •
+            </span>
+          ) : null}
         </Tab>
       </div>
 
-      {tab === "criteria" ? (
-        <CriteriaEditor
-          initial={criteria}
-          updatedAt={criteriaUpdatedAt}
-          updatedBy={criteriaUpdatedBy}
-          loadError={criteriaError}
-        />
-      ) : tab === "leads" ? (
-        leadsError ? (
+      <div role="tabpanel" hidden={tab !== "leads"}>
+        {leadsError ? (
           <ErrorCard title="Could not load leads" message={leadsError}>
             If the API is running, this usually means migrations 0020 and 0021 have not been
             applied to the database it is pointed at.
           </ErrorCard>
         ) : (
           <LeadsTable initial={leads} />
-        )
-      ) : templatesError ? (
-        <ErrorCard title="Could not load the messages" message={templatesError}>
-          The messages still send — the worker falls back to the wording built into the release
-          when this table is unreachable. Only editing is unavailable.
-        </ErrorCard>
-      ) : (
-        <WhatsAppTemplates initial={templates} maxLength={maxLength} />
-      )}
+        )}
+      </div>
+
+      <div role="tabpanel" hidden={tab !== "whatsapp"}>
+        {templatesError ? (
+          <ErrorCard title="Could not load the messages" message={templatesError}>
+            The messages still send — the worker falls back to the wording built into the release
+            when this table is unreachable. Only editing is unavailable.
+          </ErrorCard>
+        ) : (
+          <WhatsAppTemplates initial={templates} maxLength={maxLength} />
+        )}
+      </div>
+
+      <div role="tabpanel" hidden={tab !== "criteria"}>
+        <CriteriaEditor
+          initial={criteria}
+          updatedAt={criteriaUpdatedAt}
+          updatedBy={criteriaUpdatedBy}
+          loadError={criteriaError}
+          onDirtyChange={setCriteriaDirty}
+        />
+      </div>
     </div>
   );
 }

@@ -49,11 +49,20 @@ export function CriteriaEditor({
   updatedAt,
   updatedBy,
   loadError,
+  onDirtyChange,
 }: {
   initial: FunnelCriteria;
   updatedAt?: string;
   updatedBy?: string | null;
   loadError?: string;
+  /**
+   * Reported upwards so the tab strip can mark this panel as unsaved.
+   *
+   * Without it the only evidence of a pending change is on a screen the
+   * operator has navigated away from — they toggle qualification off, switch to
+   * Leads, and every visible signal says the funnel is still filtering.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [criteria, setCriteria] = useState<FunnelCriteria>(initial);
   const [dirty, setDirty] = useState(false);
@@ -64,6 +73,7 @@ export function CriteriaEditor({
   const update = (next: FunnelCriteria) => {
     setCriteria(next);
     setDirty(true);
+    onDirtyChange?.(true);
     setNote(null);
     setError(null);
   };
@@ -79,6 +89,7 @@ export function CriteriaEditor({
       const res = await saveFunnelCriteriaAction(criteria);
       if (res.error) return setError(res.error);
       setDirty(false);
+      onDirtyChange?.(false);
       setError(null);
       setNote("Saved. New enquiries are judged by these rules within a minute.");
     });
