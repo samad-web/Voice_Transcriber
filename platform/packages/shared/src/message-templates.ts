@@ -104,8 +104,14 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "booking_confirmed",
-    label: "Booked a call",
-    when: "Sent the moment someone picks a slot on the website.",
+    // Names the Meet link, because that is what an operator comes here looking
+    // for. "Booked a call" is accurate and was unfindable: somebody hunting for
+    // the message that carries the join link scanned five headings, saw nothing
+    // with "Meet" in it, and concluded the template did not exist.
+    label: "Booked a call — sends the Google Meet link",
+    when:
+      "Sent on WhatsApp within a minute of someone picking a slot on the website. " +
+      "Carries the time and the Google Meet link. Google also emails them a calendar invite.",
     allowedPlaceholders: ["first_name", "name", "slot", "meet_link"],
     // Live since 2026-08-10, reversing the 2026-08-09 decision not to message
     // bookers. The worker sweep in booking-confirmations.ts queues it; migration
