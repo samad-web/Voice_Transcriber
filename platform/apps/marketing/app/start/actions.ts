@@ -11,12 +11,14 @@ import {
   classifyCrm,
   coerceOption,
   normalizeEmail,
+  evaluateCriteria,
   qualify,
   validateEmail,
   validateName,
   validatePhone,
 } from "@aura/shared";
 import { consentEvidence } from "@/lib/funnel/consent";
+import { loadFunnelCriteria } from "@/lib/funnel/criteria";
 import { funnelConfigured, query } from "@/lib/funnel/db";
 import { captureContact, recordQualification } from "@/lib/funnel/repository";
 import { clearFunnelSession, getFunnelSession, setFunnelSession } from "@/lib/funnel/session";
@@ -184,9 +186,37 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
     return { ok: false, error: "Please tell us which CRM you use and how it is working out." };
   }
 
-  // Server-side and silent. `crmSatisfied` is deliberately NOT passed: it shapes
-  // the sales conversation, not the verdict. See CRM_SATISFACTION_OPTIONS.
-  const result = qualify({ budget, intent, hasCrm, wantsCustomCrm });
+  // ── The verdict ───────────────────────────────────────────────────────
+  //
+  // Server-side and silent, as it always was. What changed on 2026-08-10 is
+  // WHERE the rules come from: an operator-editable set in
+  // marketing.funnel_criteria rather than three clauses compiled into the
+  // release. `loadFunnelCriteria()` falls back to the compiled defaults on any
+  // failure, and those defaults are the same three clauses — proven equal over
+  // every answer combination in funnel-criteria.test.ts — so a database blip
+  // changes nothing about who qualifies.
+  //
+  // `qualify()` is still called, for `routeToHuman` only. That flag is not a
+  // qualification rule and was never one: it records that somebody asked about
+  // a custom build so an operator can answer the question, and making it
+  // editable would invite someone to turn it into a rule by accident.
+  const criteria = await loadFunnelCriteria();
+  const evaluation = evaluateCriteria(criteria, {
+    budget,
+    intent,
+    hasCrm,
+    wantsCustomCrm,
+    // Available to rules even though the shipped defaults do not use them. An
+    // operator can write "team size is 6-20" without a code change, which is
+    // the entire point of the feature.
+    teamSize,
+    businessType,
+    crmSatisfied,
+  });
+  const result = {
+    ...qualify({ budget, intent, hasCrm, wantsCustomCrm }),
+    status: evaluation.status,
+  };
 
   // Same reasoning as step 1 — but the session is deliberately NOT cleared on
   // failure, so a retry still attaches to the row step 1 created rather than

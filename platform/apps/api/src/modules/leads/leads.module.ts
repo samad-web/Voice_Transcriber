@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { FunnelCriteriaController } from "./funnel-criteria.controller";
 import { LeadsController } from "./leads.controller";
 import { MessageTemplatesController } from "./message-templates.controller";
 import { SlotsController } from "./slots.controller";
@@ -11,6 +12,7 @@ import { WhatsAppCheckController } from "./whatsapp-check.controller";
     SlotsController,
     MessageTemplatesController,
     WhatsAppCheckController,
+    FunnelCriteriaController,
   ],
 })
 export class LeadsModule {}

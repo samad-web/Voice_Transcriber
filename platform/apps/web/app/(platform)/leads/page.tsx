@@ -1,5 +1,6 @@
+import { DEFAULT_FUNNEL_CRITERIA } from "@aura/shared";
 import { PageHeader } from "@/components/page-header";
-import { listLeadsAction, listMessageTemplatesAction } from "./actions";
+import { getFunnelCriteriaAction, listLeadsAction, listMessageTemplatesAction } from "./actions";
 import { LeadsTabs } from "./leads-tabs";
 
 /**
@@ -14,15 +15,16 @@ import { LeadsTabs } from "./leads-tabs";
  * call next, and a list where converted customers outnumber live enquiries by
  * ten to one is a list nobody uses.
  *
- * Both fetches run CONCURRENTLY and fail independently. Awaiting them in
+ * All three fetches run CONCURRENTLY and fail independently. Awaiting them in
  * sequence would make the templates tab wait on a leads query it has nothing to
  * do with, and a single try/catch around both would mean one unreachable
  * endpoint blanked the other tab.
  */
 export default async function LeadsPage() {
-  const [leadsResult, templatesResult] = await Promise.all([
+  const [leadsResult, templatesResult, criteriaResult] = await Promise.all([
     listLeadsAction("open"),
     listMessageTemplatesAction(),
+    getFunnelCriteriaAction(),
   ]);
 
   return (
@@ -40,6 +42,10 @@ export default async function LeadsPage() {
         templates={templatesResult.templates ?? []}
         templatesError={templatesResult.error}
         maxLength={templatesResult.maxLength ?? 1200}
+        criteria={criteriaResult.criteria ?? DEFAULT_FUNNEL_CRITERIA}
+        criteriaUpdatedAt={criteriaResult.updatedAt}
+        criteriaUpdatedBy={criteriaResult.updatedBy}
+        criteriaError={criteriaResult.error}
       />
     </>
   );

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { validateCriteria, type FunnelCriteria } from "@aura/shared";
 import { requireOperator } from "@/lib/operator-guard";
 import { getPrincipal } from "@/lib/owner-context";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
@@ -513,6 +514,78 @@ export async function checkWhatsAppNumbersAction(
     }
     const data = await res.json();
     return { configured: data.configured, results: data.results ?? [] };
+  } catch {
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Qualification criteria
+
+   Who counts as a lead. Held in the database and edited here rather than
+   compiled into a release, because it is a commercial decision that changes
+   more often than the code does.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+export interface CriteriaResult {
+  criteria?: FunnelCriteria;
+  updatedAt?: string;
+  updatedBy?: string | null;
+  error?: string;
+}
+
+export async function getFunnelCriteriaAction(): Promise<CriteriaResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/funnel-criteria`, {
+      headers: crossTenantHeaders,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 404) {
+        return { error: "The criteria endpoint is not available. Is the API on the current build?" };
+      }
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = await res.json();
+    return { criteria: data.criteria, updatedAt: data.updatedAt, updatedBy: data.updatedBy };
+  } catch {
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+  }
+}
+
+export async function saveFunnelCriteriaAction(criteria: FunnelCriteria): Promise<CriteriaResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const actor = (await getPrincipal())?.email || "console";
+
+  // Checked here as well as in the API. Same function, so the two cannot
+  // disagree — this one just gets the operator a red line without a round trip.
+  const check = validateCriteria(criteria);
+  if (!check.ok) return { error: check.error };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/funnel-criteria`, {
+      method: "PUT",
+      headers: crossTenantHeaders,
+      cache: "no-store",
+      body: JSON.stringify({ ...criteria, actor }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = await res.json();
+    revalidatePath("/leads");
+    return { criteria: data.criteria };
   } catch {
     return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
   }

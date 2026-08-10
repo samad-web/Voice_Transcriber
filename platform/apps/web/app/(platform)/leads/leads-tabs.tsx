@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import type { FunnelCriteria } from "@aura/shared";
 import type { Lead, MessageTemplate } from "./actions";
 import { LeadsTable } from "./leads-table";
 import { WhatsAppTemplates } from "./whatsapp-templates";
+import { CriteriaEditor } from "./criteria-editor";
 
 /**
  * Two views of the same funnel: the people, and what we say to them.
@@ -23,14 +25,22 @@ export function LeadsTabs({
   templates,
   templatesError,
   maxLength,
+  criteria,
+  criteriaUpdatedAt,
+  criteriaUpdatedBy,
+  criteriaError,
 }: {
   leads: Lead[];
   leadsError?: string;
   templates: MessageTemplate[];
   templatesError?: string;
   maxLength: number;
+  criteria: FunnelCriteria;
+  criteriaUpdatedAt?: string;
+  criteriaUpdatedBy?: string | null;
+  criteriaError?: string;
 }) {
-  const [tab, setTab] = useState<"leads" | "whatsapp">("leads");
+  const [tab, setTab] = useState<TabId>("leads");
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,9 +51,22 @@ export function LeadsTabs({
         <Tab id="whatsapp" current={tab} onSelect={setTab}>
           WhatsApp
         </Tab>
+        {/* Third, and last, because it is the one an operator visits least and
+            the one with the widest blast radius: editing it changes how every
+            future enquiry is sorted. */}
+        <Tab id="criteria" current={tab} onSelect={setTab}>
+          Qualification{criteria.enabled ? "" : " (off)"}
+        </Tab>
       </div>
 
-      {tab === "leads" ? (
+      {tab === "criteria" ? (
+        <CriteriaEditor
+          initial={criteria}
+          updatedAt={criteriaUpdatedAt}
+          updatedBy={criteriaUpdatedBy}
+          loadError={criteriaError}
+        />
+      ) : tab === "leads" ? (
         leadsError ? (
           <ErrorCard title="Could not load leads" message={leadsError}>
             If the API is running, this usually means migrations 0020 and 0021 have not been
@@ -64,15 +87,17 @@ export function LeadsTabs({
   );
 }
 
+type TabId = "leads" | "whatsapp" | "criteria";
+
 function Tab({
   id,
   current,
   onSelect,
   children,
 }: {
-  id: "leads" | "whatsapp";
+  id: TabId;
   current: string;
-  onSelect: (id: "leads" | "whatsapp") => void;
+  onSelect: (id: TabId) => void;
   children: React.ReactNode;
 }) {
   const active = current === id;

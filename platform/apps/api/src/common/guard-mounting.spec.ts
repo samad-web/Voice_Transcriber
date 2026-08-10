@@ -12,7 +12,7 @@
  * cannot be fooled by formatting.
  *
  * The four route classes are exhaustive and their sizes are asserted: 57
- * tenant-scoped, 19 cross-tenant, 6 device-authenticated, 6 unguarded = 88. A
+ * tenant-scoped, 21 cross-tenant, 6 device-authenticated, 6 unguarded = 90. A
  * new route lands in one of those buckets and moves a count, so "I added an
  * endpoint and forgot the guards" is a red test rather than a live hole.
  *
@@ -59,6 +59,7 @@ import { InstancesController } from "../modules/devices/instances.controller";
 import { LeadsController as FunnelLeadsController } from "../modules/leads/leads.controller";
 import { MessageTemplatesController } from "../modules/leads/message-templates.controller";
 import { SlotsController } from "../modules/leads/slots.controller";
+import { FunnelCriteriaController } from "../modules/leads/funnel-criteria.controller";
 import { WhatsAppCheckController } from "../modules/leads/whatsapp-check.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
@@ -102,6 +103,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   SlotsController,
   MessageTemplatesController,
   WhatsAppCheckController,
+  FunnelCriteriaController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -153,6 +155,11 @@ const CROSS_TENANT = [
   // Presence lookup on the WhatsApp network for numbers an enquirer typed.
   // Same reasoning as the rest of the funnel: no org exists yet to scope to.
   "POST /admin/whatsapp/check",
+  // Who counts as a qualified lead. Cross-tenant for the same reason as
+  // the rest of the funnel: these rules belong to the funnel, not to a
+  // tenant, because a lead has no tenant until it is converted.
+  "GET /admin/funnel-criteria",
+  "PUT /admin/funnel-criteria",
 ];
 
 /** §2.3 — one route on the whole platform. */
@@ -238,13 +245,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 88 routes, partitioned 57 tenant / 19 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 90 routes, partitioned 57 tenant / 21 cross-tenant / 6 device / 6 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten. They are
     // asserted as a set, not just a total, so moving a route BETWEEN classes
     // (dropping TenantGuard from a tenant route, say) fails even though the
     // total is unchanged.
-    expect(ROUTES).toHaveLength(88);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(88);
+    expect(ROUTES).toHaveLength(90);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(90);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -256,10 +263,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
     expect(tenantScoped).toHaveLength(57);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(88);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(90);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 76 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 78 principal routes", () => {
     // 57 tenant-scoped + 6 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
@@ -267,7 +274,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(76);
+    expect(principalRoutes).toHaveLength(78);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
