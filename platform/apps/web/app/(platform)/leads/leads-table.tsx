@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { describeAnswers } from "@aura/shared";
 import { BrutalButton, Card, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
 import { convertLeadAction, deleteLeadsAction, type ConvertResult, type Lead } from "./actions";
 import { RejectPanel } from "./reject-panel";
@@ -66,6 +67,7 @@ const FILTERS: { id: Filter; label: string }[] = [
 
 export function LeadsTable({ initial }: { initial: Lead[] }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [answersFor, setAnswersFor] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [converted, setConverted] = useState<Set<string>>(new Set());
@@ -229,6 +231,11 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
       {visible.map((lead) => {
         const done = converted.has(lead.id);
         const isRejected = rejected.has(lead.id);
+        // One open panel at a time. Expanding every lead by default would turn
+        // a scannable list into eight screens of prose; expanding several at
+        // once is the same problem more slowly.
+        const showAnswers = answersFor === lead.id;
+        const answers = describeAnswers(lead);
         return (
           <Card key={lead.id}>
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -272,24 +279,68 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                     : ""}
                 </p>
 
-                <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-text-muted">
-                  {(
-                    [
-                      ["Business", lead.business_type],
-                      ["Team", lead.team_size],
-                      ["Budget", lead.budget_inr],
-                      ["Stage", lead.intent],
-                      ["CRM", lead.crm_name ?? lead.has_crm],
-                    ] as const
-                  )
-                    .filter(([, v]) => v)
-                    .map(([k, v]) => (
-                      <div key={k} className="flex gap-1.5">
-                        <dt className="font-medium">{k}:</dt>
-                        <dd>{v}</dd>
-                      </div>
-                    ))}
-                </dl>
+                {/* WHEN THEY CAME IN. The card carried no timestamp at all,
+                    which left the list unreadable for the majority of leads:
+                    only a qualified visitor is ever offered a slot, so for
+                    everyone who did not qualify there was no time on the row of
+                    any kind, and no way to tell this morning's enquiry from
+                    last month's. Same pinned zone as the call time — see
+                    formatSlot. */}
+                <p className="mt-1 text-xs text-text-muted">
+                  Enquired {formatSlot(lead.created_at)} IST
+                  {lead.contact_attempts > 1 &&
+                  lead.last_contacted_at &&
+                  lead.last_contacted_at !== lead.created_at
+                    ? ` · last activity ${formatSlot(lead.last_contacted_at)} IST`
+                    : ""}
+                </p>
+
+                {/* WHAT THEY WERE ASKED, AND WHAT THEY SAID.
+
+                    This used to be five hardcoded pairs printing the STORED
+                    VALUE — "Budget: below_10k", "CRM: spreadsheets_whatsapp" —
+                    with a made-up label on the left that was not any question
+                    the visitor saw. Two things were wrong with it: the operator
+                    had to translate enum values in their head, and an answer
+                    like "tell_me_more" is meaningless without "Would you like
+                    us to build a CRM for you?" above it.
+
+                    `describeAnswers` comes from @aura/shared and carries the
+                    question wording the form itself renders, so the panel
+                    cannot attribute an answer to a question nobody was asked.
+                    It also surfaces crm_satisfied, which no view had. */}
+                {answers.length > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setAnswersFor(showAnswers ? null : lead.id)}
+                      aria-expanded={showAnswers}
+                      className="mt-3 text-xs font-medium text-accent underline underline-offset-2"
+                    >
+                      {showAnswers
+                        ? "Hide answers"
+                        : `Show the ${answers.length} answers they gave`}
+                    </button>
+
+                    {showAnswers ? (
+                      <dl className="mt-2 grid gap-x-6 gap-y-2 rounded-md border border-border bg-bg-subtle p-3 text-xs sm:grid-cols-2">
+                        {answers.map((a) => (
+                          <div key={a.key}>
+                            <dt className="text-text-muted">{a.question}</dt>
+                            <dd className="mt-0.5 font-medium text-text">{a.answer}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : null}
+                  </>
+                ) : (
+                  // Reached step 1 and stopped. Saying so is more use than an
+                  // empty box, because it is the difference between a lead who
+                  // told us nothing and one whose answers failed to load.
+                  <p className="mt-3 text-xs text-text-muted">
+                    Left before answering the qualifying questions.
+                  </p>
+                )}
 
                 {/* The join link, only when Google actually returned one. It is
                     null on every booking made while the calendar is configured

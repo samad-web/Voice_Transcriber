@@ -28,6 +28,7 @@ export interface Lead {
   intent: string | null;
   has_crm: string | null;
   crm_name: string | null;
+  crm_satisfied: string | null;
   wants_custom_crm: string | null;
   crm_connector_status: string | null;
   status: string;

@@ -7,6 +7,11 @@ import {
   CRM_SATISFACTION_OPTIONS,
   FUNNEL_COUNTRIES,
   FUNNEL_CRM_OPTIONS,
+  // The question wording, shared with the console's lead panel. Held in one
+  // place so the console cannot end up attributing an answer to a question
+  // nobody was asked — the failure is silent, and reading a lead's answers
+  // under the wrong question is worse than not showing them.
+  FUNNEL_QUESTIONS,
   HAS_CRM_OPTIONS,
   INTENTS,
   TEAM_SIZES,
@@ -501,7 +506,7 @@ export function FunnelForm() {
               construction". As pills that is a nine-row wall on a phone with a
               ragged right edge — see the control rule above Dropdown. */}
           <Dropdown
-            label="What kind of business?"
+            label={FUNNEL_QUESTIONS.businessType}
             name="businessType"
             options={BUSINESS_TYPES}
             placeholder="Select your industry…"
@@ -514,7 +519,7 @@ export function FunnelForm() {
               seeing the whole ladder at once — "Just me" through "More than
               50" is a scale, and a dropdown hides scale behind a click. */}
           <Choice
-            label="How many telecallers do you have?"
+            label={FUNNEL_QUESTIONS.teamSize}
             name="teamSize"
             options={TEAM_SIZES}
             value={values.teamSize}
@@ -522,7 +527,7 @@ export function FunnelForm() {
             onPick={(v) => set("teamSize", v)}
           />
           <Choice
-            label="Monthly telemarketing budget"
+            label={FUNNEL_QUESTIONS.budget}
             name="budget"
             options={BUDGET_BANDS}
             value={values.budget}
@@ -533,7 +538,7 @@ export function FunnelForm() {
           {/* Two options. A dropdown for a binary choice is a click to reveal
               what a glance should already have told you. */}
           <Choice
-            label="How soon do you need this?"
+            label={FUNNEL_QUESTIONS.intent}
             name="intent"
             options={INTENTS}
             value={values.intent}
@@ -542,7 +547,7 @@ export function FunnelForm() {
           />
 
           <Choice
-            label="Do you use a CRM today?"
+            label={FUNNEL_QUESTIONS.hasCrm}
             name="hasCrm"
             options={HAS_CRM_OPTIONS}
             value={values.hasCrm}
@@ -576,7 +581,7 @@ export function FunnelForm() {
                   they already know the name of — this is a lookup, not a
                   comparison, which is exactly what a dropdown is for. */}
               <Dropdown
-                label="Which one?"
+                label={FUNNEL_QUESTIONS.crmName}
                 name="crmName"
                 options={FUNNEL_CRM_OPTIONS}
                 placeholder="Select your CRM…"
@@ -618,7 +623,7 @@ export function FunnelForm() {
                   the custom build is on the table, and that is the larger
                   transaction. */}
               <Choice
-                label="Are you happy with it?"
+                label={FUNNEL_QUESTIONS.crmSatisfied}
                 name="crmSatisfied"
                 options={CRM_SATISFACTION_OPTIONS}
                 value={values.crmSatisfied}
@@ -629,7 +634,7 @@ export function FunnelForm() {
           ) : null}
 
           <Choice
-            label="Would you like us to build a CRM for you?"
+            label={FUNNEL_QUESTIONS.wantsCustomCrm}
             name="wantsCustomCrm"
             options={WANTS_CUSTOM_CRM_OPTIONS}
             value={values.wantsCustomCrm}

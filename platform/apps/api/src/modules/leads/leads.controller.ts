@@ -92,7 +92,11 @@ export class LeadsController {
     const { rows } = await this.db.adminPool().query(
       `SELECT s.id, s.name, s.email, s.phone_e164, s.whatsapp_e164, s.country_code,
               s.business_type, s.team_size, s.budget_inr, s.intent,
-              s.has_crm, s.crm_name, s.wants_custom_crm, s.crm_connector_status,
+              -- crm_satisfied (migration 0028) was never added here, so the one
+              -- answer that says whether their current CRM is a problem could
+              -- not be read anywhere in the console.
+              s.has_crm, s.crm_name, s.crm_satisfied, s.wants_custom_crm,
+              s.crm_connector_status,
               s.status, s.contact_attempts, s.last_contacted_at, s.created_at,
               s.converted_org_id, s.converted_at, s.converted_by,
               o.name AS converted_org_name,
