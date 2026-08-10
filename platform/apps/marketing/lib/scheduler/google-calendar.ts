@@ -3,42 +3,43 @@ import type { FunnelSubmission, Scheduler, Slot } from "./types";
 import { zonedDateParts, zonedTimeToUtc } from "./zoned-time";
 
 /* ════════════════════════════════════════════════════════════════════════════
-   ⚠️  UNVERIFIED — READ THIS BEFORE TRUSTING ANY OF IT.
+   LIVE. Verified against Google on 2026-08-10.
 
-   This talks to a Google Cloud project that does not exist yet (doc 16 §0.4:
-   the Calendar API and an OAuth consent screen are an external dependency we do
-   not have). Nothing below has ever been run against Google. It is written from
-   the Calendar v3 and OAuth 2.0 service-account documentation and it typechecks,
-   which is a very long way from working.
+   Project aura-503207, service account aura-booking@aura-503207.iam.
+   gserviceaccount.com, writing to a calendar the service account OWNS
+   (ae473a10…@group.calendar.google.com) with support@sirahdigital.in granted
+   owner on it.
 
-   It is deliberately NOT the default: `getScheduler()` returns
-   `UnavailableScheduler` unless every credential is present, so an untested
-   code path cannot reach a live visitor by accident.
+   Everything below has been exercised for real: token exchange with and without
+   impersonation, freeBusy, an insert that produced a Meet link, and a delete.
 
-   ── What has to be true before flipping this on ──────────────────────────────
+   ── WHY THE CALENDAR IS ONE THE SERVICE ACCOUNT OWNS ────────────────────────
 
-   1. A Google Cloud project with the Calendar API enabled.
-   2. A service account, with a JSON key, in that project.
-   3. The target calendar SHARED with the service account's email, granted
-      "Make changes to events".
-   4. Attendee invites: a bare service account CANNOT invite attendees. Google
-      rejects `events.insert` with attendees unless the account has domain-wide
-      delegation. So either
-        (a) enable domain-wide delegation for the service account in Workspace
-            admin, scope `https://www.googleapis.com/auth/calendar`, and set
-            GOOGLE_CALENDAR_IMPERSONATE_SUBJECT to a real human mailbox in the
-            domain — then the lead receives a genuine calendar invite; or
-        (b) leave it unset, in which case ATTENDEES ARE OMITTED ENTIRELY and the
-            lead gets no invite. The event still lands on the team calendar with
-            the lead's details in the body. This module picks (b) automatically
-            rather than letting the whole booking fail, but it is a materially
-            worse experience and someone must decide which one ships.
-   5. A first manual run: one `availableSlots` against the real calendar and one
-      `book` that is then inspected in the Google Calendar UI. Until that has
-      happened, treat every line here as a hypothesis.
+   Not preference — necessity. The Workspace domain restricts OUTBOUND calendar
+   sharing to free/busy only, so granting the service account write access to a
+   human's calendar is impossible: `events.insert` returns 403
+   `requiredAccessLevel` on the primary calendar AND on secondary ones. INBOUND
+   sharing is not restricted, so a calendar the service account creates and then
+   shares back into the domain works in both directions. GOOGLE_BUSY_CALENDAR_IDS
+   is what keeps the team's real diary authoritative for availability.
 
-   Verify in that order. The most likely failure is (3) — a service account can
-   authenticate perfectly and still 404 on a calendar nobody shared with it.
+   ── IMPERSONATION CONTROLS TWO THINGS AT ONCE ───────────────────────────────
+
+   With GOOGLE_CALENDAR_IMPERSONATE_SUBJECT set, and domain-wide delegation
+   authorised for scope https://www.googleapis.com/auth/calendar:
+     • the lead is added as an ATTENDEE and Google emails them the invite;
+     • a Meet link is requested and minted.
+
+   With it unset, NEITHER happens. Both are entitlements of a real Workspace
+   mailbox, and a bare service account has neither — asking for a Meet link
+   without it fails the whole insert with 400 "Invalid conference type value."
+   (see note at `wantsMeet`). That coupling is deliberate; if the two ever need
+   to be separated, split the flag rather than making the Meet request
+   unconditional.
+
+   The likeliest failure after a config change is still a sharing one: a service
+   account can authenticate perfectly and still 404 on a calendar nobody shared
+   with it.
    ════════════════════════════════════════════════════════════════════════════ */
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";

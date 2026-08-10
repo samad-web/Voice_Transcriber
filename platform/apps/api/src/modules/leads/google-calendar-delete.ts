@@ -116,10 +116,24 @@ export async function deleteCalendarEvents(eventIds: string[]): Promise<Calendar
     };
   }
 
+  /**
+   * Tell the attendee the meeting is off.
+   *
+   * Google's default on events.delete is to notify NOBODY. Once the funnel
+   * started inviting leads as real attendees, that default became the worst
+   * possible one: rejecting a lead removed the meeting from OUR calendar and
+   * left it sitting on THEIRS, with a working Meet link, and they turn up.
+   *
+   * `all` is harmless where there are no attendees — an event nobody was
+   * invited to has nobody to notify — so this needs no condition on whether
+   * impersonation is configured.
+   */
+  const params = new URLSearchParams({ sendUpdates: "all" });
+
   for (const eventId of eventIds) {
     try {
       const res = await fetch(
-        `${CALENDAR_API}/calendars/${encodeURIComponent(cfg.calendarId)}/events/${encodeURIComponent(eventId)}`,
+        `${CALENDAR_API}/calendars/${encodeURIComponent(cfg.calendarId)}/events/${encodeURIComponent(eventId)}?${params}`,
         {
           method: "DELETE",
           headers: { authorization: `Bearer ${token}` },

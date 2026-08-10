@@ -151,10 +151,16 @@ let cached: Scheduler | null = null;
  * says that rule "holds absolutely", so a misconfiguration must degrade to the
  * honest screen rather than throw a 500 into a live lead form.
  *
- * TODAY, IN THIS REPOSITORY, THIS ALWAYS RETURNS `UnavailableScheduler`. No
- * Google credentials exist anywhere in the platform (`.env.production.example`
- * has no GOOGLE_* entry), which is the correct and intended state until the
- * Cloud project is created.
+ * In production this returns `GoogleCalendarScheduler` — the credentials are
+ * set and verified (see the header of google-calendar.ts). It still returns
+ * `UnavailableScheduler` anywhere the GOOGLE_* vars are absent, which is every
+ * local and preview environment, and that remains the correct default.
+ *
+ * Note the failure mode this fell into once: because ANY thrown error lands in
+ * the catch below, an unrelated bad OPTIONAL setting silently discarded a
+ * working Google configuration. `envOr()` above is the guard; the honest screen
+ * is a safe fallback for a MISSING calendar, not a good place to hide a
+ * misconfigured one, so read the server log when slots stop appearing.
  */
 export function getScheduler(): Scheduler {
   if (cached) return cached;
