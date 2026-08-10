@@ -38,6 +38,13 @@ export interface Lead {
   converted_at: string | null;
   converted_by: string | null;
   converted_org_name: string | null;
+  /**
+   * The call this person booked, if they booked one. Null for everyone else,
+   * which is most of them — booking is offered only on the qualified path.
+   */
+  booked_starts_at: string | null;
+  booked_ends_at: string | null;
+  booked_meeting_url: string | null;
 }
 
 export interface LeadsResult {

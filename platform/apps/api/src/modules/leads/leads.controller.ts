@@ -95,9 +95,28 @@ export class LeadsController {
               s.has_crm, s.crm_name, s.wants_custom_crm, s.crm_connector_status,
               s.status, s.contact_attempts, s.last_contacted_at, s.created_at,
               s.converted_org_id, s.converted_at, s.converted_by,
-              o.name AS converted_org_name
+              o.name AS converted_org_name,
+              slot.starts_at  AS booked_starts_at,
+              slot.ends_at    AS booked_ends_at,
+              slot.meeting_url AS booked_meeting_url
          FROM marketing.funnel_submissions s
          LEFT JOIN organizations o ON o.id = s.converted_org_id
+         -- The call this person booked, if any.
+         --
+         -- LATERAL with LIMIT 1 rather than a plain LEFT JOIN: a submission can
+         -- legitimately touch several slots over its life (booked, released by a
+         -- reject, booked again), and a plain join would emit one lead row per
+         -- slot and silently duplicate the lead in the list. Only slots still in
+         -- 'booked' count — a released or cancelled one is not a call anybody is
+         -- turning up to. Newest first, because a rebooking supersedes.
+         LEFT JOIN LATERAL (
+           SELECT b.starts_at, b.ends_at, b.meeting_url
+             FROM marketing.booking_slots b
+            WHERE b.submission_id = s.id
+              AND b.status = 'booked'
+            ORDER BY b.starts_at DESC
+            LIMIT 1
+         ) slot ON true
          ${where}
         ORDER BY s.created_at DESC
         LIMIT $1`,

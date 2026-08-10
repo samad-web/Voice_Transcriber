@@ -34,6 +34,27 @@ const STATUS_LABELS: Record<string, { label: string; tone: "solid" | "muted" | "
   rejected: { label: "Rejected", tone: "danger" },
 };
 
+/**
+ * A booked call time, in the timezone the sales team actually works in.
+ *
+ * Asia/Kolkata is pinned rather than left to the browser. The slot was offered,
+ * chosen and stored in the team's zone (SCHEDULER_TIMEZONE), so rendering it in
+ * whatever zone the operator's laptop happens to be set to is how a 6:30 pm call
+ * becomes a 1:00 pm one in the only place anybody reads it. The label is printed
+ * alongside for the same reason — a time with no zone is a guess.
+ */
+function formatSlot(iso: string): string {
+  return new Date(iso).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 type Filter = "all" | "qualified" | "disqualified" | "contact_captured";
 
 const FILTERS: { id: Filter; label: string }[] = [
@@ -231,6 +252,15 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                   {lead.contact_attempts > 1 ? (
                     <StatusChip tone="muted">{lead.contact_attempts} enquiries</StatusChip>
                   ) : null}
+                  {/* Shown for ANY lead holding a booked slot, whatever the
+                      funnel decided about them. Booking is normally offered
+                      only on the qualified path, so a booked call against a
+                      lead that did not qualify is exactly the case an operator
+                      must not miss: somebody is expecting a call. Hiding it
+                      behind the qualified filter would make that invisible. */}
+                  {lead.booked_starts_at ? (
+                    <StatusChip tone="solid">Call {formatSlot(lead.booked_starts_at)} IST</StatusChip>
+                  ) : null}
                 </div>
 
                 {/* Contact details are the reason an operator opens this page, so
@@ -260,6 +290,25 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                       </div>
                     ))}
                 </dl>
+
+                {/* The join link, only when Google actually returned one. It is
+                    null on every booking made while the calendar is configured
+                    without domain-wide delegation, because a bare service
+                    account cannot mint a Meet link — so this is absent far more
+                    often than present, and an empty "Join:" label would read as
+                    a broken link rather than an absent feature. */}
+                {lead.booked_meeting_url ? (
+                  <p className="mt-2 text-xs">
+                    <a
+                      href={lead.booked_meeting_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent underline underline-offset-2"
+                    >
+                      Join the call
+                    </a>
+                  </p>
+                ) : null}
               </div>
 
               {!done && !isRejected ? (
