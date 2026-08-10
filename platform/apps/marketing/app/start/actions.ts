@@ -285,11 +285,27 @@ export interface BookResultPayload {
   /** Google Meet link, when Google Calendar is configured and returned one. */
   meetingUrl?: string | null;
   error?: string;
+  /**
+   * The session cookie is gone, so NO slot on this page can be booked.
+   *
+   * Distinguished from "that time was taken" because the two need opposite
+   * responses. A taken slot means try another one, and the picker refreshes.
+   * An expired session means every button will fail identically, and refreshing
+   * the list only invites the visitor to fail again on a different time — so
+   * the form offers them a way back to the start instead of a dead end.
+   */
+  sessionExpired?: boolean;
 }
 
 export async function bookSlotAction(slotId: string): Promise<BookResultPayload> {
   const session = await getFunnelSession();
-  if (!session) return { ok: false, error: "Your session expired. Please start again." };
+  if (!session) {
+    return {
+      ok: false,
+      sessionExpired: true,
+      error: "Your session expired, so we could not attach this booking to your details.",
+    };
+  }
 
   // Shape-checked before it reaches a query: a malformed id would otherwise be
   // a Postgres "invalid input syntax for type uuid", which is a 500 rather than

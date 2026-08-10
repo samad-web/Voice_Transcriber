@@ -718,6 +718,8 @@ function SlotPicker() {
     meetingUrl: string | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Terminal: the session cookie is gone and no slot on this page can work. */
+  const [expired, setExpired] = useState(false);
   const [pending, start] = useTransition();
 
   useEffect(() => {
@@ -777,7 +779,23 @@ function SlotPicker() {
         </p>
       ) : null}
 
-      {days.map((day) => (
+      {/* A dead end otherwise: the visitor is told their session expired and
+          left staring at buttons that will each fail identically. Their answers
+          are already saved — step 1 and step 2 both landed — so starting again
+          costs them the form, not the enquiry, and somebody will still see it.*/}
+      {expired ? (
+        <div className="mt-4 rounded-xl border p-4 text-sm" style={{ borderColor: "var(--mk-line)" }}>
+          <p style={{ color: "var(--mk-ink)" }}>
+            Your session expired before we could book that time. Your details are saved and the
+            team can still see your enquiry.
+          </p>
+          <a href="/start" className="mk-cta mk-cta-sm mt-3 inline-flex">
+            Start again to pick a time
+          </a>
+        </div>
+      ) : null}
+
+      {!expired && days.map((day) => (
         <div key={day} className="mb-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--mk-muted)" }}>
             {day}
@@ -808,6 +826,13 @@ function SlotPicker() {
                         // buy near-misses. Safe to call when the pixel is
                         // unconfigured — it is a no-op.
                         trackLead();
+                      } else if (res.sessionExpired) {
+                        // Terminal for this page: the cookie that ties a booking
+                        // to their details is gone, so EVERY slot here will fail
+                        // the same way. Re-fetching the list would only offer a
+                        // fresh set of buttons that cannot work either.
+                        setExpired(true);
+                        setError(res.error ?? "Your session expired.");
                       } else {
                         setError(res.error ?? "That time is no longer available.");
                         // Re-fetch: whatever went is gone, and showing it again
