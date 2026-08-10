@@ -37,14 +37,22 @@
 
 INSERT INTO marketing.funnel_followups
   (submission_id, template, channel, status, attempts, next_attempt_at, error)
+-- Every literal is cast explicitly.
+--
+-- A bare NULL in a SELECT list is `text`, not "whatever the target column is" —
+-- an INSERT ... SELECT gets no type inference from the target the way
+-- INSERT ... VALUES does. Unqualified, this failed on `next_attempt_at` with
+-- "is of type timestamp with time zone but expression is of type text". The
+-- others are cast for the same reason, before the next column added to this
+-- table finds the same edge.
 SELECT DISTINCT
   b.submission_id,
-  'booking_confirmed',
-  'whatsapp',
-  'dead',
-  0,
-  NULL,
-  'predates booking confirmations (migration 0032) — deliberately not sent'
+  'booking_confirmed'::text,
+  'whatsapp'::text,
+  'dead'::text,
+  0::int,
+  NULL::timestamptz,
+  'predates booking confirmations (migration 0032) — deliberately not sent'::text
 FROM marketing.booking_slots b
 WHERE b.status = 'booked'
   AND b.submission_id IS NOT NULL
