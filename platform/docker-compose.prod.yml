@@ -2,9 +2,22 @@
 # only container binding a host port and which obtains/renews Let's Encrypt
 # certificates automatically.
 #
+# ⚠️  DO NOT DEPLOY BY COPYING THE COMMANDS BELOW. USE ./deploy.sh.
+#
+# The commands here describe the CADDY layout only. A host that already runs
+# nginx on :80/:443 needs `-f docker-compose.nginx.yml` as well, and that
+# overlay is the ONLY thing publishing the loopback ports nginx proxies to.
+# Omitting it does not fail — compose happily recreates the containers without
+# published ports, and every recreated service disappears behind a 502 while
+# `docker ps` shows them all healthy. That outage happened on 2026-08-10.
+#
 #   cp .env.production.example .env.production   # then fill it in
-#   docker compose --env-file .env.production -f docker-compose.prod.yml --profile setup run --rm migrate
-#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+#   ./deploy.sh --migrate      # first run, or whenever a migration is added
+#   ./deploy.sh                # every deploy after that
+#
+# deploy.sh picks the overlays, then checks the ports are actually listening,
+# which is the step that turns this class of mistake into a loud failure
+# instead of a silent one. Raw compose invocations, for reference only:
 #
 # --env-file is REQUIRED, not decorative: `env_file:` only populates the
 # containers, while ${VAR} substitution in THIS file reads the --env-file (or a
