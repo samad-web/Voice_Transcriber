@@ -4,6 +4,7 @@ import {
   BarChart3,
   Building2,
   Contact,
+  Copy,
   Handshake,
   KeyRound,
   LayoutGrid,
@@ -122,6 +123,14 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Building2,
     title: "Accounts",
     context: "Pipeline",
+  },
+  {
+    href: "/owner/duplicates",
+    label: "Duplicates",
+    icon: Copy,
+    title: "Duplicates",
+    context: "Pipeline",
+    ownerRoles: ["owner", "manager"],
   },
 ];
 

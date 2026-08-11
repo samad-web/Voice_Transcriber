@@ -131,6 +131,12 @@ export class MergeController {
     });
   }
 
+  /**
+   * Candidates plus a label/detail for each side (contact.display_name/email,
+   * or account.name/domain) — duplicate_matches itself only holds ids, and a
+   * review screen showing two bare uuids is useless for deciding which side
+   * to keep.
+   */
   @Get("duplicates")
   async duplicates(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = DuplicatesQuery.safeParse(query);
@@ -139,10 +145,19 @@ export class MergeController {
 
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
-        `SELECT id, object_type, record_a_id, record_b_id, match_reason, score, status, created_at
-           FROM duplicate_matches
-          WHERE status = $1 AND ($2::text IS NULL OR object_type = $2)
-          ORDER BY created_at DESC`,
+        `SELECT dm.id, dm.object_type, dm.record_a_id, dm.record_b_id, dm.match_reason,
+                dm.score, dm.status, dm.created_at,
+                COALESCE(c1.display_name, a1.name)  AS record_a_label,
+                COALESCE(c1.email, a1.domain)        AS record_a_detail,
+                COALESCE(c2.display_name, a2.name)  AS record_b_label,
+                COALESCE(c2.email, a2.domain)        AS record_b_detail
+           FROM duplicate_matches dm
+           LEFT JOIN contacts c1 ON dm.object_type = 'contact' AND c1.id = dm.record_a_id
+           LEFT JOIN accounts a1 ON dm.object_type = 'account' AND a1.id = dm.record_a_id
+           LEFT JOIN contacts c2 ON dm.object_type = 'contact' AND c2.id = dm.record_b_id
+           LEFT JOIN accounts a2 ON dm.object_type = 'account' AND a2.id = dm.record_b_id
+          WHERE dm.status = $1 AND ($2::text IS NULL OR dm.object_type = $2)
+          ORDER BY dm.created_at DESC`,
         [status, objectType ?? null],
       );
       return { duplicates: rows };

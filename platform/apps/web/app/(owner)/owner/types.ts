@@ -206,6 +206,21 @@ export interface CustomFieldOption {
   label: string;
 }
 
+export interface DuplicateMatch {
+  id: string;
+  object_type: "contact" | "account";
+  record_a_id: string;
+  record_b_id: string;
+  record_a_label: string | null;
+  record_a_detail: string | null;
+  record_b_label: string | null;
+  record_b_detail: string | null;
+  match_reason: "phone" | "email" | "external_id" | "fuzzy_name_company";
+  score: string | number | null;
+  status: "pending" | "dismissed" | "merged";
+  created_at: string;
+}
+
 export interface CustomFieldDefinition {
   id: string;
   object_type: "contact" | "account" | "deal";

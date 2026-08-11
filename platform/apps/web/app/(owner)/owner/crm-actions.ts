@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "./actions";
-import type { Account, Contact, Deal } from "./types";
+import type { Account, Contact, Deal, DuplicateMatch } from "./types";
 
 /**
  * CRM Phase 1 foundation (E0.1) — mutations for the new Deal/Contact/Account
@@ -94,6 +94,108 @@ export async function fetchContactAction(
       ? ((await dealsRes.json()) as { deals: Deal[] })
       : { deals: [] };
     return { contact, deals };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Duplicate detection & merge (E0.3) — exact-match only (external_id
+ * collisions), see merge.controller.ts's header for why phone/email/domain
+ * aren't scanned. Same ownerHeaders()-first shape as the actions above.
+ */
+
+export async function scanDuplicatesAction(
+  objectType: "contact" | "account",
+): Promise<ActionResult & { scanned?: number; newCandidates?: number }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/merge/scan?objectType=${objectType}`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: `API ${res.status}` };
+    const data = (await res.json()) as { scanned: number; newCandidates: number };
+    revalidatePath("/owner/duplicates");
+    return data;
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export interface FetchDuplicatesResult {
+  duplicates?: DuplicateMatch[];
+  error?: string;
+}
+
+export async function fetchDuplicatesAction(
+  objectType?: "contact" | "account",
+): Promise<FetchDuplicatesResult> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const query = objectType ? `?objectType=${objectType}` : "";
+    const res = await fetch(`${API_URL}/v1/merge/duplicates${query}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: `API ${res.status}` };
+    return (await res.json()) as { duplicates: DuplicateMatch[] };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export async function dismissDuplicateAction(id: string): Promise<ActionResult> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/merge/duplicates/${id}/dismiss`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: `API ${res.status}` };
+    revalidatePath("/owner/duplicates");
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** Keeps `survivorId`'s own fields (no field-by-field picker in this UI — see
+ *  duplicates-manager.tsx), additively merging facts/external_ids from the
+ *  side being absorbed. */
+export async function mergeRecordsAction(
+  objectType: "contact" | "account",
+  survivorId: string,
+  victimId: string,
+): Promise<ActionResult & { mergeId?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/merge`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({ objectType, survivorId, victimId, fieldDecisions: {} }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: typeof body?.message === "string" ? body.message : `API ${res.status}` };
+    }
+    const data = (await res.json()) as { mergeId: string };
+    revalidatePath("/owner/duplicates");
+    revalidatePath("/owner/contacts");
+    revalidatePath("/owner/accounts");
+    revalidatePath("/owner/deals");
+    return { mergeId: data.mergeId };
   } catch {
     return { error: "API unreachable" };
   }
