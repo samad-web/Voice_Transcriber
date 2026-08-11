@@ -28,7 +28,29 @@ export const metadata: Metadata = pageMetadata({
  * what-happens-next and who-sees-this deserve answering. It just no longer
  * stands between them and the form.
  */
-export default function StartPage() {
+export default async function StartPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ resume?: string; link?: string }>;
+}) {
+  // Set by /continue/<token>, which has already verified the token and the
+  // session cookie. These are presentation hints only — nothing here grants
+  // access to anything, so a visitor typing ?resume=1 by hand gets step 2 with
+  // no session and the ordinary "your session expired" on submit.
+  const params = await searchParams;
+  const resuming = params.resume === "1";
+  const linkExpired = params.link === "expired";
+
+  return <StartPageBody resuming={resuming} linkExpired={linkExpired} />;
+}
+
+function StartPageBody({
+  resuming,
+  linkExpired,
+}: {
+  resuming: boolean;
+  linkExpired: boolean;
+}) {
   return (
     <div className="mk-page relative overflow-x-clip">
       <div className="mk-wash" />
@@ -42,7 +64,7 @@ export default function StartPage() {
           form needs room to breathe above the fold's edge, particularly once
           step 2 grows the card. */}
       <div className="relative z-10 mx-auto grid max-w-5xl items-start gap-8 px-5 pb-12 pt-4 sm:gap-12 sm:px-6 sm:pb-16 sm:pt-6 lg:grid-cols-[1fr_0.95fr] lg:pb-20 lg:pt-8">
-        <FunnelForm />
+        <FunnelForm startAt={resuming ? "qualify" : "contact"} linkExpired={linkExpired} />
 
         <div className="lg:order-first">
           <h1 className="mk-display text-[clamp(1.5rem,4.5vw,3rem)]">

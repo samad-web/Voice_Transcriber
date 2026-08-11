@@ -22,6 +22,8 @@ export const MESSAGE_TEMPLATE_KEYS = [
   "custom_crm_info",
   "booking_confirmed",
   "reminder_followup",
+  "resume_form",
+  "resume_form_2",
 ] as const;
 
 export type MessageTemplateKey = (typeof MESSAGE_TEMPLATE_KEYS)[number];
@@ -42,7 +44,35 @@ export const PLACEHOLDER_HELP: Record<string, string> = {
   name: "Their full name as they typed it",
   slot: "The booked call time, e.g. “Tue 12 Aug, 6:30 pm”",
   meet_link: "The Google Meet link, when the calendar produced one",
+  resume_link:
+    "A private link back into this person’s own half-finished form. " +
+    "Required — a nudge without it has nothing to click.",
 };
+
+/**
+ * Placeholders a message is POINTLESS without.
+ *
+ * Distinct from OPTIONAL_PLACEHOLDERS below, and the opposite rule. An optional
+ * one that is missing takes its sentence away and the message still reads. A
+ * REQUIRED one that is missing means the message has no reason to exist: "you
+ * didn't finish, pick up where you left off" with no link is an instruction the
+ * reader cannot follow, and worse than silence.
+ *
+ * The renderer refuses rather than substituting, so the outbox dead-letters the
+ * row with a reason an operator can act on instead of sending "pick up where
+ * you left off: there".
+ */
+export const REQUIRED_PLACEHOLDERS = new Set(["resume_link"]);
+
+/** Placeholders in `body` that must have a value and do not. */
+export function missingRequiredPlaceholders(
+  body: string,
+  vars: Record<string, string | undefined>,
+): string[] {
+  return placeholdersIn(body).filter(
+    (name) => REQUIRED_PLACEHOLDERS.has(name) && !vars[name]?.trim(),
+  );
+}
 
 export interface MessageTemplateSpec {
   key: MessageTemplateKey;
@@ -143,6 +173,33 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     whatsapp:
       "Hi {{first_name}}, following up on your enquiry about Aura. " +
       "If you'd still like to see what your calls are saying, reply here and we'll set up a time.",
+  },
+  {
+    key: "resume_form",
+    label: "Didn’t finish the form — first nudge",
+    when:
+      "Sent about 2 hours after someone gives their details and never answers the " +
+      "qualifying questions. Carries a private link back into their own half-finished form.",
+    allowedPlaceholders: ["first_name", "name", "resume_link"],
+    live: true,
+    // Short on purpose. Evolution drives an ordinary WhatsApp account over the
+    // unofficial web protocol, and this is the least-engaged audience the
+    // funnel messages, so brevity is a deliverability decision.
+    whatsapp:
+      "Hi {{first_name}}, you started telling us about your business on Aura but didn't finish. " +
+      "It takes under a minute — pick up where you left off: {{resume_link}}",
+  },
+  {
+    key: "resume_form_2",
+    label: "Didn’t finish the form — final nudge",
+    when:
+      "Sent about 2 days after the first nudge, and only if they still haven’t finished. " +
+      "Nobody gets more than these two.",
+    allowedPlaceholders: ["first_name", "name", "resume_link"],
+    live: true,
+    whatsapp:
+      "Hi {{first_name}}, your Aura enquiry is still open. Answer the last few questions and " +
+      "we'll tell you honestly whether we can help: {{resume_link}}",
   },
 ];
 

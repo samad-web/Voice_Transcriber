@@ -7,7 +7,13 @@ import {
   type FollowUpTemplate,
 } from "./funnel-followup";
 import { renderWhatsAppMessage } from "./message-templates";
+import { mintResumeLink } from "./resume-tokens";
 import { getWhatsAppSender } from "./whatsapp";
+
+/** The two stages that carry a link back into an unfinished form. */
+function isNudge(template: MessageTemplateKey): boolean {
+  return template === "resume_form" || template === "resume_form_2";
+}
 
 /**
  * Durable queue for funnel follow-up messages — doc 16 §3.6.
@@ -206,6 +212,7 @@ export async function drainFollowUps(limit = 100): Promise<number> {
     email: string;
     phone_e164: string | null;
     whatsapp_e164: string | null;
+    status: string;
     slot_label: string | null;
     meeting_url: string | null;
   }>(
@@ -228,7 +235,7 @@ export async function drainFollowUps(limit = 100): Promise<number> {
      * conflicting appointment.
      */
     `SELECT f.id, f.submission_id, f.template, f.channel, f.attempts,
-            s.name, s.email, s.phone_e164, s.whatsapp_e164,
+            s.name, s.email, s.phone_e164, s.whatsapp_e164, s.status,
             b.slot_label, b.meeting_url
        FROM marketing.funnel_followups f
        JOIN marketing.funnel_submissions s ON s.id = f.submission_id
@@ -272,13 +279,39 @@ export async function drainFollowUps(limit = 100): Promise<number> {
         const to = row.whatsapp_e164 || row.phone_e164;
         if (!to) {
           result = { ok: false, error: "no phone number on submission", terminal: true };
+        } else if (isNudge(row.template) && row.status !== "contact_captured") {
+          /**
+           * They finished the form between the queue and the send.
+           *
+           * The sweep only selects unfinished enquiries, but minutes pass
+           * before the drain runs and this is exactly the window somebody uses
+           * to come back on their own. Sending "you didn't finish, pick up
+           * where you left off" to a person who just answered every question —
+           * and may already have booked a call — is the worst message in the
+           * catalogue.
+           *
+           * Terminal, not a retry: they are not going to become unfinished.
+           */
+          result = {
+            ok: false,
+            error: `finished the form before the nudge was sent (status ${row.status})`,
+            terminal: true,
+          };
         } else {
           // The copy comes from the database now, so it can be missing or
           // switched off. Both are terminal: retrying a template an operator
           // deliberately disabled would send the message they told us not to,
           // as soon as the backoff happened to land after they re-enabled it.
+          // Minted at SEND time, not at queue time, so the token's 14-day life
+          // starts when the link reaches the person rather than whenever the
+          // sweep happened to run.
+          const resumeLink = isNudge(row.template)
+            ? await mintResumeLink(row.submission_id)
+            : undefined;
+
           const rendered = await renderWhatsAppMessage(row.template, {
             name: row.name,
+            resumeLink: resumeLink ?? undefined,
             // Passed for every template, used only by the ones whose copy
             // names them. `validateTemplateBody` already refuses `{{slot}}` or
             // `{{meet_link}}` in a stage that has no booking, so an unused

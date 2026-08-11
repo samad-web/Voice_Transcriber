@@ -4,6 +4,7 @@ import {
   fillTemplate,
   firstNameOf,
   getMessageTemplateSpec,
+  missingRequiredPlaceholders,
   type MessageChannel,
 } from "@aura/shared";
 
@@ -120,6 +121,15 @@ export type WhatsAppVars = {
    * of "Join on Google Meet here: there ." on their phone.
    */
   meetLink?: string;
+  /**
+   * The link back into a half-finished form. Only for `resume_form` and
+   * `resume_form_2`.
+   *
+   * REQUIRED where the copy uses it, unlike meetLink — see the check in
+   * `renderWhatsAppMessage`. A nudge with no link has nothing for the reader to
+   * do, so its absence fails the send rather than trimming the sentence.
+   */
+  resumeLink?: string;
 };
 
 export type RenderedMessage =
@@ -147,16 +157,38 @@ export async function renderWhatsAppMessage(
 
   const body = stored?.body ?? spec.whatsapp;
 
-  return {
-    ok: true,
-    text: fillTemplate(body, {
-      first_name: firstNameOf(vars.name),
-      // Capitalised for the same reason as first_name: a template using the
-      // full name would otherwise render "Hi aakash kummar," from a form typed
-      // in lower case on a phone.
-      name: capitalizeName(vars.name),
-      slot: vars.slot,
-      meet_link: vars.meetLink,
-    }),
+  const vals = {
+    first_name: firstNameOf(vars.name),
+    name: capitalizeName(vars.name),
+    slot: vars.slot,
+    meet_link: vars.meetLink,
+    resume_link: vars.resumeLink,
   };
+
+  /**
+   * Refuse rather than substitute when a REQUIRED placeholder has no value.
+   *
+   * `fillTemplate` replaces anything unresolved with the neutral word, which is
+   * right for a name and catastrophic for a link: "pick up where you left off:
+   * there" is an instruction the reader cannot follow, sent to someone who
+   * already declined to finish once.
+   *
+   * Terminal, so the outbox records the reason instead of retrying six times.
+   * The realistic cause is a deployment with no SITE_DOMAIN, which no amount of
+   * retrying fixes.
+   */
+  const missing = missingRequiredPlaceholders(body, vals);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason:
+        `the "${spec.label}" message needs ${missing.map((m) => `{{${m}}}`).join(", ")} ` +
+        "and no value was available — check SITE_DOMAIN is set",
+    };
+  }
+
+  // `vals` above is the single source of what each placeholder resolves to —
+  // built once so the required-placeholder check and the substitution can never
+  // disagree about whether a value was present.
+  return { ok: true, text: fillTemplate(body, vals) };
 }

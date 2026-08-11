@@ -226,8 +226,28 @@ function checkQualify(v: Values): Record<string, string> {
   return e;
 }
 
-export function FunnelForm() {
-  const [step, setStep] = useState<Step>("contact");
+export function FunnelForm({
+  /**
+   * Where to open.
+   *
+   * "qualify" is how a resume link lands: /continue/<token> has already
+   * verified the token, re-established the step-1 session cookie and sent them
+   * here, so their contact details are saved and the only thing left is the
+   * questions. Starting at step 1 would ask a person who has been nudged for
+   * not finishing to fill in their name and number a second time.
+   *
+   * The step-1 FIELDS stay empty in that case, and that is correct rather than
+   * a gap: they are never shown, and step 2 identifies the submission from the
+   * httpOnly cookie, never from anything in the DOM.
+   */
+  startAt = "contact",
+  /** Their link was unknown, expired, or the enquiry is already complete. */
+  linkExpired = false,
+}: {
+  startAt?: Step;
+  linkExpired?: boolean;
+} = {}) {
+  const [step, setStep] = useState<Step>(startAt);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, start] = useTransition();
@@ -334,6 +354,17 @@ export function FunnelForm() {
     // of the card below it rather than under it.
     <div ref={cardRef} className="mk-card scroll-mt-20 p-5 sm:p-7 lg:p-9">
       <Progress step={step} />
+
+      {/* Their resume link did not open anything. Said plainly and without
+          blame — the commonest reason by far is that they already finished,
+          and the second is that it simply aged out. Neither is a mistake they
+          made, and "invalid link" would read as an accusation. */}
+      {linkExpired ? (
+        <p role="status" className="mb-5 rounded-xl px-4 py-3 text-sm" style={alertStyle}>
+          That link has expired, or the enquiry it belonged to is already complete. You can start
+          again below — it only takes a minute.
+        </p>
+      ) : null}
 
       {errors.form ? (
         <p role="alert" className="mb-5 rounded-xl px-4 py-3 text-sm" style={alertStyle}>
