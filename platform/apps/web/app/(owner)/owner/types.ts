@@ -129,3 +129,94 @@ export function contactLabel(lead: Lead): string {
   if (lead.contact_number_last3) return `…${lead.contact_number_last3}`;
   return "no number";
 }
+
+/**
+ * CRM Phase 1 foundation (E0.1) — Account/Contact/Deal, alongside the Lead
+ * shapes above rather than instead of them. See the Phase 1 plan.
+ */
+
+export interface Deal {
+  id: string;
+  pipeline_id: string;
+  workspace_id: string | null;
+  account_id: string | null;
+  contact_id: string | null;
+  name: string;
+  stage: string;
+  status: "open" | "won" | "lost";
+  amount: string | number | null;
+  expected_close_date: string | null;
+  summary: string | null;
+  next_action: string | null;
+  notes: string | null;
+  owner_user_id: string | null;
+  telecaller_id: string | null;
+  source_lead_id: string | null;
+  facts: Record<string, unknown>;
+  call_count: number;
+  last_activity_at: string;
+  stage_changed_at: string;
+  created_at: string;
+  updated_at: string;
+  contact_name: string | null;
+  account_name: string | null;
+}
+
+export interface DealBoardColumn extends Stage {
+  count: number;
+  value: number;
+  deals: Deal[];
+}
+
+export interface Contact {
+  id: string;
+  workspace_id: string | null;
+  account_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string;
+  email: string | null;
+  phone_prefix: string | null;
+  phone_last3: string | null;
+  title: string | null;
+  owner_user_id: string | null;
+  facts: Record<string, unknown>;
+  status: "active" | "archived" | "merged";
+  call_count: number;
+  last_activity_at: string;
+  created_at: string;
+}
+
+export interface Account {
+  id: string;
+  workspace_id: string | null;
+  name: string;
+  domain: string | null;
+  phone_prefix: string | null;
+  phone_last3: string | null;
+  owner_user_id: string | null;
+  facts: Record<string, unknown>;
+  status: "active" | "archived" | "merged";
+  last_activity_at: string;
+  created_at: string;
+}
+
+export interface CustomFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface CustomFieldDefinition {
+  id: string;
+  object_type: "contact" | "account" | "deal";
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "boolean" | "picklist" | "multiselect" | "lookup";
+  description: string | null;
+  required: boolean;
+  options: CustomFieldOption[];
+  lookup_object_type: string | null;
+  sort_order: number;
+  status: "active" | "archived";
+  created_at: string;
+}

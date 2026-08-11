@@ -11,7 +11,7 @@ import type { Lead, LeadCall, Stage } from "./types";
  * accepts as an argument, a caller can forge — so the tenant is derived, never
  * passed in.
  */
-async function ownerHeaders(): Promise<Record<string, string> | null> {
+export async function ownerHeaders(): Promise<Record<string, string> | null> {
   const owner = await getOwner();
   if (!owner) return null;
   return orgHeaders(owner.membership.orgId, {
