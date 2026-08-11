@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -45,11 +46,12 @@ const ACCOUNT_COLUMNS = `id, workspace_id, name, domain, phone_prefix, phone_las
  * into web nav yet. See the Phase 1 plan.
  */
 @Controller("accounts")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, CrmPermissionsGuard)
 export class AccountsController {
   constructor(private readonly db: DbService) {}
 
   @Get()
+  @RequireCrmPermission("account", "view")
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -91,6 +93,11 @@ export class AccountsController {
   }
 
   @Get(":id")
+  // `account` only, though the payload embeds a contact summary: those are the
+  // people AT this account, so seeing the account implies seeing who is on it.
+  // Contrast GET /contacts/:id/deals, where deals are the entire payload rather
+  // than a nested summary and the grant is therefore `deal`.
+  @RequireCrmPermission("account", "view")
   async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -109,6 +116,7 @@ export class AccountsController {
   }
 
   @Post()
+  @RequireCrmPermission("account", "create")
   async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateAccountBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -129,6 +137,7 @@ export class AccountsController {
   }
 
   @Patch(":id")
+  @RequireCrmPermission("account", "edit")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

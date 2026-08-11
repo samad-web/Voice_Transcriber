@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 import { entryStage, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -77,7 +78,7 @@ const DEAL_JOINS = `FROM deals d
  * organizations.lead_stages. Strangler-fig: not linked into web nav yet.
  */
 @Controller("deals")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, CrmPermissionsGuard)
 export class DealsController {
   constructor(private readonly db: DbService) {}
 
@@ -98,6 +99,7 @@ export class DealsController {
   }
 
   @Get()
+  @RequireCrmPermission("deal", "view")
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -150,6 +152,7 @@ export class DealsController {
 
   /** Board view: every column, with its true count/value and the top N cards. */
   @Get("board")
+  @RequireCrmPermission("deal", "view")
   async board(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = BoardQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -196,6 +199,7 @@ export class DealsController {
   }
 
   @Get(":id")
+  @RequireCrmPermission("deal", "view")
   async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -207,6 +211,7 @@ export class DealsController {
   }
 
   @Post()
+  @RequireCrmPermission("deal", "create")
   async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateDealBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -261,6 +266,7 @@ export class DealsController {
    * owner/leads.controller.ts's update handler.
    */
   @Patch(":id")
+  @RequireCrmPermission("deal", "edit")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

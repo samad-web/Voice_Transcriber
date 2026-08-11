@@ -17,6 +17,9 @@ export interface Member {
   email: string;
   name: string | null;
   role: string;
+  /** The assigned `roles` row (migration 0039), or null if none. */
+  roleId?: string | null;
+  roleName?: string | null;
   recordingsListen: boolean;
   recordingsExport: boolean;
   scopeType?: string | null;
@@ -29,10 +32,28 @@ export interface Workspace {
   created_at: string;
 }
 
-const ROLES = ["owner", "admin", "manager", "analyst", "viewer"] as const;
+/** A row from `GET /v1/roles` — system-seeded or operator-defined. */
+export interface CrmRole {
+  id: string;
+  key: string;
+  name: string;
+  is_system: boolean;
+  status: string;
+}
+
+/**
+ * The tenant-assignable half of `memberships.role`'s CHECK enum, matching
+ * members.controller.ts's `Role` exactly (platform_admin is reserved for
+ * internal staff and deliberately absent).
+ *
+ * This list used to read ["owner","admin","manager","analyst","viewer"], which
+ * matched nothing the API accepts — so every add/change to anything but
+ * "viewer" was rejected with a 400 the UI showed as a bare status code.
+ */
+const ROLES = ["org_admin", "workspace_admin", "workspace_member", "viewer"] as const;
 
 function roleTone(role: string): "solid" | "muted" | "outline" {
-  if (role === "owner" || role === "admin") return "solid";
+  if (role === "org_admin" || role === "workspace_admin") return "solid";
   if (role === "viewer") return "outline";
   return "muted";
 }
@@ -40,16 +61,18 @@ function roleTone(role: string): "solid" | "muted" | "outline" {
 export function TeamManager({
   members,
   workspaces,
+  roles,
   orgId,
 }: {
   members: Member[];
   workspaces: Workspace[];
+  roles: CrmRole[];
   /** Tenant these members belong to; omitted falls back to the dev org. */
   orgId?: string;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<string>("analyst");
+  const [role, setRole] = useState<string>("workspace_member");
   const [listen, setListen] = useState(true);
   const [exportPerm, setExportPerm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +98,22 @@ export function TeamManager({
     });
 
   const changeRole = (userId: string, nextRole: string) =>
-    startTransition(() => updateMemberAction({ userId, role: nextRole }, orgId).then(() => undefined));
+    startTransition(async () => {
+      setError(null);
+      const res = await updateMemberAction({ userId, role: nextRole }, orgId);
+      if (res.error) setError(res.error);
+    });
+
+  /** Assign a CRM role (0039). Sent alone, so the legacy `role` above is untouched. */
+  const changeCrmRole = (userId: string, nextRoleId: string) =>
+    startTransition(async () => {
+      setError(null);
+      const res = await updateMemberAction(
+        { userId, roleId: nextRoleId === "" ? null : nextRoleId },
+        orgId,
+      );
+      if (res.error) setError(res.error);
+    });
 
   const togglePerm = (m: Member, key: "recordingsListen" | "recordingsExport") =>
     startTransition(() =>
@@ -118,6 +156,7 @@ export function TeamManager({
                   <tr className="bg-neutral-100 border-b-2 border-black font-mono text-[10px] text-black font-bold uppercase tracking-wider">
                     <th className="py-3.5 px-5">Member</th>
                     <th className="py-3.5 px-4">Role</th>
+                    <th className="py-3.5 px-4">CRM Role</th>
                     <th className="py-3.5 px-4">Permissions</th>
                     <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
@@ -147,6 +186,27 @@ export function TeamManager({
                             ))}
                           </select>
                         </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        {/* Which permission grid this member is enforced against
+                            on the CRM routes. Separate from the column beside it:
+                            that one is the legacy tenant role every other guard
+                            still reads, and changing one must not change the
+                            other. */}
+                        <select
+                          className="text-[10px] font-mono font-bold uppercase border border-black bg-white px-1 py-0.5 rounded-none focus:outline-none"
+                          value={m.roleId ?? ""}
+                          disabled={pending}
+                          onChange={(e) => changeCrmRole(m.userId, e.target.value)}
+                        >
+                          <option value="">— none —</option>
+                          {roles.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                              {r.is_system ? "" : " (custom)"}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex flex-wrap gap-1.5">

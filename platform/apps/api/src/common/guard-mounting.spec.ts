@@ -190,6 +190,34 @@ const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
 /** §2.4 — one controller, two routes. */
 const OWNER_ROLE_ROUTES = ["GET /owner/overview", "PATCH /owner/telecallers/:deviceId"];
 
+/**
+ * The CRM object model's enforced surface — every route that consults the
+ * `role_permissions` grid (migration 0039) via `CrmPermissionsGuard`.
+ *
+ * Pinned as an exhaustive list for the same reason PERMISSION_ROUTES is: a
+ * route that quietly LOSES its guard is a silent authorization hole, and a
+ * route that gains one unexpectedly is a silent lockout. `pipelines`,
+ * `custom-field-definitions` and `merge` are deliberately absent —
+ * `PermissionObjectType` is contact|account|deal only, so there is no grant
+ * for them to check yet; they remain AdminKeyGuard+TenantGuard as before.
+ */
+const CRM_PERMISSION_ROUTES = [
+  "GET /accounts",
+  "GET /accounts/:id",
+  "POST /accounts",
+  "PATCH /accounts/:id",
+  "GET /contacts",
+  "GET /contacts/:id",
+  "GET /contacts/:id/deals",
+  "POST /contacts",
+  "PATCH /contacts/:id",
+  "GET /deals",
+  "GET /deals/board",
+  "GET /deals/:id",
+  "POST /deals",
+  "PATCH /deals/:id",
+];
+
 interface Route {
   /** `"GET /calls/:id"` — verb plus the declared path, no `v1` prefix. */
   route: string;
@@ -348,6 +376,38 @@ describe("guard mounting (inventory 13 §1.1)", () => {
       const last = guards.indexOf("TenantGuard");
       const index = guards.findIndex((g) => g === "PermissionsGuard" || g === "OwnerRoleGuard");
       expect([route, index > last]).toEqual([route, true]);
+    }
+  });
+
+  it("mounts CrmPermissionsGuard on exactly the contact/account/deal routes, after TenantGuard", () => {
+    // The guard reads `req.principal` (AdminKeyGuard) and `req.tenantOrgId`
+    // (TenantGuard), so like the other two metadata guards its position in the
+    // chain is a correctness requirement — it 401s if it runs first.
+    const withCrm = ROUTES.filter((r) => r.guards.includes("CrmPermissionsGuard"));
+    expect(sorted(withCrm.map((r) => r.route))).toEqual(sorted(CRM_PERMISSION_ROUTES));
+
+    for (const { route, guards } of withCrm) {
+      expect([route, guards.indexOf("CrmPermissionsGuard") > guards.indexOf("TenantGuard")]).toEqual(
+        [route, true],
+      );
+    }
+  });
+
+  it("leaves pipelines, custom-field-definitions and merge unenforced, as scoped", () => {
+    // Asserted rather than assumed: these carry the root ADMIN_API_KEY like
+    // every other tenant route, and the reason they are NOT permission-checked
+    // is that `PermissionObjectType` has no value for them yet — not that
+    // somebody forgot. If that enum grows, this test is where the decision
+    // gets revisited.
+    const unenforced = ROUTES.filter(
+      (r) =>
+        r.route.includes("/pipelines") ||
+        r.route.includes("/custom-field-definitions") ||
+        r.route.includes("/merge"),
+    );
+    expect(unenforced).toHaveLength(14);
+    for (const { route, guards } of unenforced) {
+      expect([route, guards]).toEqual([route, ["AdminKeyGuard", "TenantGuard"]]);
     }
   });
 

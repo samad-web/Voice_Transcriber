@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -55,11 +56,12 @@ const CONTACT_COLUMNS = `id, workspace_id, account_id, first_name, last_name, di
  * web nav yet. See the Phase 1 plan.
  */
 @Controller("contacts")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, CrmPermissionsGuard)
 export class ContactsController {
   constructor(private readonly db: DbService) {}
 
   @Get()
+  @RequireCrmPermission("contact", "view")
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -106,6 +108,7 @@ export class ContactsController {
   }
 
   @Get(":id")
+  @RequireCrmPermission("contact", "view")
   async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -118,6 +121,9 @@ export class ContactsController {
 
   /** Every deal this contact is on, most recently active first. */
   @Get(":id/deals")
+  // Gated on `deal`, not `contact`: the rows this returns are deals, so a role
+  // that may see contacts but not deals must not read them through this route.
+  @RequireCrmPermission("deal", "view")
   async deals(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -136,6 +142,7 @@ export class ContactsController {
   }
 
   @Post()
+  @RequireCrmPermission("contact", "create")
   async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CreateContactBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -166,6 +173,7 @@ export class ContactsController {
   }
 
   @Patch(":id")
+  @RequireCrmPermission("contact", "edit")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

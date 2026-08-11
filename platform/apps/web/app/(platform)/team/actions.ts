@@ -51,6 +51,8 @@ export async function updateMemberAction(
   input: {
     userId: string;
     role?: string;
+    /** A `roles` row (migration 0039) — null clears the assignment. */
+    roleId?: string | null;
     recordingsListen?: boolean;
     recordingsExport?: boolean;
   },
@@ -69,7 +71,10 @@ export async function updateMemberAction(
       cache: "no-store",
       body: JSON.stringify(patch),
     });
-    if (!res.ok) return { error: `API ${res.status}` };
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
     revalidatePath("/team");
     return {};
   } catch {
