@@ -7,8 +7,19 @@ build/
 .env
 .env.local
 .env.*.local
-# Production credentials live only on the server
+# Production credentials live only on the server.
+#
+# The wildcard matters as much as the plain name. Every deploy that edits this
+# file takes a timestamped backup beside it (.env.production.bak-1786223862,
+# .env.production.bak.20260810132028), and those were untracked-but-not-ignored
+# — the exact state in which `git add -A` commits the database password, the
+# root ADMIN_API_KEY and the Evolution key. Five of them were sitting on the
+# VPS on 2026-08-10. Same trap the service-account key rule at the repo root
+# exists to close.
 .env.production
+.env.production.*
+# ...but the template, which carries no secrets, is tracked on purpose.
+!.env.production.example
 coverage/
 .DS_Store
 

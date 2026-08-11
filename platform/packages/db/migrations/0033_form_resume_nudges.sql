@@ -108,6 +108,17 @@ ALTER TABLE marketing.funnel_followups
 -- messages — so brevity is a deliverability decision, not a style one.
 --
 -- ON CONFLICT DO NOTHING so a redeploy never overwrites an operator's edits.
+--
+-- ── SEEDED DISABLED, AND THAT IS THE POINT ─────────────────────────────────
+--
+-- `enabled = false`. This shipped enabled and the consequence was immediate:
+-- the sweep ran seven minutes after deploy and three real people received a
+-- message the owner had not read, having said they wanted to edit the wording
+-- first. A sent WhatsApp cannot be recalled.
+--
+-- So an outbound template arrives switched off and the operator turns it on
+-- after reading it. The cost is that somebody must press a switch once; the
+-- alternative cost is messages to strangers as a side effect of a deploy.
 ------------------------------------------------------------------------------
 
 INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
@@ -115,12 +126,12 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
 ('resume_form', 'whatsapp',
  'Hi {{first_name}}, you started telling us about your business on Aura but didn''t finish. ' ||
  'It takes under a minute — pick up where you left off: {{resume_link}}',
- true),
+ false),
 
 ('resume_form_2', 'whatsapp',
  'Hi {{first_name}}, your Aura enquiry is still open. Answer the last few questions and ' ||
  'we''ll tell you honestly whether we can help: {{resume_link}}',
- true)
+ false)
 
 ON CONFLICT (key, channel) DO NOTHING;
 
