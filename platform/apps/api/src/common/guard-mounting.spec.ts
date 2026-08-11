@@ -48,6 +48,11 @@ import { BillingController } from "../modules/billing/billing.controller";
 import { CallsController } from "../modules/calls/calls.controller";
 import { NotesController } from "../modules/calls/notes.controller";
 import { CrmController } from "../modules/crm/crm.controller";
+import { AccountsController } from "../modules/crm-objects/accounts.controller";
+import { ContactsController } from "../modules/crm-objects/contacts.controller";
+import { DealsController } from "../modules/crm-objects/deals.controller";
+import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
+import { CustomFieldsController } from "../modules/custom-fields/custom-fields.controller";
 import { DeviceTelemetryController } from "../modules/devices/device-telemetry.controller";
 import { DevicesController } from "../modules/devices/devices.controller";
 import { InstancesController } from "../modules/devices/instances.controller";
@@ -61,9 +66,11 @@ import { MessageTemplatesController } from "../modules/leads/message-templates.c
 import { SlotsController } from "../modules/leads/slots.controller";
 import { FunnelCriteriaController } from "../modules/leads/funnel-criteria.controller";
 import { WhatsAppCheckController } from "../modules/leads/whatsapp-check.controller";
+import { MergeController } from "../modules/merge/merge.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
+import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
 import { MembersController } from "../modules/tenancy/members.controller";
 import { TenancyController } from "../modules/tenancy/tenancy.controller";
@@ -104,6 +111,20 @@ const CONTROLLERS: Array<Type<unknown>> = [
   MessageTemplatesController,
   WhatsAppCheckController,
   FunnelCriteriaController,
+  // ── the CRM object model (CRM Phase 1, migrations 0034-0039) ──────────────
+  // Same story as the funnel block above, and the reason this suite's
+  // filesystem check exists: all seven shipped across M2-M6 without being
+  // listed here, so every assertion below was blind to 33 live tenant-scoped
+  // routes carrying the root ADMIN_API_KEY over every tenant's contacts,
+  // accounts and deals. Adding them is behaviour-neutral — it only makes the
+  // suite see what was already mounted.
+  AccountsController,
+  ContactsController,
+  DealsController,
+  PipelinesController,
+  CustomFieldsController,
+  MergeController,
+  RolesController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -246,13 +267,15 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 91 routes, partitioned 57 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
-    // The counts inventory 13 §1.1 closes with, plus the funnel's ten. They are
-    // asserted as a set, not just a total, so moving a route BETWEEN classes
-    // (dropping TenantGuard from a tenant route, say) fails even though the
-    // total is unchanged.
-    expect(ROUTES).toHaveLength(91);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(91);
+  it("has 124 routes, partitioned 90 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
+    // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
+    // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
+    // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles).
+    // They are asserted as a set, not just a total, so moving a route BETWEEN
+    // classes (dropping TenantGuard from a tenant route, say) fails even though
+    // the total is unchanged.
+    expect(ROUTES).toHaveLength(124);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(124);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -262,20 +285,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(57);
+    expect(tenantScoped).toHaveLength(90);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(91);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(124);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 79 principal routes", () => {
-    // 57 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 112 principal routes", () => {
+    // 90 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(79);
+    expect(principalRoutes).toHaveLength(112);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
