@@ -20,6 +20,7 @@ import { LeadsModule } from "./modules/leads/leads.module";
 import { OwnerModule } from "./modules/owner/owner.module";
 import { CrmObjectsModule } from "./modules/crm-objects/crm-objects.module";
 import { CustomFieldsModule } from "./modules/custom-fields/custom-fields.module";
+import { MergeModule } from "./modules/merge/merge.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -48,6 +49,7 @@ import { CustomFieldsModule } from "./modules/custom-fields/custom-fields.module
     OwnerModule,
     CrmObjectsModule,
     CustomFieldsModule,
+    MergeModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by
