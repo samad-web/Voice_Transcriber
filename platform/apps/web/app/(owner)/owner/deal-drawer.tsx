@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { updateDealAction } from "./crm-actions";
+import { InteractionTimeline } from "./interaction-timeline";
 import { formatValue, num, relativeTime, type Deal, type Stage } from "./types";
 
 /** Same hand-copied textarea chrome as lead-drawer.tsx — see that file's note. */
@@ -15,10 +16,13 @@ const TEXTAREA_CLASS =
  * One deal, opened from the board.
  *
  * CRM Phase 1 foundation (E0.1) — deliberately the same shape as
- * lead-drawer.tsx (instant render from the row the caller already holds,
- * report patches upward via onChanged rather than owning source-of-truth
- * state), minus the call-history fetch: the board/list rows already carry
- * everything this drawer shows, so there is nothing further to fetch.
+ * lead-drawer.tsx: instant render from the row the caller already holds, and
+ * patches reported upward via onChanged rather than owning source-of-truth
+ * state.
+ *
+ * The one thing it does fetch is the interaction timeline (Track A2), which
+ * the board row cannot carry: a deal's history is unbounded, so paying for it
+ * on every card in the list query would be the wrong trade.
  */
 export function DealDrawer({
   deal,
@@ -224,6 +228,10 @@ export function DealDrawer({
                 {error}
               </p>
             ) : null}
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <InteractionTimeline parent="deals" parentId={deal.id} />
           </div>
 
           <dl className="grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">

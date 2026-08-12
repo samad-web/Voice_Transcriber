@@ -48,6 +48,82 @@ export interface CrmObjectProjection {
   reason: string;
 }
 
+interface CallRow {
+  workspace_id: string;
+  direction: string;
+  started_at: Date;
+  duration_s: number;
+  status: string;
+  telecaller: string | null;
+}
+
+/**
+ * Put one call on the interaction timeline (migrations/0040), attached to the
+ * Contact and Deal it produced.
+ *
+ * Idempotent on `interactions(call_id) WHERE type = 'call'`, which is what
+ * lets the live dual-write, a reprocess, and the backfill all run over the
+ * same call without stacking duplicate timeline entries — the same role
+ * `deals(source_lead_id)` plays for the lead projection.
+ *
+ * `account_id` is deliberately left NULL: a call's account is whatever
+ * account its contact belongs to, and contacts get re-parented (by a merge,
+ * or by an admin). Reading it through the contact at query time stays correct
+ * when that happens; a denormalised copy written here would not.
+ */
+export async function projectCallToInteraction(
+  client: DbClient,
+  orgId: string,
+  callId: string,
+  contactId: string | null,
+  dealId: string | null,
+): Promise<"created" | "updated" | "skipped"> {
+  const {
+    rows: [call],
+  } = await client.query<CallRow>(
+    `SELECT c.workspace_id, c.direction, c.started_at, c.duration_s, c.status,
+            COALESCE(d.telecaller_name, d.label) AS telecaller
+       FROM calls c
+       LEFT JOIN devices d ON d.id = c.device_id
+      WHERE c.id = $1`,
+    [callId],
+  );
+  if (!call) return "skipped";
+
+  const {
+    rows: [row],
+  } = await client.query<{ created: boolean }>(
+    `INSERT INTO interactions
+       (org_id, workspace_id, type, direction, contact_id, deal_id, call_id,
+        occurred_at, duration_s, actor_label, metadata)
+     VALUES ($1, $2, 'call', $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+     ON CONFLICT (call_id) WHERE call_id IS NOT NULL AND type = 'call'
+     DO UPDATE SET
+       -- COALESCE, not overwrite: a reprocess that fails to re-derive a lead
+       -- must not strip the contact/deal an earlier successful run attached.
+       contact_id = COALESCE(EXCLUDED.contact_id, interactions.contact_id),
+       deal_id    = COALESCE(EXCLUDED.deal_id, interactions.deal_id),
+       -- occurred_at is the call's start time and never changes; omitted so a
+       -- reprocess cannot shuffle the timeline's ordering.
+       duration_s = EXCLUDED.duration_s,
+       metadata   = interactions.metadata || EXCLUDED.metadata
+     RETURNING (xmax = 0) AS created`,
+    [
+      orgId,
+      call.workspace_id,
+      call.direction,
+      contactId,
+      dealId,
+      callId,
+      call.started_at,
+      call.duration_s,
+      call.telecaller,
+      JSON.stringify({ status: call.status }),
+    ],
+  );
+  return row.created ? "created" : "updated";
+}
+
 export async function projectLeadToCrm(
   client: DbClient,
   orgId: string,
@@ -209,6 +285,22 @@ export async function projectLeadToCrm(
       lead.last_activity_at,
     ],
   );
+
+  // ── Timeline ───────────────────────────────────────────────────────────
+  // The calls this lead actually knows about. On the live path last_call_id
+  // IS the call just processed, so every completed call lands on the timeline
+  // as it happens; the backfill's second pass reaches the rest of history by
+  // walking `calls` directly.
+  //
+  // Inside the same transaction as the Contact/Deal writes above, so a
+  // timeline row can never reference a deal that got rolled back — and
+  // outside any try/catch here, deliberately: pipeline.ts already wraps this
+  // whole function non-blockingly, and swallowing an error a second time
+  // would hide it from that log.
+  const callIds = [...new Set([lead.first_call_id, lead.last_call_id].filter(Boolean))] as string[];
+  for (const callId of callIds) {
+    await projectCallToInteraction(client, orgId, callId, contactId, deal.id);
+  }
 
   return { contactId, dealId: deal.id, reason: deal.created ? "created" : "updated" };
 }

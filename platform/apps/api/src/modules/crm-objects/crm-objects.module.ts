@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AccountsController } from "./accounts.controller";
 import { ContactsController } from "./contacts.controller";
 import { DealsController } from "./deals.controller";
+import { InteractionsController } from "./interactions.controller";
 import { PipelinesController } from "./pipelines.controller";
 
 /**
@@ -11,6 +12,12 @@ import { PipelinesController } from "./pipelines.controller";
  * moonlit-juggling-pie.md).
  */
 @Module({
-  controllers: [PipelinesController, AccountsController, ContactsController, DealsController],
+  controllers: [
+    PipelinesController,
+    AccountsController,
+    ContactsController,
+    DealsController,
+    InteractionsController,
+  ],
 })
 export class CrmObjectsModule {}

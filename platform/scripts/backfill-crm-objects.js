@@ -25,8 +25,9 @@ const { withOrgContext, getAdminPool, closeAllPools } = require("../packages/db/
 
 const crmObjectsModule = path.join(__dirname, "../apps/worker/dist/pipeline/crm-objects.js");
 let projectLeadToCrm;
+let projectCallToInteraction;
 try {
-  ({ projectLeadToCrm } = require(crmObjectsModule));
+  ({ projectLeadToCrm, projectCallToInteraction } = require(crmObjectsModule));
 } catch {
   console.error(`cannot load ${crmObjectsModule}\nRun: pnpm --filter @aura/worker build`);
   process.exit(1);
@@ -71,12 +72,70 @@ async function main() {
           console.error(`  lead ${lead.id}: ${err.message}`);
         }
       }
-      return { scanned: leads.length, contactsCreated, dealsCreated, updated, skipped };
+      // ── Pass 2: the rest of the timeline (A2) ──────────────────────────
+      // projectLeadToCrm only knows a lead's first and last call, so pass 1
+      // has already placed those two. Every OTHER call from the same number
+      // is reached here, by matching the hash the contact was deduped on.
+      //
+      // Deliberately keyed on the contact rather than walking `calls` blind:
+      // a call from a number that never qualified as a lead has no CRM object
+      // to attach to, and inventing one here would quietly widen what counts
+      // as a contact — which is the cutover's decision to make, not the
+      // backfill's.
+      const { rows: contacts } = await client.query(
+        `SELECT id, phone_hash FROM contacts
+          WHERE phone_hash IS NOT NULL AND status <> 'merged'`,
+      );
+
+      let timelineCreated = 0;
+      let timelineSkipped = 0;
+      for (const contact of contacts) {
+        // The deal to attach these to: the one this contact already owns.
+        // LIMIT 1 because a contact can own several (one per source lead) and
+        // a historical call cannot be attributed to a particular one — the
+        // contact timeline is the honest home for it either way.
+        const {
+          rows: [deal],
+        } = await client.query(
+          `SELECT id FROM deals WHERE contact_id = $1 ORDER BY created_at ASC LIMIT 1`,
+          [contact.id],
+        );
+        const { rows: calls } = await client.query(
+          `SELECT id FROM calls WHERE remote_number_hash = $1 ORDER BY started_at ASC`,
+          [contact.phone_hash],
+        );
+        for (const call of calls) {
+          try {
+            const result = await projectCallToInteraction(
+              client,
+              org.id,
+              call.id,
+              contact.id,
+              deal ? deal.id : null,
+            );
+            if (result === "created") timelineCreated++;
+          } catch (err) {
+            timelineSkipped++;
+            console.error(`  call ${call.id}: ${err.message}`);
+          }
+        }
+      }
+
+      return {
+        scanned: leads.length,
+        contactsCreated,
+        dealsCreated,
+        updated,
+        skipped,
+        timelineCreated,
+        timelineSkipped,
+      };
     });
 
     console.log(
       `${org.name}: ${summary.scanned} lead(s) → ${summary.dealsCreated} new deal(s) ` +
-        `(${summary.contactsCreated} contact upserts), ${summary.updated} updated, ${summary.skipped} skipped`,
+        `(${summary.contactsCreated} contact upserts), ${summary.updated} updated, ${summary.skipped} skipped; ` +
+        `timeline: ${summary.timelineCreated} new interaction(s), ${summary.timelineSkipped} failed`,
     );
   }
 

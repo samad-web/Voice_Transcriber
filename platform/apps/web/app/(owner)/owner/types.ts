@@ -206,6 +206,29 @@ export interface CustomFieldOption {
   label: string;
 }
 
+/**
+ * One row on a contact/account/deal timeline (Track A2). `actor` is already
+ * resolved API-side to the user's name or the device label, so the UI never
+ * needs a second lookup to render "who".
+ */
+export interface Interaction {
+  id: string;
+  type: "call" | "email" | "sms" | "whatsapp" | "meeting" | "note";
+  direction: "incoming" | "outgoing" | null;
+  contact_id: string | null;
+  account_id: string | null;
+  deal_id: string | null;
+  call_id: string | null;
+  subject: string | null;
+  body: string | null;
+  occurred_at: string;
+  duration_s: number | null;
+  actor_user_id: string | null;
+  actor: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface DuplicateMatch {
   id: string;
   object_type: "contact" | "account";

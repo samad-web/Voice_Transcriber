@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
   Card,
   EmptyState,
@@ -98,7 +99,12 @@ export default async function ContactsPage({
               {data.contacts.map((contact) => (
                 <TableRow key={contact.id}>
                   <TableCell>
-                    <span className="block font-medium text-text">{contact.display_name}</span>
+                    <Link
+                      href={`/owner/contacts/${contact.id}`}
+                      className="block font-medium text-text hover:underline"
+                    >
+                      {contact.display_name}
+                    </Link>
                     {contact.title ? (
                       <span className="text-xs text-text-muted">{contact.title}</span>
                     ) : null}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DbClient } from "./crm-dispatch";
-import { projectLeadToCrm } from "./crm-objects";
+import { projectCallToInteraction, projectLeadToCrm } from "./crm-objects";
 
 /**
  * projectLeadToCrm reads a lead upsertLead() already wrote and projects it
@@ -40,21 +40,35 @@ const PIPELINE_ROW = {
   ],
 };
 
+const CALL_ROW = {
+  workspace_id: "00000000-0000-4000-8000-000000000002",
+  direction: "incoming",
+  started_at: new Date("2026-08-06T09:14:00.000Z"),
+  duration_s: 132,
+  status: "COMPLETE",
+  telecaller: "SM-M156B",
+};
+
 interface FakeDbOptions {
   lead?: Record<string, unknown> | null;
   pipeline?: Record<string, unknown> | null;
   /** Existing contact found by the no-phone-hash fallback lookup. */
   existingContact?: { id: string } | null;
   dealCreated?: boolean;
+  call?: Record<string, unknown> | null;
+  interactionCreated?: boolean;
+  /** Every INSERT INTO interactions this fake saw, for asserting on params. */
+  interactionInserts?: unknown[][];
 }
 
 function fakeDb(opts: FakeDbOptions = {}): DbClient {
   const leadRows = "lead" in opts ? (opts.lead ? [opts.lead] : []) : [LEAD_ROW];
   const pipelineRows = "pipeline" in opts ? (opts.pipeline ? [opts.pipeline] : []) : [PIPELINE_ROW];
   const existingContactRows = opts.existingContact ? [opts.existingContact] : [];
+  const callRows = "call" in opts ? (opts.call ? [opts.call] : []) : [CALL_ROW];
 
   return {
-    query: async <R = Record<string, unknown>>(sql: string) => {
+    query: async <R = Record<string, unknown>>(sql: string, params?: unknown[]) => {
       if (sql.includes("FROM leads")) return { rows: leadRows as R[], rowCount: leadRows.length };
       if (sql.includes("FROM deal_pipelines")) {
         return { rows: pipelineRows as R[], rowCount: pipelineRows.length };
@@ -68,6 +82,16 @@ function fakeDb(opts: FakeDbOptions = {}): DbClient {
       }
       if (sql.startsWith("INSERT INTO deals")) {
         return { rows: [{ id: DEAL_ID, created: opts.dealCreated ?? true }] as R[], rowCount: 1 };
+      }
+      if (sql.includes("FROM calls c")) {
+        return { rows: callRows as R[], rowCount: callRows.length };
+      }
+      if (sql.startsWith("INSERT INTO interactions")) {
+        opts.interactionInserts?.push(params ?? []);
+        return {
+          rows: [{ created: opts.interactionCreated ?? true }] as R[],
+          rowCount: 1,
+        };
       }
       throw new Error(`fakeDb: unexpected query: ${sql.slice(0, 80)}`);
     },
@@ -100,5 +124,74 @@ describe("projectLeadToCrm", () => {
   it("returns nulls when the org has no default pipeline", async () => {
     const result = await projectLeadToCrm(fakeDb({ pipeline: null }), ORG_ID, "lead-1");
     expect(result).toEqual({ contactId: null, dealId: null, reason: "no default pipeline for org" });
+  });
+
+  it("puts the lead's call on the timeline, attached to the contact and deal", async () => {
+    const inserts: unknown[][] = [];
+    await projectLeadToCrm(fakeDb({ interactionInserts: inserts }), ORG_ID, "lead-1");
+
+    // LEAD_ROW's first and last call are the same id, so exactly one row —
+    // the de-duplication in projectLeadToCrm, not an accident of the fake.
+    expect(inserts).toHaveLength(1);
+    const [orgId, , , contactId, dealId, callId] = inserts[0];
+    expect({ orgId, contactId, dealId, callId }).toEqual({
+      orgId: ORG_ID,
+      contactId: CONTACT_ID,
+      dealId: DEAL_ID,
+      callId: "22222222-2222-4222-8222-222222222222",
+    });
+  });
+
+  it("projects both calls when a lead's first and last differ", async () => {
+    const inserts: unknown[][] = [];
+    const twoCallLead = { ...LEAD_ROW, last_call_id: "99999999-9999-4999-8999-999999999999" };
+    await projectLeadToCrm(fakeDb({ lead: twoCallLead, interactionInserts: inserts }), ORG_ID, "l");
+
+    expect(inserts.map((params) => params[5])).toEqual([
+      "22222222-2222-4222-8222-222222222222",
+      "99999999-9999-4999-8999-999999999999",
+    ]);
+  });
+});
+
+describe("projectCallToInteraction", () => {
+  it("writes the call's own direction, duration and telecaller onto the row", async () => {
+    const inserts: unknown[][] = [];
+    const result = await projectCallToInteraction(
+      fakeDb({ interactionInserts: inserts }),
+      ORG_ID,
+      "call-1",
+      CONTACT_ID,
+      DEAL_ID,
+    );
+
+    expect(result).toBe("created");
+    const [, workspaceId, direction, , , , occurredAt, durationS, actorLabel, metadata] = inserts[0];
+    expect({ workspaceId, direction, occurredAt, durationS, actorLabel }).toEqual({
+      workspaceId: CALL_ROW.workspace_id,
+      direction: "incoming",
+      occurredAt: CALL_ROW.started_at,
+      durationS: 132,
+      actorLabel: "SM-M156B",
+    });
+    expect(JSON.parse(metadata as string)).toEqual({ status: "COMPLETE" });
+  });
+
+  it("reports 'updated' when the call is already on the timeline", async () => {
+    const db = fakeDb({ interactionCreated: false });
+    expect(await projectCallToInteraction(db, ORG_ID, "call-1", CONTACT_ID, DEAL_ID)).toBe("updated");
+  });
+
+  it("skips without inserting when the call no longer exists", async () => {
+    const inserts: unknown[][] = [];
+    const db = fakeDb({ call: null, interactionInserts: inserts });
+    expect(await projectCallToInteraction(db, ORG_ID, "gone", CONTACT_ID, DEAL_ID)).toBe("skipped");
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("accepts a null contact and deal — an unattributed call still happened", async () => {
+    const inserts: unknown[][] = [];
+    await projectCallToInteraction(fakeDb({ interactionInserts: inserts }), ORG_ID, "c", null, null);
+    expect([inserts[0][3], inserts[0][4]]).toEqual([null, null]);
   });
 });

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "./actions";
-import type { Account, Contact, Deal, DuplicateMatch } from "./types";
+import type { Account, Contact, Deal, DuplicateMatch, Interaction } from "./types";
 
 /**
  * CRM Phase 1 foundation (E0.1) — mutations for the new Deal/Contact/Account
@@ -211,6 +211,79 @@ export async function fetchAccountAction(
     const res = await fetch(`${API_URL}/v1/accounts/${accountId}`, { headers, cache: "no-store" });
     if (!res.ok) return { error: `API ${res.status}` };
     return (await res.json()) as { account: Account; contacts: Contact[] };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+// ── Track A2: the interaction timeline ──────────────────────────────────────
+
+/** Which object's timeline — mirrors the API's nested route shape exactly. */
+export type TimelineParent = "contacts" | "accounts" | "deals";
+
+export async function fetchInteractionsAction(
+  parent: TimelineParent,
+  parentId: string,
+  limit = 50,
+): Promise<{ interactions?: Interaction[]; total?: number; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/${parent}/${parentId}/interactions?limit=${limit}`,
+      { headers, cache: "no-store" },
+    );
+    if (!res.ok) return { error: `API ${res.status}` };
+    return (await res.json()) as { interactions: Interaction[]; total: number };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export interface LogInteractionInput {
+  type: "email" | "sms" | "whatsapp" | "meeting" | "note";
+  subject?: string | null;
+  body?: string | null;
+  direction?: "incoming" | "outgoing" | null;
+}
+
+/**
+ * Log something that happened by hand. `call` is deliberately not an option —
+ * calls reach the timeline through the worker, and letting a human type one in
+ * would put a row on the timeline that no recording backs.
+ */
+export async function logInteractionAction(
+  parent: TimelineParent,
+  parentId: string,
+  input: LogInteractionInput,
+): Promise<ActionResult & { interaction?: Interaction }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/${parent}/${parentId}/interactions`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = body?.message;
+      return {
+        error: Array.isArray(detail)
+          ? detail.map((d: { message?: string }) => d.message).join("; ")
+          : typeof detail === "string"
+            ? detail
+            : `API ${res.status}`,
+      };
+    }
+    const data = (await res.json()) as { interaction: Interaction };
+    revalidatePath("/owner/deals");
+    revalidatePath("/owner/contacts");
+    revalidatePath("/owner/accounts");
+    return { interaction: data.interaction };
   } catch {
     return { error: "API unreachable" };
   }
