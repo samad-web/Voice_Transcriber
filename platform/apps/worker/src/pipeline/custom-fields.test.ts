@@ -23,9 +23,16 @@ interface Write {
   column: string;
   value: unknown;
   fieldId: string;
+  sql: string;
 }
 
-function fakeDb(definitions: Definition[], writes: Write[]): DbClient {
+/**
+ * `humanOwned` makes the INSERT report rowCount 0, which is what Postgres
+ * does when the `WHERE source <> 'human'` on the conflict clause declines the
+ * update (migration 0045). Modelled rather than assumed, because the whole
+ * point of that clause is a case this fake would otherwise never exercise.
+ */
+function fakeDb(definitions: Definition[], writes: Write[], humanOwned = false): DbClient {
   return {
     query: async <R = Record<string, unknown>>(sql: string, params?: unknown[]) => {
       if (sql.includes("FROM custom_field_definitions")) {
@@ -36,9 +43,10 @@ function fakeDb(definitions: Definition[], writes: Write[]): DbClient {
         return { rows: rows as R[], rowCount: rows.length };
       }
       if (sql.startsWith("INSERT INTO")) {
-        const column = /INSERT INTO \w+ \(org_id, \w+, field_id, (\w+)\)/.exec(sql)?.[1] ?? "?";
-        writes.push({ column, fieldId: String(params?.[2]), value: params?.[3] });
-        return { rows: [] as R[], rowCount: 1 };
+        const column =
+          /INSERT INTO \w+ \(org_id, \w+, field_id, (\w+), source\)/.exec(sql)?.[1] ?? "?";
+        writes.push({ column, fieldId: String(params?.[2]), value: params?.[3], sql });
+        return { rows: [] as R[], rowCount: humanOwned ? 0 : 1 };
       }
       throw new Error(`fakeDb: unexpected query: ${sql.slice(0, 60)}`);
     },
@@ -194,5 +202,37 @@ describe("projectFactsToCustomFields", () => {
     );
     expect(result).toEqual({ written: 3, skipped: 0 });
     expect(writes.map((w) => w.column).sort()).toEqual(["value_bool", "value_num", "value_text"]);
+  });
+});
+
+describe("human-owned values (migration 0045)", () => {
+  it("reports a declined overwrite as skipped, not written", async () => {
+    // The rep corrected the budget by hand; the next call re-extracts it. The
+    // conflict clause declines, and the count has to say so — "written: 1"
+    // when nothing changed would make the logs lie about the one case this
+    // rule exists for.
+    const writes: Write[] = [];
+    const result = await projectFactsToCustomFields(
+      fakeDb([NUMBER], writes, true),
+      ORG_ID,
+      "contact",
+      RECORD_ID,
+      { budget: "5,000" },
+    );
+    expect(result).toEqual({ written: 0, skipped: 1 });
+  });
+
+  it("stamps its own writes as 'extraction' so a human can later take ownership", async () => {
+    const writes: Write[] = [];
+    await projectFactsToCustomFields(fakeDb([TEXT], writes), ORG_ID, "contact", RECORD_ID, {
+      notes: "wants a quote",
+    });
+    // Asserted on the SQL rather than a param: the source is a literal in the
+    // statement, and a later edit that made it a placeholder would silently
+    // start writing NULL.
+    expect(writes).toHaveLength(1);
+    expect(writes[0].sql).toContain("'extraction'");
+    // And the clause that makes the whole rule work.
+    expect(writes[0].sql).toContain("source <> 'human'");
   });
 });

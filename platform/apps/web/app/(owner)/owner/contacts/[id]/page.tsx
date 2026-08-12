@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
+import { CustomFieldEditor } from "../../custom-field-editor";
 import { InteractionTimeline } from "../../interaction-timeline";
 import { TaskList } from "../../task-list";
 import { formatValue, relativeTime, type Contact, type Deal } from "../../types";
@@ -89,6 +90,10 @@ export default async function ContactDetailPage({
                 </dd>
               </div>
             </dl>
+          </Card>
+
+          <Card>
+            <CustomFieldEditor parent="contacts" parentId={contact.id} />
           </Card>
 
           <Card>

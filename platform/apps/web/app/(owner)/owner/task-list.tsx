@@ -32,11 +32,13 @@ function dueLabel(due: string | null): { text: string; overdue: boolean } {
 export function TaskList({
   dealId,
   contactId,
+  accountId,
   title = "Tasks",
   showComposer = true,
 }: {
   dealId?: string;
   contactId?: string;
+  accountId?: string;
   title?: string;
   showComposer?: boolean;
 }) {
@@ -47,7 +49,7 @@ export function TaskList({
 
   const load = useCallback(() => {
     let cancelled = false;
-    void fetchTasksAction({ dealId, contactId, status: "open" }).then((result) => {
+    void fetchTasksAction({ dealId, contactId, accountId, status: "open" }).then((result) => {
       if (cancelled) return;
       if (result.error) {
         setError(result.error);
@@ -59,7 +61,7 @@ export function TaskList({
     return () => {
       cancelled = true;
     };
-  }, [dealId, contactId]);
+  }, [dealId, contactId, accountId]);
 
   useEffect(() => {
     setTasks(null);
@@ -78,6 +80,7 @@ export function TaskList({
         dueOn: draft.dueOn || null,
         dealId: dealId ?? null,
         contactId: contactId ?? null,
+        accountId: accountId ?? null,
       });
       if (result.error) {
         setError(result.error);

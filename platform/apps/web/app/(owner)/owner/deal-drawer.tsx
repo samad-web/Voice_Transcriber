@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { updateDealAction } from "./crm-actions";
+import { CustomFieldEditor } from "./custom-field-editor";
 import { InteractionTimeline } from "./interaction-timeline";
 import { TaskList } from "./task-list";
 import { formatValue, num, relativeTime, type Deal, type Stage } from "./types";
@@ -229,6 +230,13 @@ export function DealDrawer({
                 {error}
               </p>
             ) : null}
+          </div>
+
+          {/* The org's own defined fields, distinct from "Extracted details"
+              above: that block prints the raw `facts` blob, this one is the
+              typed values an admin declared and a rep can correct. */}
+          <div className="border-t border-border pt-4">
+            <CustomFieldEditor parent="deals" parentId={deal.id} />
           </div>
 
           <div className="border-t border-border pt-4">

@@ -23,10 +23,11 @@ import type { DbClient } from "./crm-dispatch";
  * budget must not blank the budget an earlier call established, so there is
  * no path here that writes NULL over an existing value.
  *
- * WORTH KNOWING when a value-EDITING UI lands: today nothing but this
- * function writes these tables, so "newest extraction wins" is unambiguous.
- * The moment a human can type into one, this needs the same human-owns-it
- * guard that keeps upsertLead off `stage`/`status`.
+ * HUMAN-OWNS-IT. A value-editing UI now exists (custom-field-values.
+ * controller.ts), so this function is no longer the only writer. It defers:
+ * a value whose `source` is 'human' is never overwritten by extraction, the
+ * same rule that keeps upsertLead off `stage`/`status`. See migration 0045
+ * and the INSERT below.
  */
 
 interface FieldDefinition {
@@ -79,14 +80,25 @@ export async function projectFactsToCustomFields(
     // The column name comes from valueColumnForType's closed switch and the
     // table from the object type, never from caller input — no interpolation
     // of anything a tenant controls.
-    await client.query(
-      `INSERT INTO ${table} (org_id, ${idColumn}, field_id, ${column})
-       VALUES ($1, $2, $3, $4)
+    //
+    // The WHERE on the conflict clause is the human-owns-it rule this file's
+    // header called for (migration 0045). A rep who corrects a budget the LLM
+    // guessed wrong keeps that correction: the next call re-extracts, this
+    // statement finds source = 'human', and the DO UPDATE simply doesn't fire.
+    // Without it the symptom is "the CRM keeps changing my numbers back",
+    // with nothing anywhere to explain why.
+    const { rowCount } = await client.query(
+      `INSERT INTO ${table} (org_id, ${idColumn}, field_id, ${column}, source)
+       VALUES ($1, $2, $3, $4, 'extraction')
        ON CONFLICT (${idColumn}, field_id)
-       DO UPDATE SET ${column} = EXCLUDED.${column}`,
+       DO UPDATE SET ${column} = EXCLUDED.${column}, updated_at = now()
+        WHERE ${table}.source <> 'human'`,
       [orgId, recordId, definition.id, coerced],
     );
-    written++;
+    // A row the human owns reports as skipped, not written — "written: 3"
+    // when one of them was declined would be a lie in the logs.
+    if (rowCount && rowCount > 0) written++;
+    else skipped++;
   }
 
   return { written, skipped };

@@ -8,6 +8,7 @@ export * from "./leads";
 export * from "./roles";
 export * from "./pipelines";
 export * from "./custom-fields";
+export * from "./custom-field-values";
 export * from "./permissions";
 export * from "./interactions";
 export * from "./tasks";

@@ -267,6 +267,32 @@ export interface DuplicateMatch {
   created_at: string;
 }
 
+/**
+ * One custom field AS IT APPLIES TO A RECORD — the definition and this
+ * record's value in a single shape, which is what the API returns.
+ *
+ * `source` is the provenance from migration 0045 and it is deliberately on
+ * the wire rather than internal: "the AI put this here" and "a colleague
+ * typed this" carry very different weight when a rep is deciding whether to
+ * quote a number back to a customer.
+ */
+export interface RecordCustomField {
+  id: string;
+  key: string;
+  label: string;
+  type: CustomFieldDefinition["type"];
+  description: string | null;
+  required: boolean;
+  options: CustomFieldOption[];
+  lookupObjectType: string | null;
+  validation: { min?: number; max?: number } | null;
+  status: "active" | "archived";
+  value: unknown;
+  source: "extraction" | "human" | "automation" | "import" | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
 export interface CustomFieldDefinition {
   id: string;
   object_type: "contact" | "account" | "deal";

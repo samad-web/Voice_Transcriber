@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import {
   Card,
   EmptyState,
@@ -95,7 +96,12 @@ export default async function AccountsPage({
               {data.accounts.map((account) => (
                 <TableRow key={account.id}>
                   <TableCell>
-                    <span className="block font-medium text-text">{account.name}</span>
+                    <Link
+                      href={`/owner/accounts/${account.id}`}
+                      className="block font-medium text-text hover:underline"
+                    >
+                      {account.name}
+                    </Link>
                   </TableCell>
                   <TableCell className="text-text-muted">{account.domain ?? "—"}</TableCell>
                   <TableCell className="text-text-muted">

@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "./actions";
-import type { Account, Contact, Deal, DuplicateMatch, Interaction, Task } from "./types";
+import type {
+  Account,
+  Contact,
+  Deal,
+  DuplicateMatch,
+  Interaction,
+  RecordCustomField,
+  Task,
+} from "./types";
 
 /**
  * CRM Phase 1 foundation (E0.1) — mutations for the new Deal/Contact/Account
@@ -370,7 +378,13 @@ export async function updateTaskAction(
 }
 
 export async function fetchTasksAction(
-  query: { dealId?: string; contactId?: string; status?: string; limit?: number } = {},
+  query: {
+    dealId?: string;
+    contactId?: string;
+    accountId?: string;
+    status?: string;
+    limit?: number;
+  } = {},
 ): Promise<{ tasks?: Task[]; total?: number; error?: string }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
@@ -378,6 +392,7 @@ export async function fetchTasksAction(
   const params = new URLSearchParams();
   if (query.dealId) params.set("dealId", query.dealId);
   if (query.contactId) params.set("contactId", query.contactId);
+  if (query.accountId) params.set("accountId", query.accountId);
   if (query.status) params.set("status", query.status);
   params.set("limit", String(query.limit ?? 50));
 
@@ -385,6 +400,63 @@ export async function fetchTasksAction(
     const res = await fetch(`${API_URL}/v1/tasks?${params}`, { headers, cache: "no-store" });
     if (!res.ok) return { error: `API ${res.status}` };
     return (await res.json()) as { tasks: Task[]; total: number };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+// ── Custom field values on a record ─────────────────────────────────────────
+
+/**
+ * The definitions and their values in one response — see
+ * custom-field-values.controller.ts for why the API joins them rather than
+ * making every caller do it.
+ */
+export async function fetchCustomFieldsAction(
+  parent: TimelineParent,
+  parentId: string,
+): Promise<{ fields?: RecordCustomField[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/${parent}/${parentId}/custom-fields`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: `API ${res.status}` };
+    return (await res.json()) as { fields: RecordCustomField[] };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Partial save: only the keys present are touched, and a key mapped to `null`
+ * clears that field. Anything a person writes here becomes `source: 'human'`
+ * server-side, which stops the next AI extraction from overwriting it.
+ */
+export async function saveCustomFieldsAction(
+  parent: TimelineParent,
+  parentId: string,
+  values: Record<string, unknown>,
+): Promise<ActionResult & { fields?: RecordCustomField[] }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/${parent}/${parentId}/custom-fields`, {
+      method: "PUT",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({ values }),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const data = (await res.json()) as { fields: RecordCustomField[] };
+    revalidatePath("/owner/deals");
+    revalidatePath("/owner/contacts");
+    revalidatePath("/owner/accounts");
+    return { fields: data.fields };
   } catch {
     return { error: "API unreachable" };
   }
