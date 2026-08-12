@@ -1,5 +1,6 @@
 import { entryStage, parsePipelineStages } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
+import { projectFactsToCustomFields } from "./custom-fields";
 import { leadTitle } from "./leads";
 
 /**
@@ -285,6 +286,14 @@ export async function projectLeadToCrm(
       lead.last_activity_at,
     ],
   );
+
+  // ── Typed custom fields (Track A4) ─────────────────────────────────────
+  // The same `facts` blob written above, projected into whatever fields this
+  // org has actually defined. Runs for both objects because a definition can
+  // exist on either; costs one indexed lookup that returns nothing when an
+  // org has defined none, which is the common case.
+  await projectFactsToCustomFields(client, orgId, "contact", contactId, facts);
+  await projectFactsToCustomFields(client, orgId, "deal", deal.id, facts);
 
   // ── Timeline ───────────────────────────────────────────────────────────
   // The calls this lead actually knows about. On the live path last_call_id

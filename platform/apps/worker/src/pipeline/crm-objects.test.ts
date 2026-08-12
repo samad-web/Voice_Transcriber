@@ -86,6 +86,12 @@ function fakeDb(opts: FakeDbOptions = {}): DbClient {
       if (sql.includes("FROM calls c")) {
         return { rows: callRows as R[], rowCount: callRows.length };
       }
+      // Track A4's typed custom-field projection. Empty by default: these
+      // cases are about the Contact/Deal/timeline projection, and
+      // custom-fields.test.ts covers the coercion rules directly.
+      if (sql.includes("FROM custom_field_definitions")) {
+        return { rows: [] as R[], rowCount: 0 };
+      }
       if (sql.startsWith("INSERT INTO interactions")) {
         opts.interactionInserts?.push(params ?? []);
         return {
