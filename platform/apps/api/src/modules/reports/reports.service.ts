@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { parsePipelineStages, type PipelineStage } from "@aura/shared";
 import { DbService } from "../../db/db.service";
+import { furthestOpenStage } from "../crm-objects/stage-history";
 
 /**
  * The three Layer 3 reports, as data. Split out of the controller because
@@ -278,11 +279,33 @@ export class ReportsService {
       const open = stages.filter((s) => !s.terminal);
       const order = new Map(open.map((s, i) => [s.key, i]));
 
-      const { rows: deals } = await client.query<{ stage: string; status: string; n: string }>(
-        `SELECT stage, status, count(*) AS n
-           FROM deals
-          WHERE pipeline_id = $1 AND created_at >= $2::date AND created_at < ($3::date + 1)
-          GROUP BY stage, status`,
+      /**
+       * One row per deal, carrying every stage it was EVER in — read from the
+       * transition ledger (migration 0046), not from the `stage` column.
+       *
+       * This is the whole reason that table exists. A lost deal's `stage` has
+       * been overwritten with the terminal 'lost', erasing how far it got, so
+       * the previous version of this report had to floor every loss at the
+       * entry stage — making a deal that died in Negotiation
+       * indistinguishable from one that died on first contact. The ledger
+       * still knows, and `visited` is that knowledge.
+       *
+       * The LEFT JOIN matters: a deal with no transitions at all (created
+       * before 0046 and somehow missed by its backfill) still appears, with
+       * an empty `visited`, and is floored at the entry stage below rather
+       * than dropped from the funnel.
+       */
+      const { rows: deals } = await client.query<{
+        status: string;
+        visited: string[] | null;
+      }>(
+        `SELECT d.status,
+                array_remove(array_agg(DISTINCT t.to_stage), NULL) AS visited
+           FROM deals d
+           LEFT JOIN deal_stage_transitions t ON t.deal_id = d.id
+          WHERE d.pipeline_id = $1
+            AND d.created_at >= $2::date AND d.created_at < ($3::date + 1)
+          GROUP BY d.id, d.status`,
         [target.id, from, to],
       );
 
@@ -291,27 +314,26 @@ export class ReportsService {
       let won = 0;
       let lost = 0;
       for (const row of deals) {
-        const n = Number(row.n);
-        total += n;
-        if (row.status === "won") won += n;
-        if (row.status === "lost") lost += n;
+        total += 1;
+        if (row.status === "won") won += 1;
+        if (row.status === "lost") lost += 1;
 
-        // How far this deal got, as an index into the open stages.
-        //
-        // A won deal passed all of them. A LOST one has had its stage
-        // overwritten with the terminal 'lost', which is not in `order` — so
-        // the only thing still knowable about it is that it entered the
-        // pipeline at all, which every created deal did. Floor it at the
-        // entry stage rather than letting it fall out of the funnel
-        // entirely: dropping it would make the top of the funnel smaller
-        // than the number of deals created, shrinking every denominator and
-        // flattering every conversion rate below it.
+        // The FURTHEST open stage this deal reached. Counting furthest-reached
+        // rather than summing individual entries is what keeps the funnel
+        // monotonic — a deal that was moved backwards, or one whose history
+        // was reconstructed by 0046's backfill and so has gaps, still counts
+        // once at every stage up to its high-water mark.
+        const furthest = furthestOpenStage(order, row.visited ?? [], row.status, open.length);
+
+        // Floored at the entry stage: every deal that exists entered the
+        // pipeline, whatever else is unknown about it. Dropping the unknowns
+        // would make the top of the funnel smaller than the number of deals
+        // created, shrinking every denominator below it and flattering every
+        // conversion rate.
         //
         // The invariant this preserves — rows[0].reached === summary.created
         // — is asserted in reports.service.test.ts.
-        const current = order.get(row.stage);
-        const upTo = row.status === "won" ? open.length - 1 : (current ?? 0);
-        for (let i = 0; i <= upTo; i++) reached[i] += n;
+        for (let i = 0; i <= Math.max(furthest, 0); i++) reached[i] += 1;
       }
 
       const rows: ConversionRow[] = open.map((stage, i) => ({

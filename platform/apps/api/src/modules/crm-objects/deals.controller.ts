@@ -9,14 +9,17 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { entryStage, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { recordStageTransition } from "./stage-history";
 
 type DbClient = { query<R = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: R[] }> };
 
@@ -218,9 +221,49 @@ export class DealsController {
     });
   }
 
+  /**
+   * How this deal got where it is (migration 0046).
+   *
+   * `daysInStage` is computed here rather than stored: it is the gap to the
+   * NEXT transition, which is not knowable when a row is written. The final
+   * row measures to now, because the deal is still sitting there.
+   */
+  @Get(":id/stage-history")
+  @RequireCrmPermission("deal", "view")
+  async stageHistory(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [deal],
+      } = await client.query<{ id: string }>(`SELECT id FROM deals WHERE id = $1`, [id]);
+      if (!deal) throw new NotFoundException("deal not found");
+
+      const { rows } = await client.query(
+        `SELECT t.id, t.from_stage, t.to_stage, t.from_status, t.to_status, t.source,
+                t.occurred_at, COALESCE(u.name, t.actor_label) AS actor,
+                EXTRACT(EPOCH FROM (
+                  COALESCE(lead(t.occurred_at) OVER (ORDER BY t.occurred_at), now())
+                  - t.occurred_at
+                )) / 86400 AS days_in_stage
+           FROM deal_stage_transitions t
+           LEFT JOIN users u ON u.id = t.changed_by
+          WHERE t.deal_id = $1
+          ORDER BY t.occurred_at`,
+        [id],
+      );
+
+      return {
+        transitions: rows.map((row) => ({
+          ...row,
+          days_in_stage:
+            row.days_in_stage === null ? null : Number(Number(row.days_in_stage).toFixed(2)),
+        })),
+      };
+    });
+  }
+
   @Post()
   @RequireCrmPermission("deal", "create")
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateDealBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -258,6 +301,18 @@ export class DealsController {
         ],
       );
 
+      // The deal entering the pipeline is the first row of its history —
+      // from_stage NULL. Without it a deal created directly in the console
+      // would have a ledger that starts mid-story.
+      await recordStageTransition(client, orgId, {
+        dealId: inserted.id,
+        fromStage: null,
+        toStage: stage,
+        fromStatus: null,
+        toStatus: status,
+        changedBy: actorUserId(req),
+      });
+
       const {
         rows: [deal],
       } = await client.query(`SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1`, [inserted.id]);
@@ -279,6 +334,7 @@ export class DealsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = UpdateDealBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -287,10 +343,14 @@ export class DealsController {
 
     return this.db.withOrg(orgId, async (client) => {
       let status: string | null = null;
+      let previous: { stage: string; status: string } | null = null;
       if (p.stage) {
         const {
           rows: [existing],
-        } = await client.query<{ pipeline_id: string }>(`SELECT pipeline_id FROM deals WHERE id = $1`, [id]);
+        } = await client.query<{ pipeline_id: string; stage: string; status: string }>(
+          `SELECT pipeline_id, stage, status FROM deals WHERE id = $1`,
+          [id],
+        );
         if (!existing) throw new NotFoundException("deal not found");
         const pipeline = await this.resolvePipeline(client, existing.pipeline_id);
         if (!pipeline.stages.some((s) => s.key === p.stage)) {
@@ -299,6 +359,9 @@ export class DealsController {
           );
         }
         status = statusForStage(pipeline.stages, p.stage);
+        // Captured BEFORE the UPDATE — afterwards the old stage is gone, which
+        // is precisely the erasure migration 0046 exists to stop.
+        previous = { stage: existing.stage, status: existing.status };
       }
 
       const {
@@ -346,6 +409,19 @@ export class DealsController {
       );
       if (!updated) throw new NotFoundException("deal not found");
 
+      if (p.stage && previous) {
+        // recordStageTransition drops a no-op move itself, so a drag that
+        // lands a card back in its own column writes nothing.
+        await recordStageTransition(client, orgId, {
+          dealId: id,
+          fromStage: previous.stage,
+          toStage: p.stage,
+          fromStatus: previous.status,
+          toStatus: status ?? previous.status,
+          changedBy: actorUserId(req),
+        });
+      }
+
       const {
         rows: [deal],
       } = await client.query(`SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1`, [id]);
@@ -366,4 +442,10 @@ export class DealsController {
       [orgId, action, targetId],
     );
   }
+}
+
+/** Same validate-or-null the other CRM controllers need — see interactions.controller.ts. */
+function actorUserId(req: PrincipalRequest): string | null {
+  const parsed = z.string().uuid().safeParse(req.principal?.userId);
+  return parsed.success ? parsed.data : null;
 }

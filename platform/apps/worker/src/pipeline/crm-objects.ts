@@ -287,6 +287,21 @@ export async function projectLeadToCrm(
     ],
   );
 
+  // ── Stage history (migration 0046) ─────────────────────────────────────
+  // Only on creation. This projection deliberately never MOVES a deal —
+  // stage is the owner's, as the ON CONFLICT above says — so the one and only
+  // transition it can honestly record is the deal entering the pipeline.
+  // Writing anything on an update would put a move in the ledger that never
+  // happened.
+  if (deal.created) {
+    await client.query(
+      `INSERT INTO deal_stage_transitions
+         (org_id, deal_id, from_stage, to_stage, from_status, to_status, source, actor_label)
+       VALUES ($1, $2, NULL, $3, NULL, 'open', 'pipeline', 'call pipeline')`,
+      [orgId, deal.id, entryStage(stages)],
+    );
+  }
+
   // ── Typed custom fields (Track A4) ─────────────────────────────────────
   // The same `facts` blob written above, projected into whatever fields this
   // org has actually defined. Runs for both objects because a definition can

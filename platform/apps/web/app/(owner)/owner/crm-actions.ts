@@ -405,6 +405,38 @@ export async function fetchTasksAction(
   }
 }
 
+// ── Stage history (migration 0046) ──────────────────────────────────────────
+
+export interface StageTransitionRow {
+  id: string;
+  from_stage: string | null;
+  to_stage: string;
+  from_status: string | null;
+  to_status: string;
+  source: "console" | "pipeline" | "automation" | "backfill";
+  occurred_at: string;
+  actor: string | null;
+  days_in_stage: number | null;
+}
+
+export async function fetchStageHistoryAction(
+  dealId: string,
+): Promise<{ transitions?: StageTransitionRow[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/deals/${dealId}/stage-history`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: `API ${res.status}` };
+    return (await res.json()) as { transitions: StageTransitionRow[] };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 // ── Custom field values on a record ─────────────────────────────────────────
 
 /**

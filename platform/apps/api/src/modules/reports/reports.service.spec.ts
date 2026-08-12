@@ -1,5 +1,6 @@
 import { parsePipelineStages } from "@aura/shared";
 import { ReportsService, stageProbability } from "./reports.service";
+import { furthestOpenStage } from "../crm-objects/stage-history";
 import type { DbService } from "../../db/db.service";
 
 /**
@@ -22,8 +23,12 @@ const STAGES = [
 ];
 
 interface FakeRows {
-  /** rows for the `GROUP BY stage, status` conversion query */
-  deals?: Array<{ stage: string; status: string; n: string }>;
+  /**
+   * One row per deal for the conversion query — `visited` being every stage
+   * the transition ledger (migration 0046) records it having entered, which
+   * is what replaced the old "infer it from the current stage" guess.
+   */
+  deals?: Array<{ status: string; visited: string[] | null }>;
   /** rows for the pipeline snapshot query */
   counts?: Array<{ stage: string; deals: string; amount: string; avg_days: string | null }>;
   velocity?: { avg_days: string | null; won: string };
@@ -38,7 +43,7 @@ function fakeDb(rows: FakeRows = {}): DbService {
           if (sql.includes("FROM deal_pipelines")) {
             return { rows: [{ id: PIPELINE_ID, name: "Sales", stages: STAGES }], rowCount: 1 };
           }
-          if (sql.includes("GROUP BY stage, status")) {
+          if (sql.includes("deal_stage_transitions")) {
             return { rows: rows.deals ?? [], rowCount: (rows.deals ?? []).length };
           }
           if (sql.includes("status = 'won'") && sql.includes("avg(")) {
@@ -117,44 +122,97 @@ describe("ReportsService.conversion", () => {
   const run = (deals: FakeRows["deals"]) =>
     new ReportsService(fakeDb({ deals })).conversion(ORG, "2026-01-01", "2026-12-31");
 
-  it("counts a deal as having reached every stage at or before its own", async () => {
-    const result = await run([{ stage: "qualified", status: "open", n: "5" }]);
+  /** n identical deals — the ledger shape, one row each. */
+  const many = (n: number, status: string, visited: string[] | null) =>
+    Array.from({ length: n }, () => ({ status, visited }));
+
+  it("counts a deal as having reached every stage it entered", async () => {
+    const result = await run(many(5, "open", ["new", "contacted", "qualified"]));
     expect(result.rows.map((r) => r.reached)).toEqual([5, 5, 5, 0]);
   });
 
   it("credits a won deal with the whole funnel", async () => {
-    const result = await run([{ stage: "won", status: "won", n: "2" }]);
+    // Its ledger stops at whatever stage it was in when it closed; winning is
+    // by definition having passed everything before it.
+    const result = await run(many(2, "won", ["new", "won"]));
     expect(result.rows.map((r) => r.reached)).toEqual([2, 2, 2, 2]);
   });
 
-  it("keeps lost deals in the top of the funnel", async () => {
-    // A lost deal's stage was overwritten with the terminal value, so how far
-    // it actually got is unknowable — but it certainly entered. Dropping it
-    // would shrink the denominator and flatter every rate below.
-    const result = await run([{ stage: "lost", status: "lost", n: "7" }]);
-    expect(result.rows[0].reached).toBe(7);
+  it("credits a LOST deal with how far it actually got — the point of 0046", async () => {
+    // The old report could only floor this at the entry stage, because
+    // `deals.stage` had been overwritten with 'lost'. The ledger remembers
+    // that it reached Negotiation, so a late loss and an early one stop
+    // looking identical.
+    const result = await run(many(7, "lost", ["new", "contacted", "qualified", "negotiation", "lost"]));
+    expect(result.rows.map((r) => r.reached)).toEqual([7, 7, 7, 7]);
+  });
+
+  it("still floors a deal with no usable history at the entry stage", async () => {
+    // Nothing in the ledger, or only terminal stages in it. It certainly
+    // entered the pipeline; dropping it would shrink every denominator below.
+    for (const visited of [null, [], ["lost"]]) {
+      const result = await run(many(3, "lost", visited));
+      expect(result.rows.map((r) => r.reached)).toEqual([3, 0, 0, 0]);
+    }
+  });
+
+  it("counts a deal that was moved BACKWARDS once, at its high-water mark", async () => {
+    // Furthest-reached, not current — otherwise a deal pulled back from
+    // Negotiation to Contacted would silently reduce the Negotiation count of
+    // a period that already happened.
+    const result = await run(many(1, "open", ["new", "contacted", "negotiation"]));
+    expect(result.rows.map((r) => r.reached)).toEqual([1, 1, 1, 1]);
   });
 
   it("never lets the top of the funnel disagree with deals created", async () => {
     // The invariant that caught the original bug: 34 created rendered as 32
     // reached, because lost deals fell out entirely.
     const result = await run([
-      { stage: "new", status: "open", n: "29" },
-      { stage: "won", status: "won", n: "3" },
-      { stage: "lost", status: "lost", n: "2" },
+      ...many(29, "open", ["new"]),
+      ...many(3, "won", ["new", "won"]),
+      ...many(2, "lost", ["new", "contacted", "lost"]),
     ]);
     expect(result.rows[0].reached).toBe(result.summary?.created);
     expect(result.summary).toMatchObject({ created: 34, won: 3, lost: 2, open: 29, winRate: 0.6 });
   });
 
   it("reports no win rate rather than 0% when nothing has closed", async () => {
-    const result = await run([{ stage: "new", status: "open", n: "10" }]);
+    const result = await run(many(10, "open", ["new"]));
     expect(result.summary?.winRate).toBeNull();
   });
 
   it("gives the first stage no conversion rate — there is nothing before it", async () => {
-    const result = await run([{ stage: "new", status: "open", n: "10" }]);
+    const result = await run(many(10, "open", ["new"]));
     expect(result.rows[0].conversionFromPrevious).toBeNull();
+  });
+});
+
+describe("furthestOpenStage", () => {
+  const order = new Map([
+    ["new", 0],
+    ["contacted", 1],
+    ["qualified", 2],
+    ["negotiation", 3],
+  ]);
+
+  it("ignores terminal stages, which are not positions in the funnel", () => {
+    expect(furthestOpenStage(order, ["new", "contacted", "lost"], "lost", 4)).toBe(1);
+  });
+
+  it("returns -1 when nothing in the history is a known open stage", () => {
+    // The caller floors this at the entry stage; returning 0 here instead
+    // would make "I know it reached New" indistinguishable from "I know
+    // nothing", which are different claims.
+    expect(furthestOpenStage(order, ["lost"], "lost", 4)).toBe(-1);
+    expect(furthestOpenStage(order, [], "open", 4)).toBe(-1);
+  });
+
+  it("gives a won deal the last open stage regardless of its history", () => {
+    expect(furthestOpenStage(order, ["new"], "won", 4)).toBe(3);
+  });
+
+  it("is order-independent — it takes the maximum, not the last entry", () => {
+    expect(furthestOpenStage(order, ["negotiation", "contacted"], "open", 4)).toBe(3);
   });
 });
 
