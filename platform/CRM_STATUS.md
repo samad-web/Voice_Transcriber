@@ -2,8 +2,11 @@
 
 **As of:** 2026-08-12
 **Branch:** `crm-foundation-data-model` (off `crm-connectors-and-console-auth`, not merged, not deployed)
-**Scope built:** PRD Phase 1 / Layer 0 "Foundation", roadmap Track A (A1–A5), and a first cut of
-PRD Layer 3 (reporting). Layers 1, 2, 4, 5, 6 are **not started**.
+**Scope built:** PRD Phase 1 / Layer 0 "Foundation", roadmap Track A (A1–A5), **PRD Layer 1
+(multi-channel engagement), Layer 2 (workflow automation) and Layer 3 (reporting)**. Layers 4, 5
+and 6 are **not started**; A6, the `leads` cutover, is deliberately gated.
+
+**Verification steps for everything after Track A are in [CRM_VERIFICATION.md](CRM_VERIFICATION.md).**
 
 This is a strangler-fig build: everything below is new tables/modules/pages added *alongside* the
 existing `leads` pipeline. Nothing about `leads`, `call_facts`, the CRM outbound-connector pipeline
@@ -128,6 +131,39 @@ Still genuinely inert:
 | A4 | Live typed custom-field population from the pipeline, with type-validated coercion | `6e4dead` |
 | A5 | Trigram fuzzy duplicate matching, degrading safely without the extension | `801729d` |
 
+---
+
+## 2c. Layer 1, 2 and the B-series (post-Track-A)
+
+| Item | What landed | Commit |
+|---|---|---|
+| Layer 1a | Per-user, provider-agnostic email/calendar connections (Google, Microsoft, IMAP, CalDAV) with OAuth2+PKCE and envelope-encrypted tokens | `3cbfe6b` |
+| Layer 1b | Inbound mail sync onto the timeline | `a061dd5` |
+| B1 | Custom-field values readable and editable, with `source` provenance — extraction never overwrites a human | `126d352` |
+| B2 | `deal_stage_transitions` ledger; conversion funnel reads real history; time-in-stage on the drawer | `3ae43f9` |
+| B3 | Calendar sync — meetings on the timeline, forward-looking window, cancellations removed | `ff37be7` |
+| B4 | User-initiated email send, off by default | `5a36c00` |
+| B5 | In-app notifications and the bell | `e200486` |
+| B6 | Layer 2 rule engine — rules, event queue, worker executor, run log | `8eed192` |
+
+**Three rules run through all of it, and they are the parts worth reviewing:**
+
+1. **A synced message or meeting is recorded only when its other side is already a contact.** A
+   rep's mailbox and calendar hold their doctor, their payslips and their job applications;
+   copying either wholesale into a system a manager reads would be a serious breach dressed up
+   as a feature. Only subjects and snippets are stored, never bodies or event descriptions.
+2. **A human's edit outranks every machine.** Migration 0045 added provenance to custom-field
+   values; neither the AI extraction nor an automation rule will overwrite `source = 'human'`.
+3. **Nothing automated can send.** The Layer 2 action union has no `send_email` member, and a
+   test asserts it. Sending is one message, composed by a person, to an address read from the
+   contact record, behind `EMAIL_SENDING_ENABLED` which defaults to off.
+
+Rule loops are impossible structurally rather than by a depth counter: **nothing the automation
+executor writes ever enqueues an event.** Only a person acting or a deadline passing puts work on
+the queue. The cost is that rules cannot chain, which is stated rather than hidden.
+
+---
+
 Two latent bugs were found by live testing during this stretch and fixed: `date` columns
 (`tasks.due_on`, `deals.expected_close_date`) round-tripped a day early on this platform's +05:30
 host because node-postgres parses them at local midnight; and the roles admin hand-copied
@@ -153,17 +189,14 @@ Neither was visible to a typecheck.
 - **Territory/ownership rules beyond `all` vs `owned` scope** on the permission grid — no
   round-robin assignment, no lead routing rules.
 
-### 3.2 Not started at all — PRD Layers 1–6
-
-The approved PRD described 6 layers on top of the Layer 0 foundation. **None of the following have
-any code written:**
+### 3.2 PRD Layers 1–6
 
 | Layer | Theme | Status |
 |---|---|---|
-| 1 | Multi-channel engagement (email/SMS/WhatsApp sequences, not just calls) | **Blocked on a decision** — which email/calendar providers are in scope |
-| 2 | Workflow automation (triggers, sequences, task assignment) | Not started |
-| 3 | Reporting & analytics (pipeline forecasting, rep performance, funnel reports) | **First cut shipped** (`e03ae18`) |
-| 4 | Third-party integrations beyond the existing outbound CRM connectors (calendar, email providers, marketing tools) | Not started |
+| 1 | Multi-channel engagement | **Built** — per-user connections, inbound mail, calendar, user-initiated send |
+| 2 | Workflow automation (triggers, sequences, task assignment) | **Built** — rules, queue-driven engine, run log |
+| 3 | Reporting & analytics (pipeline forecasting, rep performance, funnel reports) | **Built**, funnel now backed by real stage history |
+| 4 | Third-party integrations beyond the outbound CRM connectors | **Mostly covered by Layer 1's connection catalogue.** Marketing tools not started |
 | 5 | Go-to-market / billing tooling (quotas, territories, comp plans) | Not started |
 | 6 | (per original PRD numbering — advanced/platform-level capabilities) | Not started |
 
@@ -171,12 +204,13 @@ any code written:**
 per-rep outcomes, plus CSV export of each. Read-only — no migration. Viewing needs `deal:view`,
 exporting needs `deal:export` (the first real use of that action).
 
-**Layer 3, what it still can't do:** stage probabilities are positional, not configurable per stage;
-the funnel is inferred from each deal's *current* stage because there is no transition history, so a
-skipped stage still counts as passed and a lost deal counts only as having entered. A
-`deal_stage_transitions` table would remove that guesswork and is the natural next step if these
-numbers start driving decisions. There is also no per-rep task/interaction attribution, because a rep
-is a `telecallers` row and a task assignee is a `users` row with nothing mapping between them.
+**Layer 3, what it still can't do:** stage probabilities are positional, not configurable per stage.
+~~the funnel is inferred from each deal's *current* stage because there is no transition history~~ —
+**fixed by B2**: `deal_stage_transitions` records every move, and the funnel now counts the furthest
+stage each deal actually reached, so a deal that died in Negotiation no longer reads the same as one
+that died on first contact. Rows the migration reconstructed carry `source = 'backfill'` and are
+labelled *reconstructed* in the UI. There is still no per-rep task/interaction attribution, because
+a rep is a `telecallers` row and a task assignee is a `users` row with nothing mapping between them.
 
 ### 3.3 The remaining Track A item
 
