@@ -11,6 +11,7 @@ import {
   ListFilter,
   ListChecks,
   PieChart,
+  Link2,
   Phone,
   Plug,
   Search,
@@ -153,6 +154,16 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // not a telecaller's view of their own work — same restriction the boards
     // carry (design doc §9).
     ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/connections",
+    label: "Connections",
+    icon: Link2,
+    title: "Connections",
+    context: "Your account",
+    // No persona restriction: this is a person's own mailbox and calendar,
+    // not a team setting. A telecaller connecting their own email is exactly
+    // the point.
   },
   {
     href: "/owner/duplicates",

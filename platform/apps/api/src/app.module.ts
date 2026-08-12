@@ -22,6 +22,7 @@ import { CrmObjectsModule } from "./modules/crm-objects/crm-objects.module";
 import { CustomFieldsModule } from "./modules/custom-fields/custom-fields.module";
 import { MergeModule } from "./modules/merge/merge.module";
 import { RolesModule } from "./modules/roles/roles.module";
+import { ConnectionsModule } from "./modules/connections/connections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 
@@ -56,6 +57,7 @@ import { TasksModule } from "./modules/tasks/tasks.module";
     RolesModule,
     TasksModule,
     ReportsModule,
+    ConnectionsModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

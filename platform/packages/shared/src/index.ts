@@ -12,6 +12,7 @@ export * from "./permissions";
 export * from "./interactions";
 export * from "./tasks";
 export * from "./dedupe";
+export * from "./connection-providers";
 export * from "./funnel";
 export * from "./funnel-answers";
 export * from "./funnel-criteria";
