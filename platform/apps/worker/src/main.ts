@@ -10,6 +10,7 @@ import { startReaper } from "./pipeline/reaper";
 import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
+import { startMailboxSync } from "./pipeline/email-sync";
 import { startBookingConfirmations } from "./pipeline/booking-confirmations";
 import { startFormNudges } from "./pipeline/form-nudges";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
@@ -63,6 +64,11 @@ async function bootstrap() {
   // closes the matching slot, so an hour blocked out by hand stops being
   // offered to visitors. Silent no-op without Google credentials.
   startCalendarBusySync();
+  // Pulls each USER's own connected mailbox onto the interaction timeline —
+  // and only the messages whose other side is already a contact, so a rep's
+  // private mail never enters the CRM. No-op until somebody connects an
+  // account. See the module header for why polling rather than webhooks.
+  startMailboxSync();
   // Queues the WhatsApp confirmation — with the Meet link — for anyone who has
   // booked and not had one. It lives here rather than in the booking itself
   // because the public marketing role holds no grant on the outbox; see the
