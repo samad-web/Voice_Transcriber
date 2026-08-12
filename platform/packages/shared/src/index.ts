@@ -12,6 +12,7 @@ export * from "./custom-field-values";
 export * from "./permissions";
 export * from "./interactions";
 export * from "./tasks";
+export * from "./notifications";
 export * from "./dedupe";
 export * from "./connection-providers";
 export * from "./funnel";

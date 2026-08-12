@@ -18,6 +18,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
+import { notify } from "../notifications/notify";
 import { DbService } from "../../db/db.service";
 
 const ListQuery = z.object({
@@ -186,6 +187,28 @@ export class TasksController {
         ],
       );
 
+      // Telling the assignee is the difference between a task list and a
+      // to-do list somebody has to remember to check. `notify` drops it when
+      // the assignee IS the creator — being told you gave yourself a task is
+      // exactly the noise that teaches people to ignore the bell.
+      if (task.assignee_user_id) {
+        await notify(
+          client,
+          orgId,
+          {
+            userId: task.assignee_user_id,
+            kind: "task_assigned",
+            title: task.title,
+            body: task.due_on ? `Due ${task.due_on}` : null,
+            linkPath: "/owner/tasks",
+            taskId: task.id,
+            dealId: task.deal_id,
+            contactId: task.contact_id,
+          },
+          actorUserId(req),
+        );
+      }
+
       await this.audit(client, orgId, "task.create", task.id);
       return { task };
     });
@@ -197,6 +220,7 @@ export class TasksController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = TaskUpdate.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -234,6 +258,28 @@ export class TasksController {
         params,
       );
       if (!task) throw new NotFoundException("task not found");
+
+      // Re-assignment notifies the new owner, on the same terms as creation.
+      // Deliberately not the OLD owner: "this was taken off you" is a message
+      // about somebody else's decision, and if it needs saying it needs
+      // saying by a person.
+      if (p.assigneeUserId) {
+        await notify(
+          client,
+          orgId,
+          {
+            userId: p.assigneeUserId,
+            kind: "task_assigned",
+            title: task.title,
+            body: task.due_on ? `Due ${task.due_on}` : null,
+            linkPath: "/owner/tasks",
+            taskId: task.id,
+            dealId: task.deal_id,
+            contactId: task.contact_id,
+          },
+          actorUserId(req),
+        );
+      }
 
       await this.audit(client, orgId, "task.update", id);
       return { task };

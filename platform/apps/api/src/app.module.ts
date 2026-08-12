@@ -25,6 +25,7 @@ import { RolesModule } from "./modules/roles/roles.module";
 import { ConnectionsModule } from "./modules/connections/connections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -56,6 +57,7 @@ import { TasksModule } from "./modules/tasks/tasks.module";
     MergeModule,
     RolesModule,
     TasksModule,
+    NotificationsModule,
     ReportsModule,
     ConnectionsModule,
   ],

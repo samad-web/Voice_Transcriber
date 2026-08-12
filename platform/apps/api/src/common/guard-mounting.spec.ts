@@ -73,6 +73,7 @@ import { SlotsController } from "../modules/leads/slots.controller";
 import { FunnelCriteriaController } from "../modules/leads/funnel-criteria.controller";
 import { WhatsAppCheckController } from "../modules/leads/whatsapp-check.controller";
 import { MergeController } from "../modules/merge/merge.controller";
+import { NotificationsController } from "../modules/notifications/notifications.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
@@ -137,6 +138,11 @@ const CONTROLLERS: Array<Type<unknown>> = [
   CustomFieldValuesController,
   MergeController,
   RolesController,
+  // In-app notifications (migration 0048). AdminKeyGuard + TenantGuard only —
+  // a notification is addressed to one person and is theirs to read whatever
+  // their CRM role is; the scoping that matters is `user_id = <caller>`, which
+  // no guard can express and every query in that controller applies.
+  NotificationsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -354,7 +360,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 152 routes, partitioned 118 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 155 routes, partitioned 121 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -364,8 +370,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // set, not just a total, so moving a route BETWEEN classes (dropping
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
-    expect(ROUTES).toHaveLength(152);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(152);
+    expect(ROUTES).toHaveLength(155);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(155);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -375,20 +381,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(118);
+    expect(tenantScoped).toHaveLength(121);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(152);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(155);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 140 principal routes", () => {
-    // 118 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 143 principal routes", () => {
+    // 121 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(140);
+    expect(principalRoutes).toHaveLength(143);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
