@@ -26,6 +26,7 @@ import { ConnectionsModule } from "./modules/connections/connections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { AutomationModule } from "./modules/automation/automation.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -58,6 +59,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     RolesModule,
     TasksModule,
     NotificationsModule,
+    AutomationModule,
     ReportsModule,
     ConnectionsModule,
   ],

@@ -12,6 +12,7 @@ import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
 import { startMailboxSync } from "./pipeline/email-sync";
 import { startCalendarSync } from "./pipeline/calendar-sync";
+import { startAutomationEngine } from "./pipeline/automation";
 import { startBookingConfirmations } from "./pipeline/booking-confirmations";
 import { startFormNudges } from "./pipeline/form-nudges";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
@@ -76,6 +77,12 @@ async function bootstrap() {
   // sweep this looks forward as well as back — a meeting next Thursday is the
   // most useful thing on a deal — and it removes events that get cancelled.
   startCalendarSync();
+  // Layer 2's rule engine. Drains the events the API enqueues, and sweeps for
+  // the triggers no person causes (a deal going quiet, a task going late).
+  // Nothing it does enqueues an event, which is what makes rule loops
+  // structurally impossible rather than merely unlikely — see the module
+  // header. It has no send-an-email action, deliberately.
+  startAutomationEngine();
   // Queues the WhatsApp confirmation — with the Meet link — for anyone who has
   // booked and not had one. It lives here rather than in the booking itself
   // because the public marketing role holds no grant on the outbox; see the

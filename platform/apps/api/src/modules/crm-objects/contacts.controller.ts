@@ -16,6 +16,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { enqueueAutomationEventSafely } from "../automation/enqueue";
 
 const ListQuery = z.object({
   accountId: z.string().uuid().optional(),
@@ -167,6 +168,12 @@ export class ContactsController {
           p.title ?? null,
         ],
       );
+      await enqueueAutomationEventSafely(client, orgId, "contact.created", "contact", contact.id, {
+        contactId: contact.id,
+        accountId: contact.account_id ?? null,
+        contactOwnerUserId: contact.owner_user_id ?? null,
+      });
+
       await this.audit(client, orgId, "contact.create", contact.id);
       return { contact };
     });

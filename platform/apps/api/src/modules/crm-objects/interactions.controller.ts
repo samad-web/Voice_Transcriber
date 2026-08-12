@@ -18,6 +18,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { enqueueAutomationEventSafely } from "../automation/enqueue";
 
 const ListQuery = z.object({
   type: z.string().max(40).optional(),
@@ -247,6 +248,20 @@ export class InteractionsController {
         `UPDATE ${parentTable} SET last_activity_at = GREATEST(last_activity_at, $2::timestamptz)
           WHERE id = $1`,
         [parentId, interaction.occurred_at],
+      );
+
+      await enqueueAutomationEventSafely(
+        client,
+        orgId,
+        "interaction.logged",
+        "interaction",
+        interaction.id,
+        {
+          dealId: interaction.deal_id ?? null,
+          contactId: interaction.contact_id ?? null,
+          accountId: interaction.account_id ?? null,
+          interactionType: interaction.type,
+        },
       );
 
       return { interaction };

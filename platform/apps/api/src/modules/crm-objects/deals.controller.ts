@@ -19,6 +19,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { enqueueAutomationEventSafely } from "../automation/enqueue";
 import { recordStageTransition } from "./stage-history";
 
 type DbClient = { query<R = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: R[] }> };
@@ -316,6 +317,17 @@ export class DealsController {
       const {
         rows: [deal],
       } = await client.query(`SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1`, [inserted.id]);
+
+      await enqueueAutomationEventSafely(client, orgId, "deal.created", "deal", inserted.id, {
+        dealId: inserted.id,
+        contactId: p.contactId ?? null,
+        accountId: p.accountId ?? null,
+        stage,
+        status,
+        amount: p.amount ?? null,
+        dealOwnerUserId: (deal as { owner_user_id?: string | null })?.owner_user_id ?? null,
+      });
+
       await this.audit(client, orgId, "deal.create", inserted.id);
       return { deal };
     });
@@ -425,6 +437,31 @@ export class DealsController {
       const {
         rows: [deal],
       } = await client.query(`SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1`, [id]);
+
+      // Only a stage MOVE is an event. Editing the amount or the notes is not
+      // something a rule should be able to react to yet — and adding a
+      // deal.updated trigger later is easy, where un-firing rules that have
+      // already run on every keystroke is not.
+      if (p.stage && previous && previous.stage !== p.stage) {
+        const row = deal as {
+          contact_id?: string | null;
+          account_id?: string | null;
+          amount?: string | number | null;
+          owner_user_id?: string | null;
+        };
+        await enqueueAutomationEventSafely(client, orgId, "deal.stage_changed", "deal", id, {
+          dealId: id,
+          contactId: row?.contact_id ?? null,
+          accountId: row?.account_id ?? null,
+          stage: p.stage,
+          fromStage: previous.stage,
+          toStage: p.stage,
+          status: status ?? previous.status,
+          amount: row?.amount === null || row?.amount === undefined ? null : Number(row.amount),
+          dealOwnerUserId: row?.owner_user_id ?? null,
+        });
+      }
+
       await this.audit(client, orgId, p.stage ? "deal.stage_change" : "deal.update", id);
       return { deal };
     });

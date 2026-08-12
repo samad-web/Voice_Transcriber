@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import type { OwnerRole } from "@aura/shared";
@@ -73,6 +74,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Custom Fields",
     icon: SlidersHorizontal,
     title: "Custom Fields",
+    context: "Platform",
+  },
+  {
+    href: "/automations",
+    label: "Automations",
+    icon: Workflow,
+    title: "Automations",
     context: "Platform",
   },
   {
