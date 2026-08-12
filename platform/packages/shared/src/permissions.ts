@@ -19,7 +19,18 @@ export const SystemRoleKey = z.enum([
 ]);
 export type SystemRoleKey = z.infer<typeof SystemRoleKey>;
 
-export const PermissionObjectType = z.enum(["contact", "account", "deal"]);
+/**
+ * What a grant can be about. `task` joined in with Track A3 (migration 0041),
+ * which also seeds every system role's task grants to match its contact ones —
+ * widening this enum without that seeding would lock every existing user out
+ * of the new object, since CrmPermissionsGuard denies whatever it finds no
+ * grant for.
+ *
+ * Still absent, deliberately: `pipeline`, `custom_field` and `merge`. Those
+ * are org-configuration surfaces rather than records, and they stay on
+ * AdminKeyGuard+TenantGuard until there is a reason to model them here.
+ */
+export const PermissionObjectType = z.enum(["contact", "account", "deal", "task"]);
 export type PermissionObjectType = z.infer<typeof PermissionObjectType>;
 
 export const PermissionAction = z.enum(["view", "create", "edit", "delete", "export"]);

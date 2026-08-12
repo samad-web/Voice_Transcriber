@@ -9,6 +9,7 @@ import {
   KeyRound,
   LayoutGrid,
   ListFilter,
+  ListChecks,
   Phone,
   Plug,
   Search,
@@ -117,6 +118,15 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // Same persona restriction as the lead board (design doc §9) — a
     // telecaller's nav stays Dashboard + All Leads, not the full pipeline.
     ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/tasks",
+    label: "Tasks",
+    icon: ListChecks,
+    title: "Tasks",
+    context: "Pipeline",
+    // No persona restriction, unlike the boards: a telecaller's own follow-ups
+    // are exactly the thing they need this console for.
   },
   {
     href: "/owner/contacts",

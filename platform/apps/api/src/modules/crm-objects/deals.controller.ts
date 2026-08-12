@@ -61,9 +61,17 @@ const UpdateDealBody = z.object({
   ownerUserId: z.string().uuid().nullable().optional(),
 });
 
-/** Every deal view returns the same shape — one definition for list/board/detail. */
+/**
+ * Every deal view returns the same shape — one definition for list/board/detail.
+ *
+ * `expected_close_date` goes through to_char for the reason spelled out in
+ * tasks.controller.ts: node-postgres turns a `date` into a local-midnight JS
+ * Date, which JSON then emits as UTC, so on this platform's +05:30 host every
+ * date shipped a day early. Same defect, found while building Track A3.
+ */
 const DEAL_COLUMNS = `d.id, d.pipeline_id, d.workspace_id, d.account_id, d.contact_id, d.name, d.stage,
-  d.status, d.amount, d.expected_close_date, d.summary, d.next_action, d.notes, d.owner_user_id,
+  d.status, d.amount, to_char(d.expected_close_date, 'YYYY-MM-DD') AS expected_close_date,
+  d.summary, d.next_action, d.notes, d.owner_user_id,
   d.telecaller_id, d.source_lead_id, d.facts, d.call_count, d.last_activity_at, d.stage_changed_at,
   d.created_at, d.updated_at, c.display_name AS contact_name, a.name AS account_name`;
 

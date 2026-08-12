@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { updateDealAction } from "./crm-actions";
 import { InteractionTimeline } from "./interaction-timeline";
+import { TaskList } from "./task-list";
 import { formatValue, num, relativeTime, type Deal, type Stage } from "./types";
 
 /** Same hand-copied textarea chrome as lead-drawer.tsx — see that file's note. */
@@ -228,6 +229,10 @@ export function DealDrawer({
                 {error}
               </p>
             ) : null}
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <TaskList dealId={deal.id} title="Follow-ups" />
           </div>
 
           <div className="border-t border-border pt-4">

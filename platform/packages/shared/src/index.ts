@@ -10,6 +10,7 @@ export * from "./pipelines";
 export * from "./custom-fields";
 export * from "./permissions";
 export * from "./interactions";
+export * from "./tasks";
 export * from "./funnel";
 export * from "./funnel-answers";
 export * from "./funnel-criteria";

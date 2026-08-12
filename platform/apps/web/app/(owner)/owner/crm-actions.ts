@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "./actions";
-import type { Account, Contact, Deal, DuplicateMatch, Interaction } from "./types";
+import type { Account, Contact, Deal, DuplicateMatch, Interaction, Task } from "./types";
 
 /**
  * CRM Phase 1 foundation (E0.1) — mutations for the new Deal/Contact/Account
@@ -287,4 +287,102 @@ export async function logInteractionAction(
   } catch {
     return { error: "API unreachable" };
   }
+}
+
+// ── Track A3: follow-up tasks ───────────────────────────────────────────────
+
+export interface TaskInputPayload {
+  title: string;
+  notes?: string | null;
+  dueOn?: string | null;
+  priority?: "low" | "normal" | "high";
+  dealId?: string | null;
+  contactId?: string | null;
+  accountId?: string | null;
+  assigneeUserId?: string | null;
+}
+
+export async function createTaskAction(
+  input: TaskInputPayload,
+): Promise<ActionResult & { task?: Task }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/tasks`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const data = (await res.json()) as { task: Task };
+    revalidatePath("/owner/tasks");
+    revalidatePath("/owner/deals");
+    return { task: data.task };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export async function updateTaskAction(
+  taskId: string,
+  update: {
+    status?: "open" | "done" | "cancelled";
+    title?: string;
+    notes?: string | null;
+    dueOn?: string | null;
+    priority?: "low" | "normal" | "high";
+    assigneeUserId?: string | null;
+  },
+): Promise<ActionResult & { task?: Task }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/tasks/${taskId}`, {
+      method: "PATCH",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const data = (await res.json()) as { task: Task };
+    revalidatePath("/owner/tasks");
+    revalidatePath("/owner/deals");
+    return { task: data.task };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export async function fetchTasksAction(
+  query: { dealId?: string; contactId?: string; status?: string; limit?: number } = {},
+): Promise<{ tasks?: Task[]; total?: number; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  const params = new URLSearchParams();
+  if (query.dealId) params.set("dealId", query.dealId);
+  if (query.contactId) params.set("contactId", query.contactId);
+  if (query.status) params.set("status", query.status);
+  params.set("limit", String(query.limit ?? 50));
+
+  try {
+    const res = await fetch(`${API_URL}/v1/tasks?${params}`, { headers, cache: "no-store" });
+    if (!res.ok) return { error: `API ${res.status}` };
+    return (await res.json()) as { tasks: Task[]; total: number };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** Zod issue arrays and plain messages both arrive under `message`. */
+async function errorText(res: Response): Promise<string> {
+  const body = await res.json().catch(() => ({}));
+  const message = (body as { message?: unknown })?.message;
+  if (Array.isArray(message)) {
+    return message.map((m: { message?: string }) => m.message ?? "").join("; ");
+  }
+  return typeof message === "string" ? message : `API ${res.status}`;
 }

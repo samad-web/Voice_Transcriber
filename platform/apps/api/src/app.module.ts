@@ -22,6 +22,7 @@ import { CrmObjectsModule } from "./modules/crm-objects/crm-objects.module";
 import { CustomFieldsModule } from "./modules/custom-fields/custom-fields.module";
 import { MergeModule } from "./modules/merge/merge.module";
 import { RolesModule } from "./modules/roles/roles.module";
+import { TasksModule } from "./modules/tasks/tasks.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -52,6 +53,7 @@ import { RolesModule } from "./modules/roles/roles.module";
     CustomFieldsModule,
     MergeModule,
     RolesModule,
+    TasksModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

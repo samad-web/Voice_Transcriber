@@ -5,6 +5,7 @@ import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { InteractionTimeline } from "../../interaction-timeline";
+import { TaskList } from "../../task-list";
 import { formatValue, relativeTime, type Contact, type Deal } from "../../types";
 
 export const metadata: Metadata = { title: "Contact — Aura" };
@@ -52,9 +53,14 @@ export default async function ContactDetailPage({
       </Link>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
-        <Card>
-          <InteractionTimeline parent="contacts" parentId={contact.id} title="Timeline" />
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <TaskList contactId={contact.id} title="Follow-ups" />
+          </Card>
+          <Card>
+            <InteractionTimeline parent="contacts" parentId={contact.id} title="Timeline" />
+          </Card>
+        </div>
 
         <div className="space-y-4">
           <Card>

@@ -1,5 +1,9 @@
 /** Shapes returned by /v1/roles — CRM Phase 1 foundation (E0.4). */
 
+import type { PermissionAction, PermissionObjectType, PermissionScope } from "@aura/shared";
+
+export type { PermissionAction, PermissionObjectType, PermissionScope };
+
 export interface Role {
   id: string;
   key: string;
@@ -10,10 +14,6 @@ export interface Role {
   created_at: string;
   updated_at: string;
 }
-
-export type PermissionObjectType = "contact" | "account" | "deal";
-export type PermissionAction = "view" | "create" | "edit" | "delete" | "export";
-export type PermissionScope = "all" | "owned";
 
 /**
  * GET /v1/roles/:id/permissions returns raw snake_case DB rows (this
@@ -35,5 +35,19 @@ export interface PermissionGrant {
   fieldRestrictions: Record<string, "hidden" | "readonly">;
 }
 
-export const PERMISSION_OBJECT_TYPES: PermissionObjectType[] = ["contact", "account", "deal"];
+/**
+ * The grid's rows and columns.
+ *
+ * These three types used to be hand-copied unions in this file, which drifted
+ * the moment `task` joined PermissionObjectType in Track A3 — the API accepted
+ * a grant the console could not render. They are imported from @aura/shared
+ * now, so the next object type is a one-line addition to the array below and
+ * nothing else.
+ */
+export const PERMISSION_OBJECT_TYPES: PermissionObjectType[] = [
+  "contact",
+  "account",
+  "deal",
+  "task",
+];
 export const PERMISSION_ACTIONS: PermissionAction[] = ["view", "create", "edit", "delete", "export"];

@@ -207,6 +207,29 @@ export interface CustomFieldOption {
 }
 
 /**
+ * A follow-up task (Track A3). `due_on` is a plain `YYYY-MM-DD` string, never
+ * a timestamp — see tasks.controller.ts for why that distinction is load-
+ * bearing rather than cosmetic.
+ */
+export interface Task {
+  id: string;
+  title: string;
+  notes: string | null;
+  contact_id: string | null;
+  account_id: string | null;
+  deal_id: string | null;
+  assignee_user_id: string | null;
+  assignee_name?: string | null;
+  deal_name?: string | null;
+  contact_name?: string | null;
+  due_on: string | null;
+  status: "open" | "done" | "cancelled";
+  priority: "low" | "normal" | "high";
+  completed_at: string | null;
+  created_at: string;
+}
+
+/**
  * One row on a contact/account/deal timeline (Track A2). `actor` is already
  * resolved API-side to the user's name or the device label, so the UI never
  * needs a second lookup to render "who".
