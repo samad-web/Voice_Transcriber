@@ -58,11 +58,15 @@ function Hero() {
           </p>
 
           <div className="mt-8 sm:mt-10">
-            {/* THE ASK NAMES WHAT YOU GET. "Get started" describes the button's
-                mechanics; this describes the outcome of pressing it, which is
-                the only reason anyone presses anything. */}
+            {/* THE ASK NAMES WHAT HAPPENS NEXT. "Get started" describes the
+                button's mechanics; this names the thing the visitor ends up
+                with, which is the only reason anyone presses anything.
+
+                First person on purpose — "Book my call", not "Book your call".
+                It reads as the visitor's own words rather than the site giving
+                an instruction. */}
             <Link href={CTA_HREF} className="mk-cta">
-              Show me what my calls are saying
+              Book my call now
               <span aria-hidden="true">→</span>
             </Link>
 
@@ -417,7 +421,7 @@ function FinalCta() {
           className="mt-9 inline-flex items-center gap-2 rounded-full bg-white px-9 py-4 text-base font-semibold transition-transform duration-150 hover:-translate-y-0.5"
           style={{ color: "#0b1220" }}
         >
-          Show me what my calls are saying
+          Book my call now
           <span aria-hidden="true">→</span>
         </Link>
 

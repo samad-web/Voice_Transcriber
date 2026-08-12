@@ -56,9 +56,12 @@ export function SiteHeader() {
         </nav>
 
         <Link href="/start" className="mk-cta mk-cta-sm ml-auto">
-          {/* Same words as the page's CTAs. A header button that says
-              something different reads as a different action. */}
-          Show me my calls
+          {/* The short form of the page's CTA. The body buttons say "Book my
+              call now"; this drops the "now" because it is a persistent header
+              button rather than a moment of decision, and an urgency word that
+              follows you down every scroll stops reading as urgency. Same verb
+              and same object, so it is unmistakably the same action. */}
+          Book my call
           <span aria-hidden="true">→</span>
         </Link>
       </div>

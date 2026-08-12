@@ -16,7 +16,11 @@ export function FinalCta() {
         waMessage={WA_MESSAGES.footer}
         secondary={{
           href: startHref("final-cta"),
-          label: "Start the 2-minute setup form",
+          // Matches the header and the page CTAs. "Start the 2-minute setup
+          // form" described the mechanics of the next screen; this names what
+          // the visitor gets out of it, and being the same words as every other
+          // funnel button means they read as one action rather than four.
+          label: "Book my call",
           requiresFunnel: true,
         }}
       />
