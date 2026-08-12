@@ -405,6 +405,43 @@ export async function fetchTasksAction(
   }
 }
 
+// ── Sending mail to a contact ───────────────────────────────────────────────
+
+/**
+ * One message, to the contact named by `contactId`, from the signed-in user's
+ * own connected mailbox.
+ *
+ * There is no recipient parameter, and that is the design — the API reads the
+ * address from the contact row, so neither this action nor anything calling it
+ * can point a send at an arbitrary inbox. See outbound-mail.controller.ts.
+ */
+export async function sendContactEmailAction(
+  contactId: string,
+  input: { subject: string; body: string },
+): Promise<ActionResult & { sent?: boolean; to?: string; interaction?: Interaction | null }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/contacts/${contactId}/email`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const data = (await res.json()) as {
+      sent: boolean;
+      to: string;
+      interaction: Interaction | null;
+    };
+    revalidatePath("/owner/contacts");
+    return data;
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 // ── Stage history (migration 0046) ──────────────────────────────────────────
 
 export interface StageTransitionRow {

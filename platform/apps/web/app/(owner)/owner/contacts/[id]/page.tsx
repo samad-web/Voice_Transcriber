@@ -5,6 +5,7 @@ import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { CustomFieldEditor } from "../../custom-field-editor";
+import { EmailComposer } from "../../email-composer";
 import { InteractionTimeline } from "../../interaction-timeline";
 import { TaskList } from "../../task-list";
 import { formatValue, relativeTime, type Contact, type Deal } from "../../types";
@@ -55,6 +56,13 @@ export default async function ContactDetailPage({
 
       <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
         <div className="space-y-6">
+          <Card>
+            <EmailComposer
+              contactId={contact.id}
+              contactEmail={contact.email}
+              contactName={contact.display_name}
+            />
+          </Card>
           <Card>
             <TaskList contactId={contact.id} title="Follow-ups" />
           </Card>
