@@ -11,6 +11,7 @@ import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
 import { startMailboxSync } from "./pipeline/email-sync";
+import { startCalendarSync } from "./pipeline/calendar-sync";
 import { startBookingConfirmations } from "./pipeline/booking-confirmations";
 import { startFormNudges } from "./pipeline/form-nudges";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
@@ -69,6 +70,12 @@ async function bootstrap() {
   // private mail never enters the CRM. No-op until somebody connects an
   // account. See the module header for why polling rather than webhooks.
   startMailboxSync();
+  // And each user's own CALENDAR, under the same rule: an event reaches the
+  // timeline only if somebody on its guest list is already a contact, so a
+  // rep's dentist appointment never becomes a CRM record. Unlike the mail
+  // sweep this looks forward as well as back — a meeting next Thursday is the
+  // most useful thing on a deal — and it removes events that get cancelled.
+  startCalendarSync();
   // Queues the WhatsApp confirmation — with the Meet link — for anyone who has
   // booked and not had one. It lives here rather than in the booking itself
   // because the public marketing role holds no grant on the outbox; see the

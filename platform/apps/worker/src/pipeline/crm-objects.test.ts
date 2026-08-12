@@ -62,6 +62,7 @@ interface FakeDbOptions {
   interactionCreated?: boolean;
   /** Every INSERT INTO interactions this fake saw, for asserting on params. */
   interactionInserts?: unknown[][];
+  stageTransitions?: unknown[][];
 }
 
 function fakeDb(opts: FakeDbOptions = {}): DbClient {
@@ -95,6 +96,13 @@ function fakeDb(opts: FakeDbOptions = {}): DbClient {
       if (sql.includes("FROM custom_field_definitions")) {
         return { rows: [] as R[], rowCount: 0 };
       }
+      // The stage ledger (migration 0046). Recorded here only when the deal
+      // is CREATED — this projection never moves a deal, so an update has no
+      // transition to write. `stageTransitions` lets a case assert that.
+      if (sql.includes("INSERT INTO deal_stage_transitions")) {
+        opts.stageTransitions?.push(params ?? []);
+        return { rows: [] as R[], rowCount: 1 };
+      }
       if (sql.startsWith("INSERT INTO interactions")) {
         opts.interactionInserts?.push(params ?? []);
         return {
@@ -116,6 +124,27 @@ describe("projectLeadToCrm", () => {
   it("updates rather than creates when the deal already exists for this lead", async () => {
     const result = await projectLeadToCrm(fakeDb({ dealCreated: false }), ORG_ID, "lead-1");
     expect(result.reason).toBe("updated");
+  });
+
+  it("opens the stage ledger when it creates a deal", async () => {
+    const transitions: unknown[][] = [];
+    await projectLeadToCrm(fakeDb({ stageTransitions: transitions }), ORG_ID, "lead-1");
+    expect(transitions).toHaveLength(1);
+    // (org, deal, to_stage) — entering the pipeline at its entry stage.
+    expect(transitions[0]).toEqual([ORG_ID, DEAL_ID, "new"]);
+  });
+
+  it("writes NO transition when it only updates — this projection never moves a deal", async () => {
+    // Stage belongs to the owner, as the ON CONFLICT in crm-objects.ts says.
+    // A transition row here would put a move in the ledger that never
+    // happened, which is exactly what a ledger must not contain.
+    const transitions: unknown[][] = [];
+    await projectLeadToCrm(
+      fakeDb({ dealCreated: false, stageTransitions: transitions }),
+      ORG_ID,
+      "lead-1",
+    );
+    expect(transitions).toHaveLength(0);
   });
 
   it("falls back to a call/lead anchor when there is no phone hash", async () => {

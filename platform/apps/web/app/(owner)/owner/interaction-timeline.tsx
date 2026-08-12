@@ -169,6 +169,12 @@ export function InteractionTimeline({
           {rows.map((row) => {
             const Icon = ICONS[row.type] ?? StickyNote;
             const length = duration(row.duration_s);
+            // Calendar sync brings in meetings that have not happened yet — a
+            // meeting next Thursday being the single most useful thing on a
+            // deal. Nothing marks them in the database; "in the future" is
+            // simply true or not at the moment of rendering, which needs no
+            // column and stays correct as Thursday arrives.
+            const upcoming = new Date(row.occurred_at).getTime() > Date.now();
             return (
               <li key={row.id} className="flex items-start gap-3 px-3 py-2.5">
                 <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
@@ -177,8 +183,15 @@ export function InteractionTimeline({
                     <span className="text-xs font-medium text-text capitalize">
                       {row.direction ? `${row.direction} ${row.type}` : row.type}
                     </span>
+                    {upcoming ? (
+                      <span className="rounded-full bg-accent-subtle px-2 py-0.5 text-xs font-medium text-accent-text">
+                        Scheduled
+                      </span>
+                    ) : null}
                     <span className="text-xs text-text-muted tabular-nums">
-                      {relativeTime(row.occurred_at)}
+                      {upcoming
+                        ? new Date(row.occurred_at).toLocaleString()
+                        : relativeTime(row.occurred_at)}
                       {length ? ` · ${length}` : ""}
                       {row.actor ? ` · ${row.actor}` : ""}
                     </span>
