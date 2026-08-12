@@ -2,8 +2,8 @@
 
 **As of:** 2026-08-12
 **Branch:** `crm-foundation-data-model` (off `crm-connectors-and-console-auth`, not merged, not deployed)
-**Scope built:** PRD Phase 1 / Layer 0 "Foundation", plus roadmap Track A (A1–A5). Layers 1–6 are
-**not started**.
+**Scope built:** PRD Phase 1 / Layer 0 "Foundation", roadmap Track A (A1–A5), and a first cut of
+PRD Layer 3 (reporting). Layers 1, 2, 4, 5, 6 are **not started**.
 
 This is a strangler-fig build: everything below is new tables/modules/pages added *alongside* the
 existing `leads` pipeline. Nothing about `leads`, `call_facts`, the CRM outbound-connector pipeline
@@ -160,15 +160,31 @@ any code written:**
 
 | Layer | Theme | Status |
 |---|---|---|
-| 1 | Multi-channel engagement (email/SMS/WhatsApp sequences, not just calls) | Not started |
+| 1 | Multi-channel engagement (email/SMS/WhatsApp sequences, not just calls) | **Blocked on a decision** — which email/calendar providers are in scope |
 | 2 | Workflow automation (triggers, sequences, task assignment) | Not started |
-| 3 | Reporting & analytics (pipeline forecasting, rep performance, funnel reports) | Not started |
+| 3 | Reporting & analytics (pipeline forecasting, rep performance, funnel reports) | **First cut shipped** (`e03ae18`) |
 | 4 | Third-party integrations beyond the existing outbound CRM connectors (calendar, email providers, marketing tools) | Not started |
 | 5 | Go-to-market / billing tooling (quotas, territories, comp plans) | Not started |
 | 6 | (per original PRD numbering — advanced/platform-level capabilities) | Not started |
 
-If work continues past Foundation, the next step is picking one of these layers and running the same
-plan → milestone → verify cycle used for Phase 1.
+**Layer 3, what shipped:** `/owner/reports` with a stage-weighted forecast, a conversion funnel, and
+per-rep outcomes, plus CSV export of each. Read-only — no migration. Viewing needs `deal:view`,
+exporting needs `deal:export` (the first real use of that action).
+
+**Layer 3, what it still can't do:** stage probabilities are positional, not configurable per stage;
+the funnel is inferred from each deal's *current* stage because there is no transition history, so a
+skipped stage still counts as passed and a lost deal counts only as having entered. A
+`deal_stage_transitions` table would remove that guesswork and is the natural next step if these
+numbers start driving decisions. There is also no per-rep task/interaction attribution, because a rep
+is a `telecallers` row and a task assignee is a `users` row with nothing mapping between them.
+
+### 3.3 The remaining Track A item
+
+**A6, the `leads` → CRM cutover, is not started and is deliberately gated.** The roadmap's own
+condition is "after A1–A5 are live and trusted" — this branch is unmerged and unreviewed, so that
+condition is not met. It is also the highest-risk item here (two live tenants) and carries an open
+question only the owner can answer: whether a freeze window is acceptable, or whether it must be
+zero-downtime with a shadow-read period first.
 
 ---
 
@@ -176,7 +192,7 @@ plan → milestone → verify cycle used for Phase 1.
 
 Local dev is currently running:
 - Web: http://localhost:3000 (owner console: `/owner/deals`, `/owner/tasks`, `/owner/contacts`,
-  `/owner/contacts/<id>`, `/owner/accounts`, `/owner/duplicates`; platform console:
+  `/owner/contacts/<id>`, `/owner/accounts`, `/owner/reports`, `/owner/duplicates`; platform console:
   `/custom-fields`, `/roles`)
 - API: http://localhost:4000
 - Postgres/RabbitMQ/Redis/MinIO via `docker compose` in `platform/`
