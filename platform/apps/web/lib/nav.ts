@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   ListFilter,
   ListChecks,
+  PieChart,
   Phone,
   Plug,
   Search,
@@ -141,6 +142,17 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Building2,
     title: "Accounts",
     context: "Pipeline",
+  },
+  {
+    href: "/owner/reports",
+    label: "Reports",
+    icon: PieChart,
+    title: "Reports",
+    context: "Pipeline",
+    // Pipeline value and per-rep win rates are a manager's view of the team,
+    // not a telecaller's view of their own work — same restriction the boards
+    // carry (design doc §9).
+    ownerRoles: ["owner", "manager"],
   },
   {
     href: "/owner/duplicates",
