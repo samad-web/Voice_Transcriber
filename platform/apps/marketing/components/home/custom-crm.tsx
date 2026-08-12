@@ -122,7 +122,10 @@ export function CustomCrm() {
           waMessage={WA_MESSAGES.customCrm}
           secondary={{
             href: startHref("custom-crm-section", "custom-crm"),
-            label: "Start the 2-minute setup form",
+            // Same words as every other funnel button on the site. The WhatsApp
+            // CTA beside it keeps its own label, because it opens a chat rather
+            // than the booking form and a button must say what it does.
+            label: "Book my call",
             requiresFunnel: true,
           }}
         />
