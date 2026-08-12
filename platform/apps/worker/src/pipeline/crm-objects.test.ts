@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { isUnmatchableDisplayName } from "@aura/shared";
+
 import type { DbClient } from "./crm-dispatch";
 import { projectCallToInteraction, projectLeadToCrm } from "./crm-objects";
+import { leadTitle } from "./leads";
 
 /**
  * projectLeadToCrm reads a lead upsertLead() already wrote and projects it
@@ -157,6 +160,25 @@ describe("projectLeadToCrm", () => {
       "22222222-2222-4222-8222-222222222222",
       "99999999-9999-4999-8999-999999999999",
     ]);
+  });
+});
+
+describe("the placeholder name the duplicate matcher must ignore", () => {
+  /**
+   * Track A5's fuzzy scan excludes `UNMATCHABLE_DISPLAY_NAMES` because two
+   * "Unknown caller" contacts score 1.0 against each other while being two
+   * people nobody could identify — merging them would fuse unrelated
+   * histories. That exclusion is only correct while it still matches what
+   * this pipeline actually writes, and leadTitle() lives in a file the
+   * strangler-fig plan keeps untouched. So the coupling is pinned here
+   * instead: change leadTitle's fallback and this fails, naming the reason.
+   */
+  it("is exactly what leadTitle() falls back to for a nameless, numberless call", () => {
+    expect(isUnmatchableDisplayName(leadTitle(null, null, null, null))).toBe(true);
+  });
+
+  it("does not swallow a real contact name", () => {
+    expect(isUnmatchableDisplayName(leadTitle("Priya Sharma", null, null, null))).toBe(false);
   });
 });
 

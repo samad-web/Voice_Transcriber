@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { UNMATCHABLE_DISPLAY_NAMES } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -22,13 +23,15 @@ import { DbService } from "../../db/db.service";
  * Merge & duplicate detection (CRM Phase 1, E0.3) — Contact/Account only,
  * matching the epic's own wording. Schema: packages/db/migrations/0038.
  *
- * SCOPE (per the user's explicit call, 2026-08-11): exact-match dedup only
- * this milestone. Fuzzy name+company matching needs `pg_trgm`, which no
- * migration in this codebase has ever enabled and which is unverified on the
- * production Supabase project — that half of `match_reason` (`fuzzy_name_
- * company`) is deliberately not populated here.
+ * SCOPE: Phase 1 shipped exact-match only. Track A5 added the fuzzy
+ * name+company half (`match_reason = 'fuzzy_name_company'`), which needs
+ * `pg_trgm` — the first Postgres extension this codebase has required.
+ * Migration 0042 installs it if the deploying role may, and NEITHER half
+ * hard-depends on it: `fuzzyAvailable()` asks Postgres at request time, and a
+ * scan on an environment without the extension reports it as unavailable
+ * rather than failing. Exact-match scanning is unaffected either way.
  *
- * Of the three remaining exact-match kinds, only `external_id` can actually
+ * Of the three exact-match kinds, only `external_id` can actually
  * produce a candidate: `contacts`/`accounts` already carry partial UNIQUE
  * indexes on `(org_id, phone_hash)` / `(org_id, lower(email))` /
  * `(org_id, lower(domain))` for active rows (0035), so two ACTIVE rows can
@@ -45,7 +48,21 @@ type ObjectType = z.infer<typeof ObjectType>;
 const TABLE: Record<ObjectType, string> = { contact: "contacts", account: "accounts" };
 const DEAL_FK: Record<ObjectType, string> = { contact: "contact_id", account: "account_id" };
 
-const ScanQuery = z.object({ objectType: ObjectType });
+const ScanQuery = z.object({
+  objectType: ObjectType,
+  /**
+   * Trigram similarity a pair must reach to be queued, 0-1.
+   *
+   * 0.45 rather than pg_trgm's own 0.3 default: names are short strings, and
+   * at 0.3 "Priya Sharma"/"Rahul Sharma" scores as a candidate. This is the
+   * threshold for what a human is asked to LOOK at, not for what gets merged
+   * — merging stays a deliberate two-click action either way — so it is tuned
+   * to keep the review queue worth opening.
+   */
+  threshold: z.coerce.number().min(0.1).max(1).default(0.45),
+  /** Skip the trigram pass even where the extension is available. */
+  exactOnly: z.coerce.boolean().default(false),
+});
 const DuplicatesQuery = z.object({
   objectType: ObjectType.optional(),
   status: z.enum(["pending", "dismissed", "merged"]).default("pending"),
@@ -90,15 +107,21 @@ export class MergeController {
   constructor(private readonly db: DbService) {}
 
   /**
-   * Scan for external_id collisions among active (non-merged) rows and
-   * upsert them into the candidate queue. Not computed live on every page
-   * load — see 0038's header on `duplicate_matches`.
+   * Scan for duplicate candidates and upsert them into the review queue. Not
+   * computed live on every page load — see 0038's header on
+   * `duplicate_matches`.
+   *
+   * Two passes: exact `external_id` collisions, then (where `pg_trgm` is
+   * installed) trigram name similarity. Both write the same queue with a
+   * different `match_reason`, and a pair found by both keeps the exact-match
+   * row — `ON CONFLICT DO NOTHING` and the exact pass running first.
    */
   @Post("scan")
   async scan(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ScanQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const table = TABLE[parsed.data.objectType];
+    const { threshold, exactOnly } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       // Two rows collide when they share a (system, id) pair inside external_ids.
@@ -127,8 +150,91 @@ export class MergeController {
         );
         inserted += rowCount ?? 0;
       }
-      return { scanned: pairs.length, newCandidates: inserted };
+
+      // ── Pass 2: trigram name similarity (Track A5) ─────────────────────
+      const fuzzyAvailable = await this.fuzzyAvailable(client);
+      let fuzzyScanned = 0;
+      if (!exactOnly && fuzzyAvailable) {
+        const nameColumn = parsed.data.objectType === "contact" ? "display_name" : "name";
+
+        // `a.id < b.id` gives each unordered pair once and matches
+        // duplicate_matches' own CHECK (record_a_id < record_b_id), so no
+        // LEAST/GREATEST is needed and the pair is never queued twice.
+        //
+        // The `%` operator is what uses the GIN trigram index from 0042;
+        // similarity() alone would force a full pairwise scan. set_limit
+        // makes `%` agree with the threshold actually being applied.
+        await client.query(`SELECT set_limit($1)`, [threshold]);
+
+        const { rows: fuzzy } = await client.query<{ a: string; b: string; score: number }>(
+          `SELECT a.id AS a, b.id AS b, similarity(a.${nameColumn}, b.${nameColumn}) AS score
+             FROM ${table} a
+             JOIN ${table} b
+               ON b.org_id = a.org_id
+              AND a.id < b.id
+              AND a.${nameColumn} % b.${nameColumn}
+            WHERE a.org_id = $1
+              AND a.status <> 'merged' AND b.status <> 'merged'
+              AND similarity(a.${nameColumn}, b.${nameColumn}) >= $2
+              -- Placeholder names are not evidence of anything. Two
+              -- "Unknown caller" rows score 1.0 while being two people nobody
+              -- could identify; queueing them invites an operator to fuse two
+              -- unrelated histories. Found in live testing, not theory.
+              AND lower(btrim(a.${nameColumn})) <> ALL($3::text[])
+              AND lower(btrim(b.${nameColumn})) <> ALL($3::text[])
+              ${
+                // Two people with similar names at DIFFERENT companies are
+                // more likely two different people than one duplicate — the
+                // "name+company" half of the match reason. Only applied when
+                // both sides actually name a company; an unassigned contact
+                // is not evidence either way.
+                parsed.data.objectType === "contact"
+                  ? "AND (a.account_id IS NULL OR b.account_id IS NULL OR a.account_id = b.account_id)"
+                  : ""
+              }
+            ORDER BY score DESC
+            LIMIT 500`,
+          [orgId, threshold, UNMATCHABLE_DISPLAY_NAMES.map((n) => n.toLowerCase())],
+        );
+        fuzzyScanned = fuzzy.length;
+
+        for (const pair of fuzzy) {
+          const { rowCount } = await client.query(
+            `INSERT INTO duplicate_matches (org_id, object_type, record_a_id, record_b_id, match_reason, score)
+             VALUES ($1, $2, $3, $4, 'fuzzy_name_company', $5)
+             ON CONFLICT (org_id, object_type, record_a_id, record_b_id) DO NOTHING`,
+            [orgId, parsed.data.objectType, pair.a, pair.b, pair.score],
+          );
+          inserted += rowCount ?? 0;
+        }
+      }
+
+      return {
+        scanned: pairs.length + fuzzyScanned,
+        newCandidates: inserted,
+        // Reported rather than silent: a queue with nothing in it means
+        // something different depending on whether fuzzy matching actually
+        // ran, and the UI says which.
+        fuzzy: exactOnly ? "skipped" : fuzzyAvailable ? "ran" : "unavailable",
+        threshold,
+      };
     });
+  }
+
+  /**
+   * Is `pg_trgm` actually installed here?
+   *
+   * Asked at request time rather than assumed from the migration: 0042
+   * installs the extension only if the deploying role was permitted to, and
+   * whether production Supabase permits that was never confirmed. Checking
+   * turns "fuzzy matching is off in this environment" into a reported state
+   * instead of a 42883 undefined-function error.
+   */
+  private async fuzzyAvailable(client: {
+    query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }>;
+  }): Promise<boolean> {
+    const { rowCount } = await client.query(`SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'`);
+    return (rowCount ?? 0) > 0;
   }
 
   /**

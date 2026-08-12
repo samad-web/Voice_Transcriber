@@ -107,7 +107,15 @@ export async function fetchContactAction(
 
 export async function scanDuplicatesAction(
   objectType: "contact" | "account",
-): Promise<ActionResult & { scanned?: number; newCandidates?: number }> {
+): Promise<
+  ActionResult & {
+    scanned?: number;
+    newCandidates?: number;
+    /** Whether the trigram pass actually ran — see merge.controller.ts. */
+    fuzzy?: "ran" | "unavailable" | "skipped";
+    threshold?: number;
+  }
+> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
 
@@ -118,7 +126,12 @@ export async function scanDuplicatesAction(
       cache: "no-store",
     });
     if (!res.ok) return { error: `API ${res.status}` };
-    const data = (await res.json()) as { scanned: number; newCandidates: number };
+    const data = (await res.json()) as {
+      scanned: number;
+      newCandidates: number;
+      fuzzy: "ran" | "unavailable" | "skipped";
+      threshold: number;
+    };
     revalidatePath("/owner/duplicates");
     return data;
   } catch {

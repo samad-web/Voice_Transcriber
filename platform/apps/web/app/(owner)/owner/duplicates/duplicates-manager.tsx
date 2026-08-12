@@ -12,23 +12,38 @@ import type { DuplicateMatch } from "../types";
 /**
  * Review queue for /v1/merge/duplicates — scan, then keep-one-side merge or
  * dismiss each pending pair. No field-by-field picker: the API's
- * fieldDecisions defaults to "keep the survivor's own values", which is the
- * right default for the one match kind this scan produces (an external_id
- * collision, where both sides already agree on the field that matched).
+ * fieldDecisions defaults to "keep the survivor's own values", which stays
+ * the right default for both match kinds — an external_id collision (both
+ * sides already agree on the field that matched) and a fuzzy name match
+ * (where the operator picks the side to keep, which IS the decision).
  */
 export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
   const [duplicates, setDuplicates] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const scan = (objectType: "contact" | "account") => {
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const result = await scanDuplicatesAction(objectType);
       if (result.error) {
         setError(result.error);
         return;
       }
+
+      // "Found nothing" and "could not look" are different answers, and a
+      // queue that stays empty looks identical either way. Say which.
+      if (result.fuzzy === "unavailable") {
+        setNotice(
+          "Scanned exact matches only — fuzzy name matching needs the pg_trgm extension, " +
+            "which is not installed on this database.",
+        );
+      } else if (result.newCandidates === 0) {
+        setNotice(`No new duplicates found (name similarity ≥ ${result.threshold ?? ""}).`);
+      }
+
       // The action already revalidates the path; nothing more to do here if
       // the scan found zero — the list simply stays as it was.
       if (result.newCandidates && result.newCandidates > 0) {
@@ -81,10 +96,19 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
         </p>
       ) : null}
 
+      {notice ? (
+        <p
+          role="status"
+          className="rounded-md border border-border bg-surface-hover p-3 text-sm text-text-muted"
+        >
+          {notice}
+        </p>
+      ) : null}
+
       {duplicates.length === 0 ? (
         <EmptyState
           title="No duplicates to review"
-          description='Run a scan to look for records that share the same external system id — or check back after one runs on its own.'
+          description="Run a scan to look for records that share an external system id, or whose names are close enough to be the same person."
         />
       ) : (
         <div className="space-y-3">
