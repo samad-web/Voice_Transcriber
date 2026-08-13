@@ -14,6 +14,58 @@ import {
 import { RejectPanel } from "./reject-panel";
 
 /**
+ * What the lead typed when asked where to find them online, made clickable.
+ *
+ * The whole point of collecting this is that somebody opens it before the call,
+ * and asking an operator to select-copy-paste out of a definition list is how a
+ * field quietly stops being used.
+ *
+ * ── IT IS FREE TEXT, SO MOST OF IT IS NOT A URL ────────────────────────────
+ *
+ * Real answers look like "instagram.com/ourshop", "@ourshop", "we're only on
+ * JustDial" and "www.example.in — also on FB". Only the parts that plausibly
+ * address something get linked; everything else is printed as written. A naive
+ * `href={value}` would produce links to `/admin/leads/@ourshop`, which look
+ * live and go nowhere.
+ *
+ * `https://` is forced rather than trusted: a bare `//host` is protocol-relative
+ * and a `javascript:` string is an XSS, and this value came from a stranger
+ * typing into a public form.
+ */
+function DigitalPresence({ value }: { value: string }) {
+  // Split on whitespace and commas, keeping the separators, so the sentence a
+  // person wrote survives with only its addresses turned into links.
+  const parts = value.split(/([\s,]+)/);
+
+  return (
+    <span className="break-words">
+      {parts.map((part, i) => {
+        // A host-looking token: something.tld, optionally with a path. Not a
+        // validator — it only has to be right often enough to be useful, and
+        // wrong safely, which printing the text achieves.
+        const looksLikeHost = /^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?$/i.test(part);
+        if (!looksLikeHost) return <span key={i}>{part}</span>;
+
+        const href = /^https?:\/\//i.test(part) ? part : `https://${part}`;
+        return (
+          <a
+            key={i}
+            href={href}
+            target="_blank"
+            // noreferrer as well as noopener: the target learns the console's
+            // URL otherwise, and that URL identifies a customer's tenant.
+            rel="noopener noreferrer"
+            className="text-accent underline underline-offset-2"
+          >
+            {part}
+          </a>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
  * The leads list, and the convert flow.
  *
  * A client component because converting is a two-step server round trip whose
@@ -435,7 +487,13 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                         {answers.map((a) => (
                           <div key={a.key}>
                             <dt className="text-text-muted">{a.question}</dt>
-                            <dd className="mt-0.5 font-medium text-text">{a.answer}</dd>
+                            <dd className="mt-0.5 font-medium text-text">
+                              {a.key === "digitalPresence" ? (
+                                <DigitalPresence value={a.answer} />
+                              ) : (
+                                a.answer
+                              )}
+                            </dd>
                           </div>
                         ))}
                       </dl>

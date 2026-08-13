@@ -51,6 +51,7 @@ export const FUNNEL_QUESTIONS = {
   crmName: "Which one?",
   crmSatisfied: "Are you happy with it?",
   wantsCustomCrm: "Would you like us to build a CRM for you?",
+  digitalPresence: "Where can we find you online?",
 } as const;
 
 /** The subset of a submission this module can read. */
@@ -63,6 +64,7 @@ export interface FunnelAnswerSource {
   crm_name?: string | null;
   crm_satisfied?: string | null;
   wants_custom_crm?: string | null;
+  digital_presence?: string | null;
 }
 
 export interface AnsweredQuestion {
@@ -116,6 +118,9 @@ export function describeAnswers(row: FunnelAnswerSource): AnsweredQuestion[] {
     "wantsCustomCrm",
     row.wants_custom_crm && labelFor(WANTS_CUSTOM_CRM_OPTIONS, row.wants_custom_crm),
   );
+  // Free text, so no `labelFor`: whatever they typed IS the answer. Last,
+  // because it is last on the form.
+  push("digitalPresence", row.digital_presence);
 
   return out;
 }

@@ -81,6 +81,8 @@ type Values = {
   crmNameOther: string;
   crmSatisfied: string;
   wantsCustomCrm: string;
+  /** Free text: a site, a handle, or "we only have a Facebook page". */
+  digitalPresence: string;
 };
 
 const EMPTY: Values = {
@@ -100,6 +102,7 @@ const EMPTY: Values = {
   crmNameOther: "",
   crmSatisfied: "",
   wantsCustomCrm: "",
+  digitalPresence: "",
 };
 
 /* ── Phone entry ────────────────────────────────────────────────────────────
@@ -694,6 +697,41 @@ export function FunnelForm({
             error={errors.wantsCustomCrm}
             onPick={(v) => set("wantsCustomCrm", v)}
           />
+
+          {/* OPTIONAL, and last.
+
+              Optional because a required field on a lead form is paid for in
+              leads, and plenty of real businesses in this market genuinely have
+              no web presence — which is itself worth knowing, and is what a
+              blank records. It is also the only free-text question here, and
+              free text is the slowest thing to answer on a phone.
+
+              Last because everything above it decides whether the lead
+              qualifies. A typing field sitting between the budget and intent
+              pills would be a place to stall on the way to the answers that
+              actually matter. */}
+          <Field
+            label={FUNNEL_QUESTIONS.digitalPresence}
+            name="digitalPresence"
+            error={errors.digitalPresence}
+          >
+            <input
+              name="digitalPresence"
+              value={values.digitalPresence}
+              onChange={(e) => set("digitalPresence", e.currentTarget.value)}
+              // `url` would demand a scheme and reject "@ourshop" and
+              // "instagram.com/ourshop", which is most of the honest answers.
+              type="text"
+              inputMode="url"
+              autoComplete="url"
+              maxLength={300}
+              style={inputStyle}
+              placeholder="Website, Instagram, Google listing — whatever you have"
+            />
+            <p className="mt-1.5 text-xs" style={{ color: "var(--mk-muted)" }}>
+              Optional. It just helps us understand your business before we talk.
+            </p>
+          </Field>
 
           <button type="submit" className="mk-cta w-full justify-center" disabled={pending}>
             {pending ? "Submitting…" : "Submit"}

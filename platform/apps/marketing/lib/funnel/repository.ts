@@ -231,6 +231,8 @@ export interface QualificationWrite {
   /** Only when `hasCrm === 'yes'`; null otherwise. Migration 0028. */
   crmSatisfied: CrmSatisfaction | null;
   wantsCustomCrm: WantsCustomCrm | null;
+  /** Free text, already trimmed and bounded by the caller. Migration 0051. */
+  digitalPresence: string | null;
   status: "qualified" | "disqualified";
   routeToHuman: boolean;
   crmConnectorStatus: CrmConnectorStatus;
@@ -262,6 +264,7 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
               status               = $10,
               route_to_human       = $11,
               crm_connector_status = $12,
+              digital_presence     = $13,
               last_contacted_at    = now()
         WHERE id = $1`,
       [
@@ -277,6 +280,7 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
         input.status,
         input.routeToHuman,
         input.crmConnectorStatus,
+        input.digitalPresence,
       ],
     );
 
@@ -289,7 +293,8 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
               has_crm          = $6,
               crm_name         = $7,
               crm_satisfied    = $8,
-              wants_custom_crm = $9
+              wants_custom_crm = $9,
+              digital_presence = $11
         WHERE id = $1 AND submission_id = $10`,
       [
         input.historyId,
@@ -302,6 +307,7 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
         input.crmSatisfied,
         input.wantsCustomCrm,
         input.submissionId,
+        input.digitalPresence,
       ],
     );
   });
