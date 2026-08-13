@@ -10,6 +10,7 @@ import { Reflector } from "@nestjs/core";
 import { z } from "zod";
 import type { PermissionAction, PermissionObjectType } from "@aura/shared";
 import type { PrincipalRequest } from "./auth-principal";
+import { UNSCOPED } from "./crm-scope";
 import { DbService } from "../db/db.service";
 
 export const CRM_PERMISSION_KEY = "required_crm_permission";
@@ -74,7 +75,10 @@ export class CrmPermissionsGuard implements CanActivate {
     }
 
     const userId = z.string().uuid().safeParse(principal.userId);
-    if (principal.viaAdminKey && !userId.success) return true;
+    if (principal.viaAdminKey && !userId.success) {
+      req.crmScope = UNSCOPED;
+      return true;
+    }
     if (!userId.success) throw new ForbiddenException(denial(required));
 
     const orgId = req.tenantOrgId;
@@ -83,8 +87,15 @@ export class CrmPermissionsGuard implements CanActivate {
     }
 
     const { rows } = await this.db.withOrg(orgId, (client) =>
-      client.query(
-        `SELECT 1
+      client.query<{ scope: string }>(
+        // `ORDER BY scope` puts 'all' before 'owned' alphabetically, and LIMIT 1
+        // therefore takes the WIDEST grant when a user somehow holds two. That
+        // is the right tie-break: two grants means somebody was given both, and
+        // silently applying the narrower one would be a lockout nobody
+        // configured. It cannot normally happen — role_permissions is unique on
+        // (role, object, action) — but a membership resolving through the
+        // legacy `role`-string fallback below can match a second row.
+        `SELECT rp.scope
            FROM memberships m
            JOIN roles r
              ON r.org_id = m.org_id
@@ -92,12 +103,21 @@ export class CrmPermissionsGuard implements CanActivate {
            JOIN role_permissions rp
              ON rp.role_id = r.id AND rp.object_type = $3 AND rp.action = $4
           WHERE m.user_id = $1 AND m.org_id = $2
+          ORDER BY rp.scope
           LIMIT 1`,
         [userId.data, orgId, required.objectType, required.action],
       ),
     );
 
     if (rows.length === 0) throw new ForbiddenException(denial(required));
+
+    // The scope travels on the request because it is a predicate on rows, not
+    // a verdict on the request — see crm-scope.ts. Every controller with a
+    // @RequireCrmPermission route reads it via @RecordScope().
+    req.crmScope = {
+      scope: rows[0].scope === "owned" ? "owned" : "all",
+      userId: userId.data,
+    };
     return true;
   }
 }

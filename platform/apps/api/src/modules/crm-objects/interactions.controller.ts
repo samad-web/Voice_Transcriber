@@ -16,6 +16,7 @@ import { InteractionInput } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { enqueueAutomationEventSafely } from "../automation/enqueue";
@@ -63,8 +64,9 @@ export class InteractionsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.list(orgId, "contacts", id, "i.contact_id = $1", query);
+    return this.list(orgId, "contacts", id, "i.contact_id = $1", query, recordScope);
   }
 
   @Get("deals/:id/interactions")
@@ -73,8 +75,9 @@ export class InteractionsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.list(orgId, "deals", id, "i.deal_id = $1", query);
+    return this.list(orgId, "deals", id, "i.deal_id = $1", query, recordScope);
   }
 
   /**
@@ -91,6 +94,7 @@ export class InteractionsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     return this.list(
       orgId,
@@ -98,6 +102,7 @@ export class InteractionsController {
       id,
       `(i.account_id = $1 OR i.contact_id IN (SELECT id FROM contacts WHERE account_id = $1))`,
       query,
+      recordScope,
     );
   }
 
@@ -108,8 +113,9 @@ export class InteractionsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.create(orgId, "contacts", id, { contactId: id }, body, req);
+    return this.create(orgId, "contacts", id, { contactId: id }, body, req, recordScope);
   }
 
   @Post("accounts/:id/interactions")
@@ -119,8 +125,9 @@ export class InteractionsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.create(orgId, "accounts", id, { accountId: id }, body, req);
+    return this.create(orgId, "accounts", id, { accountId: id }, body, req, recordScope);
   }
 
   /**
@@ -135,8 +142,9 @@ export class InteractionsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.create(orgId, "deals", id, { dealId: id }, body, req);
+    return this.create(orgId, "deals", id, { dealId: id }, body, req, recordScope);
   }
 
   // ── shared implementation ────────────────────────────────────────────────
@@ -147,13 +155,14 @@ export class InteractionsController {
     parentId: string,
     scope: string,
     query: unknown,
+    recordScope: CrmRecordScope,
   ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { type, limit, offset } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      await assertExists(client, parentTable, parentId);
+      await assertExists(client, parentTable, parentId, recordScope);
 
       const params: unknown[] = [parentId];
       let where = scope;
@@ -189,6 +198,7 @@ export class InteractionsController {
     attach: { contactId?: string; accountId?: string; dealId?: string },
     body: unknown,
     req: PrincipalRequest,
+    recordScope: CrmRecordScope,
   ) {
     // The parent comes from the PATH, so the body may not also name one —
     // otherwise `POST /contacts/A/interactions {contactId: B}` would write to
@@ -198,7 +208,7 @@ export class InteractionsController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      await assertExists(client, parentTable, parentId);
+      await assertExists(client, parentTable, parentId, recordScope);
 
       // Logging against a deal fills in that deal's contact; see logOnDeal.
       let contactId = p.contactId ?? null;
@@ -278,9 +288,19 @@ async function assertExists(
   client: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> },
   table: "contacts" | "accounts" | "deals",
   id: string,
+  recordScope: CrmRecordScope,
 ): Promise<void> {
-  const found = await client.query(`SELECT 1 FROM ${table} WHERE id = $1`, [id]);
-  if (!found.rowCount) throw new NotFoundException(`${table.replace(/s$/, "")} not found`);
+  // The `owned` scope applies to the PARENT, which is what this route was
+  // permission-checked against. Without it a scoped rep could read a
+  // colleague's whole deal timeline by knowing the deal's id — the record
+  // itself would 404, but its history would not.
+  const objectType = table.replace(/s$/, "") as "contact" | "account" | "deal";
+  const scoped = scopeClause(objectType, recordScope, 2);
+  const found = await client.query(
+    `SELECT 1 FROM ${table} WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+    scoped ? [id, recordScope.userId] : [id],
+  );
+  if (!found.rowCount) throw new NotFoundException(`${objectType} not found`);
 }
 
 /**

@@ -12,6 +12,7 @@ import type { Response } from "express";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, UNSCOPED, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { toCsv, safeFilename, type CsvColumn } from "./csv";
 import {
@@ -63,28 +64,40 @@ export class ReportsController {
 
   @Get("pipeline")
   @RequireCrmPermission("deal", "view")
-  async pipeline(@OrgId() orgId: string, @Query() query: unknown) {
+  async pipeline(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    return this.reports.pipeline(orgId, parsed.data.pipelineId);
+    return this.reports.pipeline(orgId, parsed.data.pipelineId, recordScope);
   }
 
   @Get("performance")
   @RequireCrmPermission("deal", "view")
-  async performance(@OrgId() orgId: string, @Query() query: unknown) {
+  async performance(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
-    return this.reports.performance(orgId, from, to);
+    return this.reports.performance(orgId, from, to, recordScope);
   }
 
   @Get("conversion")
   @RequireCrmPermission("deal", "view")
-  async conversion(@OrgId() orgId: string, @Query() query: unknown) {
+  async conversion(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
-    return this.reports.conversion(orgId, from, to, parsed.data.pipelineId);
+    return this.reports.conversion(orgId, from, to, parsed.data.pipelineId, recordScope);
   }
 
   /**
@@ -103,6 +116,7 @@ export class ReportsController {
     @Param("report") report: string,
     @Query() query: unknown,
     @Res() res: Response,
+    @RecordScope() recordScope: CrmRecordScope,
   ): Promise<void> {
     const name = ReportName.safeParse(report);
     if (!name.success) throw new BadRequestException("unknown report");
@@ -110,7 +124,10 @@ export class ReportsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
     const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
-    const csv = await this.render(name.data, orgId, from, to, parsed.data.pipelineId);
+    // The export carries the SAME scope as the on-screen report. A CSV that
+    // widened it would be the leak with the longest legs — a file, off the
+    // platform, with no permission attached to it any more.
+    const csv = await this.render(name.data, orgId, from, to, recordScope, parsed.data.pipelineId);
 
     res
       .status(200)
@@ -129,10 +146,11 @@ export class ReportsController {
     orgId: string,
     from: string,
     to: string,
+    recordScope: CrmRecordScope = UNSCOPED,
     pipelineId?: string,
   ): Promise<string> {
     if (name === "pipeline") {
-      const data = await this.reports.pipeline(orgId, pipelineId);
+      const data = await this.reports.pipeline(orgId, pipelineId, recordScope);
       const columns: Array<CsvColumn<PipelineRow>> = [
         { header: "Stage", value: (r) => r.label },
         { header: "Deals", value: (r) => r.deals },
@@ -145,7 +163,7 @@ export class ReportsController {
     }
 
     if (name === "performance") {
-      const data = await this.reports.performance(orgId, from, to);
+      const data = await this.reports.performance(orgId, from, to, recordScope);
       const columns: Array<CsvColumn<PerformanceRow>> = [
         { header: "Rep", value: (r) => r.rep },
         { header: "Open deals", value: (r) => r.openDeals },
@@ -158,7 +176,7 @@ export class ReportsController {
       return toCsv(columns, data.reps);
     }
 
-    const data = await this.reports.conversion(orgId, from, to, pipelineId);
+    const data = await this.reports.conversion(orgId, from, to, pipelineId, recordScope);
     const columns: Array<CsvColumn<ConversionRow>> = [
       { header: "Stage", value: (r) => r.label },
       { header: "Deals reached", value: (r) => r.reached },

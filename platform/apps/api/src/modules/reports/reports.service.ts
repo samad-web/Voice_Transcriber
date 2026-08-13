@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { parsePipelineStages, type PipelineStage } from "@aura/shared";
 import { DbService } from "../../db/db.service";
 import { furthestOpenStage } from "../crm-objects/stage-history";
+import { UNSCOPED, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 
 /**
  * The three Layer 3 reports, as data. Split out of the controller because
@@ -84,7 +85,7 @@ export class ReportsService {
    * 30 days" is not a thing anyone means. The time-bounded questions are
    * `conversion` and `performance`.
    */
-  async pipeline(orgId: string, pipelineId?: string) {
+  async pipeline(orgId: string, pipelineId?: string, recordScope: CrmRecordScope = UNSCOPED) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows: pipelines } = await client.query<{ id: string; name: string; stages: unknown }>(
         `SELECT id, name, stages FROM deal_pipelines
@@ -108,9 +109,9 @@ export class ReportsService {
                 COALESCE(sum(amount), 0)                              AS amount,
                 avg(EXTRACT(EPOCH FROM (now() - stage_changed_at)) / 86400) AS avg_days
            FROM deals
-          WHERE pipeline_id = $1 AND status = 'open'
+          WHERE pipeline_id = $1 AND status = 'open' ${ownedDeals(recordScope, 2)}
           GROUP BY stage`,
-        [target.id],
+        scopedParams([target.id], recordScope),
       );
       const byStage = new Map(counts.map((c) => [c.stage, c]));
 
@@ -140,8 +141,8 @@ export class ReportsService {
         `SELECT avg(EXTRACT(EPOCH FROM (stage_changed_at - created_at)) / 86400) AS avg_days,
                 count(*) AS won
            FROM deals
-          WHERE pipeline_id = $1 AND status = 'won'`,
-        [target.id],
+          WHERE pipeline_id = $1 AND status = 'won' ${ownedDeals(recordScope, 2)}`,
+        scopedParams([target.id], recordScope),
       );
 
       return {
@@ -168,7 +169,12 @@ export class ReportsService {
    * the two are reported side by side rather than being forced into one
    * identity the data does not actually share.
    */
-  async performance(orgId: string, from: string, to: string) {
+  async performance(
+    orgId: string,
+    from: string,
+    to: string,
+    recordScope: CrmRecordScope = UNSCOPED,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query<Record<string, string | null>>(
         `WITH deal_stats AS (
@@ -180,6 +186,7 @@ export class ReportsService {
                   COALESCE(sum(d.amount) FILTER (WHERE d.status = 'won'), 0)  AS won_value
              FROM deals d
             WHERE d.created_at >= $1::date AND d.created_at < ($2::date + 1)
+                  ${ownedDeals(recordScope, 3, "d")}
             GROUP BY d.telecaller_id
          )
          SELECT ds.rep_id,
@@ -188,7 +195,7 @@ export class ReportsService {
            FROM deal_stats ds
            LEFT JOIN telecallers t ON t.id = ds.rep_id
           ORDER BY ds.won_value DESC, ds.open_value DESC`,
-        [from, to],
+        scopedParams([from, to], recordScope),
       );
 
       // Console activity, keyed on the platform user. Kept as separate
@@ -264,7 +271,13 @@ export class ReportsService {
    * entirely and is the natural next step if these numbers start driving
    * decisions.
    */
-  async conversion(orgId: string, from: string, to: string, pipelineId?: string) {
+  async conversion(
+    orgId: string,
+    from: string,
+    to: string,
+    pipelineId?: string,
+    recordScope: CrmRecordScope = UNSCOPED,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows: pipelines } = await client.query<{ id: string; name: string; stages: unknown }>(
         `SELECT id, name, stages FROM deal_pipelines
@@ -305,8 +318,9 @@ export class ReportsService {
            LEFT JOIN deal_stage_transitions t ON t.deal_id = d.id
           WHERE d.pipeline_id = $1
             AND d.created_at >= $2::date AND d.created_at < ($3::date + 1)
+                ${ownedDeals(recordScope, 4, "d")}
           GROUP BY d.id, d.status`,
-        [target.id, from, to],
+        scopedParams([target.id, from, to], recordScope),
       );
 
       const reached = new Array(open.length).fill(0);
@@ -363,4 +377,23 @@ export class ReportsService {
 
 function emptyTotals() {
   return { deals: 0, amount: 0, weightedAmount: 0, wonDeals: 0, avgDaysToWin: null };
+}
+
+/**
+ * The `owned` scope, as an extra AND on a report's WHERE clause.
+ *
+ * Reports aggregate, so this is the one place a scope leak would be silent
+ * rather than obvious: a role restricted to its own deals could otherwise read
+ * the org's total pipeline value off the forecast without ever seeing a single
+ * row it was not allowed to see. `""` when unscoped, so the SQL is unchanged
+ * for every role granted `all`.
+ */
+function ownedDeals(scope: CrmRecordScope, paramIndex: number, alias = ""): string {
+  const clause = scopeClause("deal", scope, paramIndex, alias);
+  return clause ? `AND ${clause}` : "";
+}
+
+/** The caller's own uuid appended, but only when the scope actually uses one. */
+function scopedParams(params: unknown[], scope: CrmRecordScope): unknown[] {
+  return scope.scope === "owned" ? [...params, scope.userId] : params;
 }

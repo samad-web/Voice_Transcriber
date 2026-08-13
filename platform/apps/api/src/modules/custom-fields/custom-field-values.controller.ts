@@ -24,6 +24,7 @@ import {
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -54,20 +55,32 @@ export class CustomFieldValuesController {
 
   @Get("contacts/:id/custom-fields")
   @RequireCrmPermission("contact", "view")
-  async contactValues(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
-    return this.read(orgId, "contact", id);
+  async contactValues(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    return this.read(orgId, "contact", id, recordScope);
   }
 
   @Get("accounts/:id/custom-fields")
   @RequireCrmPermission("account", "view")
-  async accountValues(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
-    return this.read(orgId, "account", id);
+  async accountValues(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    return this.read(orgId, "account", id, recordScope);
   }
 
   @Get("deals/:id/custom-fields")
   @RequireCrmPermission("deal", "view")
-  async dealValues(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
-    return this.read(orgId, "deal", id);
+  async dealValues(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    return this.read(orgId, "deal", id, recordScope);
   }
 
   @Put("contacts/:id/custom-fields")
@@ -77,8 +90,9 @@ export class CustomFieldValuesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.write(orgId, "contact", id, body, req);
+    return this.write(orgId, "contact", id, body, req, recordScope);
   }
 
   @Put("accounts/:id/custom-fields")
@@ -88,8 +102,9 @@ export class CustomFieldValuesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.write(orgId, "account", id, body, req);
+    return this.write(orgId, "account", id, body, req, recordScope);
   }
 
   @Put("deals/:id/custom-fields")
@@ -99,18 +114,24 @@ export class CustomFieldValuesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
-    return this.write(orgId, "deal", id, body, req);
+    return this.write(orgId, "deal", id, body, req, recordScope);
   }
 
   // ── shared implementation ────────────────────────────────────────────────
 
-  private async read(orgId: string, objectType: CustomFieldObjectType, recordId: string) {
+  private async read(
+    orgId: string,
+    objectType: CustomFieldObjectType,
+    recordId: string,
+    recordScope: CrmRecordScope,
+  ) {
     const table = valueTableForObjectType(objectType);
     const idColumn = valueTableIdColumn(objectType);
 
     return this.db.withOrg(orgId, async (client) => {
-      await assertExists(client, objectType, recordId);
+      await assertExists(client, objectType, recordId, recordScope);
 
       // LEFT JOIN, so a defined-but-never-filled field still comes back and
       // the form can render it. Archived definitions are included ONLY when
@@ -162,6 +183,7 @@ export class CustomFieldValuesController {
     recordId: string,
     body: unknown,
     req: PrincipalRequest,
+    recordScope: CrmRecordScope,
   ) {
     const parsed = CustomFieldValuesInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -173,7 +195,7 @@ export class CustomFieldValuesController {
     const idColumn = valueTableIdColumn(objectType);
 
     return this.db.withOrg(orgId, async (client) => {
-      await assertExists(client, objectType, recordId);
+      await assertExists(client, objectType, recordId, recordScope);
 
       const { rows: definitions } = await client.query<{
         id: string;
@@ -254,7 +276,7 @@ export class CustomFieldValuesController {
         [orgId, objectType, recordId],
       );
 
-      return this.read(orgId, objectType, recordId);
+      return this.read(orgId, objectType, recordId, recordScope);
     });
   }
 }
@@ -268,9 +290,17 @@ async function assertExists(
   client: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> },
   objectType: CustomFieldObjectType,
   id: string,
+  recordScope: CrmRecordScope,
 ): Promise<void> {
   const table = `${objectType}s`;
-  const found = await client.query(`SELECT 1 FROM ${table} WHERE id = $1`, [id]);
+  // Scoped on the record these values hang off. Without it a scoped rep could
+  // read — and WRITE — the custom fields of a colleague's contact by knowing
+  // its id, while the contact itself correctly 404s.
+  const scoped = scopeClause(objectType, recordScope, 2);
+  const found = await client.query(
+    `SELECT 1 FROM ${table} WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+    scoped ? [id, recordScope.userId] : [id],
+  );
   if (!found.rowCount) throw new NotFoundException(`${objectType} not found`);
 }
 

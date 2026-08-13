@@ -26,6 +26,16 @@ export interface PrincipalRequest extends Request {
    * `@OrgId()`. Unset on `@CrossTenant()` routes, which have no single org.
    */
   tenantOrgId?: string;
+  /**
+   * Row-level scope from the permission grid, written by `CrmPermissionsGuard`
+   * and read via `@RecordScope()`. Only set on routes carrying
+   * `@RequireCrmPermission`; see crm-scope.ts for why this is a request value
+   * rather than something the guard could decide on its own.
+   *
+   * Typed loosely here to keep `common/` free of an import cycle between the
+   * principal shape and the guard that fills it in.
+   */
+  crmScope?: { scope: "all" | "owned"; userId: string | null };
 }
 
 export const PERMISSIONS = ["recordings:listen", "recordings:export"] as const;

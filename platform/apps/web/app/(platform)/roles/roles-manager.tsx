@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Card, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, FormField, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
 import {
   createRoleAction,
   fetchRolePermissionsAction,
@@ -12,6 +12,7 @@ import {
   PERMISSION_OBJECT_TYPES,
   type PermissionAction,
   type PermissionObjectType,
+  type PermissionScope,
   type Role,
 } from "./types";
 
@@ -23,12 +24,26 @@ const grantKey = (o: PermissionObjectType, a: PermissionAction): GrantKey => `${
  * Define custom roles and edit ANY role's permission grid — including a
  * system role's, which is the point: an operator adjusting what "Viewer"
  * can see is normal, renaming or archiving the row itself is not (roles.
- * controller.ts rejects that). Nothing here is enforced yet (E0.4, schema-
- * only phase) — see roles.controller.ts's header.
+ * controller.ts rejects that).
+ *
+ * Both halves are now live. The checkboxes are enforced by
+ * `CrmPermissionsGuard`; the "Which records" column is enforced by a predicate
+ * on every query (apps/api/src/common/crm-scope.ts). Until that landed, this
+ * screen could only ever save `scope: "all"` — the column existed, the API
+ * accepted it, and nothing read it.
  */
 export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string }) {
   const [selected, setSelected] = useState<Role | null>(null);
   const [granted, setGranted] = useState<Set<GrantKey>>(new Set());
+  /**
+   * Scope is held PER OBJECT, not per grant.
+   *
+   * The database stores it per (object, action) and the API accepts that, but
+   * "may view every deal and edit only their own" is not a policy anybody
+   * actually writes — it is a way to end up with a role whose behaviour nobody
+   * can predict from looking at it. One control per row says what it means.
+   */
+  const [scopes, setScopes] = useState<Record<string, PermissionScope>>({});
   const [loadingGrid, setLoadingGrid] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [newName, setNewName] = useState("");
@@ -48,7 +63,17 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
         setError(result.error);
         return;
       }
-      setGranted(new Set((result.grants ?? []).map((g) => grantKey(g.object_type, g.action))));
+      const grants = result.grants ?? [];
+      setGranted(new Set(grants.map((g) => grantKey(g.object_type, g.action))));
+      // Per-object scope read back from whichever grants carry one. A role
+      // edited through the API with mixed scopes collapses to the narrowest
+      // here, so saving from this screen cannot silently WIDEN one.
+      const byObject: Record<string, PermissionScope> = {};
+      for (const g of grants) {
+        if (g.scope === "owned") byObject[g.object_type] = "owned";
+        else byObject[g.object_type] ??= "all";
+      }
+      setScopes(byObject);
     });
   };
 
@@ -69,7 +94,12 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
     startTransition(async () => {
       const grants = Array.from(granted).map((key) => {
         const [objectType, action] = key.split(":") as [PermissionObjectType, PermissionAction];
-        return { objectType, action, scope: "all" as const, fieldRestrictions: {} };
+        return {
+          objectType,
+          action,
+          scope: scopes[objectType] ?? ("all" as PermissionScope),
+          fieldRestrictions: {},
+        };
       });
       const result = await saveRolePermissionsAction(selected.id, grants, orgId);
       if (result.error) {
@@ -177,6 +207,9 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
                           {action}
                         </th>
                       ))}
+                      <th className="border-b border-border px-3 py-2 text-xs font-medium text-text-muted">
+                        Which records
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -194,6 +227,23 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
                             />
                           </td>
                         ))}
+                        <td className="px-3 py-2">
+                          <Select
+                            aria-label={`Which ${objectType} records`}
+                            value={scopes[objectType] ?? "all"}
+                            onChange={(e) => {
+                              setSaved(false);
+                              setScopes((prev) => ({
+                                ...prev,
+                                [objectType]: e.target.value as PermissionScope,
+                              }));
+                            }}
+                            className="min-w-[9rem] text-xs"
+                          >
+                            <option value="all">Everyone&rsquo;s</option>
+                            <option value="owned">Only their own</option>
+                          </Select>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

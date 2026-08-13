@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { enqueueAutomationEventSafely } from "../automation/enqueue";
@@ -63,7 +64,11 @@ export class ContactsController {
 
   @Get()
   @RequireCrmPermission("contact", "view")
-  async list(@OrgId() orgId: string, @Query() query: unknown) {
+  async list(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { accountId, q, sort, limit, offset } = parsed.data;
@@ -77,6 +82,11 @@ export class ContactsController {
       };
 
       if (accountId) add("account_id = $?", accountId);
+
+      // The `owned` half of the permission grid (migration 0039) — see
+      // common/crm-scope.ts for why this lives in the query, not the guard.
+      const owned = scopeFilter("contact", recordScope);
+      if (owned) add(owned.sql, owned.value);
       if (q) {
         params.push(`%${q}%`);
         const p = `$${params.length}`;
@@ -110,11 +120,21 @@ export class ContactsController {
 
   @Get(":id")
   @RequireCrmPermission("contact", "view")
-  async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async detail(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
+      // 404 rather than 403 for a record outside the caller's scope: a 403
+      // confirms the record exists, which is the fact being withheld.
+      const scoped = scopeClause("contact", recordScope, 2);
       const {
         rows: [contact],
-      } = await client.query(`SELECT ${CONTACT_COLUMNS} FROM contacts WHERE id = $1`, [id]);
+      } = await client.query(
+        `SELECT ${CONTACT_COLUMNS} FROM contacts WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [id, recordScope.userId] : [id],
+      );
       if (!contact) throw new NotFoundException("contact not found");
       return { contact };
     });
@@ -125,18 +145,26 @@ export class ContactsController {
   // Gated on `deal`, not `contact`: the rows this returns are deals, so a role
   // that may see contacts but not deals must not read them through this route.
   @RequireCrmPermission("deal", "view")
-  async deals(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async deals(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [contact],
       } = await client.query(`SELECT id FROM contacts WHERE id = $1`, [id]);
       if (!contact) throw new NotFoundException("contact not found");
 
+      // Scoped on DEAL, not contact — this route's grant is `deal:view`, so
+      // the rows being protected are the deals. A scoped rep looking at a
+      // shared contact sees their own deals on it and not a colleague's.
+      const scoped = scopeClause("deal", recordScope, 2);
       const { rows: deals } = await client.query(
         `SELECT id, pipeline_id, name, stage, status, amount, last_activity_at, created_at
-           FROM deals WHERE contact_id = $1
+           FROM deals WHERE contact_id = $1 ${scoped ? `AND ${scoped}` : ""}
           ORDER BY last_activity_at DESC`,
-        [id],
+        scoped ? [id, recordScope.userId] : [id],
       );
       return { deals };
     });
@@ -144,7 +172,11 @@ export class ContactsController {
 
   @Post()
   @RequireCrmPermission("contact", "create")
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = CreateContactBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -154,8 +186,9 @@ export class ContactsController {
         rows: [contact],
       } = await client.query(
         `INSERT INTO contacts
-           (org_id, workspace_id, account_id, first_name, last_name, display_name, email, title)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (org_id, workspace_id, account_id, first_name, last_name, display_name, email, title,
+            owner_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING ${CONTACT_COLUMNS}`,
         [
           orgId,
@@ -166,6 +199,9 @@ export class ContactsController {
           p.displayName,
           p.email ?? null,
           p.title ?? null,
+          // A scoped user's new record is stamped as theirs, or they would
+          // create it and immediately lose sight of it.
+          recordScope.scope === "owned" ? recordScope.userId : null,
         ],
       );
       await enqueueAutomationEventSafely(client, orgId, "contact.created", "contact", contact.id, {
@@ -185,6 +221,7 @@ export class ContactsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = UpdateContactBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -192,6 +229,10 @@ export class ContactsController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // Same 404-not-403 contract as the detail route: a scoped user editing
+      // somebody else's record matches no row, writes nothing, and learns
+      // nothing about whether it exists.
+      const scopedUpdate = scopeClause("contact", recordScope, 16);
       const {
         rows: [contact],
       } = await client.query(
@@ -205,7 +246,7 @@ export class ContactsController {
            owner_user_id = CASE WHEN $13::boolean THEN $14 ELSE owner_user_id END,
            status        = COALESCE($15, status),
            last_activity_at = now()
-         WHERE id = $1
+         WHERE id = $1 ${scopedUpdate ? `AND ${scopedUpdate}` : ""}
          RETURNING ${CONTACT_COLUMNS}`,
         [
           id,
@@ -223,6 +264,7 @@ export class ContactsController {
           p.ownerUserId !== undefined,
           p.ownerUserId ?? null,
           p.status ?? null,
+          ...(scopedUpdate ? [recordScope.userId] : []),
         ],
       );
       if (!contact) throw new NotFoundException("contact not found");

@@ -14,6 +14,7 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -52,7 +53,11 @@ export class AccountsController {
 
   @Get()
   @RequireCrmPermission("account", "view")
-  async list(@OrgId() orgId: string, @Query() query: unknown) {
+  async list(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { q, sort, limit, offset } = parsed.data;
@@ -65,6 +70,12 @@ export class AccountsController {
         params.push(`%${q}%`);
         const p = `$${params.length}`;
         where.push(`(name ILIKE ${p} OR domain ILIKE ${p})`);
+      }
+
+      // The `owned` half of the permission grid — see common/crm-scope.ts.
+      if (recordScope.scope === "owned") {
+        params.push(recordScope.userId);
+        where.push(`owner_user_id = $${params.length}`);
       }
 
       const ORDER = {
@@ -98,11 +109,21 @@ export class AccountsController {
   // Contrast GET /contacts/:id/deals, where deals are the entire payload rather
   // than a nested summary and the grant is therefore `deal`.
   @RequireCrmPermission("account", "view")
-  async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async detail(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
+      // 404 rather than 403 outside the caller's scope — a 403 would confirm
+      // the record exists, which is the fact being withheld.
+      const scoped = scopeClause("account", recordScope, 2);
       const {
         rows: [account],
-      } = await client.query(`SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE id = $1`, [id]);
+      } = await client.query(
+        `SELECT ${ACCOUNT_COLUMNS} FROM accounts WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [id, recordScope.userId] : [id],
+      );
       if (!account) throw new NotFoundException("account not found");
 
       const { rows: contacts } = await client.query(
@@ -117,7 +138,11 @@ export class AccountsController {
 
   @Post()
   @RequireCrmPermission("account", "create")
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = CreateAccountBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -126,10 +151,18 @@ export class AccountsController {
       const {
         rows: [account],
       } = await client.query(
-        `INSERT INTO accounts (org_id, workspace_id, name, domain)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO accounts (org_id, workspace_id, name, domain, owner_user_id)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING ${ACCOUNT_COLUMNS}`,
-        [orgId, p.workspaceId ?? null, p.name, p.domain ?? null],
+        [
+          orgId,
+          p.workspaceId ?? null,
+          p.name,
+          p.domain ?? null,
+          // Stamped as the creator's when they are scoped, or they would
+          // create a record and immediately lose sight of it.
+          recordScope.scope === "owned" ? recordScope.userId : null,
+        ],
       );
       await this.audit(client, orgId, "account.create", account.id);
       return { account };
@@ -142,6 +175,7 @@ export class AccountsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = UpdateAccountBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -149,6 +183,9 @@ export class AccountsController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // Same contract as the detail route: no row matched, no write, no
+      // disclosure.
+      const scopedUpdate = scopeClause("account", recordScope, 8);
       const {
         rows: [account],
       } = await client.query(
@@ -161,7 +198,7 @@ export class AccountsController {
            owner_user_id = CASE WHEN $5::boolean THEN $6 ELSE owner_user_id END,
            status        = COALESCE($7, status),
            last_activity_at = now()
-         WHERE id = $1
+         WHERE id = $1 ${scopedUpdate ? `AND ${scopedUpdate}` : ""}
          RETURNING ${ACCOUNT_COLUMNS}`,
         [
           id,
@@ -171,6 +208,7 @@ export class AccountsController {
           p.ownerUserId !== undefined,
           p.ownerUserId ?? null,
           p.status ?? null,
+          ...(scopedUpdate ? [recordScope.userId] : []),
         ],
       );
       if (!account) throw new NotFoundException("account not found");

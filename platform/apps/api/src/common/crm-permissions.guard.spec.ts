@@ -53,14 +53,14 @@ interface Recorded {
  * row; every call is recorded so the tests can assert WHAT was asked, not just
  * what came back.
  */
-function fakeDb(granted: boolean): { db: DbService; calls: Recorded[] } {
+function fakeDb(granted: boolean, scope: "all" | "owned" = "all"): { db: DbService; calls: Recorded[] } {
   const calls: Recorded[] = [];
   const db = {
     withOrg: async (orgId: string, fn: (client: unknown) => Promise<unknown>) => {
       const client = {
         query: async (_sql: string, params: unknown[]) => {
           calls.push({ orgId, params });
-          return { rows: granted ? [{ "?column?": 1 }] : [] };
+          return { rows: granted ? [{ scope }] : [] };
         },
       };
       return fn(client);
@@ -232,5 +232,69 @@ describe("CrmPermissionsGuard", () => {
       status: 403,
     });
     expect(calls).toHaveLength(0);
+  });
+
+  // ── record scope (migration 0039's `scope` column) ────────────────────────
+  //
+  // `owned` was settable through the API from the day 0039 shipped and read by
+  // nothing, so a role configured to see only its own records saw every record
+  // in the tenant. The guard cannot enforce that itself — it is a predicate on
+  // rows — so what it must do is resolve the scope and hand it to the
+  // controller. These pin that handoff.
+
+  it("C11 puts an `all` scope on the request when the grant is unrestricted", async () => {
+    const { db } = fakeDb(true, "all");
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context, req } = contextFor(
+      FixtureController.prototype.viewContact,
+      sessionPrincipal({ userId: USER_A }),
+    );
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(req.crmScope).toEqual({ scope: "all", userId: USER_A });
+  });
+
+  it("C12 puts an `owned` scope, carrying the caller's id, on the request", async () => {
+    // The id matters as much as the flag: the controller filters on it, and a
+    // scope with no user would either match nothing or (worse) not filter.
+    const { db } = fakeDb(true, "owned");
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context, req } = contextFor(
+      FixtureController.prototype.viewContact,
+      sessionPrincipal({ userId: USER_A }),
+    );
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(req.crmScope).toEqual({ scope: "owned", userId: USER_A });
+  });
+
+  it("C13 leaves the bare admin key UNSCOPED — seed scripts see everything", async () => {
+    // Same carve-out as the permission check itself. A backfill that suddenly
+    // saw only "its own" records would silently do a fraction of its job.
+    const { db, calls } = fakeDb(true, "owned");
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context, req } = contextFor(
+      FixtureController.prototype.viewContact,
+      adminKeyPrincipal(),
+    );
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(req.crmScope).toEqual({ scope: "all", userId: null });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("C14 treats any unrecognised scope value as `all`, not as a lockout", async () => {
+    // A row written by a future migration, or by hand. Failing open here is
+    // deliberate: the ACTION was already granted by the row's existence, and
+    // silently narrowing it would be a lockout nobody configured.
+    const { db } = fakeDb(true, "something-else" as "all");
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context, req } = contextFor(
+      FixtureController.prototype.viewContact,
+      sessionPrincipal({ userId: USER_A }),
+    );
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(req.crmScope?.scope).toBe("all");
   });
 });

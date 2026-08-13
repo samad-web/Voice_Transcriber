@@ -17,6 +17,7 @@ import { entryStage, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { enqueueAutomationEventSafely } from "../automation/enqueue";
@@ -112,7 +113,11 @@ export class DealsController {
 
   @Get()
   @RequireCrmPermission("deal", "view")
-  async list(@OrgId() orgId: string, @Query() query: unknown) {
+  async list(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { pipelineId, stage, status, contactId, accountId, q, sort, limit, offset } = parsed.data;
@@ -130,6 +135,12 @@ export class DealsController {
       if (status) add("d.status = $?", status);
       if (contactId) add("d.contact_id = $?", contactId);
       if (accountId) add("d.account_id = $?", accountId);
+
+      // The `owned` half of the permission grid. A role granted deal:view with
+      // scope 'owned' sees only its own pipeline — applied here because it is a
+      // predicate on rows, which no guard can express.
+      const owned = scopeFilter("deal", recordScope, "d");
+      if (owned) add(owned.sql, owned.value);
       if (q) {
         params.push(`%${q}%`);
         const p = `$${params.length}`;
@@ -165,7 +176,11 @@ export class DealsController {
   /** Board view: every column, with its true count/value and the top N cards. */
   @Get("board")
   @RequireCrmPermission("deal", "view")
-  async board(@OrgId() orgId: string, @Query() query: unknown) {
+  async board(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = BoardQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { pipelineId, perStage } = parsed.data;
@@ -176,6 +191,11 @@ export class DealsController {
       // Rank inside each stage in one pass — a query per column would be N
       // round trips for a board that is read on every page load (same
       // reasoning as owner/leads.controller.ts's board endpoint).
+      // The scoped predicate goes INSIDE the window functions, not outside:
+      // stage_total and stage_value are computed by those windows, so
+      // filtering after the fact would show a scoped user their own cards
+      // under somebody else's column totals.
+      const scoped = scopeClause("deal", recordScope, 3, "d");
       const { rows } = await client.query(
         `SELECT * FROM (
            SELECT ${DEAL_COLUMNS},
@@ -183,11 +203,11 @@ export class DealsController {
                   count(*)     OVER (PARTITION BY d.stage)::int AS stage_total,
                   COALESCE(sum(d.amount) OVER (PARTITION BY d.stage), 0)::float AS stage_value
              ${DEAL_JOINS}
-            WHERE d.pipeline_id = $1
+            WHERE d.pipeline_id = $1 ${scoped ? `AND ${scoped}` : ""}
          ) ranked
           WHERE rn <= $2
           ORDER BY rn`,
-        [pipeline.id, perStage],
+        scoped ? [pipeline.id, perStage, recordScope.userId] : [pipeline.id, perStage],
       );
 
       const columns = pipeline.stages.map((s) => {
@@ -212,11 +232,22 @@ export class DealsController {
 
   @Get(":id")
   @RequireCrmPermission("deal", "view")
-  async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async detail(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
+      // 404, not 403, when a scoped user asks for somebody else's deal. A 403
+      // would confirm the record exists, which is exactly the fact the scope
+      // is meant to withhold.
+      const scoped = scopeClause("deal", recordScope, 2, "d");
       const {
         rows: [deal],
-      } = await client.query(`SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1`, [id]);
+      } = await client.query(
+        `SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [id, recordScope.userId] : [id],
+      );
       if (!deal) throw new NotFoundException("deal not found");
       return { deal };
     });
@@ -231,11 +262,19 @@ export class DealsController {
    */
   @Get(":id/stage-history")
   @RequireCrmPermission("deal", "view")
-  async stageHistory(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async stageHistory(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
+      const scoped = scopeClause("deal", recordScope, 2);
       const {
         rows: [deal],
-      } = await client.query<{ id: string }>(`SELECT id FROM deals WHERE id = $1`, [id]);
+      } = await client.query<{ id: string }>(
+        `SELECT id FROM deals WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [id, recordScope.userId] : [id],
+      );
       if (!deal) throw new NotFoundException("deal not found");
 
       const { rows } = await client.query(
@@ -264,7 +303,12 @@ export class DealsController {
 
   @Post()
   @RequireCrmPermission("deal", "create")
-  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+  async create(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = CreateDealBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -285,8 +329,8 @@ export class DealsController {
       } = await client.query<{ id: string }>(
         `INSERT INTO deals
            (org_id, workspace_id, pipeline_id, account_id, contact_id, name, stage, status,
-            amount, expected_close_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            amount, expected_close_date, owner_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           orgId,
@@ -299,6 +343,10 @@ export class DealsController {
           status,
           p.amount ?? null,
           p.expectedCloseDate ?? null,
+          // A scoped user's new deal is stamped as theirs. Without this they
+          // would create a record and immediately lose sight of it, which
+          // reads as "the save didn't work".
+          recordScope.scope === "owned" ? recordScope.userId : null,
         ],
       );
 
@@ -347,6 +395,7 @@ export class DealsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = UpdateDealBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -360,8 +409,10 @@ export class DealsController {
         const {
           rows: [existing],
         } = await client.query<{ pipeline_id: string; stage: string; status: string }>(
-          `SELECT pipeline_id, stage, status FROM deals WHERE id = $1`,
-          [id],
+          `SELECT pipeline_id, stage, status FROM deals WHERE id = $1${
+            scopeClause("deal", recordScope, 2) ? ` AND ${scopeClause("deal", recordScope, 2)}` : ""
+          }`,
+          scopeClause("deal", recordScope, 2) ? [id, recordScope.userId] : [id],
         );
         if (!existing) throw new NotFoundException("deal not found");
         const pipeline = await this.resolvePipeline(client, existing.pipeline_id);
@@ -376,6 +427,9 @@ export class DealsController {
         previous = { stage: existing.stage, status: existing.status };
       }
 
+      // A scoped user editing somebody else's deal finds nothing to update and
+      // gets the same 404 the detail route gives — no write, no disclosure.
+      const scopedUpdate = scopeClause("deal", recordScope, 21);
       const {
         rows: [updated],
       } = await client.query<{ id: string }>(
@@ -394,7 +448,7 @@ export class DealsController {
            account_id  = CASE WHEN $17::boolean THEN $18 ELSE account_id END,
            owner_user_id = CASE WHEN $19::boolean THEN $20 ELSE owner_user_id END,
            last_activity_at = now()
-         WHERE id = $1
+         WHERE id = $1 ${scopedUpdate ? `AND ${scopedUpdate}` : ""}
          RETURNING id`,
         [
           id,
@@ -417,6 +471,7 @@ export class DealsController {
           p.accountId ?? null,
           p.ownerUserId !== undefined,
           p.ownerUserId ?? null,
+          ...(scopedUpdate ? [recordScope.userId] : []),
         ],
       );
       if (!updated) throw new NotFoundException("deal not found");

@@ -17,6 +17,7 @@ import { TaskInput, TaskUpdate } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { notify } from "../notifications/notify";
 import { DbService } from "../../db/db.service";
@@ -79,7 +80,12 @@ export class TasksController {
 
   @Get()
   @RequireCrmPermission("task", "view")
-  async list(@OrgId() orgId: string, @Query() query: unknown, @Req() req: PrincipalRequest) {
+  async list(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const q = parsed.data;
@@ -107,6 +113,12 @@ export class TasksController {
       } else if (q.assigneeUserId) {
         add("t.assignee_user_id = $?", q.assigneeUserId);
       }
+
+      // The `owned` half of the permission grid. For a task that means either
+      // END of it — assignee or creator — because a rep who asked a colleague
+      // to do something still needs to see it. See common/crm-scope.ts.
+      const owned = scopeFilter("task", recordScope, "t");
+      if (owned) add(owned.sql, owned.value);
 
       // Overdue means open AND past due — a completed task that was late is
       // not something anyone still needs to act on.
@@ -140,11 +152,19 @@ export class TasksController {
 
   @Get(":id")
   @RequireCrmPermission("task", "view")
-  async detail(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async detail(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
+      const scoped = scopeClause("task", recordScope, 2, "t");
       const {
         rows: [task],
-      } = await client.query(`SELECT ${TASK_COLUMNS} FROM tasks t WHERE t.id = $1`, [id]);
+      } = await client.query(
+        `SELECT ${TASK_COLUMNS} FROM tasks t WHERE t.id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [id, recordScope.userId] : [id],
+      );
       if (!task) throw new NotFoundException("task not found");
       return { task };
     });
@@ -152,6 +172,9 @@ export class TasksController {
 
   @Post()
   @RequireCrmPermission("task", "create")
+  // No @RecordScope() here, deliberately: `created_by` is stamped with the
+  // actor and a task counts as "owned" via EITHER end, so a scoped user always
+  // sees the task they just created without anything extra being stamped.
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = TaskInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -221,6 +244,7 @@ export class TasksController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = TaskUpdate.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -250,10 +274,16 @@ export class TasksController {
       }
       if (sets.length === 0) throw new BadRequestException("no fields to update");
 
+      // A scoped user editing a task that is neither theirs to do nor theirs
+      // to have asked for matches no row — same 404-not-403 contract the other
+      // CRM objects use.
+      const scopedUpdate = scopeClause("task", recordScope, params.length + 1);
+      if (scopedUpdate) params.push(recordScope.userId);
       const {
         rows: [task],
       } = await client.query(
-        `UPDATE tasks SET ${sets.join(", ")} WHERE id = $1
+        `UPDATE tasks SET ${sets.join(", ")}
+          WHERE id = $1 ${scopedUpdate ? `AND ${scopedUpdate}` : ""}
          RETURNING ${TASK_COLUMNS.replace(/t\./g, "")}`,
         params,
       );
