@@ -24,6 +24,7 @@ import {
   validatePhone,
 } from "@aura/shared";
 import { CONSENT_SUPPORTING_TEXT, CONTACT_CONSENT_TEXT, WHATSAPP_SAME_QUESTION } from "@/lib/funnel/consent";
+import { WA_MESSAGES, whatsappHref } from "@/lib/site";
 import { trackLead } from "@/components/meta-pixel";
 import {
   bookSlotAction,
@@ -341,6 +342,27 @@ export function FunnelForm({
       if (res.ok) {
         setOutcome(res.outcome ?? "disqualified");
         setStep("done");
+        /**
+         * Straight to WhatsApp. Owner's decision, 2026-08-12.
+         *
+         * The submission is already written and qualified by the time this
+         * runs — the await above returned — so nothing is lost by leaving the
+         * page immediately.
+         *
+         * THE CONSEQUENCE, SAID OUT LOUD: the slot picker lives on the screen
+         * this navigates away from, so no visitor reaches it any more and no
+         * call is booked through the funnel. The calendar sync, the Meet links
+         * and the booking confirmation all still work and are all now
+         * unreachable from the public site. Deleting the redirect below is the
+         * whole of restoring them.
+         *
+         * Same tab, not window.open: a popup that did not come from a click is
+         * blocked by every mobile browser, and a blocked handoff would leave
+         * the visitor on a screen that says it is taking them somewhere and
+         * then does not.
+         */
+        const wa = whatsappHref(WA_MESSAGES.funnelComplete);
+        if (wa) window.location.href = wa;
       } else {
         setErrors({ form: res.error ?? "Something went wrong. Please try again." });
       }
@@ -689,6 +711,44 @@ export function FunnelForm({
    real (doc 16 §0.4). That rule is absolute. */
 
 function Outcome({ outcome }: { outcome: Outcome }) {
+  /**
+   * When WhatsApp is configured, `onQualify` has already navigated away and
+   * this screen is a one-frame flash. Showing the diary in that frame would
+   * flash a picker nobody can use.
+   *
+   * The manual link is not decoration. `window.location.href` to a `wa.me` URL
+   * is reliable, but WhatsApp itself may not be installed, an in-app browser
+   * may refuse the scheme, and a desktop visitor lands on web.whatsapp.com
+   * needing a QR scan. In every one of those the person is left looking at
+   * this card, and it has to contain a way forward rather than a promise that
+   * something is about to happen.
+   */
+  const wa = whatsappHref(WA_MESSAGES.funnelComplete);
+  if (wa) {
+    return (
+      <div className="mk-card p-7 text-center sm:p-9">
+        <span
+          className="mx-auto mb-6 block h-1.5 w-14 rounded-full"
+          style={{ background: "var(--brand-gradient)" }}
+          aria-hidden="true"
+        />
+        <h2 className="mk-display text-2xl">Thanks — taking you to WhatsApp.</h2>
+        <p
+          className="mx-auto mt-4 max-w-md text-[0.9375rem] leading-relaxed"
+          style={{ color: "var(--mk-muted)" }}
+        >
+          We have your answers. Send us the message that opens and we&rsquo;ll take it from there.
+        </p>
+        <p className="mt-6">
+          <a href={wa} className="mk-cta">
+            Open WhatsApp
+            <span aria-hidden="true">→</span>
+          </a>
+        </p>
+      </div>
+    );
+  }
+
   const copy = {
     qualified: {
       h: "Thanks, let's book a time.",
