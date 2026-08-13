@@ -168,6 +168,14 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
   const crmSatisfied =
     hasCrm === "yes" ? coerceOption(CRM_SATISFACTION_OPTIONS, form.get("crmSatisfied")) : null;
 
+  // Free text from a public form, so it is bounded here and not only by the
+  // input's maxLength — a POST is a POST, and the browser attribute is a
+  // convenience rather than a limit. 300 characters holds a site and two
+  // handles; empty becomes NULL rather than "", so "skipped" and "typed
+  // nothing" are the same thing in the column, which is what they mean.
+  const digitalPresence =
+    String(form.get("digitalPresence") ?? "").trim().slice(0, 300) || null;
+
   // ── Required answers ──────────────────────────────────────────────────
   //
   // There was no check here, and its absence was not neutral. An unanswered
@@ -233,6 +241,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
       crmName,
       crmSatisfied,
       wantsCustomCrm,
+      digitalPresence,
       status: result.status,
       routeToHuman: result.routeToHuman,
       crmConnectorStatus: classifyCrm(hasCrm, crmName),

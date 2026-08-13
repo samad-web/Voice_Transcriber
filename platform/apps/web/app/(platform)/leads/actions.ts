@@ -30,6 +30,8 @@ export interface Lead {
   has_crm: string | null;
   crm_name: string | null;
   crm_satisfied: string | null;
+  /** Website, social handle, or whatever they gave us. Free text. */
+  digital_presence: string | null;
   wants_custom_crm: string | null;
   crm_connector_status: string | null;
   status: string;

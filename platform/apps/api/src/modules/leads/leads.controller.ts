@@ -101,6 +101,9 @@ export class LeadsController {
               -- answer that says whether their current CRM is a problem could
               -- not be read anywhere in the console.
               s.has_crm, s.crm_name, s.crm_satisfied, s.wants_custom_crm,
+              -- Where to find them online (migration 0051). Free text, so it is
+              -- rendered as a link only when it actually looks like one.
+              s.digital_presence,
               s.crm_connector_status,
               s.status, s.contact_attempts, s.last_contacted_at, s.created_at,
               s.converted_org_id, s.converted_at, s.converted_by,
