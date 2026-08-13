@@ -405,6 +405,106 @@ export async function fetchTasksAction(
   }
 }
 
+// ── Record lookup (for `lookup` custom fields) ──────────────────────────────
+
+export interface RecordOption {
+  id: string;
+  label: string;
+  detail: string | null;
+}
+
+/**
+ * Search contacts / accounts / deals by name, for a picker.
+ *
+ * Goes through the ordinary list endpoints rather than a new search route, so
+ * it inherits their permission gate AND their `owned` scope for free: a rep
+ * restricted to their own records cannot use a lookup field as a way to
+ * enumerate a colleague's. That is worth more than the round trip it costs.
+ */
+export async function searchRecordsAction(
+  objectType: "contact" | "account" | "deal",
+  q: string,
+): Promise<{ records?: RecordOption[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  const path = `${objectType}s`;
+  const query = new URLSearchParams({ limit: "10" });
+  if (q.trim()) query.set("q", q.trim());
+
+  try {
+    const res = await fetch(`${API_URL}/v1/${path}?${query}`, { headers, cache: "no-store" });
+    if (!res.ok) return { error: `API ${res.status}` };
+    const data = (await res.json()) as {
+      contacts?: Contact[];
+      accounts?: Account[];
+      deals?: Deal[];
+    };
+
+    if (objectType === "contact") {
+      return {
+        records: (data.contacts ?? []).map((c) => ({
+          id: c.id,
+          label: c.display_name,
+          detail: c.email ?? c.title ?? null,
+        })),
+      };
+    }
+    if (objectType === "account") {
+      return {
+        records: (data.accounts ?? []).map((a) => ({
+          id: a.id,
+          label: a.name,
+          detail: a.domain,
+        })),
+      };
+    }
+    return {
+      records: (data.deals ?? []).map((d) => ({
+        id: d.id,
+        label: d.name,
+        detail: d.stage,
+      })),
+    };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * The label for ONE record, so a picker holding a stored id can show a name
+ * instead of a uuid.
+ *
+ * Returns null rather than erroring when the record is gone or invisible —
+ * a lookup pointing at a deleted record should read as "unknown record",
+ * not break the whole form it sits in.
+ */
+export async function resolveRecordAction(
+  objectType: "contact" | "account" | "deal",
+  id: string,
+): Promise<RecordOption | null> {
+  const headers = await ownerHeaders();
+  if (!headers) return null;
+
+  try {
+    const res = await fetch(`${API_URL}/v1/${objectType}s/${id}`, { headers, cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      contact?: Contact;
+      account?: Account;
+      deal?: Deal;
+    };
+    if (data.contact) {
+      return { id, label: data.contact.display_name, detail: data.contact.email };
+    }
+    if (data.account) return { id, label: data.account.name, detail: data.account.domain };
+    if (data.deal) return { id, label: data.deal.name, detail: data.deal.stage };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Sending mail to a contact ───────────────────────────────────────────────
 
 /**

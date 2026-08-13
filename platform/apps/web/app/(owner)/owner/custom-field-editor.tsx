@@ -8,6 +8,7 @@ import {
   saveCustomFieldsAction,
   type TimelineParent,
 } from "./crm-actions";
+import { RecordPicker } from "./record-picker";
 import { relativeTime, type RecordCustomField } from "./types";
 
 /**
@@ -281,16 +282,14 @@ function FieldInput({
       );
 
     case "lookup":
-      // A record picker is its own piece of work (search, scoping, the same
-      // permission questions the merge UI has). Until it exists this at least
-      // renders and round-trips the id rather than silently omitting the field
-      // from the form, which would look like the admin's definition was lost.
       return (
-        <Input
-          value={value === null || value === undefined ? "" : String(value)}
+        <RecordPicker
+          objectType={(field.lookupObjectType as "contact" | "account" | "deal") ?? "contact"}
+          value={value === null || value === undefined ? null : String(value)}
           disabled={disabled}
-          placeholder={`${field.lookupObjectType ?? "record"} id`}
-          onChange={(e) => onChange(e.target.value)}
+          // `null` clears the field — the same distinction the API draws
+          // between an absent key and an explicit null.
+          onChange={(id) => onChange(id)}
         />
       );
 
