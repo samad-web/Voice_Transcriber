@@ -1,10 +1,10 @@
 # Aura CRM — Verification Steps
 
-**For:** everything built after Track A — Layer 1 (email + calendar + sending), B1–B6.
+**For:** everything built after Track A — Layer 1 (email + calendar + sending), B1–B6, C1–C3.
 **Branch:** `crm-foundation-data-model`. Nothing merged, nothing deployed.
 **As of:** 2026-08-12
 
-What I already ran is listed at the bottom (§9). Everything in §1–§8 is for you, in the
+What I already ran is listed at the bottom (§12). Everything in §1–§9 is for you, in the
 order that makes each step's result meaningful.
 
 ---
@@ -14,7 +14,7 @@ order that makes each step's result meaningful.
 ```bash
 cd platform
 docker compose up -d                        # postgres 5433, rabbit, redis, minio
-pnpm db:migrate                             # 0045–0049 should say "applied"
+pnpm db:migrate                             # 0045–0050 should say "applied"
 pnpm --filter @aura/api dev                 # :4000
 pnpm --filter @aura/worker dev              # background sweeps
 pnpm --filter @aura/web dev                 # :3000
@@ -110,7 +110,7 @@ in Negotiation looked the same as one that died on the first call.
 
 **The claim:** only messages and meetings involving an existing contact ever enter the CRM.
 
-These need `EMAIL_STUB=1` / `CALENDAR_STUB=1` unless you've registered real OAuth apps (§7).
+These need `EMAIL_STUB=1` / `CALENDAR_STUB=1` unless you've registered real OAuth apps (§10).
 
 1. **Make a connection row to sync.** `/owner/connections` — without OAuth credentials the
    Google/Microsoft buttons will report *not configured*, which is correct. For a stub run,
@@ -268,7 +268,104 @@ These need `EMAIL_STUB=1` / `CALENDAR_STUB=1` unless you've registered real OAut
 
 ---
 
-## 7. Before any of this touches real accounts
+## 7. C1 - `owned` record scope (the control that was silently ignored)
+
+**The claim:** `role_permissions.scope` has been settable through the API since migration 0039 and
+read by nothing. A role configured to see only its own records saw every record in the tenant.
+
+Set up once:
+
+1. `/roles` -> pick a tenant -> create a role `sales_rep`. Tick **view / create / edit** on
+   contact, deal and task. In the new **Which records** column choose **Only their own** for all
+   three. Save.
+2. `/team` -> assign that CRM role to a test user. Note their user id.
+3. Give them one thing to own, so "sees nothing" and "sees only theirs" are distinguishable:
+
+```sql
+UPDATE deals SET owner_user_id = '<test user id>'
+ WHERE id = (SELECT id FROM deals ORDER BY created_at LIMIT 1);
+```
+
+Then, calling as that user:
+
+```bash
+H="-H x-admin-key:$ADMIN_API_KEY -H x-org-id:<org> -H x-caller-user-id:<test user id>"
+curl -s $H localhost:4000/v1/deals       | jq .total    # expect 1, not 36
+curl -s $H localhost:4000/v1/deals/board | jq '[.columns[].count] | add'   # expect 1
+curl -s -o /dev/null -w '%{http_code}' $H localhost:4000/v1/deals/<another deal id>
+# expect 404, NOT 403 - a 403 confirms the record exists, which is the fact being withheld
+```
+
+**The four that matter most.** Each is a place where the record itself 404s correctly while
+something hanging off it could still leak. All four must return **404**:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}' $H localhost:4000/v1/deals/<other>/interactions
+curl -s -o /dev/null -w '%{http_code}' $H localhost:4000/v1/deals/<other>/stage-history
+curl -s -o /dev/null -w '%{http_code}' $H localhost:4000/v1/contacts/<other>/custom-fields
+curl -s -o /dev/null -w '%{http_code}' -X PUT $H -H 'content-type: application/json' \
+  -d '{"values":{"budget":1}}' localhost:4000/v1/contacts/<other>/custom-fields
+```
+
+**Then the aggregates**, where a leak is invisible rather than obvious - a scoped role could
+otherwise read the org's total pipeline value without seeing a single forbidden row:
+
+```bash
+curl -s $H localhost:4000/v1/reports/pipeline | jq .totals.amount
+curl -s $H localhost:4000/v1/reports/conversion | jq .summary.created
+curl -s $H localhost:4000/v1/reports/pipeline/export | head -3
+```
+
+Finally confirm nothing broke for anyone else:
+
+- The same calls **without** `x-caller-user-id` (a bare admin key - the backfill's path) still
+  return everything.
+- A user whose Which-records is **Everyone's** still sees all 36 deals.
+- Creating a deal AS the scoped user leaves it visible to them: it is stamped as theirs, or they
+  would create a record and immediately lose sight of it, which reads as "the save didn't work".
+
+---
+
+## 8. C2 - Sales targets
+
+1. `/targets` -> pick a tenant -> **This quarter** -> leave Who as *The whole team* -> measure
+   **Value closed** -> `500000` -> **Set target**.
+2. Create the same one again. Expect a readable refusal, not a 500: the team target has its own
+   partial unique index, because a NULL owner never collides in a plain one.
+3. `/owner/reports` gains an **Against target** block. With no wins it reads 0% and *behind*,
+   with the pace tick wherever you are in the quarter.
+4. **The number worth checking:**
+
+```sql
+UPDATE deals SET status='won', amount=125000, stage_changed_at=now()
+ WHERE id = (SELECT id FROM deals WHERE status='open' LIMIT 1);
+```
+
+   The block should read **125K of 500K, 25%**. Put it back afterwards.
+
+5. **Pace, not the raw percentage.** That same 25% must read *ahead* early in the quarter and
+   *behind* late in it. If it says the same in both cases, the pace comparison is not working and
+   the status is just a re-coloured percentage.
+6. Attainment counts on `stage_changed_at`, not `created_at` - a deal opened last quarter and won
+   this one belongs to this quarter's number.
+
+---
+
+## 9. C3 - Lookup record picker
+
+1. `/custom-fields` -> add a **lookup** field on Contact, targeting **account**.
+2. Open a contact: that field is now a **search box**, not a uuid box. Type part of an account
+   name and pick it.
+3. Reload. It must show the account's **name**, not the id it stored.
+4. Point it at a deleted record: it should read *unknown record* rather than breaking the form
+   around it.
+5. As the scoped user from section 7, the picker must only find records they can see. The empty
+   state says "no accounts you can see match" - a lookup field must not become a back door to
+   enumerate a colleague's records.
+
+---
+
+## 10. Before any of this touches real accounts
 
 Google and Microsoft sync/send need OAuth apps **you** register — nobody can do that on your
 behalf. Until then the connect buttons honestly report *not configured* and the sweeps are no-ops.
@@ -286,14 +383,20 @@ Redirect URI must match the app registration **exactly**.
 
 ---
 
-## 8. Known gaps, so you don't test for them
+## 11. Known gaps, so you don't test for them
 
 - **IMAP and CalDAV connect but do not sync.** Both need a real client library (a dependency
   decision) and a server to test against. They report *no sync adapter* rather than sitting
   silently connected — say the word and I'll add `imapflow`.
 - **Rules cannot chain.** By design (§6.4). A rule can make another rule's condition true, but
   cannot cause it to run.
-- **Lookup custom fields** render as a raw id box. A record picker is its own piece of work.
+- ~~Lookup custom fields render as a raw id box.~~ Built in C3.
+- **Field-level restrictions** (`role_permissions.field_restrictions`) are still unread.
+  Unlike `scope` this has never been settable-and-ignored - no UI offers it. Deciding what
+  "hidden" means on a list endpoint vs a detail one vs a CSV export is the real work there.
+- **Territories and commission.** Layer 5's quota half is built. Commission is payroll: it
+  needs an accrual model, a claw-back rule for a deal that unwinds, and an approval trail
+  before it goes anywhere near a pay packet.
 - **`pg_trgm` on production Supabase** is still an open question from A5. Fuzzy dedup stays off
   where the extension isn't installed; nothing breaks either way.
 - **A6, the `leads` cutover, is not started.** Its own precondition is "A1–A5 live and trusted",
@@ -302,7 +405,7 @@ Redirect URI must match the app registration **exactly**.
 
 ---
 
-## 9. What I already ran
+## 12. What I already ran
 
 - All five migrations (0045–0049) applied clean against local `callintel`; supabase mirror synced.
 - `verify-rls.js` — **ALL PASS**, including the five new tables (RLS enabled *and* forced).
@@ -312,12 +415,22 @@ Redirect URI must match the app registration **exactly**.
   typecheck, so these were run rather than reasoned about.
 - Stage-history backfill: **36 deals, 36 with history, 37 transition rows** — one deal had
   already moved.
-- Test suites: **shared 277**, **worker 165**, **api 238** — all green. That includes 20 new
-  automation tests, 13 calendar-privacy tests, 20 custom-field-value tests and the send-safety
-  suite.
+- Test suites: **shared 293**, **worker 165**, **api 250** — all green. That includes 20
+  automation tests, 16 target/attainment tests, 13 calendar-privacy tests, 20
+  custom-field-value tests, 12 record-scope tests and the send-safety suite.
+- **C2's attainment proved against real data.** Zero won deals makes a correct query
+  indistinguishable from a broken one, so I won one deal for 125,000 inside the period and
+  confirmed `actual` landed on exactly that; re-measured the same target as `won_count` and
+  got 1. Rolled back, and the seeded target deleted — the database is back at 36 open deals
+  and 0 targets.
+- **C2's team-target unique index confirmed biting**: a second team target for the same period
+  raised `sales_targets_team`, which a plain unique index would NOT have caught, because
+  NULLs never collide.
 - Typecheck clean across api, worker, web and shared.
-- `guard-mounting.spec.ts` re-pinned: **160 routes, 126 tenant-scoped**, every new route in an
+- `guard-mounting.spec.ts` re-pinned: **164 routes, 130 tenant-scoped**, every new route in an
   explicit allowlist.
+- Every scoped query executed against the real database and confirmed to actually filter: 36
+  deals unscoped, 0 for a user who owns none.
 
 **What I did NOT run:** any browser click-through, and anything against a real mailbox, real
 calendar or a real recipient. §1–§6 are the parts that need a human and a real account.

@@ -2,9 +2,10 @@
 
 **As of:** 2026-08-12
 **Branch:** `crm-foundation-data-model` (off `crm-connectors-and-console-auth`, not merged, not deployed)
-**Scope built:** PRD Phase 1 / Layer 0 "Foundation", roadmap Track A (A1–A5), **PRD Layer 1
-(multi-channel engagement), Layer 2 (workflow automation) and Layer 3 (reporting)**. Layers 4, 5
-and 6 are **not started**; A6, the `leads` cutover, is deliberately gated.
+**Scope built:** PRD Phase 1 / Layer 0 "Foundation", roadmap Track A (A1–A5), **PRD Layers 1, 2, 3
+and 5**, plus full enforcement of the `owned` permission scope. Layer 4 is largely covered by
+Layer 1's connection catalogue; Layer 6 is **not started**; A6, the `leads` cutover, is
+deliberately gated.
 
 **Verification steps for everything after Track A are in [CRM_VERIFICATION.md](CRM_VERIFICATION.md).**
 
@@ -114,10 +115,18 @@ These exist in the schema/API/UI but do nothing yet — by design, not by omissi
   `CREATE EXTENSION pg_trgm`.** Nothing breaks if it doesn't; fuzzy matching simply stays off until
   someone runs that one statement.
 
+- ~~**`owned`-scope restrictions.**~~ **Now enforced (C1, commit `df3b6b0`).** The guard resolves
+  the grant's scope and every CRM query applies it — contacts, accounts, deals, tasks, the nested
+  timeline and custom-field routes, and all three reports including the CSV export. Out-of-scope
+  records 404 rather than 403, so a denial never confirms a record exists. `/roles` gained a
+  "Which records" column, so it is configurable rather than API-only.
+
 Still genuinely inert:
 
-- **Field-level and `owned`-scope restrictions.** `role_permissions` carries `scope` and
-  `field_restrictions` columns; `CrmPermissionsGuard` checks object × action only.
+- **Field-level restrictions.** `role_permissions.field_restrictions` is still unread — no UI
+  offers it and no query honours it, so unlike `scope` it has never been settable-and-ignored.
+  Deciding what "hidden" means on a list endpoint versus a detail one versus a CSV export is the
+  real work there, and it has not been done.
 
 ---
 
@@ -145,6 +154,9 @@ Still genuinely inert:
 | B4 | User-initiated email send, off by default | `5a36c00` |
 | B5 | In-app notifications and the bell | `e200486` |
 | B6 | Layer 2 rule engine — rules, event queue, worker executor, run log | `8eed192` |
+| C1 | `owned` record scope enforced on every CRM query, and settable on `/roles` | `df3b6b0` |
+| C2 | Layer 5 sales targets + attainment against pace | `3d0d241` |
+| C3 | Record picker, so `lookup` custom fields are usable by a person | `ed87efc` |
 
 **Three rules run through all of it, and they are the parts worth reviewing:**
 
@@ -182,12 +194,15 @@ Neither was visible to a typecheck.
   `pipelines`, `custom-field-definitions` and `merge` are still `AdminKeyGuard`+`TenantGuard` only.
   Those are org-configuration surfaces rather than records, so modelling them as permission objects
   is a judgement call rather than an oversight.
-- **Field-level and `owned`-scope restrictions.** `role_permissions` carries `scope` and
-  `field_restrictions` columns; the guard currently checks object×action only.
+- **Field-level restrictions.** `role_permissions.field_restrictions` is carried and unread.
+  (`scope` is enforced as of C1.)
 - **A generic custom-object system.** Only custom *fields* on the three fixed objects (Contact,
   Account, Deal) exist. Admin-definable new object types were explicitly out of scope.
 - **Territory/ownership rules beyond `all` vs `owned` scope** on the permission grid — no
-  round-robin assignment, no lead routing rules.
+  round-robin assignment, no lead routing rules. `owned` itself is enforced (C1).
+- **Commission and comp plans.** Layer 5's quota half is built; commission is payroll — it needs
+  an accrual model, a claw-back rule for a deal that unwinds and an approval trail, which makes a
+  bug in it a different category of problem from a wrong number on a dashboard.
 
 ### 3.2 PRD Layers 1–6
 
@@ -197,7 +212,7 @@ Neither was visible to a typecheck.
 | 2 | Workflow automation (triggers, sequences, task assignment) | **Built** — rules, queue-driven engine, run log |
 | 3 | Reporting & analytics (pipeline forecasting, rep performance, funnel reports) | **Built**, funnel now backed by real stage history |
 | 4 | Third-party integrations beyond the outbound CRM connectors | **Mostly covered by Layer 1's connection catalogue.** Marketing tools not started |
-| 5 | Go-to-market / billing tooling (quotas, territories, comp plans) | Not started |
+| 5 | Go-to-market / billing tooling (quotas, territories, comp plans) | **Quotas built** (`3d0d241`). Territories and comp plans deliberately not — see below |
 | 6 | (per original PRD numbering — advanced/platform-level capabilities) | Not started |
 
 **Layer 3, what shipped:** `/owner/reports` with a stage-weighted forecast, a conversion funnel, and
