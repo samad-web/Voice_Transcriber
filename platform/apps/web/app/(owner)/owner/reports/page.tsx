@@ -50,6 +50,24 @@ interface PerformanceReport {
   workspace: { tasksCompleted: number; tasksOverdue: number; interactions: number };
 }
 
+interface AttainmentReport {
+  attainment: Array<{
+    targetId: string;
+    ownerUserId: string | null;
+    ownerName: string | null;
+    metric: "won_value" | "won_count";
+    periodStart: string;
+    periodEnd: string;
+    target: number;
+    actual: number;
+    ratio: number;
+    periodElapsed: number;
+    pace: number;
+    status: "ahead" | "on track" | "behind" | "not started";
+  }>;
+  asOf: string;
+}
+
 const pct = (value: number | null): string =>
   value === null ? "—" : `${Math.round(value * 100)}%`;
 
@@ -64,10 +82,11 @@ const pct = (value: number | null): string =>
  * role that may not read one still gets the others rather than an empty page.
  */
 export default async function ReportsPage() {
-  const [pipeline, conversion, performance] = await Promise.all([
+  const [pipeline, conversion, performance, attainment] = await Promise.all([
     ownerGet<PipelineReport>("/v1/reports/pipeline"),
     ownerGet<ConversionReport>("/v1/reports/conversion"),
     ownerGet<PerformanceReport>("/v1/reports/performance"),
+    ownerGet<AttainmentReport>("/v1/targets/attainment"),
   ]);
 
   if (!pipeline && !conversion && !performance) {
@@ -103,6 +122,66 @@ export default async function ReportsPage() {
             hint={`${pipeline.totals.wonDeals} won so far`}
           />
         </div>
+      ) : null}
+
+      {attainment && attainment.attainment.length > 0 ? (
+        <Card>
+          <MonoLabel>Against target</MonoLabel>
+          <p className="mt-1 text-xs text-text-muted">
+            Measured against PACE, not against the whole number — 40% of a quarter&rsquo;s target is
+            ahead in week two and behind in week eleven.
+          </p>
+          <ul className="mt-3 space-y-3">
+            {attainment.attainment.map((row) => (
+              <li key={row.targetId}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium text-text">
+                    {row.ownerName ?? "Whole team"}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <StatusChip
+                      tone={
+                        row.status === "behind"
+                          ? "muted"
+                          : row.status === "not started"
+                            ? "muted"
+                            : "solid"
+                      }
+                    >
+                      {row.status}
+                    </StatusChip>
+                    <span className="text-xs text-text-muted tabular-nums">
+                      {row.metric === "won_count"
+                        ? `${row.actual} of ${row.target}`
+                        : `${formatValue(row.actual)} of ${formatValue(row.target)}`}
+                      {" · "}
+                      {pct(row.ratio)}
+                    </span>
+                  </span>
+                </div>
+                {/* Two marks on one bar: filled = actual, the tick = where a
+                    steady seller would be today. The tick is the reason this
+                    is a bar rather than a percentage — it turns a number into
+                    a comparison without needing a sentence. */}
+                <div className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-surface-hover">
+                  <div
+                    className="h-full rounded-full bg-accent"
+                    style={{ width: `${Math.min(100, Math.round(row.ratio * 100))}%` }}
+                  />
+                  <div
+                    aria-hidden="true"
+                    title={`Pace: ${pct(row.periodElapsed)} through the period`}
+                    className="absolute top-0 h-full w-0.5 bg-text-subtle"
+                    style={{ left: `${Math.min(100, Math.round(row.periodElapsed * 100))}%` }}
+                  />
+                </div>
+                <span className="mt-1 block text-xs text-text-subtle tabular-nums">
+                  {row.periodStart} → {row.periodEnd} · {pct(row.periodElapsed)} elapsed
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
       ) : null}
 
       <Card>

@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Target,
   Users,
   Workflow,
   type LucideIcon,
@@ -74,6 +75,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Custom Fields",
     icon: SlidersHorizontal,
     title: "Custom Fields",
+    context: "Platform",
+  },
+  {
+    href: "/targets",
+    label: "Targets",
+    icon: Target,
+    title: "Sales Targets",
     context: "Platform",
   },
   {

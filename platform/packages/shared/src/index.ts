@@ -14,6 +14,7 @@ export * from "./interactions";
 export * from "./tasks";
 export * from "./notifications";
 export * from "./automation";
+export * from "./targets";
 export * from "./dedupe";
 export * from "./connection-providers";
 export * from "./funnel";

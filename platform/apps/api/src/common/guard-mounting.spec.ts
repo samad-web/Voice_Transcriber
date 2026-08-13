@@ -55,6 +55,7 @@ import { InteractionsController } from "../modules/crm-objects/interactions.cont
 import { ConnectionsController } from "../modules/connections/connections.controller";
 import { OutboundMailController } from "../modules/connections/outbound-mail.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
+import { TargetsController } from "../modules/reports/targets.controller";
 import { TasksController } from "../modules/tasks/tasks.controller";
 import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
 import { CustomFieldsController } from "../modules/custom-fields/custom-fields.controller";
@@ -132,6 +133,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   InteractionsController,
   TasksController,
   ReportsController,
+  TargetsController,
   ConnectionsController,
   OutboundMailController,
   PipelinesController,
@@ -270,6 +272,14 @@ const CRM_PERMISSION_ROUTES = [
   "GET /reports/performance",
   "GET /reports/conversion",
   "GET /reports/:report/export",
+  // PRD Layer 5. Gated on `deal` rather than a new object type: a target is a
+  // statement about deals and attainment is computed from them. Setting one
+  // needs `deal:edit`, because it changes what every report says about a
+  // person's performance.
+  "GET /targets",
+  "GET /targets/attainment",
+  "POST /targets",
+  "DELETE /targets/:id",
   // Custom-field VALUES on a record — nested under their parent for the same
   // reason the timeline routes are, and gated on that parent's view/edit.
   // The DEFINITIONS surface (`/custom-field-definitions`) stays unenforced
@@ -366,7 +376,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 160 routes, partitioned 126 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 164 routes, partitioned 130 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -376,8 +386,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // set, not just a total, so moving a route BETWEEN classes (dropping
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
-    expect(ROUTES).toHaveLength(160);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(160);
+    expect(ROUTES).toHaveLength(164);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(164);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -387,20 +397,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(126);
+    expect(tenantScoped).toHaveLength(130);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(160);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(164);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 148 principal routes", () => {
-    // 126 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 152 principal routes", () => {
+    // 130 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(148);
+    expect(principalRoutes).toHaveLength(152);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
