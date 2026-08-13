@@ -91,6 +91,18 @@ export const WA_MESSAGES = {
   compatibility: "Hi, I want to check whether Aura works on my team's phones.",
   pricing: "Hi, I'd like to understand Aura's pricing for my team.",
   footer: "Hi, I have a question about Aura.",
+  /**
+   * Sent the instant someone finishes the funnel form — the owner's wording,
+   * 2026-08-12, deliberately just a greeting.
+   *
+   * Every other opener here carries its placement so a reply can start from
+   * "how do you sell today" rather than "how can I help". This one cannot: it
+   * is what the visitor's own thread will open with, and the owner asked for a
+   * plain hello. The context is not lost — their name, number and all six
+   * answers are already in the console by the time this message arrives, keyed
+   * to the number they are messaging from.
+   */
+  funnelComplete: "Hi",
 } as const;
 
 /* ────────────────────────────────────────────────────────────────────────────
