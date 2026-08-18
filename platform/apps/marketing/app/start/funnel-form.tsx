@@ -24,7 +24,7 @@ import {
   validatePhone,
 } from "@aura/shared";
 import { CONSENT_SUPPORTING_TEXT, CONTACT_CONSENT_TEXT, WHATSAPP_SAME_QUESTION } from "@/lib/funnel/consent";
-import { WA_MESSAGES, whatsappHref } from "@/lib/site";
+import { slotBookedMessage, whatsappHref } from "@/lib/site";
 import { trackLead } from "@/components/meta-pixel";
 import {
   bookSlotAction,
@@ -345,34 +345,16 @@ export function FunnelForm({
       if (res.ok) {
         setOutcome(res.outcome ?? "disqualified");
         setStep("done");
-        /**
-         * Straight to WhatsApp. Owner's decision, 2026-08-12.
-         *
-         * The submission is already written and qualified by the time this
-         * runs — the await above returned — so nothing is lost by leaving the
-         * page immediately.
-         *
-         * THE CONSEQUENCE, SAID OUT LOUD: the slot picker lives on the screen
-         * this navigates away from, so no visitor reaches it any more and no
-         * call is booked through the funnel. The calendar sync, the Meet links
-         * and the booking confirmation all still work and are all now
-         * unreachable from the public site. Deleting the redirect below is the
-         * whole of restoring them.
-         *
-         * Same tab, not window.open: a popup that did not come from a click is
-         * blocked by every mobile browser, and a blocked handoff would leave
-         * the visitor on a screen that says it is taking them somewhere and
-         * then does not.
-         */
-        const wa = whatsappHref(WA_MESSAGES.funnelComplete);
-        if (wa) window.location.href = wa;
+        // WhatsApp is no longer opened here. The slot picker lives on the
+        // screen this used to navigate away from — the handoff now happens
+        // once a visitor actually books a time, in SlotPicker below.
       } else {
         setErrors({ form: res.error ?? "Something went wrong. Please try again." });
       }
     });
   }
 
-  if (step === "done") return <Outcome outcome={outcome ?? "disqualified"} />;
+  if (step === "done") return <Outcome outcome={outcome ?? "disqualified"} name={values.name} />;
 
   return (
     // scroll-mt clears the 64px sticky header, so scrollIntoView lands the top
@@ -748,45 +730,7 @@ export function FunnelForm({
    unconfigured the visitor sees the contact screen, never a slot that is not
    real (doc 16 §0.4). That rule is absolute. */
 
-function Outcome({ outcome }: { outcome: Outcome }) {
-  /**
-   * When WhatsApp is configured, `onQualify` has already navigated away and
-   * this screen is a one-frame flash. Showing the diary in that frame would
-   * flash a picker nobody can use.
-   *
-   * The manual link is not decoration. `window.location.href` to a `wa.me` URL
-   * is reliable, but WhatsApp itself may not be installed, an in-app browser
-   * may refuse the scheme, and a desktop visitor lands on web.whatsapp.com
-   * needing a QR scan. In every one of those the person is left looking at
-   * this card, and it has to contain a way forward rather than a promise that
-   * something is about to happen.
-   */
-  const wa = whatsappHref(WA_MESSAGES.funnelComplete);
-  if (wa) {
-    return (
-      <div className="mk-card p-7 text-center sm:p-9">
-        <span
-          className="mx-auto mb-6 block h-1.5 w-14 rounded-full"
-          style={{ background: "var(--brand-gradient)" }}
-          aria-hidden="true"
-        />
-        <h2 className="mk-display text-2xl">Thanks — taking you to WhatsApp.</h2>
-        <p
-          className="mx-auto mt-4 max-w-md text-[0.9375rem] leading-relaxed"
-          style={{ color: "var(--mk-muted)" }}
-        >
-          We have your answers. Send us the message that opens and we&rsquo;ll take it from there.
-        </p>
-        <p className="mt-6">
-          <a href={wa} className="mk-cta">
-            Open WhatsApp
-            <span aria-hidden="true">→</span>
-          </a>
-        </p>
-      </div>
-    );
-  }
-
+function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
   const copy = {
     qualified: {
       h: "Thanks, let's book a time.",
@@ -825,7 +769,7 @@ function Outcome({ outcome }: { outcome: Outcome }) {
           The picker still renders nothing when there is no real availability,
           which is the rule that has not moved: a time that cannot be honoured
           must never appear (doc 16 §0.4). */}
-      <SlotPicker />
+      <SlotPicker name={name} />
     </div>
   );
 }
@@ -838,13 +782,19 @@ function Outcome({ outcome }: { outcome: Outcome }) {
  * empty, the screen shows only "we'll be in touch". Doc 16 §0.4: a time that is
  * not genuinely bookable must never appear, so the honest fallback is the
  * default state and the calendar is what has to prove itself.
+ *
+ * Booking a slot is also what now sends someone to WhatsApp — see the
+ * `bookSlotAction` success handler below. The message carries their name and
+ * the time they just claimed, so the reply on WhatsApp already has enough
+ * context.
  */
-function SlotPicker() {
+function SlotPicker({ name }: { name: string }) {
   const [slots, setSlots] = useState<OpenSlot[] | null>(null);
   const [booked, setBooked] = useState<{
     dayLabel: string;
     timeLabel: string;
     meetingUrl: string | null;
+    waHref: string | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Terminal: the session cookie is gone and no slot on this page can work. */
@@ -887,6 +837,19 @@ function SlotPicker() {
             <span style={{ color: "var(--mk-muted)" }}>
               (the same link is in your calendar invite)
             </span>
+          </p>
+        ) : null}
+
+        {/* The automatic redirect below usually gets here first. This is the
+            fallback for when it does not — WhatsApp not installed, an in-app
+            browser refusing the scheme, a desktop visitor needing a QR scan —
+            so the visitor is never left with nothing to click. Absent
+            entirely when WhatsApp itself is unconfigured. */}
+        {booked.waHref ? (
+          <p className="mt-3 text-sm">
+            <a href={booked.waHref} className="font-semibold underline underline-offset-2">
+              Open WhatsApp
+            </a>
           </p>
         ) : null}
       </div>
@@ -942,10 +905,14 @@ function SlotPicker() {
                       const res = await bookSlotAction(s.id);
                       if (res.ok) {
                         setError(null);
+                        const dayLabel = res.dayLabel!;
+                        const timeLabel = res.timeLabel!;
+                        const wa = whatsappHref(slotBookedMessage(name, dayLabel, timeLabel));
                         setBooked({
-                          dayLabel: res.dayLabel!,
-                          timeLabel: res.timeLabel!,
+                          dayLabel,
+                          timeLabel,
                           meetingUrl: res.meetingUrl ?? null,
+                          waHref: wa,
                         });
                         // The conversion, fired only once the slot is actually
                         // claimed. Not on reaching the picker and not on the
@@ -955,6 +922,11 @@ function SlotPicker() {
                         // buy near-misses. Safe to call when the pixel is
                         // unconfigured — it is a no-op.
                         trackLead();
+                        // Same tab, not window.open: a popup that did not come
+                        // from a click is blocked by every mobile browser, and
+                        // this click is one render removed from the one that
+                        // triggered it (the state update above runs first).
+                        if (wa) window.location.href = wa;
                       } else if (res.sessionExpired) {
                         // Terminal for this page: the cookie that ties a booking
                         // to their details is gone, so EVERY slot here will fail
