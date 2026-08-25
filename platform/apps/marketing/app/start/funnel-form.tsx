@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
   BUDGET_BANDS,
+  BUSINESS_TYPE_OTHER_OPTIONS,
   BUSINESS_TYPES,
   CRM_SATISFACTION_OPTIONS,
   FUNNEL_COUNTRIES,
@@ -14,6 +15,7 @@ import {
   FUNNEL_QUESTIONS,
   HAS_CRM_OPTIONS,
   INTENTS,
+  SALUTATIONS,
   TEAM_SIZES,
   WANTS_CUSTOM_CRM_OPTIONS,
   // The SAME validators the server runs. Sharing them is the point: a client
@@ -65,6 +67,7 @@ type Outcome = "qualified" | "triage" | "disqualified";
  * also what makes per-field validation possible before anything is sent.
  */
 type Values = {
+  salutation: string;
   name: string;
   country: string;
   phone: string;
@@ -73,6 +76,9 @@ type Values = {
   email: string;
   consent: boolean;
   businessType: string;
+  /** A second-level industry, or the literal "typed" to reveal the box below. */
+  businessTypeOther: string;
+  businessTypeOtherText: string;
   teamSize: string;
   budget: string;
   intent: string;
@@ -86,6 +92,7 @@ type Values = {
 };
 
 const EMPTY: Values = {
+  salutation: "",
   name: "",
   country: "IN",
   phone: "",
@@ -94,6 +101,8 @@ const EMPTY: Values = {
   email: "",
   consent: false,
   businessType: "",
+  businessTypeOther: "",
+  businessTypeOtherText: "",
   teamSize: "",
   budget: "",
   intent: "",
@@ -104,6 +113,20 @@ const EMPTY: Values = {
   wantsCustomCrm: "",
   digitalPresence: "",
 };
+
+/**
+ * The salutation list, plus a way back out of it.
+ *
+ * The catalogue in @aura/shared holds the four real titles. This prepends an
+ * empty option because the picker has no other way to be un-picked: the field
+ * is optional, and somebody who taps "Dr." by mistake must be able to undo it
+ * without reloading the form. Its empty value is also what makes an untouched
+ * form post nothing rather than a sentinel the server would have to discard.
+ */
+const SALUTATION_CHOICES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "", label: "No title" },
+  ...SALUTATIONS,
+];
 
 /* ── Phone entry ────────────────────────────────────────────────────────────
    The digit rules already existed and were already enforced — India is 10
@@ -215,6 +238,15 @@ function checkContact(v: Values): Record<string, string> {
 function checkQualify(v: Values): Record<string, string> {
   const e: Record<string, string> = {};
   if (!v.businessType) e.businessType = "Please pick the closest one.";
+  // Only when they picked "Something else" — the same conditional shape the CRM
+  // questions use, and for the same reason: a field they were never shown must
+  // not block the form.
+  if (v.businessType === "other") {
+    if (!v.businessTypeOther) e.businessTypeOther = "Please pick the closest one.";
+    if (v.businessTypeOther === "typed" && !v.businessTypeOtherText.trim()) {
+      e.businessTypeOtherText = "Please type what kind of business it is.";
+    }
+  }
   if (!v.teamSize) e.teamSize = "Please choose a team size.";
   if (!v.budget) e.budget = "Please choose a range.";
   if (!v.intent) e.intent = "Please let us know your timeline.";
@@ -384,15 +416,45 @@ export function FunnelForm({
           <h2 className="mk-display text-2xl">Let&rsquo;s start with how to reach you.</h2>
 
           <Field label="Full name" error={errors.name} name="name">
-            <input
-              name="name"
-              value={values.name}
-              onChange={(e) => set("name", e.currentTarget.value)}
-              autoComplete="name"
-              style={inputStyle}
-              placeholder="Your name"
-              aria-invalid={errors.name ? true : undefined}
-            />
+            {/* The salutation sits IN FRONT OF the name, in the same row, for
+                the same reason the dial code sits in front of the phone number
+                below: it is a prefix to that value, not a question of its own.
+                As five pills on their own two rows it read as a separate step
+                and took more vertical space than the field it belongs to.
+
+                OPTIONAL, and the unselected "Title" is a real answer rather
+                than a prompt — a form that makes you declare a title before it
+                will take your enquiry is a form some people close. Nothing is
+                stored when it is left alone and the messages greet them by
+                first name. That is why there is no "prefer not to say" option:
+                not choosing one already says it.
+
+                This is the application's own listbox, NOT a native <select>.
+                A `<select>` renders its options with the operating system — a
+                flat grey Windows menu next to a form of rounded brand-tinted
+                controls — which is the whole reason `Dropdown` exists here. The
+                country picker below is still native and is the odd one out;
+                this one should not copy that. */}
+            <div className="flex gap-2">
+              <DropdownControl
+                name="salutation"
+                options={SALUTATION_CHOICES}
+                placeholder="Title"
+                value={values.salutation}
+                onPick={(v) => set("salutation", v)}
+                widthStyle={{ width: "7rem", flex: "0 0 auto" }}
+                ariaLabel={FUNNEL_QUESTIONS.salutation}
+              />
+              <input
+                name="name"
+                value={values.name}
+                onChange={(e) => set("name", e.currentTarget.value)}
+                autoComplete="name"
+                style={inputStyle}
+                placeholder="Your name"
+                aria-invalid={errors.name ? true : undefined}
+              />
+            </div>
           </Field>
 
           <Field label="Phone number" error={errors.phone} name="phone">
@@ -550,8 +612,69 @@ export function FunnelForm({
             placeholder="Select your industry…"
             value={values.businessType}
             error={errors.businessType}
-            onPick={(v) => set("businessType", v)}
+            onPick={(v) => {
+              // Changing away from "other" clears everything downstream of it,
+              // exactly as picking a different has-CRM answer does. Otherwise
+              // choosing "Something else", saying "Logistics", then switching
+              // to "Real estate" would post an industry AND a contradicting
+              // second one.
+              setValues((prev) => ({
+                ...prev,
+                businessType: v,
+                businessTypeOther: "",
+                businessTypeOtherText: "",
+              }));
+              setErrors((e) => {
+                const next = { ...e };
+                delete next.businessType;
+                delete next.businessTypeOther;
+                delete next.businessTypeOtherText;
+                return next;
+              });
+            }}
           />
+
+          {/* "Something else" finally has somewhere to be specific.
+
+              This is the same gap the CRM question already closed: an "other"
+              option that stored the literal string "other" and lost the one
+              piece of information it exists to collect. A curated list first,
+              because most of what lands in "something else" is a handful of
+              recognisable industries and picking one is faster than typing —
+              and free text behind its last option, because no list is
+              complete. */}
+          {values.businessType === "other" ? (
+            <>
+              <Dropdown
+                label={FUNNEL_QUESTIONS.businessTypeOther}
+                name="businessTypeOther"
+                options={BUSINESS_TYPE_OTHER_OPTIONS}
+                placeholder="Select the closest…"
+                value={values.businessTypeOther}
+                error={errors.businessTypeOther}
+                onPick={(v) => set("businessTypeOther", v)}
+              />
+
+              {values.businessTypeOther === "typed" ? (
+                <Field
+                  label="What kind of business is it?"
+                  name="businessTypeOtherText"
+                  error={errors.businessTypeOtherText}
+                >
+                  <input
+                    name="businessTypeOtherText"
+                    value={values.businessTypeOtherText}
+                    onChange={(e) => set("businessTypeOtherText", e.currentTarget.value)}
+                    style={inputStyle}
+                    placeholder="In a few words"
+                    autoComplete="off"
+                    maxLength={120}
+                    aria-invalid={errors.businessTypeOtherText ? true : undefined}
+                  />
+                </Field>
+              ) : null}
+            </>
+          ) : null}
 
           {/* Five short ordinal options. Pills, because the useful thing is
               seeing the whole ladder at once — "Just me" through "More than
@@ -1097,13 +1220,72 @@ function Dropdown({
   error?: string;
   onPick?: (v: string) => void;
 }) {
+  return (
+    <Field label={label} name={name} error={error}>
+      <DropdownControl
+        name={name}
+        options={options}
+        placeholder={placeholder}
+        value={value}
+        error={error}
+        onPick={onPick}
+        ariaLabel={label}
+      />
+    </Field>
+  );
+}
+
+/**
+ * The listbox itself, without the label and the row it usually owns.
+ *
+ * Split out of `Dropdown` so the salutation can sit INLINE in front of the name
+ * field and still be this application's control rather than the operating
+ * system's. Everything below — the roles, the keyboard map, the hidden input,
+ * the scroll-into-view — is the original code unchanged; only the `<Field>`
+ * wrapper moved up into `Dropdown`.
+ *
+ * `widthStyle` is how a caller makes it compact. Nothing else about it varies:
+ * a second, simpler picker written by hand for the narrow case is a second
+ * keyboard implementation to keep correct, and the one that gets forgotten is
+ * always the one a keyboard user needs.
+ */
+function DropdownControl({
+  name,
+  options,
+  placeholder,
+  value,
+  error,
+  onPick,
+  widthStyle,
+  ariaLabel,
+}: {
+  name: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  placeholder: string;
+  value: string;
+  error?: string;
+  onPick?: (v: string) => void;
+  /** Narrows the trigger. The panel still sizes to its own content. */
+  widthStyle?: React.CSSProperties;
+  /** Required when there is no visible <Field> label to point at. */
+  ariaLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
-  const selected = options.find((o) => o.value === value) ?? null;
+  /**
+   * An EMPTY value is "nothing chosen", never a chosen option.
+   *
+   * The salutation list carries a `{ value: "", label: "No title" }` entry so a
+   * mis-tap can be undone. Without the `value ?` guard the trigger matched that
+   * entry and sat there reading "No title" before anyone had touched it —
+   * an assertion about the person where the placeholder should have been an
+   * invitation. "No title" now appears only in the open list, as the way out.
+   */
+  const selected = value ? (options.find((o) => o.value === value) ?? null) : null;
 
   // Close on a click anywhere else. `mousedown` rather than `click` so the panel
   // is gone before the underlying element reacts to the same gesture.
@@ -1160,8 +1342,7 @@ function Dropdown({
   }
 
   return (
-    <Field label={label} name={name} error={error}>
-      <div ref={rootRef} className="relative" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="relative" style={widthStyle} onKeyDown={onKeyDown}>
         {/* The value the form actually submits. `readOnly` is implicit on a
             hidden input, but React warns without onChange on a valued input in
             some versions — hidden inputs are exempt, and this one is driven
@@ -1175,10 +1356,12 @@ function Dropdown({
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="listbox"
           aria-expanded={open}
+          aria-label={ariaLabel}
           aria-invalid={error ? true : undefined}
           style={{
             ...selectStyle,
             textAlign: "left",
+            ...(widthStyle ?? null),
             ...(error ? { borderColor: "var(--mk-danger, #dc2626)" } : null),
           }}
           className="flex items-center"
@@ -1196,10 +1379,13 @@ function Dropdown({
           <ul
             ref={listRef}
             role="listbox"
-            aria-label={label}
+            aria-label={ariaLabel}
             aria-activedescendant={`${name}-opt-${active}`}
             tabIndex={-1}
-            className="absolute left-0 right-0 z-30 mt-1 overflow-y-auto py-1"
+            // `min-w-full` rather than `right-0`, so a NARROW trigger (the
+            // salutation, at 6.5rem) still gets a panel wide enough to read its
+            // own options, while a full-width one is unchanged.
+            className="absolute left-0 z-30 mt-1 w-max min-w-full overflow-y-auto py-1"
             style={{
               // The scrolling this component exists to provide. 16rem shows
               // about six options — enough to see there are more without the
@@ -1236,8 +1422,7 @@ function Dropdown({
             })}
           </ul>
         ) : null}
-      </div>
-    </Field>
+    </div>
   );
 }
 

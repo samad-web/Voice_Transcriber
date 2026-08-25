@@ -36,6 +36,19 @@ export class UnavailableScheduler implements Scheduler {
     return [];
   }
 
+  /**
+   * A no-op, and NOT a throw — unlike `book` above.
+   *
+   * The asymmetry is deliberate. Booking through an unconfigured scheduler
+   * means a caller invented a slot, which is a bug worth failing loudly on.
+   * Cancelling through one means a slot that was booked while a calendar was
+   * configured is being released after it stopped being — a deployment change,
+   * not a caller error. The desired end state (no event) already holds, so
+   * there is nothing to do and nothing to complain about; throwing would break
+   * a legitimate reschedule for a reason the person rescheduling cannot fix.
+   */
+  async cancel(): Promise<void> {}
+
   async book(): Promise<{ eventId: string; meetingUrl?: string | null }> {
     throw new Error(
       `UnavailableScheduler cannot book: ${this.reason}. ` +

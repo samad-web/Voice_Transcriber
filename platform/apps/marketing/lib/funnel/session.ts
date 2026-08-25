@@ -18,11 +18,14 @@ import { signPayload, verifyPayload } from "./signing";
 const COOKIE = "aura_funnel_sid";
 
 /**
- * Two hours. Long enough that someone can take a phone call in the middle of the
- * form and come back; short enough that a shared or public machine does not
- * leave a writable handle on someone else's submission open all day.
+ * Twenty-four hours. RAISED from two (2026-08-16) — two hours meant anyone who
+ * left step 2 for the rest of the day (end of shift, "I'll finish this
+ * tomorrow") came back to "Your session expired" on a form that still had
+ * their answers half filled in, with no way to resume except starting over.
+ * A day covers that gap; a shared or public machine is still bounded to a
+ * single calendar day rather than left open indefinitely.
  */
-const TTL_MS = 2 * 60 * 60 * 1000;
+const TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface FunnelSession {
   /** funnel_submissions.id */

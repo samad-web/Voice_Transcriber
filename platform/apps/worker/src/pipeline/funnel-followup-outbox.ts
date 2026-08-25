@@ -1,12 +1,9 @@
 import { getAdminPool } from "@aura/db";
 import type { MessageTemplateKey } from "@aura/shared";
 import { backoffSeconds, type DbClient } from "./crm-dispatch";
-import {
-  getFollowUpDispatcher,
-  renderFollowUp,
-  type FollowUpTemplate,
-} from "./funnel-followup";
-import { renderWhatsAppMessage } from "./message-templates";
+import { getFollowUpDispatcher } from "./funnel-followup";
+import { renderMessage } from "./message-templates";
+import { mintRescheduleLink } from "./reschedule-tokens";
 import { mintResumeLink } from "./resume-tokens";
 import { getWhatsAppSender } from "./whatsapp";
 
@@ -60,13 +57,6 @@ function isNudge(template: MessageTemplateKey): boolean {
  */
 
 const MAX_ATTEMPTS = positiveInt(process.env.FUNNEL_FOLLOWUP_MAX_ATTEMPTS, 6);
-
-/** The stages `renderFollowUp` has email copy for. See the email branch below. */
-const EMAIL_TEMPLATES: readonly FollowUpTemplate[] = [
-  "disqualified_neutral",
-  "custom_crm_info",
-  "rejected",
-];
 
 /**
  * Past this age a queued follow-up is dropped rather than sent.
@@ -209,12 +199,14 @@ export async function drainFollowUps(limit = 100): Promise<number> {
     channel: "email" | "whatsapp";
     attempts: number;
     name: string;
+    salutation: string | null;
     email: string;
     phone_e164: string | null;
     whatsapp_e164: string | null;
     status: string;
     slot_label: string | null;
     meeting_url: string | null;
+    booking_slot_id: string | null;
   }>(
     /**
      * The LATERAL join supplies `booking_confirmed` with the two things only a
@@ -235,15 +227,16 @@ export async function drainFollowUps(limit = 100): Promise<number> {
      * conflicting appointment.
      */
     `SELECT f.id, f.submission_id, f.template, f.channel, f.attempts,
-            s.name, s.email, s.phone_e164, s.whatsapp_e164, s.status,
-            b.slot_label, b.meeting_url
+            s.name, s.salutation, s.email, s.phone_e164, s.whatsapp_e164, s.status,
+            b.slot_label, b.meeting_url, b.booking_slot_id
        FROM marketing.funnel_followups f
        JOIN marketing.funnel_submissions s ON s.id = f.submission_id
        LEFT JOIN LATERAL (
          SELECT to_char(bs.starts_at AT TIME ZONE $2, 'Dy, DD Mon')
                   || ' at '
                   || to_char(bs.starts_at AT TIME ZONE $2, 'HH24:MI') AS slot_label,
-                bs.meeting_url
+                bs.meeting_url,
+                bs.id AS booking_slot_id
            FROM marketing.booking_slots bs
           WHERE bs.submission_id = s.id
             AND bs.status = 'booked'
@@ -267,86 +260,84 @@ export async function drainFollowUps(limit = 100): Promise<number> {
 
     let result: Awaited<ReturnType<typeof dispatcher.send>>;
     try {
-      if (row.channel === "whatsapp") {
-        // ROUTED BY CHANNEL. Before this existed every row went to the email
-        // dispatcher, so a queued WhatsApp message would have been rendered as
-        // an email and sent to the address instead of the number — the wrong
-        // copy, on the wrong channel, reported as a success.
-        //
-        // whatsapp_e164 first, then phone_e164: the form asks whether WhatsApp
-        // is the same number and stores the answer, so preferring it honours
-        // what the person actually told us.
-        const to = row.whatsapp_e164 || row.phone_e164;
-        if (!to) {
-          result = { ok: false, error: "no phone number on submission", terminal: true };
-        } else if (isNudge(row.template) && row.status !== "contact_captured") {
-          /**
-           * They finished the form between the queue and the send.
-           *
-           * The sweep only selects unfinished enquiries, but minutes pass
-           * before the drain runs and this is exactly the window somebody uses
-           * to come back on their own. Sending "you didn't finish, pick up
-           * where you left off" to a person who just answered every question —
-           * and may already have booked a call — is the worst message in the
-           * catalogue.
-           *
-           * Terminal, not a retry: they are not going to become unfinished.
-           */
-          result = {
-            ok: false,
-            error: `finished the form before the nudge was sent (status ${row.status})`,
-            terminal: true,
-          };
-        } else {
-          // The copy comes from the database now, so it can be missing or
-          // switched off. Both are terminal: retrying a template an operator
-          // deliberately disabled would send the message they told us not to,
-          // as soon as the backoff happened to land after they re-enabled it.
-          // Minted at SEND time, not at queue time, so the token's 14-day life
-          // starts when the link reaches the person rather than whenever the
-          // sweep happened to run.
-          const resumeLink = isNudge(row.template)
-            ? await mintResumeLink(row.submission_id)
-            : undefined;
+      // whatsapp_e164 first, then phone_e164: the form asks whether WhatsApp is
+      // the same number and stores the answer, so preferring it honours what
+      // the person actually told us.
+      const to = row.channel === "whatsapp" ? row.whatsapp_e164 || row.phone_e164 : row.email;
 
-          const rendered = await renderWhatsAppMessage(row.template, {
-            name: row.name,
-            resumeLink: resumeLink ?? undefined,
-            // Passed for every template, used only by the ones whose copy
-            // names them. `validateTemplateBody` already refuses `{{slot}}` or
-            // `{{meet_link}}` in a stage that has no booking, so an unused
-            // value here cannot leak into the wrong message.
-            slot: row.slot_label ?? undefined,
-            meetLink: row.meeting_url ?? undefined,
-          });
-          if (!rendered.ok) {
-            result = { ok: false, error: rendered.reason, terminal: true };
-          } else {
-            const wa = await getWhatsAppSender().send({ to, text: rendered.text });
-            // Normalised into the email dispatcher's shape so one status machine
-            // governs both channels: `retryable` inverts to `terminal`.
-            result = wa.ok
-              ? { ok: true, messageId: wa.providerMessageId }
-              : { ok: false, error: wa.error, terminal: !wa.retryable };
-          }
-        }
-      } else if (EMAIL_TEMPLATES.includes(row.template as FollowUpTemplate)) {
-        const message = renderFollowUp(row.template as FollowUpTemplate, {
-          submissionId: row.submission_id,
-          name: row.name,
-          email: row.email,
-        });
-        result = await dispatcher.send(message);
-      } else {
-        // A WhatsApp-only stage queued on the email channel. Terminal, and said
-        // plainly — the alternative is renderFollowUp throwing a generic
-        // "unknown template" that reads like a corrupt row rather than a
-        // missing translation.
+      if (!to) {
         result = {
           ok: false,
-          error: `no email copy exists for "${row.template}" — it is a WhatsApp-only stage`,
+          error: row.channel === "whatsapp" ? "no phone number on submission" : "no email address",
           terminal: true,
         };
+      } else if (isNudge(row.template) && row.status !== "contact_captured") {
+        /**
+         * They finished the form between the queue and the send.
+         *
+         * The sweep only selects unfinished enquiries, but minutes pass before
+         * the drain runs and this is exactly the window somebody uses to come
+         * back on their own. Sending "you didn't finish, pick up where you left
+         * off" to a person who just answered every question — and may already
+         * have booked a call — is the worst message in the catalogue.
+         *
+         * Terminal, not a retry: they are not going to become unfinished.
+         */
+        result = {
+          ok: false,
+          error: `finished the form before the nudge was sent (status ${row.status})`,
+          terminal: true,
+        };
+      } else {
+        // Both links are minted at SEND time, not at queue time, so a token's
+        // life starts when it reaches the person rather than whenever the sweep
+        // happened to run.
+        const resumeLink = isNudge(row.template)
+          ? await mintResumeLink(row.submission_id)
+          : undefined;
+        const rescheduleLink = row.booking_slot_id
+          ? await mintRescheduleLink(row.booking_slot_id)
+          : undefined;
+
+        // ONE RENDERER FOR BOTH CHANNELS. Email copy used to come from
+        // hardcoded functions in funnel-followup.ts while WhatsApp came from
+        // the database, so the two channels could say different things and only
+        // one of them was editable. Both now resolve the same way: the stored
+        // row if there is one, the shared catalogue if there is not, and a
+        // switched-off template refuses on either channel.
+        const rendered = await renderMessage(row.template, row.channel, {
+          name: row.name,
+          salutation: row.salutation,
+          resumeLink: resumeLink ?? undefined,
+          rescheduleLink: rescheduleLink ?? undefined,
+          // Passed for every template, used only by the ones whose copy names
+          // them. `validateTemplateBody` already refuses `{{slot}}` or
+          // `{{meet_link}}` in a stage that has no booking, so an unused value
+          // here cannot leak into the wrong message.
+          slot: row.slot_label ?? undefined,
+          meetLink: row.meeting_url ?? undefined,
+        });
+
+        if (!rendered.ok) {
+          // Missing, switched off, or a stage with no copy for this channel.
+          // All terminal: retrying a template an operator deliberately disabled
+          // would send the message they told us not to, as soon as the backoff
+          // happened to land after they re-enabled it.
+          result = { ok: false, error: rendered.reason, terminal: true };
+        } else if (row.channel === "whatsapp") {
+          const wa = await getWhatsAppSender().send({ to, text: rendered.text });
+          // Normalised into the email dispatcher's shape so one status machine
+          // governs both channels: `retryable` inverts to `terminal`.
+          result = wa.ok
+            ? { ok: true, messageId: wa.providerMessageId }
+            : { ok: false, error: wa.error, terminal: !wa.retryable };
+        } else {
+          result = await dispatcher.send({
+            to: { name: row.name, email: to },
+            subject: rendered.subject ?? "",
+            text: rendered.text,
+          });
+        }
       }
     } catch (err) {
       // An unknown template or a dispatcher that threw. Terminal either way —

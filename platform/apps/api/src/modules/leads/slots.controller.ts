@@ -44,6 +44,17 @@ const BookedQuery = z.object({
   timeZone: z.string().min(1).max(64).optional(),
   /** Include calls that have already happened — for "did we do that one?". */
   includePast: z.coerce.boolean().optional(),
+  /**
+   * How far BACK to look when includePast is set. Bounded, and not by the same
+   * number as `days`.
+   *
+   * `includePast` used to mean "no lower bound at all", which was harmless when
+   * the only reason to look backwards was curiosity. It is not harmless now
+   * that this list is where an operator marks attendance: the page would grow
+   * by every call ever taken and put a pair of unpressed buttons beside a call
+   * from eight months ago, which reads as a backlog rather than as history.
+   */
+  pastDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 const CreateBody = z.object({
@@ -58,6 +69,27 @@ const CreateBody = z.object({
 /** Guard rails on a bulk write. A typo'd year must not create 400,000 rows. */
 const MAX_DAYS = 92;
 const MAX_SLOTS = 600;
+
+const AttendanceBody = z.object({
+  outcome: z.enum(["attended", "no_show"]),
+  actor: z.string().min(1).max(200).optional(),
+});
+
+/**
+ * How long after a no-show each nurture message goes out.
+ *
+ * From the moment the operator presses the button, NOT from the call's start
+ * time. Those differ whenever somebody marks up a backlog: mark Monday's
+ * no-show on Thursday and hour-based-on-start-time would fire all three
+ * immediately, so a person who missed one call receives three chasing messages
+ * in the same minute. From the button press, the sequence always reads as a
+ * sequence.
+ */
+const NURTURE_STAGES: ReadonlyArray<{ template: string; afterHours: number }> = [
+  { template: "nurture_1", afterHours: 24 },
+  { template: "nurture_2", afterHours: 48 },
+  { template: "nurture_3", afterHours: 72 },
+];
 
 const GenerateBody = z.object({
   fromDate: z.string().regex(ISO_DATE),
@@ -167,7 +199,12 @@ export class SlotsController {
   async booked(@Query() query: unknown) {
     const parsed = BookedQuery.safeParse(query ?? {});
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { days = 14, timeZone = "Asia/Kolkata", includePast = false } = parsed.data;
+    const {
+      days = 14,
+      timeZone = "Asia/Kolkata",
+      includePast = false,
+      pastDays = 14,
+    } = parsed.data;
 
     const { rows } = await this.db.adminPool().query(
       `SELECT s.id,
@@ -188,14 +225,18 @@ export class SlotsController {
               f.budget_inr,
               f.crm_name,
               f.crm_satisfied,
-              f.status AS lead_status
+              f.status AS lead_status,
+              s.attendance,
+              s.attendance_recorded_at,
+              s.attendance_recorded_by
          FROM marketing.booking_slots s
          LEFT JOIN marketing.funnel_submissions f ON f.id = s.submission_id
         WHERE s.status = 'booked'
           AND ($3::boolean OR s.starts_at > now())
+          AND (NOT $3::boolean OR s.starts_at > now() - make_interval(days => $4))
           AND s.starts_at < now() + make_interval(days => $1)
         ORDER BY s.starts_at`,
-      [days, timeZone, includePast],
+      [days, timeZone, includePast, pastDays],
     );
     return { bookings: rows, timeZone };
   }
@@ -333,6 +374,139 @@ export class SlotsController {
   }
 
   /**
+   * Record whether a booked call actually happened, and tell the person.
+   *
+   * ── ONE TRANSACTION, BECAUSE HALF OF THIS IS USELESS ─────────────────────
+   *
+   * Marking the outcome and queueing the message that follows from it are the
+   * same act. Recorded-but-not-messaged means the operator believes the lead
+   * has been contacted and they have not; messaged-but-not-recorded means the
+   * next person to look sees an unmarked call and marks it again, sending a
+   * second copy. Both write to the same database, so there is no excuse for
+   * them to be able to come apart — the same reasoning `reject()` follows.
+   *
+   * ── `attendance IS NULL` IS WHAT MAKES THE BUTTON SAFE TO PRESS TWICE ────
+   *
+   * A double-click, a retried request, or two operators working the same
+   * morning list would otherwise queue a second set of messages. With the guard
+   * the second write matches no row and 404s, which the console reports as
+   * "already marked" rather than silently sending again.
+   *
+   * ── WHY THE NURTURE ROWS ARE QUEUED HERE AND NOT BY A SWEEP ──────────────
+   *
+   * A sweep would have to keep asking "which no-shows are 24 hours old and have
+   * not been nurtured", every minute, forever. The no-show is a discrete event
+   * with a known time, so the three rows can simply be written with their send
+   * instants already stamped — the same design the call reminders use, and it
+   * means the drip survives a worker restart without a sweep existing at all.
+   *
+   * They are queued even while the nurture templates are switched off. The
+   * drain resolves a disabled template as terminal and records why, so nothing
+   * is sent — but the intent is recorded, and switching the templates on does
+   * not require replaying history.
+   */
+  @Post(":id/attendance")
+  async attendance(@Param("id") id: string, @Body() body: unknown) {
+    if (!z.string().uuid().safeParse(id).success) {
+      throw new BadRequestException("slot id must be a uuid");
+    }
+    const parsed = AttendanceBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { outcome, actor = "console" } = parsed.data;
+
+    const client = await this.db.adminPool().connect();
+    try {
+      await client.query("BEGIN");
+
+      const { rows } = await client.query<{ id: string; submission_id: string | null }>(
+        `UPDATE marketing.booking_slots
+            SET attendance             = $2,
+                attendance_recorded_at = now(),
+                attendance_recorded_by = $3
+          WHERE id = $1
+            AND status = 'booked'
+            AND attendance IS NULL
+        RETURNING id, submission_id`,
+        [id, outcome, actor],
+      );
+      if (rows.length === 0) {
+        await client.query("ROLLBACK");
+        throw new NotFoundException(
+          "no booked call with that id is waiting to be marked — it may already have been",
+        );
+      }
+
+      const slot = rows[0]!;
+
+      /**
+       * No enquirer, no messages.
+       *
+       * `submission_id` is ON DELETE SET NULL, so a call whose lead was erased
+       * under a DPDP request still stands in the diary and is still worth
+       * marking — the operator's record of their own week. There is simply
+       * nobody left to write to, and queueing rows the drain would dead-letter
+       * with "no recipient" would turn a correct outcome into a log full of
+       * failures.
+       */
+      let queued = 0;
+      if (slot.submission_id) {
+        const template = outcome === "attended" ? "call_attended" : "call_no_show";
+        queued += await this.queueBookingNotification(client, id, template, "now");
+
+        if (outcome === "no_show") {
+          for (const stage of NURTURE_STAGES) {
+            queued += await this.queueBookingNotification(
+              client,
+              id,
+              stage.template,
+              `${stage.afterHours} hours`,
+            );
+          }
+        }
+      }
+
+      await client.query("COMMIT");
+      return { id: slot.id, attendance: outcome, queued, hasEnquirer: Boolean(slot.submission_id) };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * One row on the booking outbox. Returns 1 if it was added, 0 if one already
+   * existed.
+   *
+   * `ON CONFLICT DO NOTHING` on (booking_slot_id, template, channel), so a
+   * second no-show mark on a call that was somehow un-marked and re-marked
+   * cannot produce a second drip.
+   *
+   * WhatsApp only. Email is the worker's decision, not this endpoint's: the
+   * drain's dispatcher falls back to log-only with no mail provider configured,
+   * and queueing an undeliverable second copy of every outcome message would
+   * double the table an operator reads to find out what was sent. See
+   * `emailConfigured()` in the worker.
+   */
+  private async queueBookingNotification(
+    client: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> },
+    bookingSlotId: string,
+    template: string,
+    delay: "now" | string,
+  ): Promise<number> {
+    const res = await client.query(
+      `INSERT INTO marketing.booking_notifications
+         (booking_slot_id, template, channel, status, attempts, next_attempt_at)
+       VALUES ($1, $2, 'whatsapp', 'pending', 0,
+               now() + COALESCE($3::interval, interval '0'))
+       ON CONFLICT (booking_slot_id, template, channel) DO NOTHING`,
+      [bookingSlotId, template, delay === "now" ? null : delay],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * Cancel a slot.
    *
    * Never a hard DELETE. A booked slot has someone's expectation attached to it,
@@ -392,6 +566,33 @@ export class SlotsController {
       [id],
     );
     if (rows.length === 0) throw new NotFoundException("slot not found, or already cancelled");
+
+    /**
+     * Kill anything still queued for this booking.
+     *
+     * Without it, cancelling Tuesday's call leaves its "your call is in about
+     * an hour" reminder sitting in the outbox, and it fires on Tuesday to
+     * somebody whose appointment was called off days earlier. The drain has its
+     * own backstop check on the slot's status, but recording the reason here is
+     * what makes the console able to say why the message never went.
+     *
+     * `dead` rather than deleted, and outside the read/update pair above rather
+     * than in a transaction with it: the slot is already released, and failing
+     * the whole cancellation because the outbox update errored would leave the
+     * operator unable to free an hour they need back.
+     */
+    await this.db
+      .adminPool()
+      .query(
+        `UPDATE marketing.booking_notifications
+            SET status = 'dead', error = 'the booking was cancelled',
+                next_attempt_at = NULL, updated_at = now()
+          WHERE booking_slot_id = $1 AND status = 'pending'`,
+        [id],
+      )
+      .catch((err: Error) =>
+        console.error(`slots: could not stand down notifications for ${id}: ${err.message}`),
+      );
 
     const had = before[0]!;
     return {

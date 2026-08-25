@@ -1,14 +1,23 @@
 import { randomUUID } from "node:crypto";
 
 /**
- * Follow-up messages for funnel submissions — doc 16 §3.6, `lead-funnel-spec.md`
- * "Follow-up Message Template".
+ * The email delivery seam — doc 16 §3.6, `lead-funnel-spec.md` "Follow-up
+ * Message Template".
  *
- * Two halves live here: the templates (pure, tested) and the delivery seam. The
- * queue that drives them is `funnel-followup-outbox.ts`, modelled on
- * `outbox.ts` — the same table-as-queue with attempts, backoff and a dead state,
- * because doc 16 §3.6 says to reuse that pattern rather than invent a second
- * delivery mechanism, and because it is the proven one in this codebase.
+ * ── THE TEMPLATES USED TO LIVE HERE, AND NO LONGER DO ──────────────────────
+ *
+ * This module once held three email bodies as TypeScript functions
+ * (`disqualifiedNeutral`, `customCrmInfo`, `rejected`) plus a `renderFollowUp`
+ * switch. That made email the one channel an operator could not edit: WhatsApp
+ * copy moved into `marketing.message_templates` in migration 0026, and email
+ * stayed behind because there was no mail provider and no editor for it.
+ * Migration 0026's own header set the exit condition — "when email goes live,
+ * seed it here and delete the literals there, in that order" — and 0053 did
+ * exactly that. The copy is now in the `@aura/shared` catalogue with its
+ * WhatsApp sibling, stored per (key, channel), rendered by
+ * `./message-templates.ts`, and editable from the console.
+ *
+ * What remains here is the part that was always right: the transport.
  *
  * ── NO MAIL PROVIDER IS CONFIGURED, AND THE DEFAULT ONLY LOGS ───────────────
  *
@@ -30,16 +39,6 @@ import { randomUUID } from "node:crypto";
  * the kind of quiet untruth doc 10 §14 exists to prevent.
  */
 
-/* ── Templates ───────────────────────────────────────────────────────────── */
-
-export type FollowUpTemplate = "disqualified_neutral" | "custom_crm_info" | "rejected";
-
-export type FollowUpRecipient = {
-  submissionId: string;
-  name: string;
-  email: string;
-};
-
 export type FollowUpMessage = {
   to: { name: string; email: string };
   subject: string;
@@ -47,158 +46,6 @@ export type FollowUpMessage = {
    *  pixel, and it does not need a template engine to be safe. */
   text: string;
 };
-
-/** First name only, for a greeting. Falls back to the whole string, and to a
- *  neutral opener when there is nothing usable — never "Hi undefined". */
-function greetingName(name: string): string | null {
-  const first = name.trim().split(/\s+/)[0];
-  return first && first.length >= 2 ? first : null;
-}
-
-/**
- * The disqualified follow-up.
- *
- * The spec is precise about what this must NOT contain: no mention of budget,
- * no reference to a rule, nothing that reads as a rejection. Doc 16 §3.2 adds
- * the reason it matters — at a ₹30,000/month threshold against a per-handset
- * SMB price point, this is likely the message MOST enquiries receive, so it is
- * the main path's copy, not a consolation note. It says the team will be in
- * touch, and it leaves the door open on the reader's own terms.
- *
- * It also does not ask them to book anything. A disqualified lead being sent
- * back to a calendar is how the qualified path stops being worth having.
- */
-function disqualifiedNeutral(to: FollowUpRecipient): FollowUpMessage {
-  const hi = greetingName(to.name);
-  return {
-    to: { name: to.name, email: to.email },
-    subject: "Following up on your enquiry",
-    text: [
-      hi ? `Hi ${hi},` : "Hello,",
-      ``,
-      `Thank you for getting in touch about Aura. We have your details and our`,
-      `team will be in touch as things line up on your end.`,
-      ``,
-      `In the meantime, if it is useful: our compatibility page lists exactly`,
-      `which handsets record reliably, and our consent page explains what the`,
-      `app records and what it does not. Both are worth five minutes before any`,
-      `call recording rollout.`,
-      ``,
-      `If your requirements change, or you would like to talk sooner, just reply`,
-      `to this email — it reaches a person.`,
-      ``,
-      `Aura`,
-      `Sirah Digital`,
-    ].join("\n"),
-  };
-}
-
-/**
- * The `wants_custom_crm = 'tell_me_more'` follow-up.
- *
- * Doc 16 §3.2: `tell_me_more` deliberately does not book a slot — it is an
- * information request, not a buying signal — and "the follow-up template should
- * answer the question rather than push a call". So this one answers it, with
- * the same claim doc 16 §4.1 establishes is true rather than aspirational: a
- * custom CRM here is a configuration of machinery that already exists (the
- * Agent Studio compiles a tenant's typed field schema into the provider's
- * response schema; the connector catalogue already maps fields).
- *
- * No price, because there is no published price and inventing one here would be
- * the same failure as inventing one on the pricing page.
- */
-function customCrmInfo(to: FollowUpRecipient): FollowUpMessage {
-  const hi = greetingName(to.name);
-  return {
-    to: { name: to.name, email: to.email },
-    subject: "Following up on your enquiry",
-    text: [
-      hi ? `Hi ${hi},` : "Hello,",
-      ``,
-      `Thanks for asking about a CRM built around your business — here is the`,
-      `short version, since you asked to hear more rather than to book a call.`,
-      ``,
-      `Most CRMs make you describe your business in someone else's words: deals,`,
-      `opportunities, sales cycles. We build yours around what you actually`,
-      `track — brick type and quantity, site location, quotation status,`,
-      `follow-up date. Whatever your calls are already about.`,
-      ``,
-      `Aura then feeds it automatically. Every qualified call becomes a record`,
-      `with the details already filled in, in Tamil or English. Nobody types`,
-      `anything.`,
-      ``,
-      `It is built on the same extraction engine your calls would already run`,
-      `through, so this is a configuration of something that exists rather than`,
-      `a rebuild from scratch — which is why it is affordable at your size.`,
-      ``,
-      `If you would like the specifics for how you sell today, reply to this`,
-      `email and describe it in a couple of lines. We will tell you honestly`,
-      `whether you need a new system or just a connector to the one you have.`,
-      ``,
-      `Aura`,
-      `Sirah Digital`,
-    ].join("\n"),
-  };
-}
-
-/**
- * The rejection follow-up — sent when a HUMAN has decided not to proceed.
- *
- * Different from `disqualified_neutral`, which the funnel sends automatically
- * when the budget/intent rules say no. Someone read this enquiry and made a
- * decision, so the message says so plainly rather than trailing off.
- *
- * WHAT IT DELIBERATELY DOES NOT DO
- *
- * · It does not explain the reason. The operator's note is for the operator;
- *   an unsolicited critique of somebody's business is not a kindness, and any
- *   reason given in writing is a reason to argue with.
- * · It does not say "we will keep you on file" unless that is true. Nothing in
- *   this system re-surfaces a rejected lead, so promising it would be a lie
- *   with a two-year fuse.
- * · It leaves the door open in the one honest way available: an invitation to
- *   come back if things change, which costs nothing and is true.
- *
- * A rejection that reads like a form letter is worse than a short human one.
- * This is four sentences.
- */
-function rejected(to: FollowUpRecipient): FollowUpMessage {
-  const hi = greetingName(to.name);
-  return {
-    to: { name: to.name, email: to.email },
-    subject: "About your Aura enquiry",
-    text: [
-      hi ? `Hi ${hi},` : "Hello,",
-      ``,
-      `Thanks for taking the time to tell us about your business, and for your`,
-      `interest in Aura.`,
-      ``,
-      `Having looked at it properly, we do not think we are the right fit for`,
-      `you at the moment, so we will not take this further. We would rather say`,
-      `that now than take you through a sales process that ends the same way.`,
-      ``,
-      `If things change on your side, you are very welcome to come back to us.`,
-      ``,
-      `Aura`,
-      `Sirah Digital`,
-    ].join("\n"),
-  };
-}
-
-const TEMPLATES: Record<FollowUpTemplate, (to: FollowUpRecipient) => FollowUpMessage> = {
-  disqualified_neutral: disqualifiedNeutral,
-  custom_crm_info: customCrmInfo,
-  rejected,
-};
-
-export function renderFollowUp(
-  template: FollowUpTemplate,
-  to: FollowUpRecipient,
-): FollowUpMessage {
-  const render = TEMPLATES[template];
-  if (!render) throw new Error(`Unknown follow-up template "${template}"`);
-  return render(to);
-}
 
 /* ── Delivery seam ───────────────────────────────────────────────────────── */
 
@@ -309,6 +156,24 @@ export class HttpFollowUpDispatcher implements FollowUpDispatcher {
 }
 
 let cached: FollowUpDispatcher | null = null;
+
+/**
+ * Whether mail can actually be delivered, as opposed to logged.
+ *
+ * The presence of an endpoint is the whole test, mirroring
+ * `getFollowUpDispatcher` below — one condition, so the two can never disagree
+ * about whether email is real.
+ *
+ * Callers use this to decide whether to QUEUE an email at all. That is a
+ * different question from whether to SEND one: a rejection is queued regardless
+ * and logged if it cannot go, because the row is the record that the message
+ * was owed. A reminder is not — a second, undeliverable copy of every reminder
+ * would double the outbox and make "what did we send this person" harder to
+ * read, for no gain.
+ */
+export function emailConfigured(): boolean {
+  return Boolean(process.env.FUNNEL_FOLLOWUP_ENDPOINT?.trim());
+}
 
 /** Selected by env, exactly like the marketing app's scheduler. Absent config
  *  means log-only, never a crash and never a silent drop. */

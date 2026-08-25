@@ -88,6 +88,10 @@ export interface Booking {
   crm_name: string | null;
   crm_satisfied: string | null;
   lead_status: string | null;
+  /** Null until somebody marks it. Migration 0053. */
+  attendance: "attended" | "no_show" | null;
+  attendance_recorded_at: string | null;
+  attendance_recorded_by: string | null;
 }
 
 export interface BookingsResult {
@@ -96,7 +100,16 @@ export interface BookingsResult {
   error?: string;
 }
 
-export async function listBookingsAction(days = 14): Promise<BookingsResult> {
+/**
+ * `includePast` is what makes attendance markable at all: a call can only be
+ * marked once it has happened, and the default view deliberately shows only
+ * what is still ahead. The API bounds the backward window itself (`pastDays`),
+ * so "show me what needs marking" cannot turn into "show me every call ever".
+ */
+export async function listBookingsAction(
+  days = 14,
+  includePast = false,
+): Promise<BookingsResult> {
   try {
     await requireOperator();
   } catch {
@@ -104,6 +117,10 @@ export async function listBookingsAction(days = 14): Promise<BookingsResult> {
   }
   try {
     const q = new URLSearchParams({ days: String(days) });
+    if (includePast) {
+      q.set("includePast", "true");
+      q.set("pastDays", String(days));
+    }
     const res = await fetch(`${API_URL}/v1/admin/slots/booked?${q}`, {
       headers: crossTenantHeaders,
       cache: "no-store",
@@ -158,6 +175,65 @@ export async function createSlotsAction(input: {
     const data = await res.json();
     revalidatePath("/slots");
     return { created: data.created?.length ?? 0, skipped: data.skipped ?? 0 };
+  } catch {
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+  }
+}
+
+export interface AttendanceResult {
+  attendance?: "attended" | "no_show";
+  /** How many messages were queued. 0 means the enquirer had been erased. */
+  queued?: number;
+  hasEnquirer?: boolean;
+  error?: string;
+}
+
+/**
+ * Record whether a booked call happened, and let the API queue what follows.
+ *
+ * The messages are NOT queued here. That is deliberate and not just a layering
+ * preference: the API writes the outcome and the outbox rows in one
+ * transaction, so there is no window in which the console believes it marked a
+ * call and nobody was told, or told somebody about an outcome that was never
+ * recorded. Two fetches from here could not offer that.
+ *
+ * Revalidates `/leads` as well as `/slots` — the leads table shows the booking
+ * beside each enquirer, so an outcome recorded here changes what that page
+ * should say.
+ */
+export async function markAttendanceAction(
+  id: string,
+  outcome: "attended" | "no_show",
+): Promise<AttendanceResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  // `||` not `??` — see createSlotsAction. An empty email sails past `??` and
+  // the API rejects the request with `actor: too_small`.
+  const actor = (await getPrincipal())?.email || "console";
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/slots/${id}/attendance`, {
+      method: "POST",
+      headers: crossTenantHeaders,
+      cache: "no-store",
+      body: JSON.stringify({ outcome, actor }),
+    });
+    if (!res.ok) {
+      if (res.status === 404) {
+        // The API's own guard is `attendance IS NULL`, so this is overwhelmingly
+        // "somebody already marked it" rather than a missing row — said in those
+        // terms, because "API 404" would send an operator looking for a bug.
+        return { error: "That call has already been marked, or is no longer booked." };
+      }
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    const data = await res.json();
+    revalidatePath("/slots");
+    revalidatePath("/leads");
+    return { attendance: data.attendance, queued: data.queued, hasEnquirer: data.hasEnquirer };
   } catch {
     return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
   }

@@ -3,11 +3,13 @@ import type { PoolClient } from "pg";
 import type {
   BudgetBand,
   BusinessType,
+  BusinessTypeOther,
   CrmConnectorStatus,
   CrmSatisfaction,
   FunnelVariant,
   HasCrm,
   Intent,
+  Salutation,
   TeamSize,
   WantsCustomCrm,
 } from "./shared";
@@ -29,6 +31,8 @@ if (typeof window !== "undefined") {
 export type MatchReason = "new" | "phone" | "email" | "phone_over_email";
 
 export interface ContactCapture {
+  /** Mr/Mrs/Ms/Dr, or null when they chose not to say. Migration 0053. */
+  salutation: Salutation | null;
   name: string;
   email: string;
   emailNormalized: string;
@@ -155,6 +159,11 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
                 country_code      = $4,
                 consent_text      = $5,
                 consent_at        = $6,
+                -- COALESCE, so a repeat fill that skipped the salutation does
+                -- not erase the one they gave last time. Same rule the WhatsApp
+                -- number follows above: a later blank is an absence, not a
+                -- correction.
+                salutation        = COALESCE($7, salutation),
                 contact_attempts  = contact_attempts + 1,
                 last_contacted_at = now()
           WHERE id = $1
@@ -169,6 +178,7 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
           // record that this fill happened at all.
           input.consentText,
           input.consentAt,
+          input.salutation,
         ],
       );
       submissionId = target.id;
@@ -177,8 +187,8 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
       const { rows } = await client.query<{ id: string; contact_attempts: number }>(
         `INSERT INTO marketing.funnel_submissions
            (name, email, email_normalized, phone_e164, whatsapp_e164, country_code,
-            status, variant, consent_text, consent_at, utm)
-         VALUES ($1, $2, $3, $4, $5, $6, 'contact_captured', $7, $8, $9, $10::jsonb)
+            status, variant, consent_text, consent_at, utm, salutation)
+         VALUES ($1, $2, $3, $4, $5, $6, 'contact_captured', $7, $8, $9, $10::jsonb, $11)
       RETURNING id, contact_attempts`,
         [
           input.name,
@@ -191,6 +201,7 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
           input.consentText,
           input.consentAt,
           JSON.stringify(input.utm),
+          input.salutation,
         ],
       );
       submissionId = rows[0].id;
@@ -202,8 +213,8 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
     // values, and — on the conflict case — the email that could not be stored.
     const { rows: hist } = await client.query<{ id: string }>(
       `INSERT INTO marketing.funnel_contact_history
-         (submission_id, variant, utm, submitted_email, submitted_phone, match_reason)
-       VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+         (submission_id, variant, utm, submitted_email, submitted_phone, match_reason, salutation)
+       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
     RETURNING id`,
       [
         submissionId,
@@ -212,6 +223,7 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
         input.emailNormalized,
         input.phoneE164,
         matchReason,
+        input.salutation,
       ],
     );
 
@@ -223,6 +235,8 @@ export interface QualificationWrite {
   submissionId: string;
   historyId: string;
   businessType: BusinessType | null;
+  /** Only when `businessType === 'other'`; null otherwise. Migration 0053. */
+  businessTypeOther: BusinessTypeOther | string | null;
   teamSize: TeamSize | null;
   budget: BudgetBand | null;
   intent: Intent | null;
@@ -265,6 +279,7 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
               route_to_human       = $11,
               crm_connector_status = $12,
               digital_presence     = $13,
+              business_type_other  = $14,
               last_contacted_at    = now()
         WHERE id = $1`,
       [
@@ -281,20 +296,22 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
         input.routeToHuman,
         input.crmConnectorStatus,
         input.digitalPresence,
+        input.businessTypeOther,
       ],
     );
 
     await client.query(
       `UPDATE marketing.funnel_contact_history
-          SET business_type    = $2,
-              team_size        = $3,
-              budget_inr       = $4,
-              intent           = $5,
-              has_crm          = $6,
-              crm_name         = $7,
-              crm_satisfied    = $8,
-              wants_custom_crm = $9,
-              digital_presence = $11
+          SET business_type       = $2,
+              team_size           = $3,
+              budget_inr          = $4,
+              intent              = $5,
+              has_crm             = $6,
+              crm_name            = $7,
+              crm_satisfied       = $8,
+              wants_custom_crm    = $9,
+              digital_presence    = $11,
+              business_type_other = $12
         WHERE id = $1 AND submission_id = $10`,
       [
         input.historyId,
@@ -308,6 +325,7 @@ export async function recordQualification(input: QualificationWrite): Promise<vo
         input.wantsCustomCrm,
         input.submissionId,
         input.digitalPresence,
+        input.businessTypeOther,
       ],
     );
   });

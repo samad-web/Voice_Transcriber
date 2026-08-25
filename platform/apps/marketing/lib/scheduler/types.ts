@@ -86,6 +86,25 @@ export interface Scheduler {
   }>;
 
   /**
+   * Cancel a previously booked event, notifying the attendee.
+   *
+   * Used by the reschedule flow, which releases one slot and claims another —
+   * leaving the old event standing would put two appointments in the team's
+   * diary for one person, and the lead would still hold an invite to the time
+   * they just moved away from.
+   *
+   * MUST NOT throw for an event that is already gone. A 404 or 410 from Google
+   * means the desired state is the actual state, and treating it as a failure
+   * would make a reschedule fail on a retry of a request that had in fact
+   * already succeeded.
+   *
+   * A genuine failure DOES throw, and the caller records it rather than undoing
+   * the swap — the database is the source of truth for who is booked when, and
+   * the calendar is a mirror that can be repaired by hand.
+   */
+  cancel(eventId: string): Promise<void>;
+
+  /**
    * Whether this implementation can talk to a real calendar at all.
    *
    * NOT for choosing what to render — `availableSlots().length` is the signal
