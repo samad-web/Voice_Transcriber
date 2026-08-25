@@ -12,11 +12,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { parseLeadStages, statusForStage } from "@aura/shared";
+import { parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { recordStageTransition } from "../crm-objects/stage-history";
 
 const ListQuery = z.object({
   stage: z.string().max(40).optional(),
@@ -288,6 +289,14 @@ export class LeadsController {
       );
       if (!lead) throw new NotFoundException("lead not found");
 
+      // A6: the worker's dual-write (projectLeadToCrm) only sets a deal's
+      // stage/status ONCE, on creation — a follow-up call must never move a
+      // deal a human is already working. This IS that human moving it, so
+      // propagating it onto the linked deal is this endpoint's job, not the
+      // worker's. Own non-blocking try/catch inside — a bug here must never
+      // break the lead PATCH itself.
+      if (p.stage) await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
+
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
          VALUES ($1, 'user', $2, $3, 'lead', $4, $5::jsonb)`,
@@ -297,4 +306,69 @@ export class LeadsController {
       return { lead };
     });
   }
+
+  /**
+   * Carry a lead's stage move onto its dual-written deal (`deals.source_lead_id`),
+   * including the stage-history ledger — the same write `deals.controller.ts`'s
+   * own PATCH makes, so the two never disagree about what a transition row
+   * means. The deal's OWN pipeline decides its status, not the lead's: the two
+   * stage lists are independently configurable and only happen to start out
+   * matching, so a key that doesn't exist on the deal's pipeline is a data-
+   * quality signal for reconciliation, not something to guess about here.
+   */
+  private async propagateStageToDeal(
+    client: {
+      query: <R = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
+    },
+    orgId: string,
+    leadId: string,
+    newStage: string,
+    actorId: string | null,
+  ): Promise<void> {
+    try {
+      const {
+        rows: [deal],
+      } = await client.query<{ id: string; stage: string; status: string; pipeline_id: string }>(
+        `SELECT id, stage, status, pipeline_id FROM deals WHERE source_lead_id = $1`,
+        [leadId],
+      );
+      if (!deal) return; // no dual-written deal for this lead (yet, or ever)
+
+      const {
+        rows: [pipeline],
+      } = await client.query<{ stages: unknown }>(`SELECT stages FROM deal_pipelines WHERE id = $1`, [
+        deal.pipeline_id,
+      ]);
+      const stages = parsePipelineStages(pipeline?.stages);
+      if (!stages.some((s) => s.key === newStage)) {
+        console.error(
+          `lead ${leadId}: cannot propagate stage "${newStage}" — not a stage on deal ${deal.id}'s pipeline`,
+        );
+        return;
+      }
+      const dealStatus = statusForStage(stages, newStage);
+
+      await client.query(
+        `UPDATE deals SET stage = $2, status = $3, stage_changed_at = now(), last_activity_at = now()
+          WHERE id = $1`,
+        [deal.id, newStage, dealStatus],
+      );
+      await recordStageTransition(client, orgId, {
+        dealId: deal.id,
+        fromStage: deal.stage,
+        toStage: newStage,
+        fromStatus: deal.status,
+        toStatus: dealStatus,
+        changedBy: actorId,
+        source: "console",
+      });
+    } catch (err) {
+      console.error(`lead ${leadId}: deal stage propagation error (non-blocking):`, err);
+    }
+  }
+}
+
+function actorUserId(req: PrincipalRequest): string | null {
+  const parsed = z.string().uuid().safeParse(req.principal?.userId);
+  return parsed.success ? parsed.data : null;
 }

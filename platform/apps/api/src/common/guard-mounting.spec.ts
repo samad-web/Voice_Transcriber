@@ -196,6 +196,7 @@ const CROSS_TENANT = [
   "GET /admin/slots/booked",
   "POST /admin/slots",
   "POST /admin/slots/generate",
+  "POST /admin/slots/:id/attendance",
   "DELETE /admin/slots/:id",
   "GET /admin/message-templates",
   "PUT /admin/message-templates/:key",
@@ -214,7 +215,11 @@ const CROSS_TENANT = [
 const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
 
 /** §2.4 — one controller, two routes. */
-const OWNER_ROLE_ROUTES = ["GET /owner/overview", "PATCH /owner/telecallers/:deviceId"];
+const OWNER_ROLE_ROUTES = [
+  "GET /owner/overview",
+  "GET /owner/crm-overview",
+  "PATCH /owner/telecallers/:deviceId",
+];
 
 /**
  * The CRM object model's enforced surface — every route that consults the
@@ -376,18 +381,22 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 164 routes, partitioned 130 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 166 routes, partitioned 131 tenant / 23 cross-tenant / 6 device / 6 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
     // plus Track A2's 6 interaction-timeline routes Track A3's 4 task routes,
-    // Layer 3's 4 report routes, Layer 1's 6 connection routes, and the 6
-    // custom-field-VALUE routes. They are asserted as a
+    // Layer 3's 4 report routes, Layer 1's 6 connection routes, the 6
+    // custom-field-VALUE routes, the booking lifecycle's one
+    // (POST /admin/slots/:id/attendance, cross-tenant like the rest of the
+    // funnel's operator surface), and A6 Milestone 4's one
+    // (GET /owner/crm-overview, tenant-scoped like its sibling
+    // GET /owner/overview). They are asserted as a
     // set, not just a total, so moving a route BETWEEN classes (dropping
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
-    expect(ROUTES).toHaveLength(164);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(164);
+    expect(ROUTES).toHaveLength(166);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(166);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -397,20 +406,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(130);
+    expect(tenantScoped).toHaveLength(131);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(164);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(166);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 152 principal routes", () => {
-    // 130 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 154 principal routes", () => {
+    // 131 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(152);
+    expect(principalRoutes).toHaveLength(154);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

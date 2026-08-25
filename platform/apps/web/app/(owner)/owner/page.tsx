@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Banknote, PhoneCall, Target, Trophy } from "lucide-react";
 import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
+import { crmShadowReadEnabled } from "@/lib/crm-cutover";
 import { ownerGet } from "@/lib/owner-context";
 import { TelecallerName } from "./telecaller-name";
 import { formatDuration, formatValue, num, relativeTime, type Overview } from "./types";
@@ -25,7 +26,12 @@ export default async function OwnerDashboardPage({
 }) {
   const { days: daysParam } = await searchParams;
   const days = Math.min(365, Math.max(1, Number(daysParam) || 30));
-  const data = await ownerGet<Overview>(`/v1/owner/overview?days=${days}`);
+  // A6, Milestone 4: same page, same Overview shape — only which table it's
+  // read from forks, behind the shadow-read flag. See lib/crm-cutover.ts.
+  const crmPrimary = crmShadowReadEnabled();
+  const data = await ownerGet<Overview>(
+    crmPrimary ? `/v1/owner/crm-overview?days=${days}` : `/v1/owner/overview?days=${days}`,
+  );
 
   if (!data) {
     return (
@@ -40,6 +46,16 @@ export default async function OwnerDashboardPage({
       </>
     );
   }
+
+  // The board/leads pages don't accept a ?stage=/?focus= query yet, so the
+  // CRM-primary links point at the plain page rather than a param it would
+  // silently ignore — see CRM_STATUS.md, A6 Milestone 4.
+  const pipelineHref = crmPrimary ? "/owner/deals" : "/owner/board";
+  const pipelineLinkLabel = crmPrimary ? "Open deals board →" : "Open board →";
+  const stageHref = (stageKey: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`);
+  const allHref = crmPrimary ? "/owner/deals" : "/owner/leads";
+  const allLinkLabel = crmPrimary ? "All deals →" : "All leads →";
+  const recordHref = (id: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?focus=${id}`);
 
   const { leads, calls, funnel, telecallers, byDay } = data;
   const closed = leads.won + leads.lost;
@@ -107,16 +123,16 @@ export default async function OwnerDashboardPage({
         <Card shadow className="space-y-4">
           <div className="flex items-baseline justify-between gap-3">
             <MonoLabel>Pipeline by stage</MonoLabel>
-            <Link href="/owner/board" className={PANEL_LINK}>
-              Open board →
+            <Link href={pipelineHref} className={PANEL_LINK}>
+              {pipelineLinkLabel}
             </Link>
           </div>
           {leads.total === 0 ? (
-            <EmptyPipeline />
+            <EmptyPipeline crmPrimary={crmPrimary} />
           ) : (
             <div className="space-y-2.5">
               {funnel.map((stage) => (
-                <Link key={stage.key} href={`/owner/leads?stage=${stage.key}`} className="group block">
+                <Link key={stage.key} href={stageHref(stage.key)} className="group block">
                   <div className="flex items-center justify-between gap-3 text-xs">
                     <span className="text-text-muted transition-colors duration-150 ease-out group-hover:text-text">
                       {stage.label}
@@ -279,18 +295,20 @@ export default async function OwnerDashboardPage({
       <Card shadow className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
           <MonoLabel>Latest activity</MonoLabel>
-          <Link href="/owner/leads" className={PANEL_LINK}>
-            All leads →
+          <Link href={allHref} className={PANEL_LINK}>
+            {allLinkLabel}
           </Link>
         </div>
         {data.recent.length === 0 ? (
-          <p className="py-6 text-center text-sm text-text-muted">No leads yet</p>
+          <p className="py-6 text-center text-sm text-text-muted">
+            {crmPrimary ? "No deals yet" : "No leads yet"}
+          </p>
         ) : (
           <div className="divide-y divide-border">
             {data.recent.map((lead) => (
               <Link
                 key={lead.id}
-                href={`/owner/leads?focus=${lead.id}`}
+                href={recordHref(lead.id)}
                 className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2.5 transition-colors duration-150 ease-out hover:bg-surface-hover"
               >
                 <div className="min-w-0">
@@ -319,16 +337,17 @@ export default async function OwnerDashboardPage({
 }
 
 /**
- * Leads only appear once a call's extraction qualifies, so an empty pipeline is
- * usually a setup gap rather than a quiet week — say which.
+ * Leads/deals only appear once a call's extraction qualifies, so an empty
+ * pipeline is usually a setup gap rather than a quiet week — say which.
  */
-function EmptyPipeline() {
+function EmptyPipeline({ crmPrimary }: { crmPrimary: boolean }) {
+  const noun = crmPrimary ? "deal" : "lead";
   return (
     <div className="space-y-2 py-8 text-center">
-      <p className="text-sm font-medium text-text">No leads yet</p>
+      <p className="text-sm font-medium text-text">No {noun}s yet</p>
       <p className="mx-auto max-w-sm text-sm leading-relaxed text-text-muted">
-        A lead appears here once a recorded call is transcribed and the AI agent
-        extracts something usable from it. If calls are arriving but no leads
+        A {noun} appears here once a recorded call is transcribed and the AI agent
+        extracts something usable from it. If calls are arriving but no {noun}s
         are, the extraction agent may need tuning.
       </p>
     </div>

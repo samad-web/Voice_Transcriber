@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { parseLeadStages } from "@aura/shared";
+import { parseLeadStages, parsePipelineStages } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
@@ -161,6 +161,147 @@ export class OwnerController {
         org: { id: org.id, name: org.name },
         window: { days },
         leads,
+        calls,
+        funnel,
+        stages,
+        telecallers,
+        byDay,
+        recent,
+      };
+    });
+  }
+
+  /**
+   * A6, Milestone 4: the same dashboard, read from `deals`/`contacts`/
+   * `deal_pipelines` instead of `leads`. Deliberately returns the exact same
+   * shape `overview()` does (including the `leads`/`byDay[].leads` field
+   * names) so `owner/page.tsx` can call either endpoint and render with the
+   * same JSX — only the data source forks, not the page. See
+   * `/owner/reports` for forecast/funnel/rep-performance detail; this is
+   * only the KPI-row-plus-recent-activity shape that endpoint doesn't cover.
+   */
+  @Get("crm-overview")
+  async crmOverview(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+  ) {
+    const parsed = WindowQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { days } = parsed.data;
+
+    // RLS scopes every query below to `orgId`; no explicit filter is needed
+    // (matches overview()'s own convention).
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [org],
+      } = await client.query("SELECT id, name FROM organizations LIMIT 1");
+      if (!org) throw new NotFoundException("organization not found");
+
+      const {
+        rows: [pipeline],
+      } = await client.query<{ stages: unknown }>(
+        "SELECT stages FROM deal_pipelines WHERE is_default = true LIMIT 1",
+      );
+      // No default pipeline yet (see crm-objects.ts's own no-op branch): the
+      // KPI/telecaller/activity rows below still work off `deals` directly,
+      // only the stage-shaped funnel has nothing to group by.
+      const stages = pipeline ? parsePipelineStages(pipeline.stages) : [];
+
+      const {
+        rows: [deals],
+      } = await client.query(
+        `SELECT count(*)::int AS total,
+                count(*) FILTER (WHERE status = 'open')::int AS open,
+                count(*) FILTER (WHERE status = 'won')::int  AS won,
+                count(*) FILTER (WHERE status = 'lost')::int AS lost,
+                count(*) FILTER (WHERE created_at > now() - make_interval(days => $1))::int AS created_in_window,
+                COALESCE(sum(amount) FILTER (WHERE status = 'open'), 0)::float AS pipeline_value,
+                COALESCE(sum(amount) FILTER (WHERE status = 'won'),  0)::float AS won_value
+           FROM deals`,
+        [days],
+      );
+
+      const {
+        rows: [calls],
+      } = await client.query(
+        `SELECT count(*)::int AS total,
+                count(*) FILTER (WHERE status = 'COMPLETE')::int AS complete,
+                COALESCE(sum(duration_s), 0)::int AS total_seconds
+           FROM calls
+          WHERE started_at > now() - make_interval(days => $1)`,
+        [days],
+      );
+
+      const { rows: stageRows } = await client.query(
+        `SELECT stage, count(*)::int AS count, COALESCE(sum(amount), 0)::float AS value
+           FROM deals GROUP BY stage`,
+      );
+      const funnel = stages.map((s) => {
+        const row = stageRows.find((r) => r.stage === s.key);
+        return { ...s, count: row?.count ?? 0, value: row?.value ?? 0 };
+      });
+
+      // Same device-level call stats as overview()'s telecaller rollup, but
+      // the deal aggregate joins on `telecaller_id` (a `telecallers` row —
+      // what deals.telecaller_id already is, copied from the lead at
+      // projection time) rather than `telecaller_device_id`, since that is
+      // the identity a deal actually carries.
+      const { rows: telecallers } = await client.query(
+        `SELECT d.id, d.label, d.telecaller_name, d.status, d.last_seen_at,
+                COALESCE(c.calls, 0)         AS calls,
+                COALESCE(c.talk_seconds, 0)  AS talk_seconds,
+                c.last_call_at,
+                COALESCE(dl.deals, 0)        AS leads,
+                COALESCE(dl.won, 0)          AS won,
+                COALESCE(dl.pipeline_value, 0)::float AS pipeline_value
+           FROM devices d
+           LEFT JOIN (
+             SELECT device_id,
+                    count(*)::int AS calls,
+                    COALESCE(sum(duration_s), 0)::int AS talk_seconds,
+                    max(started_at) AS last_call_at
+               FROM calls
+              WHERE started_at > now() - make_interval(days => $1)
+              GROUP BY device_id
+           ) c ON c.device_id = d.id
+           LEFT JOIN (
+             SELECT telecaller_id,
+                    count(*)::int AS deals,
+                    count(*) FILTER (WHERE status = 'won')::int AS won,
+                    COALESCE(sum(amount) FILTER (WHERE status = 'open'), 0) AS pipeline_value
+               FROM deals
+              WHERE created_at > now() - make_interval(days => $1)
+              GROUP BY telecaller_id
+           ) dl ON dl.telecaller_id = d.telecaller_id
+          WHERE d.status <> 'wiped' OR COALESCE(c.calls, 0) > 0 OR COALESCE(dl.deals, 0) > 0
+          ORDER BY COALESCE(dl.deals, 0) DESC, COALESCE(c.calls, 0) DESC, d.label ASC`,
+        [days],
+      );
+
+      const { rows: byDay } = await client.query(
+        `SELECT day, sum(calls)::int AS calls, sum(leads)::int AS leads FROM (
+           SELECT date_trunc('day', started_at)::date AS day, count(*)::int AS calls, 0 AS leads
+             FROM calls  WHERE started_at > now() - make_interval(days => $1) GROUP BY 1
+           UNION ALL
+           SELECT date_trunc('day', created_at)::date AS day, 0 AS calls, count(*)::int AS leads
+             FROM deals  WHERE created_at > now() - make_interval(days => $1) GROUP BY 1
+         ) series GROUP BY day ORDER BY day`,
+        [days],
+      );
+
+      const { rows: recent } = await client.query(
+        `SELECT d.id, d.name AS title, d.stage, d.status, d.amount AS value_num, d.last_activity_at,
+                t.display_name AS telecaller
+           FROM deals d
+           LEFT JOIN telecallers t ON t.id = d.telecaller_id
+          ORDER BY d.last_activity_at DESC
+          LIMIT 8`,
+      );
+
+      return {
+        org: { id: org.id, name: org.name },
+        window: { days },
+        leads: deals,
         calls,
         funnel,
         stages,

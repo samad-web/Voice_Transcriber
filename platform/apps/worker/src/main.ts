@@ -7,6 +7,7 @@ import { processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
+import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
 import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
@@ -28,6 +29,11 @@ async function bootstrap() {
 
   await consumePipeline(processCall);
   startReaper();
+  // A6's shadow-read burn-in check: does a lead's dual-written deal/contact
+  // still agree with it? Off unless CRM_RECONCILE_ENABLED=true — see the
+  // module header for why this is opt-in and why stage/status are gated
+  // separately from everything else it compares.
+  startCrmReconcileSweep();
   // Redelivers anything the inline attempt couldn't land. Runs regardless of
   // queue traffic, so a CRM that recovers overnight still gets yesterday's leads.
   startOutboxDrain();

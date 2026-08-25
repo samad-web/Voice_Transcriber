@@ -68,6 +68,48 @@ export async function reapExpired(): Promise<number> {
         );
       }
 
+      // Deals age out the same way, on their own last_activity_at clock — an
+      // owner still working one keeps bumping it via every edit, same as
+      // leads above. Deleting the deal itself cascades its custom-field
+      // values, stage-transition ledger, and any interactions/tasks hung
+      // off it (0037/0040/0041/0046).
+      const dormantDeals = await client.query(
+        `DELETE FROM deals WHERE last_activity_at < now() - make_interval(days => $1)
+         RETURNING id`,
+        [org.retention_days],
+      );
+      if ((dormantDeals.rowCount ?? 0) > 0) {
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
+           VALUES ($1, 'system', 'reaper', 'retention.reap', 'deal', $2::jsonb)`,
+          [org.id, JSON.stringify({ count: dormantDeals.rowCount })],
+        );
+      }
+
+      // A contact goes once it's stale AND nothing else still needs it —
+      // same "last link" question erasure.controller.ts asks (a hand-created
+      // deal, a manual note, a task), checked fresh here so a deal reaped
+      // just above already counts as gone. `status <> 'merged'`: a merge
+      // victim is a tombstone with its own 30-day revert window (0038), not
+      // this sweep's business to remove.
+      const dormantContacts = await client.query(
+        `DELETE FROM contacts c
+          WHERE c.status <> 'merged'
+            AND c.last_activity_at < now() - make_interval(days => $1)
+            AND NOT EXISTS (SELECT 1 FROM deals WHERE contact_id = c.id)
+            AND NOT EXISTS (SELECT 1 FROM interactions WHERE contact_id = c.id AND call_id IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM tasks WHERE contact_id = c.id AND deal_id IS NULL)
+         RETURNING c.id`,
+        [org.retention_days],
+      );
+      if ((dormantContacts.rowCount ?? 0) > 0) {
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
+           VALUES ($1, 'system', 'reaper', 'retention.reap', 'contact', $2::jsonb)`,
+          [org.id, JSON.stringify({ count: dormantContacts.rowCount })],
+        );
+      }
+
       return expired.length;
     });
   }

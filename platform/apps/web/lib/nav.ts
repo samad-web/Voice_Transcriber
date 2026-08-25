@@ -191,9 +191,29 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
 ];
 
-/** Which of `OWNER_NAV_ITEMS` a given owner-console persona may see. */
-export function ownerNavItemsFor(role: OwnerRole): NavItem[] {
-  return OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role));
+/**
+ * The CRM object pages — what A6's shadow-read flag promotes to sit right
+ * after Dashboard, above the legacy Board/All Leads pair, once it's on.
+ * Neither page group is ever hidden by this: the legacy pair stays exactly
+ * where it is, one click away, for the whole burn-in period.
+ */
+const CRM_PRIMARY_HREFS = ["/owner/deals", "/owner/contacts", "/owner/accounts", "/owner/reports"];
+
+/**
+ * Which of `OWNER_NAV_ITEMS` a given owner-console persona may see, in what
+ * order. `crmPrimary` (CRM_SHADOW_READ_ENABLED, resolved server-side and
+ * passed down — see the owner layout) moves the CRM object pages to sit
+ * right after Dashboard rather than after the legacy Board/All Leads pair.
+ * Nothing is added, removed, or hidden; only the order changes.
+ */
+export function ownerNavItemsFor(role: OwnerRole, crmPrimary = false): NavItem[] {
+  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role));
+  if (!crmPrimary) return visible;
+
+  const crmGroup = visible.filter((item) => CRM_PRIMARY_HREFS.includes(item.href));
+  const rest = visible.filter((item) => !CRM_PRIMARY_HREFS.includes(item.href));
+  const afterDashboard = rest.findIndex((item) => item.href === "/owner") + 1;
+  return [...rest.slice(0, afterDashboard), ...crmGroup, ...rest.slice(afterDashboard)];
 }
 
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */

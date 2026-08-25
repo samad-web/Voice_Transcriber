@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { MobileNav } from "@/components/mobile-nav";
 import { Sidebar } from "@/components/sidebar";
+import { crmShadowReadEnabled } from "@/lib/crm-cutover";
 import { getOwner } from "@/lib/owner-context";
 import { NotificationBell } from "./owner/notifications/notification-bell";
 
@@ -19,6 +20,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   if (!owner) redirect("/dashboard");
 
   const company = owner.membership.orgName || "Owner Console";
+  // A6: which page group the sidebar leads with. Neither group is hidden by
+  // this — see lib/crm-cutover.ts.
+  const crmPrimary = crmShadowReadEnabled();
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row">
@@ -26,6 +30,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         email={owner.email}
         area="owner"
         ownerRole={owner.membership.ownerRole}
+        crmPrimary={crmPrimary}
         title={company}
         subtitle="Sales Pipeline"
       />
@@ -33,6 +38,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         email={owner.email}
         area="owner"
         ownerRole={owner.membership.ownerRole}
+        crmPrimary={crmPrimary}
         title={company}
         subtitle="Sales Pipeline"
       />

@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { createHash, createHmac } from "node:crypto";
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import type { PoolClient } from "@aura/db";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -30,13 +31,21 @@ const s3 = new S3Client({
 const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
 
 /**
- * Cascading erasure (§2.6, GDPR Art. 17 / DPDP): S3 object → lead → transcript →
- * ai_outputs → call_facts → crm_sync_log → call row, then a signed receipt
- * recorded in the audit log. CRM-pushed copies are best-effort/logged (TODO
- * with the HubSpot connector). Per-subject (phone-hash) fan-out lands later.
+ * Cascading erasure (§2.6, GDPR Art. 17 / DPDP): S3 object → lead → contact/deal
+ * → transcript → ai_outputs → call_facts → crm_sync_log → call row, then a
+ * signed receipt recorded in the audit log. CRM-pushed copies are best-effort/
+ * logged (TODO with the HubSpot connector). Per-subject (phone-hash) fan-out
+ * lands later.
  *
  * A call the caller's org cannot see is a 404 and mints nothing — see the note
  * on the lookup below for why that ordering is the whole contract.
+ *
+ * Known, disclosed residual gap: a contact/deal that survives because it has
+ * another legitimate link (see eraseCrmObjects below) is NOT scrubbed of the
+ * erased call's specific contribution to its free-text `facts`/`notes` — no
+ * per-field provenance exists for that blob (only custom-field VALUES have
+ * `source`, since migration 0045). An honest "retained" entry on the receipt
+ * beats a receipt that claims a scrub it cannot actually perform.
  */
 @Controller("erasure-requests")
 @UseGuards(AdminKeyGuard, TenantGuard)
@@ -85,12 +94,36 @@ export class ErasureController {
       // them, so erasing the call without it would leave the data behind under
       // a different table name. Matched on the contact hash — one erasure
       // request removes the prospect, not just this one conversation.
-      const leadRes = await client.query(
-        `DELETE FROM leads
+      //
+      // Resolved (not yet deleted) BEFORE eraseCrmObjects runs: deals' and
+      // contacts' `source_lead_id` are ON DELETE SET NULL (0035/0036), so
+      // deleting these leads first would erase the very link eraseCrmObjects
+      // needs in order to find its own candidates — a real bug caught only by
+      // running this live, not by anything a typecheck could see.
+      const { rows: candidateLeads } = await client.query<{ id: string }>(
+        `SELECT id FROM leads
           WHERE first_call_id = $1 OR last_call_id = $1
              OR ($2::text IS NOT NULL AND contact_number_hash = $2)`,
         [callId, rec?.remote_number_hash ?? null],
       );
+      const candidateLeadIds = candidateLeads.map((r) => r.id);
+
+      // The lead's eventual erasure below does NOT cascade to contacts/deals
+      // — both FKs are ON DELETE SET NULL, by design, since a contact can
+      // outlive any one lead once dedup is org-wide. Resolve and erase them
+      // explicitly, the same "who else still points here" question the lead
+      // DELETE below already answers for the phone-hash fan-out.
+      const { purged: crmPurged, retainedContactIds } = await this.eraseCrmObjects(
+        client,
+        callId,
+        rec?.remote_number_hash ?? null,
+        candidateLeadIds,
+      );
+      purged.push(...crmPurged);
+
+      const leadRes = await client.query("DELETE FROM leads WHERE id = ANY($1::uuid[])", [
+        candidateLeadIds,
+      ]);
       if ((leadRes.rowCount ?? 0) > 0) purged.push("lead_rows");
 
       for (const [table, label] of [
@@ -110,6 +143,10 @@ export class ErasureController {
         status: "COMPLETED",
         callId,
         purged,
+        // Never claim a scrub that didn't happen: a contact retained here
+        // still has another legitimate link (a hand-created deal, a manual
+        // note, a task) — see the class docstring for the disclosed gap.
+        retainedContactIds,
         erasedAtUtc: new Date().toISOString(),
       };
       const signature = createHmac(
@@ -127,5 +164,76 @@ export class ErasureController {
 
       return { ...receipt, signature, receiptHash: createHash("sha256").update(signature).digest("hex") };
     });
+  }
+
+  /**
+   * Erases every deal/contact whose ONLY provenance is the erased lead(s)/
+   * call, and retains anything with another legitimate link. Order matters:
+   * deals are resolved and deleted first, so the contact "safe to delete"
+   * check below sees a contact with no deals left rather than racing against
+   * ones about to be removed anyway.
+   *
+   * `status <> 'merged'` on the contact candidate query is deliberate, not an
+   * oversight: 0038 tombstones a merge victim (status='merged',
+   * merged_into_id set) rather than deleting it, because merge_log/revert
+   * need that row to still exist. Hard-deleting one here — even one with no
+   * other links — would corrupt that audit trail, so a merged contact is
+   * never a candidate at all.
+   */
+  private async eraseCrmObjects(
+    client: PoolClient,
+    callId: string,
+    phoneHash: string | null,
+    deletedLeadIds: string[],
+  ): Promise<{ purged: string[]; retainedContactIds: string[] }> {
+    const purged: string[] = [];
+
+    const { rows: dealRows } = await client.query(
+      `SELECT id FROM deals
+        WHERE source_lead_id = ANY($1::uuid[])
+           OR id IN (SELECT deal_id FROM interactions WHERE call_id = $2 AND deal_id IS NOT NULL)`,
+      [deletedLeadIds, callId],
+    );
+    if (dealRows.length > 0) {
+      await client.query("DELETE FROM deals WHERE id = ANY($1::uuid[])", [
+        dealRows.map((r) => r.id as string),
+      ]);
+      purged.push("deal_rows");
+    }
+
+    const { rows: contactRows } = await client.query(
+      `SELECT id FROM contacts
+        WHERE status <> 'merged'
+          AND ( ($1::text IS NOT NULL AND phone_hash = $1)
+             OR source_lead_id = ANY($2::uuid[])
+             OR id IN (SELECT contact_id FROM interactions WHERE call_id = $3 AND contact_id IS NOT NULL) )`,
+      [phoneHash, deletedLeadIds, callId],
+    );
+
+    const retainedContactIds: string[] = [];
+    let deletedAnyContact = false;
+    for (const { id: contactId } of contactRows) {
+      const {
+        rows: [{ safe_to_delete: safeToDelete }],
+      } = await client.query(
+        `SELECT NOT EXISTS (
+           SELECT 1 FROM deals WHERE contact_id = $1
+           UNION ALL
+           SELECT 1 FROM interactions WHERE contact_id = $1 AND call_id IS NULL
+           UNION ALL
+           SELECT 1 FROM tasks WHERE contact_id = $1 AND deal_id IS NULL
+         ) AS safe_to_delete`,
+        [contactId],
+      );
+      if (safeToDelete) {
+        await client.query("DELETE FROM contacts WHERE id = $1", [contactId]);
+        deletedAnyContact = true;
+      } else {
+        retainedContactIds.push(contactId as string);
+      }
+    }
+    if (deletedAnyContact) purged.push("contact_rows");
+
+    return { purged, retainedContactIds };
   }
 }

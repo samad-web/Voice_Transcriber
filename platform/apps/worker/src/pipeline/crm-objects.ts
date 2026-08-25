@@ -8,12 +8,11 @@ import { leadTitle } from "./leads";
  * object model (packages/db/migrations/0035-0036), alongside — not instead
  * of — the existing `leads` row.
  *
- * Strangler-fig, CRM Phase 1 (see the Phase 1 plan): this function is not
- * yet called from pipeline.ts's live call-processing path — that wiring is a
- * later, separately-reviewed milestone (M3). For now it exists so
- * scripts/backfill-crm-objects.js can replay it over history, and the live
- * dual-write (when it lands) will call this exact function too, so backfill
- * and live projection can never drift from each other.
+ * Strangler-fig, CRM Phase 1 (see the Phase 1 plan): called live from
+ * pipeline.ts's call-processing path (M3, non-blocking) immediately after
+ * upsertLead(), and also replayed by scripts/backfill-crm-objects.js over
+ * history — both call this exact function, so backfill and live projection
+ * can never drift from each other.
  *
  * Read-after-write from `leads`, keyed on the leadId upsertLead() already
  * returned, rather than re-deriving qualification from the call — the call
