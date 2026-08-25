@@ -11,6 +11,8 @@ import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
 import { startBookingConfirmations } from "./pipeline/booking-confirmations";
+import { startBookingNotificationDrain } from "./pipeline/booking-notifications-outbox";
+import { startCallReminders } from "./pipeline/call-reminders";
 import { startFormNudges } from "./pipeline/form-nudges";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
@@ -68,6 +70,15 @@ async function bootstrap() {
   // because the public marketing role holds no grant on the outbox; see the
   // module header.
   startBookingConfirmations();
+  // The booking outbox: pre-call reminders, the attended/no-show message the
+  // console queues, and the no-show nurture drip. Keyed on the BOOKING rather
+  // than the person, so a rescheduled call gets a fresh set of reminders — see
+  // the module header for why that needs a second table.
+  startBookingNotificationDrain();
+  // And the sweep that fills it. Works out 24h/1h/5m from each booking's own
+  // start time and queues three rows stamped with those instants, so the
+  // schedule survives a worker restart instead of living in a timing window.
+  startCallReminders();
   // Nudges people who gave their details and never answered the questions,
   // with a private link back into their own half-finished form. Two messages,
   // ever — see the module header.
@@ -78,7 +89,7 @@ async function bootstrap() {
   console.log(
     `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
-      "+ booking confirmations + form nudges",
+      "+ booking confirmations + call reminders + form nudges",
   );
 }
 

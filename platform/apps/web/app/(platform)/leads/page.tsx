@@ -41,7 +41,6 @@ export default async function LeadsPage() {
         leadsError={leadsResult.error}
         templates={templatesResult.templates ?? []}
         templatesError={templatesResult.error}
-        maxLength={templatesResult.maxLength ?? 1200}
         criteria={criteriaResult.criteria ?? DEFAULT_FUNNEL_CRITERIA}
         criteriaUpdatedAt={criteriaResult.updatedAt}
         criteriaUpdatedBy={criteriaResult.updatedBy}

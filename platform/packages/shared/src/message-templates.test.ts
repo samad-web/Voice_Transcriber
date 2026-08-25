@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  EMAIL_BODY_MAX,
+  EMAIL_SUBJECT_MAX,
   MESSAGE_BODY_MAX,
   MESSAGE_TEMPLATES,
   MESSAGE_TEMPLATE_KEYS,
@@ -10,8 +12,11 @@ import {
   fillTemplate,
   firstNameOf,
   getMessageTemplateSpec,
+  getTemplateFallback,
   placeholdersIn,
+  titleNameOf,
   validateTemplateBody,
+  validateTemplateSubject,
 } from "./message-templates";
 
 /**
@@ -84,6 +89,53 @@ describe("fillTemplate", () => {
       const out = fillTemplate(body, { first_name: "Ramesh", slot: "Tue 6:30 pm" });
       expect(out).not.toMatch(/ {2,}/);
     });
+
+    it("drops a trailing optional placeholder that ends the message", () => {
+      // {{reschedule_link}} usually sits at the very end with no full stop
+      // after it. The original regex demanded a terminator, so an un-minted
+      // link at end-of-string would have been left as the neutral word — i.e.
+      // "Pick a new time: there" on somebody's phone.
+      const out = fillTemplate("Sorry we missed you. Pick a new time: {{reschedule_link}}", {});
+      expect(out).toBe("Sorry we missed you.");
+    });
+
+    it("keeps it when the link exists", () => {
+      const out = fillTemplate("Sorry we missed you. Pick a new time: {{reschedule_link}}", {
+        reschedule_link: "https://aura.example/reschedule/abc",
+      });
+      expect(out).toContain("https://aura.example/reschedule/abc");
+    });
+  });
+});
+
+describe("titleNameOf", () => {
+  it("puts the chosen salutation in front of the whole name", () => {
+    // The WHOLE name, not a guessed surname — in this funnel's market the last
+    // word is often a father's name or an initial, so "Mr. Kumar" is a coin
+    // flip where "Mr. Ramesh Kumar" is always right.
+    expect(titleNameOf("mr", "ramesh kumar")).toBe("Mr. Ramesh Kumar");
+    expect(titleNameOf("dr", "Priya S")).toBe("Dr. Priya S");
+  });
+
+  it("gives nothing back when they chose not to say", () => {
+    // 'other' is "prefer not to say" — inventing "Mr." for them is the exact
+    // failure the option exists to avoid.
+    expect(titleNameOf("other", "Ramesh Kumar")).toBeUndefined();
+    expect(titleNameOf(null, "Ramesh Kumar")).toBeUndefined();
+    expect(titleNameOf(undefined, "Ramesh Kumar")).toBeUndefined();
+  });
+
+  it("degrades through firstNameOf to the neutral word, never to a blank", () => {
+    // The seam that actually reaches a phone. Three steps down, no hole.
+    const body = "Hi {{title_name}}, thanks.";
+    const withTitle = titleNameOf("mr", "Ramesh Kumar") ?? firstNameOf("Ramesh Kumar");
+    expect(fillTemplate(body, { title_name: withTitle })).toBe("Hi Mr. Ramesh Kumar, thanks.");
+
+    const noTitle = titleNameOf(null, "Ramesh Kumar") ?? firstNameOf("Ramesh Kumar");
+    expect(fillTemplate(body, { title_name: noTitle })).toBe("Hi Ramesh, thanks.");
+
+    const nothing = titleNameOf(null, "R") ?? firstNameOf("R");
+    expect(fillTemplate(body, { title_name: nothing })).toBe("Hi there, thanks.");
   });
 });
 
@@ -170,26 +222,30 @@ describe("placeholdersIn", () => {
 
 describe("validateTemplateBody", () => {
   it("accepts a body using only that stage's placeholders", () => {
-    expect(validateTemplateBody("rejected", "Hi {{first_name}}, no thanks.")).toEqual({ ok: true });
+    expect(validateTemplateBody("rejected", "Hi {{first_name}}, no thanks.", "whatsapp")).toEqual({
+      ok: true,
+    });
   });
 
   it("rejects {{slot}} outside the booking stage", () => {
     // The one that matters: no other stage has a booked time, so this would
     // render as "there" on every send — a message that looks fine in the editor
     // and is nonsense on the phone.
-    const result = validateTemplateBody("rejected", "See you at {{slot}}.");
+    const result = validateTemplateBody("rejected", "See you at {{slot}}.", "whatsapp");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("{{slot}}");
   });
 
   it("accepts {{slot}} in the booking stage", () => {
-    expect(validateTemplateBody("booking_confirmed", "At {{slot}}.")).toEqual({ ok: true });
+    expect(validateTemplateBody("booking_confirmed", "At {{slot}}.", "whatsapp")).toEqual({
+      ok: true,
+    });
   });
 
   it("names every available placeholder when it rejects one", () => {
     // The error is read by an operator mid-edit, so it has to say what they CAN
     // use, not only what they cannot.
-    const result = validateTemplateBody("rejected", "{{company}}");
+    const result = validateTemplateBody("rejected", "{{company}}", "whatsapp");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toContain("{{first_name}}");
@@ -198,18 +254,69 @@ describe("validateTemplateBody", () => {
   });
 
   it("rejects an empty body and points at the off switch instead", () => {
-    const result = validateTemplateBody("rejected", "   ");
+    const result = validateTemplateBody("rejected", "   ", "whatsapp");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("switch it off");
   });
 
   it("rejects an over-long body", () => {
-    expect(validateTemplateBody("rejected", "x".repeat(MESSAGE_BODY_MAX + 1)).ok).toBe(false);
-    expect(validateTemplateBody("rejected", "x".repeat(MESSAGE_BODY_MAX)).ok).toBe(true);
+    expect(validateTemplateBody("rejected", "x".repeat(MESSAGE_BODY_MAX + 1), "whatsapp").ok).toBe(
+      false,
+    );
+    expect(validateTemplateBody("rejected", "x".repeat(MESSAGE_BODY_MAX), "whatsapp").ok).toBe(true);
   });
 
   it("rejects an unknown stage", () => {
-    expect(validateTemplateBody("not_a_stage", "Hello.").ok).toBe(false);
+    expect(validateTemplateBody("not_a_stage", "Hello.", "whatsapp").ok).toBe(false);
+  });
+
+  it("gives email a longer ceiling than WhatsApp", () => {
+    // The WhatsApp cap is a deliverability limit on an unofficial gateway, not
+    // a style rule. Applying it to mail would force the email copy into the
+    // wrong register for the channel.
+    const long = "x".repeat(MESSAGE_BODY_MAX + 1);
+    expect(validateTemplateBody("rejected", long, "whatsapp").ok).toBe(false);
+    expect(validateTemplateBody("rejected", long, "email").ok).toBe(true);
+    expect(validateTemplateBody("rejected", "x".repeat(EMAIL_BODY_MAX + 1), "email").ok).toBe(false);
+  });
+
+  it("refuses email copy for a WhatsApp-only stage", () => {
+    // reminder_call_5m has no email variant on purpose — five minutes is not
+    // enough notice for mail. Storing copy for it would be copy nothing reads.
+    const result = validateTemplateBody("reminder_call_5m", "Hello.", "email");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("WhatsApp only");
+  });
+});
+
+describe("validateTemplateSubject", () => {
+  it("accepts a plain subject", () => {
+    expect(validateTemplateSubject("booking_confirmed", "Your call is confirmed")).toEqual({
+      ok: true,
+    });
+  });
+
+  it("accepts a placeholder the stage allows", () => {
+    expect(validateTemplateSubject("booking_confirmed", "Confirmed for {{slot}}")).toEqual({
+      ok: true,
+    });
+  });
+
+  it("rejects a line break, which is a header-injection attempt", () => {
+    const result = validateTemplateSubject("booking_confirmed", "Hi\nBcc: someone@else");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("line break");
+  });
+
+  it("rejects an empty or over-long subject", () => {
+    expect(validateTemplateSubject("booking_confirmed", "  ").ok).toBe(false);
+    expect(
+      validateTemplateSubject("booking_confirmed", "x".repeat(EMAIL_SUBJECT_MAX + 1)).ok,
+    ).toBe(false);
+  });
+
+  it("rejects a stage with no email variant", () => {
+    expect(validateTemplateSubject("reminder_call_5m", "Hello").ok).toBe(false);
   });
 });
 
@@ -222,10 +329,44 @@ describe("the catalogue", () => {
     // Catches the obvious own goal: shipping a default that the API would
     // refuse to save, so an operator cannot re-save it after a one-word edit.
     for (const spec of MESSAGE_TEMPLATES) {
-      expect([spec.key, validateTemplateBody(spec.key, spec.whatsapp)]).toEqual([
+      expect([spec.key, validateTemplateBody(spec.key, spec.whatsapp, "whatsapp")]).toEqual([
         spec.key,
         { ok: true },
       ]);
+      if (spec.email) {
+        expect([spec.key, validateTemplateBody(spec.key, spec.email.body, "email")]).toEqual([
+          spec.key,
+          { ok: true },
+        ]);
+        expect([spec.key, validateTemplateSubject(spec.key, spec.email.subject)]).toEqual([
+          spec.key,
+          { ok: true },
+        ]);
+      }
+    }
+  });
+
+  it("resolves a fallback for every channel a stage claims to support", () => {
+    for (const spec of MESSAGE_TEMPLATES) {
+      expect([spec.key, getTemplateFallback(spec.key, "whatsapp")?.body]).toEqual([
+        spec.key,
+        spec.whatsapp,
+      ]);
+      // undefined for a WhatsApp-only stage is the correct answer, not a hole —
+      // it is what tells the drain to dead-letter an email row for that stage
+      // instead of sending a blank.
+      expect([spec.key, getTemplateFallback(spec.key, "email")?.body]).toEqual([
+        spec.key,
+        spec.email?.body,
+      ]);
+    }
+  });
+
+  it("gives every email variant a subject", () => {
+    // A blank subject line is the single strongest spam signal a message can
+    // carry, and it is invisible in an editor that only shows the body.
+    for (const spec of MESSAGE_TEMPLATES) {
+      if (spec.email) expect([spec.key, spec.email.subject.trim().length > 0]).toEqual([spec.key, true]);
     }
   });
 

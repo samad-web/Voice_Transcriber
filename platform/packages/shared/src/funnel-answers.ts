@@ -29,11 +29,13 @@
 
 import {
   BUDGET_BANDS,
+  BUSINESS_TYPE_OTHER_OPTIONS,
   BUSINESS_TYPES,
   CRM_SATISFACTION_OPTIONS,
   FUNNEL_CRM_OPTIONS,
   HAS_CRM_OPTIONS,
   INTENTS,
+  SALUTATIONS,
   TEAM_SIZES,
   WANTS_CUSTOM_CRM_OPTIONS,
 } from "./funnel";
@@ -43,7 +45,9 @@ import {
  * description of the questions — it IS the questions.
  */
 export const FUNNEL_QUESTIONS = {
+  salutation: "Salutation",
   businessType: "What kind of business?",
+  businessTypeOther: "Which kind, specifically?",
   teamSize: "How many telecallers do you have?",
   budget: "Monthly telemarketing budget",
   intent: "How soon do you need this?",
@@ -56,7 +60,9 @@ export const FUNNEL_QUESTIONS = {
 
 /** The subset of a submission this module can read. */
 export interface FunnelAnswerSource {
+  salutation?: string | null;
   business_type?: string | null;
+  business_type_other?: string | null;
   team_size?: string | null;
   budget_inr?: string | null;
   intent?: string | null;
@@ -104,7 +110,16 @@ export function describeAnswers(row: FunnelAnswerSource): AnsweredQuestion[] {
     }
   };
 
+  push("salutation", row.salutation && labelFor(SALUTATIONS, row.salutation));
   push("businessType", row.business_type && labelFor(BUSINESS_TYPES, row.business_type));
+  // Only meaningful once businessType is 'other' — same reasoning as crmName's
+  // "other" not being looked up when hasCrm isn't 'yes'.
+  if (row.business_type === "other") {
+    push(
+      "businessTypeOther",
+      row.business_type_other && labelFor(BUSINESS_TYPE_OTHER_OPTIONS, row.business_type_other),
+    );
+  }
   push("teamSize", row.team_size && labelFor(TEAM_SIZES, row.team_size));
   push("budget", row.budget_inr && labelFor(BUDGET_BANDS, row.budget_inr));
   push("intent", row.intent && labelFor(INTENTS, row.intent));

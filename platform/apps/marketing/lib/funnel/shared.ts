@@ -25,6 +25,7 @@
  */
 export {
   BUDGET_BANDS,
+  BUSINESS_TYPE_OTHER_OPTIONS,
   BUSINESS_TYPES,
   FUNNEL_COUNTRIES,
   FUNNEL_CRM_OPTIONS,
@@ -33,6 +34,7 @@ export {
   INTENTS,
   NAME_PATTERN,
   QUALIFYING_BUDGET_INR,
+  SALUTATIONS,
   TEAM_SIZES,
   WANTS_CUSTOM_CRM_OPTIONS,
   classifyCrm,
@@ -52,6 +54,7 @@ export {
 export type {
   BudgetBand,
   BusinessType,
+  BusinessTypeOther,
   CrmConnectorStatus,
   CrmSatisfaction,
   FunnelCountry,
@@ -63,6 +66,7 @@ export type {
   Intent,
   QualificationAnswers,
   QualificationResult,
+  Salutation,
   TeamSize,
   ValidationResult,
   WantsCustomCrm,

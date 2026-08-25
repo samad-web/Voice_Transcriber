@@ -2,10 +2,12 @@
 
 import {
   BUDGET_BANDS,
+  BUSINESS_TYPE_OTHER_OPTIONS,
   BUSINESS_TYPES,
   CRM_SATISFACTION_OPTIONS,
   HAS_CRM_OPTIONS,
   INTENTS,
+  SALUTATIONS,
   TEAM_SIZES,
   WANTS_CUSTOM_CRM_OPTIONS,
   classifyCrm,
@@ -93,6 +95,11 @@ export async function submitContactAction(form: FormData): Promise<StepOneResult
   let captured;
   try {
     captured = await captureContact({
+      // Optional, and narrowed against the fixed list rather than trusted —
+      // `coerceOption` returns null for anything unrecognised, which is the
+      // same outcome as leaving it blank. It shapes how a message greets
+      // somebody and nothing else, so an absent one costs nothing.
+      salutation: coerceOption(SALUTATIONS, form.get("salutation")),
       name: nameCheck.value!,
       email,
       emailNormalized: normalizeEmail(email),
@@ -140,6 +147,31 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
 
   const businessType = coerceOption(BUSINESS_TYPES, form.get("businessType"));
   const teamSize = coerceOption(TEAM_SIZES, form.get("teamSize"));
+
+  /**
+   * "Something else" now has somewhere to say what it is.
+   *
+   * Same two-level shape the CRM question already uses: a curated list, plus a
+   * free-text box behind its last option. Storing the literal "other" threw
+   * away the only thing that answer exists to collect, which is what the CRM
+   * field's own "other (please specify)" fix was about.
+   *
+   * Forced to null unless businessType is actually 'other'. The field is
+   * conditionally rendered, but a POST is a POST and anyone can send
+   * `businessTypeOther` alongside `businessType=real_estate` — recording a
+   * second, contradicting industry against a row that already names one is a
+   * mess no later query could untangle.
+   */
+  const otherSelection = coerceOption(BUSINESS_TYPE_OTHER_OPTIONS, form.get("businessTypeOther"));
+  const otherTyped = String(form.get("businessTypeOtherText") ?? "")
+    .trim()
+    .slice(0, 120); // free text on a public form gets a length bound
+  const businessTypeOther =
+    businessType === "other"
+      ? otherSelection === "typed"
+        ? otherTyped || null
+        : otherSelection
+      : null;
   const budget = coerceOption(BUDGET_BANDS, form.get("budget"));
   const intent = coerceOption(INTENTS, form.get("intent"));
   const hasCrm = coerceOption(HAS_CRM_OPTIONS, form.get("hasCrm"));
@@ -193,6 +225,9 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
   if (hasCrm === "yes" && (!crmName || !crmSatisfied)) {
     return { ok: false, error: "Please tell us which CRM you use and how it is working out." };
   }
+  if (businessType === "other" && !businessTypeOther) {
+    return { ok: false, error: "Please tell us what kind of business it is." };
+  }
 
   // ── The verdict ───────────────────────────────────────────────────────
   //
@@ -234,6 +269,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
       submissionId: session.sid,
       historyId: session.hid,
       businessType,
+      businessTypeOther,
       teamSize,
       budget,
       intent,

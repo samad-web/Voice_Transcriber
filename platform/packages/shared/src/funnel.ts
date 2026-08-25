@@ -236,6 +236,68 @@ export function coerceOption<T extends string>(
   return options.find((o) => o.value === trimmed)?.value ?? null;
 }
 
+/**
+ * Salutation. Descriptive, like `digitalPresence` — it shapes how a message
+ * greets someone, it does not feed `qualify()`.
+ *
+ * ── THERE IS NO "PREFER NOT TO SAY" OPTION, AND THAT IS THE POINT ──────────
+ *
+ * There was one, and it was redundant. The field is optional and renders as a
+ * dropdown in front of the name whose unselected state reads "Title", so
+ * declining to answer is already a first-class outcome that costs one fewer
+ * decision than picking an option that means "no answer". Both paths end in the
+ * same place: `titleNameOf` returns undefined and the message greets them by
+ * first name.
+ *
+ * The database CHECK (migration 0053) still admits 'other' deliberately — it is
+ * a harmless superset, and a stored value the form no longer offers must not
+ * start failing validation. `coerceOption` narrows a submitted 'other' to null,
+ * which means exactly what it used to.
+ */
+export type Salutation = "mr" | "mrs" | "ms" | "dr";
+
+export const SALUTATIONS: ReadonlyArray<FunnelOption<Salutation>> = [
+  { value: "mr", label: "Mr." },
+  { value: "mrs", label: "Mrs." },
+  { value: "ms", label: "Ms." },
+  { value: "dr", label: "Dr." },
+];
+
+/**
+ * The Business-Type "Other" gap.
+ *
+ * `BUSINESS_TYPES` above has always had an `other` value ("Something else")
+ * with nowhere to say what it actually is — unlike `crm_name`, which already
+ * pairs its own "Other" option with a free-text box (`crmNameOther` in
+ * `funnel-form.tsx`). This is that same fix, applied here: a curated
+ * second-level list first (a dropdown is still a dropdown, not a typing
+ * field), with a final "Other — type it in" option that reveals the free-text
+ * box only when nothing on this list fits either.
+ *
+ * Only reachable when `businessType === 'other'`, so it does not compete with
+ * the nine options already on the main question.
+ */
+export type BusinessTypeOther =
+  | "logistics"
+  | "manufacturing"
+  | "hospitality"
+  | "professional_services"
+  | "automotive"
+  | "beauty_wellness"
+  | "nonprofit"
+  | "typed";
+
+export const BUSINESS_TYPE_OTHER_OPTIONS: ReadonlyArray<FunnelOption<BusinessTypeOther>> = [
+  { value: "logistics", label: "Logistics / transport" },
+  { value: "manufacturing", label: "Manufacturing" },
+  { value: "hospitality", label: "Hospitality / travel" },
+  { value: "professional_services", label: "Professional services (legal, accounting, consulting)" },
+  { value: "automotive", label: "Automotive" },
+  { value: "beauty_wellness", label: "Beauty / wellness" },
+  { value: "nonprofit", label: "NGO / nonprofit" },
+  { value: "typed", label: "Other — type it in" },
+];
+
 /* ────────────────────────────────────────────────────────────────────────────
    Qualification (§3.2)
    ──────────────────────────────────────────────────────────────────────────── */

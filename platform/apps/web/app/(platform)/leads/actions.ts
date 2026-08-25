@@ -382,13 +382,35 @@ export async function sendBookingConfirmationAction(input: {
   }
 }
 
-/* ── WhatsApp message copy ─────────────────────────────────────────────────
+/* ── Message copy ──────────────────────────────────────────────────────────
  *
  * The words sent to an enquirer at each stage, editable without a deploy.
  * Stored in `marketing.message_templates`; the API merges each stored row over
  * the catalogue in @aura/shared so a stage with no row still reports the copy
  * that would actually be sent.
+ *
+ * BOTH CHANNELS since migration 0053. Email copy used to live in TypeScript in
+ * the worker, so it was the one thing on this page an operator could not touch;
+ * it now comes back as a second variant per stage, stored and validated exactly
+ * like the WhatsApp one.
  */
+
+/** One channel's editable copy for a stage. */
+export interface TemplateVariant {
+  channel: "whatsapp" | "email";
+  /** Email only — null on WhatsApp, which has no subject line. */
+  subject: string | null;
+  body: string;
+  enabled: boolean;
+  /** True when somebody has edited it away from the built-in wording. */
+  customised: boolean;
+  defaultSubject: string | null;
+  defaultBody: string;
+  /** Per channel: email gets a bigger ceiling than a chat message. */
+  maxLength: number;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
 
 export interface MessageTemplate {
   key: string;
@@ -398,18 +420,13 @@ export interface MessageTemplate {
   live: boolean;
   blockedBy: string | null;
   allowedPlaceholders: string[];
-  body: string;
-  enabled: boolean;
-  /** True when somebody has edited it away from the built-in wording. */
-  customised: boolean;
-  defaultBody: string;
-  updatedAt: string | null;
-  updatedBy: string | null;
+  whatsapp: TemplateVariant;
+  /** Null for a stage that is deliberately WhatsApp-only. */
+  email: TemplateVariant | null;
 }
 
 export interface TemplatesResult {
   templates?: MessageTemplate[];
-  maxLength?: number;
   error?: string;
 }
 
@@ -432,7 +449,7 @@ export async function listMessageTemplatesAction(): Promise<TemplatesResult> {
       return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
     const data = await res.json();
-    return { templates: data.templates ?? [], maxLength: data.maxLength };
+    return { templates: data.templates ?? [] };
   } catch {
     return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
   }
@@ -445,6 +462,9 @@ export interface SaveTemplateResult {
 
 export async function saveMessageTemplateAction(input: {
   key: string;
+  channel: "whatsapp" | "email";
+  /** Email only. Ignored for whatsapp. */
+  subject?: string;
   body: string;
   enabled: boolean;
 }): Promise<SaveTemplateResult> {
@@ -463,7 +483,13 @@ export async function saveMessageTemplateAction(input: {
         method: "PUT",
         headers: crossTenantHeaders,
         cache: "no-store",
-        body: JSON.stringify({ body: input.body, enabled: input.enabled, actor }),
+        body: JSON.stringify({
+          channel: input.channel,
+          subject: input.subject,
+          body: input.body,
+          enabled: input.enabled,
+          actor,
+        }),
       },
     );
     if (!res.ok) {
@@ -483,6 +509,7 @@ export async function saveMessageTemplateAction(input: {
 
 export async function resetMessageTemplateAction(input: {
   key: string;
+  channel: "whatsapp" | "email";
 }): Promise<SaveTemplateResult> {
   try {
     await requireOperator();
@@ -497,7 +524,7 @@ export async function resetMessageTemplateAction(input: {
         method: "POST",
         headers: crossTenantHeaders,
         cache: "no-store",
-        body: JSON.stringify({ actor }),
+        body: JSON.stringify({ channel: input.channel, actor }),
       },
     );
     if (!res.ok) {

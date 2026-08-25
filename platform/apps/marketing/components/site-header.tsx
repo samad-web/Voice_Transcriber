@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ButtonLink } from "./ui/button";
+import { HeaderCta } from "./header-cta";
 import { Logo } from "@/components/brand/logo";
 import { BRAND, NAV } from "@/lib/site";
 
@@ -25,11 +26,16 @@ import { BRAND, NAV } from "@/lib/site";
  *   bar as the primary action, and it was aimed at people who already bought.
  *   Console access is now an address — /admin — which redirects to the login.
  *
- * Still zero client JavaScript, and now with nothing to hydrate at all. The
- * `<details>` mobile menu is gone with the nav it was holding: two in-page
+ * The `<details>` mobile menu is gone with the nav it was holding: two in-page
  * anchors on a page you scroll anyway do not earn a disclosure widget, a
  * summary element and a popover on a phone. Below `md` the header is the
  * lockup and the CTA, which is the only thing a phone visitor needs from it.
+ *
+ * This used to say "still zero client JavaScript, and now with nothing to
+ * hydrate at all". That stopped being true when the CTA learned to hide itself
+ * on /start — see ./header-cta.tsx for why that needed the pathname and why the
+ * server-only alternatives were worse. The header is otherwise unchanged: the
+ * lockup and the nav are still static server-rendered markup.
  */
 export function SiteHeader() {
   return (
@@ -55,15 +61,7 @@ export function SiteHeader() {
           </ul>
         </nav>
 
-        <Link href="/start" className="mk-cta mk-cta-sm ml-auto">
-          {/* The short form of the page's CTA. The body buttons say "Book my
-              call now"; this drops the "now" because it is a persistent header
-              button rather than a moment of decision, and an urgency word that
-              follows you down every scroll stops reading as urgency. Same verb
-              and same object, so it is unmistakably the same action. */}
-          Book my call
-          <span aria-hidden="true">→</span>
-        </Link>
+        <HeaderCta />
       </div>
     </header>
   );

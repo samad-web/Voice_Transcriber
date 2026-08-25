@@ -13,6 +13,15 @@ export function pageMetadata(opts: {
   title: string;
   description: string;
   path: string;
+  /**
+   * Keep this page out of search results.
+   *
+   * For the token-gated surfaces — a page that only means anything to somebody
+   * holding a private link has nothing to offer a search engine, and indexing
+   * one invites strangers onto a screen whose only honest answer to them is
+   * "this link has expired".
+   */
+  noIndex?: boolean;
 }): Metadata {
   const url = `${SITE_URL}${opts.path}`;
   const fullTitle = opts.path === "/" ? opts.title : `${opts.title}, ${BRAND}`;
@@ -21,6 +30,7 @@ export function pageMetadata(opts: {
     title: opts.title,
     description: opts.description,
     alternates: { canonical: url },
+    ...(opts.noIndex ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
       type: "website",
       url,
