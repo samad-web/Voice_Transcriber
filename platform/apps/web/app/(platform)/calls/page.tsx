@@ -4,6 +4,7 @@ import { Card, EmptyState, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope } from "@/lib/tenant-scope";
 import { CallsExplorer, type CallRow } from "./calls-explorer";
@@ -19,6 +20,9 @@ export default async function CallsPage({
 }: {
   searchParams: Promise<{ org?: string; page?: string; followUp?: string }>;
 }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { org, page, followUp } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 

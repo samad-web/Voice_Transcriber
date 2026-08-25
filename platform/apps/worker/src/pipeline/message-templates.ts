@@ -4,7 +4,9 @@ import {
   fillTemplate,
   firstNameOf,
   getMessageTemplateSpec,
+  getTemplateFallback,
   missingRequiredPlaceholders,
+  titleNameOf,
   type MessageChannel,
 } from "@aura/shared";
 
@@ -27,6 +29,14 @@ import {
  * deliberate instruction, not a failure, and falling back to the code copy
  * would override it — so it is reported as terminal and the outbox records why.
  *
+ * ── BOTH CHANNELS, ONE CACHE ───────────────────────────────────────────────
+ *
+ * The table has always been keyed (key, channel); until migration 0053 only
+ * whatsapp rows existed and this module only rendered them. It now renders
+ * email from the same rows and the same catalogue, so the two channels cannot
+ * drift into separate mechanisms — the only difference between them is that an
+ * email also carries a subject.
+ *
  * ── WHY IT IS CACHED ───────────────────────────────────────────────────────
  *
  * The drain processes up to 100 rows a tick and would otherwise issue one query
@@ -37,7 +47,7 @@ import {
 
 const TTL_MS = 60_000;
 
-type StoredTemplate = { body: string; enabled: boolean };
+type StoredTemplate = { subject: string | null; body: string; enabled: boolean };
 
 let cache: Map<string, StoredTemplate> | null = null;
 let cachedAt = 0;
@@ -55,9 +65,9 @@ function cacheKey(key: string, channel: MessageChannel): string {
 /**
  * Load every template in one query.
  *
- * All of them, not the one being sent: there are five rows totalling a few
- * kilobytes, and a per-key cache would issue five queries in the first second
- * after every expiry instead of one.
+ * All of them, not the one being sent: there are a few dozen rows totalling a
+ * few kilobytes, and a per-key cache would issue one query per key in the first
+ * second after every expiry instead of one.
  *
  * A failed load caches NOTHING and leaves the previous map in place, so a
  * transient error falls back to slightly stale copy rather than to the compiled
@@ -84,12 +94,19 @@ async function load(): Promise<Map<string, StoredTemplate>> {
     const { rows } = await pool.query<{
       key: string;
       channel: MessageChannel;
+      subject: string | null;
       body: string;
       enabled: boolean;
-    }>(`SELECT key, channel, body, enabled FROM marketing.message_templates`);
+    }>(`SELECT key, channel, subject, body, enabled FROM marketing.message_templates`);
 
     const next = new Map<string, StoredTemplate>();
-    for (const r of rows) next.set(cacheKey(r.key, r.channel), { body: r.body, enabled: r.enabled });
+    for (const r of rows) {
+      next.set(cacheKey(r.key, r.channel), {
+        subject: r.subject,
+        body: r.body,
+        enabled: r.enabled,
+      });
+    }
     cache = next;
     cachedAt = now;
     return cache;
@@ -104,13 +121,14 @@ async function load(): Promise<Map<string, StoredTemplate>> {
   }
 }
 
-export type WhatsAppVars = {
+export type TemplateVars = {
   name: string;
-  /** Only for `booking_confirmed`. Absent elsewhere. */
+  /** What they chose on the form, when they chose anything. Drives {{title_name}}. */
+  salutation?: string | null;
+  /** Only for the booking stages. Absent elsewhere. */
   slot?: string;
   /**
-   * The Google Meet URL, when the calendar produced one. Only for
-   * `booking_confirmed`.
+   * The Google Meet URL, when the calendar produced one.
    *
    * Genuinely optional, and not merely "usually present": a booking made while
    * the calendar is misconfigured, or before domain-wide delegation was
@@ -122,56 +140,84 @@ export type WhatsAppVars = {
    */
   meetLink?: string;
   /**
+   * The link that lets somebody move their own booking. Optional in the same
+   * sentence-dropping sense as `meetLink`: a reminder that could not mint one
+   * still needs to say when the call is. See REQUIRED_PLACEHOLDERS in
+   * @aura/shared for why this differs from `resumeLink`.
+   */
+  rescheduleLink?: string;
+  /**
    * The link back into a half-finished form. Only for `resume_form` and
    * `resume_form_2`.
    *
-   * REQUIRED where the copy uses it, unlike meetLink — see the check in
-   * `renderWhatsAppMessage`. A nudge with no link has nothing for the reader to
-   * do, so its absence fails the send rather than trimming the sentence.
+   * REQUIRED where the copy uses it, unlike the two above — see the check in
+   * `renderMessage`. A nudge with no link has nothing for the reader to do, so
+   * its absence fails the send rather than trimming the sentence.
    */
   resumeLink?: string;
 };
 
 export type RenderedMessage =
-  | { ok: true; text: string }
+  | { ok: true; text: string; subject?: string }
   | { ok: false; reason: string };
 
+/** The values every placeholder resolves to, built once per render. */
+function placeholderValues(vars: TemplateVars): Record<string, string | undefined> {
+  return {
+    first_name: firstNameOf(vars.name),
+    name: capitalizeName(vars.name),
+    // Degrades title → first name → the neutral word, so a template that greets
+    // with {{title_name}} never renders "Hi ,".
+    title_name: titleNameOf(vars.salutation, vars.name) ?? firstNameOf(vars.name),
+    slot: vars.slot,
+    meet_link: vars.meetLink,
+    reschedule_link: vars.rescheduleLink,
+    resume_link: vars.resumeLink,
+  };
+}
+
 /**
- * Render the WhatsApp copy for a stage.
+ * Render one stage on one channel.
  *
- * Returns `ok: false` for exactly two things, both terminal and both worth an
- * operator seeing: a template that does not exist (a bug — an outbox row for a
- * stage nobody defined) and one that has been switched off.
+ * Returns `ok: false` for exactly three things, all terminal and all worth an
+ * operator seeing: a stage that does not exist (a bug — an outbox row for a
+ * stage nobody defined), a stage with no copy for this channel (a WhatsApp-only
+ * stage queued on email), and one that has been switched off.
  */
-export async function renderWhatsAppMessage(
+export async function renderMessage(
   key: string,
-  vars: WhatsAppVars,
+  channel: MessageChannel,
+  vars: TemplateVars,
 ): Promise<RenderedMessage> {
   const spec = getMessageTemplateSpec(key);
-  if (!spec) return { ok: false, reason: `no WhatsApp copy is defined for "${key}"` };
+  if (!spec) return { ok: false, reason: `no copy is defined for "${key}"` };
 
-  const stored = (await load()).get(cacheKey(key, "whatsapp"));
+  const fallback = getTemplateFallback(key, channel);
+  if (!fallback) {
+    return {
+      ok: false,
+      reason: `"${spec.label}" has no ${channel} copy — it is a ${
+        channel === "email" ? "WhatsApp" : "email"
+      }-only stage`,
+    };
+  }
+
+  const stored = (await load()).get(cacheKey(key, channel));
   if (stored && !stored.enabled) {
     return { ok: false, reason: `the "${spec.label}" message is switched off in the console` };
   }
 
-  const body = stored?.body ?? spec.whatsapp;
-
-  const vals = {
-    first_name: firstNameOf(vars.name),
-    name: capitalizeName(vars.name),
-    slot: vars.slot,
-    meet_link: vars.meetLink,
-    resume_link: vars.resumeLink,
-  };
+  const body = stored?.body ?? fallback.body;
+  const subject = stored?.subject ?? fallback.subject;
+  const vals = placeholderValues(vars);
 
   /**
    * Refuse rather than substitute when a REQUIRED placeholder has no value.
    *
    * `fillTemplate` replaces anything unresolved with the neutral word, which is
-   * right for a name and catastrophic for a link: "pick up where you left off:
-   * there" is an instruction the reader cannot follow, sent to someone who
-   * already declined to finish once.
+   * right for a name and catastrophic for a resume link: "pick up where you
+   * left off: there" is an instruction the reader cannot follow, sent to
+   * someone who already declined to finish once.
    *
    * Terminal, so the outbox records the reason instead of retrying six times.
    * The realistic cause is a deployment with no SITE_DOMAIN, which no amount of
@@ -187,8 +233,19 @@ export async function renderWhatsAppMessage(
     };
   }
 
-  // `vals` above is the single source of what each placeholder resolves to —
-  // built once so the required-placeholder check and the substitution can never
-  // disagree about whether a value was present.
-  return { ok: true, text: fillTemplate(body, vals) };
+  return {
+    ok: true,
+    text: fillTemplate(body, vals),
+    // A subject is substituted too: "Your Aura call is confirmed for {{slot}}"
+    // is the whole reason a subject line is worth having here.
+    ...(channel === "email" && subject ? { subject: fillTemplate(subject, vals) } : {}),
+  };
+}
+
+/** Convenience wrapper for the WhatsApp path, which is most call sites. */
+export async function renderWhatsAppMessage(
+  key: string,
+  vars: TemplateVars,
+): Promise<RenderedMessage> {
+  return renderMessage(key, "whatsapp", vars);
 }

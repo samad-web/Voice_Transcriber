@@ -2,6 +2,7 @@ import type { CrmProviderSpec } from "@aura/shared";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope, workspacesFor } from "@/lib/tenant-scope";
 import { CrmManager } from "./crm-manager";
@@ -17,6 +18,9 @@ export default async function CrmPage({
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { org } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 

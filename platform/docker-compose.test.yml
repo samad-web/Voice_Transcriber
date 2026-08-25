@@ -100,9 +100,19 @@ services:
       timeout: 3s
       retries: 30
 
-  # Creates the bucket the API and worker expect. Runs to completion and exits 0;
-  # `depends_on: service_completed_successfully` is what makes `up --wait` block
-  # on the bucket existing rather than merely on MinIO being up.
+  # Creates the bucket the API and worker expect. Runs to completion and exits 0.
+  #
+  # DELIBERATELY EXCLUDED FROM `up --wait`'S SERVICE LIST (test:integration:up in
+  # package.json) — confirmed on Compose v2.40.3-desktop.1, 2026-08-16: `--wait`
+  # treats ANY container it observes in an "exited" state as a failure and returns
+  # exit code 1, even at code 0, even for a service with no healthcheck and
+  # restart: "no" (the implicit default) that was always going to exit. There is
+  # no per-service opt-out for this in `--wait` itself. So `up --wait` names only
+  # the three long-running services (postgres/rabbitmq/minio); this one-shot job
+  # runs as a SEPARATE, un-waited `docker compose up minio-init` immediately
+  # after, whose own exit code is the real signal — 0 means the bucket exists, and
+  # a nonzero one correctly fails the script instead of being swallowed by the
+  # first command's already-successful exit.
   minio-init:
     image: minio/mc:latest
     depends_on:

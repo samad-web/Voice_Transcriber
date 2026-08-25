@@ -1,5 +1,5 @@
 import { getScheduler } from "@/lib/scheduler";
-import { query } from "./db";
+import { query, withTransaction } from "./db";
 
 /**
  * Reading and claiming booking slots from the public funnel. SERVER ONLY.
@@ -178,6 +178,129 @@ export async function bookSlot(
 
   return { ok: true, dayLabel: row.day_label, timeLabel: row.time_label, meetingUrl };
 }
+
+export type RescheduleResult =
+  | {
+      ok: true;
+      dayLabel: string;
+      timeLabel: string;
+      startsAt: Date;
+      endsAt: Date;
+      /** The event to cancel in Google, if the old booking had one. */
+      oldCalendarEventId: string | null;
+    }
+  /** The new time went to somebody else, or slipped inside the notice window. */
+  | { ok: false; reason: "taken" }
+  /** The old booking is no longer theirs to move — cancelled, or already moved. */
+  | { ok: false; reason: "gone" };
+
+/**
+ * Move a booking from one slot to another.
+ *
+ * ── WHY THIS IS ONE TRANSACTION AND `bookSlot` IS NOT ──────────────────────
+ *
+ * A plain claim is a single atomic UPDATE, and that is genuinely sufficient:
+ * one statement either matches an open row or does not. A reschedule is two
+ * statements that must both hold, and each of the four ways to get that wrong
+ * is a real failure someone would experience:
+ *
+ *   release then fail to claim   they lose their appointment and get nothing
+ *   claim then fail to release   the team's diary shows them twice
+ *
+ * So both run inside `withTransaction`, and a zero-row result on either rolls
+ * the whole thing back. The visitor ends up exactly where they started, which
+ * is the only acceptable outcome for a failed move.
+ *
+ * ── ORDER: RELEASE FIRST ───────────────────────────────────────────────────
+ *
+ * Releasing before claiming lets somebody move to an ADJACENT slot without
+ * fighting themselves for it, and — more importantly — it is the order that
+ * makes `booking_slots_starts_uniq` a non-issue, since the old row goes back to
+ * 'open' before the new one is touched.
+ *
+ * ── THE `submission_id = $2` GUARD IS THE AUTHORISATION CHECK ──────────────
+ *
+ * The submission id comes from the signed httpOnly cookie the token exchange
+ * set, never from the request body. Pinning the release to it means a token for
+ * one booking cannot release a different one, even if a slot id were guessed.
+ *
+ * Google is told AFTER the commit, in the caller — the database decides, the
+ * calendar mirrors, and a Google failure must never undo a real reservation.
+ */
+export async function rescheduleSlot(
+  oldSlotId: string,
+  newSlotId: string,
+  submissionId: string,
+  name: string,
+  timeZone: string,
+  noticeMinutes = DEFAULT_NOTICE_MINUTES,
+): Promise<RescheduleResult> {
+  return withTransaction<RescheduleResult>(async (client) => {
+    const { rows: released } = await client.query<{ calendar_event_id: string | null }>(
+      `UPDATE marketing.booking_slots
+          SET status            = 'open',
+              submission_id     = NULL,
+              booked_at         = NULL,
+              booked_name       = NULL,
+              calendar_event_id = NULL,
+              calendar_error    = NULL,
+              meeting_url       = NULL
+        WHERE id = $1
+          AND submission_id = $2
+          AND status = 'booked'
+      RETURNING calendar_event_id`,
+      [oldSlotId, submissionId],
+    );
+    if (released.length === 0) return { ok: false as const, reason: "gone" as const };
+
+    // The same notice window and busy check the picker was drawn with, so a
+    // slot that has slipped inside it while the page sat open is refused rather
+    // than silently taken.
+    const { rows: claimed } = await client.query<{
+      day_label: string;
+      time_label: string;
+      starts_at: Date;
+      ends_at: Date;
+    }>(
+      `UPDATE marketing.booking_slots
+          SET status = 'booked',
+              submission_id = $2,
+              booked_at = now(),
+              booked_name = $3
+        WHERE id = $1
+          AND status = 'open'
+          AND external_busy_at IS NULL
+          AND starts_at > now() + make_interval(mins => $5)
+      RETURNING to_char(starts_at AT TIME ZONE $4, 'Dy, DD Mon') AS day_label,
+                to_char(starts_at AT TIME ZONE $4, 'HH24:MI')    AS time_label,
+                starts_at, ends_at`,
+      [newSlotId, submissionId, name.slice(0, 200), timeZone, noticeMinutes],
+    );
+    if (claimed.length === 0) {
+      // Throwing is what rolls back the release above. Caught immediately below
+      // and turned back into an ordinary "taken" answer — the visitor sees the
+      // same message they would from a lost race on a first booking, and their
+      // original slot is still theirs.
+      throw new SlotUnavailable();
+    }
+
+    const row = claimed[0]!;
+    return {
+      ok: true as const,
+      dayLabel: row.day_label,
+      timeLabel: row.time_label,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      oldCalendarEventId: released[0]!.calendar_event_id,
+    };
+  }).catch((err) => {
+    if (err instanceof SlotUnavailable) return { ok: false as const, reason: "taken" as const };
+    throw err;
+  });
+}
+
+/** Internal control flow for `rescheduleSlot` — never escapes this module. */
+class SlotUnavailable extends Error {}
 
 /**
  * Mirror a claimed slot into Google Calendar.

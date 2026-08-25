@@ -3,6 +3,7 @@ import { Activity, Building2, DollarSign, HardDrive, Phone } from "lucide-react"
 import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin, apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope } from "@/lib/tenant-scope";
 
@@ -45,6 +46,9 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { org } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 

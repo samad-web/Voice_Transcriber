@@ -1,21 +1,26 @@
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope } from "@/lib/tenant-scope";
-import { TeamManager, type Member, type Workspace } from "./team-manager";
+import { TeamManager, type CrmRole, type Member, type Workspace } from "./team-manager";
 
 export default async function TeamPage({
   searchParams,
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { org } = await searchParams;
   const { tenants, orgId } = await resolveTenantScope(org);
 
-  const [members, workspaces] = await Promise.all([
+  const [members, workspaces, roles] = await Promise.all([
     apiGetAs<{ members: Member[] }>("/v1/members", orgId),
     apiGetAs<{ workspaces: Workspace[] }>("/v1/workspaces", orgId),
+    apiGetAs<{ roles: CrmRole[] }>("/v1/roles", orgId),
   ]);
 
   return (
@@ -35,6 +40,7 @@ export default async function TeamPage({
         <TeamManager
           members={members?.members ?? []}
           workspaces={workspaces?.workspaces ?? []}
+          roles={roles?.roles ?? []}
           orgId={orgId}
         />
       )}

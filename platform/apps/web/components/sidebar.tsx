@@ -14,6 +14,9 @@ export function Sidebar({
   area = "platform",
   /** Owner-console persona (design doc §9); ignored when area !== "owner". */
   ownerRole,
+  /** A6's shadow-read flag (CRM_SHADOW_READ_ENABLED), resolved server-side by
+   *  the owner layout — a client component cannot read that env var itself. */
+  crmPrimary = false,
   /** Rail heading. The owner console shows their company name here. */
   title = "Aura Platform",
   subtitle = "Call Intelligence",
@@ -21,11 +24,12 @@ export function Sidebar({
   email?: string | null;
   area?: NavArea;
   ownerRole?: OwnerRole;
+  crmPrimary?: boolean;
   title?: string;
   subtitle?: string;
 }) {
   const pathname = usePathname();
-  const items = area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner") : NAV_ITEMS;
+  const items = area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary) : NAV_ITEMS;
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-surface p-4 md:flex lg:w-64">

@@ -5,6 +5,7 @@ import type { PipelineMessage } from "@aura/queue";
 import { ExtractionSchema } from "@aura/shared";
 import { type AsrResult, transcribe } from "./asr";
 import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
+import { projectLeadToCrm } from "./crm-objects";
 import { upsertLead } from "./leads";
 import { enqueueDispatch } from "./outbox";
 
@@ -454,9 +455,11 @@ export async function runPostAsrStages(
   // this false, so a lead-only connector stays silent rather than sending a
   // call whose qualification was never actually established.
   let qualified = false;
+  let leadId: string | null = null;
   try {
     const lead = await upsertLead(client, orgId, callId);
     qualified = lead.leadId !== null;
+    leadId = lead.leadId;
     console.log(
       lead.leadId
         ? `call ${callId}: lead ${lead.leadId} ${lead.reason}`
@@ -464,6 +467,44 @@ export async function runPostAsrStages(
     );
   } catch (err) {
     console.error(`call ${callId}: lead projection error (non-blocking):`, err);
+  }
+
+  // CRM Phase 1 foundation (E0.1): project the same lead onto the new
+  // Contact/Deal object model, alongside `leads` — not instead of it. Its own
+  // try/catch, strictly AFTER upsertLead and reading back what it wrote, so a
+  // bug here can never affect whether the call reaches COMPLETE or whether
+  // `leads`/crm-dispatch below run. The owner console's board/leads pages
+  // still read `leads`, not contacts/deals, as their primary source (A6) —
+  // this write is additive until that cutover happens.
+  if (leadId) {
+    try {
+      const projection = await projectLeadToCrm(client, orgId, leadId);
+      if (projection.reason === "no default pipeline for org") {
+        // This org gets ZERO CRM projection until someone seeds a default
+        // pipeline — worth an operator's attention, not a scrolled-past log
+        // line. Spam-guarded to one row per org per day, since every future
+        // call on this org hits the same no-op otherwise.
+        console.error(
+          `call ${callId}: crm-object projection skipped — org ${orgId} has no default pipeline`,
+        );
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
+           SELECT $1, 'system', 'pipeline', 'crm.no_default_pipeline', 'organization', '{}'::jsonb
+            WHERE NOT EXISTS (
+              SELECT 1 FROM audit_log
+               WHERE org_id = $1 AND action = 'crm.no_default_pipeline'
+                 AND created_at > now() - interval '24 hours'
+            )`,
+          [orgId],
+        );
+      } else {
+        console.log(
+          `call ${callId}: crm-object contact=${projection.contactId} deal=${projection.dealId} (${projection.reason})`,
+        );
+      }
+    } catch (err) {
+      console.error(`call ${callId}: crm-object projection error (non-blocking):`, err);
+    }
   }
 
   // Queue the lead for every connected integration and try once immediately.

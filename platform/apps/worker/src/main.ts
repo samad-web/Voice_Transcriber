@@ -7,10 +7,16 @@ import { processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
+import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
 import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
+import { startMailboxSync } from "./pipeline/email-sync";
+import { startCalendarSync } from "./pipeline/calendar-sync";
+import { startAutomationEngine } from "./pipeline/automation";
 import { startBookingConfirmations } from "./pipeline/booking-confirmations";
+import { startBookingNotificationDrain } from "./pipeline/booking-notifications-outbox";
+import { startCallReminders } from "./pipeline/call-reminders";
 import { startFormNudges } from "./pipeline/form-nudges";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
@@ -23,6 +29,11 @@ async function bootstrap() {
 
   await consumePipeline(processCall);
   startReaper();
+  // A6's shadow-read burn-in check: does a lead's dual-written deal/contact
+  // still agree with it? Off unless CRM_RECONCILE_ENABLED=true — see the
+  // module header for why this is opt-in and why stage/status are gated
+  // separately from everything else it compares.
+  startCrmReconcileSweep();
   // Redelivers anything the inline attempt couldn't land. Runs regardless of
   // queue traffic, so a CRM that recovers overnight still gets yesterday's leads.
   startOutboxDrain();
@@ -63,11 +74,37 @@ async function bootstrap() {
   // closes the matching slot, so an hour blocked out by hand stops being
   // offered to visitors. Silent no-op without Google credentials.
   startCalendarBusySync();
+  // Pulls each USER's own connected mailbox onto the interaction timeline —
+  // and only the messages whose other side is already a contact, so a rep's
+  // private mail never enters the CRM. No-op until somebody connects an
+  // account. See the module header for why polling rather than webhooks.
+  startMailboxSync();
+  // And each user's own CALENDAR, under the same rule: an event reaches the
+  // timeline only if somebody on its guest list is already a contact, so a
+  // rep's dentist appointment never becomes a CRM record. Unlike the mail
+  // sweep this looks forward as well as back — a meeting next Thursday is the
+  // most useful thing on a deal — and it removes events that get cancelled.
+  startCalendarSync();
+  // Layer 2's rule engine. Drains the events the API enqueues, and sweeps for
+  // the triggers no person causes (a deal going quiet, a task going late).
+  // Nothing it does enqueues an event, which is what makes rule loops
+  // structurally impossible rather than merely unlikely — see the module
+  // header. It has no send-an-email action, deliberately.
+  startAutomationEngine();
   // Queues the WhatsApp confirmation — with the Meet link — for anyone who has
   // booked and not had one. It lives here rather than in the booking itself
   // because the public marketing role holds no grant on the outbox; see the
   // module header.
   startBookingConfirmations();
+  // The booking outbox: pre-call reminders, the attended/no-show message the
+  // console queues, and the no-show nurture drip. Keyed on the BOOKING rather
+  // than the person, so a rescheduled call gets a fresh set of reminders — see
+  // the module header for why that needs a second table.
+  startBookingNotificationDrain();
+  // And the sweep that fills it. Works out 24h/1h/5m from each booking's own
+  // start time and queues three rows stamped with those instants, so the
+  // schedule survives a worker restart instead of living in a timing window.
+  startCallReminders();
   // Nudges people who gave their details and never answered the questions,
   // with a private link back into their own half-finished form. Two messages,
   // ever — see the module header.
@@ -78,7 +115,7 @@ async function bootstrap() {
   console.log(
     `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
-      "+ booking confirmations + form nudges",
+      "+ booking confirmations + call reminders + form nudges",
   );
 }
 

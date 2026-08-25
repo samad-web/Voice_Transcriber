@@ -20,18 +20,21 @@ export function MobileNav({
   area = "platform",
   /** Owner-console persona (design doc §9); ignored when area !== "owner". */
   ownerRole,
+  /** See <Sidebar>: A6's shadow-read flag, resolved server-side and passed down. */
+  crmPrimary = false,
   title = "Aura Platform",
   subtitle = "Call Intelligence",
 }: {
   email?: string | null;
   area?: NavArea;
   ownerRole?: OwnerRole;
+  crmPrimary?: boolean;
   title?: string;
   subtitle?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const items = area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner") : NAV_ITEMS;
+  const items = area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary) : NAV_ITEMS;
   const current = navItemFor(pathname, items);
 
   // Navigating (or resizing up into the sidebar breakpoint) must not leave the

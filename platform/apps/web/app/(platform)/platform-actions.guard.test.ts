@@ -26,6 +26,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankNonCode, bodyBraceAfter, matchDelimiter } from "@/lib/test-support/source-scan";
 
 /** This test file lives at the root of the route group it polices. */
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -58,94 +59,6 @@ function findActionFiles(dir: string, prefix = ""): string[] {
     else if (entry.name === "actions.ts") found.push(rel);
   }
   return found.sort();
-}
-
-/**
- * Blank out everything that is not code — line comments, block comments, and
- * the contents of every quoted string and template literal — preserving length
- * and newlines so offsets still line up with the original.
- *
- * Not fastidiousness. Two concrete failures made it necessary:
- *
- *   · `` `${API_URL}/v1/calls/${callId}` `` appears in every one of these
- *     files, and a brace counter that did not understand template literals
- *     closes the function early, at the `}` of `${callId}` — then reports a
- *     guarded action as unguarded, or worse, the reverse.
- *   · `agents/actions.ts:31` has a doc comment INSIDE a parameter list
- *     containing the word "environment's", whose apostrophe opens a string
- *     that never closes and swallows the rest of the file.
- *
- * Blanking first makes every scanner below a plain counter, and it also means
- * `requireOperator` merely MENTIONED in a comment cannot satisfy the check.
- */
-function blankNonCode(source: string): string {
-  const out = source.split("");
-  const blank = (from: number, to: number) => {
-    for (let i = from; i < to && i < out.length; i++) if (out[i] !== "\n") out[i] = " ";
-  };
-
-  for (let i = 0; i < source.length; i++) {
-    const c = source[i];
-    const next = source[i + 1];
-
-    if (c === "/" && next === "/") {
-      const nl = source.indexOf("\n", i);
-      const end = nl === -1 ? source.length : nl;
-      blank(i, end);
-      i = end;
-      continue;
-    }
-    if (c === "/" && next === "*") {
-      const close = source.indexOf("*/", i + 2);
-      const end = close === -1 ? source.length : close + 2;
-      blank(i, end);
-      i = end - 1;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      let j = i + 1;
-      while (j < source.length) {
-        if (source[j] === "\\") j += 2;
-        else if (source[j] === c) break;
-        else j++;
-      }
-      // Keep the delimiters so the text still reads as a string; blank what is
-      // between them, interpolations included.
-      blank(i + 1, j);
-      i = j;
-      continue;
-    }
-  }
-  return out.join("");
-}
-
-/** Index of the delimiter matching the one at `open`. Code-only input. */
-function matchDelimiter(code: string, open: number, openCh: string, closeCh: string): number {
-  let depth = 0;
-  for (let i = open; i < code.length; i++) {
-    if (code[i] === openCh) depth++;
-    else if (code[i] === closeCh && --depth === 0) return i;
-  }
-  throw new Error(
-    `unbalanced ${openCh}${closeCh} at ${open} — the scanner is wrong, not the source`,
-  );
-}
-
-/**
- * From just past a parameter list, the `{` that opens the body. Not simply the
- * next `{`: a return-type annotation legitimately contains one, as in
- * `Promise<{ results?: SearchResult[]; error?: string }>`. The body brace is
- * the first at angle-bracket depth zero.
- */
-function bodyBraceAfter(code: string, from: number): number {
-  let angle = 0;
-  for (let i = from; i < code.length; i++) {
-    const c = code[i];
-    if (c === "<") angle++;
-    else if (c === ">") angle--;
-    else if (c === "{" && angle <= 0) return i;
-  }
-  throw new Error("no function body found after a parameter list");
 }
 
 interface Action {
@@ -314,35 +227,6 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
   });
 });
 
-describe("blankNonCode — the scanner this suite's correctness rests on", () => {
-  // Self-tests, for the same reason apps/api ships guard-harness.spec.ts with
-  // its own: a silently wrong scanner weakens every assertion above at once,
-  // and it fails OPEN (an action whose body it truncates before the guard call
-  // is reported as unguarded; one it over-extends is reported as guarded).
-  it("blanks a template literal's interpolations, braces included", () => {
-    const out = blankNonCode("const u = `${API}/v1/calls/${id}`;");
-    expect(out).toHaveLength("const u = `${API}/v1/calls/${id}`;".length);
-    expect(out).not.toContain("{");
-    expect(out).toContain("`");
-  });
-
-  it("blanks an apostrophe inside a block comment without eating the rest", () => {
-    const src = "function f(\n  /** the environment's id */\n  a: string,\n) {\n  return a;\n}";
-    const out = blankNonCode(src);
-    expect(out).toContain("return a;");
-    expect(matchDelimiter(out, out.indexOf("("), "(", ")")).toBeGreaterThan(0);
-  });
-
-  it("blanks a commented-out call so a mention cannot satisfy the check", () => {
-    const out = blankNonCode("// await requireOperator();\nconst x = 1;");
-    expect(GUARD_CALL.test(out)).toBe(false);
-    expect(out).toContain("const x = 1;");
-  });
-
-  it("preserves offsets and line count exactly", () => {
-    const src = 'const a = "xx"; // note\n/* block */ const b = `yy`;\n';
-    const out = blankNonCode(src);
-    expect(out).toHaveLength(src.length);
-    expect(out.split("\n")).toHaveLength(src.split("\n").length);
-  });
-});
+// The scanner's own self-tests live in lib/test-support/source-scan.test.ts —
+// shared by this suite and platform-pages.guard.test.ts, so they are proven
+// once rather than twice.

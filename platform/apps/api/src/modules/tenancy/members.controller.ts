@@ -31,6 +31,16 @@ const CreateMemberBody = z.object({
 
 const UpdateMemberBody = z.object({
   role: Role.optional(),
+  /**
+   * Assign a `roles` row (migration 0039) — including a CUSTOM one, which the
+   * legacy `role` enum above cannot express. Null clears it, which falls the
+   * member back to the grants of whatever system role `role` names.
+   *
+   * Sent on its own this leaves `role` untouched, so the legacy enum every
+   * existing guard still reads is never changed as a side effect of granting
+   * someone a custom CRM role.
+   */
+  roleId: z.string().uuid().nullable().optional(),
   recordingsListen: z.boolean().optional(),
   recordingsExport: z.boolean().optional(),
 });
@@ -48,11 +58,13 @@ export class MembersController {
       // memberships is RLS-scoped to the org; users is a global platform table.
       const { rows } = await client.query(
         `SELECT u.id AS "userId", u.email, u.name, m.role,
+                m.role_id AS "roleId", r.name AS "roleName",
                 m.recordings_listen AS "recordingsListen",
                 m.recordings_export AS "recordingsExport",
                 m.scope_type AS "scopeType", m.scope_id AS "scopeId"
            FROM memberships m
            JOIN users u ON u.id = m.user_id
+           LEFT JOIN roles r ON r.id = m.role_id
           ORDER BY u.email`,
       );
       return { members: rows };
@@ -89,14 +101,23 @@ export class MembersController {
       const {
         rows: [membership],
       } = await client.query(
+        // `role_id` mirrors `role` onto the 0039 roles table. 0039 backfilled
+        // the memberships that existed when it ran; without this every member
+        // created afterwards would keep a NULL role_id forever and hold no CRM
+        // grants at all. The subselect matches on the same (org_id, key) pair
+        // that backfill used.
         `INSERT INTO memberships
-           (org_id, user_id, scope_type, scope_id, role, recordings_listen, recordings_export)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (org_id, user_id, scope_type, scope_id, role, role_id,
+            recordings_listen, recordings_export)
+         VALUES ($1, $2, $3, $4, $5,
+                 (SELECT id FROM roles WHERE org_id = $1 AND key = $5), $6, $7)
          ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE SET
            role = EXCLUDED.role,
+           role_id = EXCLUDED.role_id,
            recordings_listen = EXCLUDED.recordings_listen,
            recordings_export = EXCLUDED.recordings_export
          RETURNING id, scope_type AS "scopeType", scope_id AS "scopeId", role,
+                   role_id AS "roleId",
                    recordings_listen AS "recordingsListen",
                    recordings_export AS "recordingsExport"`,
         [orgId, user.id, scopeType, scopeId, role, recordingsListen ?? false, recordingsExport ?? false],
@@ -123,6 +144,18 @@ export class MembersController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
+      // An explicit roleId must name a role in THIS org. Checked up front rather
+      // than left to the FK, which would only catch a wholly non-existent id —
+      // a real role belonging to a DIFFERENT tenant would satisfy the constraint
+      // while granting this member another org's permission grid.
+      if (p.roleId != null) {
+        const role = await client.query("SELECT 1 FROM roles WHERE id = $1 AND org_id = $2", [
+          p.roleId,
+          orgId,
+        ]);
+        if (role.rowCount === 0) throw new NotFoundException("role not found in this org");
+      }
+
       const { rows } = await client.query(
         // `org_id = $5` is defence in depth, not the primary control. Today the
         // primary control is RLS: withOrg runs on getPool() as `aura_app`, which
@@ -145,16 +178,35 @@ export class MembersController {
         // which is why owner_role is a separate column rather than a reuse of
         // `role` — an operator's team edit must never regrade a live owner
         // console login.
+        //
+        // role_id has three cases, in priority order: an explicit roleId wins
+        // (including an explicit null, which is why the "was it supplied?" flag
+        // is a separate parameter from the value — COALESCE cannot tell "clear
+        // it" from "leave it alone"); otherwise a role change re-syncs it to the
+        // matching system role; otherwise it is left exactly as it was.
         `UPDATE memberships SET
            role = COALESCE($2, role),
+           role_id = CASE
+             WHEN $6::boolean THEN $7::uuid
+             WHEN $2::text IS NOT NULL THEN (SELECT id FROM roles WHERE org_id = $5 AND key = $2)
+             ELSE role_id
+           END,
            recordings_listen = COALESCE($3, recordings_listen),
            recordings_export = COALESCE($4, recordings_export)
          WHERE user_id = $1
            AND org_id = $5
          RETURNING id, user_id AS "userId", scope_type AS "scopeType", scope_id AS "scopeId",
-                   role, recordings_listen AS "recordingsListen",
+                   role, role_id AS "roleId", recordings_listen AS "recordingsListen",
                    recordings_export AS "recordingsExport"`,
-        [userId, p.role ?? null, p.recordingsListen ?? null, p.recordingsExport ?? null, orgId],
+        [
+          userId,
+          p.role ?? null,
+          p.recordingsListen ?? null,
+          p.recordingsExport ?? null,
+          orgId,
+          p.roleId !== undefined,
+          p.roleId ?? null,
+        ],
       );
       if (rows.length === 0) throw new NotFoundException("member not found in this org");
 

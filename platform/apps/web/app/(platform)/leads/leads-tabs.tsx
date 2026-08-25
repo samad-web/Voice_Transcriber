@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { FunnelCriteria } from "@aura/shared";
 import type { Lead, MessageTemplate } from "./actions";
 import { LeadsTable } from "./leads-table";
-import { WhatsAppTemplates } from "./whatsapp-templates";
+import { MessageTemplates } from "./message-templates";
 import { CriteriaEditor } from "./criteria-editor";
 
 /**
@@ -42,7 +42,6 @@ export function LeadsTabs({
   leadsError,
   templates,
   templatesError,
-  maxLength,
   criteria,
   criteriaUpdatedAt,
   criteriaUpdatedBy,
@@ -52,7 +51,6 @@ export function LeadsTabs({
   leadsError?: string;
   templates: MessageTemplate[];
   templatesError?: string;
-  maxLength: number;
   criteria: FunnelCriteria;
   criteriaUpdatedAt?: string;
   criteriaUpdatedBy?: string | null;
@@ -68,7 +66,7 @@ export function LeadsTabs({
           Leads{leads.length > 0 ? ` (${leads.length})` : ""}
         </Tab>
         <Tab id="whatsapp" current={tab} onSelect={setTab}>
-          WhatsApp
+          Messages
         </Tab>
         {/* Third, and last, because it is the one an operator visits least and
             the one with the widest blast radius: editing it changes how every
@@ -106,7 +104,7 @@ export function LeadsTabs({
             when this table is unreachable. Only editing is unavailable.
           </ErrorCard>
         ) : (
-          <WhatsAppTemplates initial={templates} maxLength={maxLength} />
+          <MessageTemplates initial={templates} />
         )}
       </div>
 

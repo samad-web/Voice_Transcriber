@@ -14,7 +14,7 @@
     "test:watch": "pnpm -r --parallel --if-present test:watch",
     "test:integration": "pnpm -r build && vitest run --config vitest.integration.config.ts",
     "test:integration:only": "vitest run --config vitest.integration.config.ts",
-    "test:integration:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "test:integration:up": "docker compose -f docker-compose.test.yml up -d --wait postgres rabbitmq minio && docker compose -f docker-compose.test.yml up minio-init",
     "test:integration:down": "docker compose -f docker-compose.test.yml down -v",
     "tenancy:check": "node scripts/check-tenancy.js",
     "infra:up": "docker compose up -d",

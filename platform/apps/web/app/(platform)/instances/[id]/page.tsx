@@ -16,6 +16,7 @@ import {
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { workspacesFor } from "@/lib/tenant-scope";
 import type { CallRow } from "../../calls/calls-explorer";
@@ -132,6 +133,9 @@ const SCROLLER = "overflow-x-auto";
 
 /** `id` is the customer's org id — the tenant boundary the instance lives in. */
 export default async function InstanceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { id: orgId } = await params;
 
   const org = await apiGetAs<Org>("/v1/org", orgId);

@@ -129,3 +129,181 @@ export function contactLabel(lead: Lead): string {
   if (lead.contact_number_last3) return `…${lead.contact_number_last3}`;
   return "no number";
 }
+
+/**
+ * CRM Phase 1 foundation (E0.1) — Account/Contact/Deal, alongside the Lead
+ * shapes above rather than instead of them. See the Phase 1 plan.
+ */
+
+export interface Deal {
+  id: string;
+  pipeline_id: string;
+  workspace_id: string | null;
+  account_id: string | null;
+  contact_id: string | null;
+  name: string;
+  stage: string;
+  status: "open" | "won" | "lost";
+  amount: string | number | null;
+  expected_close_date: string | null;
+  summary: string | null;
+  next_action: string | null;
+  notes: string | null;
+  owner_user_id: string | null;
+  telecaller_id: string | null;
+  source_lead_id: string | null;
+  facts: Record<string, unknown>;
+  call_count: number;
+  last_activity_at: string;
+  stage_changed_at: string;
+  created_at: string;
+  updated_at: string;
+  contact_name: string | null;
+  account_name: string | null;
+}
+
+export interface DealBoardColumn extends Stage {
+  count: number;
+  value: number;
+  deals: Deal[];
+}
+
+export interface Contact {
+  id: string;
+  workspace_id: string | null;
+  account_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string;
+  email: string | null;
+  phone_prefix: string | null;
+  phone_last3: string | null;
+  title: string | null;
+  owner_user_id: string | null;
+  facts: Record<string, unknown>;
+  status: "active" | "archived" | "merged";
+  call_count: number;
+  last_activity_at: string;
+  created_at: string;
+}
+
+export interface Account {
+  id: string;
+  workspace_id: string | null;
+  name: string;
+  domain: string | null;
+  phone_prefix: string | null;
+  phone_last3: string | null;
+  owner_user_id: string | null;
+  facts: Record<string, unknown>;
+  status: "active" | "archived" | "merged";
+  last_activity_at: string;
+  created_at: string;
+}
+
+export interface CustomFieldOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * A follow-up task (Track A3). `due_on` is a plain `YYYY-MM-DD` string, never
+ * a timestamp — see tasks.controller.ts for why that distinction is load-
+ * bearing rather than cosmetic.
+ */
+export interface Task {
+  id: string;
+  title: string;
+  notes: string | null;
+  contact_id: string | null;
+  account_id: string | null;
+  deal_id: string | null;
+  assignee_user_id: string | null;
+  assignee_name?: string | null;
+  deal_name?: string | null;
+  contact_name?: string | null;
+  due_on: string | null;
+  status: "open" | "done" | "cancelled";
+  priority: "low" | "normal" | "high";
+  completed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * One row on a contact/account/deal timeline (Track A2). `actor` is already
+ * resolved API-side to the user's name or the device label, so the UI never
+ * needs a second lookup to render "who".
+ */
+export interface Interaction {
+  id: string;
+  type: "call" | "email" | "sms" | "whatsapp" | "meeting" | "note";
+  direction: "incoming" | "outgoing" | null;
+  contact_id: string | null;
+  account_id: string | null;
+  deal_id: string | null;
+  call_id: string | null;
+  subject: string | null;
+  body: string | null;
+  occurred_at: string;
+  duration_s: number | null;
+  actor_user_id: string | null;
+  actor: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DuplicateMatch {
+  id: string;
+  object_type: "contact" | "account";
+  record_a_id: string;
+  record_b_id: string;
+  record_a_label: string | null;
+  record_a_detail: string | null;
+  record_b_label: string | null;
+  record_b_detail: string | null;
+  match_reason: "phone" | "email" | "external_id" | "fuzzy_name_company";
+  score: string | number | null;
+  status: "pending" | "dismissed" | "merged";
+  created_at: string;
+}
+
+/**
+ * One custom field AS IT APPLIES TO A RECORD — the definition and this
+ * record's value in a single shape, which is what the API returns.
+ *
+ * `source` is the provenance from migration 0045 and it is deliberately on
+ * the wire rather than internal: "the AI put this here" and "a colleague
+ * typed this" carry very different weight when a rep is deciding whether to
+ * quote a number back to a customer.
+ */
+export interface RecordCustomField {
+  id: string;
+  key: string;
+  label: string;
+  type: CustomFieldDefinition["type"];
+  description: string | null;
+  required: boolean;
+  options: CustomFieldOption[];
+  lookupObjectType: string | null;
+  validation: { min?: number; max?: number } | null;
+  status: "active" | "archived";
+  value: unknown;
+  source: "extraction" | "human" | "automation" | "import" | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface CustomFieldDefinition {
+  id: string;
+  object_type: "contact" | "account" | "deal";
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "boolean" | "picklist" | "multiselect" | "lookup";
+  description: string | null;
+  required: boolean;
+  options: CustomFieldOption[];
+  lookup_object_type: string | null;
+  sort_order: number;
+  status: "active" | "archived";
+  created_at: string;
+}

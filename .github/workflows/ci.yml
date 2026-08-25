@@ -2,12 +2,17 @@
 # ever had: 8,000 lines of TypeScript, live customers, and until now nothing ran
 # on a push except a human's memory.
 #
-# Four jobs, deliberately independent so a red lint does not hide a red schema:
+# Five jobs, deliberately independent so a red lint does not hide a red schema:
 #
-#   static   lint, format, typecheck, and the tenancy grep
-#   unit     pnpm -r test
-#   db       migrations + the RLS invariant check, against an EPHEMERAL Postgres
-#   build    both production images actually build
+#   static         lint, format, typecheck, and the tenancy grep
+#   unit           pnpm -r test
+#   db             migrations + the RLS invariant check, against an EPHEMERAL Postgres
+#   integration    the cross-tenant isolation loop + guard suite, spawned API/worker
+#                  against docker-compose.test.yml — added 2026-08-16. Before this job
+#                  existed, 141+ isolation cases and the guard-mounting checks were real,
+#                  green, and blocked no merge: "544 tests someone has to remember"
+#                  (08_ROAD_TO_10.md, Stage 1 run log 4). This is that memory, automated.
+#   build          both production images actually build
 #
 # There is NO deploy job and there should not be one yet. Deployment is manual
 # (see platform/DEPLOYMENT.md) and stays that way until Stage 1.6 gives us a
@@ -199,6 +204,53 @@ jobs:
       # deploy, so "applied twice" is the normal case, not an edge case.
       - name: Migrations are idempotent
         run: pnpm --filter @aura/db migrate
+
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration — isolation loop + guards
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: platform/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      # docker-compose.test.yml is INFRASTRUCTURE ONLY (postgres/rabbitmq/minio
+      # on 55432/55672/59000-1, never the dev stack's ports) — the harness
+      # spawns the API and worker itself, from a build this step does not do.
+      # `test:integration:up` is two docker compose calls, not one: `--wait`
+      # blocks on postgres/rabbitmq/minio's healthchecks, then a separate,
+      # un-waited `up minio-init` creates the bucket and is checked by its own
+      # exit code — see docker-compose.test.yml's comment on minio-init for why
+      # `--wait` cannot include a one-shot container without misreporting success
+      # as failure. Either step failing fails this one.
+      - name: Start the ephemeral test stack
+        run: pnpm test:integration:up
+
+      # `pnpm test:integration` = `pnpm -r build && vitest run --config
+      # vitest.integration.config.ts`. The build is not redundant with the
+      # `static`/`unit` jobs' builds — those compile packages/*, and
+      # tests/setup/processes.ts specifically requires apps/api and
+      # apps/worker built to dist/, which nothing else in this workflow does.
+      - name: Run the integration suite
+        run: pnpm test:integration
+
+      # Always, not on-success: an ephemeral stack left running on a failed job
+      # is merely wasted runner minutes today, but the whole point of tmpfs +
+      # no named volumes in docker-compose.test.yml is that nothing here is
+      # meant to outlive the job that started it.
+      - name: Tear down the test stack
+        if: always()
+        run: pnpm test:integration:down
 
   # ---------------------------------------------------------------------------
   build:

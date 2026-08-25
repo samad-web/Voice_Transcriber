@@ -18,6 +18,15 @@ import { BillingModule } from "./modules/billing/billing.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { OwnerModule } from "./modules/owner/owner.module";
+import { CrmObjectsModule } from "./modules/crm-objects/crm-objects.module";
+import { CustomFieldsModule } from "./modules/custom-fields/custom-fields.module";
+import { MergeModule } from "./modules/merge/merge.module";
+import { RolesModule } from "./modules/roles/roles.module";
+import { ConnectionsModule } from "./modules/connections/connections.module";
+import { ReportsModule } from "./modules/reports/reports.module";
+import { TasksModule } from "./modules/tasks/tasks.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { AutomationModule } from "./modules/automation/automation.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -44,6 +53,15 @@ import { OwnerModule } from "./modules/owner/owner.module";
     AdminModule,
     LeadsModule,
     OwnerModule,
+    CrmObjectsModule,
+    CustomFieldsModule,
+    MergeModule,
+    RolesModule,
+    TasksModule,
+    NotificationsModule,
+    AutomationModule,
+    ReportsModule,
+    ConnectionsModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

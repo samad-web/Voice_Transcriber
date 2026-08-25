@@ -259,6 +259,40 @@ export class GoogleCalendarScheduler implements Scheduler {
     return { eventId: res.id, meetingUrl };
   }
 
+  /**
+   * Delete the event, telling the attendee it is off.
+   *
+   * `sendUpdates=all` is the whole point of doing this through the API rather
+   * than letting the row go stale: the lead is holding a calendar invite, and
+   * cancelling silently leaves it in their diary for a call nobody will join.
+   *
+   * 404 and 410 are SUCCESS. Google returns 410 for an event already deleted
+   * and 404 for one it never had, and in both cases the state we want is the
+   * state that exists. Treating them as failures would make a retried
+   * reschedule — or one racing an operator who cancelled by hand — report an
+   * error for work that was already done.
+   *
+   * Not routed through `fetchJson`: a successful DELETE has an empty body, so
+   * `res.json()` would throw on the happy path.
+   */
+  async cancel(eventId: string): Promise<void> {
+    const token = await this.accessToken();
+    const url =
+      `${CALENDAR_API}/calendars/${encodeURIComponent(this.config.calendarId)}` +
+      `/events/${encodeURIComponent(eventId)}?sendUpdates=all`;
+
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+
+    if (res.ok || res.status === 404 || res.status === 410) return;
+
+    const text = await res.text().catch(() => "");
+    throw new Error(`Google Calendar ${res.status}: ${text.slice(0, 500)}`);
+  }
+
   /* ── Google plumbing ─────────────────────────────────────────────────── */
 
   /**

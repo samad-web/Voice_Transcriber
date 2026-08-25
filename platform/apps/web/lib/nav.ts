@@ -3,14 +3,24 @@ import {
   CalendarDays,
   BarChart3,
   Building2,
+  Contact,
+  Copy,
+  Handshake,
   KeyRound,
   LayoutGrid,
   ListFilter,
+  ListChecks,
+  PieChart,
+  Link2,
   Phone,
   Plug,
   Search,
+  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
+  Target,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import type { OwnerRole } from "@aura/shared";
@@ -60,6 +70,34 @@ export const NAV_ITEMS: NavItem[] = [
     context: "Platform",
   },
   { href: "/crm", label: "CRM Integrations", icon: Plug, title: "CRM Integrations" },
+  {
+    href: "/custom-fields",
+    label: "Custom Fields",
+    icon: SlidersHorizontal,
+    title: "Custom Fields",
+    context: "Platform",
+  },
+  {
+    href: "/targets",
+    label: "Targets",
+    icon: Target,
+    title: "Sales Targets",
+    context: "Platform",
+  },
+  {
+    href: "/automations",
+    label: "Automations",
+    icon: Workflow,
+    title: "Automations",
+    context: "Platform",
+  },
+  {
+    href: "/roles",
+    label: "Roles",
+    icon: ShieldCheck,
+    title: "Roles",
+    context: "Platform",
+  },
   { href: "/team", label: "Team", icon: Users, title: "Team Management" },
   { href: "/api-keys", label: "API Keys", icon: KeyRound, title: "API Keys" },
   { href: "/usage", label: "Usage", icon: BarChart3, title: "Usage & Billing" },
@@ -89,11 +127,93 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     title: "All Leads",
     context: "Pipeline",
   },
+  {
+    href: "/owner/deals",
+    label: "Deals",
+    icon: Handshake,
+    title: "Deals",
+    context: "Pipeline",
+    // Same persona restriction as the lead board (design doc §9) — a
+    // telecaller's nav stays Dashboard + All Leads, not the full pipeline.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/tasks",
+    label: "Tasks",
+    icon: ListChecks,
+    title: "Tasks",
+    context: "Pipeline",
+    // No persona restriction, unlike the boards: a telecaller's own follow-ups
+    // are exactly the thing they need this console for.
+  },
+  {
+    href: "/owner/contacts",
+    label: "Contacts",
+    icon: Contact,
+    title: "Contacts",
+    context: "Pipeline",
+  },
+  {
+    href: "/owner/accounts",
+    label: "Accounts",
+    icon: Building2,
+    title: "Accounts",
+    context: "Pipeline",
+  },
+  {
+    href: "/owner/reports",
+    label: "Reports",
+    icon: PieChart,
+    title: "Reports",
+    context: "Pipeline",
+    // Pipeline value and per-rep win rates are a manager's view of the team,
+    // not a telecaller's view of their own work — same restriction the boards
+    // carry (design doc §9).
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/connections",
+    label: "Connections",
+    icon: Link2,
+    title: "Connections",
+    context: "Your account",
+    // No persona restriction: this is a person's own mailbox and calendar,
+    // not a team setting. A telecaller connecting their own email is exactly
+    // the point.
+  },
+  {
+    href: "/owner/duplicates",
+    label: "Duplicates",
+    icon: Copy,
+    title: "Duplicates",
+    context: "Pipeline",
+    ownerRoles: ["owner", "manager"],
+  },
 ];
 
-/** Which of `OWNER_NAV_ITEMS` a given owner-console persona may see. */
-export function ownerNavItemsFor(role: OwnerRole): NavItem[] {
-  return OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role));
+/**
+ * The CRM object pages — what A6's shadow-read flag promotes to sit right
+ * after Dashboard, above the legacy Board/All Leads pair, once it's on.
+ * Neither page group is ever hidden by this: the legacy pair stays exactly
+ * where it is, one click away, for the whole burn-in period.
+ */
+const CRM_PRIMARY_HREFS = ["/owner/deals", "/owner/contacts", "/owner/accounts", "/owner/reports"];
+
+/**
+ * Which of `OWNER_NAV_ITEMS` a given owner-console persona may see, in what
+ * order. `crmPrimary` (CRM_SHADOW_READ_ENABLED, resolved server-side and
+ * passed down — see the owner layout) moves the CRM object pages to sit
+ * right after Dashboard rather than after the legacy Board/All Leads pair.
+ * Nothing is added, removed, or hidden; only the order changes.
+ */
+export function ownerNavItemsFor(role: OwnerRole, crmPrimary = false): NavItem[] {
+  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role));
+  if (!crmPrimary) return visible;
+
+  const crmGroup = visible.filter((item) => CRM_PRIMARY_HREFS.includes(item.href));
+  const rest = visible.filter((item) => !CRM_PRIMARY_HREFS.includes(item.href));
+  const afterDashboard = rest.findIndex((item) => item.href === "/owner") + 1;
+  return [...rest.slice(0, afterDashboard), ...crmGroup, ...rest.slice(afterDashboard)];
 }
 
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */

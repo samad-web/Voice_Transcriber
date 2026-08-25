@@ -48,6 +48,18 @@ import { BillingController } from "../modules/billing/billing.controller";
 import { CallsController } from "../modules/calls/calls.controller";
 import { NotesController } from "../modules/calls/notes.controller";
 import { CrmController } from "../modules/crm/crm.controller";
+import { AccountsController } from "../modules/crm-objects/accounts.controller";
+import { ContactsController } from "../modules/crm-objects/contacts.controller";
+import { DealsController } from "../modules/crm-objects/deals.controller";
+import { InteractionsController } from "../modules/crm-objects/interactions.controller";
+import { ConnectionsController } from "../modules/connections/connections.controller";
+import { OutboundMailController } from "../modules/connections/outbound-mail.controller";
+import { ReportsController } from "../modules/reports/reports.controller";
+import { TargetsController } from "../modules/reports/targets.controller";
+import { TasksController } from "../modules/tasks/tasks.controller";
+import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
+import { CustomFieldsController } from "../modules/custom-fields/custom-fields.controller";
+import { CustomFieldValuesController } from "../modules/custom-fields/custom-field-values.controller";
 import { DeviceTelemetryController } from "../modules/devices/device-telemetry.controller";
 import { DevicesController } from "../modules/devices/devices.controller";
 import { InstancesController } from "../modules/devices/instances.controller";
@@ -61,9 +73,13 @@ import { MessageTemplatesController } from "../modules/leads/message-templates.c
 import { SlotsController } from "../modules/leads/slots.controller";
 import { FunnelCriteriaController } from "../modules/leads/funnel-criteria.controller";
 import { WhatsAppCheckController } from "../modules/leads/whatsapp-check.controller";
+import { MergeController } from "../modules/merge/merge.controller";
+import { NotificationsController } from "../modules/notifications/notifications.controller";
+import { AutomationController } from "../modules/automation/automation.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
+import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
 import { MembersController } from "../modules/tenancy/members.controller";
 import { TenancyController } from "../modules/tenancy/tenancy.controller";
@@ -104,6 +120,37 @@ const CONTROLLERS: Array<Type<unknown>> = [
   MessageTemplatesController,
   WhatsAppCheckController,
   FunnelCriteriaController,
+  // ── the CRM object model (CRM Phase 1, migrations 0034-0039) ──────────────
+  // Same story as the funnel block above, and the reason this suite's
+  // filesystem check exists: all seven shipped across M2-M6 without being
+  // listed here, so every assertion below was blind to 33 live tenant-scoped
+  // routes carrying the root ADMIN_API_KEY over every tenant's contacts,
+  // accounts and deals. Adding them is behaviour-neutral — it only makes the
+  // suite see what was already mounted.
+  AccountsController,
+  ContactsController,
+  DealsController,
+  InteractionsController,
+  TasksController,
+  ReportsController,
+  TargetsController,
+  ConnectionsController,
+  OutboundMailController,
+  PipelinesController,
+  CustomFieldsController,
+  CustomFieldValuesController,
+  MergeController,
+  RolesController,
+  // In-app notifications (migration 0048). AdminKeyGuard + TenantGuard only —
+  // a notification is addressed to one person and is theirs to read whatever
+  // their CRM role is; the scoping that matters is `user_id = <caller>`, which
+  // no guard can express and every query in that controller applies.
+  NotificationsController,
+  // Layer 2's rule engine (migration 0049). AdminKeyGuard + TenantGuard, the
+  // same treatment pipelines / custom-field-definitions / roles get and for
+  // the same reason: these are org CONFIGURATION, not records, and
+  // PermissionObjectType has no value for them. Asserted below alongside those.
+  AutomationController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -149,6 +196,7 @@ const CROSS_TENANT = [
   "GET /admin/slots/booked",
   "POST /admin/slots",
   "POST /admin/slots/generate",
+  "POST /admin/slots/:id/attendance",
   "DELETE /admin/slots/:id",
   "GET /admin/message-templates",
   "PUT /admin/message-templates/:key",
@@ -167,7 +215,94 @@ const CROSS_TENANT = [
 const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
 
 /** §2.4 — one controller, two routes. */
-const OWNER_ROLE_ROUTES = ["GET /owner/overview", "PATCH /owner/telecallers/:deviceId"];
+const OWNER_ROLE_ROUTES = [
+  "GET /owner/overview",
+  "GET /owner/crm-overview",
+  "PATCH /owner/telecallers/:deviceId",
+];
+
+/**
+ * The CRM object model's enforced surface — every route that consults the
+ * `role_permissions` grid (migration 0039) via `CrmPermissionsGuard`.
+ *
+ * Pinned as an exhaustive list for the same reason PERMISSION_ROUTES is: a
+ * route that quietly LOSES its guard is a silent authorization hole, and a
+ * route that gains one unexpectedly is a silent lockout. `pipelines`,
+ * `custom-field-definitions` and `merge` are deliberately absent —
+ * `PermissionObjectType` is contact|account|deal only, so there is no grant
+ * for them to check yet; they remain AdminKeyGuard+TenantGuard as before.
+ */
+const CRM_PERMISSION_ROUTES = [
+  "GET /accounts",
+  "GET /accounts/:id",
+  "POST /accounts",
+  "PATCH /accounts/:id",
+  "GET /contacts",
+  "GET /contacts/:id",
+  "GET /contacts/:id/deals",
+  "POST /contacts",
+  "PATCH /contacts/:id",
+  "GET /deals",
+  "GET /deals/board",
+  "GET /deals/:id",
+  // The stage ledger (migration 0046). `deal:view`, not a wider grant: it is
+  // a fact about one deal, and anyone who may see the deal may see how it got
+  // there.
+  "GET /deals/:id/stage-history",
+  "POST /deals",
+  "PATCH /deals/:id",
+  // Track A2's timeline. Declared on InteractionsController, which has an
+  // EMPTY @Controller() prefix and spells each parent out in the path — so
+  // these read as contacts/accounts/deals routes here even though they live
+  // in a different file, the same way NotesController's routes appear under
+  // `calls`. Each is gated on its parent object, which is the whole reason
+  // the routes are nested rather than one filtered `/interactions` list.
+  "GET /accounts/:id/interactions",
+  "POST /accounts/:id/interactions",
+  "GET /contacts/:id/interactions",
+  "POST /contacts/:id/interactions",
+  "GET /deals/:id/interactions",
+  "POST /deals/:id/interactions",
+  // Track A3. `task` joined PermissionObjectType with migration 0041, which
+  // also seeds every system role's task grants — so these are enforced from
+  // the moment they ship, rather than being a retrofit later.
+  "GET /tasks",
+  "GET /tasks/:id",
+  "POST /tasks",
+  "PATCH /tasks/:id",
+  // PRD Layer 3. Viewing a report needs `deal:view`; the CSV export needs
+  // `deal:export` — the first route on the platform to use that action, and
+  // the reason the export is its own route rather than a `?format=` param.
+  "GET /reports/pipeline",
+  "GET /reports/performance",
+  "GET /reports/conversion",
+  "GET /reports/:report/export",
+  // PRD Layer 5. Gated on `deal` rather than a new object type: a target is a
+  // statement about deals and attainment is computed from them. Setting one
+  // needs `deal:edit`, because it changes what every report says about a
+  // person's performance.
+  "GET /targets",
+  "GET /targets/attainment",
+  "POST /targets",
+  "DELETE /targets/:id",
+  // Custom-field VALUES on a record — nested under their parent for the same
+  // reason the timeline routes are, and gated on that parent's view/edit.
+  // The DEFINITIONS surface (`/custom-field-definitions`) stays unenforced
+  // and is asserted separately below; these two are deliberately different
+  // things, which is why they are different controllers.
+  "GET /accounts/:id/custom-fields",
+  "PUT /accounts/:id/custom-fields",
+  "GET /contacts/:id/custom-fields",
+  "PUT /contacts/:id/custom-fields",
+  "GET /deals/:id/custom-fields",
+  "PUT /deals/:id/custom-fields",
+  // Sending one email to one contact, from the sender's own mailbox. Gated on
+  // `contact:edit` because it writes to that contact's timeline; the harder
+  // restrictions (a resolvable user, their own connection, a recipient read
+  // from the record rather than the request) live in the controller, since no
+  // guard can express "and the address must come from the database".
+  "POST /contacts/:id/email",
+];
 
 interface Route {
   /** `"GET /calls/:id"` — verb plus the declared path, no `v1` prefix. */
@@ -246,13 +381,22 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 91 routes, partitioned 57 tenant / 22 cross-tenant / 6 device / 6 unguarded", () => {
-    // The counts inventory 13 §1.1 closes with, plus the funnel's ten. They are
-    // asserted as a set, not just a total, so moving a route BETWEEN classes
-    // (dropping TenantGuard from a tenant route, say) fails even though the
-    // total is unchanged.
-    expect(ROUTES).toHaveLength(91);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(91);
+  it("has 166 routes, partitioned 131 tenant / 23 cross-tenant / 6 device / 6 unguarded", () => {
+    // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
+    // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
+    // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
+    // plus Track A2's 6 interaction-timeline routes Track A3's 4 task routes,
+    // Layer 3's 4 report routes, Layer 1's 6 connection routes, the 6
+    // custom-field-VALUE routes, the booking lifecycle's one
+    // (POST /admin/slots/:id/attendance, cross-tenant like the rest of the
+    // funnel's operator surface), and A6 Milestone 4's one
+    // (GET /owner/crm-overview, tenant-scoped like its sibling
+    // GET /owner/overview). They are asserted as a
+    // set, not just a total, so moving a route BETWEEN classes (dropping
+    // TenantGuard from a tenant route, say) fails even though the total is
+    // unchanged.
+    expect(ROUTES).toHaveLength(166);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(166);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -262,20 +406,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(57);
+    expect(tenantScoped).toHaveLength(131);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(91);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(166);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 79 principal routes", () => {
-    // 57 tenant-scoped + 22 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 154 principal routes", () => {
+    // 131 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(79);
+    expect(principalRoutes).toHaveLength(154);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -325,6 +469,38 @@ describe("guard mounting (inventory 13 §1.1)", () => {
       const last = guards.indexOf("TenantGuard");
       const index = guards.findIndex((g) => g === "PermissionsGuard" || g === "OwnerRoleGuard");
       expect([route, index > last]).toEqual([route, true]);
+    }
+  });
+
+  it("mounts CrmPermissionsGuard on exactly the contact/account/deal routes, after TenantGuard", () => {
+    // The guard reads `req.principal` (AdminKeyGuard) and `req.tenantOrgId`
+    // (TenantGuard), so like the other two metadata guards its position in the
+    // chain is a correctness requirement — it 401s if it runs first.
+    const withCrm = ROUTES.filter((r) => r.guards.includes("CrmPermissionsGuard"));
+    expect(sorted(withCrm.map((r) => r.route))).toEqual(sorted(CRM_PERMISSION_ROUTES));
+
+    for (const { route, guards } of withCrm) {
+      expect([route, guards.indexOf("CrmPermissionsGuard") > guards.indexOf("TenantGuard")]).toEqual(
+        [route, true],
+      );
+    }
+  });
+
+  it("leaves pipelines, custom-field-definitions and merge unenforced, as scoped", () => {
+    // Asserted rather than assumed: these carry the root ADMIN_API_KEY like
+    // every other tenant route, and the reason they are NOT permission-checked
+    // is that `PermissionObjectType` has no value for them yet — not that
+    // somebody forgot. If that enum grows, this test is where the decision
+    // gets revisited.
+    const unenforced = ROUTES.filter(
+      (r) =>
+        r.route.includes("/pipelines") ||
+        r.route.includes("/custom-field-definitions") ||
+        r.route.includes("/merge"),
+    );
+    expect(unenforced).toHaveLength(14);
+    for (const { route, guards } of unenforced) {
+      expect([route, guards]).toEqual([route, ["AdminKeyGuard", "TenantGuard"]]);
     }
   });
 

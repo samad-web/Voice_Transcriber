@@ -54,6 +54,8 @@ export interface TestRequest {
   principal?: Principal;
   tenantOrgId?: string;
   device?: DevicePrincipal;
+  /** Written by CrmPermissionsGuard — the `owned` half of the grid. */
+  crmScope?: { scope: "all" | "owned"; userId: string | null };
 }
 
 export interface TestContext {
