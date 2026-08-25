@@ -371,6 +371,19 @@ export class LeadsController {
             WHERE id = ANY($1::uuid[])`,
           [released.map((r) => r.id)],
         );
+
+        // Stand down the reminders queued against those bookings, in the same
+        // transaction that releases them. A rejected lead who still receives
+        // "your call is tomorrow at 6:30" the next morning is the worst
+        // possible sequence of two messages, and the reminder was queued days
+        // before anyone decided to reject them.
+        await client.query(
+          `UPDATE marketing.booking_notifications
+              SET status = 'dead', error = 'the lead was rejected',
+                  next_attempt_at = NULL, updated_at = now()
+            WHERE booking_slot_id = ANY($1::uuid[]) AND status = 'pending'`,
+          [released.map((r) => r.id)],
+        );
       }
 
       // NO audit_log ROW HERE, and that is not an omission.
