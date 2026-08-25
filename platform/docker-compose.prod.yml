@@ -188,8 +188,13 @@ services:
     # page that will not start because a worker is unhealthy is a marketing
     # outage caused by something the visitor cannot see.
 
-  # One-shot: applies packages/db/migrations to Supabase, then sets the runtime
-  # role's password from APP_DB_PASSWORD. Never runs as part of `up`.
+  # One-shot: applies packages/db/migrations to Supabase, sets the runtime
+  # role's password from APP_DB_PASSWORD, then fails the deploy — loudly, here,
+  # rather than leaking a tenant's data later — if any org_id table is missing
+  # FORCE RLS or a real org_isolation policy (08 §1.5). `--structural-only` is
+  # the read-only half of packages/db/verify-rls.js: the full check refuses to
+  # run against anything but a local/disposable host, which Supabase never is.
+  # Never runs as part of `up`.
   migrate:
     <<: *node-image
     profiles: ["setup"]
@@ -197,7 +202,7 @@ services:
     command:
       - sh
       - -c
-      - "node packages/db/migrate.js && node packages/db/bootstrap-role.js"
+      - "node packages/db/migrate.js && node packages/db/bootstrap-role.js && node packages/db/verify-rls.js --structural-only"
 
   redis:
     image: redis:7-alpine

@@ -22,15 +22,21 @@
  *   is for on Supabase, where the migration owner owns the tables), so the
  *   proof is worth keeping alongside the enumeration.
  *
- * Run it after every migration — in the migrate container on deploy, and in CI
- * against the ephemeral Postgres — so a bad migration fails the deploy instead
- * of leaking silently.
+ * Run the full check after every migration in CI, against the ephemeral
+ * Postgres — so a bad migration fails the deploy instead of leaking silently.
  *
  *   node verify-rls.js
  *
- * SAFETY: this script SEEDS AND DELETES. See assertDisposable() below — it
- * refuses to run against anything but a local/disposable host unless
- * RLS_TEST_ALLOW_REMOTE=1 is set explicitly.
+ * SAFETY: the full run SEEDS AND DELETES (behaviouralChecks). See
+ * assertDisposable() below — it refuses to run against anything but a
+ * local/disposable host unless RLS_TEST_ALLOW_REMOTE=1 is set explicitly.
+ *
+ *   node verify-rls.js --structural-only
+ *
+ * The read-only half alone — safe against, and meant for, the production
+ * migrate container (docker-compose.prod.yml's `migrate` service), which
+ * `assertDisposable()` would otherwise refuse outright since Supabase is
+ * never a local host. See the STRUCTURAL_ONLY branch in main() below.
  */
 const { Client } = require("pg");
 const { sslFor } = require("./ssl");
@@ -497,7 +503,39 @@ async function behaviouralChecks(admin, app) {
   await admin.query("DELETE FROM organizations WHERE name LIKE 'rls-test-%'");
 }
 
+/**
+ * `--structural-only`: the read-only half, deliberately runnable against
+ * production (08 §1.5 — "the run it in the migrate container half is
+ * structurally blocked: production is Supabase, so the guard refuses, and
+ * the only override re-enables the destructive path against live data").
+ *
+ * `structuralChecks` never writes — it enumerates `information_schema`,
+ * `pg_class`, `pg_policies` and `pg_constraint`. `assertDisposable()` exists
+ * to stop `behaviouralChecks`' seed-and-DELETE from reaching a real tenant,
+ * so it has nothing to guard here and would only ever do the wrong thing:
+ * refuse the one place this half is most needed, which is exactly the
+ * migrate container on a production deploy, where the point is to fail a bad
+ * migration before it ships rather than to seed test data into Supabase.
+ * No APP_DATABASE_URL / `app` client either — the behavioural half is the
+ * only thing that ever needed the `aura_app` role.
+ */
+const STRUCTURAL_ONLY = process.argv.includes("--structural-only");
+
 async function main() {
+  if (STRUCTURAL_ONLY) {
+    const admin = new Client({ connectionString: ADMIN_URL, ssl: sslFor(ADMIN_URL) });
+    await admin.connect();
+    await structuralChecks(admin);
+    await admin.end();
+
+    console.log(
+      failures === 0
+        ? "\nRLS structural verification: ALL PASS"
+        : `\nRLS structural verification: ${failures} FAILURE(S)`,
+    );
+    process.exit(failures === 0 ? 0 : 1);
+  }
+
   assertDisposable("DATABASE_URL", ADMIN_URL);
   assertDisposable("APP_DATABASE_URL", APP_URL);
 

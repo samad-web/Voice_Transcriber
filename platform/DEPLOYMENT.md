@@ -75,11 +75,17 @@ docker compose --env-file .env.production -f docker-compose.prod.yml \
 
 That runs `packages/db/migrate.js` (every `packages/db/migrations/*.sql` not yet in
 `schema_migrations`, in filename order, each wrapped in its own `BEGIN`/`COMMIT` — which is why no
-migration may use `CREATE INDEX CONCURRENTLY`) and then `packages/db/bootstrap-role.js`, which
+migration may use `CREATE INDEX CONCURRENTLY`), then `packages/db/bootstrap-role.js`, which
 replaces the dev password baked
-into `0001_init.sql` with `APP_DB_PASSWORD` and refuses to continue if the role can bypass RLS.
+into `0001_init.sql` with `APP_DB_PASSWORD` and refuses to continue if the role can bypass RLS,
+then `packages/db/verify-rls.js --structural-only` (08 §1.5) — read-only, so it runs against
+Supabase directly rather than refusing like the full check below does: every `org_id` table gets
+enumerated from the catalog and the run fails, by table name, on any missing FORCE RLS or a real
+`org_isolation` policy. A migration that adds a tenant table and forgets its policy fails **this**
+deploy, not a future incident.
 
-Then prove isolation actually holds against the real database:
+Then prove isolation actually *behaves* correctly against the real database — the part the
+structural check above cannot see, because right policies can still not bind:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml \
