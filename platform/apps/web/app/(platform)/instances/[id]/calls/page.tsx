@@ -4,6 +4,7 @@ import { Activity, ArrowLeft, Phone, Timer } from "lucide-react";
 import { Card, EmptyState, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { CallsExplorer, type CallRow } from "../../../calls/calls-explorer";
 
@@ -50,6 +51,9 @@ export default async function InstanceCallsPage({
     call?: string;
   }>;
 }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { id: orgId } = await params;
   const {
     instance: instanceId,

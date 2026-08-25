@@ -1,6 +1,7 @@
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope } from "@/lib/tenant-scope";
 import { ApiKeysManager, type ApiKey } from "./api-keys-manager";
@@ -10,6 +11,9 @@ export default async function ApiKeysPage({
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const { org } = await searchParams;
   const { tenants, orgId } = await resolveTenantScope(org);
 

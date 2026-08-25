@@ -1,10 +1,14 @@
 import { Activity, Building2, Server } from "lucide-react";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin } from "@/lib/server-api";
 
 /**
- * Platform-admin console (us, not customers). TODO: gate behind platform_admin
- * role once OIDC lands; tenant lifecycle, global health, model routing, cost.
+ * Platform-admin console (us, not customers). Gated by `(admin)/layout.tsx`
+ * (isOperator()) and, here, by operatorGate() itself — the layout's decision
+ * and this page's own data-fetching are not guaranteed to be sequenced by
+ * Next's renderer, so the check has to be the first thing this function does
+ * too. See operator-gate.tsx.
  */
 
 interface Tenant {
@@ -46,6 +50,9 @@ function stageTone(status?: string): "solid" | "muted" | "danger" {
 }
 
 export default async function AdminPage() {
+  const blocked = await operatorGate();
+  if (blocked) return blocked;
+
   const [tenantData, health] = await Promise.all([
     apiGetAdmin<{ tenants: Tenant[] }>("/v1/admin/tenants"),
     apiGetAdmin<Health>("/v1/admin/health"),
