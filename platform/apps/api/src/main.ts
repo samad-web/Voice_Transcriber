@@ -14,7 +14,12 @@ async function bootstrap() {
   // customer data behind a key anyone can read out of this repository.
   assertRequiredEnv();
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: true keeps the original request bytes on req.rawBody alongside
+  // the normal parsed body. Needed by the Razorpay webhook, whose HMAC
+  // signature is computed over the exact bytes Razorpay sent — re-serialising
+  // the parsed JSON can byte-differ (key order, whitespace) and fail a
+  // legitimate signature.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   warnIfSecretsUnencrypted("api");
 
   // Caddy is the only thing that can reach this process in production

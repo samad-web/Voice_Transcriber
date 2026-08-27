@@ -17,10 +17,12 @@ import { startAutomationEngine } from "./pipeline/automation";
 import { startBookingConfirmations } from "./pipeline/booking-confirmations";
 import { startBookingNotificationDrain } from "./pipeline/booking-notifications-outbox";
 import { startCallReminders } from "./pipeline/call-reminders";
+import { startOutreachSweep } from "./pipeline/outreach";
 import { startFormNudges } from "./pipeline/form-nudges";
 import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
+import { startLeadScoringSweep } from "./pipeline/lead-scoring";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -109,6 +111,19 @@ async function bootstrap() {
   // with a private link back into their own half-finished form. Two messages,
   // ever — see the module header.
   startFormNudges();
+  // The follow-up ladder (migration 0058). Moves a cadence step from 'waiting'
+  // to 'due' and stops journeys whose condition has been met. It SENDS
+  // NOTHING — a due step is work for a person, which is what keeps safety
+  // rule 3 true; see the module header.
+  //
+  // Five minutes, not the ten the automation engine uses: the first rung of a
+  // speed-to-lead cadence is often "within five minutes", and a sweep slower
+  // than the shortest rung makes that rung a lie.
+  startOutreachSweep();
+  // Kailash gap Milestone 4: a rule-based point ledger on contacts, scored
+  // off replies/meetings/inactivity that already exist. Pure computation, no
+  // sends — see the module header for the safety-rule reasoning.
+  startLeadScoringSweep();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;

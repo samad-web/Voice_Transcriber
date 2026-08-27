@@ -20,6 +20,18 @@ const ASR_LANGUAGES = [
   "ks-IN", "sd-IN", "sa-IN", "sat-IN", "mni-IN", "brx-IN", "mai-IN", "doi-IN",
 ] as const;
 
+/**
+ * Per-tenant logo/colors (Kailash gap Milestone 4). One jsonb column
+ * (migration 0065), same "tenant config as jsonb on organizations" precedent
+ * as lead_stages/lead_rules — this is too small to earn its own table.
+ */
+const BrandingBody = z.object({
+  logoUrl: z.string().url().max(500).nullish(),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
+  browserTitle: z.string().max(120).nullish(),
+});
+
 const PolicyBody = z.object({
   consentPolicy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]).optional(),
   onConsentFailure: z.enum(["record_and_flag", "do_not_record"]).optional(),
@@ -67,9 +79,35 @@ export class TenancyController {
         rows: [org],
       } = await client.query(
         `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
-                store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary
+                store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary, branding
            FROM organizations WHERE id = $1`,
         [orgId],
+      );
+      return org;
+    });
+  }
+
+  @Patch("branding")
+  async updateBranding(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = BrandingBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const p = parsed.data;
+    if (Object.keys(p).length === 0) throw new BadRequestException("nothing to update");
+
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [org],
+      } = await client.query(
+        // Merged into the existing jsonb rather than replaced, so patching
+        // just the primary color doesn't blank a logo set earlier.
+        `UPDATE organizations SET branding = branding || $2::jsonb WHERE id = $1
+         RETURNING branding`,
+        [orgId, JSON.stringify(p)],
+      );
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', 'dev-admin', 'org.branding_update', 'organization', $2, $3::jsonb)`,
+        [orgId, orgId, JSON.stringify(p)],
       );
       return org;
     });

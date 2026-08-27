@@ -160,34 +160,34 @@ CREATE INDEX IF NOT EXISTS booking_notifications_due
 INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
 
 ('reminder_call_24h', 'whatsapp',
- 'Hi {{first_name}}, a reminder that your call with Aura is tomorrow at {{slot}}. ' ||
+ 'Hi {{title_name}}, a reminder that your call with Aura is tomorrow at {{slot}}. ' ||
  'Need a different time? Reschedule here: {{reschedule_link}}',
  false),
 
 ('reminder_call_1h', 'whatsapp',
- 'Hi {{first_name}}, your call with Aura is in about an hour, at {{slot}}. ' ||
+ 'Hi {{title_name}}, your call with Aura is in about an hour, at {{slot}}. ' ||
  'Can''t make it? Reschedule here: {{reschedule_link}}',
  false),
 
 ('reminder_call_5m', 'whatsapp',
- 'Hi {{first_name}}, your call with Aura starts in a few minutes. ' ||
+ 'Hi {{title_name}}, your call with Aura starts in a few minutes. ' ||
  'Join here: {{meet_link}} . Running late or need a new time? {{reschedule_link}}',
  false),
 
 ('call_attended', 'whatsapp',
- 'Hi {{first_name}}, thanks for the call today. It was good to talk through what you''re ' ||
+ 'Hi {{title_name}}, thanks for the call today. It was good to talk through what you''re ' ||
  'looking for — we''ll follow up with next steps shortly.',
  true),
 
 ('call_no_show', 'whatsapp',
- 'Hi {{first_name}}, we had a call scheduled today and didn''t manage to connect. ' ||
+ 'Hi {{title_name}}, we had a call scheduled today and didn''t manage to connect. ' ||
  'No trouble at all — pick a new time whenever suits: {{reschedule_link}}',
  true),
 
 ('nurture_1', 'whatsapp',
  -- ⚠️ UNAPPROVED WORDING — see components/proof.tsx in apps/marketing. Get the
  -- customer's written sign-off before enabling this row.
- 'Hi {{first_name}}, following up after the call we missed. One of our customers, RD Interlock ' ||
+ 'Hi {{title_name}}, following up after the call we missed. One of our customers, RD Interlock ' ||
  'Bricks, told us: "Our conversion rate is five times what it was. We are not calling more ' ||
  'people, we finally know which calls are worth following up." Still worth a look? ' ||
  '{{reschedule_link}}',
@@ -195,13 +195,13 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
 
 ('nurture_2', 'whatsapp',
  -- ⚠️ UNAPPROVED WORDING — same caveat as nurture_1.
- 'Hi {{first_name}}, another quick note. Fortune Innovatives told us: "The insights are ' ||
+ 'Hi {{title_name}}, another quick note. Fortune Innovatives told us: "The insights are ' ||
  'what we train the team on now. Our objection handling is a different thing from what ' ||
  'it was." If you''d still like to see this on your own calls: {{reschedule_link}}',
  false),
 
 ('nurture_3', 'whatsapp',
- 'Hi {{first_name}}, last note from us on this — the offer to talk stands whenever you''re ' ||
+ 'Hi {{title_name}}, last note from us on this — the offer to talk stands whenever you''re ' ||
  'ready, no pressure. Pick a time here if that changes: {{reschedule_link}}',
  false)
 
@@ -235,12 +235,83 @@ ON CONFLICT (key, channel) DO NOTHING;
 ------------------------------------------------------------------------------
 
 UPDATE marketing.message_templates
-   SET body = 'Hi {{first_name}}, your call with Aura is confirmed for {{slot}}. ' ||
+   SET body = 'Hi {{title_name}}, your call with Aura is confirmed for {{slot}}. ' ||
               'Join here: {{meet_link}} . If that time stops working, move it here: {{reschedule_link}}'
  WHERE key = 'booking_confirmed'
    AND channel = 'whatsapp'
    AND body = 'Hi {{first_name}}, your call with Aura is confirmed for {{slot}}. ' ||
               'Join here: {{meet_link}} . If that time stops working, reply here and we''ll move it.';
+
+------------------------------------------------------------------------------
+-- Greet people with the title they gave us.
+--
+-- The form now asks for a salutation, so `{{title_name}}` resolves to
+-- "Mr. Ramesh Kumar" for anyone who chose one. It degrades in two steps —
+-- to the first name when they did not, and to "there" when the name is
+-- unusable — so this is strictly an upgrade over `{{first_name}}` and cannot
+-- produce a worse greeting than the one it replaces.
+--
+-- Every default body in @aura/shared now opens with it. These UPDATEs bring the
+-- ALREADY-SEEDED rows (0026 and 0033) into line, because a row that exists wins
+-- over the code fallback — without them, production would keep sending
+-- "Hi Ramesh," from the database while the catalogue claimed otherwise, and
+-- message-templates.test.ts would be asserting a string nothing sends.
+--
+-- ── GUARDED ON THE EXACT PRIOR TEXT, ONE STATEMENT PER STAGE ──────────────
+--
+-- The tempting version is one `regexp_replace` over every row. It is wrong
+-- twice: it would rewrite copy an operator has reworded (0029's rule — theirs
+-- wins), and it would leave no literal of the new text anywhere in the SQL, so
+-- the catalogue-vs-seed drift test would have nothing to match and would stop
+-- being able to tell these two sources apart. Verbose and checkable beats
+-- clever and silent.
+------------------------------------------------------------------------------
+
+UPDATE marketing.message_templates
+   SET body = 'Hi {{title_name}}, thanks for your interest in Aura and for telling us about your business. ' ||
+              'Having looked at it properly we don''t think we''re the right fit for you at the moment, ' ||
+              'so we won''t take this further. If things change, do come back to us.'
+ WHERE key = 'rejected' AND channel = 'whatsapp'
+   AND body = 'Hi {{first_name}}, thanks for your interest in Aura and for telling us about your business. ' ||
+              'Having looked at it properly we don''t think we''re the right fit for you at the moment, ' ||
+              'so we won''t take this further. If things change, do come back to us.';
+
+UPDATE marketing.message_templates
+   SET body = 'Hi {{title_name}}, thanks for your enquiry about Aura. Someone from the team will get back to you. ' ||
+              'If anything changes on your side in the meantime, we''d be glad to hear from you.'
+ WHERE key = 'disqualified_neutral' AND channel = 'whatsapp'
+   AND body = 'Hi {{first_name}}, thanks for your enquiry about Aura. Someone from the team will get back to you. ' ||
+              'If anything changes on your side in the meantime, we''d be glad to hear from you.';
+
+UPDATE marketing.message_templates
+   SET body = 'Hi {{title_name}}, thanks for asking about a CRM built around your business. Reply here and tell us ' ||
+              'how you sell today, and we''ll say honestly whether you need a new system or just a ' ||
+              'connector to the one you have.'
+ WHERE key = 'custom_crm_info' AND channel = 'whatsapp'
+   AND body = 'Hi {{first_name}}, thanks for asking about a CRM built around your business. Reply here and tell us ' ||
+              'how you sell today, and we''ll say honestly whether you need a new system or just a ' ||
+              'connector to the one you have.';
+
+UPDATE marketing.message_templates
+   SET body = 'Hi {{title_name}}, following up on your enquiry about Aura. ' ||
+              'If you''d still like to see what your calls are saying, reply here and we''ll set up a time.'
+ WHERE key = 'reminder_followup' AND channel = 'whatsapp'
+   AND body = 'Hi {{first_name}}, following up on your enquiry about Aura. ' ||
+              'If you''d still like to see what your calls are saying, reply here and we''ll set up a time.';
+
+UPDATE marketing.message_templates
+   SET body = 'Hi {{title_name}}, you started telling us about your business on Aura but didn''t finish. ' ||
+              'It takes under a minute — pick up where you left off: {{resume_link}}'
+ WHERE key = 'resume_form' AND channel = 'whatsapp'
+   AND body = 'Hi {{first_name}}, you started telling us about your business on Aura but didn''t finish. ' ||
+              'It takes under a minute — pick up where you left off: {{resume_link}}';
+
+UPDATE marketing.message_templates
+   SET body = 'Hi {{title_name}}, your Aura enquiry is still open. Answer the last few questions and ' ||
+              'we''ll tell you honestly whether we can help: {{resume_link}}'
+ WHERE key = 'resume_form_2' AND channel = 'whatsapp'
+   AND body = 'Hi {{first_name}}, your Aura enquiry is still open. Answer the last few questions and ' ||
+              'we''ll tell you honestly whether we can help: {{resume_link}}';
 
 ------------------------------------------------------------------------------
 -- Grants

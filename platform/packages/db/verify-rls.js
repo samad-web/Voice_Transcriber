@@ -49,8 +49,8 @@ const APP_URL =
 
 /**
  * Tables in the public schema that legitimately have no org_id, and therefore
- * no org_isolation policy. TWO ENTRIES, ON PURPOSE: this is an allowlist, so
- * adding a third requires a reviewed edit to this file rather than a silent
+ * no org_isolation policy. THREE ENTRIES, ON PURPOSE: this is an allowlist, so
+ * adding a fourth requires a reviewed edit to this file rather than a silent
  * pass. Anything else that turns up without an org_id fails the run.
  *
  *   users             platform-level humans; tenancy comes from `memberships`.
@@ -62,8 +62,17 @@ const APP_URL =
  *                     states it out loud rather than hiding it.
  *   schema_migrations this runner's own bookkeeping; 0001 revokes it from
  *                     aura_app entirely.
+ *   payment_webhook_events (0060) Razorpay webhook idempotency ledger. Read
+ *                     and written entirely on the admin pool by
+ *                     razorpay-webhook.controller.ts, which resolves the org
+ *                     from the payment_link id in the (untrusted) payload —
+ *                     it cannot run inside the org context it is trying to
+ *                     establish, the same bootstrap exception
+ *                     messaging_channels.webhook_token resolution documents.
+ *                     Holds only a provider name + an opaque event id, no
+ *                     tenant data.
  */
-const NON_TENANT_TABLES = new Set(["users", "schema_migrations"]);
+const NON_TENANT_TABLES = new Set(["users", "schema_migrations", "payment_webhook_events"]);
 
 /**
  * Schemas OTHER THAN `public` that hold application data and have been reviewed

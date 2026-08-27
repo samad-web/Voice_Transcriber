@@ -61,6 +61,17 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   deal: "owner_user_id",
   // Tasks are handled by ownerPredicate's two-column branch below.
   task: null,
+  // A conversation's owner is whoever it is assigned to. An UNASSIGNED thread
+  // is therefore invisible to an `owned`-scoped role — which is the intended
+  // reading: the shared queue belongs to whoever can see all of it, and a rep
+  // scoped to their own work should not be answering correspondence nobody
+  // has routed to them.
+  conversation: "assigned_user_id",
+  // A product is a shared catalogue entry, not a person's record — no owner
+  // column exists and none of its routes use RecordScope/scopeClause.
+  product: null,
+  quotation: "owner_user_id",
+  invoice: "owner_user_id",
 };
 
 /**
@@ -88,12 +99,22 @@ export function scopeFilter(
 
   if (column) return { sql: `${prefix}${column} = $?`, value: userId };
 
-  // Tasks: either end of it. Both branches compare to the SAME parameter, so
-  // the caller still substitutes exactly one value.
-  return {
-    sql: `(${prefix}assignee_user_id = $? OR ${prefix}created_by = $?)`,
-    value: userId,
-  };
+  // `task` is the one object with no single owner column — either end of it.
+  // Both branches compare to the SAME parameter, so the caller still
+  // substitutes exactly one value.
+  if (objectType === "task") {
+    return {
+      sql: `(${prefix}assignee_user_id = $? OR ${prefix}created_by = $?)`,
+      value: userId,
+    };
+  }
+
+  // Any other null-column object (e.g. `product`, a shared catalogue entry
+  // with no per-record owner) has nothing to restrict `owned` scope BY — that
+  // scope should never actually be granted for it, but if it somehow is, the
+  // safe reading is "no narrower than `all`", not a query against columns the
+  // table doesn't have.
+  return null;
 }
 
 /**

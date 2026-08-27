@@ -76,6 +76,21 @@ import { WhatsAppCheckController } from "../modules/leads/whatsapp-check.control
 import { MergeController } from "../modules/merge/merge.controller";
 import { NotificationsController } from "../modules/notifications/notifications.controller";
 import { AutomationController } from "../modules/automation/automation.controller";
+import { ConversationsController } from "../modules/conversations/conversations.controller";
+import { MessagingChannelsController } from "../modules/conversations/messaging-channels.controller";
+import { MessagingWebhookController } from "../modules/conversations/messaging-webhook.controller";
+import { WhatsAppSendController } from "../modules/conversations/whatsapp-send.controller";
+import { TagsController } from "../modules/tags/tags.controller";
+import { MarketingSourcesController } from "../modules/tags/marketing-sources.controller";
+import { OutreachController } from "../modules/outreach/outreach.controller";
+import { ProductsController } from "../modules/products/products.controller";
+import { QuotationsController } from "../modules/quotations/quotations.controller";
+import { InvoicesController } from "../modules/invoices/invoices.controller";
+import { PaymentsController } from "../modules/invoices/payments.controller";
+import { RazorpayWebhookController } from "../modules/invoices/razorpay-webhook.controller";
+import { ImportController } from "../modules/import/import.controller";
+import { MetaOAuthController } from "../modules/meta-ads/meta-oauth.controller";
+import { MetaWebhookController } from "../modules/meta-ads/meta-webhook.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
@@ -151,11 +166,72 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // the same reason: these are org CONFIGURATION, not records, and
   // PermissionObjectType has no value for them. Asserted below alongside those.
   AutomationController,
+  // The inbound messaging inbox (migrations 0055/0056). ConversationsController
+  // is CrmPermissionsGuard'd on the new `conversation` object type;
+  // MessagingChannelsController is org CONFIGURATION and sits with Automation
+  // above; MessagingWebhookController is deliberately UNGUARDED and is listed
+  // in UNGUARDED below — a provider cannot present an admin key or an org
+  // header, so its `:token` path segment is the credential.
+  ConversationsController,
+  MessagingChannelsController,
+  MessagingWebhookController,
+  // The outbound half, added for Wasi (migration 0061). See
+  // whatsapp-send.controller.ts's header for why it's a separate class
+  // rather than a method here. MessagingChannelsController also gained one
+  // route in this change (GET .../templates, a Wasi proxy) — no new import
+  // needed for that, same class.
+  WhatsAppSendController,
+  // Tags and campaign attribution (migration 0057). TagsController carries
+  // BOTH regimes: the tag vocabulary is org configuration, while attaching a
+  // tag to a record is gated on that record's `edit` grant — a viewer who
+  // cannot edit a contact must not be able to relabel it either.
+  TagsController,
+  MarketingSourcesController,
+  // The follow-up ladder (migration 0058). AdminKeyGuard + TenantGuard, with
+  // the automation rules above: it writes only to its own two tables, where a
+  // rule can move a deal and rewrite its custom fields.
+  OutreachController,
+  // Kailash-gap Milestone 1 (migrations 0059/0060): products/quotations/
+  // invoices join `product`/`quotation`/`invoice` on PermissionObjectType, so
+  // all of ProductsController/QuotationsController/InvoicesController/
+  // PaymentsController sit with the rest of CrmPermissionsGuard's surface
+  // below. RazorpayWebhookController is deliberately UNGUARDED, same class
+  // of exception as MessagingWebhookController above — Razorpay cannot
+  // present an admin key, and the payload's payment_link id (resolved on the
+  // admin pool) is what names the org, verified against THAT org's own
+  // webhook secret before anything is trusted.
+  ProductsController,
+  QuotationsController,
+  InvoicesController,
+  PaymentsController,
+  RazorpayWebhookController,
+  // Kailash gap Milestone 2: bulk CSV import (migration 0062). AdminKeyGuard+
+  // TenantGuard only — a bulk operation over a caller-chosen entity type,
+  // the same administrative tier scripts/backfill-crm-objects.js already
+  // operates at, not a per-record CrmPermissionsGuard surface.
+  ImportController,
+  // Kailash gap Milestone 4: Meta Lead Ads capture (migration 0063).
+  // MetaOAuthController mixes both regimes in one class, like TagsController
+  // does — `start` needs a signed-in tenant, `callback` is Meta's own
+  // browser redirect and verifies itself via a signed state token instead.
+  // MetaWebhookController is entirely UNGUARDED, same class of exception as
+  // messaging/webhook/:token and /webhooks/razorpay.
+  MetaOAuthController,
+  MetaWebhookController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
 
-/** §1.2 — the six routes with no `@UseGuards` metadata at all. */
+/**
+ * §1.2 — the seven routes with no `@UseGuards` metadata at all.
+ *
+ * The messaging webhook is the newest member and the only one that is
+ * unguarded while still writing tenant data. It is admissible because the
+ * `:token` path segment IS its credential: 32 CSPRNG bytes, UNIQUE
+ * platform-wide in `messaging_channels.webhook_token`, resolved on the admin
+ * pool to name the org before anything is written. An unknown token 404s
+ * without disclosing whether one exists.
+ */
 const UNGUARDED = [
   "GET /health",
   "POST /auth/login",
@@ -163,6 +239,18 @@ const UNGUARDED = [
   "POST /devices/register",
   "POST /devices/challenge",
   "POST /devices/authenticate",
+  "POST /messaging/webhook/:token",
+  // Razorpay's payment-link webhook (migration 0060). See razorpay-webhook.controller.ts's
+  // header for the resolve-org-then-verify-signature ordering that makes this
+  // safe to leave unguarded.
+  "POST /webhooks/razorpay",
+  // Meta's own OAuth redirect lands here with no Aura credentials — verifies
+  // itself via the signed `state` param instead (meta-client.ts).
+  "GET /meta/oauth/callback",
+  // Meta's leadgen webhook handshake + delivery (migration 0063). Same
+  // resolve-then-verify shape as the other unauthenticated webhooks above.
+  "GET /meta/webhook",
+  "POST /meta/webhook",
 ];
 
 /** §1.1 rows 22, 23, 44, 48–50 — the handset fleet's entire surface. */
@@ -270,6 +358,18 @@ const CRM_PERMISSION_ROUTES = [
   "GET /tasks/:id",
   "POST /tasks",
   "PATCH /tasks/:id",
+  // The inbox (migrations 0055/0056), on the `conversation` object type.
+  // There is no POST here and that is the point: safety rule 3 survives only
+  // while no general-purpose "post a message" route sits behind an ordinary
+  // permission. Reading, routing, claiming and closing — never sending.
+  "GET /conversations",
+  "GET /conversations/:id",
+  "PATCH /conversations/:id",
+  // Attaching a label is editing the record it hangs off (migration 0057).
+  "POST /contacts/:id/tags",
+  "DELETE /contacts/:id/tags/:tagId",
+  "POST /deals/:id/tags",
+  "DELETE /deals/:id/tags/:tagId",
   // PRD Layer 3. Viewing a report needs `deal:view`; the CSV export needs
   // `deal:export` — the first route on the platform to use that action, and
   // the reason the export is its own route rather than a `?format=` param.
@@ -302,6 +402,30 @@ const CRM_PERMISSION_ROUTES = [
   // from the record rather than the request) live in the controller, since no
   // guard can express "and the address must come from the database".
   "POST /contacts/:id/email",
+  // Kailash-gap Milestone 1 (migrations 0059/0060). `product`/`quotation`/
+  // `invoice` joined PermissionObjectType together, seeded in the same
+  // migrations that widen the enum — see permissions.ts's comment.
+  "GET /products",
+  "GET /products/:id",
+  "POST /products",
+  "PATCH /products/:id",
+  "GET /quotations",
+  "GET /quotations/:id",
+  "POST /quotations",
+  "PATCH /quotations/:id",
+  "GET /invoices",
+  "GET /invoices/:id",
+  "POST /invoices",
+  "POST /invoices/from-quotation/:quotationId",
+  "PATCH /invoices/:id",
+  // "Collect Payment" — gated on invoice:edit, same reasoning as the email
+  // send route above: creating a link writes to the invoice's payment
+  // history, even though only the (unguarded, separately verified) webhook
+  // can ever mark it paid.
+  "POST /invoices/:id/payment-link",
+  // The outbound WhatsApp send path (migration 0061). Gated on `conversation:edit`
+  // rather than a new action — same reasoning as the email-send route above.
+  "POST /conversations/:id/messages",
 ];
 
 interface Route {
@@ -381,7 +505,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 166 routes, partitioned 131 tenant / 23 cross-tenant / 6 device / 6 unguarded", () => {
+  it("has 220 routes, partitioned 180 tenant / 23 cross-tenant / 6 device / 11 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -389,14 +513,16 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // Layer 3's 4 report routes, Layer 1's 6 connection routes, the 6
     // custom-field-VALUE routes, the booking lifecycle's one
     // (POST /admin/slots/:id/attendance, cross-tenant like the rest of the
-    // funnel's operator surface), and A6 Milestone 4's one
+    // funnel's operator surface), A6 Milestone 4's one
     // (GET /owner/crm-overview, tenant-scoped like its sibling
-    // GET /owner/overview). They are asserted as a
+    // GET /owner/overview), and Kailash-gap Milestone 1's 15 (4 products + 4
+    // quotations + 5 invoices + 1 payment-link, all tenant-scoped, plus the
+    // one unguarded Razorpay webhook). They are asserted as a
     // set, not just a total, so moving a route BETWEEN classes (dropping
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
-    expect(ROUTES).toHaveLength(166);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(166);
+    expect(ROUTES).toHaveLength(220);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(220);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -406,20 +532,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(131);
+    expect(tenantScoped).toHaveLength(180);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(166);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(220);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 154 principal routes", () => {
-    // 131 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 203 principal routes", () => {
+    // 180 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(154);
+    expect(principalRoutes).toHaveLength(203);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -515,12 +641,15 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     ]);
   });
 
-  it("pins the six unguarded routes as an explicit allowlist", () => {
+  it("pins the eleven unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
     // `POST /auth/logout` is a known finding — an anonymous DELETE on the
-    // RLS-bypassing pool. A SEVENTH unguarded route is not a judgement call
-    // this suite can make, so it fails and asks for one.
+    // RLS-bypassing pool. Razorpay, Meta's OAuth callback and Meta's leadgen
+    // webhook are the newest: unauthenticated for the same class of reason as
+    // the messaging webhook, resolve-then-verify rather than guard-then-trust.
+    // A TWELFTH unguarded route is not a judgement call this suite can make,
+    // so it fails and asks for one.
     for (const route of UNGUARDED) {
       expect([route, byRoute.get(route)?.guards]).toEqual([route, []]);
     }

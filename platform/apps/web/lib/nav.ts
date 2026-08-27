@@ -10,6 +10,8 @@ import {
   LayoutGrid,
   ListFilter,
   ListChecks,
+  MessagesSquare,
+  Milestone,
   PieChart,
   Link2,
   Phone,
@@ -145,6 +147,25 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Pipeline",
     // No persona restriction, unlike the boards: a telecaller's own follow-ups
     // are exactly the thing they need this console for.
+  },
+  {
+    href: "/owner/inbox",
+    label: "Inbox",
+    icon: MessagesSquare,
+    title: "Inbox",
+    context: "Pipeline",
+    // Unrestricted for the same reason Tasks is: a telecaller answering
+    // replies is the whole job, and routing correspondence to a persona who
+    // cannot see it is how an enquiry goes unanswered.
+  },
+  {
+    href: "/owner/outreach",
+    label: "Outreach",
+    icon: Milestone,
+    title: "Outreach",
+    context: "Pipeline",
+    // Unrestricted, like Tasks and Inbox: working the follow-up ladder is a
+    // telecaller's core job, not a manager's oversight view.
   },
   {
     href: "/owner/contacts",

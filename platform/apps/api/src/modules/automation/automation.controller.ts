@@ -14,7 +14,14 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { AutomationRuleInput, AutomationTrigger, SWEEP_TRIGGERS } from "@aura/shared";
+import {
+  AutomationRuleInput,
+  AutomationTrigger,
+  SWEEP_TRIGGERS,
+  projectDryRun,
+  type AutomationSubject,
+  type AutomationTrigger as AutomationTriggerValue,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -26,6 +33,21 @@ const RULE_COLUMNS = `id, name, description, trigger, conditions, actions, statu
 const RunsQuery = z.object({
   ruleId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+/**
+ * A rule to preview. `conditions`/`actions` stay `unknown` here on purpose:
+ * projectDryRun validates them with the SAME schemas the worker's
+ * processEvent uses, and re-validating them at the edge would mean a preview
+ * could reject a shape the executor accepts, or the reverse.
+ */
+const DryRunInput = z.object({
+  trigger: AutomationTrigger,
+  conditions: z.unknown().optional(),
+  actions: z.unknown().optional(),
+  /** How far back to replay. Capped — this reads raw events. */
+  windowDays: z.coerce.number().int().min(1).max(90).default(30),
+  limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 
 /**
@@ -85,6 +107,71 @@ export class AutomationController {
         [ruleId ?? null, limit],
       );
       return { runs: rows };
+    });
+  }
+
+  /**
+   * "If this rule had been live over the last N days, what would it have
+   * done?"
+   *
+   * ── IT IS A POST THAT WRITES NOTHING ────────────────────────────────
+   *
+   * POST because the rule being previewed is a body, not a query string —
+   * conditions and actions are nested objects, and a rule is normally
+   * previewed BEFORE it is saved, so there is no id to GET by. The handler
+   * only SELECTs; the projection itself is a pure function that has no
+   * database access to misuse.
+   *
+   * The window is capped because this replays raw events: an unbounded
+   * preview on a busy tenant is a table scan somebody triggers by holding
+   * down a button.
+   */
+  @Post("dry-run")
+  async dryRun(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = DryRunInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { trigger, conditions, actions, windowDays, limit } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query<{
+        id: string;
+        trigger: AutomationTriggerValue;
+        subject_type: string | null;
+        subject_id: string | null;
+        payload: AutomationSubject;
+        created_at: Date;
+      }>(
+        `SELECT id, trigger, subject_type, subject_id, payload, created_at
+           FROM automation_events
+          WHERE trigger = $1
+            AND created_at >= now() - ($2 || ' days')::interval
+          ORDER BY created_at DESC
+          LIMIT $3`,
+        [trigger, String(windowDays), limit],
+      );
+
+      const result = projectDryRun(
+        { trigger, conditions, actions },
+        rows.map((r) => ({
+          id: r.id,
+          trigger: r.trigger,
+          subjectType: r.subject_type,
+          subjectId: r.subject_id,
+          payload: r.payload ?? {},
+          occurredAt: r.created_at,
+        })),
+        new Date(),
+      );
+
+      // Stated rather than left for the reader to infer: a preview capped at
+      // `limit` that says "8 matches" reads as "8 in the window", which it is
+      // not. The count and the cap have to travel together.
+      if (rows.length === limit) {
+        result.approximations.push(
+          `Only the most recent ${limit} events were replayed — there may be older ones in this window.`,
+        );
+      }
+      return { ...result, windowDays };
     });
   }
 

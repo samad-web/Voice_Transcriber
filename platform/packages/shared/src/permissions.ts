@@ -29,8 +29,22 @@ export type SystemRoleKey = z.infer<typeof SystemRoleKey>;
  * Still absent, deliberately: `pipeline`, `custom_field` and `merge`. Those
  * are org-configuration surfaces rather than records, and they stay on
  * AdminKeyGuard+TenantGuard until there is a reason to model them here.
+ *
+ * `product`/`quotation`/`invoice` joined in with the Kailash-gap Milestone 1
+ * work (migrations 0059/0060), seeded the same way `task` and `conversation`
+ * were — every system role gets a matching grant in the same migration that
+ * widens this enum, so nobody is locked out the day it ships.
  */
-export const PermissionObjectType = z.enum(["contact", "account", "deal", "task"]);
+export const PermissionObjectType = z.enum([
+  "contact",
+  "account",
+  "deal",
+  "task",
+  "conversation",
+  "product",
+  "quotation",
+  "invoice",
+]);
 export type PermissionObjectType = z.infer<typeof PermissionObjectType>;
 
 export const PermissionAction = z.enum(["view", "create", "edit", "delete", "export"]);

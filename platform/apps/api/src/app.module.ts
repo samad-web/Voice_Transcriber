@@ -24,9 +24,17 @@ import { MergeModule } from "./modules/merge/merge.module";
 import { RolesModule } from "./modules/roles/roles.module";
 import { ConnectionsModule } from "./modules/connections/connections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { ConversationsModule } from "./modules/conversations/conversations.module";
+import { TagsModule } from "./modules/tags/tags.module";
+import { OutreachModule } from "./modules/outreach/outreach.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AutomationModule } from "./modules/automation/automation.module";
+import { ProductsModule } from "./modules/products/products.module";
+import { QuotationsModule } from "./modules/quotations/quotations.module";
+import { InvoicesModule } from "./modules/invoices/invoices.module";
+import { ImportModule } from "./modules/import/import.module";
+import { MetaAdsModule } from "./modules/meta-ads/meta-ads.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -57,11 +65,19 @@ import { AutomationModule } from "./modules/automation/automation.module";
     CustomFieldsModule,
     MergeModule,
     RolesModule,
+    ConversationsModule,
+    TagsModule,
+    OutreachModule,
     TasksModule,
     NotificationsModule,
     AutomationModule,
     ReportsModule,
     ConnectionsModule,
+    ProductsModule,
+    QuotationsModule,
+    InvoicesModule,
+    ImportModule,
+    MetaAdsModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

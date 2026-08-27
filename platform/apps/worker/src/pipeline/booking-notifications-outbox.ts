@@ -1,4 +1,5 @@
 import { getAdminPool } from "@aura/db";
+import { quietHoursFromEnv, quietWindowEndsAt, shouldHoldForQuietHours } from "@aura/shared";
 import type { MessageChannel, MessageTemplateKey } from "@aura/shared";
 import { backoffSeconds, type DbClient } from "./crm-dispatch";
 import { getFollowUpDispatcher } from "./funnel-followup";
@@ -242,7 +243,32 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
   const dispatcher = getFollowUpDispatcher();
   let processed = 0;
 
+  // Read once per drain, not per row: every row in this batch is being judged
+  // against the same instant, and re-reading the clock mid-loop could hold
+  // half a batch and send the other half across a 21:00 boundary.
+  const quiet = quietHoursFromEnv();
+  const now = new Date();
+
   for (const row of due) {
+    // ── quiet hours ──────────────────────────────────────────────────────
+    //
+    // Before every other check, and deliberately NOT counted as an attempt: a
+    // message held because of the hour has not failed to deliver. Letting it
+    // consume a retry would walk it up the backoff ladder and eventually
+    // dead-letter something that was never broken — a nurture message queued
+    // on a Friday evening could exhaust itself over a weekend of quiet
+    // windows and never be sent at all.
+    //
+    // Time-critical templates are exempt inside shouldHoldForQuietHours, so a
+    // "your call starts in an hour" still goes out at 06:00.
+    if (quiet && shouldHoldForQuietHours(row.template, now, quiet)) {
+      await pool.query(
+        `UPDATE marketing.booking_notifications SET next_attempt_at = $2 WHERE id = $1`,
+        [row.id, quietWindowEndsAt(now, quiet)],
+      );
+      continue;
+    }
+
     const attempts = row.attempts + 1;
 
     let result:

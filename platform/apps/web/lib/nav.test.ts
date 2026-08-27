@@ -27,6 +27,8 @@ describe("ownerNavItemsFor", () => {
       "/owner/board",
       "/owner/leads",
       "/owner/tasks",
+      "/owner/inbox",
+      "/owner/outreach",
       "/owner/connections",
       "/owner/duplicates",
     ]);
@@ -50,6 +52,10 @@ describe("ownerNavItemsFor", () => {
       "/owner/accounts",
       "/owner/leads",
       "/owner/tasks",
+      // Unrestricted, like Tasks: answering replies and working the ladder are
+      // a telecaller's job.
+      "/owner/inbox",
+      "/owner/outreach",
       "/owner/connections",
     ]);
   });
