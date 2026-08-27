@@ -92,6 +92,7 @@ export default async function ContactsPage({
                 <TableHeaderCell>Email</TableHeaderCell>
                 <TableHeaderCell>Phone</TableHeaderCell>
                 <TableHeaderCell className="text-right">Calls</TableHeaderCell>
+                <TableHeaderCell className="text-right">Lead score</TableHeaderCell>
                 <TableHeaderCell>Last activity</TableHeaderCell>
               </tr>
             </TableHead>
@@ -118,6 +119,13 @@ export default async function ContactsPage({
                         : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{contact.call_count}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {contact.lead_score > 0 ? (
+                      <span className="font-medium text-text">{contact.lead_score}</span>
+                    ) : (
+                      <span className="text-text-muted">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-text-muted tabular-nums">
                     {relativeTime(contact.last_activity_at)}
                   </TableCell>

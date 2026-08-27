@@ -29,8 +29,18 @@ describe("ownerNavItemsFor", () => {
       "/owner/tasks",
       "/owner/inbox",
       "/owner/outreach",
+      // Kailash gap Milestones 1/2/4 — not part of the CRM_PRIMARY_HREFS
+      // group, so they stay in their declared OWNER_NAV_ITEMS order rather
+      // than moving with Deals/Contacts/Accounts/Reports.
+      "/owner/products",
+      "/owner/quotations",
+      "/owner/invoices",
       "/owner/connections",
       "/owner/duplicates",
+      "/owner/import",
+      "/owner/messaging-setup",
+      "/owner/meta-ads",
+      "/owner/branding",
     ]);
   });
 

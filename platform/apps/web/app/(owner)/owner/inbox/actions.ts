@@ -15,6 +15,7 @@ export interface Conversation {
   contact_name: string | null;
   status: ConversationStatus;
   assigned_user_id: string | null;
+  messaging_channel_id: string | null;
   last_message_at: string | null;
   last_inbound_at: string | null;
   unread_count: number;
@@ -31,6 +32,13 @@ export interface ConversationMessage {
   body: string | null;
   error: string | null;
   occurred_at: string;
+}
+
+export interface WasiTemplate {
+  name: string;
+  status: string;
+  category?: string;
+  language?: string;
 }
 
 export interface InboxFilters {
@@ -91,12 +99,11 @@ export async function fetchThreadAction(
 }
 
 /**
- * Route, claim, read or close a thread.
- *
- * Deliberately the only mutation this page has. There is no reply action
- * because there is no reply ROUTE — safety rule 3 keeps sending on the narrow
- * human-composed path, and adding a send here would be the exact hole the
- * rule exists to prevent.
+ * Route, claim, read or close a thread — plus, since Kailash gap Milestone 3,
+ * the one narrow send action below. Safety rule 3 is kept by that action's
+ * own shape (whatsapp-send.controller.ts): a human composes it, it goes to
+ * the address already on the conversation, and it's off by default behind
+ * WHATSAPP_SENDING_ENABLED — not by this file having no mutations at all.
  */
 export async function updateConversationAction(
   id: string,
@@ -120,6 +127,63 @@ export async function updateConversationAction(
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       const detail = (body as { message?: unknown })?.message ?? body;
+      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
+    }
+    revalidatePath("/owner/inbox");
+    return { ok: true };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** The channel's Meta-approved WhatsApp templates, for the composer's template picker. */
+export async function fetchChannelTemplatesAction(
+  channelId: string,
+): Promise<{ templates?: WasiTemplate[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/channels/${channelId}/templates`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = (body as { message?: unknown })?.message;
+      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
+    }
+    const data = (await res.json()) as { templates: WasiTemplate[] };
+    return { templates: data.templates };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Send one WhatsApp message into this conversation. See
+ * whatsapp-send.controller.ts for the full gate chain this rides on — this
+ * action does not duplicate any of it, it just relays whatever the API says
+ * (including a friendly 503 when WHATSAPP_SENDING_ENABLED is off, or Wasi's
+ * own rejection reason, e.g. an expired 24-hour session window).
+ */
+export async function sendWhatsAppMessageAction(
+  conversationId: string,
+  message: { type: "text"; body: string } | { type: "template"; template: string; params: Record<string, string> },
+): Promise<{ ok?: true; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(message),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = (body as { message?: unknown })?.message;
       return { error: typeof detail === "string" ? detail : `API ${res.status}` };
     }
     revalidatePath("/owner/inbox");

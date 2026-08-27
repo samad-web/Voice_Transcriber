@@ -1,0 +1,573 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import Link from "next/link";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from "@aura/ui";
+import {
+  createPaymentLinkAction,
+  updateInvoiceAction,
+  type Invoice,
+  type InvoiceItem,
+  type InvoiceItemInput,
+  type InvoiceStatus,
+  type Payment,
+} from "../actions";
+import { formatMoney } from "../format";
+
+interface ItemRow {
+  key: string;
+  productId?: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  discountPct: string;
+  taxRate: string;
+  lineTotal: string | null;
+}
+
+function toRows(items: InvoiceItem[]): ItemRow[] {
+  return items.map((item) => ({
+    key: item.id,
+    productId: item.product_id ?? undefined,
+    description: item.description,
+    quantity: String(Number(item.quantity)),
+    unitPrice: String(Number(item.unit_price)),
+    discountPct: item.discount_pct ? String(Number(item.discount_pct)) : "",
+    taxRate: item.tax_rate ? String(Number(item.tax_rate)) : "",
+    lineTotal: item.line_total,
+  }));
+}
+
+let rowSeq = 0;
+function newRow(): ItemRow {
+  rowSeq += 1;
+  return {
+    key: `new-${rowSeq}`,
+    description: "",
+    quantity: "1",
+    unitPrice: "",
+    discountPct: "",
+    taxRate: "",
+    lineTotal: null,
+  };
+}
+
+const STATUS_OPTIONS: InvoiceStatus[] = ["draft", "sent", "paid", "overdue", "void"];
+
+function paymentTone(status: Payment["status"]): "solid" | "outline" | "danger" {
+  if (status === "paid") return "solid";
+  if (status === "failed") return "danger";
+  return "outline";
+}
+
+/**
+ * The invoice detail page's interactive half: header (status/due
+ * date/GST/notes), the line-item table, payment history, and the one button
+ * that actually matters — Collect Payment. That last one is deliberately its
+ * own island of state: the payment link it mints has nowhere else to live
+ * (the payments list the API returns has no URL field, only an id), so it
+ * must survive whatever else on this page saves and re-renders around it.
+ */
+export function InvoiceDetail({
+  invoice: initialInvoice,
+  items: initialItems,
+  payments,
+}: {
+  invoice: Invoice;
+  items: InvoiceItem[];
+  payments: Payment[];
+}) {
+  const [invoice, setInvoice] = useState(initialInvoice);
+  const [status, setStatus] = useState<InvoiceStatus>(initialInvoice.status);
+  const [dueDate, setDueDate] = useState(initialInvoice.due_date ? initialInvoice.due_date.slice(0, 10) : "");
+  const [notes, setNotes] = useState(initialInvoice.notes ?? "");
+  const [customerGstin, setCustomerGstin] = useState(initialInvoice.customer_gstin ?? "");
+  const [placeOfSupply, setPlaceOfSupply] = useState(initialInvoice.place_of_supply ?? "");
+  const [headerError, setHeaderError] = useState<string | null>(null);
+  const [headerPending, startHeader] = useTransition();
+
+  const [rows, setRows] = useState<ItemRow[]>(() => toRows(initialItems));
+  const [discountType, setDiscountType] = useState<"none" | "percent" | "amount">(
+    initialInvoice.discount_type ?? "none",
+  );
+  const [discountValue, setDiscountValue] = useState(
+    initialInvoice.discount_value ? String(Number(initialInvoice.discount_value)) : "0",
+  );
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  const [itemsPending, startItems] = useTransition();
+
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentPending, startPayment] = useTransition();
+  const [copied, setCopied] = useState(false);
+
+  const saveHeader = () => {
+    setHeaderError(null);
+    startHeader(async () => {
+      const result = await updateInvoiceAction(invoice.id, {
+        status,
+        dueDate: dueDate || null,
+        notes: notes.trim() || null,
+        customerGstin: customerGstin.trim() || null,
+        placeOfSupply: placeOfSupply.trim() || null,
+      });
+      if (result.error || !result.invoice) {
+        setHeaderError(result.error ?? "Could not save");
+        return;
+      }
+      setInvoice(result.invoice);
+      setStatus(result.invoice.status);
+      setDueDate(result.invoice.due_date ? result.invoice.due_date.slice(0, 10) : "");
+      setNotes(result.invoice.notes ?? "");
+      setCustomerGstin(result.invoice.customer_gstin ?? "");
+      setPlaceOfSupply(result.invoice.place_of_supply ?? "");
+    });
+  };
+
+  const updateRow = (key: string, patch: Partial<ItemRow>) => {
+    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  };
+
+  const removeRow = (key: string) => {
+    setRows((prev) => prev.filter((row) => row.key !== key));
+  };
+
+  const saveItems = () => {
+    setItemsError(null);
+
+    const parsed: InvoiceItemInput[] = [];
+    for (const row of rows) {
+      if (!row.description.trim()) continue;
+      const quantity = Number(row.quantity);
+      const unitPrice = Number(row.unitPrice);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setItemsError(`Enter a valid quantity for "${row.description}"`);
+        return;
+      }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        setItemsError(`Enter a valid unit price for "${row.description}"`);
+        return;
+      }
+      parsed.push({
+        productId: row.productId,
+        description: row.description.trim(),
+        quantity,
+        unitPrice,
+        discountPct: row.discountPct ? Number(row.discountPct) : undefined,
+        taxRate: row.taxRate ? Number(row.taxRate) : undefined,
+      });
+    }
+    if (parsed.length === 0) {
+      setItemsError("An invoice needs at least one line item");
+      return;
+    }
+
+    startItems(async () => {
+      const result = await updateInvoiceAction(invoice.id, {
+        items: parsed,
+        discount: {
+          type: discountType === "none" ? null : discountType,
+          value: Number(discountValue) || 0,
+        },
+      });
+      if (result.error || !result.invoice) {
+        setItemsError(result.error ?? "Could not save items");
+        return;
+      }
+      setInvoice(result.invoice);
+      if (result.items) setRows(toRows(result.items));
+      setDiscountType(result.invoice.discount_type ?? "none");
+      setDiscountValue(
+        result.invoice.discount_value ? String(Number(result.invoice.discount_value)) : "0",
+      );
+    });
+  };
+
+  const collectPayment = () => {
+    setPaymentError(null);
+    setCopied(false);
+    startPayment(async () => {
+      const result = await createPaymentLinkAction(invoice.id);
+      if (result.error || !result.paymentLinkUrl) {
+        setPaymentError(result.error ?? "Could not create a payment link");
+        return;
+      }
+      setPaymentUrl(result.paymentLinkUrl);
+    });
+  };
+
+  const copyLink = async () => {
+    if (!paymentUrl) return;
+    try {
+      await navigator.clipboard.writeText(paymentUrl);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const balanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
+      <div className="space-y-6">
+        <Card>
+          <MonoLabel>Line items</MonoLabel>
+          {itemsError ? (
+            <p
+              role="alert"
+              className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
+            >
+              {itemsError}
+            </p>
+          ) : null}
+
+          <div className="mt-3">
+            <Table caption="Invoice line items">
+              <TableHead>
+                <tr>
+                  <TableHeaderCell>Description</TableHeaderCell>
+                  <TableHeaderCell>Qty</TableHeaderCell>
+                  <TableHeaderCell>Unit price</TableHeaderCell>
+                  <TableHeaderCell>Discount %</TableHeaderCell>
+                  <TableHeaderCell>Tax %</TableHeaderCell>
+                  <TableHeaderCell>Line total</TableHeaderCell>
+                  <TableHeaderCell>
+                    <span className="sr-only">Remove</span>
+                  </TableHeaderCell>
+                </tr>
+              </TableHead>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell>
+                      <Input
+                        aria-label="Description"
+                        value={row.description}
+                        onChange={(e) => updateRow(row.key, { description: e.target.value })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        aria-label="Quantity"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row.quantity}
+                        onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        aria-label="Unit price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row.unitPrice}
+                        onChange={(e) => updateRow(row.key, { unitPrice: e.target.value })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        aria-label="Discount percent"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row.discountPct}
+                        onChange={(e) => updateRow(row.key, { discountPct: e.target.value })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        aria-label="Tax rate percent"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={row.taxRate}
+                        onChange={(e) => updateRow(row.key, { taxRate: e.target.value })}
+                      />
+                    </TableCell>
+                    <TableCell className="tabular-nums text-text-muted">
+                      {row.lineTotal ? formatMoney(row.lineTotal, invoice.currency) : "unsaved"}
+                    </TableCell>
+                    <TableCell>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(row.key)}>
+                        Remove
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setRows((prev) => [...prev, newRow()])}
+                    >
+                      + Add item
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4">
+            <FormField label="Discount type" name="discountType">
+              <Select
+                value={discountType}
+                onChange={(e) => setDiscountType(e.target.value as typeof discountType)}
+              >
+                <option value="none">None</option>
+                <option value="percent">Percent</option>
+                <option value="amount">Amount</option>
+              </Select>
+            </FormField>
+            <FormField label="Discount value" name="discountValue">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                disabled={discountType === "none"}
+                value={discountValue}
+                onChange={(e) => setDiscountValue(e.target.value)}
+              />
+            </FormField>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Button type="button" loading={itemsPending} onClick={saveItems}>
+              Save items
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <MonoLabel>Payments</MonoLabel>
+          {payments.length === 0 ? (
+            <p className="mt-3 text-sm text-text-muted">No payment attempts yet.</p>
+          ) : (
+            <div className="mt-3">
+              <Table caption="Payment history">
+                <TableHead>
+                  <tr>
+                    <TableHeaderCell>Provider</TableHeaderCell>
+                    <TableHeaderCell>Status</TableHeaderCell>
+                    <TableHeaderCell>Amount</TableHeaderCell>
+                    <TableHeaderCell>Created</TableHeaderCell>
+                    <TableHeaderCell>Captured</TableHeaderCell>
+                  </tr>
+                </TableHead>
+                <TableBody>
+                  {payments.map((payment) => (
+                    <TableRow key={payment.id}>
+                      <TableCell className="text-text-muted">{payment.provider}</TableCell>
+                      <TableCell>
+                        <StatusChip tone={paymentTone(payment.status)}>{payment.status}</StatusChip>
+                      </TableCell>
+                      <TableCell className="tabular-nums text-text-muted">
+                        {formatMoney(payment.amount, payment.currency)}
+                      </TableCell>
+                      <TableCell className="text-text-muted">
+                        {new Date(payment.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-text-muted">
+                        {payment.captured_at ? new Date(payment.captured_at).toLocaleString() : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <Card>
+          <MonoLabel>Details</MonoLabel>
+          {headerError ? (
+            <p
+              role="alert"
+              className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
+            >
+              {headerError}
+            </p>
+          ) : null}
+          <div className="mt-3 space-y-3">
+            <FormField label="Status" name="status">
+              <Select value={status} onChange={(e) => setStatus(e.target.value as InvoiceStatus)}>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField label="Due date" name="dueDate">
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </FormField>
+            <FormField label="Customer GSTIN" name="customerGstin">
+              <Input
+                value={customerGstin}
+                onChange={(e) => setCustomerGstin(e.target.value.toUpperCase())}
+              />
+            </FormField>
+            <FormField label="Place of supply" name="placeOfSupply">
+              <Input value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)} />
+            </FormField>
+            <FormField label="Notes" name="notes">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                className="w-full rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text placeholder:text-text-muted hover:border-text-subtle"
+              />
+            </FormField>
+            <Button type="button" loading={headerPending} onClick={saveHeader}>
+              Save
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <MonoLabel>Totals</MonoLabel>
+          <dl className="mt-3 space-y-2 text-xs">
+            <div className="flex justify-between">
+              <dt className="text-text-muted">Subtotal</dt>
+              <dd className="font-medium text-text tabular-nums">
+                {formatMoney(invoice.subtotal, invoice.currency)}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-text-muted">Discount</dt>
+              <dd className="font-medium text-text tabular-nums">
+                {invoice.discount_type
+                  ? invoice.discount_type === "percent"
+                    ? `${Number(invoice.discount_value ?? 0)}%`
+                    : formatMoney(invoice.discount_value, invoice.currency)
+                  : "—"}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-text-muted">Tax</dt>
+              <dd className="font-medium text-text tabular-nums">
+                {formatMoney(invoice.tax_total, invoice.currency)}
+              </dd>
+            </div>
+            {invoice.cgst || invoice.sgst ? (
+              <div className="flex justify-between">
+                <dt className="text-text-muted">CGST + SGST</dt>
+                <dd className="font-medium text-text tabular-nums">
+                  {formatMoney(Number(invoice.cgst ?? 0) + Number(invoice.sgst ?? 0), invoice.currency)}
+                </dd>
+              </div>
+            ) : null}
+            {invoice.igst ? (
+              <div className="flex justify-between">
+                <dt className="text-text-muted">IGST</dt>
+                <dd className="font-medium text-text tabular-nums">
+                  {formatMoney(invoice.igst, invoice.currency)}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex justify-between border-t border-border pt-2">
+              <dt className="font-medium text-text">Total</dt>
+              <dd className="font-semibold text-text tabular-nums">
+                {formatMoney(invoice.total, invoice.currency)}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-text-muted">Amount paid</dt>
+              <dd className="font-medium text-text tabular-nums">
+                {formatMoney(invoice.amount_paid, invoice.currency)}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-text-muted">Balance due</dt>
+              <dd className="font-medium text-text tabular-nums">
+                {formatMoney(balanceDue, invoice.currency)}
+              </dd>
+            </div>
+          </dl>
+        </Card>
+
+        <Card>
+          <MonoLabel>Linked to</MonoLabel>
+          <dl className="mt-3 space-y-2.5 text-xs">
+            <div>
+              <dt className="text-text-muted">Account</dt>
+              <dd className="mt-0.5 font-medium break-words text-text">{invoice.account_id ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-text-muted">Contact</dt>
+              <dd className="mt-0.5 font-medium break-words text-text">{invoice.contact_id ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-text-muted">Deal</dt>
+              <dd className="mt-0.5 font-medium break-words text-text">{invoice.deal_id ?? "—"}</dd>
+            </div>
+            {invoice.quotation_id ? (
+              <div>
+                <dt className="text-text-muted">Quotation</dt>
+                <dd className="mt-0.5">
+                  <Link
+                    href={`/owner/quotations/${invoice.quotation_id}`}
+                    className="font-medium text-text hover:underline"
+                  >
+                    View quotation
+                  </Link>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </Card>
+
+        <Card>
+          <MonoLabel>Collect payment</MonoLabel>
+          <p className="mt-2 text-xs text-text-muted">
+            Generates a Razorpay payment link. Nothing is emailed or texted automatically — copy the
+            link and share it yourself.
+          </p>
+          {paymentError ? (
+            <p role="alert" className="mt-2 text-xs font-medium text-danger-text">
+              {paymentError}
+            </p>
+          ) : null}
+          {paymentUrl ? (
+            <div className="mt-3 flex items-center gap-2">
+              <Input
+                readOnly
+                aria-label="Payment link"
+                value={paymentUrl}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+              <Button type="button" variant="secondary" size="sm" onClick={copyLink}>
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          ) : (
+            <Button type="button" size="sm" className="mt-3" loading={paymentPending} onClick={collectPayment}>
+              Collect Payment
+            </Button>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}

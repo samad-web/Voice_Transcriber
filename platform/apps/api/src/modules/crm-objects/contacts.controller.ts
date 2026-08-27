@@ -50,7 +50,7 @@ const UpdateContactBody = z.object({
 
 const CONTACT_COLUMNS = `id, workspace_id, account_id, first_name, last_name, display_name, email,
   phone_prefix, phone_last3, title, external_ids, owner_user_id, facts, status, merged_into_id,
-  call_count, last_activity_at, created_at, updated_at`;
+  call_count, lead_score, last_activity_at, created_at, updated_at`;
 
 /**
  * Contacts (people) — CRM Phase 1, E0.1. Strangler-fig: nothing here reads

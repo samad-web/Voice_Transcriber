@@ -183,6 +183,8 @@ export interface Contact {
   facts: Record<string, unknown>;
   status: "active" | "archived" | "merged";
   call_count: number;
+  /** Kailash gap Milestone 4 — a point ledger scored by a worker sweep, not stored elsewhere. */
+  lead_score: number;
   last_activity_at: string;
   created_at: string;
 }

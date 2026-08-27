@@ -27,12 +27,14 @@ import { DbService } from "../../db/db.service";
  *
  * ── THERE IS NO SEND ROUTE HERE, ON PURPOSE ─────────────────────────────
  *
- * Safety rule 3 — nothing automated can send — is a property of the system,
- * not a promise in a comment, and it survives only as long as there is no
- * general-purpose "post a message" endpoint sitting behind an ordinary
- * permission. Reading, routing, claiming and closing are all this controller
- * does. Replying stays on the narrow human-composed path that already exists
- * and is separately flagged.
+ * Reading, routing, claiming and closing are all this controller does.
+ * WhatsApp sending (Kailash gap Milestone 3, `whatsapp-send.controller.ts`)
+ * is a deliberately SEPARATE, narrow controller — one recipient read from the
+ * conversation itself, a signed-in human required, off by default behind
+ * `WHATSAPP_SENDING_ENABLED`, capped per day — so this file's claim stays
+ * literally true rather than becoming a stale comment the day sending
+ * shipped. Safety rule 3 is a property of that other controller's shape, not
+ * of this file pretending sending doesn't exist.
  */
 const CONVERSATION_COLUMNS = `c.id, c.workspace_id, c.channel, c.peer_address, c.peer_label,
   c.contact_id, c.status, c.assigned_user_id, c.messaging_channel_id,

@@ -4,11 +4,14 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { StatusChip } from "@aura/ui";
 import { RecordPicker } from "../record-picker";
 import {
+  fetchChannelTemplatesAction,
   fetchThreadAction,
   listConversationsAction,
+  sendWhatsAppMessageAction,
   updateConversationAction,
   type Conversation,
   type ConversationMessage,
+  type WasiTemplate,
 } from "./actions";
 
 type Filter = "open" | "unmatched" | "closed";
@@ -44,6 +47,48 @@ export function Inbox() {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // ── composer (Kailash gap Milestone 3) ──────────────────────────────
+  const [composerMode, setComposerMode] = useState<"text" | "template">("text");
+  const [composerText, setComposerText] = useState("");
+  const [templates, setTemplates] = useState<WasiTemplate[] | null>(null);
+  const [templateName, setTemplateName] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendOk, setSendOk] = useState(false);
+  const [sending, startSend] = useTransition();
+
+  function loadTemplates(channelId: string) {
+    if (templates !== null) return;
+    startSend(async () => {
+      const res = await fetchChannelTemplatesAction(channelId);
+      setTemplates(res.templates ?? []);
+      if (res.error) setSendError(res.error);
+    });
+  }
+
+  function send() {
+    if (!thread) return;
+    setSendError(null);
+    setSendOk(false);
+    startSend(async () => {
+      const res = await sendWhatsAppMessageAction(
+        thread.conversation.id,
+        composerMode === "text"
+          ? { type: "text", body: composerText }
+          : { type: "template", template: templateName, params: {} },
+      );
+      if (res.error) {
+        setSendError(res.error);
+        return;
+      }
+      setSendOk(true);
+      setComposerText("");
+      const refreshed = await fetchThreadAction(thread.conversation.id);
+      if (refreshed.conversation) {
+        setThread({ conversation: refreshed.conversation, messages: refreshed.messages ?? [] });
+      }
+    });
+  }
+
   const load = useCallback(() => {
     start(async () => {
       const res = await listConversationsAction(
@@ -65,6 +110,11 @@ export function Inbox() {
 
   function open(id: string) {
     setSelectedId(id);
+    setComposerText("");
+    setTemplates(null);
+    setTemplateName("");
+    setSendError(null);
+    setSendOk(false);
     start(async () => {
       const res = await fetchThreadAction(id);
       if (res.error || !res.conversation) {
@@ -277,10 +327,84 @@ export function Inbox() {
               )}
             </ul>
 
-            <p className="mt-4 border-t border-border pt-3 text-xs text-text-muted">
-              Replies are sent from the lead&rsquo;s record, not from here — this platform has no
-              automated sending path, by design.
-            </p>
+            {thread.conversation.channel === "whatsapp" && thread.conversation.messaging_channel_id ? (
+              <div className="mt-4 border-t border-border pt-3">
+                <div className="flex items-center gap-1">
+                  {(["text", "template"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setComposerMode(mode);
+                        setSendError(null);
+                        if (mode === "template") loadTemplates(thread.conversation.messaging_channel_id!);
+                      }}
+                      aria-pressed={composerMode === mode}
+                      className={
+                        "h-8 rounded-md px-2.5 text-xs font-medium transition-colors " +
+                        (composerMode === mode
+                          ? "bg-accent text-accent-fg"
+                          : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
+                      }
+                    >
+                      {mode === "text" ? "Free text (within 24h)" : "Template"}
+                    </button>
+                  ))}
+                </div>
+
+                {composerMode === "text" ? (
+                  <textarea
+                    value={composerText}
+                    onChange={(e) => setComposerText(e.target.value)}
+                    placeholder="Type a reply — only deliverable within 24h of their last message."
+                    rows={3}
+                    className="mt-2 w-full resize-none rounded-md border border-border-strong bg-surface p-2.5 text-sm text-text placeholder:text-text-muted"
+                  />
+                ) : (
+                  <select
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    className="mt-2 h-9 w-full rounded-md border border-border-strong bg-surface px-2.5 text-sm text-text"
+                  >
+                    <option value="">
+                      {templates === null ? "Loading templates…" : "Choose an approved template"}
+                    </option>
+                    {(templates ?? [])
+                      .filter((t) => t.status === "approved")
+                      .map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name}
+                        </option>
+                      ))}
+                  </select>
+                )}
+
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={
+                      sending || (composerMode === "text" ? !composerText.trim() : !templateName)
+                    }
+                    onClick={send}
+                    className="inline-flex h-9 items-center rounded-md bg-accent px-3 text-sm font-medium text-accent-fg disabled:opacity-60"
+                  >
+                    {sending ? "Sending…" : "Send"}
+                  </button>
+                  {sendOk ? <span className="text-xs text-text-muted">Sent.</span> : null}
+                  {sendError ? <span className="text-xs text-danger-text">{sendError}</span> : null}
+                </div>
+                <p className="mt-2 text-xs text-text-muted">
+                  A person composes and sends every message here, one at a time — there is no
+                  automated sending path on this platform.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-4 border-t border-border pt-3 text-xs text-text-muted">
+                {thread.conversation.channel === "whatsapp"
+                  ? "This thread has no WhatsApp channel attached yet, so it can't be replied to from here."
+                  : "Replies are sent from the lead’s record, not from here — this platform has no automated sending path, by design."}
+              </p>
+            )}
           </>
         )}
       </div>
