@@ -77,13 +77,19 @@ object PlatformApi {
             JSONObject().put("deviceId", deviceId).put("nonce", nonce).put("signature", signature),
         ).getString("accessToken")
 
-    data class DeviceConfig(val recordingEnabled: Boolean, val version: Int)
+    data class DeviceConfig(
+        val recordingEnabled: Boolean,
+        val version: Int,
+        /** Instance-wide mobile app-lock hash, or null when the org hasn't set one. */
+        val appLockPasswordHash: String?,
+    )
 
     fun fetchConfig(baseUrl: String, accessToken: String): DeviceConfig {
         val response = request(baseUrl, "GET", "/devices/me/config", null, bearer = accessToken)
         return DeviceConfig(
             recordingEnabled = response.getBoolean("recordingEnabled"),
             version = response.getInt("version"),
+            appLockPasswordHash = response.optString("appLockPasswordHash", null),
         )
     }
 

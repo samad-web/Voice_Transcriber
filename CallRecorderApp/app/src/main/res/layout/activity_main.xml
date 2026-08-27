@@ -16,6 +16,8 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            app:logo="@mipmap/ic_launcher_foreground"
+            app:logoAdjustViewBounds="true"
             app:title="@string/app_name"
             app:titleCentered="false"
             app:titleTextAppearance="@style/TextAppearance.Material3.TitleLarge" />
@@ -43,11 +45,10 @@
                 android:id="@+id/greetingAvatar"
                 android:layout_width="46dp"
                 android:layout_height="46dp"
-                android:background="@drawable/bg_circle"
-                android:backgroundTint="?attr/colorPrimaryContainer"
+                android:background="@drawable/bg_gradient_brand"
                 android:gravity="center"
                 android:text="@string/profile_telecaller"
-                android:textColor="?attr/colorOnPrimaryContainer"
+                android:textColor="@android:color/white"
                 android:textSize="18sp"
                 android:textStyle="bold" />
 
@@ -75,42 +76,6 @@
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
-
-        <!-- Shown only when the accessibility service is off -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/setupBanner"
-            style="@style/Widget.Material3.CardView.Filled"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="12dp"
-            android:layout_marginTop="8dp"
-            android:visibility="gone"
-            app:cardBackgroundColor="?attr/colorSecondaryContainer"
-            app:cardCornerRadius="16dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/setup_banner"
-                    android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-                    android:textColor="?attr/colorOnSecondaryContainer" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/enableAccessibility"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:text="@string/enable" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
         <!-- Pull down to re-run the OEM recording import on demand: the automatic ingest
              only fires ~15s after a call ends and on a 15-minute cycle, so a call made

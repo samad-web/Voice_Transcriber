@@ -48,7 +48,9 @@ object ActivationManager {
                 baseUrl, deviceId, nonce, DeviceIdentity.signNonce(nonce),
             )
             val config = PlatformApi.fetchConfig(baseUrl, token)
-            ActivationStore.saveConfig(context, config.recordingEnabled, config.version)
+            ActivationStore.saveConfig(
+                context, config.recordingEnabled, config.version, config.appLockPasswordHash,
+            )
             // recordingEnabled is the only capture knob the server config document
             // currently carries, so it fully drives the local gate (isRecordingAllowed).
             // TODO: when the server extends DeviceConfig with capture policy (e.g. a
@@ -58,8 +60,15 @@ object ActivationManager {
             "Config v${config.version}: recording ${if (config.recordingEnabled) "ENABLED" else "DISABLED"}"
         } catch (e: PlatformApi.ApiException) {
             if (e.code == 401) {
-                // Remote logout/wipe or revocation — close the gate locally.
-                ActivationStore.saveConfig(context, recordingEnabled = false, configVersion = 0)
+                // Remote logout/wipe or revocation — close the recording gate locally.
+                // The app-lock hash is left exactly as last synced: a revoked device
+                // should still show its lock screen, not fall open on an auth failure.
+                ActivationStore.saveConfig(
+                    context,
+                    recordingEnabled = false,
+                    configVersion = 0,
+                    appLockPasswordHash = ActivationStore.appLockPasswordHash(context),
+                )
                 "Server rejected device (${e.code}) — recording disabled"
             } else {
                 "Config refresh failed: ${e.message}"

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Aura</string>
+    <string name="app_name">Auratel</string>
     <string name="developed_by">Developed by Sirah Digital</string>
     <string name="channel_recording">Recording</string>
     <string name="recording_title">Recording call</string>
@@ -28,7 +28,6 @@
     <string name="theme_dark">Dark</string>
     <string name="enable">Enable</string>
     <string name="more_actions">More actions</string>
-    <string name="setup_banner">Turn on call detection so calls record automatically.</string>
     <string name="empty_title">No recordings yet</string>
     <string name="empty_subtitle">Answered calls will appear here automatically.</string>
     <string name="file_missing">Recording file is missing</string>
@@ -101,4 +100,28 @@
     <string name="oem_ingest">Import phone\'s own call recordings</string>
     <string name="oem_ingest_hint">Uses the dialer\'s recordings, which capture both sides. Enable Phone app → Settings → Record calls.</string>
     <string name="tap_to_set_name">Tap to set your name</string>
+    <string name="advanced_label">Advanced</string>
+
+    <!-- Admin device activation -->
+    <string name="admin_activation_title">Device Activation</string>
+    <string name="admin_field_server_url">Platform server URL</string>
+    <string name="admin_field_instance_id">Instance ID</string>
+    <string name="admin_field_admin_key">One-time admin key</string>
+    <string name="admin_scan_qr">Scan Activation QR</string>
+    <string name="admin_or_manual">or enter manually</string>
+    <string name="admin_activate">Activate Device</string>
+    <string name="admin_refresh">Refresh Server Config</string>
+    <string name="admin_deactivate">Deactivate (clear enrollment)</string>
+    <string name="admin_fields_required">All three fields are required.</string>
+    <string name="admin_enrolling">Enrolling…</string>
+    <string name="admin_activation_failed">Activation failed: %1$s</string>
+    <string name="admin_enrollment_cleared">Enrollment cleared.</string>
+    <string name="admin_scanned_confirm">Scanned instance + key. Confirm the server URL, then Activate.</string>
+    <string name="admin_scan_unrecognized">Unrecognized QR (expected the activation code from the web app).</string>
+
+    <!-- App lock -->
+    <string name="lock_subtitle">Enter the password to continue</string>
+    <string name="lock_password_hint">Password</string>
+    <string name="lock_wrong_password">Incorrect password</string>
+    <string name="lock_unlock">Unlock</string>
 </resources>

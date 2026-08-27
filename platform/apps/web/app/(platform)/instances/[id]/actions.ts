@@ -249,6 +249,76 @@ export async function updatePolicyAction(input: {
   }
 }
 
+/**
+ * Set, change, or clear the mobile app-lock password for this instance.
+ * Rides the org policy endpoint like the transcription toggle and ASR
+ * settings — audited, and it bumps device config versions so every enrolled
+ * handset picks the change up on its next config refresh. `password: null`
+ * clears the lock for the whole fleet under this org.
+ */
+export async function setAppLockPasswordAction(input: {
+  orgId: string;
+  password: string | null;
+}): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/org/policy`, {
+      method: "PATCH",
+      headers: orgHeaders(input.orgId),
+      cache: "no-store",
+      body: JSON.stringify({ appLockPassword: input.password }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    revalidatePath(`/instances/${input.orgId}`);
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Set (or correct) the telecaller holding one handset — name and an optional
+ * employee/agent code — right where the device shows up as connected in the
+ * console, instead of only after the fact from the org's own owner dashboard.
+ * Calling it again on the same device edits the existing telecaller rather
+ * than creating a new one.
+ */
+export async function setDeviceTelecallerAction(input: {
+  orgId: string;
+  deviceId: string;
+  name: string;
+  externalId: string | null;
+}): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/devices/${input.deviceId}/telecaller`, {
+      method: "PATCH",
+      headers: orgHeaders(input.orgId),
+      cache: "no-store",
+      body: JSON.stringify({ name: input.name, externalId: input.externalId }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    revalidatePath(`/instances/${input.orgId}`);
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 export interface DeleteInstanceResult {
   deleted?: boolean;
   name?: string;

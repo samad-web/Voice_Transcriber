@@ -18,7 +18,7 @@ object ActivationStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun apiBaseUrl(context: Context): String =
-        prefs(context).getString("api_base_url", "http://10.0.2.2:4000")!!
+        prefs(context).getString("api_base_url", "https://aura.sirahagents.com")!!
 
     fun isActivated(context: Context): Boolean =
         prefs(context).getString("device_id", null) != null
@@ -30,6 +30,14 @@ object ActivationStore {
     /** Server-pushed flag from GET /v1/devices/me/config — defaults to false. */
     fun isRecordingEnabled(context: Context): Boolean =
         prefs(context).getBoolean("recording_enabled", false)
+
+    /**
+     * The instance's mobile app-lock hash (`pbkdf2$iterations$saltHex$hashHex`),
+     * synced from the same config document — null when the org hasn't set one,
+     * in which case [ui.LockActivity] lets the app open with no prompt.
+     */
+    fun appLockPasswordHash(context: Context): String? =
+        prefs(context).getString("app_lock_password_hash", null)
 
     /** The single question every capture path asks before starting. */
     fun isRecordingAllowed(context: Context): Boolean =
@@ -60,10 +68,22 @@ object ActivationStore {
             .apply()
     }
 
-    fun saveConfig(context: Context, recordingEnabled: Boolean, configVersion: Int) {
+    /**
+     * [appLockPasswordHash] must be passed explicitly (no default) — callers that only
+     * mean to update recordingEnabled/configVersion (e.g. the 401 handler) should pass
+     * [appLockPasswordHash] back through unchanged, never null, or a transient auth
+     * failure would silently strip a fleet's app lock.
+     */
+    fun saveConfig(
+        context: Context,
+        recordingEnabled: Boolean,
+        configVersion: Int,
+        appLockPasswordHash: String?,
+    ) {
         prefs(context).edit()
             .putBoolean("recording_enabled", recordingEnabled)
             .putInt("config_version", configVersion)
+            .putString("app_lock_password_hash", appLockPasswordHash)
             .apply()
     }
 

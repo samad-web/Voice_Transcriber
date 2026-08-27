@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.Aura" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_mid</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorPrimaryContainer">@color/aura_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/aura_ink</item>
+
+        <item name="colorSecondary">@color/brand_to</item>
+        <item name="colorOnSecondary">@android:color/white</item>
+        <item name="colorSecondaryContainer">@color/aura_surface_2</item>
+        <item name="colorOnSecondaryContainer">@color/aura_ink</item>
+
+        <item name="colorSurface">@color/aura_surface</item>
+        <item name="colorOnSurface">@color/aura_ink</item>
+        <item name="colorSurfaceContainer">@color/aura_surface</item>
+        <item name="colorSurfaceContainerHigh">@color/aura_surface</item>
+        <item name="colorSurfaceContainerHighest">@color/aura_surface_2</item>
+        <item name="colorOnSurfaceVariant">@color/aura_muted</item>
+        <item name="colorOutline">@color/aura_line</item>
+        <item name="colorOutlineVariant">@color/aura_line</item>
+
+        <item name="android:windowBackground">@color/aura_ground</item>
+        <item name="android:navigationBarColor" tools:targetApi="21">@color/aura_ground</item>
+
+        <item name="materialCardViewStyle">@style/Widget.Aura.CardView</item>
+        <item name="materialButtonStyle">@style/Widget.Aura.Button</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Aura.BottomSheet</item>
+    </style>
+
+    <style name="Widget.Aura.CardView" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">20dp</item>
+    </style>
+
+    <style name="Widget.Aura.Button" parent="Widget.Material3.Button">
+        <item name="cornerRadius">999dp</item>
+    </style>
+
+    <style name="ThemeOverlay.Aura.BottomSheet" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.Aura.BottomSheet</item>
+    </style>
+
+    <style name="Widget.Aura.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="shapeAppearance">@style/ShapeAppearance.Aura.BottomSheet</item>
+        <item name="backgroundTint">@color/aura_surface</item>
+    </style>
+
+    <style name="ShapeAppearance.Aura.BottomSheet" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">24dp</item>
+        <item name="cornerSizeTopRight">24dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+</resources>

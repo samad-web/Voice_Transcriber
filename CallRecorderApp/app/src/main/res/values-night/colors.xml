@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="aura_ground">#070B12</color>
+    <color name="aura_surface">#0F1621</color>
+    <color name="aura_surface_2">#131C29</color>
+    <color name="aura_line">#1E2836</color>
+    <color name="aura_ink">#E8EEF7</color>
+    <color name="aura_muted">#93A3B8</color>
+    <color name="aura_primary_container">#132235</color>
+</resources>

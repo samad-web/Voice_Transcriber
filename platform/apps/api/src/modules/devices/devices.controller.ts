@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
   UnauthorizedException,
@@ -22,6 +24,11 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
+const SetTelecallerBody = z.object({
+  name: z.string().trim().min(1).max(120),
+  // Employee/agent code. Optional — most telecallers may never be given one.
+  externalId: z.string().trim().max(64).nullable().optional(),
+});
 const AuthenticateBody = z.object({
   deviceId: z.string().uuid(),
   nonce: z.string().min(16),
@@ -220,7 +227,8 @@ export class DevicesController {
         rows: [row],
       } = await client.query(
         `SELECT d.status AS device_status, i.config_version,
-                o.status AS org_status, o.consent_policy, o.on_consent_failure
+                o.status AS org_status, o.consent_policy, o.on_consent_failure,
+                o.app_lock_password_hash
            FROM devices d
            JOIN instances i ON i.id = d.instance_id
            JOIN organizations o ON o.id = d.org_id
@@ -247,6 +255,7 @@ export class DevicesController {
           policy: row.consent_policy,
           onFailure: row.on_consent_failure,
         },
+        appLockPasswordHash: row.app_lock_password_hash,
       });
     });
   }
@@ -271,6 +280,91 @@ export class DevicesController {
     // TODO (checklist §3.5): push FCM message so the device acts immediately
     // instead of on next config poll.
     return this.setDeviceStatus(orgId, id, "wiped");
+  }
+
+  /**
+   * Set the telecaller (name + optional employee/agent code) holding this
+   * handset. Captured here, at connection time in the platform console, so a
+   * recorded call can be traced to who actually spoke it — not just which
+   * device recorded it — the moment a device is enrolled, rather than only
+   * after the fact from the org's own owner dashboard.
+   *
+   * Writes the same `telecallers` identity table (0017) and `devices`
+   * columns that owner.controller's setTelecaller does — this is the same
+   * feature reachable from the operator side, plus the external_id (0067)
+   * that route does not collect. Re-running with the same device links back
+   * to the existing telecaller row instead of creating a duplicate, so this
+   * doubles as "modify": call it again to correct a name or code.
+   */
+  @Patch(":id/telecaller")
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  async setTelecaller(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) deviceId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = SetTelecallerBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const name = parsed.data.name;
+    const externalId = parsed.data.externalId?.trim() || null;
+
+    try {
+      return await this.db.withOrg(orgId, async (client) => {
+        const {
+          rows: [device],
+        } = await client.query(`SELECT telecaller_id FROM devices WHERE id = $1`, [deviceId]);
+        if (!device) throw new BadRequestException("device not found in this org");
+
+        let telecallerId: string = device.telecaller_id;
+        if (telecallerId) {
+          await client.query(
+            `UPDATE telecallers SET display_name = $2, external_id = $3 WHERE id = $1`,
+            [telecallerId, name, externalId],
+          );
+        } else {
+          const {
+            rows: [inserted],
+          } = await client.query(
+            `INSERT INTO telecallers (org_id, display_name, external_id)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [orgId, name, externalId],
+          );
+          telecallerId = inserted.id;
+          await client.query(`UPDATE devices SET telecaller_id = $2 WHERE id = $1`, [
+            deviceId,
+            telecallerId,
+          ]);
+        }
+
+        const {
+          rows: [updated],
+        } = await client.query(
+          `UPDATE devices SET telecaller_name = $2 WHERE id = $1
+           RETURNING id, telecaller_name, telecaller_id`,
+          [deviceId, name],
+        );
+
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+           VALUES ($1, 'user', 'dev-admin', 'device.telecaller_set', 'device', $2, $3)`,
+          [orgId, deviceId, JSON.stringify({ name, externalId })],
+        );
+
+        return {
+          device: updated,
+          telecaller: { id: telecallerId, displayName: name, externalId },
+        };
+      });
+    } catch (err) {
+      // Unique violation on telecallers_org_external_id (0067) — two
+      // telecallers under this org can't share one employee/agent code.
+      if ((err as { code?: string }).code === "23505") {
+        throw new ConflictException(
+          `That ID is already assigned to another telecaller in this org.`,
+        );
+      }
+      throw err;
+    }
   }
 
   private setDeviceStatus(orgId: string, deviceId: string, status: "logged_out" | "wiped") {

@@ -21,12 +21,14 @@ import { apiGetAs } from "@/lib/server-api";
 import { workspacesFor } from "@/lib/tenant-scope";
 import type { CallRow } from "../../calls/calls-explorer";
 import { CrmManager, type Integration } from "../../crm/crm-manager";
+import { AppLockForm } from "./app-lock-form";
 import { DeleteInstance } from "./delete-instance";
 import { DeviceActions } from "./device-actions";
 import { ErasureTool } from "./erasure-tool";
 import { KeyGenerator } from "./key-generator";
 import { OwnerAccounts, type OwnerRow } from "./owner-accounts";
 import { PolicyForm } from "./policy-form";
+import { TelecallerForm } from "./telecaller-form";
 import { AsrSettings } from "./asr-settings";
 import { TranscriptionToggle } from "./transcription-toggle";
 
@@ -43,6 +45,7 @@ interface Org {
   asr_language: string | null;
   asr_mode: string | null;
   vocabulary: string[] | null;
+  app_lock_enabled: boolean;
 }
 
 interface InstanceRow {
@@ -79,6 +82,9 @@ interface DeviceRow {
   status: "active" | "logged_out" | "wiped" | "lost";
   capture_capability: string | null;
   last_seen_at: string | null;
+  telecaller_name: string | null;
+  telecaller_id: string | null;
+  telecaller_external_id: string | null;
 }
 
 interface Overview {
@@ -262,6 +268,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
             instanceName={org.name}
           />
           <PolicyForm orgId={orgId} initial={org} />
+          <AppLockForm orgId={orgId} enabled={org.app_lock_enabled} />
           <ErasureTool orgId={orgId} />
         </div>
 
@@ -449,11 +456,12 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                 </p>
               ) : (
                 <div tabIndex={0} role="region" aria-label={`Devices, ${inst.name}`} className={SCROLLER}>
-                  <table className="w-full min-w-[880px] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
                     <caption className="sr-only">Enrolled devices for {inst.name}</caption>
                     <TableHead>
                       <tr>
                         <TableHeaderCell>Device</TableHeaderCell>
+                        <TableHeaderCell>Telecaller</TableHeaderCell>
                         <TableHeaderCell>Fingerprint</TableHeaderCell>
                         <TableHeaderCell>Capability</TableHeaderCell>
                         <TableHeaderCell>Last seen</TableHeaderCell>
@@ -469,6 +477,14 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                               {device.label ?? "Unlabeled device"}
                             </span>
                             <span className="font-mono text-xs text-text-muted">{device.id}</span>
+                          </TableCell>
+                          <TableCell>
+                            <TelecallerForm
+                              orgId={orgId}
+                              deviceId={device.id}
+                              name={device.telecaller_name}
+                              externalId={device.telecaller_external_id}
+                            />
                           </TableCell>
                           <TableCell className="font-mono text-xs">
                             {device.fingerprint ?? "—"}

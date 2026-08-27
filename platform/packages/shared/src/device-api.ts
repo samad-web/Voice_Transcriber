@@ -53,6 +53,13 @@ export const DeviceConfig = z.object({
     policy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]),
     onFailure: z.enum(["record_and_flag", "do_not_record"]),
   }),
+  /**
+   * Per-instance mobile app-lock, set on the Instance page in the CRM.
+   * `pbkdf2$<iterations>$<saltHex>$<hashHex>` (see app-lock-hash.ts) or null
+   * when the org hasn't set one — the device verifies a typed password
+   * against this offline, it is never sent back to the server.
+   */
+  appLockPasswordHash: z.string().nullable(),
 });
 export type DeviceConfig = z.infer<typeof DeviceConfig>;
 

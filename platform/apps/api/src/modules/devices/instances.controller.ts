@@ -149,8 +149,11 @@ export class InstancesController {
       );
 
       const { rows: devices } = await client.query(
-        `SELECT id, label, fingerprint, status, capture_capability, last_seen_at, created_at
-           FROM devices WHERE instance_id = $1 ORDER BY created_at DESC`,
+        `SELECT d.id, d.label, d.fingerprint, d.status, d.capture_capability, d.last_seen_at,
+                d.created_at, d.telecaller_name, d.telecaller_id, t.external_id AS telecaller_external_id
+           FROM devices d
+           LEFT JOIN telecallers t ON t.id = d.telecaller_id
+          WHERE d.instance_id = $1 ORDER BY d.created_at DESC`,
         [instanceId],
       );
 

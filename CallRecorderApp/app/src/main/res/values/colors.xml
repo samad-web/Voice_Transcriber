@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#0B6E4F</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
+
+    <!-- Aura brand gradient, ported 1:1 from the marketing site's brand.css -->
+    <color name="brand_from">#00B4F0</color>
+    <color name="brand_mid">#3B6BEE</color>
+    <color name="brand_to">#7B2FF7</color>
+
+    <color name="aura_ground">#FBFCFE</color>
+    <color name="aura_surface">#FFFFFF</color>
+    <color name="aura_surface_2">#F3F6FB</color>
+    <color name="aura_line">#E6EBF2</color>
+    <color name="aura_ink">#0B1220</color>
+    <color name="aura_muted">#5B6B80</color>
+    <color name="aura_primary_container">#E1F0FF</color>
 </resources>

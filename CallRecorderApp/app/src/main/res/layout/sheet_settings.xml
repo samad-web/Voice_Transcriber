@@ -8,34 +8,13 @@
     android:paddingTop="20dp"
     android:paddingBottom="32dp">
 
+    <!-- Long-press to reveal Advanced (accessibility / VoIP capture internals). -->
     <TextView
+        android:id="@+id/settingsTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/settings"
         android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/accessibilityStatus"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/accessibility_off"
-            android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAccessibility"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/enable" />
-    </LinearLayout>
 
     <TextView
         android:layout_width="match_parent"
@@ -103,15 +82,6 @@
         android:text="@string/force_speaker_phone"
         android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
 
-    <com.google.android.material.materialswitch.MaterialSwitch
-        android:id="@+id/recordVoip"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:minHeight="48dp"
-        android:text="@string/record_voip"
-        android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
-
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -125,6 +95,63 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp" />
+
+    <!-- Advanced: the VoIP-via-accessibility capture internals. Not in normal navigation —
+         long-press the "Settings" title above to reveal it. Capture keeps running either way;
+         this only exposes the on-device controls for it. -->
+    <LinearLayout
+        android:id="@+id/advancedGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="20dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/advanced_label"
+            android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/accessibilityStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/accessibility_off"
+                android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAccessibility"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/enable" />
+        </LinearLayout>
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/recordVoip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="48dp"
+            android:text="@string/record_voip"
+            android:textAppearance="@style/TextAppearance.Material3.BodyLarge" />
+    </LinearLayout>
 
     <TextView
         android:layout_width="match_parent"

@@ -92,7 +92,6 @@ class MainActivity : AppCompatActivity() {
         binding.recordings.layoutManager = LinearLayoutManager(this)
         binding.recordings.adapter = adapter
         binding.playerPanel.visibility = View.GONE
-        binding.enableAccessibility.setOnClickListener { openAccessibilitySettings() }
         binding.swipeRefresh.setOnRefreshListener { refreshRecordings() }
 
         // Telecaller greeting — tap the header to set/change the name.
@@ -124,9 +123,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Prompt to enable the accessibility service only while it's off.
-        binding.setupBanner.visibility =
-            if (AccessibilityStatus.isEnabled(this)) View.GONE else View.VISIBLE
         renderGreeting() // keep the time-of-day greeting current
     }
 
@@ -281,6 +277,14 @@ class MainActivity : AppCompatActivity() {
             getString(if (on) R.string.accessibility_on else R.string.accessibility_off)
         sheet.btnAccessibility.visibility = if (on) View.GONE else View.VISIBLE
         sheet.btnAccessibility.setOnClickListener { openAccessibilitySettings() }
+
+        // Advanced (VoIP-via-accessibility internals) is off normal navigation — long-press
+        // the "Settings" title to reveal it. Capture itself never depends on this being open.
+        sheet.settingsTitle.setOnLongClickListener {
+            sheet.advancedGroup.visibility =
+                if (sheet.advancedGroup.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            true
+        }
 
         sheet.oemIngest.isChecked = settings.oemIngestEnabled
         sheet.oemIngest.setOnCheckedChangeListener { _, checked ->
@@ -489,6 +493,13 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.READ_CALL_LOG)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
+                // "Music and audio" — same permission RecordingsScannerActivity asks for
+                // later on the MediaStore path; asking here too means OEM-recording
+                // ingest already has it by the time it's needed, no second prompt.
+                add(Manifest.permission.READ_MEDIA_AUDIO)
+            } else {
+                @Suppress("DEPRECATION")
+                add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         }
         permissions.launch(needed.toTypedArray())

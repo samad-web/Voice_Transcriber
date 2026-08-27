@@ -505,7 +505,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 220 routes, partitioned 180 tenant / 23 cross-tenant / 6 device / 11 unguarded", () => {
+  it("has 221 routes, partitioned 181 tenant / 23 cross-tenant / 6 device / 11 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -515,14 +515,17 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // (POST /admin/slots/:id/attendance, cross-tenant like the rest of the
     // funnel's operator surface), A6 Milestone 4's one
     // (GET /owner/crm-overview, tenant-scoped like its sibling
-    // GET /owner/overview), and Kailash-gap Milestone 1's 15 (4 products + 4
+    // GET /owner/overview), Kailash-gap Milestone 1's 15 (4 products + 4
     // quotations + 5 invoices + 1 payment-link, all tenant-scoped, plus the
-    // one unguarded Razorpay webhook). They are asserted as a
+    // one unguarded Razorpay webhook), and the platform console's
+    // PATCH /devices/:id/telecaller (0067) — the operator-side counterpart of
+    // PATCH /owner/telecallers/:deviceId below, tenant-scoped like the rest of
+    // the devices surface. They are asserted as a
     // set, not just a total, so moving a route BETWEEN classes (dropping
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
-    expect(ROUTES).toHaveLength(220);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(220);
+    expect(ROUTES).toHaveLength(221);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(221);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -532,20 +535,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(180);
+    expect(tenantScoped).toHaveLength(181);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(220);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(221);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 203 principal routes", () => {
-    // 180 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 204 principal routes", () => {
+    // 181 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
     // which only `AdminKeyGuard` writes, so the order is a correctness
     // requirement and not a style — tenant.guard.spec.ts's chain-order block
     // shows the reversed pair 401s a perfectly valid request. Asserting the
     // INDICES (not just membership) is what makes a reordered `@UseGuards`
     // fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(203);
+    expect(principalRoutes).toHaveLength(204);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
