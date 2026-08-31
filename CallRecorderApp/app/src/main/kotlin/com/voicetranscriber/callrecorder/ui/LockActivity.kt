@@ -5,9 +5,14 @@ import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.voicetranscriber.callrecorder.R
 import com.voicetranscriber.callrecorder.databinding.ActivityLockBinding
 import com.voicetranscriber.callrecorder.platform.ActivationStore
 import com.voicetranscriber.callrecorder.platform.AppLock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The real launcher entry point (see AndroidManifest — MainActivity is no
@@ -46,15 +51,36 @@ class LockActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * PBKDF2 at AppLock's iteration count is deliberately slow enough to resist
+     * brute-forcing, which also makes it slow enough to notice on a budget
+     * handset — so it runs off the main thread with the button visibly busy,
+     * rather than leaving the tap looking like it did nothing until it suddenly
+     * either unlocks or shows an error.
+     */
     private fun attemptUnlock(hash: String) {
         val entered = binding.password.text?.toString().orEmpty()
-        if (entered.isNotEmpty() && AppLock.verify(entered, hash)) {
-            AppLock.unlockedThisSession = true
-            enterApp()
-        } else {
-            binding.error.visibility = View.VISIBLE
-            binding.password.text?.clear()
+        if (entered.isEmpty()) return
+        setChecking(true)
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.Default) { AppLock.verify(entered, hash) }
+            setChecking(false)
+            if (ok) {
+                AppLock.unlockedThisSession = true
+                enterApp()
+            } else {
+                binding.error.visibility = View.VISIBLE
+                binding.password.text?.clear()
+            }
         }
+    }
+
+    private fun setChecking(checking: Boolean) {
+        binding.unlockBtn.text = getString(if (checking) R.string.lock_checking else R.string.lock_unlock)
+        binding.unlockBtn.isEnabled = !checking
+        binding.password.isEnabled = !checking
+        binding.unlockProgress.visibility = if (checking) View.VISIBLE else View.GONE
+        if (checking) binding.error.visibility = View.GONE
     }
 
     private fun enterApp() {

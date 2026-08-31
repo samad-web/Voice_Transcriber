@@ -263,7 +263,7 @@ export class TargetsController {
           actorUserId(req),
         ],
       );
-      await this.audit(client, orgId, "target.create", target.id);
+      await this.audit(client, orgId, "target.create", target.id, req);
       return { target };
     });
   }
@@ -281,6 +281,7 @@ export class TargetsController {
   async remove(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
@@ -295,7 +296,7 @@ export class TargetsController {
         scoped ? [id, recordScope.userId] : [id],
       );
       if (!rowCount) throw new NotFoundException("target not found");
-      await this.audit(client, orgId, "target.delete", id);
+      await this.audit(client, orgId, "target.delete", id, req);
       return { deleted: true };
     });
   }
@@ -305,11 +306,12 @@ export class TargetsController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'sales_target', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'sales_target', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

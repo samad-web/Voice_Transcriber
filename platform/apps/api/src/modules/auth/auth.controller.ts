@@ -16,7 +16,17 @@ import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { AuthService } from "./auth.service";
 
-const LoginBody = z.object({ email: z.string().email(), password: z.string().min(1) });
+const LoginBody = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+  /**
+   * Optional hint for a user who belongs to more than one org — without it,
+   * `AuthService.login` falls back to the earliest-created membership, which
+   * is unreachable-by-design for any OTHER org a multi-org user belongs to.
+   * Ignored if the caller isn't actually a member of the named org.
+   */
+  orgId: z.string().uuid().optional(),
+});
 
 const ContextQuery = z
   .object({
@@ -41,7 +51,7 @@ export class AuthController {
   async login(@Body() body: unknown) {
     const parsed = LoginBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const result = await this.auth.login(parsed.data.email, parsed.data.password);
+    const result = await this.auth.login(parsed.data.email, parsed.data.password, parsed.data.orgId);
     if (!result) throw new UnauthorizedException("invalid email or password");
     return {
       token: result.token,

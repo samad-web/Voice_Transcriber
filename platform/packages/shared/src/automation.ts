@@ -35,11 +35,22 @@ export const AutomationTrigger = z.enum([
   "interaction.logged",
   /** A contact was created. */
   "contact.created",
+  /** A call's AI read flagged a compliance/escalation risk (0069). Enqueued
+   *  by the worker pipeline once the call's lead/deal has resolved, so
+   *  `notify`'s deal_owner/contact_owner target has something to resolve. */
+  "call.risk_flagged",
+  /** A promised callback (outreach_journey_steps.due_at) passed unactioned.
+   *  Produced by the worker sweep, same shape as task.overdue. */
+  "outreach_step.overdue",
 ]);
 export type AutomationTrigger = z.infer<typeof AutomationTrigger>;
 
 /** Triggers a person cannot cause directly — the sweep produces them. */
-export const SWEEP_TRIGGERS: AutomationTrigger[] = ["deal.idle", "task.overdue"];
+export const SWEEP_TRIGGERS: AutomationTrigger[] = [
+  "deal.idle",
+  "task.overdue",
+  "outreach_step.overdue",
+];
 
 /**
  * Conditions, as data rather than an expression language.
@@ -63,6 +74,11 @@ export const AutomationConditions = z.object({
   interactionType: z.array(z.string().max(40)).max(10).optional(),
   /** deal.idle / task.overdue — how stale before it counts. */
   idleDays: z.number().int().min(1).max(365).optional(),
+  /** call.risk_flagged only — only match flags at or above this severity. */
+  riskSeverity: z.array(z.enum(["low", "medium", "high"])).max(3).optional(),
+  /** outreach_step.overdue only — hour-scale grace period, distinct from
+   *  idleDays' day-scale (a promised callback is missed in hours, not days). */
+  graceHours: z.number().int().min(1).max(168).optional(),
 });
 export type AutomationConditions = z.infer<typeof AutomationConditions>;
 
@@ -71,6 +87,9 @@ export const ActionTarget = z.union([
   z.literal("deal_owner"),
   z.literal("contact_owner"),
   z.literal("task_assignee"),
+  /** outreach_step.overdue only — the outreach journey's own owner, a
+   *  different person than a deal's or contact's owner. */
+  z.literal("journey_owner"),
   z.string().uuid(),
 ]);
 export type ActionTarget = z.infer<typeof ActionTarget>;
@@ -141,6 +160,20 @@ export const AutomationRuleInput = z
         message: "interactionType only means anything on an interaction trigger",
       });
     }
+    if (rule.trigger !== "call.risk_flagged" && rule.conditions.riskSeverity) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["conditions", "riskSeverity"],
+        message: "riskSeverity only means anything on the call.risk_flagged trigger",
+      });
+    }
+    if (rule.trigger !== "outreach_step.overdue" && rule.conditions.graceHours !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["conditions", "graceHours"],
+        message: "graceHours only means anything on the outreach_step.overdue trigger",
+      });
+    }
     // Every action needs a subject to hang off. A rule triggered by a contact
     // has no deal, so a move_stage on it could never run.
     if (rule.trigger === "contact.created") {
@@ -175,6 +208,12 @@ export interface AutomationSubject {
   dealOwnerUserId?: string | null;
   contactOwnerUserId?: string | null;
   taskAssigneeUserId?: string | null;
+  /** call.risk_flagged only — the highest severity among the call's flags. */
+  riskSeverity?: string | null;
+  /** outreach_step.overdue only — how many hours past due_at. */
+  overdueHours?: number | null;
+  /** outreach_step.overdue only — the outreach journey's own owner. */
+  journeyOwnerUserId?: string | null;
 }
 
 /**
@@ -200,6 +239,7 @@ export function matchesConditions(
   if (!inList(conditions.fromStage, subject.fromStage)) return false;
   if (!inList(conditions.status, subject.status)) return false;
   if (!inList(conditions.interactionType, subject.interactionType)) return false;
+  if (!inList(conditions.riskSeverity, subject.riskSeverity)) return false;
 
   if (conditions.amountGte !== undefined) {
     if (subject.amount === null || subject.amount === undefined) return false;
@@ -213,6 +253,10 @@ export function matchesConditions(
     if (subject.idleDays === null || subject.idleDays === undefined) return false;
     if (subject.idleDays < conditions.idleDays) return false;
   }
+  if (conditions.graceHours !== undefined) {
+    if (subject.overdueHours === null || subject.overdueHours === undefined) return false;
+    if (subject.overdueHours < conditions.graceHours) return false;
+  }
   return true;
 }
 
@@ -225,6 +269,8 @@ export function resolveTarget(target: ActionTarget, subject: AutomationSubject):
       return subject.contactOwnerUserId ?? null;
     case "task_assignee":
       return subject.taskAssigneeUserId ?? null;
+    case "journey_owner":
+      return subject.journeyOwnerUserId ?? null;
     default:
       return target;
   }

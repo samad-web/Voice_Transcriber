@@ -60,7 +60,7 @@ export function SearchExplorer({
 
   return (
     <div className="space-y-6">
-      <Card shadow className="space-y-4">
+      <Card elevated className="space-y-4">
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4" />
           <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">

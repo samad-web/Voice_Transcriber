@@ -31,6 +31,7 @@ export class DeviceAuthGuard implements CanActivate {
       const payload = jwt.verify(
         header.slice("Bearer ".length),
         process.env.JWT_SECRET ?? "dev-jwt-secret-change-me",
+        { algorithms: ["HS256"] },
       ) as jwt.JwtPayload;
       if (payload.scope !== "device" || typeof payload.sub !== "string") {
         throw new Error("wrong token scope");

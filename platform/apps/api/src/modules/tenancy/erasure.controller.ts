@@ -4,6 +4,7 @@ import {
   Controller,
   NotFoundException,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { createHash, createHmac } from "node:crypto";
@@ -11,6 +12,8 @@ import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { PoolClient } from "@aura/db";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -53,14 +56,20 @@ export class ErasureController {
   constructor(private readonly db: DbService) {}
 
   @Post()
-  async erase(@OrgId() orgId: string, @Body() body: unknown) {
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async erase(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = ErasureBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { callId } = parsed.data;
 
-    return this.db.withOrg(orgId, async (client) => {
+    // Resolve the call under RLS, but don't hold that transaction/connection
+    // open across the S3 delete below — this is operator-triggered rather than
+    // a hot path, but the network call still has no business sitting inside a
+    // BEGIN…COMMIT the same way the ingest endpoints' S3 calls didn't.
+    const rec = await this.db.withOrg(orgId, async (client) => {
       const {
-        rows: [rec],
+        rows: [row],
       } = await client.query(
         `SELECT r.s3_key, c.remote_number_hash
            FROM calls c LEFT JOIN recordings r ON r.call_id = c.id
@@ -76,20 +85,26 @@ export class ErasureController {
       // 12 §3.6: a receipt that overstates what was deleted is worse than one that
       // admits a gap, and a signed artefact must never be issued on a path that
       // resolved nothing. LEFT JOIN, so a call with no recording still yields a
-      // row — `!rec` means the CALL is absent, not the audio.
+      // row — `!row` means the CALL is absent, not the audio.
       //
       // Consequence worth knowing: erasure is no longer idempotent. Re-sending a
       // request for an already-erased call now 404s instead of returning a second
       // empty receipt. That is the intended reading — the only truthful receipt
       // for that call is the one already in audit_log.
-      if (!rec) throw new NotFoundException("call not found in this org");
+      if (!row) throw new NotFoundException("call not found in this org");
+      return row;
+    });
 
-      const purged: string[] = [];
-      if (rec?.s3_key) {
-        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: rec.s3_key }));
-        purged.push("s3_audio_object");
-      }
+    // Outside any transaction / pool connection now. S3 goes first, same as
+    // before: nothing in the DB has been touched yet, so a failure here still
+    // leaves everything retryable and mints no receipt.
+    const purged: string[] = [];
+    if (rec?.s3_key) {
+      await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: rec.s3_key }));
+      purged.push("s3_audio_object");
+    }
 
+    return this.db.withOrg(orgId, async (client) => {
       // The lead carries the subject's name and everything the call said about
       // them, so erasing the call without it would leave the data behind under
       // a different table name. Matched on the contact hash — one erasure
@@ -158,8 +173,8 @@ export class ErasureController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', 'dev-admin', 'erasure.complete', 'call', $2, $3)`,
-        [orgId, callId, JSON.stringify({ ...receipt, signature })],
+         VALUES ($1, 'user', $2, 'erasure.complete', 'call', $3, $4)`,
+        [orgId, req.principal?.userId ?? "dev-admin", callId, JSON.stringify({ ...receipt, signature })],
       );
 
       return { ...receipt, signature, receiptHash: createHash("sha256").update(signature).digest("hex") };
@@ -212,24 +227,36 @@ export class ErasureController {
 
     const retainedContactIds: string[] = [];
     let deletedAnyContact = false;
-    for (const { id: contactId } of contactRows) {
-      const {
-        rows: [{ safe_to_delete: safeToDelete }],
-      } = await client.query(
-        `SELECT NOT EXISTS (
-           SELECT 1 FROM deals WHERE contact_id = $1
-           UNION ALL
-           SELECT 1 FROM interactions WHERE contact_id = $1 AND call_id IS NULL
-           UNION ALL
-           SELECT 1 FROM tasks WHERE contact_id = $1 AND deal_id IS NULL
-         ) AS safe_to_delete`,
-        [contactId],
+    if (contactRows.length > 0) {
+      const contactIds = contactRows.map((r) => r.id as string);
+      // One set-based query instead of one safe_to_delete round trip per
+      // candidate contact: a LEFT JOIN against every blocking link, grouped
+      // back down to one row per contact. bool_and(...) is true exactly when
+      // no blocking row joined for that contact — the same predicate the old
+      // per-row NOT EXISTS(...) computed, just batched.
+      const { rows: safety } = await client.query<{ id: string; safe_to_delete: boolean }>(
+        `SELECT ids.id,
+                bool_and(b.contact_id IS NULL) AS safe_to_delete
+           FROM unnest($1::uuid[]) AS ids(id)
+           LEFT JOIN (
+             SELECT contact_id FROM deals WHERE contact_id = ANY($1::uuid[])
+             UNION ALL
+             SELECT contact_id FROM interactions WHERE contact_id = ANY($1::uuid[]) AND call_id IS NULL
+             UNION ALL
+             SELECT contact_id FROM tasks WHERE contact_id = ANY($1::uuid[]) AND deal_id IS NULL
+           ) b ON b.contact_id = ids.id
+          GROUP BY ids.id`,
+        [contactIds],
       );
-      if (safeToDelete) {
-        await client.query("DELETE FROM contacts WHERE id = $1", [contactId]);
+
+      const deletableIds: string[] = [];
+      for (const row of safety) {
+        if (row.safe_to_delete) deletableIds.push(row.id);
+        else retainedContactIds.push(row.id);
+      }
+      if (deletableIds.length > 0) {
+        await client.query("DELETE FROM contacts WHERE id = ANY($1::uuid[])", [deletableIds]);
         deletedAnyContact = true;
-      } else {
-        retainedContactIds.push(contactId as string);
       }
     }
     if (deletedAnyContact) purged.push("contact_rows");

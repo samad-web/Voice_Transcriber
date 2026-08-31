@@ -22,20 +22,28 @@ export function InstanceForm() {
   const [retentionDays, setRetentionDays] = useState(90);
   const [ttlMinutes, setTtlMinutes] = useState(15);
   const [maxUses, setMaxUses] = useState(1);
+  const [enableCrm, setEnableCrm] = useState(false);
   const [result, setResult] = useState<ProvisionResult | null>(null);
   const [pending, startTransition] = useTransition();
 
   const submit = () => {
     startTransition(async () => {
       setResult(
-        await createTenantAction({ name, consentPolicy, retentionDays, ttlMinutes, maxUses }),
+        await createTenantAction({
+          name,
+          consentPolicy,
+          retentionDays,
+          ttlMinutes,
+          maxUses,
+          enableCrm,
+        }),
       );
     });
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Card shadow className="space-y-4">
+      <Card elevated className="space-y-4">
         <div>
           <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
             New Customer Instance
@@ -131,6 +139,25 @@ export function InstanceForm() {
           </div>
         </div>
 
+        <label className="flex items-start gap-2.5 border-2 border-black bg-neutral-50 p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={enableCrm}
+            onChange={(e) => setEnableCrm(e.target.checked)}
+          />
+          <span>
+            <span className="block text-xs font-mono uppercase tracking-wider font-bold text-black">
+              Enable CRM
+            </span>
+            <span className="block text-[11px] text-neutral-500 font-sans mt-0.5">
+              Contacts, Accounts, Deals, pipelines and roles for this client. Off by default — every
+              instance gets call recording and transcription regardless; this adds the CRM on top.
+              Can be turned on or off later from the instance page.
+            </span>
+          </span>
+        </label>
+
         <BrutalButton
           className="w-full"
           shadow
@@ -152,6 +179,10 @@ export function InstanceForm() {
       {result?.adminKey ? (
         <div className="space-y-4">
           <EnrollmentCredentials result={result} serverUrl={serverUrl} />
+          <p className="text-xs text-neutral-500 font-sans font-medium">
+            CRM: {result.enabledModules?.includes("crm") ? "enabled" : "not enabled"} for this
+            instance.
+          </p>
           <Link href={`/instances/${result.orgId}`}>
             <BrutalButton variant="secondary" className="w-full">
               Open {result.instanceName}

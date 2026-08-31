@@ -31,6 +31,7 @@ vi.mock("./sarvam", () => ({
 import {
   analyzeConversation,
   analyzeTranscript,
+  generateAgentDraft,
   geminiAnalyzeModel,
   geminiThinking,
   glossaryBlock,
@@ -259,6 +260,114 @@ describe("analyzeTranscript — response handling", () => {
   });
 });
 
+describe("generateAgentDraft", () => {
+  it("throws a directive error when no provider is configured", () => {
+    return expect(generateAgentDraft({ description: "score lead urgency" })).rejects.toThrow(
+      /no analyze provider configured/,
+    );
+  });
+
+  it("returns a schema-conformant placeholder under ANALYZE_STUB=1, from scratch", async () => {
+    vi.stubEnv("ANALYZE_STUB", "1");
+    const draft = await generateAgentDraft({ description: "score lead urgency" });
+
+    expect(sarvam.chat).not.toHaveBeenCalled();
+    expect(draft.name).toBeTruthy();
+    expect(draft.systemPrompt).toContain("score lead urgency");
+    // Every declared field is well-formed against the same rules a
+    // hand-authored agent is held to.
+    expect(() => ExtractionSchema.parse({ fields: draft.fields })).not.toThrow();
+  });
+
+  it("under ANALYZE_STUB=1 with a base agent, carries the base's fields forward unchanged", async () => {
+    vi.stubEnv("ANALYZE_STUB", "1");
+    const base = { name: "Lead Qualifier", systemPrompt: "Extract intent.", fields: RD_SCHEMA.fields };
+    const draft = await generateAgentDraft({ description: "also flag budget objections", base });
+
+    expect(draft.fields).toStrictEqual(base.fields);
+    expect(draft.systemPrompt).toContain(base.systemPrompt);
+    expect(draft.systemPrompt).toContain("also flag budget objections");
+  });
+
+  it("sends the domain instructions, the description, and (when given) the base agent to the provider", async () => {
+    sarvam.configured.mockReturnValue(true);
+    sarvam.chat.mockResolvedValue(
+      reply(
+        JSON.stringify({
+          name: "Budget Flagger",
+          systemPrompt: "Extract budget objections.",
+          fields: [{ key: "has_budget_objection", type: "boolean", description: "d", required: true }],
+        }),
+      ),
+    );
+
+    const base = { name: "Lead Qualifier", systemPrompt: "Extract intent.", fields: RD_SCHEMA.fields };
+    const draft = await generateAgentDraft({ description: "also flag budget objections", base });
+
+    expect(sarvam.chat).toHaveBeenCalledTimes(1);
+    const opts = sarvam.chat.mock.calls[0][0] as { prompt: string; jsonSchema: unknown };
+    expect(opts.prompt).toContain("call-analysis AI agent");
+    expect(opts.prompt).toContain("also flag budget objections");
+    expect(opts.prompt).toContain("Lead Qualifier");
+    expect(opts.prompt).toContain("Extract intent.");
+    expect(draft.name).toBe("Budget Flagger");
+    expect(draft.fields).toStrictEqual([
+      { key: "has_budget_objection", type: "boolean", description: "d", required: true },
+    ]);
+  });
+
+  it("normalizes a field key the model got wrong before validating it", async () => {
+    sarvam.configured.mockReturnValue(true);
+    sarvam.chat.mockResolvedValue(
+      reply(
+        JSON.stringify({
+          name: "Agent",
+          systemPrompt: "p",
+          fields: [{ key: "Has Budget!", type: "boolean", description: "d", required: true }],
+        }),
+      ),
+    );
+
+    const draft = await generateAgentDraft({ description: "d" });
+    expect(draft.fields[0].key).toBe("has_budget_");
+  });
+
+  it("repairs once, telling the model exactly what was wrong", async () => {
+    sarvam.configured.mockReturnValue(true);
+    sarvam.chat
+      .mockResolvedValueOnce(
+        reply(JSON.stringify({ name: "Agent", systemPrompt: "p", fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: [] }] })),
+      )
+      .mockResolvedValueOnce(
+        reply(
+          JSON.stringify({
+            name: "Agent",
+            systemPrompt: "p",
+            fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: ["a", "b"] }],
+          }),
+        ),
+      );
+
+    const draft = await generateAgentDraft({ description: "d" });
+
+    expect(sarvam.chat).toHaveBeenCalledTimes(2);
+    const repairPrompt = (sarvam.chat.mock.calls[1][0] as { prompt: string }).prompt;
+    expect(repairPrompt).toContain("Your previous output was invalid");
+    expect(repairPrompt).toContain("must list at least one option");
+    expect(draft.fields[0].enumValues).toStrictEqual(["a", "b"]);
+  });
+
+  it("throws when the repair also fails, rather than returning an unusable draft", async () => {
+    sarvam.configured.mockReturnValue(true);
+    sarvam.chat.mockResolvedValue(reply(JSON.stringify({ name: "", systemPrompt: "", fields: [] })));
+
+    await expect(generateAgentDraft({ description: "d" })).rejects.toThrow(
+      /model output failed validation twice/,
+    );
+    expect(sarvam.chat).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("analyzeConversation", () => {
   it("returns the safe empty shape for a blank transcript without calling a provider", async () => {
     // TRANSCRIPTION_OFF calls and silent recordings reach here. Every string
@@ -279,6 +388,9 @@ describe("analyzeConversation", () => {
       outcome: "unknown",
       key_points: [],
       action_items: [],
+      qualityScore: null,
+      qualityCriteria: null,
+      riskFlags: [],
       provider: "none",
       model: "none",
       tokensIn: 0,

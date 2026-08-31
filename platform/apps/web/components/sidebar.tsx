@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock, User } from "lucide-react";
+import { Logo } from "@aura/ui";
 import type { OwnerRole } from "@aura/shared";
-import { NAV_ITEMS, ownerNavItemsFor, type NavArea } from "@/lib/nav";
+import { NAV_ITEMS, navItemFor, ownerNavItemsFor, type NavArea } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export function Sidebar({
@@ -17,6 +18,10 @@ export function Sidebar({
   /** A6's shadow-read flag (CRM_SHADOW_READ_ENABLED), resolved server-side by
    *  the owner layout — a client component cannot read that env var itself. */
   crmPrimary = false,
+  /** Whether this org has the CRM module (enabled_modules, migration 0072),
+   *  resolved server-side by the owner layout. Hides CRM-object nav items
+   *  entirely when false — see nav.ts's CRM_GATED_HREFS. */
+  crmEnabled = true,
   /** Rail heading. The owner console shows their company name here. */
   title = "Aura Platform",
   subtitle = "Call Intelligence",
@@ -25,23 +30,30 @@ export function Sidebar({
   area?: NavArea;
   ownerRole?: OwnerRole;
   crmPrimary?: boolean;
+  crmEnabled?: boolean;
   title?: string;
   subtitle?: string;
 }) {
   const pathname = usePathname();
-  const items = area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary) : NAV_ITEMS;
+  const items =
+    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled) : NAV_ITEMS;
+  // Longest-prefix match against every item at once, not each item tested
+  // independently — otherwise Dashboard (href "/owner") matches the prefix
+  // test on every other owner route too, and both it and the real current
+  // item render as active together.
+  const active = navItemFor(pathname, items);
 
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-surface p-4 md:flex lg:w-64">
       <div className="space-y-8">
         <div className="flex items-center gap-3 px-2">
-          {/* The brand mark stays neutral on purpose. Accent is a scarce signal
-              in v2 (doc 16 §1.1) and the one thing it has to mean in this rail
-              is "you are here" — a permanently-accented logo two rows above the
-              active item would compete with exactly that. */}
-          <div className="flex h-9 w-9 shrink-0 select-none items-center justify-center rounded-md bg-text text-lg font-semibold text-bg">
-            A
-          </div>
+          {/* Brand-register pass: the console now carries the real mark, matching
+             the landing page — the old neutral-square reasoning (doc 16 §1.1,
+             "accent is scarce, don't compete with the active-item signal") is
+             superseded by the owner's decision to adopt the full landing
+             register here. The active item below still gets its own gradient
+             fill, which reads fine against a static mark two rows above it. */}
+          <Logo size={32} priority />
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold leading-tight text-text">{title}</h1>
             <span className="mt-0.5 block truncate text-xs text-text-muted">{subtitle}</span>
@@ -51,19 +63,19 @@ export function Sidebar({
         <nav aria-label="Main" className="space-y-0.5">
           {items.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const isActive = item === active;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out ${
+                style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+                className={`flex w-full items-center gap-3 rounded-full px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out ${
                   isActive
-                    ? // Active nav is one of the four sanctioned accent uses.
-                      // The tinted fill + accent-text pair is 8.01:1 light and
-                      // 8.64:1 dark, so it reads as selected without the fill
-                      // shouting louder than the page it labels.
-                      "bg-accent-subtle text-accent-text"
+                    ? // The gradient fill is the "you are here" signal now —
+                      // white holds contrast against every stop (same pairing
+                      // marketing's CTA already ships in production).
+                      "text-white"
                     : "text-text-muted hover:bg-surface-hover hover:text-text"
                 }`}
               >

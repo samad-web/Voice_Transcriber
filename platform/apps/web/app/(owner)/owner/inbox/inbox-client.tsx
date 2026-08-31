@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { StatusChip } from "@aura/ui";
 import { RecordPicker } from "../record-picker";
 import {
@@ -47,6 +47,14 @@ export function Inbox() {
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // Out-of-order-response guards: a rapid double-click (two threads, or the
+  // same filter clicked twice) can let an older fetchThreadAction /
+  // listConversationsAction response resolve after a newer one already did.
+  // These refs hold what the *latest* request asked for, so a response can
+  // check — after its await — whether it is still the one that matters.
+  const selectedIdRef = useRef<string | null>(null);
+  const filterRef = useRef<Filter>(filter);
+
   // ── composer (Kailash gap Milestone 3) ──────────────────────────────
   const [composerMode, setComposerMode] = useState<"text" | "template">("text");
   const [composerText, setComposerText] = useState("");
@@ -90,12 +98,18 @@ export function Inbox() {
   }
 
   const load = useCallback(() => {
+    const requestFilter = filter;
+    filterRef.current = requestFilter;
     start(async () => {
       const res = await listConversationsAction(
-        filter === "unmatched"
+        requestFilter === "unmatched"
           ? { unmatchedOnly: true }
-          : { status: filter === "closed" ? "closed" : "open" },
+          : { status: requestFilter === "closed" ? "closed" : "open" },
       );
+      // The filter moved on again while this was in flight — a newer load()
+      // owns the list now, so this stale response is dropped rather than
+      // clobbering it.
+      if (filterRef.current !== requestFilter) return;
       if (res.error) {
         setError(res.error);
         setThreads([]);
@@ -110,6 +124,7 @@ export function Inbox() {
 
   function open(id: string) {
     setSelectedId(id);
+    selectedIdRef.current = id;
     setComposerText("");
     setTemplates(null);
     setTemplateName("");
@@ -117,6 +132,9 @@ export function Inbox() {
     setSendOk(false);
     start(async () => {
       const res = await fetchThreadAction(id);
+      // A newer click already moved selection on — this response lost the
+      // race and would otherwise show the wrong thread in the reading pane.
+      if (selectedIdRef.current !== id) return;
       if (res.error || !res.conversation) {
         setError(res.error ?? "Thread unavailable");
         return;
@@ -126,6 +144,7 @@ export function Inbox() {
       // does not need a round trip every time somebody clicks a thread.
       if (res.conversation.unread_count > 0) {
         await updateConversationAction(id, { markRead: true });
+        if (selectedIdRef.current !== id) return;
         setThreads((prev) =>
           prev ? prev.map((t) => (t.id === id ? { ...t, unread_count: 0 } : t)) : prev,
         );
@@ -167,13 +186,15 @@ export function Inbox() {
               onClick={() => {
                 setFilter(f.key);
                 setSelectedId(null);
+                selectedIdRef.current = null;
                 setThread(null);
               }}
               aria-pressed={filter === f.key}
+              style={filter === f.key ? { backgroundImage: "var(--brand-gradient)" } : undefined}
               className={
-                "h-9 rounded-md px-3 text-sm font-medium transition-colors " +
+                "h-9 rounded-full px-3 text-sm font-medium transition-colors " +
                 (filter === f.key
-                  ? "bg-accent text-accent-fg"
+                  ? "text-white"
                   : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
               }
             >
@@ -234,7 +255,14 @@ export function Inbox() {
 
       {/* ── reading pane ────────────────────────────────────────────── */}
       <div className="min-w-0 rounded-md border border-border p-4">
-        {error ? <p className="mb-3 text-sm text-danger-text">{error}</p> : null}
+        {error ? (
+          <p
+            role="alert"
+            className="mb-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
+          >
+            {error}
+          </p>
+        ) : null}
 
         {thread === null ? (
           <p className="text-sm text-text-muted">Pick a thread to read it.</p>
@@ -340,10 +368,13 @@ export function Inbox() {
                         if (mode === "template") loadTemplates(thread.conversation.messaging_channel_id!);
                       }}
                       aria-pressed={composerMode === mode}
+                      style={
+                        composerMode === mode ? { backgroundImage: "var(--brand-gradient)" } : undefined
+                      }
                       className={
-                        "h-8 rounded-md px-2.5 text-xs font-medium transition-colors " +
+                        "h-8 rounded-full px-2.5 text-xs font-medium transition-colors " +
                         (composerMode === mode
-                          ? "bg-accent text-accent-fg"
+                          ? "text-white"
                           : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
                       }
                     >

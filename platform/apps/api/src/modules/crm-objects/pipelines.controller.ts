@@ -8,11 +8,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { DEFAULT_PIPELINE_STAGES, PipelineStages } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -68,7 +70,7 @@ export class PipelinesController {
   }
 
   @Post()
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreatePipelineBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -87,7 +89,7 @@ export class PipelinesController {
          RETURNING ${PIPELINE_COLUMNS}`,
         [orgId, p.name, JSON.stringify(p.stages ?? DEFAULT_PIPELINE_STAGES), p.isDefault],
       );
-      await this.audit(client, orgId, "pipeline.create", pipeline.id);
+      await this.audit(client, orgId, "pipeline.create", pipeline.id, req);
       return { pipeline };
     });
   }
@@ -97,6 +99,7 @@ export class PipelinesController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = UpdatePipelineBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -129,7 +132,7 @@ export class PipelinesController {
         ],
       );
       if (!pipeline) throw new NotFoundException("pipeline not found");
-      await this.audit(client, orgId, "pipeline.update", id);
+      await this.audit(client, orgId, "pipeline.update", id, req);
       return { pipeline };
     });
   }
@@ -139,11 +142,12 @@ export class PipelinesController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'deal_pipeline', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'deal_pipeline', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

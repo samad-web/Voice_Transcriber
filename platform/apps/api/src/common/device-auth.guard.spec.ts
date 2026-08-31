@@ -267,21 +267,24 @@ describe("DeviceAuthGuard", () => {
       });
     });
 
-    it("ACCEPTS HS384/HS512 over the same secret — no algorithm is pinned", async () => {
-      // Today's behaviour, pinned rather than endorsed. The platform only ever
-      // mints HS256 (`devices.controller.ts:193` passes a string key and no
-      // `algorithm`), but the verifier accepts the whole HMAC family. Harmless
-      // while the secret is the only input, and worth knowing the day the
-      // signing side is changed or a `algorithms: ["HS256"]` allowlist is added
-      // — this test turning red is that change, not a regression.
+    it("401s HS384/HS512 over the same secret — only HS256 is accepted", async () => {
+      // The guard now passes `algorithms: ["HS256"]` to `jwt.verify` (`:31-35`),
+      // defense in depth against algorithm confusion even though the platform
+      // only ever mints HS256 (`devices.controller.ts:193` passes a string key
+      // and no `algorithm`). This replaces the old "no algorithm is pinned"
+      // case: HS384/HS512 tokens over the same secret are no longer accepted.
       for (const algorithm of ["HS384", "HS512"] as const) {
         const token = validDeviceToken({}, { algorithm });
         const { context, req } = makeExecutionContext({
           headers: { authorization: bearer(token) },
         });
 
-        expect(guard.canActivate(context)).toBe(true);
-        expect(req.device?.deviceId).toBe(DEVICE_A);
+        await expectHttpError(() => guard.canActivate(context), {
+          type: UnauthorizedException,
+          message: BAD_TOKEN,
+          status: 401,
+        });
+        expect(req.device).toBeUndefined();
       }
     });
   });

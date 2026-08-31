@@ -1,7 +1,8 @@
 import { GoogleGenAI, type ThinkingConfig } from "@google/genai";
 import {
   compileToJsonSchema,
-  type ExtractionSchema,
+  ExtractionSchema,
+  type ExtractionField,
   validateExtraction,
 } from "@aura/shared";
 import { RetryableError, withProviderRetry } from "./retry";
@@ -154,6 +155,72 @@ export interface DiarizedSegment {
   endMs?: number;
 }
 
+/** Per-criterion breakdown behind {@link ConversationIntelligence.qualityScore}. */
+export interface QualityCriteria {
+  consentDisclosed: boolean;
+  /** 0-10: did the agent follow the pitch/script. */
+  scriptAdherence: number;
+  /** 0-10: tone, courtesy, no talking over the customer. */
+  professionalism: number;
+  /** 0-10: did the agent ask for the sale/next step, handle objections. */
+  conversionSignal: number;
+  /** One short sentence — why this score, not a transcript re-summary. */
+  rationale: string;
+}
+
+/** One compliance/escalation-worthy moment the model noticed in the call. */
+export interface RiskFlag {
+  /** e.g. "competitor_mention", "cancellation_request", "legal_threat". Free text — the automation-rule condition matches on severity, not category. */
+  category: string;
+  /** A short quoted or paraphrased snippet, for a human reviewer to locate it. */
+  snippet: string;
+  severity: "low" | "medium" | "high";
+}
+
+/**
+ * Coercion for the quality/risk fields an LLM hands back as loosely-typed
+ * JSON. Never throws — a malformed or absent field degrades to null/empty
+ * rather than failing conversation intelligence, which must never block a
+ * call (§ pipeline.ts runPostAsrStages).
+ */
+function coerceQualityScore(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null;
+}
+
+function coerceQualityCriteria(value: unknown): QualityCriteria | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const clamp10 = (x: unknown): number => {
+    const n = Number(x);
+    return Number.isFinite(n) ? Math.max(0, Math.min(10, Math.round(n))) : 0;
+  };
+  return {
+    consentDisclosed: v.consentDisclosed === true,
+    scriptAdherence: clamp10(v.scriptAdherence),
+    professionalism: clamp10(v.professionalism),
+    conversionSignal: clamp10(v.conversionSignal),
+    rationale: typeof v.rationale === "string" ? v.rationale.slice(0, 300) : "",
+  };
+}
+
+/** Capped at 5 regardless of how many the model returned — this is a spotter
+ *  a human triages, not an exhaustive transcript re-derivation. */
+function coerceRiskFlags(value: unknown): RiskFlag[] {
+  if (!Array.isArray(value)) return [];
+  const severities = new Set(["low", "medium", "high"]);
+  return value
+    .filter((f): f is Record<string, unknown> => Boolean(f) && typeof f === "object")
+    .slice(0, 5)
+    .map((f) => ({
+      category: typeof f.category === "string" ? f.category.slice(0, 60) : "other",
+      snippet: typeof f.snippet === "string" ? f.snippet.slice(0, 300) : "",
+      severity: severities.has(String(f.severity))
+        ? (f.severity as RiskFlag["severity"])
+        : "low",
+    }));
+}
+
 /**
  * Text-based diarization + intent for a single-channel call recording. Whisper
  * gives one un-labelled blob, so we ask the LLM to split it into Agent/Customer
@@ -172,6 +239,11 @@ export interface ConversationIntelligence {
   outcome: string;
   key_points: string[];
   action_items: string[];
+  /** 0-100, or null when the model's read didn't land. */
+  qualityScore: number | null;
+  qualityCriteria: QualityCriteria | null;
+  /** Capped at 5 — this is a spotter, not a transcript re-derivation. */
+  riskFlags: RiskFlag[];
   provider: string;
   model: string;
   tokensIn: number;
@@ -293,6 +365,225 @@ export async function analyzeTranscript(
   };
 }
 
+export interface AgentDraft {
+  name: string;
+  systemPrompt: string;
+  fields: ExtractionField[];
+}
+
+/** What generateAgentDraft asks the model to return — mirrors ExtractionField's
+ *  own shape (packages/shared/src/extraction.ts) plus the two agent-level
+ *  strings that aren't part of a field. */
+const AGENT_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    systemPrompt: { type: "string" },
+    fields: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string" },
+          type: {
+            type: "string",
+            enum: ["string", "number", "boolean", "enum", "datetime", "string[]"],
+          },
+          description: { type: "string" },
+          required: { type: "boolean" },
+          enumValues: { type: "array", items: { type: "string" } },
+        },
+        required: ["key", "type", "description", "required"],
+      },
+    },
+  },
+  required: ["name", "systemPrompt", "fields"],
+};
+
+function agentDraftPrompt(
+  description: string,
+  base?: { name: string; systemPrompt: string; fields: ExtractionField[] },
+  repairNote?: string,
+): string {
+  const domain =
+    "You are designing a call-analysis AI agent for a telecalling/CRM platform. " +
+    "An agent has a system prompt (instructions an LLM follows when reading a call " +
+    "transcript) and a list of structured fields it extracts from that transcript. " +
+    "Field keys must be snake_case (lowercase letters, digits, underscores, starting " +
+    "with a letter). Every 'enum' field must list at least one non-empty enumValues " +
+    "option — an enum with no options can never be satisfied. Field types are exactly " +
+    "one of: string, number, boolean, enum, datetime, string[].";
+
+  const baseBlock = base
+    ? `\n\nStart from this EXISTING agent and modify it per the request below, ` +
+      `carrying forward anything the request doesn't mention:\n` +
+      `Name: ${base.name}\nSystem prompt: ${base.systemPrompt}\n` +
+      `Fields: ${JSON.stringify(base.fields)}`
+    : "";
+
+  const ask =
+    `\n\nOperator's request: ${description}\n\nProduce a complete agent definition: ` +
+    "a short descriptive name, a system prompt instructing the extraction, and the " +
+    "list of fields to extract.";
+
+  const repair = repairNote
+    ? `\n\nYour previous output was invalid: ${repairNote}. Fix it and return the ` +
+      "full corrected definition, not just the changed part."
+    : "";
+
+  return `${domain}${baseBlock}${ask}${repair}`;
+}
+
+/** Best-effort normalization of what a model hands back, before validation —
+ *  same spirit as agent-studio.tsx's own client-side key cleanup, done again
+ *  here because a model can ignore the prompt's instructions. */
+function normalizeDraft(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const r = raw as { fields?: unknown };
+  if (!Array.isArray(r.fields)) return raw;
+  return {
+    ...r,
+    fields: r.fields.map((f) => {
+      if (typeof f !== "object" || f === null) return f;
+      const field = f as { key?: unknown };
+      if (typeof field.key !== "string") return field;
+      return { ...field, key: field.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") };
+    }),
+  };
+}
+
+/** Validates a generated draft's shape. `name`/`systemPrompt` are checked by
+ *  hand (packages/llm has no zod dependency of its own); `fields` reuses
+ *  ExtractionSchema (@aura/shared) — the exact rules a human-authored agent
+ *  is held to, including "an enum field needs at least one option". */
+function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[] } {
+  if (typeof raw !== "object" || raw === null) return { errors: ["output is not a JSON object"] };
+  const r = raw as { name?: unknown; systemPrompt?: unknown; fields?: unknown };
+  const errors: string[] = [];
+
+  const name = typeof r.name === "string" ? r.name.trim().slice(0, 120) : "";
+  if (!name) errors.push('"name" must be a non-empty string');
+
+  const systemPrompt = typeof r.systemPrompt === "string" ? r.systemPrompt.trim() : "";
+  if (!systemPrompt) errors.push('"systemPrompt" must be a non-empty string');
+
+  const fieldsParsed = ExtractionSchema.safeParse({ fields: r.fields });
+  if (!fieldsParsed.success) {
+    errors.push(...fieldsParsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+  }
+
+  if (errors.length > 0) return { errors };
+  return {
+    data: { name, systemPrompt: systemPrompt.slice(0, 20000), fields: fieldsParsed.success ? fieldsParsed.data.fields : [] },
+  };
+}
+
+function stubAgentDraft(input: {
+  description: string;
+  base?: { name: string; systemPrompt: string; fields: ExtractionField[] };
+}): AgentDraft {
+  if (input.base) {
+    return {
+      name: `${input.base.name} (modified)`.slice(0, 120),
+      systemPrompt: `${input.base.systemPrompt}\n\nAdditional instruction: ${input.description}`.slice(
+        0,
+        20000,
+      ),
+      fields: input.base.fields,
+    };
+  }
+  return {
+    name: (input.description.trim().slice(0, 60) || "Generated Agent"),
+    systemPrompt: `You are an expert call analyst. ${input.description}`.slice(0, 20000),
+    fields: [
+      {
+        key: "summary_note",
+        type: "string",
+        description: `Notes related to: ${input.description}`.slice(0, 500),
+        required: false,
+      },
+    ],
+  };
+}
+
+/**
+ * Generate a draft agent definition (name, system prompt, extraction fields)
+ * from an operator's free-text description — the AI Agent Studio's
+ * "describe it and it is created accordingly" path. Optionally given an
+ * existing agent's current definition as `base`, in which case the model is
+ * asked to MODIFY it per the description rather than start from nothing —
+ * the Studio's "build from a previous agent by modifying it" path, when the
+ * modification is expressed as a description rather than hand-edited.
+ *
+ * This is a PREVIEW, not a persisted write — apps/api/src/modules/agents/
+ * agents.controller.ts's `POST /agents/generate` returns the draft for the
+ * operator to review (and further hand-edit) before the existing
+ * `POST /agents` actually saves it, same non-persisting contract as
+ * `POST /agents/:id/test`.
+ *
+ * Same provider precedence and structured-output mechanics as
+ * analyzeTranscript (ANALYZE_STUB → Sarvam → Gemini), but validated against
+ * ExtractionSchema instead of a tenant's own field schema, and — unlike
+ * analyzeTranscript, which must never drop a call — a second invalid
+ * response THROWS rather than being saved with `validationStatus: "failed"`:
+ * nothing has been persisted yet, so failing loud here is strictly better
+ * than handing the operator a broken draft that silently doesn't validate.
+ */
+export async function generateAgentDraft(input: {
+  description: string;
+  base?: { name: string; systemPrompt: string; fields: ExtractionField[] };
+}): Promise<AgentDraft> {
+  if (process.env.ANALYZE_STUB === "1") return stubAgentDraft(input);
+
+  let run: (repairNote?: string) => Promise<unknown>;
+
+  if (sarvamChatConfigured()) {
+    run = async (repairNote?: string) => {
+      const res = await sarvamChat({
+        prompt: agentDraftPrompt(input.description, input.base, repairNote),
+        jsonSchema: AGENT_DRAFT_JSON_SCHEMA,
+        label: "generateAgentDraft",
+      });
+      return JSON.parse(res.text || "{}");
+    };
+  } else {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "your-gemini-api-key-here") {
+      throw new Error(
+        "no analyze provider configured (set SARVAM_API_KEY, GEMINI_API_KEY or ANALYZE_STUB=1)",
+      );
+    }
+    const model = geminiAnalyzeModel();
+    const ai = new GoogleGenAI({ apiKey });
+    run = async (repairNote?: string) => {
+      const response = await withProviderRetry(
+        () =>
+          ai.models.generateContent({
+            model,
+            contents: [
+              { role: "user", parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote) }] },
+            ],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: AGENT_DRAFT_JSON_SCHEMA,
+              thinkingConfig: geminiThinking(),
+            },
+          }),
+        "generateAgentDraft",
+      );
+      return JSON.parse(response.text ?? "{}");
+    };
+  }
+
+  const first = parseAgentDraft(normalizeDraft(await run()));
+  if ("data" in first) return first.data;
+
+  const second = parseAgentDraft(normalizeDraft(await run(first.errors.join("; "))));
+  if ("data" in second) return second.data;
+
+  throw new Error(`generateAgentDraft: model output failed validation twice: ${second.errors.join("; ")}`);
+}
+
 /**
  * Diarize + read intent for one call transcript. One JSON-mode call does the
  * whole job (speaker turns, per-turn intent, overall intent/sentiment/outcome).
@@ -322,6 +613,9 @@ export async function analyzeConversation(
     outcome: "unknown",
     key_points: [],
     action_items: [],
+    qualityScore: null,
+    qualityCriteria: null,
+    riskFlags: [],
     provider: "none",
     model: "none",
     tokensIn: 0,
@@ -368,6 +662,13 @@ export async function analyzeConversation(
   const callRule =
     "Summarise the call and read the overall intent, sentiment and outcome. " +
     "Write the summary/intents in English regardless of the call's language.\n" +
+    "4. Score call quality 0-100 and its four criteria (consentDisclosed: did " +
+    "the agent state this call may be recorded, or that consent policy does " +
+    "not require it; scriptAdherence, professionalism, conversionSignal: each " +
+    "0-10). One short rationale sentence.\n" +
+    "5. List up to 5 risk flags ONLY for things actually said — a competitor " +
+    "mention, a cancellation/refund request, a legal threat, a broken promise, " +
+    "hostility. Empty array when there is nothing to flag; do not invent one.\n" +
     "Return ONLY a JSON object.";
 
   const system = label
@@ -401,7 +702,11 @@ export async function analyzeConversation(
     '"agent_intent":"what the agent is trying to achieve",' +
     '"sentiment":"positive|neutral|negative",' +
     '"outcome":"interested|not_interested|follow_up|callback|no_answer|wrong_number|other",' +
-    '"key_points":["..."],"action_items":["..."]}';
+    '"key_points":["..."],"action_items":["..."],' +
+    '"qualityScore":0-100,' +
+    '"qualityCriteria":{"consentDisclosed":true|false,"scriptAdherence":0-10,' +
+    '"professionalism":0-10,"conversionSignal":0-10,"rationale":"..."},' +
+    '"riskFlags":[{"category":"...","snippet":"...","severity":"low|medium|high"}]}';
   const shape = label
     ? '{"language":"<iso639-1>",' +
       '"labels":[{"i":0,"speaker":"Agent|Customer","intent":"..."}],' +
@@ -431,6 +736,38 @@ export async function analyzeConversation(
    */
   const str = { type: "string" };
   const strList = { type: "array", items: { type: "string" } };
+  const qualityCriteriaSchema = {
+    type: "object",
+    properties: {
+      consentDisclosed: { type: "boolean" },
+      scriptAdherence: { type: "integer" },
+      professionalism: { type: "integer" },
+      conversionSignal: { type: "integer" },
+      rationale: str,
+    },
+    required: [
+      "consentDisclosed",
+      "scriptAdherence",
+      "professionalism",
+      "conversionSignal",
+      "rationale",
+    ],
+  };
+  const riskFlagsSchema = {
+    type: "array",
+    // Capped in the prompt (§5), not here — the schema constrains shape, not
+    // count, and a hard array-length limit would make a genuinely risky call
+    // with 6 flags fail generation entirely rather than return 5.
+    items: {
+      type: "object",
+      properties: {
+        category: str,
+        snippet: str,
+        severity: { type: "string", enum: ["low", "medium", "high"] },
+      },
+      required: ["category", "snippet", "severity"],
+    },
+  };
   const callFieldSchema = {
     summary: str,
     overall_intent: str,
@@ -440,6 +777,9 @@ export async function analyzeConversation(
     outcome: str,
     key_points: strList,
     action_items: strList,
+    qualityScore: { type: "integer" },
+    qualityCriteria: qualityCriteriaSchema,
+    riskFlags: riskFlagsSchema,
   };
   const replySchema: Record<string, unknown> = label
     ? {
@@ -598,6 +938,11 @@ export async function analyzeConversation(
     outcome: raw.outcome || "other",
     key_points: Array.isArray(raw.key_points) ? raw.key_points.map(String) : [],
     action_items: Array.isArray(raw.action_items) ? raw.action_items.map(String) : [],
+    qualityScore: coerceQualityScore((raw as { qualityScore?: unknown }).qualityScore),
+    qualityCriteria: coerceQualityCriteria(
+      (raw as { qualityCriteria?: unknown }).qualityCriteria,
+    ),
+    riskFlags: coerceRiskFlags((raw as { riskFlags?: unknown }).riskFlags),
     provider: usedProvider,
     model: usedModel,
     tokensIn,
@@ -820,6 +1165,36 @@ async function sarvamConversation(
       },
       key_points: { type: "array", items: { type: "string" } },
       action_items: { type: "array", items: { type: "string" } },
+      qualityScore: { type: "integer" },
+      qualityCriteria: {
+        type: "object",
+        properties: {
+          consentDisclosed: { type: "boolean" },
+          scriptAdherence: { type: "integer" },
+          professionalism: { type: "integer" },
+          conversionSignal: { type: "integer" },
+          rationale: { type: "string" },
+        },
+        required: [
+          "consentDisclosed",
+          "scriptAdherence",
+          "professionalism",
+          "conversionSignal",
+          "rationale",
+        ],
+      },
+      riskFlags: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            category: { type: "string" },
+            snippet: { type: "string" },
+            severity: { type: "string", enum: ["low", "medium", "high"] },
+          },
+          required: ["category", "snippet", "severity"],
+        },
+      },
     },
     required: ["language", "summary", "sentiment", "outcome"],
   };
@@ -833,7 +1208,13 @@ async function sarvamConversation(
         `Write the summary and intents in English regardless of the call's ` +
         `language. Return ONLY JSON with keys: language (iso639-1), summary ` +
         `(2-3 sentences), overall_intent, customer_intent, agent_intent, ` +
-        `sentiment, outcome, key_points, action_items.` +
+        `sentiment, outcome, key_points, action_items, qualityScore (0-100), ` +
+        `qualityCriteria ({consentDisclosed: did the agent state this call may ` +
+        `be recorded, scriptAdherence 0-10, professionalism 0-10, ` +
+        `conversionSignal 0-10, rationale: one short sentence}), riskFlags ` +
+        `(up to 5, ONLY for things actually said — competitor mention, ` +
+        `cancellation/refund request, legal threat, broken promise, hostility; ` +
+        `empty array when there is nothing to flag).` +
         `${glossary}\n\n${fullContext}`,
       jsonSchema: summarySchema,
       label: "analyzeConversation.summary",
@@ -870,6 +1251,9 @@ async function sarvamConversation(
     outcome: raw.outcome || "other",
     key_points: Array.isArray(raw.key_points) ? raw.key_points.map(String) : [],
     action_items: Array.isArray(raw.action_items) ? raw.action_items.map(String) : [],
+    qualityScore: coerceQualityScore(raw.qualityScore),
+    qualityCriteria: coerceQualityCriteria(raw.qualityCriteria),
+    riskFlags: coerceRiskFlags(raw.riskFlags),
     provider: "sarvam",
     model,
     tokensIn: tokensIn || base.tokensIn,

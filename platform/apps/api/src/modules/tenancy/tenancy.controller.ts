@@ -4,11 +4,14 @@ import {
   Controller,
   Get,
   Patch,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { hashAppLockPassword } from "../../common/app-lock-hash";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -87,6 +90,7 @@ export class TenancyController {
       } = await client.query(
         `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
                 store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary, branding,
+                enabled_modules,
                 (app_lock_password_hash IS NOT NULL) AS app_lock_enabled
            FROM organizations WHERE id = $1`,
         [orgId],
@@ -96,7 +100,9 @@ export class TenancyController {
   }
 
   @Patch("branding")
-  async updateBranding(@OrgId() orgId: string, @Body() body: unknown) {
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async updateBranding(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = BrandingBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -114,15 +120,17 @@ export class TenancyController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', 'dev-admin', 'org.branding_update', 'organization', $2, $3::jsonb)`,
-        [orgId, orgId, JSON.stringify(p)],
+         VALUES ($1, 'user', $2, 'org.branding_update', 'organization', $3, $4::jsonb)`,
+        [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify(p)],
       );
       return org;
     });
   }
 
   @Patch("policy")
-  async updatePolicy(@OrgId() orgId: string, @Body() body: unknown) {
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async updatePolicy(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = PolicyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -178,8 +186,8 @@ export class TenancyController {
           : p;
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', 'dev-admin', 'org.policy_update', 'organization', $2, $3::jsonb)`,
-        [orgId, orgId, JSON.stringify(auditMeta)],
+         VALUES ($1, 'user', $2, 'org.policy_update', 'organization', $3, $4::jsonb)`,
+        [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify(auditMeta)],
       );
       return org;
     });

@@ -10,11 +10,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { computeDocumentTotals, computeLineTotal, splitGst, type LineItemInput } from "@aura/shared";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -162,12 +164,13 @@ export class InvoicesController {
   async create(
     @OrgId() orgId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = CreateInvoiceBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
-    const invoice = await this.insertInvoice(orgId, p, null, recordScope);
+    const invoice = await this.insertInvoice(orgId, p, null, recordScope, req);
     return invoice;
   }
 
@@ -177,6 +180,7 @@ export class InvoicesController {
   async createFromQuotation(
     @OrgId() orgId: string,
     @Param("quotationId", ParseUUIDPipe) quotationId: string,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
@@ -211,7 +215,7 @@ export class InvoicesController {
         discount: { type: quotation.discount_type, value: Number(quotation.discount_value) },
         items: qItems,
       });
-      return this.insertInvoice(orgId, p, client, recordScope);
+      return this.insertInvoice(orgId, p, client, recordScope, req);
     });
   }
 
@@ -221,6 +225,7 @@ export class InvoicesController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = UpdateInvoiceBody.safeParse(body);
@@ -301,7 +306,7 @@ export class InvoicesController {
           p.notes !== undefined, p.notes ?? null,
         ],
       );
-      await this.audit(client, orgId, "invoice.update", id);
+      await this.audit(client, orgId, "invoice.update", id, req);
       const finalItems = await this.fetchItems(client, id);
       return { invoice, items: finalItems };
     });
@@ -312,6 +317,7 @@ export class InvoicesController {
     p: z.infer<typeof CreateInvoiceBody>,
     existingClient: QueryClient | null,
     recordScope: CrmRecordScope,
+    req: PrincipalRequest,
   ) {
     const run = async (client: QueryClient) => {
       const totals = computeDocumentTotals(p.items as LineItemInput[], {
@@ -354,7 +360,7 @@ export class InvoicesController {
           ],
         );
         await this.insertItems(client, orgId, invoice.id, p.items as any[]);
-        await this.audit(client, orgId, "invoice.create", invoice.id);
+        await this.audit(client, orgId, "invoice.create", invoice.id, req);
         const items = await this.fetchItems(client, invoice.id);
         return { invoice, items };
       } catch (err: any) {
@@ -401,11 +407,11 @@ export class InvoicesController {
     return rows;
   }
 
-  private async audit(client: QueryClient, orgId: string, action: string, targetId: string) {
+  private async audit(client: QueryClient, orgId: string, action: string, targetId: string, req: PrincipalRequest) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'invoice', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'invoice', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

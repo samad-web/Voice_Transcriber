@@ -18,7 +18,7 @@ import { API_URL, orgHeaders } from "@/lib/server-api";
  * that authenticated but did not authorize would be a way around the grid.
  */
 
-const REPORTS = new Set(["pipeline", "performance", "conversion"]);
+const REPORTS = new Set(["pipeline", "performance", "conversion", "commission"]);
 
 export async function GET(
   request: Request,

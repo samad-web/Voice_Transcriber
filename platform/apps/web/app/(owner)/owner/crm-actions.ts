@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
-import { ownerHeaders } from "./actions";
+import { errorText, ownerHeaders, patchRecordAction } from "./actions";
 import type {
   Account,
   Contact,
@@ -46,65 +46,12 @@ export async function updateDealAction(
   dealId: string,
   update: DealUpdate,
 ): Promise<ActionResult & { deal?: Partial<Deal> }> {
-  const headers = await ownerHeaders();
-  if (!headers) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const res = await fetch(`${API_URL}/v1/deals/${dealId}`, {
-      method: "PATCH",
-      headers,
-      cache: "no-store",
-      body: JSON.stringify(update),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = body?.message ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
-    const data = (await res.json()) as { deal: Partial<Deal> };
-    revalidatePath("/owner/deals");
-    revalidatePath("/owner/contacts");
-    revalidatePath("/owner/accounts");
-    return { deal: data.deal };
-  } catch {
-    return { error: "API unreachable" };
-  }
-}
-
-/** Deal detail for the drawer — reads the same joined shape the board/list already carry. */
-export async function fetchDealAction(dealId: string): Promise<{ deal?: Deal; error?: string }> {
-  const headers = await ownerHeaders();
-  if (!headers) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const res = await fetch(`${API_URL}/v1/deals/${dealId}`, { headers, cache: "no-store" });
-    if (!res.ok) return { error: `API ${res.status}` };
-    return (await res.json()) as { deal: Deal };
-  } catch {
-    return { error: "API unreachable" };
-  }
-}
-
-export async function fetchContactAction(
-  contactId: string,
-): Promise<{ contact?: Contact; deals?: Deal[]; error?: string }> {
-  const headers = await ownerHeaders();
-  if (!headers) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const [contactRes, dealsRes] = await Promise.all([
-      fetch(`${API_URL}/v1/contacts/${contactId}`, { headers, cache: "no-store" }),
-      fetch(`${API_URL}/v1/contacts/${contactId}/deals`, { headers, cache: "no-store" }),
-    ]);
-    if (!contactRes.ok) return { error: `API ${contactRes.status}` };
-    const { contact } = (await contactRes.json()) as { contact: Contact };
-    const { deals } = dealsRes.ok
-      ? ((await dealsRes.json()) as { deals: Deal[] })
-      : { deals: [] };
-    return { contact, deals };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const result = await patchRecordAction<{ deal: Partial<Deal> }>(`/v1/deals/${dealId}`, update, [
+    "/owner/deals",
+    "/owner/contacts",
+    "/owner/accounts",
+  ]);
+  return result.error ? { error: result.error } : { deal: result.data?.deal };
 }
 
 /**
@@ -147,30 +94,6 @@ export async function scanDuplicatesAction(
   }
 }
 
-export interface FetchDuplicatesResult {
-  duplicates?: DuplicateMatch[];
-  error?: string;
-}
-
-export async function fetchDuplicatesAction(
-  objectType?: "contact" | "account",
-): Promise<FetchDuplicatesResult> {
-  const headers = await ownerHeaders();
-  if (!headers) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const query = objectType ? `?objectType=${objectType}` : "";
-    const res = await fetch(`${API_URL}/v1/merge/duplicates${query}`, {
-      headers,
-      cache: "no-store",
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    return (await res.json()) as { duplicates: DuplicateMatch[] };
-  } catch {
-    return { error: "API unreachable" };
-  }
-}
-
 export async function dismissDuplicateAction(id: string): Promise<ActionResult> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
@@ -207,31 +130,13 @@ export async function mergeRecordsAction(
       cache: "no-store",
       body: JSON.stringify({ objectType, survivorId, victimId, fieldDecisions: {} }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: typeof body?.message === "string" ? body.message : `API ${res.status}` };
-    }
+    if (!res.ok) return { error: await errorText(res) };
     const data = (await res.json()) as { mergeId: string };
     revalidatePath("/owner/duplicates");
     revalidatePath("/owner/contacts");
     revalidatePath("/owner/accounts");
     revalidatePath("/owner/deals");
     return { mergeId: data.mergeId };
-  } catch {
-    return { error: "API unreachable" };
-  }
-}
-
-export async function fetchAccountAction(
-  accountId: string,
-): Promise<{ account?: Account; contacts?: Contact[]; error?: string }> {
-  const headers = await ownerHeaders();
-  if (!headers) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const res = await fetch(`${API_URL}/v1/accounts/${accountId}`, { headers, cache: "no-store" });
-    if (!res.ok) return { error: `API ${res.status}` };
-    return (await res.json()) as { account: Account; contacts: Contact[] };
   } catch {
     return { error: "API unreachable" };
   }
@@ -629,14 +534,4 @@ export async function saveCustomFieldsAction(
   } catch {
     return { error: "API unreachable" };
   }
-}
-
-/** Zod issue arrays and plain messages both arrive under `message`. */
-async function errorText(res: Response): Promise<string> {
-  const body = await res.json().catch(() => ({}));
-  const message = (body as { message?: unknown })?.message;
-  if (Array.isArray(message)) {
-    return message.map((m: { message?: string }) => m.message ?? "").join("; ");
-  }
-  return typeof message === "string" ? message : `API ${res.status}`;
 }

@@ -138,7 +138,7 @@ export function TeamManager({
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Members */}
       <div className="lg:col-span-2 space-y-6">
-        <Card shadow className="overflow-hidden p-0">
+        <Card elevated className="overflow-hidden p-0">
           <div className="p-5 border-b-2 border-black flex items-center gap-2">
             <Users className="h-4 w-4" />
             <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
@@ -251,7 +251,7 @@ export function TeamManager({
         </Card>
 
         {/* Add member */}
-        <Card shadow className="space-y-4">
+        <Card elevated className="space-y-4">
           <div className="flex items-center gap-2">
             <UserPlus className="h-4 w-4" />
             <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
@@ -337,7 +337,7 @@ export function TeamManager({
 
       {/* Workspaces */}
       <div className="space-y-6">
-        <Card shadow className="space-y-4">
+        <Card elevated className="space-y-4">
           <MonoLabel>Workspaces</MonoLabel>
           <div className="space-y-3">
             {workspaces.length === 0 ? (

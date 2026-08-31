@@ -146,6 +146,7 @@ export function ImportWizard() {
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rowErrors, setRowErrors] = useState<ImportRowError[] | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [, startRun] = useTransition();
 
   function reset() {
@@ -162,6 +163,7 @@ export function ImportWizard() {
     setJob(null);
     setRowErrors(null);
     setRunError(null);
+    setDownloadError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -255,8 +257,12 @@ export function ImportWizard() {
 
   async function downloadErrorsCsv() {
     if (!job) return;
+    setDownloadError(null);
     const res = await fetchImportErrorsCsvAction(job.id);
-    if (!res.csv) return;
+    if (!res.csv) {
+      setDownloadError(res.error ?? "Could not download the error rows.");
+      return;
+    }
     const blob = new Blob([res.csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -331,6 +337,7 @@ export function ImportWizard() {
         <ResultsStep
           job={job}
           rowErrors={rowErrors}
+          downloadError={downloadError}
           onDownloadErrors={downloadErrorsCsv}
           onRestart={reset}
         />
@@ -677,11 +684,13 @@ function RunningStep({ rowCount }: { rowCount: number }) {
 function ResultsStep({
   job,
   rowErrors,
+  downloadError,
   onDownloadErrors,
   onRestart,
 }: {
   job: ImportJob;
   rowErrors: ImportRowError[] | null;
+  downloadError: string | null;
   onDownloadErrors: () => void;
   onRestart: () => void;
 }) {
@@ -723,6 +732,9 @@ function ResultsStep({
               Download error rows as CSV
             </Button>
           </div>
+          {downloadError ? (
+            <p className="mt-2 text-sm text-danger-text">{downloadError}</p>
+          ) : null}
           {rowErrors === null ? (
             <p className="mt-2 text-sm text-text-muted">Loading…</p>
           ) : (

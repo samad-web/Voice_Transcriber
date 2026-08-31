@@ -112,7 +112,10 @@ export class MetaWebhookController {
       const { fullName, email, phone } = mapLeadFields(lead.field_data);
       const displayName = fullName || email || phone || "Facebook lead";
 
-      const phoneHash = phone ? createHash("sha256").update(phone.replace(/\D+/gu, "")).digest("hex") : null;
+      const digits = phone ? phone.replace(/\D+/gu, "") : "";
+      const phoneHash = digits ? createHash("sha256").update(digits).digest("hex") : null;
+      const phonePrefix = digits ? digits.slice(0, 5) || null : null;
+      const phoneLast3 = digits.length >= 3 ? digits.slice(-3) : null;
 
       // find-or-create the one marketing source every Meta capture attributes to.
       const {
@@ -125,22 +128,65 @@ export class MetaWebhookController {
         [connection.org_id],
       );
 
-      const {
-        rows: [contact],
-      } = await client.query<{ id: string }>(
-        `INSERT INTO contacts (org_id, display_name, email, phone_hash, phone_prefix, phone_last3, marketing_source_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id`,
-        [
-          connection.org_id,
-          displayName,
-          email,
-          phoneHash,
-          phone ? phone.replace(/\D+/gu, "").slice(0, 5) || null : null,
-          phone && phone.replace(/\D+/gu, "").length >= 3 ? phone.replace(/\D+/gu, "").slice(-3) : null,
-          source.id,
-        ],
-      );
+      // FIND-OR-CREATE, not a bare INSERT.
+      //
+      // This used to be an unguarded `INSERT INTO contacts`, and `contacts`
+      // carries TWO partial unique indexes — `contacts_org_phone` and
+      // `contacts_org_email` (0035_accounts_and_contacts.sql). So a lead from
+      // somebody the tenant already knows raised 23505; `withOrg` is a real
+      // transaction, so the ROLLBACK also destroyed the `meta_leadgen_events`
+      // claim taken above; the throw was swallowed by the caller's .catch and
+      // the handler still answered `{ ok: true }`. Meta saw a 200, never
+      // redelivered, and the lead was gone silently and permanently — and the
+      // better a customer they already were, the more certain the loss.
+      //
+      // Two lookups rather than one ON CONFLICT because a single conflict
+      // target cannot cover two indexes. Same order the CSV importer uses
+      // (import.controller.ts): phone first, then email.
+      let contact: { id: string } | undefined;
+      if (phoneHash) {
+        ({
+          rows: [contact],
+        } = await client.query<{ id: string }>(
+          `SELECT id FROM contacts WHERE org_id = $1 AND phone_hash = $2 AND status <> 'merged'`,
+          [connection.org_id, phoneHash],
+        ));
+      }
+      if (!contact && email) {
+        ({
+          rows: [contact],
+        } = await client.query<{ id: string }>(
+          `SELECT id FROM contacts WHERE org_id = $1 AND lower(email) = $2 AND status <> 'merged'`,
+          [connection.org_id, email.toLowerCase()],
+        ));
+      }
+
+      if (contact) {
+        // Attribute the returning person to this campaign without overwriting
+        // anything a human curated. COALESCE only fills blanks — an existing
+        // marketing source is the FIRST touch that won them, and a later ad
+        // click must not rewrite that history.
+        await client.query(
+          `UPDATE contacts
+              SET email               = COALESCE(email, $2),
+                  phone_hash          = COALESCE(phone_hash, $3),
+                  phone_prefix        = COALESCE(phone_prefix, $4),
+                  phone_last3         = COALESCE(phone_last3, $5),
+                  marketing_source_id = COALESCE(marketing_source_id, $6),
+                  last_activity_at    = now()
+            WHERE id = $1`,
+          [contact.id, email, phoneHash, phonePrefix, phoneLast3, source.id],
+        );
+      } else {
+        ({
+          rows: [contact],
+        } = await client.query<{ id: string }>(
+          `INSERT INTO contacts (org_id, display_name, email, phone_hash, phone_prefix, phone_last3, marketing_source_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id`,
+          [connection.org_id, displayName, email, phoneHash, phonePrefix, phoneLast3, source.id],
+        ));
+      }
 
       const {
         rows: [pipeline],

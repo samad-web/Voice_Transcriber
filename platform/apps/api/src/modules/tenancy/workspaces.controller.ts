@@ -4,10 +4,13 @@ import {
   Controller,
   Get,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -32,7 +35,9 @@ export class WorkspacesController {
   }
 
   @Post()
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateWorkspaceBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { name } = parsed.data;
@@ -50,8 +55,8 @@ export class WorkspacesController {
       // reuse the uuid $1 for a text column (Postgres 42P08 inconsistent types).
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'workspace.create', 'workspace', $2)`,
-        [orgId, workspace.id],
+         VALUES ($1, 'user', $2, 'workspace.create', 'workspace', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", workspace.id],
       );
       return workspace;
     });

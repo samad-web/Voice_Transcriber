@@ -9,10 +9,12 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -141,6 +143,7 @@ export class AccountsController {
   async create(
     @OrgId() orgId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = CreateAccountBody.safeParse(body);
@@ -164,7 +167,7 @@ export class AccountsController {
           recordScope.scope === "owned" ? recordScope.userId : null,
         ],
       );
-      await this.audit(client, orgId, "account.create", account.id);
+      await this.audit(client, orgId, "account.create", account.id, req);
       return { account };
     });
   }
@@ -175,6 +178,7 @@ export class AccountsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = UpdateAccountBody.safeParse(body);
@@ -212,7 +216,7 @@ export class AccountsController {
         ],
       );
       if (!account) throw new NotFoundException("account not found");
-      await this.audit(client, orgId, "account.update", id);
+      await this.audit(client, orgId, "account.update", id, req);
       return { account };
     });
   }
@@ -222,11 +226,12 @@ export class AccountsController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'account', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'account', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

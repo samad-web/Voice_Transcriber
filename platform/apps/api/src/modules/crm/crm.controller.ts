@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -23,6 +24,7 @@ import {
   renderTemplate,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { CrmTestService } from "./crm-test.service";
@@ -137,7 +139,7 @@ export class CrmController {
 
   /** Connect a catalogue provider — the normal path. */
   @Post("integrations")
-  async connect(@OrgId() orgId: string, @Body() body: unknown) {
+  async connect(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = ConnectProviderBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const cfg = parsed.data;
@@ -237,14 +239,14 @@ export class CrmController {
           cfg.onlyQualified,
         ],
       );
-      await this.audit(client, orgId, "crm.connect", integration.id);
+      await this.audit(client, orgId, "crm.connect", integration.id, req);
       return integration;
     });
   }
 
   /** Hand-specified connector for a CRM the catalogue doesn't cover. */
   @Post("integrations/custom")
-  async connectCustom(@OrgId() orgId: string, @Body() body: unknown) {
+  async connectCustom(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CustomIntegrationBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const cfg = parsed.data;
@@ -293,7 +295,7 @@ export class CrmController {
           cfg.onlyQualified,
         ],
       );
-      await this.audit(client, orgId, "crm.connect", integration.id);
+      await this.audit(client, orgId, "crm.connect", integration.id, req);
       return integration;
     });
   }
@@ -326,6 +328,7 @@ export class CrmController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = UpdateIntegrationBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -382,7 +385,7 @@ export class CrmController {
         ],
       );
       if (!integration) throw new NotFoundException("crm integration not found in this org");
-      await this.audit(client, orgId, "crm.update", integration.id);
+      await this.audit(client, orgId, "crm.update", integration.id, req);
       return integration;
     });
   }
@@ -391,11 +394,12 @@ export class CrmController {
   async remove(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       // Audit before the delete: the row the audit entry points at is about to
       // stop existing, and an unexplained gap is worse than a dangling id.
-      await this.audit(client, orgId, "crm.disconnect", id);
+      await this.audit(client, orgId, "crm.disconnect", id, req);
       const { rowCount } = await client.query("DELETE FROM crm_integrations WHERE id = $1", [id]);
       if (rowCount === 0) throw new NotFoundException("crm integration not found in this org");
       return { deleted: true };
@@ -458,6 +462,7 @@ export class CrmController {
   async retry(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -471,7 +476,7 @@ export class CrmController {
         [id],
       );
       if (!row) throw new NotFoundException("delivery not found in this org");
-      await this.audit(client, orgId, "crm.retry", row.integration_id);
+      await this.audit(client, orgId, "crm.retry", row.integration_id, req);
       // The worker's drain picks it up on the next tick — retrying inline here
       // would put a 20s CRM timeout in the middle of an HTTP request.
       return { requeued: true, delivery: row };
@@ -483,6 +488,7 @@ export class CrmController {
   async retryDead(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       const { rowCount } = await client.query(
@@ -492,7 +498,7 @@ export class CrmController {
           WHERE integration_id = $1 AND status = 'dead'`,
         [id],
       );
-      await this.audit(client, orgId, "crm.retry_dead", id);
+      await this.audit(client, orgId, "crm.retry_dead", id, req);
       return { requeued: rowCount ?? 0 };
     });
   }
@@ -502,11 +508,12 @@ export class CrmController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'crm_integration', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'crm_integration', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

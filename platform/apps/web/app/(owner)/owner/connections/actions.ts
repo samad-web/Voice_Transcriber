@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
+import { apiErrorMessage } from "../lib/api-error";
 
 /**
  * Email/calendar connection actions (PRD Layer 1).
@@ -15,15 +16,6 @@ import { ownerHeaders } from "../actions";
 
 export interface ConnectionActionResult {
   error?: string;
-}
-
-async function message(res: Response): Promise<string> {
-  const body = await res.json().catch(() => ({}));
-  const detail = (body as { message?: unknown }).message;
-  if (Array.isArray(detail)) {
-    return detail.map((d: { message?: string }) => d.message ?? "").join("; ");
-  }
-  return typeof detail === "string" ? detail : `API ${res.status}`;
 }
 
 /** Mint an authorize URL. The caller sends the browser there. */
@@ -40,7 +32,7 @@ export async function startOAuthAction(
       cache: "no-store",
       body: JSON.stringify({ provider, redirectPath: "/owner/connections" }),
     });
-    if (!res.ok) return { error: await message(res) };
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     const data = (await res.json()) as { authorizeUrl: string };
     return { authorizeUrl: data.authorizeUrl };
   } catch {
@@ -64,7 +56,7 @@ export async function connectBasicAction(input: {
       cache: "no-store",
       body: JSON.stringify(input),
     });
-    if (!res.ok) return { error: await message(res) };
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/connections");
     return {};
   } catch {
@@ -82,7 +74,7 @@ export async function disconnectAction(id: string): Promise<ConnectionActionResu
       headers,
       cache: "no-store",
     });
-    if (!res.ok) return { error: await message(res) };
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/connections");
     return {};
   } catch {

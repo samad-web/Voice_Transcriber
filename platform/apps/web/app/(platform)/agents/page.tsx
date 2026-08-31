@@ -46,8 +46,17 @@ export default async function AgentsPage({
         </Card>
       ) : (
         <div className="space-y-6">
-          <AgentStudio agents={data.agents} orgId={orgId} workspaces={workspaces} />
-          <AgentSandbox agents={data.agents} orgId={orgId} />
+          {/* `key={orgId}` forces a full remount on tenant switch (TenantSwitcher
+              navigates client-side within this same route via `?org=`), rather
+              than just a prop update — without it, `workspaceId`/`agentId`/the
+              builder's draft state stay seeded from whichever tenant was active
+              on first mount. Submitting Create Agent then sends the PREVIOUS
+              tenant's workspaceId alongside the NEW orgId, which the API
+              correctly 404s as "workspace not found in this org" — the
+              workspace is real, just not visible under the new tenant's RLS
+              scope. */}
+          <AgentStudio key={orgId} agents={data.agents} orgId={orgId} workspaces={workspaces} />
+          <AgentSandbox key={orgId} agents={data.agents} orgId={orgId} />
         </div>
       )}
     </>

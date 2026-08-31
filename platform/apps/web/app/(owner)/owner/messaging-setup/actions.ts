@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
+import { apiErrorMessage } from "../lib/api-error";
 
 export interface MessagingChannel {
   id: string;
@@ -63,11 +64,7 @@ export async function createWasiChannelAction(input: {
         config: { wasiClientId: input.wasiClientId },
       }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = (body as { message?: unknown })?.message;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/messaging-setup");
     return { ok: true };
   } catch {

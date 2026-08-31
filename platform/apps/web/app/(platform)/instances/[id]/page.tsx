@@ -13,6 +13,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  Tooltip,
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
@@ -30,6 +31,7 @@ import { OwnerAccounts, type OwnerRow } from "./owner-accounts";
 import { PolicyForm } from "./policy-form";
 import { TelecallerForm } from "./telecaller-form";
 import { AsrSettings } from "./asr-settings";
+import { CrmModuleToggle } from "./crm-module-toggle";
 import { TranscriptionToggle } from "./transcription-toggle";
 
 interface Org {
@@ -46,6 +48,7 @@ interface Org {
   asr_mode: string | null;
   vocabulary: string[] | null;
   app_lock_enabled: boolean;
+  enabled_modules: string[];
 }
 
 interface InstanceRow {
@@ -91,6 +94,22 @@ interface Overview {
   calls: { total: number; complete: number; failed: number; total_seconds: number };
 }
 
+/** Mirrors devices.controller.ts's GET /devices/fleet-health response shape. */
+interface FleetHealthRow {
+  deviceId: string;
+  instanceId: string;
+  staleness: "never" | "<1h" | "1-24h" | "1-7d" | "stale";
+  health: {
+    batteryLevel: number | null;
+    freeStorageMb: number | null;
+    pendingUploads: number | null;
+    failureCounts: Record<string, number>;
+    ts: string;
+  } | null;
+  needsAttention: boolean;
+  attentionReasons: string[];
+}
+
 /** How many recent calls to preview inline before sending the operator to the
  *  full explorer. Enough to see the instance is alive, short enough to scan. */
 const CALL_PREVIEW = 5;
@@ -115,6 +134,36 @@ const DEVICE_TONE = {
   wiped: "danger",
   lost: "danger",
 } as const;
+
+/** Baseline tone per staleness bucket — overridden by `needsAttention` below,
+ *  since a device can be freshly-seen and still be flagged (e.g. low storage). */
+const HEALTH_TONE = {
+  "<1h": "solid",
+  "1-24h": "muted",
+  "1-7d": "muted",
+  stale: "danger",
+  never: "outline",
+} as const;
+
+const HEALTH_LABEL = {
+  "<1h": "Active <1h",
+  "1-24h": "Seen 1-24h ago",
+  "1-7d": "Seen 1-7d ago",
+  stale: "Stale 7d+",
+  never: "Never seen",
+} as const;
+
+function healthTooltip(row: FleetHealthRow | undefined): string {
+  if (!row?.health) return "No health beacon received yet";
+  const { batteryLevel, freeStorageMb, pendingUploads } = row.health;
+  const parts = [
+    batteryLevel != null ? `Battery ${batteryLevel}%` : null,
+    freeStorageMb != null ? `${freeStorageMb}MB free` : null,
+    pendingUploads != null ? `${pendingUploads} pending upload(s)` : null,
+  ].filter(Boolean);
+  const base = parts.length > 0 ? parts.join(" · ") : "No telemetry reported";
+  return row.needsAttention ? `${base} — ${row.attentionReasons.join(", ")}` : base;
+}
 
 const KEY_TONE = {
   active: "solid",
@@ -147,7 +196,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
   const org = await apiGetAs<Org>("/v1/org", orgId);
   if (!org?.id) notFound();
 
-  const [list, audit, ownerData, crm, catalogue, overview, workspaces] = await Promise.all([
+  const [list, audit, ownerData, crm, catalogue, overview, workspaces, fleetHealth] = await Promise.all([
     apiGetAs<{ instances: InstanceRow[] }>("/v1/instances", orgId),
     apiGetAs<{ entries: AuditEntry[] }>("/v1/org/audit", orgId),
     apiGetAs<{ owners: OwnerRow[]; authConfigured: boolean }>("/v1/owners", orgId),
@@ -161,8 +210,12 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
     ),
     apiGetAs<Overview>("/v1/analytics/overview", orgId),
     workspacesFor(orgId),
+    // Org-wide, fetched once: cheaper than one extra round trip per instance
+    // below, and the devices table only needs to key it by device id.
+    apiGetAs<{ devices: FleetHealthRow[] }>("/v1/devices/fleet-health", orgId),
   ]);
   const instances = list?.instances ?? [];
+  const healthByDevice = new Map((fleetHealth?.devices ?? []).map((h) => [h.deviceId, h]));
 
   const details = await Promise.all(
     instances.map((inst) =>
@@ -232,7 +285,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
         <StatCard label="Retention" value={`${org.retention_days}d`} />
       </div>
 
-      <Card shadow className="space-y-3">
+      <Card elevated className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <MonoLabel>Tenant</MonoLabel>
           <StatusChip tone={org.status === "active" ? "solid" : "muted"}>{org.status}</StatusChip>
@@ -267,12 +320,17 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
             enabled={org.transcription_enabled !== false}
             instanceName={org.name}
           />
+          <CrmModuleToggle
+            orgId={orgId}
+            enabled={org.enabled_modules.includes("crm")}
+            instanceName={org.name}
+          />
           <PolicyForm orgId={orgId} initial={org} />
           <AppLockForm orgId={orgId} enabled={org.app_lock_enabled} />
           <ErasureTool orgId={orgId} />
         </div>
 
-        <Card shadow className="space-y-3">
+        <Card elevated className="space-y-3">
           <MonoLabel>Immutable audit ledger</MonoLabel>
           <div className="max-h-[32rem] divide-y divide-border overflow-y-auto">
             {(audit?.entries ?? []).length === 0 ? (
@@ -456,7 +514,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                 </p>
               ) : (
                 <div tabIndex={0} role="region" aria-label={`Devices, ${inst.name}`} className={SCROLLER}>
-                  <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
                     <caption className="sr-only">Enrolled devices for {inst.name}</caption>
                     <TableHead>
                       <tr>
@@ -466,6 +524,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                         <TableHeaderCell>Capability</TableHeaderCell>
                         <TableHeaderCell>Last seen</TableHeaderCell>
                         <TableHeaderCell>Status</TableHeaderCell>
+                        <TableHeaderCell>Health</TableHeaderCell>
                         <TableHeaderCell>Actions</TableHeaderCell>
                       </tr>
                     </TableHead>
@@ -501,6 +560,23 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                             <StatusChip tone={DEVICE_TONE[device.status]}>
                               {device.status}
                             </StatusChip>
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const health = healthByDevice.get(device.id);
+                              const staleness = health?.staleness ?? "never";
+                              const tone = health?.needsAttention ? "danger" : HEALTH_TONE[staleness];
+                              return (
+                                <Tooltip content={healthTooltip(health)}>
+                                  {/* Tooltip's trigger must itself be focusable (Tooltip's own
+                                      doc comment) — a bare StatusChip <span> would never show
+                                      this to a keyboard user. */}
+                                  <button type="button" className="cursor-default rounded-full">
+                                    <StatusChip tone={tone}>{HEALTH_LABEL[staleness]}</StatusChip>
+                                  </button>
+                                </Tooltip>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             <DeviceActions

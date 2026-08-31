@@ -6,8 +6,10 @@ import {
   SetMetadata,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { z } from "zod";
 import { type OwnerRole, resolveOwnerRole } from "@aura/shared";
 import type { PrincipalRequest } from "./auth-principal";
+import { AuthService } from "../modules/auth/auth.service";
 
 export const OWNER_ROLE_KEY = "required_owner_role";
 
@@ -18,17 +20,25 @@ export const RequireOwnerRole = (...roles: OwnerRole[]) => SetMetadata(OWNER_ROL
  * Enforces `@RequireOwnerRole(...)`. Runs AFTER AdminKeyGuard, so `req.principal`
  * is set.
  *
- * A bare admin-key caller that never asserted a persona (`viaAdminKey` true,
- * `ownerRole` null — seed scripts, ops tooling, anything not yet updated to
- * send `x-caller-owner-role`) keeps today's behaviour and passes unchecked.
- * Enforcement only activates once a caller actually names a persona, which
- * every real owner-console request does (see apps/web/lib/owner-context.ts).
+ * STAGE 2.5 (checklist 08 §2.5) — CLOSED. This used to trust the caller's OWN
+ * claim about its persona (`x-caller-owner-role`, read verbatim by
+ * admin-key.guard.ts into `principal.ownerRole`): any admin-key holder could
+ * assert `owner` and be believed, or omit the header entirely and be waved
+ * through unchecked. It now derives the persona itself from `memberships`
+ * (the same table a Bearer session's `ownerRole` already came from, via
+ * `principalFromToken` — that path was never the bypass and is unchanged) —
+ * see `AuthService.ownerRoleFor`. `admin-key.guard.ts` still parses
+ * `x-caller-owner-role` into `principal.ownerRole` for an admin-key caller,
+ * but nothing here reads that value anymore; it is only informational.
  */
 @Injectable()
 export class OwnerRoleGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly auth: AuthService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<OwnerRole[] | undefined>(OWNER_ROLE_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -39,20 +49,27 @@ export class OwnerRoleGuard implements CanActivate {
     const principal = req.principal;
     if (!principal) throw new ForbiddenException("owner role required");
 
-    // SECURITY (08 §2.5): this line is the bypass. `ownerRole` is populated in
-    // admin-key.guard.ts purely from the caller-supplied `x-caller-owner-role`
-    // header, so an admin-key caller that omits it lands here with null and is
-    // waved through EVERY @RequireOwnerRole check on the platform. The same
-    // caller can also just assert `owner` and be believed. Role enforcement is
-    // therefore advisory: it constrains the web tier, which volunteers the
-    // header, and constrains nothing else. Removing this line is not the fix —
-    // it would break seed scripts and ops tooling while still trusting a header.
-    // The fix is for the API to derive the persona server-side from the
-    // authenticated subject (memberships.owner_role, migration 0018) instead of
-    // reading it off the request. Behaviour deliberately UNCHANGED here.
-    if (principal.viaAdminKey && principal.ownerRole == null) return true;
+    let ownerRole: OwnerRole | null;
+    if (principal.viaAdminKey) {
+      // Derived from `memberships`, not from anything the request claims.
+      // The bare admin key itself (no `x-caller-user-id`, `userId` is the
+      // literal string "admin-key") has no row to look up — and correctly
+      // so: a credential with no user behind it has no persona to grant.
+      const userId = z.string().uuid().safeParse(principal.userId);
+      const resolved = userId.success
+        ? await this.auth.ownerRoleFor(userId.data, principal.orgId)
+        : undefined;
+      if (resolved === undefined) {
+        throw new ForbiddenException(`requires owner role: ${required.join(" or ")}`);
+      }
+      ownerRole = resolved;
+    } else {
+      // A session's ownerRole was already read from `memberships` when the
+      // token was resolved — authoritative already.
+      ownerRole = principal.ownerRole;
+    }
 
-    const actual = resolveOwnerRole(principal.ownerRole);
+    const actual = resolveOwnerRole(ownerRole);
     if (!required.includes(actual)) {
       throw new ForbiddenException(`requires owner role: ${required.join(" or ")}`);
     }

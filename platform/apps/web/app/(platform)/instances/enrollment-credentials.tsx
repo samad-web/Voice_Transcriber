@@ -63,7 +63,7 @@ export function EnrollmentCredentials({
   };
 
   return (
-    <Card shadow className="space-y-4">
+    <Card elevated className="space-y-4">
       <div className="flex justify-between items-start gap-2">
         <div>
           <MonoLabel>{title}</MonoLabel>

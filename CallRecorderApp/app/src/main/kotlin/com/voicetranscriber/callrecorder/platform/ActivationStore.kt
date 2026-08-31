@@ -35,9 +35,24 @@ object ActivationStore {
      * The instance's mobile app-lock hash (`pbkdf2$iterations$saltHex$hashHex`),
      * synced from the same config document — null when the org hasn't set one,
      * in which case [ui.LockActivity] lets the app open with no prompt.
+     *
+     * Anything that is not a well-formed PBKDF2 record reads as NO LOCK, rather
+     * than as a lock nobody can open. A stored value can only ever be verified
+     * by [AppLock.verify], which requires `pbkdf2$iterations$salt$hash`; a value
+     * failing this check could therefore never unlock the app, and honouring it
+     * would leave the handset gated forever behind the only exported LAUNCHER.
+     *
+     * This is the recovery path as much as a guard: a device that already synced
+     * the literal string "null" (see PlatformApi.fetchConfig, now fixed at the
+     * source) heals itself on next launch instead of needing a reinstall.
+     * Failing OPEN is deliberate and is the safer direction — the lock protects
+     * a recordings list on a company handset, and the cost of wrongly locking a
+     * telecaller out of their own device is far higher than the cost of a
+     * missing prompt on a malformed value that was never a real password.
      */
     fun appLockPasswordHash(context: Context): String? =
         prefs(context).getString("app_lock_password_hash", null)
+            ?.takeIf { it.startsWith("pbkdf2$") && it.split("$").size == 4 }
 
     /** The single question every capture path asks before starting. */
     fun isRecordingAllowed(context: Context): Boolean =

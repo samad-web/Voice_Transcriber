@@ -65,6 +65,53 @@ export async function createAgentAction(input: {
   }
 }
 
+export interface GeneratedDraft {
+  error?: string;
+  name?: string;
+  systemPrompt?: string;
+  fields?: AgentFieldInput[];
+}
+
+/**
+ * Draft a new agent from a description — the Studio's "describe it with AI"
+ * path. When `baseAgentId` is set (the "Start from" picker), drafts a
+ * MODIFICATION of that agent instead of one from scratch. Never persists
+ * anything: the draft only fills the same form state the manual builder and
+ * "Start from" picker already write to, and it's saved through the ordinary
+ * `createAgentAction` above, same as anything else typed into that form.
+ */
+export async function generateAgentAction(input: {
+  description: string;
+  baseAgentId?: string;
+  baseVersion?: number;
+  orgId?: string;
+}): Promise<GeneratedDraft> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/agents/generate`, {
+      method: "POST",
+      headers: headersFor(input.orgId),
+      cache: "no-store",
+      body: JSON.stringify({
+        description: input.description,
+        baseAgentId: input.baseAgentId,
+        baseVersion: input.baseVersion,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+    }
+    return (await res.json()) as GeneratedDraft;
+  } catch {
+    return { error: "API unreachable — is the API running?" };
+  }
+}
+
 export interface AgentTestResult {
   error?: string;
   agentVersion?: number;

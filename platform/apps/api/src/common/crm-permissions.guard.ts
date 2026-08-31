@@ -10,7 +10,6 @@ import { Reflector } from "@nestjs/core";
 import { z } from "zod";
 import type { PermissionAction, PermissionObjectType } from "@aura/shared";
 import type { PrincipalRequest } from "./auth-principal";
-import { UNSCOPED } from "./crm-scope";
 import { DbService } from "../db/db.service";
 
 export const CRM_PERMISSION_KEY = "required_crm_permission";
@@ -38,19 +37,34 @@ export const RequireCrmPermission = (objectType: PermissionObjectType, action: P
  * may do. The admin-key-leak caveat documented at length in admin-key.guard.ts
  * still applies to the identity half and is unchanged by this guard.
  *
- * THE BARE-ADMIN-KEY CARVE-OUT. A caller that presents the admin key and asserts
- * no user at all (seed scripts, ops tooling, the CRM backfill) passes unchecked,
- * exactly as it does through `OwnerRoleGuard`. Those callers have no identity to
- * resolve a role for, and they are the platform's own root-credentialled jobs.
- * Every OTHER outcome denies: an asserted user with no membership in the target
- * org, or with a role whose grid lacks this object/action, gets a 403 rather
- * than being waved through.
+ * NO BARE-ADMIN-KEY CARVE-OUT. A caller that presents the admin key but asserts
+ * no user (or an unresolvable one) is DENIED, the same as `OwnerRoleGuard` was
+ * hardened to do (see that guard's STAGE 2.5 note). This guard used to grant an
+ * UNSCOPED, unfiltered read/write over every contact/account/deal in the org in
+ * that case, on the theory that seed scripts and ops tooling needed it — but
+ * nothing in this repository actually calls these routes that way (checked:
+ * `scripts/backfill-crm-objects.js` writes the database directly and never
+ * touches `/v1/contacts`, `/v1/accounts` or `/v1/deals`), and the bypass had a
+ * perverse shape besides: OMITTING `x-caller-user-id` granted MORE access than
+ * asserting a real-but-unresolvable one, which is backwards. Ops tooling that
+ * genuinely needs this surface should assert a real, seeded user id — the same
+ * path every other admin-key caller already takes. Every outcome now denies
+ * except an asserted user who resolves to a real membership with a matching
+ * grant: no user, an empty string, a malformed id, or a well-formed id with no
+ * row all reach the same 403 below.
  *
  * NULL `role_id` FALLBACK. Migration 0039 backfilled `memberships.role_id` once,
  * and `members.controller.ts` keeps it in sync from here on, but a row written
  * between those two points would have NULL. Rather than 403 a legitimate user
  * over a data gap, the join falls back to matching the legacy `memberships.role`
  * string against `roles.key` — the same correspondence 0039's own backfill used.
+ *
+ * MODULE GATE. The query also requires `'crm' = ANY(organizations.enabled_modules)`
+ * (migration 0072). CRM being off for an org denies exactly like a missing
+ * grant does — zero rows, same 403 — which matters once a tenant that
+ * previously had CRM (and so still has its `roles`/`role_permissions` rows)
+ * gets it toggled off: without this join those rows would keep granting
+ * access even though the module is supposed to be off.
  */
 @Injectable()
 export class CrmPermissionsGuard implements CanActivate {
@@ -75,10 +89,6 @@ export class CrmPermissionsGuard implements CanActivate {
     }
 
     const userId = z.string().uuid().safeParse(principal.userId);
-    if (principal.viaAdminKey && !userId.success) {
-      req.crmScope = UNSCOPED;
-      return true;
-    }
     if (!userId.success) throw new ForbiddenException(denial(required));
 
     const orgId = req.tenantOrgId;
@@ -97,6 +107,8 @@ export class CrmPermissionsGuard implements CanActivate {
         // legacy `role`-string fallback below can match a second row.
         `SELECT rp.scope
            FROM memberships m
+           JOIN organizations o
+             ON o.id = m.org_id AND 'crm' = ANY(o.enabled_modules)
            JOIN roles r
              ON r.org_id = m.org_id
             AND (r.id = m.role_id OR (m.role_id IS NULL AND r.key = m.role))

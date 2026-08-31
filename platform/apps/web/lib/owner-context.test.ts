@@ -58,6 +58,7 @@ const rawMembership = (over: Record<string, unknown> = {}) => ({
   recordingsListen: true,
   recordingsExport: true,
   workspaceId: WORKSPACE_B,
+  enabledModules: ["aura", "crm"],
   ...over,
 });
 
@@ -68,6 +69,11 @@ interface LoadOptions {
   authEnabled: boolean;
   /** What `getSessionUser()` resolves to. */
   session?: { id: string; email: string } | null;
+  /**
+   * Raw `DEV_USER_ID`. Defaults to unset (""), which is the shipped default
+   * and keeps the synthetic principal's `userId` null.
+   */
+  devUserId?: string;
 }
 
 /**
@@ -82,8 +88,11 @@ async function load(options: LoadOptions) {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", options.authEnabled ? "anon-key" : "");
   // Pin the ids the synthetic dev principal is built from so an exported
   // DEV_ORG_ID in the shell cannot rewrite the expectation underneath us.
+  // DEV_USER_ID belongs to that same set and is pinned for the same reason:
+  // it is the one of the three a developer is actually told to export.
   vi.stubEnv("DEV_ORG_ID", DEV_ORG_ID);
   vi.stubEnv("DEV_WORKSPACE_ID", DEV_WORKSPACE_ID);
+  vi.stubEnv("DEV_USER_ID", options.devUserId ?? "");
 
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
@@ -217,6 +226,7 @@ describe("isOperator", () => {
             recordingsListen: true,
             recordingsExport: true,
             workspaceId: WORKSPACE_B,
+            enabledModules: ["aura", "crm"],
           },
         }),
       ),
@@ -287,12 +297,59 @@ describe("getPrincipal", () => {
         recordingsListen: true,
         recordingsExport: true,
         workspaceId: DEV_WORKSPACE_ID,
+        enabledModules: ["aura", "crm"],
       },
     });
     expect(fetchMock).not.toHaveBeenCalled();
     // It is BOTH an operator and an owner in this mode, by design: `kind`
     // reaches the platform console, `membership` reaches /owner.
     expect(isOperator(principal)).toBe(true);
+  });
+
+  /**
+   * DEV_USER_ID exists because the synthetic principal's `userId` is what
+   * `orgHeaders` sends as `x-caller-user-id`, and `CrmPermissionsGuard`
+   * refuses a principal without a valid uuid there — so with it unset every
+   * CRM-object page 403s and renders "Data unavailable" in exactly the
+   * local-dev mode this branch exists to support.
+   */
+  it("carries DEV_USER_ID into the synthetic dev principal when it is set", async () => {
+    const { getPrincipal } = await load({
+      operatorEmails: "",
+      authEnabled: false,
+      session: null,
+      devUserId: DEV_USER_ID,
+    });
+
+    expect((await getPrincipal())?.userId).toBe(DEV_USER_ID);
+  });
+
+  /**
+   * THE SECURITY PROPERTY, pinned. DEV_USER_ID must be readable ONLY on the
+   * no-session/auth-unconfigured branch. If it ever leaked into the
+   * real-session path — say someone "helpfully" wrote `userId ?? DEV_USER_ID`
+   * — a deployment that set it would hand every signed-in visitor a borrowed
+   * identity. Both halves are asserted: the value the API returned wins, and
+   * an API that returns no user still yields null rather than falling back.
+   */
+  it("NEVER lets DEV_USER_ID reach a principal built from a real session", async () => {
+    const withUser = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+      devUserId: DEV_USER_ID,
+    });
+    contextOk(withUser.fetchMock, { memberships: [], user: { id: USER_B, email: OWNER_EMAIL, name: null } });
+    expect((await withUser.getPrincipal())?.userId).toBe(USER_B);
+
+    const withoutUser = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+      devUserId: DEV_USER_ID,
+    });
+    contextOk(withoutUser.fetchMock, { memberships: [], user: null });
+    expect((await withoutUser.getPrincipal())?.userId).toBeNull();
   });
 
   it("resolves a session with a membership to an OWNER pinned to that org", async () => {

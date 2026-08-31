@@ -1,12 +1,17 @@
 /**
- * `OwnerRoleGuard` — the owner console's personas (inventory 13 §2.4, O1–O9).
+ * `OwnerRoleGuard` — the owner console's personas (inventory 13 §2.4, O1–O10).
  *
- * This guard is ADVISORY today and the tests below say so out loud. Two
- * separate fail-opens (`:53` for an admin-key caller with no asserted persona,
- * and `resolveOwnerRole`'s null default at roles.ts:22) mean a request can hold
- * a restricted persona and still pass. Both are pinned as today's behaviour with
- * a `.skip`ped sibling asserting the correct behaviour, so closing either one is
- * a deliberate act with a test that turns green, not a silent change.
+ * STAGE 2.5 (checklist 08 §2.5) — CLOSED. This guard used to trust the
+ * caller's own claim about its persona (`principal.ownerRole`, populated by
+ * admin-key.guard.ts purely from the caller-supplied `x-caller-owner-role`
+ * header) — any admin-key holder could assert `owner` and be believed, or
+ * omit the header and be waved through unchecked. It now derives the persona
+ * itself from `memberships` via `AuthService.ownerRoleFor`, the same table a
+ * Bearer session's `ownerRole` already came from (that path was never the
+ * bypass and is unchanged below). The two fail-opens that remain (O1/O2 —
+ * mounting without a requirement is not enforcement, and O5 — a membership
+ * that predates 0018 defaults to the most permissive persona) are unrelated
+ * to Stage 2.5 and stay exactly as documented.
  *
  * Mounted on one controller: `OwnerController`. Only
  * `PATCH /v1/owner/telecallers/:deviceId` declares roles — `GET /v1/owner/overview`
@@ -15,7 +20,10 @@
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { OwnerRoleGuard, RequireOwnerRole } from "./owner-role.guard";
+import { AuthService } from "../modules/auth/auth.service";
 import {
+  ORG_A,
+  USER_A,
   adminKeyPrincipal,
   expectHttpError,
   makeExecutionContext,
@@ -40,32 +48,38 @@ class OwnerFixtureController {
 }
 
 describe("OwnerRoleGuard", () => {
+  const auth = { ownerRoleFor: jest.fn() };
   let guard: OwnerRoleGuard;
+
   beforeEach(() => {
-    guard = new OwnerRoleGuard(new Reflector());
+    auth.ownerRoleFor.mockReset();
+    guard = new OwnerRoleGuard(new Reflector(), auth as unknown as AuthService);
   });
 
-  it("O1 · is INERT on a route that declares no roles (GET /v1/owner/overview)", () => {
+  it("O1 · is INERT on a route that declares no roles (GET /v1/owner/overview)", async () => {
     // Mounting the guard is not enforcement. A telecaller persona reads the
     // whole-org dashboard today because this route never declares a
-    // requirement — the guard returns at owner-role.guard.ts:36.
+    // requirement — the guard returns at owner-role.guard.ts's first check,
+    // before it would ever need to resolve a persona.
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.overview,
       principal: adminKeyPrincipal({ ownerRole: "telecaller" }),
     });
 
-    expect(guard.canActivate(context)).toBe(true);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(auth.ownerRoleFor).not.toHaveBeenCalled();
   });
 
-  it("O2 · allows when @RequireOwnerRole() names no roles", () => {
+  it("O2 · allows when @RequireOwnerRole() names no roles", async () => {
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.empty,
       principal: adminKeyPrincipal({ ownerRole: "telecaller" }),
     });
 
-    expect(guard.canActivate(context)).toBe(true);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(auth.ownerRoleFor).not.toHaveBeenCalled();
   });
 
   it("O3 · 403s when no principal was set (guard-order bug)", async () => {
@@ -81,27 +95,13 @@ describe("OwnerRoleGuard", () => {
     });
   });
 
-  it("O4 · FAILS OPEN for an admin-key caller that asserted no persona", async () => {
-    // PINNED DELIBERATELY (checklist 08 §2.5, owner-role.guard.ts:53). The
-    // persona comes only from the caller-supplied `x-caller-owner-role` header,
-    // so ANY holder of the admin key bypasses EVERY @RequireOwnerRole on the
-    // platform by simply not sending it. This is the transition state while
-    // seed scripts and ops tooling still call the API without a persona.
-    // Deleting the fail-open must be a deliberate act — that is what this test
-    // and its skipped sibling are for.
-    const { context } = makeExecutionContext({
-      cls: OwnerFixtureController,
-      handler: OwnerFixtureController.prototype.updateTelecaller,
-      principal: adminKeyPrincipal({ ownerRole: null }),
-    });
-
-    expect(guard.canActivate(context)).toBe(true);
-  });
-
-  it.skip("O4 (correct) · denies an admin-key caller that asserted no persona", async () => {
-    // Un-skip when Stage 2.5 lands: the API must resolve the persona itself
-    // from memberships.owner_role (migration 0018) instead of reading it off the
-    // request, at which point "no persona asserted" is a denial, not a pass.
+  it("O4 · DENIES an admin-key caller with no resolvable user (the bare key itself)", async () => {
+    // `adminKeyPrincipal()` defaults `userId` to the literal string
+    // "admin-key" — not a uuid, so there is no membership row to look up at
+    // all. This used to fail OPEN (any admin-key caller that omitted
+    // `x-caller-owner-role` was waved through unchecked); it now fails
+    // CLOSED, and does so without even reaching the database — a credential
+    // with no user behind it has no persona to grant.
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.updateTelecaller,
@@ -113,27 +113,49 @@ describe("OwnerRoleGuard", () => {
       message: "requires owner role: owner or manager",
       status: 403,
     });
+    expect(auth.ownerRoleFor).not.toHaveBeenCalled();
   });
 
-  it("O5 · FAILS OPEN for a session principal with a null persona (resolveOwnerRole → owner)", () => {
-    // The second fail-open, in @aura/shared (roles.ts:22): null resolves to the
-    // MOST permissive persona. Deliberate — it covers memberships that predate
-    // 0018 — and it is why the seeded dev membership, whose owner_role is NULL
-    // (fixture trap 5), behaves as an owner.
+  it("O5 · FAILS OPEN for a session principal with a null persona (resolveOwnerRole → owner)", async () => {
+    // The remaining fail-open, in @aura/shared (roles.ts): null resolves to
+    // the MOST permissive persona. Deliberate — it covers memberships that
+    // predate 0018 — and unrelated to Stage 2.5, since a session's ownerRole
+    // never came from a caller-suppliable header in the first place.
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.updateTelecaller,
       principal: sessionPrincipal({ ownerRole: null }),
     });
 
-    expect(guard.canActivate(context)).toBe(true);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
-  it("O6 · 403s a telecaller on an owner-or-manager route", async () => {
+  it("O5b · the SAME null-persona default applies to an admin-key caller with a real, pre-0018 membership", async () => {
+    // Parity check: the default in O5 is a property of a membership row
+    // whose owner_role predates 0018, not of the session auth mechanism —
+    // an admin-key caller resolving to the SAME row must get the SAME
+    // default, not a denial just because of which door it came in.
+    auth.ownerRoleFor.mockResolvedValue(null);
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.updateTelecaller,
-      principal: adminKeyPrincipal({ ownerRole: "telecaller" }),
+      principal: adminKeyPrincipal({ userId: USER_A, ownerRole: "owner" }),
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(auth.ownerRoleFor).toHaveBeenCalledWith(USER_A, ORG_A);
+  });
+
+  it("O6 · 403s an admin-key caller whose REAL membership (from the database) is telecaller", async () => {
+    // The caller's own claim (`principal.ownerRole: "owner"`, as if it had
+    // sent x-caller-owner-role: owner) is deliberately WRONG here — proving
+    // the guard follows what `ownerRoleFor` returns, not what the request
+    // asserts about itself.
+    auth.ownerRoleFor.mockResolvedValue("telecaller");
+    const { context } = makeExecutionContext({
+      cls: OwnerFixtureController,
+      handler: OwnerFixtureController.prototype.updateTelecaller,
+      principal: adminKeyPrincipal({ userId: USER_A, ownerRole: "owner" }),
     });
 
     await expectHttpError(() => guard.canActivate(context), {
@@ -141,16 +163,19 @@ describe("OwnerRoleGuard", () => {
       message: "requires owner role: owner or manager",
       status: 403,
     });
+    expect(auth.ownerRoleFor).toHaveBeenCalledWith(USER_A, ORG_A);
   });
 
-  it("O7 · allows a manager on an owner-or-manager route", () => {
+  it("O7 · allows an admin-key caller whose REAL membership (from the database) is manager", async () => {
+    auth.ownerRoleFor.mockResolvedValue("manager");
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.updateTelecaller,
-      principal: adminKeyPrincipal({ ownerRole: "manager" }),
+      principal: adminKeyPrincipal({ userId: USER_A, ownerRole: "telecaller" }),
     });
 
-    expect(guard.canActivate(context)).toBe(true);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(auth.ownerRoleFor).toHaveBeenCalledWith(USER_A, ORG_A);
   });
 
   it("O8 · 403s a manager on an owner-only route, and names the requirement", async () => {
@@ -167,33 +192,23 @@ describe("OwnerRoleGuard", () => {
     });
   });
 
-  it("O9 · a CASE VARIANT of a restricted persona is allowed — via the O4 fail-open", () => {
-    // The HTTP-reachable half of the escalation in report 12 §5.1. Over HTTP,
-    // `x-caller-owner-role: Telecaller` never reaches `resolveOwnerRole` at all:
-    // `OwnerRole.safeParse` nulls it at admin-key.guard.ts:95, so the principal
-    // arrives here with ownerRole null and takes the :53 fail-open. Same
-    // outcome as the skipped roles.test.ts:76 case (a restricted persona gets
-    // owner-level access), DIFFERENT mechanism — which is why the planned
-    // lower-case-and-trim fix in `resolveOwnerRole` does NOT close this path.
-    // `null` below is exactly what admin-key.guard.ts produces for "Telecaller".
+  it("O9 · a mis-cased persona claim on the admin-key principal itself is IGNORED, not enforced", async () => {
+    // The historical version of this case (report 12 §5.1 / inventory 13's
+    // O9) was about `x-caller-owner-role: Telecaller` slipping past
+    // enforcement via the old null-means-pass fail-open — a DIFFERENT bug
+    // from a DIFFERENT mechanism than O4's. That header is no longer read
+    // for an admin-key principal AT ALL (see owner-role.guard.ts), so the
+    // vector it described no longer exists: whatever `principal.ownerRole`
+    // says, correctly or mis-cased, is irrelevant once `viaAdminKey` is
+    // true. This asserts that directly — a maximally-permissive local claim
+    // does not survive contact with a real (and here, restrictive) database
+    // answer.
+    auth.ownerRoleFor.mockResolvedValue("telecaller");
     const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.updateTelecaller,
-      principal: adminKeyPrincipal({ ownerRole: null }),
-    });
-
-    expect(guard.canActivate(context)).toBe(true);
-  });
-
-  it.skip("O9 (correct) · a case variant of a restricted persona is denied", async () => {
-    // Un-skip only when BOTH fixes land: the case-insensitive parse in
-    // `resolveOwnerRole` AND server-side persona resolution. Fixing either
-    // alone leaves this path open — that is the finding.
-    const { context } = makeExecutionContext({
-      cls: OwnerFixtureController,
-      handler: OwnerFixtureController.prototype.updateTelecaller,
-      principal: adminKeyPrincipal({ ownerRole: "telecaller" }),
-      headers: { "x-caller-owner-role": "Telecaller" },
+      principal: adminKeyPrincipal({ userId: USER_A, ownerRole: "owner" }),
+      headers: { "x-caller-owner-role": "Owner" },
     });
 
     await expectHttpError(() => guard.canActivate(context), {
@@ -203,17 +218,15 @@ describe("OwnerRoleGuard", () => {
     });
   });
 
-  it("enforces the persona for a session principal that HAS one", () => {
-    // The only non-advisory path today: a Bearer aus_ session whose membership
-    // carries owner_role. No route on the platform writes anything but 'owner'
-    // (owners.controller.ts:154), so this shape exists only by direct INSERT —
-    // and is exactly what Stage 2.5 makes the norm.
-    const allowed = makeExecutionContext({
+  it("O10 · enforces the persona for a session principal that HAS one", async () => {
+    // The only path where enforcement was ever non-advisory: a Bearer aus_
+    // session whose membership carries owner_role. Unchanged by Stage 2.5.
+    const { context } = makeExecutionContext({
       cls: OwnerFixtureController,
       handler: OwnerFixtureController.prototype.updateTelecaller,
       principal: sessionPrincipal({ ownerRole: "owner" }),
     });
-    expect(guard.canActivate(allowed.context)).toBe(true);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
   it("denies a session telecaller — the persona is enforced when it is known", async () => {

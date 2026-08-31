@@ -272,8 +272,8 @@ export class CustomFieldValuesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'custom_field_value.write', $2, $3)`,
-        [orgId, objectType, recordId],
+         VALUES ($1, 'user', $2, 'custom_field_value.write', $3, $4)`,
+        [orgId, req.principal?.userId ?? "dev-admin", objectType, recordId],
       );
 
       return this.read(orgId, objectType, recordId, recordScope);

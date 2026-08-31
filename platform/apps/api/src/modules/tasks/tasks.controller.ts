@@ -95,7 +95,11 @@ export class TasksController {
       const params: unknown[] = [];
       const add = (clause: string, value: unknown) => {
         params.push(value);
-        where.push(clause.replace("$?", `$${params.length}`));
+        // Global replace: the `task` owned-scope clause has two `$?`
+        // placeholders bound to the same value (assignee OR creator) — see
+        // scopeFilter() in common/crm-scope.ts. A single-occurrence replace
+        // left the second one as a literal "$?", a Postgres syntax error.
+        where.push(clause.replace(/\$\?/g, `$${params.length}`));
       };
 
       if (q.status) add("t.status = $?", q.status);
@@ -232,7 +236,7 @@ export class TasksController {
         );
       }
 
-      await this.audit(client, orgId, "task.create", task.id);
+      await this.audit(client, orgId, "task.create", task.id, req);
       return { task };
     });
   }
@@ -311,7 +315,7 @@ export class TasksController {
         );
       }
 
-      await this.audit(client, orgId, "task.update", id);
+      await this.audit(client, orgId, "task.update", id, req);
       return { task };
     });
   }
@@ -321,11 +325,12 @@ export class TasksController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'task', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'task', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

@@ -1,6 +1,13 @@
 import { cache } from "react";
 import { type OwnerRole, resolveOwnerRole } from "@aura/shared";
-import { API_URL, DEV_ORG_ID, DEV_WORKSPACE_ID, apiGetAs, crossTenantHeaders } from "@/lib/server-api";
+import {
+  API_URL,
+  DEV_ORG_ID,
+  DEV_USER_ID,
+  DEV_WORKSPACE_ID,
+  apiGetAs,
+  crossTenantHeaders,
+} from "@/lib/server-api";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { getSessionUser } from "@/lib/supabase/server";
 
@@ -35,6 +42,9 @@ export interface OwnerMembership {
   recordingsListen: boolean;
   recordingsExport: boolean;
   workspaceId: string | null;
+  /** organizations.enabled_modules (migration 0072) — which product modules
+   *  this org has. 'crm' gates the CRM-object nav items — see nav.ts. */
+  enabledModules: string[];
 }
 
 export interface Principal {
@@ -104,7 +114,13 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     return {
       email: "",
       subject: "",
-      userId: null,
+      // DEV_USER_ID, not null: CrmPermissionsGuard denies any principal
+      // without a valid uuid userId, so leaving this null makes every
+      // CRM-object page 403 and render "Data unavailable" in exactly the
+      // local-dev mode this branch exists to support. Defaults to null, so
+      // an unset DEV_USER_ID behaves as it always did. Unreachable when
+      // AUTH_ENABLED — a real session takes the path below.
+      userId: DEV_USER_ID,
       kind: "operator",
       membership: {
         orgId: DEV_ORG_ID,
@@ -115,6 +131,8 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
         recordingsListen: true,
         recordingsExport: true,
         workspaceId: DEV_WORKSPACE_ID,
+        // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally — 0072's backfill.
+        enabledModules: ["aura", "crm"],
       },
     };
   }

@@ -12,6 +12,7 @@ export interface ProvisionResult {
   adminKey?: string;
   expiresAt?: string;
   maxUses?: number;
+  enabledModules?: string[];
 }
 
 /**
@@ -29,6 +30,7 @@ export async function createTenantAction(input: {
   retentionDays: number;
   ttlMinutes: number;
   maxUses: number;
+  enableCrm: boolean;
 }): Promise<ProvisionResult> {
   try {
     await requireOperator();
@@ -46,6 +48,7 @@ export async function createTenantAction(input: {
         retentionDays: input.retentionDays,
         tokenTtlMinutes: input.ttlMinutes,
         tokenMaxUses: input.maxUses,
+        enableCrm: input.enableCrm,
       }),
     });
     if (!res.ok) {
@@ -61,6 +64,7 @@ export async function createTenantAction(input: {
       adminKey: data.enrollment.adminKey,
       expiresAt: data.enrollment.expiresAt,
       maxUses: data.enrollment.maxUses,
+      enabledModules: data.tenant.enabled_modules,
     };
   } catch {
     return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };

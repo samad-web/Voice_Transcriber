@@ -7,10 +7,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -45,6 +47,7 @@ export class NotesController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = CreateNoteBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -64,8 +67,8 @@ export class NotesController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'call.note', 'call', $2)`,
-        [orgId, callId],
+         VALUES ($1, 'user', $2, 'call.note', 'call', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", callId],
       );
       return note;
     });

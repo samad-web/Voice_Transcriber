@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@aura/ui";
+import { startOAuthRedirect } from "../lib/oauth-redirect";
 import { startMetaConnectAction } from "./actions";
 
 /**
@@ -27,14 +28,8 @@ export function MetaAdsConnect() {
         setNotConfigured(true);
         return;
       }
-      if (result.error || !result.authorizeUrl) {
-        setError(result.error ?? "Could not start Facebook sign-in");
-        return;
-      }
-      // Full navigation, not a popup: Meta's consent screen refuses to render
-      // in an iframe, and a popup gets blocked as often as not — same
-      // reasoning as connections-manager.tsx's beginOAuth.
-      window.location.href = result.authorizeUrl;
+      const failure = startOAuthRedirect(result, "Could not start Facebook sign-in");
+      if (failure) setError(failure);
     });
   };
 

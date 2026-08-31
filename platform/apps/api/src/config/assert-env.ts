@@ -80,6 +80,26 @@ const REQUIRED: RequiredVar[] = [
     // The production example ships with these two tokens still in the URL.
     rejectedContains: ["PROJECTREF", "APP_DB_PASSWORD_VALUE"],
   },
+  {
+    name: "DATABASE_URL",
+    why:
+      "the RLS-bypassing admin pool (getAdminPool in packages/db) — used for cross-tenant admin " +
+      "routes, enrollment, and webhook lookups before an org is known — falls back to a published " +
+      "owner-credential connection string, unset means anyone who can reach the DB port has it",
+    rejected: ["postgresql://aura:aura_dev_password@localhost:5433/callintel"],
+  },
+  {
+    name: "S3_ACCESS_KEY_ID",
+    why: "falls back to the published MinIO dev literal, same class of risk as the other keys here",
+    rejected: ["aura_minio"],
+  },
+  {
+    name: "S3_SECRET_ACCESS_KEY",
+    why:
+      "falls back to the published MinIO dev literal — unset, recordings and any S3-backed data " +
+      "sit behind a credential anyone can read in this repo",
+    rejected: ["aura_minio_password"],
+  },
 ];
 
 /**

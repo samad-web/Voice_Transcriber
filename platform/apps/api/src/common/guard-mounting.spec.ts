@@ -33,7 +33,7 @@
  * `main.ts:35` adds at bootstrap; it is omitted here because it is not part of
  * the controller metadata this file reflects over.
  */
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { RequestMethod, type Type } from "@nestjs/common";
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
@@ -49,12 +49,14 @@ import { CallsController } from "../modules/calls/calls.controller";
 import { NotesController } from "../modules/calls/notes.controller";
 import { CrmController } from "../modules/crm/crm.controller";
 import { AccountsController } from "../modules/crm-objects/accounts.controller";
+import { CallIntegrityController } from "../modules/crm-objects/call-integrity.controller";
 import { ContactsController } from "../modules/crm-objects/contacts.controller";
 import { DealsController } from "../modules/crm-objects/deals.controller";
 import { InteractionsController } from "../modules/crm-objects/interactions.controller";
 import { ConnectionsController } from "../modules/connections/connections.controller";
 import { OutboundMailController } from "../modules/connections/outbound-mail.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
+import { CommissionPlansController } from "../modules/reports/commission-plans.controller";
 import { TargetsController } from "../modules/reports/targets.controller";
 import { TasksController } from "../modules/tasks/tasks.controller";
 import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
@@ -82,6 +84,10 @@ import { MessagingWebhookController } from "../modules/conversations/messaging-w
 import { WhatsAppSendController } from "../modules/conversations/whatsapp-send.controller";
 import { TagsController } from "../modules/tags/tags.controller";
 import { MarketingSourcesController } from "../modules/tags/marketing-sources.controller";
+import { ProjectsController } from "../modules/projects/projects.controller";
+import { McpController } from "../modules/mcp/mcp.controller";
+import { PublicApiController } from "../modules/public-api/public-api.controller";
+import { McpServerController } from "../modules/public-api/mcp-server.controller";
 import { OutreachController } from "../modules/outreach/outreach.controller";
 import { ProductsController } from "../modules/products/products.controller";
 import { QuotationsController } from "../modules/quotations/quotations.controller";
@@ -146,8 +152,10 @@ const CONTROLLERS: Array<Type<unknown>> = [
   ContactsController,
   DealsController,
   InteractionsController,
+  CallIntegrityController,
   TasksController,
   ReportsController,
+  CommissionPlansController,
   TargetsController,
   ConnectionsController,
   OutboundMailController,
@@ -187,6 +195,10 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // cannot edit a contact must not be able to relabel it either.
   TagsController,
   MarketingSourcesController,
+  ProjectsController,
+  McpController,
+  PublicApiController,
+  McpServerController,
   // The follow-up ladder (migration 0058). AdminKeyGuard + TenantGuard, with
   // the automation rules above: it writes only to its own two tables, where a
   // rule can move a deal and rewrite its custom fields.
@@ -269,6 +281,7 @@ const CROSS_TENANT = [
   "GET /auth/me",
   "POST /admin/tenants",
   "GET /admin/tenants",
+  "PATCH /admin/tenants/:orgId/modules",
   "GET /admin/health",
   "GET /analytics/fleet",
   // The marketing funnel. Cross-tenant by nature rather than by exception: an
@@ -307,6 +320,35 @@ const OWNER_ROLE_ROUTES = [
   "GET /owner/overview",
   "GET /owner/crm-overview",
   "PATCH /owner/telecallers/:deviceId",
+];
+
+/**
+ * Org-administration routes gated on `principal.role` directly via
+ * `OrgRoleGuard`/`@RequireOrgRole` — not a `role_permissions` grant, since
+ * these are not CRM records (contact/account/deal/...), they are "who else
+ * may act as this org". Added closing a real privilege-escalation gap: none
+ * of these had ANY check beyond tenant membership, so a freshly-invited
+ * `viewer` could `PATCH /members/:userId` its own role to `org_admin`. See
+ * org-role.guard.ts's header for the fuller reasoning, including why
+ * `pipelines`/`custom-field-definitions`/`automation`/`merge` are
+ * deliberately NOT in this list — those stay member-accessible org
+ * CONFIGURATION, a different tier from org ADMINISTRATION.
+ */
+const ORG_ROLE_ROUTES = [
+  "POST /members",
+  "PATCH /members/:userId",
+  "DELETE /members/:userId",
+  "POST /apikeys",
+  "DELETE /apikeys/:id",
+  "PATCH /org/policy",
+  "PATCH /org/branding",
+  "POST /roles",
+  "PATCH /roles/:id",
+  "PUT /roles/:id/permissions",
+  "POST /erasure-requests",
+  "POST /devices/:id/logout",
+  "POST /devices/:id/wipe",
+  "POST /workspaces",
 ];
 
 /**
@@ -426,6 +468,15 @@ const CRM_PERMISSION_ROUTES = [
   // The outbound WhatsApp send path (migration 0061). Gated on `conversation:edit`
   // rather than a new action — same reasoning as the email-send route above.
   "POST /conversations/:id/messages",
+  // The call-vs-CRM integrity review queue (0070). Gated on `deal` like
+  // reports/targets — there is no dedicated object type for this either.
+  "GET /call-integrity-flags",
+  "PATCH /call-integrity-flags/:id",
+  // The commission report (0071) — the fourth report alongside pipeline/
+  // performance/conversion, same `deal:view` gate. commission_plans CRUD
+  // itself is NOT here — it's org configuration (AdminKeyGuard+TenantGuard
+  // only), the same tier as pipelines.
+  "GET /reports/commission",
 ];
 
 interface Route {
@@ -505,7 +556,43 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(imported)).toEqual(sorted(fromDisk));
   });
 
-  it("has 221 routes, partitioned 181 tenant / 23 cross-tenant / 6 device / 11 unguarded", () => {
+  it("has no @Controller() class hiding in a file that isn't named *.controller.ts", () => {
+    // The walk above only ever looks at `*.controller.ts` files — which is
+    // exactly the naming convention a new controller could ignore. A
+    // `@Controller()` class dropped into some other file (a barrel, a
+    // `*.routes.ts`, anything) would never be added to `files` above, never
+    // compared against CONTROLLERS, and never picked up by a single guard
+    // assertion in this suite. This is the other half of that check: read
+    // every non-spec, non-module `.ts` file under `src/modules` as TEXT and
+    // look for the decorator itself, so a misnamed controller file is caught
+    // by what it contains rather than by what it's called.
+    const offenders: string[] = [];
+    const walkAll = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkAll(full);
+          continue;
+        }
+        if (!entry.name.endsWith(".ts")) continue;
+        // Spec files can reference `@Controller(` in a comment or a fixture
+        // without declaring one, and `*.module.ts` never declares one at
+        // all — both are excluded to keep this a check on real source, not
+        // noise. Everything else is fair game: the regex is what decides
+        // whether a file is a "controller support file", not its name.
+        if (entry.name.endsWith(".spec.ts") || entry.name.endsWith(".module.ts")) continue;
+        const source = readFileSync(full, "utf8");
+        if (/@Controller\(/.test(source) && !entry.name.endsWith(".controller.ts")) {
+          offenders.push(full);
+        }
+      }
+    };
+    walkAll(join(__dirname, "..", "modules"));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("has 230 routes, partitioned 190 tenant / 23 cross-tenant / 6 device / 11 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -517,15 +604,42 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // (GET /owner/crm-overview, tenant-scoped like its sibling
     // GET /owner/overview), Kailash-gap Milestone 1's 15 (4 products + 4
     // quotations + 5 invoices + 1 payment-link, all tenant-scoped, plus the
-    // one unguarded Razorpay webhook), and the platform console's
+    // one unguarded Razorpay webhook), the platform console's
     // PATCH /devices/:id/telecaller (0067) — the operator-side counterpart of
     // PATCH /owner/telecallers/:deviceId below, tenant-scoped like the rest of
-    // the devices surface. They are asserted as a
+    // the devices surface — and the call-vs-CRM integrity review queue (0070):
+    // GET/PATCH /call-integrity-flags, CrmPermissionsGuard'd on `deal` like
+    // reports/targets since there is no dedicated object type for it either
+    // — and Phase 4/5's seven, landed together: the fleet health dashboard's
+    // GET /devices/fleet-health (tenant-scoped, same tier as GET /devices),
+    // and the commission export's GET /reports/commission (CrmPermissionsGuard
+    // on deal:view, like the other three report routes) plus five plain
+    // AdminKeyGuard+TenantGuard commission_plans CRUD routes (org
+    // configuration, same tier as pipelines) — and the project catalogue's
+    // three (0073): GET/POST /projects and PATCH /projects/:id, plain
+    // AdminKeyGuard+TenantGuard because a project catalogue is org
+    // configuration in exactly the way marketing-sources and tags are.
+    // Attaching a project to a record happens through the leads/deals PATCH
+    // endpoints, which carry their own gates. They are asserted as a
     // set, not just a total, so moving a route BETWEEN classes (dropping
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
-    expect(ROUTES).toHaveLength(221);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(221);
+    //
+    // — and the external integration surface's eight (0076): six
+    // `/public/*` REST routes plus `POST /mcp` and `GET /mcp`, the inbound MCP
+    // server. The GET exists only to answer 405 with an `Allow: POST` header:
+    // Streamable HTTP's server->client SSE stream is optional, and a server
+    // that does not offer it MUST say 405 rather than leave the verb unmounted,
+    // where Nest's 404 would send a client looking for a different URL. These
+    // are the FIRST routes in the product authenticated by a tenant's own
+    // `api_keys` row rather than by the platform admin key or a user session,
+    // so they are pinned separately and exhaustively in the API_KEYED test
+    // below. They count as tenant-scoped because ApiKeyGuard writes
+    // `req.principal` with the org taken FROM THE KEY, which TenantGuard then
+    // pins exactly as it does for a session — the tenant boundary is the same
+    // one, reached with a different credential.
+    expect(ROUTES).toHaveLength(247);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(247);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -535,20 +649,23 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
-    expect(tenantScoped).toHaveLength(181);
+    // 191: the AI Agent Studio's POST /agents/generate (plain
+    // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController —
+    // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
+    expect(tenantScoped).toHaveLength(206);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(221);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(247);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 204 principal routes", () => {
-    // 181 tenant-scoped + 23 cross-tenant. `TenantGuard` reads `req.principal`,
-    // which only `AdminKeyGuard` writes, so the order is a correctness
-    // requirement and not a style — tenant.guard.spec.ts's chain-order block
-    // shows the reversed pair 401s a perfectly valid request. Asserting the
-    // INDICES (not just membership) is what makes a reordered `@UseGuards`
-    // fail here.
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 215 principal routes", () => {
+    // 191 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
+    // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
+    // correctness requirement and not a style — tenant.guard.spec.ts's
+    // chain-order block shows the reversed pair 401s a perfectly valid
+    // request. Asserting the INDICES (not just membership) is what makes a
+    // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(204);
+    expect(principalRoutes).toHaveLength(222);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -556,15 +673,70 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
-  it("never mounts TenantGuard without AdminKeyGuard", () => {
+  it("never mounts TenantGuard without a guard that writes req.principal", () => {
     // The other direction of the same dependency: a route with only
     // `TenantGuard` would reject every request with a 401 that reads like an
     // auth outage. Cheap to assert, and it is the shape a copy-paste error
     // actually takes.
+    //
+    // This used to read "without AdminKeyGuard", which was the same statement
+    // while AdminKeyGuard was the only thing that wrote `req.principal`.
+    // `ApiKeyGuard` (0076) is the second, and TenantGuard reads
+    // `principal.orgId` without caring which one filled it in. The invariant
+    // being asserted was never really about AdminKeyGuard — it is that
+    // TenantGuard is preceded by SOMETHING that authenticates — so it is
+    // widened by naming the closed set, not by dropping the check.
+    //
+    // The set is closed on purpose: a third principal-writing guard has to be
+    // added HERE, which is the review this test exists to force.
+    const PRINCIPAL_WRITERS = ["AdminKeyGuard", "ApiKeyGuard"];
     for (const { route, guards } of ROUTES) {
       if (guards.includes("TenantGuard")) {
-        expect([route, guards.includes("AdminKeyGuard")]).toEqual([route, true]);
+        const writer = guards.find((g) => PRINCIPAL_WRITERS.includes(g));
+        expect([route, writer !== undefined]).toEqual([route, true]);
+        // And it must come FIRST, for the same reason AdminKeyGuard does:
+        // TenantGuard reads what it writes.
+        expect([route, guards.indexOf(writer!)]).toEqual([route, 0]);
       }
+    }
+  });
+
+  it("pins the eight API-key routes as an explicit allowlist, each declaring a scope", () => {
+    // The blast-radius test for the external surface.
+    //
+    // `api_keys` is a credential a TENANT mints and may hand to a third party.
+    // Before 0076 nothing authenticated with it, so the question "what can an
+    // API key reach" had the answer "nothing". Now it has a real answer, and
+    // that answer must be a short list somebody has read — not a property that
+    // emerges from 246 routes' worth of decorators.
+    //
+    // Two things are asserted, and the second is the load-bearing one:
+    //   1. exactly these routes accept an API key;
+    //   2. every one of them declares an `@RequireScope`. ApiKeyGuard already
+    //      fails closed on a handler with no scope metadata, but a route that
+    //      403s in production is a bug found late; this finds it in CI.
+    //
+    // Nothing here can send a message, read a recording or transcript, delete,
+    // merge, or move a card between stages — there is no route and no scope for
+    // any of it. Adding one means editing this list.
+    const API_KEYED = [
+      "POST /public/leads",
+      "GET /public/leads",
+      "GET /public/leads/:id",
+      "GET /public/contacts",
+      "GET /public/deals",
+      "GET /public/projects",
+      "POST /mcp",
+      "GET /mcp",
+    ];
+    const apiKeyed = ROUTES.filter((r) => r.guards.includes("ApiKeyGuard"));
+    expect(sorted(apiKeyed.map((r) => r.route))).toEqual(sorted(API_KEYED));
+
+    // Every API-keyed route is ApiKeyGuard THEN TenantGuard, and nothing else:
+    // no AdminKeyGuard (which would grant platform_admin), no CrmPermissionsGuard
+    // (whose grid resolves a person, and there is no person here).
+    for (const { route, guards } of apiKeyed) {
+      expect([route, guards]).toEqual([route, ["ApiKeyGuard", "TenantGuard"]]);
     }
   });
 
@@ -598,6 +770,22 @@ describe("guard mounting (inventory 13 §1.1)", () => {
       const last = guards.indexOf("TenantGuard");
       const index = guards.findIndex((g) => g === "PermissionsGuard" || g === "OwnerRoleGuard");
       expect([route, index > last]).toEqual([route, true]);
+    }
+  });
+
+  it("mounts OrgRoleGuard on exactly the org-administration routes, after TenantGuard", () => {
+    // Same shape as the PermissionsGuard/OwnerRoleGuard assertion above: a
+    // route that quietly LOSES this guard reopens the self-promotion hole
+    // this fix closed, and a route that gains it unexpectedly is a silent
+    // lockout.
+    const withOrgRole = ROUTES.filter((r) => r.guards.includes("OrgRoleGuard"));
+    expect(sorted(withOrgRole.map((r) => r.route))).toEqual(sorted(ORG_ROLE_ROUTES));
+
+    for (const { route, guards } of withOrgRole) {
+      expect([route, guards.indexOf("OrgRoleGuard") > guards.indexOf("TenantGuard")]).toEqual([
+        route,
+        true,
+      ]);
     }
   });
 

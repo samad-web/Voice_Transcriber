@@ -137,7 +137,7 @@ export default async function UsagePage({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card shadow className="space-y-4">
+            <Card elevated className="space-y-4">
               <MonoLabel>Plan Limits</MonoLabel>
 
               <div className="space-y-2">
@@ -167,7 +167,7 @@ export default async function UsagePage({
               </div>
             </Card>
 
-            <Card shadow className="space-y-4">
+            <Card elevated className="space-y-4">
               <div className="flex items-center justify-between">
                 <MonoLabel>Invoices</MonoLabel>
                 {billing === null ? <StatusChip tone="outline">unavailable</StatusChip> : null}

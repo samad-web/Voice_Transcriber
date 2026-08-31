@@ -177,6 +177,11 @@ export function CallsExplorer({
 }) {
   const router = useRouter();
   const pollsRef = useRef(0);
+  // Mirrors `openId` synchronously so an in-flight poll can tell, after its
+  // await resolves, whether the drawer still shows the call it was polling
+  // for — `openId` itself can't be read that way from inside the closure,
+  // since state only updates on the next render.
+  const openIdRef = useRef<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CallDetailData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -190,6 +195,7 @@ export function CallsExplorer({
 
   const openDrawer = useCallback(
     (callId: string) => {
+      openIdRef.current = callId;
       setOpenId(callId);
       setDetail(null);
       setError(null);
@@ -205,6 +211,9 @@ export function CallsExplorer({
           getCallDetailAction(callId, orgId),
           getCallNotesAction(callId, orgId),
         ]);
+        // Switched to (or away from) another call while this fetch was in
+        // flight — its result belongs to a drawer that is no longer open.
+        if (openIdRef.current !== callId) return;
         setLoading(false);
         if (res.error) setError(res.error);
         else setDetail(res.detail ?? null);
@@ -239,7 +248,12 @@ export function CallsExplorer({
     if (pollsRef.current >= POLL_LIMIT) return;
     const poll = async () => {
       pollsRef.current += 1;
-      const res = await getCallDetailAction(openId, orgId);
+      const target = openId;
+      const res = await getCallDetailAction(target, orgId);
+      // The drawer may have switched to a different call (or closed) while
+      // this request was in flight — a stale response for the PREVIOUS call
+      // must not land on top of whatever is open now.
+      if (openIdRef.current !== target) return;
       if (res.detail) {
         setDetail(res.detail);
         // Refresh the table only once the call has actually settled. A failed
@@ -276,7 +290,10 @@ export function CallsExplorer({
     });
   };
 
-  const close = () => setOpenId(null);
+  const close = () => {
+    openIdRef.current = null;
+    setOpenId(null);
+  };
 
   const reprocess = () => {
     if (!openId) return;
@@ -308,6 +325,7 @@ export function CallsExplorer({
   const segments = detail?.transcript?.segments ?? null;
   const resolveSpeaker = segments ? speakerSideResolver(segments) : null;
   const intel = detail?.transcript?.intelligence ?? null;
+  const analytics = detail?.analytics ?? null;
 
   return (
     <>
@@ -537,6 +555,98 @@ export function CallsExplorer({
                         </div>
                       ) : null}
                     </section>
+
+                    {/* Call analytics: quality score, talk-ratio coaching metrics, risk flags */}
+                    {analytics ? (
+                      <section className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <MonoLabel>Call analytics</MonoLabel>
+                          {analytics.has_escalation_risk ? (
+                            <StatusChip tone="danger">Needs review</StatusChip>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {analytics.quality_score !== null ? (
+                            <StatusChip
+                              tone={
+                                analytics.quality_score >= 70
+                                  ? "solid"
+                                  : analytics.quality_score >= 40
+                                    ? "muted"
+                                    : "danger"
+                              }
+                            >
+                              Quality: {analytics.quality_score}/100
+                            </StatusChip>
+                          ) : null}
+                          {analytics.talk_ratio !== null ? (
+                            <StatusChip tone="outline">
+                              Agent talk: {Math.round(analytics.talk_ratio * 100)}%
+                            </StatusChip>
+                          ) : null}
+                          {analytics.interruption_count !== null ? (
+                            <StatusChip tone="outline">
+                              {analytics.interruption_count} interruption
+                              {analytics.interruption_count === 1 ? "" : "s"}
+                            </StatusChip>
+                          ) : null}
+                        </div>
+                        {analytics.quality_criteria ? (
+                          <div className="space-y-1.5">
+                            {(
+                              [
+                                [
+                                  "Consent disclosed",
+                                  analytics.quality_criteria.consentDisclosed ? "Yes" : "No",
+                                ],
+                                ["Script adherence", `${analytics.quality_criteria.scriptAdherence}/10`],
+                                ["Professionalism", `${analytics.quality_criteria.professionalism}/10`],
+                                ["Conversion signal", `${analytics.quality_criteria.conversionSignal}/10`],
+                              ] as const
+                            ).map(([label, value]) => (
+                              <div key={label} className="flex gap-2 text-sm">
+                                <span className="w-36 shrink-0 text-xs text-text-muted">{label}</span>
+                                <span className="text-text">{value}</span>
+                              </div>
+                            ))}
+                            {analytics.quality_criteria.rationale ? (
+                              <div className="rounded-md border border-border bg-bg-subtle p-3 text-sm leading-relaxed text-text">
+                                {analytics.quality_criteria.rationale}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {analytics.risk_flags.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <MonoLabel>Risk flags</MonoLabel>
+                            {analytics.risk_flags.map((flag, i) => (
+                              <div
+                                key={i}
+                                className="flex items-start gap-2 rounded-md border border-border bg-bg-subtle p-2.5 text-sm"
+                              >
+                                <StatusChip
+                                  tone={
+                                    flag.severity === "high"
+                                      ? "danger"
+                                      : flag.severity === "medium"
+                                        ? "muted"
+                                        : "outline"
+                                  }
+                                >
+                                  {humanize(flag.severity)}
+                                </StatusChip>
+                                <span className="min-w-0">
+                                  <span className="block text-xs text-text-muted">
+                                    {humanize(flag.category)}
+                                  </span>
+                                  {flag.snippet}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </section>
+                    ) : null}
 
                     {/* Call intelligence: intent + sentiment + outcome */}
                     {intel &&

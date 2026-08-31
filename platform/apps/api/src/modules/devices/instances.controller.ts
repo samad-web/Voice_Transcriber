@@ -9,6 +9,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
   ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
@@ -16,6 +17,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -60,7 +62,7 @@ export class InstancesController {
   constructor(private readonly db: DbService) {}
 
   @Post()
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateInstanceBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { workspaceId, name, tokenTtlMinutes, tokenMaxUses } = parsed.data;
@@ -93,8 +95,8 @@ export class InstancesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'instance.create', 'instance', $2)`,
-        [orgId, instance.id],
+         VALUES ($1, 'user', $2, 'instance.create', 'instance', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", instance.id],
       );
 
       return {
@@ -178,18 +180,23 @@ export class InstancesController {
   async remove(
     @OrgId() orgId: string,
     @Param("id") instanceId: string,
-    @Query("purgeCalls") purgeCallsRaw?: string,
+    @Query("purgeCalls") purgeCallsRaw: string | undefined,
+    @Req() req: PrincipalRequest,
   ) {
     const purgeCalls = purgeCallsRaw === "true";
 
-    return this.db.withOrg(orgId, async (client) => {
+    // Read-only pass under RLS: resolve the instance, the blocking counts, and
+    // (if purging) the S3 keys that need to go. Kept separate from the writes
+    // below so the S3 delete loop — a network call per recording — never runs
+    // while a pool connection is checked out inside a live transaction.
+    const { instance, counts, s3Keys } = await this.db.withOrg(orgId, async (client) => {
       const {
-        rows: [instance],
+        rows: [instanceRow],
       } = await client.query("SELECT id, name FROM instances WHERE id = $1", [instanceId]);
-      if (!instance) throw new NotFoundException("instance not found in this org");
+      if (!instanceRow) throw new NotFoundException("instance not found in this org");
 
       const {
-        rows: [counts],
+        rows: [countsRow],
       } = await client.query(
         `SELECT (SELECT count(*)::int FROM devices WHERE instance_id = $1) AS devices,
                 (SELECT count(*)::int
@@ -198,20 +205,20 @@ export class InstancesController {
         [instanceId],
       );
 
-      if (counts.calls > 0 && !purgeCalls) {
+      if (countsRow.calls > 0 && !purgeCalls) {
         throw new ConflictException({
           error: "instance_has_calls",
           message:
-            `"${instance.name}" still has ${counts.calls} call(s) across ` +
-            `${counts.devices} device(s). Retry with purgeCalls=true to erase them.`,
+            `"${instanceRow.name}" still has ${countsRow.calls} call(s) across ` +
+            `${countsRow.devices} device(s). Retry with purgeCalls=true to erase them.`,
           instanceId,
-          devices: counts.devices,
-          calls: counts.calls,
+          devices: countsRow.devices,
+          calls: countsRow.calls,
         });
       }
 
-      const purged: string[] = [];
-      if (counts.calls > 0) {
+      let keys: string[] = [];
+      if (countsRow.calls > 0) {
         const { rows: recs } = await client.query(
           `SELECT r.s3_key
              FROM recordings r
@@ -220,19 +227,33 @@ export class InstancesController {
             WHERE d.instance_id = $1 AND r.s3_key IS NOT NULL`,
           [instanceId],
         );
-        for (const rec of recs) {
-          try {
-            await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: rec.s3_key }));
-          } catch (err) {
-            // Abort while the keys are still in the DB so this stays retryable.
-            throw new ServiceUnavailableException(
-              `object storage delete failed for ${rec.s3_key}: ${(err as Error).message}. ` +
-                `Nothing was deleted — retry once storage is reachable.`,
-            );
-          }
-        }
-        if (recs.length > 0) purged.push(`${recs.length} s3_audio_object`);
+        keys = recs.map((r) => r.s3_key as string);
+      }
 
+      return { instance: instanceRow, counts: countsRow, s3Keys: keys };
+    });
+
+    // Outside any transaction / pool connection now. S3 objects go before any
+    // DB delete: losing the rows first would strand the audio with no key
+    // left to find it by, and nothing in the DB has been touched yet if this
+    // throws — still retryable exactly as before.
+    for (const key of s3Keys) {
+      try {
+        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+      } catch (err) {
+        throw new ServiceUnavailableException(
+          `object storage delete failed for ${key}: ${(err as Error).message}. ` +
+            `Nothing was deleted — retry once storage is reachable.`,
+        );
+      }
+    }
+
+    // Short, write-only transaction now that the S3 side is settled.
+    return this.db.withOrg(orgId, async (client) => {
+      const purged: string[] = [];
+      if (s3Keys.length > 0) purged.push(`${s3Keys.length} s3_audio_object`);
+
+      if (counts.calls > 0) {
         // transcripts / recordings / ai_outputs / call_facts / call_notes /
         // crm_sync_log all cascade from calls.
         const callRes = await client.query(
@@ -249,9 +270,10 @@ export class InstancesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', 'dev-admin', 'instance.delete', 'instance', $2, $3)`,
+         VALUES ($1, 'user', $2, 'instance.delete', 'instance', $3, $4)`,
         [
           orgId,
+          req.principal?.userId ?? "dev-admin",
           instanceId,
           JSON.stringify({
             name: instance.name,
@@ -275,6 +297,7 @@ export class InstancesController {
     @OrgId() orgId: string,
     @Param("id") instanceId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = MintKeyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -298,8 +321,8 @@ export class InstancesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'enrollment_key.create', 'instance', $2)`,
-        [orgId, instanceId],
+         VALUES ($1, 'user', $2, 'enrollment_key.create', 'instance', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", instanceId],
       );
 
       return {

@@ -12,6 +12,13 @@ import { z } from "zod";
  * all, this is the one call site the future gate plugs into.
  * `orgPlanIncludesWhatsapp` returns true for every plan today — replacing its
  * body is the entire migration once plans are real.
+ *
+ * `plan_id` names WHICH plan an org is on; `organizations.enabled_modules`
+ * (migration 0072, see org-modules.ts) is the separate, already-real
+ * RESOLVED entitlement state a plan assignment will end up writing to. When
+ * plans exist, assigning one is "write plan_id + write the plan's module
+ * set to enabled_modules" — this file's job stays just resolving
+ * `plan_id -> what's included`.
  */
 export const OrgPlan = z.enum(["legacy"]);
 export type OrgPlan = z.infer<typeof OrgPlan>;

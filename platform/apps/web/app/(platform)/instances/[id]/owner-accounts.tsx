@@ -73,7 +73,7 @@ export function OwnerAccounts({
     });
 
   return (
-    <Card shadow className="space-y-4">
+    <Card elevated className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <MonoLabel>Owner Logins</MonoLabel>
@@ -88,9 +88,9 @@ export function OwnerAccounts({
       </div>
 
       {!authConfigured ? (
-        <div className="border-2 border-black bg-yellow-100 p-3 flex gap-2.5 items-start">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          <p className="text-xs font-mono font-bold uppercase leading-relaxed">
+        <div className="flex items-start gap-2.5 rounded-md border border-warning bg-warning-subtle p-3">
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
+          <p className="text-sm leading-relaxed text-warning-text">
             Supabase Auth is not configured on the API — set SUPABASE_URL and
             SUPABASE_SERVICE_ROLE_KEY, then restart it. Logins cannot be created
             until then.

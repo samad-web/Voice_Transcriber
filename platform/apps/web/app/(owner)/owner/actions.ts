@@ -31,6 +31,49 @@ export interface LeadUpdate {
   nextAction?: string | null;
   notes?: string | null;
   valueNum?: number | null;
+  /** null clears the label; either way the API stamps it as a human's choice. */
+  projectId?: string | null;
+}
+
+/** Zod issue arrays and plain messages both arrive under `message`. Shared
+ *  with crm-actions.ts, which imports this rather than keeping its own copy. */
+export async function errorText(res: Response): Promise<string> {
+  const body = await res.json().catch(() => ({}));
+  const message = (body as { message?: unknown })?.message;
+  if (Array.isArray(message)) {
+    return message.map((m: { message?: string }) => m.message ?? "").join("; ");
+  }
+  return typeof message === "string" ? message : `API ${res.status}`;
+}
+
+/**
+ * Shared PATCH + parse-error + revalidate shape for updateLeadAction (below)
+ * and updateDealAction (crm-actions.ts) — structurally the same operation on
+ * two record types, differing only in the endpoint, the payload, and which
+ * paths need revalidating after a successful save.
+ */
+export async function patchRecordAction<T>(
+  path: string,
+  update: unknown,
+  revalidatePaths: string[],
+): Promise<ActionResult & { data?: T }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "PATCH",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const data = (await res.json()) as T;
+    for (const p of revalidatePaths) revalidatePath(p);
+    return { data };
+  } catch {
+    return { error: "API unreachable" };
+  }
 }
 
 /**
@@ -43,31 +86,12 @@ export async function updateLeadAction(
   leadId: string,
   update: LeadUpdate,
 ): Promise<ActionResult & { lead?: Partial<Lead> }> {
-  const headers = await ownerHeaders();
-  if (!headers) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const res = await fetch(`${API_URL}/v1/leads/${leadId}`, {
-      method: "PATCH",
-      headers,
-      cache: "no-store",
-      body: JSON.stringify(update),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = body?.message ?? body;
-      return {
-        error: typeof detail === "string" ? detail : `API ${res.status}`,
-      };
-    }
-    const data = (await res.json()) as { lead: Partial<Lead> };
-    revalidatePath("/owner/board");
-    revalidatePath("/owner/leads");
-    revalidatePath("/owner");
-    return { lead: data.lead };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const result = await patchRecordAction<{ lead: Partial<Lead> }>(`/v1/leads/${leadId}`, update, [
+    "/owner/board",
+    "/owner/leads",
+    "/owner",
+  ]);
+  return result.error ? { error: result.error } : { lead: result.data?.lead };
 }
 
 /** Lead detail for the drawer: the full record plus its call history. */
@@ -86,10 +110,17 @@ export async function fetchLeadAction(
   }
 }
 
-/** Put a human name against a handset so the dashboard ranks people. */
+/**
+ * Put a human name against a handset so the dashboard ranks people.
+ *
+ * `reassign: true` mints a fresh telecaller identity instead of renaming the
+ * current one — use it when the phone has genuinely changed hands, not to
+ * fix a typo in the existing holder's name.
+ */
 export async function setTelecallerNameAction(
   deviceId: string,
   name: string,
+  reassign = false,
 ): Promise<ActionResult> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
@@ -99,7 +130,7 @@ export async function setTelecallerNameAction(
       method: "PATCH",
       headers,
       cache: "no-store",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, reassign }),
     });
     if (!res.ok) return { error: `API ${res.status}` };
     revalidatePath("/owner");

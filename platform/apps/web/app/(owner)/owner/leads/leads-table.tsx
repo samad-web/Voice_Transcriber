@@ -15,12 +15,14 @@ import {
   TableRow,
 } from "@aura/ui";
 import { LeadDrawer } from "../lead-drawer";
+import { ProjectChip } from "../project-chip";
 import {
   contactLabel,
   formatValue,
   num,
   relativeTime,
   type Lead,
+  type Project,
   type Stage,
 } from "../types";
 
@@ -41,12 +43,14 @@ const SORTS = [
 export function LeadsTable({
   leads,
   stages,
+  projects,
   total,
   limit,
   offset,
 }: {
   leads: Lead[];
   stages: Stage[];
+  projects: Project[];
   total: number;
   limit: number;
   offset: number;
@@ -78,6 +82,7 @@ export function LeadsTable({
 
   const stage = params.get("stage");
   const status = params.get("status");
+  const project = params.get("projectId");
   const sort = params.get("sort") ?? "activity";
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.max(1, Math.ceil(total / limit));
@@ -85,6 +90,18 @@ export function LeadsTable({
   const patch = (leadId: string, update: Partial<Lead>) => {
     setRows((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...update } : l)));
     setOpen((current) => (current && current.id === leadId ? { ...current, ...update } : current));
+  };
+
+  // Strip `focus` from the URL on close — otherwise the deep-link effect
+  // above reopens the same lead the next time `leads` revalidates for any
+  // other reason (a stage move elsewhere, a poll, etc).
+  const closeDrawer = () => {
+    setOpen(null);
+    if (params.get("focus")) {
+      const next = new URLSearchParams(params.toString());
+      next.delete("focus");
+      router.replace(`/owner/leads${next.toString() ? `?${next}` : ""}`);
+    }
   };
 
   return (
@@ -160,6 +177,40 @@ export function LeadsTable({
         </div>
       </div>
 
+      {/* Only the active projects are offered. An archived one can still be
+          reached by URL — a bookmarked filter must not break — but putting it
+          in the chip row would grow the list forever. */}
+      {projects.length > 0 ? (
+        <div>
+          <MonoLabel>Project</MonoLabel>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <FilterChip active={!project} onClick={() => setParam("projectId", null)}>
+              All
+            </FilterChip>
+            {projects
+              .filter((p) => p.active)
+              .map((p) => (
+                <FilterChip
+                  key={p.id}
+                  active={project === p.id}
+                  onClick={() => setParam("projectId", project === p.id ? null : p.id)}
+                >
+                  {p.name}
+                </FilterChip>
+              ))}
+            {/* The list an owner needs to see to find out their catalogue is
+                missing an alias. Without it, a silently unlabelled lead looks
+                exactly like a lead that genuinely has no project. */}
+            <FilterChip
+              active={project === "none"}
+              onClick={() => setParam("projectId", project === "none" ? null : "none")}
+            >
+              Unlabelled
+            </FilterChip>
+          </div>
+        </div>
+      ) : null}
+
       {status ? (
         <div className="flex items-center gap-2">
           <MonoLabel>Filtered to</MonoLabel>
@@ -196,10 +247,11 @@ export function LeadsTable({
             aria-label="Leads"
             className="overflow-x-auto"
           >
-            <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[980px] border-collapse text-left text-sm">
               <TableHead>
                 <tr>
                   <TableHeaderCell>Lead</TableHeaderCell>
+                  <TableHeaderCell>Project</TableHeaderCell>
                   <TableHeaderCell>Stage</TableHeaderCell>
                   <TableHeaderCell className="text-right">Value</TableHeaderCell>
                   <TableHeaderCell>Telecaller</TableHeaderCell>
@@ -213,11 +265,35 @@ export function LeadsTable({
                   <TableRow
                     key={lead.id}
                     onClick={() => setOpen(lead)}
+                    // Rows open the drawer the same way board.tsx's cards do
+                    // (Enter/Space), but a <tr> has no built-in interactive
+                    // semantics — role/tabIndex/onKeyDown supply what a real
+                    // <button> would otherwise give for free.
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${lead.title}`}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpen(lead);
+                      }
+                    }}
                     className="cursor-pointer"
                   >
                     <TableCell>
                       <span className="block font-medium text-text">{lead.title}</span>
                       <span className="text-xs text-text-muted">{contactLabel(lead)}</span>
+                    </TableCell>
+                    <TableCell>
+                      {lead.project_name ? (
+                        <ProjectChip
+                          name={lead.project_name}
+                          color={lead.project_color}
+                          source={lead.project_source}
+                        />
+                      ) : (
+                        <span className="text-xs text-text-subtle">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <StatusChip
@@ -274,12 +350,18 @@ export function LeadsTable({
         ) : null}
       </div>
 
-      <LeadDrawer lead={open} stages={stages} onClose={() => setOpen(null)} onChanged={patch} />
+      <LeadDrawer
+        lead={open}
+        stages={stages}
+        projects={projects}
+        onClose={closeDrawer}
+        onChanged={patch}
+      />
     </>
   );
 }
 
-/** Selected filter = the accent, matching the sidebar's "you are here". */
+/** Selected filter = the gradient fill, the same "you are here" the sidebar and page header use. */
 function FilterChip({
   active,
   onClick,
@@ -294,9 +376,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
       className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
         active
-          ? "border-transparent bg-accent-subtle text-accent-text"
+          ? "border-transparent text-white"
           : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
       }`}
     >

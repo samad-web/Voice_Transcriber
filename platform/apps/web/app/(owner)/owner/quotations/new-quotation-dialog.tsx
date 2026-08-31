@@ -3,23 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog, FormField, Input, Select } from "@aura/ui";
-import { createQuotationAction, type QuotationItemInput } from "./actions";
-
-interface ItemDraft {
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  discountPct: string;
-  taxRate: string;
-}
-
-const EMPTY_ITEM: ItemDraft = {
-  description: "",
-  quantity: "1",
-  unitPrice: "",
-  discountPct: "",
-  taxRate: "",
-};
+import { createQuotationAction } from "./actions";
+import { createLineItemRow, useLineItemRows } from "../use-line-item-rows";
 
 /**
  * Start a quotation from a blank slate. No account/contact/deal picker —
@@ -38,7 +23,7 @@ export function NewQuotationDialog() {
   const [discountValue, setDiscountValue] = useState("0");
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState<ItemDraft[]>([{ ...EMPTY_ITEM }]);
+  const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -48,54 +33,33 @@ export function NewQuotationDialog() {
     setDiscountValue("0");
     setValidUntil("");
     setNotes("");
-    setItems([{ ...EMPTY_ITEM }]);
+    setRows([createLineItemRow()]);
     setError(null);
-  };
-
-  const updateItem = (index: number, patch: Partial<ItemDraft>) => {
-    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
-  };
-
-  const removeItem = (index: number) => {
-    setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const submit = () => {
     setError(null);
 
-    const parsed: QuotationItemInput[] = [];
-    for (const item of items) {
-      if (!item.description.trim()) continue;
-      const quantity = Number(item.quantity);
-      const unitPrice = Number(item.unitPrice);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        setError(`Enter a valid quantity for "${item.description}"`);
-        return;
-      }
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-        setError(`Enter a valid unit price for "${item.description}"`);
-        return;
-      }
-      parsed.push({
-        description: item.description.trim(),
-        quantity,
-        unitPrice,
-        discountPct: item.discountPct ? Number(item.discountPct) : undefined,
-        taxRate: item.taxRate ? Number(item.taxRate) : undefined,
-      });
+    const parsed = parse("Add at least one line item");
+    if (parsed.items === null) {
+      setError(parsed.error);
+      return;
     }
-    if (parsed.length === 0) {
-      setError("Add at least one line item");
+
+    const trimmedDiscount = discountValue.trim();
+    const discountNum = trimmedDiscount === "" ? 0 : Number(trimmedDiscount);
+    if (trimmedDiscount !== "" && (!Number.isFinite(discountNum) || discountNum < 0)) {
+      setError("Enter a valid discount value");
       return;
     }
 
     startTransition(async () => {
       const result = await createQuotationAction({
         currency: currency.trim() || "INR",
-        discount: { type: discountType === "none" ? null : discountType, value: Number(discountValue) || 0 },
+        discount: { type: discountType === "none" ? null : discountType, value: discountNum },
         validUntil: validUntil || undefined,
         notes: notes.trim() || undefined,
-        items: parsed,
+        items: parsed.items,
       });
       if (result.error || !result.quotation) {
         setError(result.error ?? "Could not create quotation");
@@ -186,15 +150,15 @@ export function NewQuotationDialog() {
           <div>
             <p className="text-sm font-medium text-text">Line items</p>
             <div className="mt-2 space-y-3">
-              {items.map((item, index) => (
-                <div key={index} className="rounded-md border border-border p-3">
+              {rows.map((row) => (
+                <div key={row.key} className="rounded-md border border-border p-3">
                   <div className="flex items-start gap-2">
                     <div className="flex-1 space-y-2">
                       <Input
                         aria-label="Description"
                         placeholder="Description"
-                        value={item.description}
-                        onChange={(e) => updateItem(index, { description: e.target.value })}
+                        value={row.description}
+                        onChange={(e) => updateRow(row.key, { description: e.target.value })}
                       />
                       <div className="grid grid-cols-2 gap-2">
                         <Input
@@ -203,8 +167,8 @@ export function NewQuotationDialog() {
                           min="0"
                           step="0.01"
                           placeholder="Qty"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(index, { quantity: e.target.value })}
+                          value={row.quantity}
+                          onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
                         />
                         <Input
                           aria-label="Unit price"
@@ -212,8 +176,8 @@ export function NewQuotationDialog() {
                           min="0"
                           step="0.01"
                           placeholder="Unit price"
-                          value={item.unitPrice}
-                          onChange={(e) => updateItem(index, { unitPrice: e.target.value })}
+                          value={row.unitPrice}
+                          onChange={(e) => updateRow(row.key, { unitPrice: e.target.value })}
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
@@ -223,8 +187,8 @@ export function NewQuotationDialog() {
                           min="0"
                           step="0.01"
                           placeholder="Discount %"
-                          value={item.discountPct}
-                          onChange={(e) => updateItem(index, { discountPct: e.target.value })}
+                          value={row.discountPct}
+                          onChange={(e) => updateRow(row.key, { discountPct: e.target.value })}
                         />
                         <Input
                           aria-label="Tax rate percent"
@@ -232,8 +196,8 @@ export function NewQuotationDialog() {
                           min="0"
                           step="0.01"
                           placeholder="Tax %"
-                          value={item.taxRate}
-                          onChange={(e) => updateItem(index, { taxRate: e.target.value })}
+                          value={row.taxRate}
+                          onChange={(e) => updateRow(row.key, { taxRate: e.target.value })}
                         />
                       </div>
                     </div>
@@ -241,8 +205,8 @@ export function NewQuotationDialog() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => removeItem(index)}
-                      disabled={items.length === 1}
+                      onClick={() => removeRow(row.key)}
+                      disabled={rows.length === 1}
                     >
                       Remove
                     </Button>
@@ -250,13 +214,7 @@ export function NewQuotationDialog() {
                 </div>
               ))}
             </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="mt-3"
-              onClick={() => setItems((prev) => [...prev, { ...EMPTY_ITEM }])}
-            >
+            <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={addRow}>
               + Add item
             </Button>
           </div>

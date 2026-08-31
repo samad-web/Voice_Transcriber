@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { fetchLeadAction, updateLeadAction } from "./actions";
+import { ProjectChip } from "./project-chip";
 import {
   contactLabel,
   formatDuration,
@@ -12,6 +13,7 @@ import {
   relativeTime,
   type Lead,
   type LeadCall,
+  type Project,
   type Stage,
 } from "./types";
 
@@ -38,11 +40,14 @@ const TEXTAREA_CLASS =
 export function LeadDrawer({
   lead,
   stages,
+  projects = [],
   onClose,
   onChanged,
 }: {
   lead: Lead | null;
   stages: Stage[];
+  /** The catalogue, for the project picker. Empty = no projects configured. */
+  projects?: Project[];
   onClose: () => void;
   /** Lets the board patch its own copy without a full refetch. */
   onChanged?: (leadId: string, update: Partial<Lead>) => void;
@@ -120,6 +125,33 @@ export function LeadDrawer({
     });
   };
 
+  /**
+   * The PATCH returns project_id and project_source but not the joined name
+   * and colour, so the chip is re-derived here from the catalogue the caller
+   * already holds. Without this the card would lose its label until the next
+   * full refetch and look like the save had failed.
+   */
+  const setProject = (projectId: string | null) => {
+    const picked = projects.find((p) => p.id === projectId) ?? null;
+    setError(null);
+    setSaved(false);
+    startTransition(async () => {
+      const result = await updateLeadAction(lead.id, { projectId });
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setSaved(true);
+      onChanged?.(lead.id, {
+        ...(result.lead ?? {}),
+        project_id: picked?.id ?? null,
+        project_name: picked?.name ?? null,
+        project_color: picked?.color ?? null,
+        project_source: "human",
+      });
+    });
+  };
+
   const facts = Object.entries(lead.facts ?? {}).filter(
     ([, value]) => value !== null && value !== "",
   );
@@ -187,6 +219,50 @@ export function LeadDrawer({
               ))}
             </div>
           </div>
+
+          {projects.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <MonoLabel>Project</MonoLabel>
+                {lead.project_source === "extraction" && lead.project_name ? (
+                  // Say plainly that a machine chose this and that changing it
+                  // is final. Anyone correcting a wrong label deserves to know
+                  // the correction sticks — otherwise they will correct it
+                  // again next week and assume the system is broken.
+                  <span className="text-xs text-text-subtle">
+                    Detected from the call — picking one below makes it yours
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {projects
+                  // An archived project stays offered while it is the one
+                  // currently on this lead: hiding it would make the chip row
+                  // silently disagree with the label above it.
+                  .filter((p) => p.active || p.id === lead.project_id)
+                  .map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={pending}
+                      aria-pressed={p.id === lead.project_id}
+                      onClick={() => setProject(p.id === lead.project_id ? null : p.id)}
+                      className="rounded-full disabled:opacity-60"
+                    >
+                      <ProjectChip
+                        name={p.name}
+                        color={p.color}
+                        className={
+                          p.id === lead.project_id
+                            ? "ring-2 ring-accent ring-offset-1 ring-offset-surface"
+                            : "opacity-60"
+                        }
+                      />
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ) : null}
 
           {lead.summary ? (
             <div className="space-y-1.5">

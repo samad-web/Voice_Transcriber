@@ -9,11 +9,14 @@ import {
   Patch,
   Post,
   Put,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { RoleInput, RolePermissionGrant } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -61,7 +64,9 @@ export class RolesController {
   }
 
   @Post()
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = RoleInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -79,7 +84,7 @@ export class RolesController {
          RETURNING ${ROLE_COLUMNS}`,
         [orgId, p.key, p.name, p.description ?? null],
       );
-      await this.audit(client, orgId, "role.create", role.id);
+      await this.audit(client, orgId, "role.create", role.id, req);
       return { role };
     });
   }
@@ -88,10 +93,13 @@ export class RolesController {
    *  other code (e.g. the createTenant seed, memberships.role_id backfill)
    *  assumes the 5 seeded rows exist per org with those exact keys. */
   @Patch(":id")
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = UpdateRoleBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -117,7 +125,7 @@ export class RolesController {
          RETURNING ${ROLE_COLUMNS}`,
         [id, p.name ?? null, p.description !== undefined, p.description ?? null, p.status ?? null],
       );
-      await this.audit(client, orgId, "role.update", id);
+      await this.audit(client, orgId, "role.update", id, req);
       return { role };
     });
   }
@@ -145,10 +153,13 @@ export class RolesController {
    * than diffing.
    */
   @Put(":id/permissions")
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
   async replacePermissions(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = PermissionsBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -165,7 +176,7 @@ export class RolesController {
           [orgId, id, grant.objectType, grant.action, grant.scope, JSON.stringify(grant.fieldRestrictions)],
         );
       }
-      await this.audit(client, orgId, "role.permissions_update", id);
+      await this.audit(client, orgId, "role.permissions_update", id, req);
 
       const { rows } = await client.query(
         `SELECT object_type, action, scope, field_restrictions
@@ -182,11 +193,12 @@ export class RolesController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'role', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'role', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

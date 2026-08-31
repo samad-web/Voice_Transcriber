@@ -80,10 +80,11 @@ export function Outreach() {
               type="button"
               onClick={() => setTab(key)}
               aria-pressed={tab === key}
+              style={tab === key ? { backgroundImage: "var(--brand-gradient)" } : undefined}
               className={
-                "h-9 rounded-md px-3 text-sm font-medium transition-colors " +
+                "h-9 rounded-full px-3 text-sm font-medium transition-colors " +
                 (tab === key
-                  ? "bg-accent text-accent-fg"
+                  ? "text-white"
                   : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
               }
             >
@@ -104,7 +105,14 @@ export function Outreach() {
         ) : null}
       </div>
 
-      {error ? <p className="mt-3 text-sm text-danger-text">{error}</p> : null}
+      {error ? (
+        <p
+          role="alert"
+          className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
+        >
+          {error}
+        </p>
+      ) : null}
 
       {tab === "due" ? (
         <ul className="mt-4 space-y-2">

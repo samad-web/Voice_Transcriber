@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import {
   dismissDuplicateAction,
@@ -18,6 +19,7 @@ import type { DuplicateMatch } from "../types";
  * (where the operator picks the side to keep, which IS the decision).
  */
 export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
+  const router = useRouter();
   const [duplicates, setDuplicates] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
       // The action already revalidates the path; nothing more to do here if
       // the scan found zero — the list simply stays as it was.
       if (result.newCandidates && result.newCandidates > 0) {
-        window.location.reload();
+        router.refresh();
       }
     });
   };

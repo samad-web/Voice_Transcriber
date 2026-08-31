@@ -19,10 +19,19 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { recordStageTransition } from "../crm-objects/stage-history";
 
+/**
+ * "none" alongside a uuid, so "which leads has the detector NOT managed to
+ * label?" is answerable. That list is the only way an owner finds out their
+ * catalogue is missing an alias, so it has to be reachable from the UI rather
+ * than being a question you can only ask in SQL.
+ */
+const ProjectFilter = z.union([z.string().uuid(), z.literal("none")]);
+
 const ListQuery = z.object({
   stage: z.string().max(40).optional(),
   status: z.enum(["open", "won", "lost"]).optional(),
   telecallerId: z.string().uuid().optional(),
+  projectId: ProjectFilter.optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
   sort: z.enum(["activity", "created", "value", "title"]).default("activity"),
@@ -33,6 +42,13 @@ const ListQuery = z.object({
 const BoardQuery = z.object({
   /** Cards fetched per column. The count is always the true total. */
   perStage: z.coerce.number().int().min(1).max(200).default(50),
+  /**
+   * Narrow the whole board to one project. The per-column counts and subtotals
+   * are computed after this filter, so a filtered board's numbers describe the
+   * filtered board — a header total that silently ignored the active filter
+   * would be read as the unfiltered one.
+   */
+  projectId: ProjectFilter.optional(),
 });
 
 const UpdateLeadBody = z.object({
@@ -43,6 +59,8 @@ const UpdateLeadBody = z.object({
   notes: z.string().max(5000).nullable().optional(),
   valueNum: z.number().nonnegative().nullable().optional(),
   telecallerDeviceId: z.string().uuid().nullable().optional(),
+  /** null clears the label. Either way this becomes the owner's column. */
+  projectId: z.string().uuid().nullable().optional(),
 });
 
 /** Columns every lead view returns — one shape for the board and the list. */
@@ -51,7 +69,19 @@ const LEAD_COLUMNS = `
   l.notes, l.facts, l.contact_name, l.contact_number_prefix, l.contact_number_last3,
   l.call_count, l.last_activity_at, l.stage_changed_at, l.created_at,
   l.telecaller_device_id, l.last_call_id,
+  l.project_id, l.project_source,
+  pr.key AS project_key, pr.name AS project_name, pr.color AS project_color,
   COALESCE(d.telecaller_name, d.label) AS telecaller`;
+
+/**
+ * The joins LEAD_COLUMNS depends on. Kept beside it rather than repeated at
+ * each of the three call sites, because adding a column to the list above and
+ * forgetting one of the joins below is a runtime error the typechecker cannot
+ * see — generated SQL is invisible to it.
+ */
+const LEAD_JOINS = `
+  LEFT JOIN devices d      ON d.id = l.telecaller_device_id
+  LEFT JOIN crm_projects pr ON pr.id = l.project_id`;
 
 /**
  * The lead pipeline (§4.2 owner console).
@@ -82,7 +112,7 @@ export class LeadsController {
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { stage, status, telecallerId, q, sort, limit, offset } = parsed.data;
+    const { stage, status, telecallerId, projectId, q, sort, limit, offset } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const where: string[] = [];
@@ -95,6 +125,8 @@ export class LeadsController {
       if (stage) add("l.stage = $?", stage);
       if (status) add("l.status = $?", status);
       if (telecallerId) add("l.telecaller_device_id = $?", telecallerId);
+      if (projectId === "none") where.push("l.project_id IS NULL");
+      else if (projectId) add("l.project_id = $?", projectId);
       if (q) {
         // One param, three columns — pushed once so the placeholder numbering
         // stays in step with `params`.
@@ -117,7 +149,7 @@ export class LeadsController {
       const { rows } = await client.query(
         `SELECT ${LEAD_COLUMNS}, count(*) OVER()::int AS total_count
            FROM leads l
-           LEFT JOIN devices d ON d.id = l.telecaller_device_id
+           ${LEAD_JOINS}
           ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
           ORDER BY ${ORDER[sort]}
           LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -140,11 +172,24 @@ export class LeadsController {
     const parsed = BoardQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
+    const { perStage, projectId } = parsed.data;
+
     return this.db.withOrg(orgId, async (client) => {
       const stages = await this.stagesFor(client);
 
+      const params: unknown[] = [perStage];
+      let projectWhere = "";
+      if (projectId === "none") {
+        projectWhere = "WHERE l.project_id IS NULL";
+      } else if (projectId) {
+        params.push(projectId);
+        projectWhere = `WHERE l.project_id = $${params.length}`;
+      }
+
       // Rank inside each stage in one pass — a query per column would be N
-      // round trips for a board that is read on every page load.
+      // round trips for a board that is read on every page load. The project
+      // filter sits INSIDE the subquery so the window functions see only the
+      // filtered rows and the column counts stay honest.
       const { rows } = await client.query(
         `SELECT * FROM (
            SELECT ${LEAD_COLUMNS},
@@ -152,11 +197,12 @@ export class LeadsController {
                   count(*)     OVER (PARTITION BY l.stage)::int AS stage_total,
                   COALESCE(sum(l.value_num) OVER (PARTITION BY l.stage), 0)::float AS stage_value
              FROM leads l
-             LEFT JOIN devices d ON d.id = l.telecaller_device_id
+             ${LEAD_JOINS}
+             ${projectWhere}
          ) ranked
           WHERE rn <= $1
           ORDER BY rn`,
-        [parsed.data.perStage],
+        params,
       );
 
       const columns = stages.map((s) => {
@@ -191,7 +237,7 @@ export class LeadsController {
         `SELECT ${LEAD_COLUMNS}, l.workspace_id, l.contact_number_hash, l.first_call_id,
                 l.agent_id, l.agent_version
            FROM leads l
-           LEFT JOIN devices d ON d.id = l.telecaller_device_id
+           ${LEAD_JOINS}
           WHERE l.id = $1`,
         [leadId],
       );
@@ -262,12 +308,19 @@ export class LeadsController {
            notes       = CASE WHEN $9::boolean THEN $10 ELSE notes END,
            value_num   = CASE WHEN $11::boolean THEN $12 ELSE value_num END,
            telecaller_device_id = CASE WHEN $13::boolean THEN $14 ELSE telecaller_device_id END,
+           project_id  = CASE WHEN $15::boolean THEN $16::uuid ELSE project_id END,
+           -- HUMAN-OWNS-IT: this endpoint is only ever a person, so setting
+           -- the project here permanently takes the column off the detector.
+           -- Clearing it to NULL counts too — "not any of these" is a
+           -- judgement the next call must not silently overturn.
+           project_source = CASE WHEN $15::boolean THEN 'human' ELSE project_source END,
            -- Working a lead IS activity: without this a card the owner is
            -- actively progressing would age out of the retention sweep.
            last_activity_at = now()
          WHERE id = $1
          RETURNING id, stage, status, title, value_num, next_action, notes, contact_name,
-                   telecaller_device_id, stage_changed_at, last_activity_at`,
+                   telecaller_device_id, project_id, project_source,
+                   stage_changed_at, last_activity_at`,
         [
           leadId,
           p.stage ?? null,
@@ -285,9 +338,22 @@ export class LeadsController {
           p.valueNum ?? null,
           p.telecallerDeviceId !== undefined,
           p.telecallerDeviceId ?? null,
+          p.projectId !== undefined,
+          p.projectId ?? null,
         ],
       );
       if (!lead) throw new NotFoundException("lead not found");
+
+      // Keep the dual-written deal in step, exactly as the stage move below
+      // does — and under the same human-owns-it rule, so this write is the
+      // one thing that CAN overwrite the detector's guess on the deal.
+      if (p.projectId !== undefined) {
+        await client.query(
+          `UPDATE deals SET project_id = $2::uuid, project_source = 'human'
+            WHERE source_lead_id = $1`,
+          [leadId, p.projectId ?? null],
+        );
+      }
 
       // A6: the worker's dual-write (projectLeadToCrm) only sets a deal's
       // stage/status ONCE, on creation — a follow-up call must never move a

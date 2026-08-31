@@ -2,6 +2,7 @@ import type { ExecutionContext } from "@nestjs/common";
 import type { ThrottlerModuleOptions } from "@nestjs/throttler";
 import type { Request } from "express";
 import { resolveAdminKey } from "../common/admin-key.guard";
+import { timingSafeStringEqual } from "../common/timing-safe-equal";
 
 const MINUTE_MS = 60_000;
 
@@ -52,9 +53,8 @@ export function throttlerOptions(): ThrottlerModuleOptions {
  * ADMIN_API_KEY is exactly the attack 08 §0.2 is about, and those attempts stay
  * on the 100/min budget.
  *
- * Comparison is a plain `===`, matching AdminKeyGuard. It is not timing-safe in
- * either place; that is one finding, to fix in one place, not a reason to make
- * the two disagree.
+ * Comparison goes through timing-safe-equal.ts, shared with AdminKeyGuard —
+ * the two must not disagree, and neither should compare a secret with `===`.
  */
 function isTrustedPlatformCaller(context: ExecutionContext): boolean {
   if (context.getType() !== "http") return false;
@@ -63,5 +63,6 @@ function isTrustedPlatformCaller(context: ExecutionContext): boolean {
   if (configured === null) return false;
 
   const presented = context.switchToHttp().getRequest<Request>().headers["x-admin-key"];
-  return (Array.isArray(presented) ? presented[0] : presented) === configured;
+  const value = Array.isArray(presented) ? presented[0] : presented;
+  return value !== undefined && timingSafeStringEqual(value, configured);
 }

@@ -1,18 +1,25 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
+import { ownerGet } from "@/lib/owner-context";
+import type { McpConnection } from "./actions";
 import { MetaAdsConnect } from "./meta-ads-client";
+import { McpConnect } from "./mcp-connect";
 
 export const metadata: Metadata = { title: "Meta Lead Ads — Aura" };
 
 /**
- * Connect Meta (Facebook) Lead Ads (Kailash gap Milestone 4) so leads
- * submitted through a Page's lead-gen forms land in this org's pipeline.
+ * Connect Meta (Facebook) Lead Ads so leads submitted through a Page's
+ * lead-gen forms land in this org's pipeline.
  *
- * No data to fetch here: there is no GET /meta/connections list endpoint yet,
- * so unlike connections/page.tsx this can't render a connection-status list
- * server-side. It is deliberately just the explanation plus the button.
+ * Two routes, offered side by side because they fail in different ways: the
+ * OAuth flow needs Meta app review and a public callback URL, and the MCP
+ * flow (migration 0074) needs neither but needs a server to point at. An org
+ * blocked on app review is not blocked on getting its leads in.
  */
-export default function MetaAdsPage() {
+export default async function MetaAdsPage() {
+  const data = await ownerGet<{ connections: McpConnection[] }>("/v1/mcp/connections");
+  const meta = data?.connections.find((c) => c.provider === "meta") ?? null;
+
   return (
     <>
       <PageHeader title="Meta Lead Ads" context="Settings" />
@@ -28,6 +35,8 @@ export default function MetaAdsPage() {
         different Page connected.
       </p>
       <MetaAdsConnect />
+
+      <McpConnect initial={meta} />
     </>
   );
 }

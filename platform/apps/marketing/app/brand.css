@@ -25,11 +25,11 @@
    ────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Read off the mark. */
-  --brand-from: #00b4f0;
-  --brand-mid:  #3b6bee;
-  --brand-to:   #7b2ff7;
-  --brand-gradient: linear-gradient(115deg, var(--brand-from) 0%, var(--brand-mid) 52%, var(--brand-to) 100%);
+  /* --brand-from/mid/to/gradient now live in @aura/ui's theme.css — the one
+     canonical definition (doc 16's "one token set"), since the console's own
+     brand register needs them too. This file no longer redeclares the hexes;
+     theme.css is imported above @import "./brand.css" in globals.css, so the
+     custom properties are already in scope here. */
 
   /* Marketing ground and ink. Both carry a slight cool bias toward the mark —
      a neutral grey here would read as unchosen next to that gradient. */

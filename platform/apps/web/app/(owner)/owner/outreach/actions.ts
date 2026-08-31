@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
+import { apiErrorMessage } from "../lib/api-error";
 
 /** One rung that is owed right now. */
 export interface DueStep {
@@ -89,11 +90,7 @@ export async function actOnStepAction(
       cache: "no-store",
       body: JSON.stringify({ status, note: note?.trim() ? note.trim() : null }),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = (body as { message?: unknown })?.message ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/outreach");
     return { ok: true };
   } catch {

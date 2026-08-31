@@ -17,6 +17,7 @@ import { orgPlanIncludesWhatsapp } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { sendWasiMessage, WasiSendError } from "./wasi-client";
@@ -53,6 +54,7 @@ export class WhatsAppSendController {
     @Param("id", ParseUUIDPipe) conversationId: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     if (process.env.WHATSAPP_SENDING_ENABLED !== "true") {
       throw new ServiceUnavailableException(
@@ -72,6 +74,9 @@ export class WhatsAppSendController {
     }
 
     return this.db.withOrg(orgId, async (client) => {
+      // A rep scoped to `owned` conversations may only send into their own —
+      // same predicate ConversationsController applies on view/update.
+      const scoped = scopeClause("conversation", recordScope, 2);
       const {
         rows: [convo],
       } = await client.query<{
@@ -80,8 +85,8 @@ export class WhatsAppSendController {
         messaging_channel_id: string | null;
       }>(
         `SELECT id, peer_address, messaging_channel_id FROM conversations
-          WHERE id = $1 AND channel = 'whatsapp'`,
-        [conversationId],
+          WHERE id = $1 AND channel = 'whatsapp' ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [conversationId, recordScope.userId] : [conversationId],
       );
       if (!convo) throw new NotFoundException("conversation not found");
       if (!convo.messaging_channel_id) {
@@ -174,8 +179,8 @@ export class WhatsAppSendController {
       await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId]);
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'conversation.whatsapp_send', 'conversation', $2)`,
-        [orgId, conversationId],
+         VALUES ($1, 'user', $2, 'conversation.whatsapp_send', 'conversation', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", conversationId],
       );
 
       return { sent: true, message: row };

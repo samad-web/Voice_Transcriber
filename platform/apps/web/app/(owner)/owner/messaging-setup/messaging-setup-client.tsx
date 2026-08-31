@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import {
   createWasiChannelAction,
@@ -32,7 +32,14 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
 
   return (
     <div className="space-y-4">
-      {error ? <p className="text-sm text-danger-text">{error}</p> : null}
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
+        >
+          {error}
+        </p>
+      ) : null}
 
       {channels.length === 0 ? (
         <Card>
@@ -136,6 +143,20 @@ function CreateDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  // The kit's <Dialog> only toggles the underlying <dialog> element and never
+  // unmounts its children, so without this a cancelled (or completed) attempt
+  // leaves its field values and error text showing the next time the dialog
+  // opens — for a different channel, or just a second try.
+  useEffect(() => {
+    if (!open) return;
+    setInboundAddress("");
+    setDisplayName("");
+    setApiKey("");
+    setApiBaseUrl("");
+    setWasiClientId("");
+    setError(null);
+  }, [open]);
+
   function submit() {
     setError(null);
     start(async () => {
@@ -212,6 +233,14 @@ function SecretDialog({
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  // Same stale-content issue as CreateDialog above — reset when opened for a
+  // (possibly different) channel, not just left over from the last attempt.
+  useEffect(() => {
+    if (channelId === null) return;
+    setSecret("");
+    setError(null);
+  }, [channelId]);
 
   return (
     <Dialog

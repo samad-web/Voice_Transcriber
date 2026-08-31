@@ -10,11 +10,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { computeDocumentTotals, computeLineTotal, type LineItemInput } from "@aura/shared";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -161,6 +163,7 @@ export class QuotationsController {
   async create(
     @OrgId() orgId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = CreateQuotationBody.safeParse(body);
@@ -203,7 +206,7 @@ export class QuotationsController {
           ],
         );
         await this.insertItems(client, orgId, quotation.id, p.items);
-        await this.audit(client, orgId, "quotation.create", quotation.id);
+        await this.audit(client, orgId, "quotation.create", quotation.id, req);
         const items = await this.fetchItems(client, quotation.id);
         return { quotation, items };
       });
@@ -219,6 +222,7 @@ export class QuotationsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = UpdateQuotationBody.safeParse(body);
@@ -298,7 +302,7 @@ export class QuotationsController {
           p.notes ?? null,
         ],
       );
-      await this.audit(client, orgId, "quotation.update", id);
+      await this.audit(client, orgId, "quotation.update", id, req);
       const finalItems = await this.fetchItems(client, id);
       return { quotation, items: finalItems };
     });
@@ -339,11 +343,11 @@ export class QuotationsController {
     return rows;
   }
 
-  private async audit(client: QueryClient, orgId: string, action: string, targetId: string) {
+  private async audit(client: QueryClient, orgId: string, action: string, targetId: string, req: PrincipalRequest) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'quotation', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'quotation', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

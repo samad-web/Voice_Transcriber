@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { call } from "@/lib/action-call";
 import { requireOperator } from "@/lib/operator-guard";
-import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Every action below is called from the drawer, which now opens over calls
@@ -18,14 +18,13 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
  * `(platform)` layout's operator gate (a render-time check) never runs for one.
  * See lib/operator-guard.ts.
  */
-const headersFor = (orgId?: string) => (orgId ? orgHeaders(orgId) : adminHeaders);
 
 export interface TranscriptSegment {
   speaker?: string | null;
   text: string;
   intent?: string | null;
-  start_s?: number | null;
-  end_s?: number | null;
+  startMs?: number | null;
+  endMs?: number | null;
 }
 
 export interface CallIntelligence {
@@ -44,6 +43,30 @@ export interface CallFact {
   value_text: string | null;
   value_num: number | null;
   value_bool: boolean | null;
+}
+
+export interface CallRiskFlag {
+  category: string;
+  snippet: string;
+  severity: "low" | "medium" | "high";
+}
+
+export interface CallAnalytics {
+  quality_score: number | null;
+  quality_criteria: {
+    consentDisclosed: boolean;
+    scriptAdherence: number;
+    professionalism: number;
+    conversionSignal: number;
+    rationale: string;
+  } | null;
+  agent_talk_seconds: number | null;
+  customer_talk_seconds: number | null;
+  talk_ratio: number | null;
+  interruption_count: number | null;
+  longest_monologue_seconds: number | null;
+  risk_flags: CallRiskFlag[];
+  has_escalation_risk: boolean;
 }
 
 export interface CallDetailData {
@@ -89,6 +112,7 @@ export interface CallDetailData {
     agent_version: number | null;
   } | null;
   facts: CallFact[];
+  analytics: CallAnalytics | null;
 }
 
 export async function getCallDetailAction(
@@ -100,16 +124,9 @@ export async function getCallDetailAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/calls/${callId}`, {
-      headers: headersFor(orgId),
-      cache: "no-store",
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    return { detail: (await res.json()) as CallDetailData };
-  } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
-  }
+  const res = await call<CallDetailData>(`/v1/calls/${callId}`, { method: "GET", orgId });
+  if (res.error) return { error: res.error };
+  return { detail: res.data };
 }
 
 export async function reprocessCallAction(
@@ -121,22 +138,16 @@ export async function reprocessCallAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/calls/${callId}/reprocess`, {
-      method: "POST",
-      headers: headersFor(orgId),
-      cache: "no-store",
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    const data = (await res.json().catch(() => ({}))) as { status?: string };
-    revalidatePath("/calls");
-    // The instance-scoped explorer lives under /instances/<org>/calls, so the
-    // global path alone would leave that table showing the pre-reprocess status.
-    if (orgId) revalidatePath(`/instances/${orgId}/calls`);
-    return { status: data.status ?? "queued" };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ status?: string }>(`/v1/calls/${callId}/reprocess`, {
+    method: "POST",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath("/calls");
+  // The instance-scoped explorer lives under /instances/<org>/calls, so the
+  // global path alone would leave that table showing the pre-reprocess status.
+  if (orgId) revalidatePath(`/instances/${orgId}/calls`);
+  return { status: res.data?.status ?? "queued" };
 }
 
 export async function getCallAudioAction(
@@ -148,17 +159,9 @@ export async function getCallAudioAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/calls/${callId}/audio`, {
-      headers: headersFor(orgId),
-      cache: "no-store",
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    const data = (await res.json()) as { url?: string };
-    return { url: data.url };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ url?: string }>(`/v1/calls/${callId}/audio`, { method: "GET", orgId });
+  if (res.error) return { error: res.error };
+  return { url: res.data?.url };
 }
 
 export interface CallNote {
@@ -177,17 +180,12 @@ export async function getCallNotesAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/calls/${callId}/notes`, {
-      headers: headersFor(orgId),
-      cache: "no-store",
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    const data = (await res.json()) as { notes?: CallNote[] };
-    return { notes: data.notes ?? [] };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ notes?: CallNote[] }>(`/v1/calls/${callId}/notes`, {
+    method: "GET",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  return { notes: res.data?.notes ?? [] };
 }
 
 export async function addCallNoteAction(
@@ -200,20 +198,11 @@ export async function addCallNoteAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/calls/${callId}/notes`, {
-      method: "POST",
-      headers: headersFor(orgId),
-      cache: "no-store",
-      body: JSON.stringify({ body }),
-    });
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(b.message ?? b)}` };
-    }
-    const data = (await res.json().catch(() => ({}))) as { note?: CallNote };
-    return { note: data.note };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ note?: CallNote }>(`/v1/calls/${callId}/notes`, {
+    method: "POST",
+    body: { body },
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  return { note: res.data?.note };
 }

@@ -90,6 +90,10 @@ export function IntegrationCard({
       else setTest(res.result ?? null);
     });
 
+  // Both reuse `testError`'s banner below — same "something failed silently
+  // otherwise" reasoning as runTest: a disconnect or pause/resume that fails
+  // (network error, stale id, 500) used to just stop spinning with no sign
+  // anything went wrong.
   const remove = () =>
     startTransition(async () => {
       if (
@@ -99,20 +103,24 @@ export function IntegrationCard({
       ) {
         return;
       }
-      await deleteIntegrationAction(integration.id, orgId);
+      setTestError(null);
+      const res = await deleteIntegrationAction(integration.id, orgId);
+      if (res.error) setTestError(res.error);
     });
 
   const toggleStatus = () =>
-    startTransition(() =>
-      updateIntegrationAction({
+    startTransition(async () => {
+      setTestError(null);
+      const res = await updateIntegrationAction({
         id: integration.id,
         orgId,
         status: integration.status === "connected" ? "disconnected" : "connected",
-      }).then(() => undefined),
-    );
+      });
+      if (res.error) setTestError(res.error);
+    });
 
   return (
-    <Card shadow className="space-y-4">
+    <Card elevated className="space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">

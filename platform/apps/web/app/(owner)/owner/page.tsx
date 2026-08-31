@@ -74,11 +74,12 @@ export default async function OwnerDashboardPage({
             key={d}
             href={`/owner?days=${d}`}
             aria-current={d === days ? "true" : undefined}
-            // Selected window = accent, the same "you are here" signal the
-            // sidebar and the lead filters use.
+            // Selected window = the gradient fill, the same "you are here"
+            // signal the sidebar and the lead filters use.
+            style={d === days ? { backgroundImage: "var(--brand-gradient)" } : undefined}
             className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors duration-150 ease-out ${
               d === days
-                ? "border-transparent bg-accent-subtle text-accent-text"
+                ? "border-transparent text-white"
                 : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
             }`}
           >
@@ -120,7 +121,7 @@ export default async function OwnerDashboardPage({
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <Card shadow className="space-y-4">
+        <Card elevated className="space-y-4">
           <div className="flex items-baseline justify-between gap-3">
             <MonoLabel>Pipeline by stage</MonoLabel>
             <Link href={pipelineHref} className={PANEL_LINK}>
@@ -170,7 +171,7 @@ export default async function OwnerDashboardPage({
           )}
         </Card>
 
-        <Card shadow className="space-y-4">
+        <Card elevated className="space-y-4">
           <MonoLabel>Calls and new leads — last {days} days</MonoLabel>
           {byDay.length === 0 ? (
             <p className="py-10 text-center text-sm text-text-muted">No activity in this window</p>
@@ -292,7 +293,7 @@ export default async function OwnerDashboardPage({
         )}
       </Card>
 
-      <Card shadow className="space-y-3">
+      <Card elevated className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
           <MonoLabel>Latest activity</MonoLabel>
           <Link href={allHref} className={PANEL_LINK}>

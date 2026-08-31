@@ -73,7 +73,11 @@ export function NotificationBell() {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, read_at: new Date().toISOString() } : r)));
     setUnread((n) => Math.max(0, n - 1));
     startTransition(async () => {
-      await markNotificationReadAction(id);
+      const res = await markNotificationReadAction(id);
+      // On failure the optimistic update above is wrong and would otherwise
+      // sit there un-reconciled until the next 60s poll — resync now, same
+      // as markAll already does.
+      if (res.error) load();
     });
   };
 

@@ -10,11 +10,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { CustomFieldDefinitionInput, CustomFieldObjectType, CustomFieldOption } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -69,7 +71,7 @@ export class CustomFieldsController {
   }
 
   @Post()
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CustomFieldDefinitionInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const f = parsed.data;
@@ -109,7 +111,7 @@ export class CustomFieldsController {
           f.sortOrder,
         ],
       );
-      await this.audit(client, orgId, "custom_field.create", field.id);
+      await this.audit(client, orgId, "custom_field.create", field.id, req);
       return { field };
     });
   }
@@ -119,6 +121,7 @@ export class CustomFieldsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = UpdateFieldBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -150,14 +153,14 @@ export class CustomFieldsController {
         ],
       );
       if (!field) throw new NotFoundException("custom field not found");
-      await this.audit(client, orgId, "custom_field.update", id);
+      await this.audit(client, orgId, "custom_field.update", id, req);
       return { field };
     });
   }
 
   /** Archives rather than deletes — values already recorded on live records must survive. */
   @Delete(":id")
-  async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [field],
@@ -166,7 +169,7 @@ export class CustomFieldsController {
         [id],
       );
       if (!field) throw new NotFoundException("custom field not found");
-      await this.audit(client, orgId, "custom_field.archive", id);
+      await this.audit(client, orgId, "custom_field.archive", id, req);
       return { archived: true };
     });
   }
@@ -176,11 +179,12 @@ export class CustomFieldsController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'custom_field_definition', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'custom_field_definition', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

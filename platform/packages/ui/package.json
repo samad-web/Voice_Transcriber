@@ -20,10 +20,12 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
+    "next": "^15.3.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
+    "next": "^15.3.0",
     "react": "^19.0.0",
     "typescript": "^5.8.3"
   }

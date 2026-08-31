@@ -248,8 +248,8 @@ export class InteractionsController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'interaction.create', $2, $3)`,
-        [orgId, parentTable.replace(/s$/, ""), parentId],
+         VALUES ($1, 'user', $2, 'interaction.create', $3, $4)`,
+        [orgId, req.principal?.userId ?? "dev-admin", parentTable.replace(/s$/, ""), parentId],
       );
 
       // Any interaction is activity: keep the object's sort key honest so a

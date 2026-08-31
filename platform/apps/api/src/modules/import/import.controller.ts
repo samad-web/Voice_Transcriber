@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Post, Req, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import {
   DedupeStrategy,
@@ -97,6 +97,14 @@ export class ImportController {
       for (let i = 0; i < rows.length; i++) {
         const mapped = mapRow(mapping, rows[i]);
         let result: RowOutcome;
+        // Each row runs inside its own SAVEPOINT. A constraint violation
+        // (e.g. a duplicate phone/email/domain) marks the whole surrounding
+        // transaction aborted at the Postgres level even though the JS
+        // exception below is caught — every statement after it, including
+        // this row's own import_job_errors insert, would then fail with
+        // "current transaction is aborted" unless rolled back to a point
+        // before the bad statement ran.
+        await client.query(`SAVEPOINT row_${i}`);
         try {
           result =
             entity === "contact"
@@ -104,7 +112,10 @@ export class ImportController {
               : entity === "account"
                 ? await importAccountRow(client, orgId, mapped, dedupeStrategy)
                 : await importDealRow(client, orgId, mapped);
+          await client.query(`RELEASE SAVEPOINT row_${i}`);
         } catch (err) {
+          await client.query(`ROLLBACK TO SAVEPOINT row_${i}`);
+          await client.query(`RELEASE SAVEPOINT row_${i}`);
           result = { outcome: "failed", error: err instanceof Error ? err.message : "unknown error" };
         }
 
@@ -133,8 +144,8 @@ export class ImportController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'import.run', 'import_job', $2)`,
-        [orgId, job.id],
+         VALUES ($1, 'user', $2, 'import.run', 'import_job', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", job.id],
       );
 
       return { job: updatedJob };
@@ -157,13 +168,27 @@ export class ImportController {
     });
   }
 
+  /**
+   * `raw` is the row exactly as the importer typed or pasted it — phone
+   * numbers and emails included, unhashed, so the failing row is fixable and
+   * re-uploadable. That is real PII sitting behind nothing but tenant
+   * membership before this check: any member could browse (or CSV-export)
+   * another member's failed import. Restricted to the person who ran the
+   * import, or an org admin — the same bar `OrgRoleGuard` uses elsewhere,
+   * inlined here because it turns on THIS job's `created_by_user_id`, not a
+   * static per-route role, so a class-level guard can't express it.
+   */
   @Get(":jobId/errors")
-  async errors(@OrgId() orgId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+  async errors(@OrgId() orgId: string, @Param("jobId", ParseUUIDPipe) jobId: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [job],
-      } = await client.query(`SELECT id FROM import_jobs WHERE id = $1`, [jobId]);
+      } = await client.query<{ id: string; created_by_user_id: string | null }>(
+        `SELECT id, created_by_user_id FROM import_jobs WHERE id = $1`,
+        [jobId],
+      );
       if (!job) throw new NotFoundException("import job not found");
+      assertCanViewImportErrors(req, job.created_by_user_id);
 
       const { rows } = await client.query(
         `SELECT row_number, raw, error FROM import_job_errors WHERE job_id = $1 ORDER BY row_number`,
@@ -175,8 +200,17 @@ export class ImportController {
 
   /** Same CSV as the report exports — one encoder for the whole codebase. */
   @Get(":jobId/errors.csv")
-  async errorsCsv(@OrgId() orgId: string, @Param("jobId", ParseUUIDPipe) jobId: string) {
+  async errorsCsv(@OrgId() orgId: string, @Param("jobId", ParseUUIDPipe) jobId: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [job],
+      } = await client.query<{ id: string; created_by_user_id: string | null }>(
+        `SELECT id, created_by_user_id FROM import_jobs WHERE id = $1`,
+        [jobId],
+      );
+      if (!job) throw new NotFoundException("import job not found");
+      assertCanViewImportErrors(req, job.created_by_user_id);
+
       const { rows } = await client.query<{ row_number: number; raw: unknown; error: string }>(
         `SELECT row_number, raw, error FROM import_job_errors WHERE job_id = $1 ORDER BY row_number`,
         [jobId],
@@ -267,7 +301,9 @@ async function importContactRow(
     );
     return { outcome: "inserted" };
   } catch (err) {
-    if (isUniqueViolation(err)) return { outcome: "failed", error: "a contact with this phone or email already exists" };
+    // Thrown, not returned: the caller's per-row SAVEPOINT needs to see this
+    // as a failure so it rolls the aborted subtransaction back.
+    if (isUniqueViolation(err)) throw new Error("a contact with this phone or email already exists");
     throw err;
   }
 }
@@ -303,7 +339,8 @@ async function importAccountRow(
     await client.query(`INSERT INTO accounts (org_id, name, domain) VALUES ($1, $2, $3)`, [orgId, row.name, domain]);
     return { outcome: "inserted" };
   } catch (err) {
-    if (isUniqueViolation(err)) return { outcome: "failed", error: "an account with this domain already exists" };
+    // Thrown, not returned — see importContactRow's identical comment.
+    if (isUniqueViolation(err)) throw new Error("an account with this domain already exists");
     throw err;
   }
 }
@@ -352,6 +389,18 @@ async function importDealRow(client: QueryClient, orgId: string, row: Record<str
     [orgId, pipeline.id, contactId, accountId, row.name, stage, status, Number.isFinite(amount) ? amount : null],
   );
   return { outcome: "inserted" };
+}
+
+/** See the `errors`/`errors.csv` handlers' docstring for why this is inline
+ *  rather than a guard. */
+function assertCanViewImportErrors(req: PrincipalRequest, createdByUserId: string | null): void {
+  const principal = req.principal;
+  if (!principal) throw new UnauthorizedException("authentication required");
+  if (principal.viaAdminKey || principal.role === "platform_admin" || principal.role === "org_admin") {
+    return;
+  }
+  if (createdByUserId && principal.userId === createdByUserId) return;
+  throw new ForbiddenException("only the person who ran this import, or an org admin, may view its errors");
 }
 
 function isUniqueViolation(err: unknown): boolean {

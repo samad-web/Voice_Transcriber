@@ -5,9 +5,11 @@ import type { PipelineMessage } from "@aura/queue";
 import { ExtractionSchema } from "@aura/shared";
 import { type AsrResult, transcribe } from "./asr";
 import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
+import { computeTalkMetrics, upsertCallAnalytics } from "./call-analytics";
 import { projectLeadToCrm } from "./crm-objects";
 import { upsertLead } from "./leads";
 import { enqueueDispatch } from "./outbox";
+import { detectCallProjects } from "./projects";
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -258,6 +260,13 @@ export async function runPostAsrStages(
   );
   const direction = dirRow?.direction ?? null;
 
+  // Carried forward to the SYNCING section below, where dealId/contactId
+  // (and their owners) are actually known — the automation event for a
+  // risk-flagged call is enqueued there, not here, so `notify`'s target
+  // resolution has something to resolve against. See call-analytics.ts and
+  // packages/shared/src/automation.ts's 'call.risk_flagged' trigger.
+  let riskFlags: Array<{ category: string; snippet: string; severity: string }> = [];
+
   try {
     // Conversation intelligence: diarize (Agent/Customer) + per-turn intent +
     // call-level intent/sentiment/outcome. Always on, non-blocking — a failure
@@ -330,6 +339,23 @@ export async function runPostAsrStages(
                     ($1, 'llm_tokens_out', $4, 'tokens', $3)`,
             [orgId, intel.tokensIn, callId, intel.tokensOut],
           );
+        }
+
+        // Call analytics: quality score + risk flags from the same LLM read
+        // above, talk-ratio/interruptions computed purely from `segments` —
+        // independent of each other so a degenerate LLM read still leaves
+        // the talk metrics intact (call-analytics.ts).
+        try {
+          await upsertCallAnalytics(client, orgId, callId, {
+            talk: computeTalkMetrics(segments),
+            qualityScore: intel.qualityScore,
+            qualityCriteria: intel.qualityCriteria,
+            riskFlags: intel.riskFlags,
+            model: intel.model,
+          });
+          riskFlags = intel.riskFlags;
+        } catch (err) {
+          console.error(`call ${callId}: call-analytics error (non-blocking):`, err);
         }
       }
     } catch (err) {
@@ -476,9 +502,13 @@ export async function runPostAsrStages(
   // `leads`/crm-dispatch below run. The owner console's board/leads pages
   // still read `leads`, not contacts/deals, as their primary source (A6) —
   // this write is additive until that cutover happens.
+  let dealId: string | null = null;
+  let contactId: string | null = null;
   if (leadId) {
     try {
       const projection = await projectLeadToCrm(client, orgId, leadId);
+      dealId = projection.dealId;
+      contactId = projection.contactId;
       if (projection.reason === "no default pipeline for org") {
         // This org gets ZERO CRM projection until someone seeds a default
         // pipeline — worth an operator's attention, not a scrolled-past log
@@ -504,6 +534,66 @@ export async function runPostAsrStages(
       }
     } catch (err) {
       console.error(`call ${callId}: crm-object projection error (non-blocking):`, err);
+    }
+  }
+
+  // Which of the tenant's own projects this call was about (migration 0073).
+  // AFTER the crm-object projection, not before, so the deal already exists
+  // and lead and deal are labelled in one place rather than disagreeing.
+  // Runs even for a call that produced no lead — the project view counts
+  // every conversation, not only the ones that became pipeline. Own
+  // non-blocking try/catch, same as every projection above it.
+  try {
+    const detected = await detectCallProjects(client, orgId, callId, leadId);
+    if (detected.hits.length > 0) {
+      console.log(
+        `call ${callId}: projects ${detected.hits
+          .map((h) => `${h.projectId}@${h.confidence}`)
+          .join(", ")} (${detected.reason})`,
+      );
+    }
+  } catch (err) {
+    console.error(`call ${callId}: project detection error (non-blocking):`, err);
+  }
+
+  // Escalation alert (call.risk_flagged, packages/shared/src/automation.ts).
+  // Enqueued HERE, not where the flags were computed above, because that ran
+  // during ANALYZING — before dealId/contactId existed. A tenant's `notify`
+  // rule resolves its target off the deal/contact owner, so the event has to
+  // wait for those to resolve, same as every other CRM-object write in this
+  // section. A risk-flagged call with no qualifying lead still gets an event
+  // (dealId/contactId null) — the engine already reports "no user to notify"
+  // for an ownerless subject rather than silently dropping it.
+  if (riskFlags.length > 0) {
+    try {
+      const severityRank: Record<string, number> = { low: 0, medium: 1, high: 2 };
+      const highest = riskFlags.reduce((a, b) =>
+        (severityRank[b.severity] ?? 0) > (severityRank[a.severity] ?? 0) ? b : a,
+      );
+      const {
+        rows: [owners],
+      } = await client.query(
+        `SELECT (SELECT owner_user_id FROM deals WHERE id = $1) AS deal_owner_user_id,
+                (SELECT owner_user_id FROM contacts WHERE id = $2) AS contact_owner_user_id`,
+        [dealId, contactId],
+      );
+      await client.query(
+        `INSERT INTO automation_events (org_id, trigger, subject_type, subject_id, payload)
+         VALUES ($1, 'call.risk_flagged', 'call', $2, $3::jsonb)`,
+        [
+          orgId,
+          callId,
+          JSON.stringify({
+            dealId,
+            contactId,
+            dealOwnerUserId: owners?.deal_owner_user_id ?? null,
+            contactOwnerUserId: owners?.contact_owner_user_id ?? null,
+            riskSeverity: highest.severity,
+          }),
+        ],
+      );
+    } catch (err) {
+      console.error(`call ${callId}: risk-flag automation enqueue error (non-blocking):`, err);
     }
   }
 

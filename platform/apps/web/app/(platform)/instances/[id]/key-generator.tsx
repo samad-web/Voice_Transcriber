@@ -30,7 +30,7 @@ export function KeyGenerator({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Card shadow className="space-y-4">
+      <Card elevated className="space-y-4">
         <div>
           <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
             Issue Enrollment Key

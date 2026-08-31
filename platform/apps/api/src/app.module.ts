@@ -35,6 +35,9 @@ import { QuotationsModule } from "./modules/quotations/quotations.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ImportModule } from "./modules/import/import.module";
 import { MetaAdsModule } from "./modules/meta-ads/meta-ads.module";
+import { ProjectsModule } from "./modules/projects/projects.module";
+import { McpModule } from "./modules/mcp/mcp.module";
+import { PublicApiModule } from "./modules/public-api/public-api.module";
 
 /**
  * Modular monolith (design doc §5). The module map below is the future
@@ -62,6 +65,9 @@ import { MetaAdsModule } from "./modules/meta-ads/meta-ads.module";
     LeadsModule,
     OwnerModule,
     CrmObjectsModule,
+    ProjectsModule,
+    McpModule,
+    PublicApiModule,
     CustomFieldsModule,
     MergeModule,
     RolesModule,

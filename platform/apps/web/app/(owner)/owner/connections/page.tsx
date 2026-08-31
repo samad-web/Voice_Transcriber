@@ -14,7 +14,12 @@ export const metadata: Metadata = { title: "Connections — Aura" };
  * administers. Every persona sees this page — a telecaller's own mailbox is
  * exactly the thing they would connect.
  */
-export default async function ConnectionsPage() {
+export default async function ConnectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connected?: string; error?: string }>;
+}) {
+  const { connected, error } = await searchParams;
   const [catalogue, mine] = await Promise.all([
     ownerGet<{ providers: ProviderView[] }>("/v1/connections/providers"),
     ownerGet<{ connections: ConnectionView[] }>("/v1/connections"),
@@ -45,6 +50,8 @@ export default async function ConnectionsPage() {
       <ConnectionsManager
         providers={catalogue.providers}
         connections={mine?.connections ?? []}
+        initialConnected={connected ?? null}
+        initialError={error ?? null}
       />
     </>
   );

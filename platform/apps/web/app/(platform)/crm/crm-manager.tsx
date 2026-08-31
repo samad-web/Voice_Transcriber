@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, Settings2 } from "lucide-react";
 import type { CrmProviderSpec } from "@aura/shared";
@@ -19,6 +19,18 @@ import { IntegrationCard, type Integration } from "./integration-card";
 import { ProviderPicker } from "./provider-picker";
 
 export type { Integration };
+
+/** Small on purpose: one tenant's connectors are a handful, not a list that
+ *  ever needs a server round trip to page through. */
+const INTEGRATIONS_PAGE_SIZE = 5;
+
+function matchesQuery(integration: Integration, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [integration.label, integration.provider, integration.endpoint, integration.target]
+    .filter((v): v is string => Boolean(v))
+    .some((v) => v.toLowerCase().includes(needle));
+}
 
 /**
  * The CRM console.
@@ -50,8 +62,19 @@ export function CrmManager({
   const router = useRouter();
   const [showCustom, setShowCustom] = useState(false);
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
 
   const byId = new Map(providers.map((p) => [p.id, p]));
+
+  const filtered = useMemo(
+    () => integrations.filter((i) => matchesQuery(i, query)),
+    [integrations, query],
+  );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / INTEGRATIONS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * INTEGRATIONS_PAGE_SIZE;
+  const pageItems = filtered.slice(pageStart, pageStart + INTEGRATIONS_PAGE_SIZE);
 
   return (
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
@@ -126,15 +149,70 @@ export function CrmManager({
             description="Pick a CRM from the catalogue to start pushing call facts — or point Aura at your own HTTPS endpoint."
           />
         ) : (
-          integrations.map((integration) => (
-            <IntegrationCard
-              key={integration.id}
-              integration={integration}
-              provider={byId.get(integration.provider)}
-              sourcePaths={sourcePaths}
-              orgId={orgId}
-            />
-          ))
+          <>
+            {integrations.length > INTEGRATIONS_PAGE_SIZE ? (
+              <FormField label="Search" name="crm-integration-search" className="max-w-sm">
+                <Input
+                  type="search"
+                  placeholder="Name, provider or URL"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </FormField>
+            ) : null}
+
+            {filtered.length === 0 ? (
+              <EmptyState
+                icon={<Link2 className="h-8 w-8" />}
+                title="No matches"
+                description={`Nothing connected here matches "${query.trim()}".`}
+              />
+            ) : (
+              <>
+                {pageItems.map((integration) => (
+                  <IntegrationCard
+                    key={integration.id}
+                    integration={integration}
+                    provider={byId.get(integration.provider)}
+                    sourcePaths={sourcePaths}
+                    orgId={orgId}
+                  />
+                ))}
+
+                {filtered.length > INTEGRATIONS_PAGE_SIZE ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-text-muted tabular-nums">
+                      {pageStart + 1}–{Math.min(pageStart + INTEGRATIONS_PAGE_SIZE, filtered.length)} of{" "}
+                      {filtered.length} · page {currentPage}/{totalPages}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={currentPage <= 1}
+                        onClick={() => setPage((p) => p - 1)}
+                      >
+                        ← Newer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setPage((p) => p + 1)}
+                      >
+                        Older →
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </>
         )}
       </div>
     </div>

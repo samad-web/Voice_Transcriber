@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { decryptSecret } from "@aura/db";
+import { assertPublicHttpUrl, decryptSecret } from "@aura/db";
 import {
   pluckPath,
   pruneBody,
@@ -208,6 +208,15 @@ export class CrmTestService {
     // A dry run answers "what exactly would you send?" without creating a
     // record in the customer's CRM — the safe thing to click first.
     if (dryRun) return { ...base, ok: true };
+
+    try {
+      // The endpoint is whatever the org typed into the connector form — an
+      // org admin could otherwise point this server's outbound request at its
+      // own internal network or a cloud metadata endpoint. See ssrf-guard.ts.
+      await assertPublicHttpUrl(request.url);
+    } catch (err) {
+      return { ...base, error: err instanceof Error ? err.message : String(err) };
+    }
 
     try {
       const res = await fetch(request.url, {

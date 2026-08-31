@@ -1,3 +1,4 @@
+import "server-only";
 import type { OwnerRole } from "@aura/shared";
 import { type ApiResult, NO_HTTP_STATUS, classifyStatus, unwrap } from "@/lib/api-result";
 
@@ -5,6 +6,11 @@ import { type ApiResult, NO_HTTP_STATUS, classifyStatus, unwrap } from "@/lib/ap
  * Server-side API access only — the admin key must never reach the browser.
  * Dev defaults match the seed script; production swaps this for the OIDC
  * session (checklist §4.1).
+ *
+ * `import "server-only"` is the belt-and-suspenders half of that sentence: it
+ * throws a build error if any Client Component ever imports this module,
+ * instead of relying on nobody doing so by discipline alone. No `"use client"`
+ * file imports it today — this just makes that invariant load-bearing.
  */
 export const API_URL = process.env.API_URL ?? "http://localhost:4000";
 
@@ -44,6 +50,26 @@ export const ADMIN_KEY = resolveAdminKey();
 export const DEV_ORG_ID = process.env.DEV_ORG_ID ?? "00000000-0000-4000-8000-000000000001";
 export const DEV_WORKSPACE_ID =
   process.env.DEV_WORKSPACE_ID ?? "00000000-0000-4000-8000-000000000002";
+
+/**
+ * The platform `users.id` the unconfigured-auth dev principal acts as.
+ *
+ * Defaults to null, which is exactly the behaviour before this existed. It is
+ * read ONLY by getPrincipal's `!user && !AUTH_ENABLED` branch — the documented
+ * local-dev mode — and cannot be reached with Supabase auth configured.
+ *
+ * WHY IT IS NEEDED: without a user id, `orgHeaders` omits `x-caller-user-id`,
+ * and `CrmPermissionsGuard` refuses any request whose principal has no valid
+ * uuid userId. So with auth unconfigured, EVERY CRM-object page (contacts,
+ * deals, tasks, products, quotations, invoices, reports) 403s and renders
+ * "Data unavailable" — while the non-CRM pages beside them work, which makes
+ * it read like an outage rather than a missing local credential.
+ *
+ * Set it to a user who actually holds a membership in DEV_ORG_ID. A value that
+ * names no member changes nothing: the guard still denies, exactly as it does
+ * today with no value at all.
+ */
+export const DEV_USER_ID = process.env.DEV_USER_ID?.trim() || null;
 
 export const adminHeaders = {
   "content-type": "application/json",

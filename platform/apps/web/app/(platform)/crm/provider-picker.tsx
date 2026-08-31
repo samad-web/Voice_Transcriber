@@ -67,7 +67,7 @@ export function ProviderPicker({
   }
 
   return (
-    <Card shadow className="space-y-4">
+    <Card elevated className="space-y-4">
       <div className="flex items-center gap-2">
         <Plug aria-hidden="true" className="h-4 w-4 text-text-muted" />
         <h4 className="text-lg font-semibold text-text">Connect a CRM</h4>
@@ -191,7 +191,7 @@ function ConnectForm({
     });
 
   return (
-    <Card shadow className="space-y-4">
+    <Card elevated className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button

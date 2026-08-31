@@ -200,7 +200,7 @@ export class AutomationController {
           actorUserId(req),
         ],
       );
-      await this.audit(client, orgId, "automation.create", created.id);
+      await this.audit(client, orgId, "automation.create", created.id, req);
       return { rule: created };
     });
   }
@@ -210,6 +210,7 @@ export class AutomationController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     // A partial update is re-validated as a WHOLE rule, by merging onto what
     // is stored. Validating the patch alone would let "change the trigger to
@@ -259,7 +260,7 @@ export class AutomationController {
           rule.status,
         ],
       );
-      await this.audit(client, orgId, "automation.update", id);
+      await this.audit(client, orgId, "automation.update", id, req);
       return { rule: updated };
     });
   }
@@ -273,11 +274,11 @@ export class AutomationController {
    * forever would just be a list of things somebody has to read past.
    */
   @Delete(":id")
-  async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
       const { rowCount } = await client.query(`DELETE FROM automation_rules WHERE id = $1`, [id]);
       if (!rowCount) throw new NotFoundException("automation rule not found");
-      await this.audit(client, orgId, "automation.delete", id);
+      await this.audit(client, orgId, "automation.delete", id, req);
       return { deleted: true };
     });
   }
@@ -287,11 +288,12 @@ export class AutomationController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'automation_rule', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'automation_rule', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

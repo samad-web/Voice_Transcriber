@@ -27,6 +27,38 @@ export interface Lead {
   telecaller_device_id: string | null;
   last_call_id: string | null;
   telecaller: string | null;
+  /**
+   * Which of the tenant's offerings this lead is for (migration 0073),
+   * joined from crm_projects so a card can render without a second lookup.
+   *
+   * `project_source` is deliberately on the wire rather than internal, for
+   * the same reason RecordCustomField.source is: "the detector guessed this
+   * from the call" and "a colleague set this" carry very different weight
+   * when someone is deciding whether to act on the label.
+   */
+  project_id: string | null;
+  project_source: "extraction" | "human" | "automation" | "import" | null;
+  project_key: string | null;
+  project_name: string | null;
+  project_color: string | null;
+}
+
+/** One row of the tenant's project catalogue — `GET /v1/projects`. */
+export interface Project {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  aliases: string[];
+  active: boolean;
+  sort_order: number;
+  lead_count: number;
+  open_count: number;
+  won_value: string | number | null;
+  call_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BoardColumn extends Stage {

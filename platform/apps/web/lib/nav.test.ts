@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { ownerNavItemsFor } from "./nav";
 
-const hrefs = (role: Parameters<typeof ownerNavItemsFor>[0], crmPrimary?: boolean) =>
-  ownerNavItemsFor(role, crmPrimary).map((i) => i.href);
+const hrefs = (
+  role: Parameters<typeof ownerNavItemsFor>[0],
+  crmPrimary?: boolean,
+  crmEnabled?: boolean,
+) => ownerNavItemsFor(role, crmPrimary, crmEnabled).map((i) => i.href);
 
 /**
  * A6, Milestone 4: `crmPrimary` (CRM_SHADOW_READ_ENABLED) reorders the CRM
@@ -26,6 +29,7 @@ describe("ownerNavItemsFor", () => {
       "/owner/reports",
       "/owner/board",
       "/owner/leads",
+      "/owner/projects",
       "/owner/tasks",
       "/owner/inbox",
       "/owner/outreach",
@@ -41,6 +45,7 @@ describe("ownerNavItemsFor", () => {
       "/owner/messaging-setup",
       "/owner/meta-ads",
       "/owner/branding",
+      "/owner/call-quality",
     ]);
   });
 
@@ -68,5 +73,53 @@ describe("ownerNavItemsFor", () => {
       "/owner/outreach",
       "/owner/connections",
     ]);
+  });
+});
+
+/**
+ * Migration 0072's `enabled_modules`: `crmEnabled` (unlike `crmPrimary`)
+ * actually removes items, not just reorders them, for a tenant that never
+ * turned CRM on.
+ */
+describe("ownerNavItemsFor — crmEnabled", () => {
+  it("defaults to true — an unset caller sees exactly what it did before this flag existed", () => {
+    expect(hrefs("owner")).toEqual(hrefs("owner", false, true));
+  });
+
+  it("hides the CRM-object pages when false, but keeps the legacy leads pages and non-CRM settings", () => {
+    const items = hrefs("owner", false, false);
+    for (const gated of [
+      "/owner/deals",
+      "/owner/contacts",
+      "/owner/accounts",
+      "/owner/tasks",
+      "/owner/inbox",
+      "/owner/products",
+      "/owner/quotations",
+      "/owner/invoices",
+      "/owner/reports",
+      "/owner/duplicates",
+      "/owner/import",
+    ]) {
+      expect(items).not.toContain(gated);
+    }
+    expect(items).toEqual([
+      "/owner",
+      "/owner/board",
+      "/owner/leads",
+      "/owner/projects",
+      "/owner/outreach",
+      "/owner/connections",
+      "/owner/messaging-setup",
+      "/owner/meta-ads",
+      "/owner/branding",
+      "/owner/call-quality",
+    ]);
+  });
+
+  it("still reorders within what's left when crmPrimary is also true", () => {
+    // Nothing in CRM_PRIMARY_HREFS survives crmEnabled=false, so the reorder
+    // step is a no-op and this collapses to the same list as crmPrimary=false.
+    expect(hrefs("owner", true, false)).toEqual(hrefs("owner", false, false));
   });
 });

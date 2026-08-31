@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@aura/ui";
 import { createProductAction, updateProductAction, type Product } from "./actions";
+import { formatMoney } from "../lib/format-money";
 
 interface Draft {
   name: string;
@@ -37,21 +38,6 @@ const EMPTY_DRAFT: Draft = {
   taxRate: "",
   status: "active",
 };
-
-/** Postgres numeric strings, formatted for display. */
-function formatMoney(amount: string | number, currency: string): string {
-  const n = typeof amount === "string" ? Number(amount) : amount;
-  if (!Number.isFinite(n)) return "—";
-  try {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: currency || "INR",
-      maximumFractionDigits: 2,
-    }).format(n);
-  } catch {
-    return `${currency} ${n.toFixed(2)}`;
-  }
-}
 
 /**
  * The product list, plus the create/edit dialog — one client component, the

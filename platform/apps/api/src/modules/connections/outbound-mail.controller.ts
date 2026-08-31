@@ -17,6 +17,7 @@ import { decryptSecret, encryptSecret } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import {
@@ -76,6 +77,7 @@ export class OutboundMailController {
     @Param("id", ParseUUIDPipe) contactId: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
   ) {
     if (!sendingEnabled()) {
       throw new ServiceUnavailableException(
@@ -95,11 +97,15 @@ export class OutboundMailController {
     }
 
     return this.db.withOrg(orgId, async (client) => {
+      // A rep scoped to `owned` contacts may only email their own — same
+      // predicate every other contact write route applies. See crm-scope.ts.
+      const scoped = scopeClause("contact", recordScope, 2);
       const {
         rows: [contact],
       } = await client.query<{ id: string; email: string | null; display_name: string }>(
-        `SELECT id, email, display_name FROM contacts WHERE id = $1 AND status <> 'merged'`,
-        [contactId],
+        `SELECT id, email, display_name FROM contacts
+          WHERE id = $1 AND status <> 'merged' ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [contactId, recordScope.userId] : [contactId],
       );
       if (!contact) throw new NotFoundException("contact not found");
       if (!contact.email) {
@@ -210,8 +216,8 @@ export class OutboundMailController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'email.send', 'contact', $2)`,
-        [orgId, contact.id],
+         VALUES ($1, 'user', $2, 'email.send', 'contact', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", contact.id],
       );
 
       return { sent: true, to: contact.email, interaction: interaction ?? null };

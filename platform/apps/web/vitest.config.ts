@@ -26,12 +26,22 @@ import { defineConfig } from "vitest/config";
  * thing here or every `@/lib/...` import in a source file under test fails to
  * resolve — with an error that reads like a missing file rather than a missing
  * alias.
+ *
+ * `server-only` is aliased to a no-op stub for the same reason: the real
+ * package throws at import time unconditionally, relying on Next's own
+ * webpack build to turn that into a no-op for a genuine Server Component.
+ * Vitest has no such build step, so without this alias `lib/server-api.ts`
+ * (which now carries `import "server-only"`) would throw in every test that
+ * imports it — including this suite's own coverage of it.
  */
 const rootDir = fileURLToPath(new URL(".", import.meta.url)).replace(/[\\/]+$/, "");
 
 export default defineConfig({
   resolve: {
-    alias: [{ find: /^@\//, replacement: `${rootDir}/` }],
+    alias: [
+      { find: /^@\//, replacement: `${rootDir}/` },
+      { find: "server-only", replacement: `${rootDir}/lib/test-support/server-only-stub.ts` },
+    ],
   },
   test: {
     include: [

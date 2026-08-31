@@ -89,7 +89,24 @@ object PlatformApi {
         return DeviceConfig(
             recordingEnabled = response.getBoolean("recordingEnabled"),
             version = response.getInt("version"),
-            appLockPasswordHash = response.optString("appLockPasswordHash", null),
+            // `isNull` FIRST — the same guard fetchCallResult already uses for
+            // `transcript` below, and for the same reason. Android's
+            // `optString(name, fallback)` returns the fallback only when the key
+            // is ABSENT; for a JSON null it returns the four-character string
+            // "null", because JSONObject.NULL.toString() is "null".
+            //
+            // That is not a cosmetic difference here. The org's app lock is NULL
+            // by default (migration 0066: "NULL = no lock (default, backward
+            // compatible with every already-enrolled fleet)"), so this key is
+            // null for essentially every fleet. Stored raw, "null" is not null,
+            // so LockActivity gates the app on it — and AppLock.verify requires
+            // `pbkdf2$iterations$salt$hash`, which "null" can never satisfy. As
+            // LockActivity is the only exported LAUNCHER (MainActivity and
+            // AdminActivationActivity are exported="false"), the handset would
+            // be locked with no way back in, not even to de-enroll.
+            appLockPasswordHash =
+                if (response.isNull("appLockPasswordHash")) null
+                else response.optString("appLockPasswordHash", null),
         )
     }
 

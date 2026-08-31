@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { call } from "@/lib/action-call";
 import { requireOperator } from "@/lib/operator-guard";
-import { API_URL, orgHeaders } from "@/lib/server-api";
+import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 import type { Credentials } from "../enrollment-credentials";
 
 /**
@@ -29,31 +30,36 @@ export async function mintKeyAction(input: {
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/instances/${input.instanceId}/keys`, {
-      method: "POST",
-      headers: orgHeaders(input.orgId),
-      cache: "no-store",
-      body: JSON.stringify({
-        tokenTtlMinutes: input.ttlMinutes,
-        tokenMaxUses: input.maxUses,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
-    }
-    const data = await res.json();
-    revalidatePath(`/instances/${input.orgId}`);
-    return {
-      instanceId: data.instanceId,
-      adminKey: data.adminKey,
-      expiresAt: data.expiresAt,
-      maxUses: data.maxUses,
-    };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<Credentials>(`/v1/instances/${input.instanceId}/keys`, {
+    method: "POST",
+    orgId: input.orgId,
+    body: { tokenTtlMinutes: input.ttlMinutes, tokenMaxUses: input.maxUses },
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${input.orgId}`);
+  return {
+    instanceId: res.data?.instanceId,
+    adminKey: res.data?.adminKey,
+    expiresAt: res.data?.expiresAt,
+    maxUses: res.data?.maxUses,
+  };
+}
+
+/**
+ * Every org-level setting below — transcription, ASR, consent policy, app
+ * lock — PATCHes this one endpoint: it is audited, and it bumps every
+ * enrolled handset's config version like any other policy edit. Follows the
+ * same de-duplication as `deviceAction()` further down — one fetch/error
+ * path, thin wrappers per setting — rather than repeating the same
+ * try/fetch/catch four times. `requireOperator()` and `revalidatePath` stay
+ * in each wrapper rather than here, because which paths to revalidate differs
+ * per setting (transcription and ASR also bump the calls explorer; consent
+ * policy and the app lock do not).
+ */
+async function patchOrgPolicy(orgId: string, body: Record<string, unknown>): Promise<{ error?: string }> {
+  const res = await call(`/v1/org/policy`, { method: "PATCH", body, orgId });
+  if (res.error) return { error: res.error };
+  return {};
 }
 
 /**
@@ -70,22 +76,52 @@ export async function setTranscriptionEnabledAction(input: {
   } catch {
     return { error: "Not authorized" };
   }
+  const res = await patchOrgPolicy(input.orgId, { transcriptionEnabled: input.enabled });
+  if (res.error) return res;
+  revalidatePath(`/instances/${input.orgId}`);
+  revalidatePath(`/instances/${input.orgId}/calls`);
+  return {};
+}
+
+/**
+ * Turn the CRM module on or off for a tenant. Unlike the org-policy settings
+ * above, this can have a side effect (seeding roles/a default pipeline the
+ * first time CRM is enabled) so it rides the dedicated admin endpoint next
+ * to that seeding logic, not `patchOrgPolicy`. Disabling never deletes any
+ * CRM data it already seeded — CrmPermissionsGuard is what actually revokes
+ * access — so re-enabling later needs no reseed.
+ *
+ * `admin/tenants/*` is `AdminController`'s cross-tenant surface (same as
+ * `createTenantAction` in `instances/new/actions.ts`) — it takes the org id
+ * as a URL param, not via `x-org-id`, so this uses `crossTenantHeaders`
+ * directly rather than `call()`'s `orgId` option, which would send
+ * `adminHeaders`' `x-org-id: DEV_ORG_ID` instead (harmless here since the
+ * route ignores it, but the wrong credential to reach for).
+ */
+export async function setCrmEnabledAction(input: {
+  orgId: string;
+  enabled: boolean;
+}): Promise<{ error?: string }> {
   try {
-    const res = await fetch(`${API_URL}/v1/org/policy`, {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  try {
+    const res = await fetch(`${API_URL}/v1/admin/tenants/${input.orgId}/modules`, {
       method: "PATCH",
-      headers: orgHeaders(input.orgId),
+      headers: crossTenantHeaders,
       cache: "no-store",
-      body: JSON.stringify({ transcriptionEnabled: input.enabled }),
+      body: JSON.stringify({ modules: input.enabled ? ["aura", "crm"] : ["aura"] }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
     revalidatePath(`/instances/${input.orgId}`);
-    revalidatePath(`/instances/${input.orgId}/calls`);
     return {};
   } catch {
-    return { error: "API unreachable" };
+    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -109,24 +145,15 @@ export async function reprocessBacklogAction(input: {
     return { error: "Not authorized" };
   }
   const { orgId, ...rest } = input;
-  try {
-    const res = await fetch(`${API_URL}/v1/calls/reprocess-backlog`, {
-      method: "POST",
-      headers: orgHeaders(orgId),
-      cache: "no-store",
-      body: JSON.stringify(rest),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
-    }
-    const data = (await res.json()) as { requeued?: number };
-    revalidatePath(`/instances/${orgId}`);
-    revalidatePath(`/instances/${orgId}/calls`);
-    return { requeued: data.requeued ?? 0 };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ requeued?: number }>(`/v1/calls/reprocess-backlog`, {
+    method: "POST",
+    body: rest,
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  revalidatePath(`/instances/${orgId}/calls`);
+  return { requeued: res.data?.requeued ?? 0 };
 }
 
 /**
@@ -149,23 +176,11 @@ export async function setAsrSettingsAction(input: {
     return { error: "Not authorized" };
   }
   const { orgId, ...rest } = input;
-  try {
-    const res = await fetch(`${API_URL}/v1/org/policy`, {
-      method: "PATCH",
-      headers: orgHeaders(orgId),
-      cache: "no-store",
-      body: JSON.stringify(rest),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
-    }
-    revalidatePath(`/instances/${orgId}`);
-    revalidatePath(`/instances/${orgId}/calls`);
-    return {};
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await patchOrgPolicy(orgId, rest);
+  if (res.error) return res;
+  revalidatePath(`/instances/${orgId}`);
+  revalidatePath(`/instances/${orgId}/calls`);
+  return {};
 }
 
 async function deviceAction(
@@ -173,19 +188,13 @@ async function deviceAction(
   deviceId: string,
   verb: "logout" | "wipe",
 ): Promise<{ status?: string; error?: string }> {
-  try {
-    const res = await fetch(`${API_URL}/v1/devices/${deviceId}/${verb}`, {
-      method: "POST",
-      headers: orgHeaders(orgId),
-      cache: "no-store",
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    const data = (await res.json().catch(() => ({}))) as { status?: string };
-    revalidatePath(`/instances/${orgId}`);
-    return { status: data.status ?? (verb === "wipe" ? "wiped" : "logged_out") };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ status?: string }>(`/v1/devices/${deviceId}/${verb}`, {
+    method: "POST",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  return { status: res.data?.status ?? (verb === "wipe" ? "wiped" : "logged_out") };
 }
 
 export async function logoutDeviceAction(
@@ -229,24 +238,15 @@ export async function updatePolicyAction(input: {
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/org/policy`, {
-      method: "PATCH",
-      headers: orgHeaders(input.orgId),
-      cache: "no-store",
-      body: JSON.stringify({
-        consentPolicy: input.consentPolicy,
-        onConsentFailure: input.onConsentFailure,
-        retentionDays: input.retentionDays,
-        storeFullNumber: input.storeFullNumber,
-      }),
-    });
-    if (!res.ok) return { error: `API ${res.status}` };
-    revalidatePath(`/instances/${input.orgId}`);
-    return {};
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await patchOrgPolicy(input.orgId, {
+    consentPolicy: input.consentPolicy,
+    onConsentFailure: input.onConsentFailure,
+    retentionDays: input.retentionDays,
+    storeFullNumber: input.storeFullNumber,
+  });
+  if (res.error) return res;
+  revalidatePath(`/instances/${input.orgId}`);
+  return {};
 }
 
 /**
@@ -265,22 +265,10 @@ export async function setAppLockPasswordAction(input: {
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/org/policy`, {
-      method: "PATCH",
-      headers: orgHeaders(input.orgId),
-      cache: "no-store",
-      body: JSON.stringify({ appLockPassword: input.password }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
-    }
-    revalidatePath(`/instances/${input.orgId}`);
-    return {};
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await patchOrgPolicy(input.orgId, { appLockPassword: input.password });
+  if (res.error) return res;
+  revalidatePath(`/instances/${input.orgId}`);
+  return {};
 }
 
 /**
@@ -288,35 +276,41 @@ export async function setAppLockPasswordAction(input: {
  * employee/agent code — right where the device shows up as connected in the
  * console, instead of only after the fact from the org's own owner dashboard.
  * Calling it again on the same device edits the existing telecaller rather
- * than creating a new one.
+ * than creating a new one, unless `reassign` is set — that mints a fresh
+ * identity for a genuinely different person instead of renaming the last one.
  */
 export async function setDeviceTelecallerAction(input: {
   orgId: string;
   deviceId: string;
   name: string;
   externalId: string | null;
+  reassign?: boolean;
 }): Promise<{ error?: string }> {
   try {
     await requireOperator();
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/devices/${input.deviceId}/telecaller`, {
-      method: "PATCH",
-      headers: orgHeaders(input.orgId),
-      cache: "no-store",
-      body: JSON.stringify({ name: input.name, externalId: input.externalId }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
-    }
-    revalidatePath(`/instances/${input.orgId}`);
-    return {};
-  } catch {
-    return { error: "API unreachable" };
+  // telecaller-form.tsx already refuses to submit a blank name, but that is
+  // client-side only — this action is an independently-addressable POST
+  // endpoint (see the file banner above), so a caller that skips the form
+  // entirely could otherwise blank out an existing telecaller's name.
+  const name = input.name.trim();
+  if (!name) {
+    return { error: "Name is required." };
   }
+  const res = await call(`/v1/devices/${input.deviceId}/telecaller`, {
+    method: "PATCH",
+    orgId: input.orgId,
+    body: {
+      name,
+      externalId: input.externalId,
+      reassign: input.reassign ?? false,
+    },
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${input.orgId}`);
+  return {};
 }
 
 export interface DeleteInstanceResult {
@@ -343,27 +337,29 @@ export async function deleteInstanceAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(
-      `${API_URL}/v1/instances/${instanceId}${purgeCalls ? "?purgeCalls=true" : ""}`,
-      { method: "DELETE", headers: orgHeaders(orgId), cache: "no-store" },
-    );
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = body?.message ?? body;
-      if (res.status === 409 && detail?.error === "instance_has_calls") {
-        return {
-          blockedByCalls: { calls: detail.calls, devices: detail.devices },
-          error: detail.message,
-        };
-      }
-      return { error: `API ${res.status}: ${JSON.stringify(detail)}` };
+  const res = await call<{ name?: string; purged?: string[] }>(
+    `/v1/instances/${instanceId}${purgeCalls ? "?purgeCalls=true" : ""}`,
+    { method: "DELETE", orgId },
+  );
+  if (res.error) {
+    // `call()` already formats a display-ready error string, but this one
+    // case needs the structured body too — the API answers 409 with
+    // {error: "instance_has_calls", calls, devices, message} so the caller
+    // can offer the purge-and-retry confirmation instead of a dead end.
+    const payload = res.rawBody as { message?: Record<string, unknown> } | undefined;
+    const detail = (payload?.message ?? payload) as
+      | { error?: string; calls?: number; devices?: number; message?: string }
+      | undefined;
+    if (res.status === 409 && detail?.error === "instance_has_calls") {
+      return {
+        blockedByCalls: { calls: detail.calls ?? 0, devices: detail.devices ?? 0 },
+        error: detail.message,
+      };
     }
-    revalidatePath("/instances");
-    return { deleted: true, name: body.name, purged: body.purged };
-  } catch {
-    return { error: "API unreachable" };
+    return { error: res.error };
   }
+  revalidatePath("/instances");
+  return { deleted: true, name: res.data?.name, purged: res.data?.purged };
 }
 
 export interface OwnerResult {
@@ -393,31 +389,25 @@ export async function createOwnerAction(input: {
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/owners`, {
+  const res = await call<{ password?: string | null; owner?: { email?: string }; linkedExisting?: boolean }>(
+    `/v1/owners`,
+    {
       method: "POST",
-      headers: orgHeaders(input.orgId),
-      cache: "no-store",
-      body: JSON.stringify({
+      orgId: input.orgId,
+      body: {
         email: input.email.trim(),
         name: input.name?.trim() || undefined,
         recordingsListen: input.recordingsListen,
-      }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = body?.message ?? body?.error ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
-    revalidatePath(`/instances/${input.orgId}`);
-    return {
-      password: body.password ?? null,
-      email: body.owner?.email,
-      linkedExisting: Boolean(body.linkedExisting),
-    };
-  } catch {
-    return { error: "API unreachable" };
-  }
+      },
+    },
+  );
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${input.orgId}`);
+  return {
+    password: res.data?.password ?? null,
+    email: res.data?.owner?.email,
+    linkedExisting: Boolean(res.data?.linkedExisting),
+  };
 }
 
 /** Issue a fresh password for an owner who has lost theirs. Shown once. */
@@ -430,21 +420,12 @@ export async function resetOwnerPasswordAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/owners/${userId}/password`, {
-      method: "POST",
-      headers: orgHeaders(orgId),
-      cache: "no-store",
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = body?.message ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
-    return { password: body.password };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ password?: string }>(`/v1/owners/${userId}/password`, {
+    method: "POST",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  return { password: res.data?.password };
 }
 
 /** Remove an owner's access to this instance. */
@@ -457,22 +438,13 @@ export async function revokeOwnerAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/owners/${userId}`, {
-      method: "DELETE",
-      headers: orgHeaders(orgId),
-      cache: "no-store",
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = body?.message ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
-    revalidatePath(`/instances/${orgId}`);
-    return { loginDeleted: Boolean(body.loginDeleted) };
-  } catch {
-    return { error: "API unreachable" };
-  }
+  const res = await call<{ loginDeleted?: boolean }>(`/v1/owners/${userId}`, {
+    method: "DELETE",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  return { loginDeleted: Boolean(res.data?.loginDeleted) };
 }
 
 export interface ErasureReceipt {
@@ -495,20 +467,12 @@ export async function triggerErasureAction(
   } catch {
     return { error: "Not authorized" };
   }
-  try {
-    const res = await fetch(`${API_URL}/v1/erasure-requests`, {
-      method: "POST",
-      headers: orgHeaders(orgId),
-      cache: "no-store",
-      body: JSON.stringify({ callId }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
-    }
-    revalidatePath(`/instances/${orgId}`);
-    return (await res.json()) as ErasureReceipt;
-  } catch {
-    return { error: "API unreachable — is the API running?" };
-  }
+  const res = await call<ErasureReceipt>(`/v1/erasure-requests`, {
+    method: "POST",
+    orgId,
+    body: { callId },
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  return res.data ?? {};
 }

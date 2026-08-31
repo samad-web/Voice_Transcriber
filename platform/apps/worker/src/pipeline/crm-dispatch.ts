@@ -1,6 +1,6 @@
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { decryptSecret } from "@aura/db";
+import { assertPublicHttpUrl, decryptSecret } from "@aura/db";
 import {
   isFilled,
   pluckPath,
@@ -416,6 +416,15 @@ export async function deliver(
       `integration is missing required configuration: ${request.missing.join(", ")}`,
       request.url,
     );
+  }
+
+  try {
+    // Same SSRF guard as the console's "test connection" — the endpoint is
+    // tenant-configured, not ours to trust. See ssrf-guard.ts. Terminal: a
+    // blocked address will still be blocked on retry.
+    await assertPublicHttpUrl(request.url);
+  } catch (err) {
+    return failure(err instanceof Error ? err.message : String(err), request.url);
   }
 
   try {

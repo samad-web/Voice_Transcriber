@@ -9,10 +9,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -72,7 +75,9 @@ export class MembersController {
   }
 
   @Post()
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateMemberBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { email, name, role, workspaceId, recordingsListen, recordingsExport } = parsed.data;
@@ -125,8 +130,8 @@ export class MembersController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'member.create', 'user', $2)`,
-        [orgId, user.id],
+         VALUES ($1, 'user', $2, 'member.create', 'user', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", user.id],
       );
 
       return { userId: user.id, email: user.email, name: user.name, ...membership };
@@ -134,10 +139,13 @@ export class MembersController {
   }
 
   @Patch(":userId")
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
   async update(
     @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = UpdateMemberBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -212,17 +220,20 @@ export class MembersController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', 'dev-admin', 'member.update', 'user', $2, $3::jsonb)`,
-        [orgId, userId, JSON.stringify(p)],
+         VALUES ($1, 'user', $2, 'member.update', 'user', $3, $4::jsonb)`,
+        [orgId, req.principal?.userId ?? "dev-admin", userId, JSON.stringify(p)],
       );
       return { memberships: rows };
     });
   }
 
   @Delete(":userId")
+  @UseGuards(OrgRoleGuard)
+  @RequireOrgRole("org_admin")
   async remove(
     @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
+    @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       // RLS scopes this DELETE to the current org; the global user row is left
@@ -238,8 +249,8 @@ export class MembersController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'member.delete', 'user', $2)`,
-        [orgId, userId],
+         VALUES ($1, 'user', $2, 'member.delete', 'user', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", userId],
       );
       return { deleted: res.rowCount ?? 0 };
     });

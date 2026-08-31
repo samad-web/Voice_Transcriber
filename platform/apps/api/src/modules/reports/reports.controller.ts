@@ -17,6 +17,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { toCsv, safeFilename, type CsvColumn } from "./csv";
 import {
   ReportsService,
+  type CommissionRow,
   type ConversionRow,
   type PerformanceRow,
   type PipelineRow,
@@ -31,7 +32,7 @@ const WindowQuery = z.object({
   pipelineId: z.string().uuid().optional(),
 });
 
-const ReportName = z.enum(["pipeline", "performance", "conversion"]);
+const ReportName = z.enum(["pipeline", "performance", "conversion", "commission"]);
 type ReportName = z.infer<typeof ReportName>;
 
 /** Default window: the last 90 days, inclusive of today. */
@@ -100,10 +101,23 @@ export class ReportsController {
     return this.reports.conversion(orgId, from, to, parsed.data.pipelineId, recordScope);
   }
 
+  @Get("commission")
+  @RequireCrmPermission("deal", "view")
+  async commission(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    const parsed = WindowQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    return this.reports.commission(orgId, from, to, recordScope);
+  }
+
   /**
-   * The same three reports as CSV.
+   * The same four reports as CSV.
    *
-   * A separate route rather than `?format=csv` on the three above, because
+   * A separate route rather than `?format=csv` on the four above, because
    * `CrmPermissionsGuard` reads STATIC decorator metadata: a format query
    * param could not raise the requirement from `view` to `export`. Same
    * reasoning that made A2's timeline routes nested rather than filtered.
@@ -174,6 +188,20 @@ export class ReportsController {
         { header: "Win rate", value: (r) => (r.winRate === null ? "" : r.winRate) },
       ];
       return toCsv(columns, data.reps);
+    }
+
+    if (name === "commission") {
+      const data = await this.reports.commission(orgId, from, to, recordScope);
+      const columns: Array<CsvColumn<CommissionRow>> = [
+        { header: "Plan", value: (r) => r.planName },
+        { header: "Metric", value: (r) => r.metric },
+        { header: "Rate type", value: (r) => r.rateType },
+        { header: "Rate", value: (r) => r.rate },
+        { header: "Rep", value: (r) => r.rep },
+        { header: "Metric total", value: (r) => r.metricTotal },
+        { header: "Commission", value: (r) => r.commission },
+      ];
+      return toCsv(columns, data.rows);
     }
 
     const data = await this.reports.conversion(orgId, from, to, pipelineId, recordScope);

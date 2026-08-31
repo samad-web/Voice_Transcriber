@@ -59,7 +59,16 @@ export const DeviceConfig = z.object({
    * when the org hasn't set one — the device verifies a typed password
    * against this offline, it is never sent back to the server.
    */
-  appLockPasswordHash: z.string().nullable(),
+  /**
+   * Optional as well as nullable, so the server can OMIT the key entirely
+   * rather than send an explicit null. Defence in depth for an Android quirk
+   * that already cost a device-bricking bug once: `JSONObject.optString(name,
+   * fallback)` honours the fallback only for an ABSENT key and returns the
+   * string "null" for a JSON null. The client now guards with `isNull` too
+   * (PlatformApi.fetchConfig) — this is the other half, so a client that
+   * forgets the guard is not punished for it.
+   */
+  appLockPasswordHash: z.string().nullable().optional(),
 });
 export type DeviceConfig = z.infer<typeof DeviceConfig>;
 

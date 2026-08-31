@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { Card, Logo, MonoLabel } from "@aura/ui";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { LoginForm } from "./login-form";
 
@@ -29,9 +29,7 @@ export default async function LoginPage({
         {/* Brand panel — desktop only; phones get the compact header in the card. */}
         <div className="hidden flex-col gap-6 pr-2 lg:flex">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 select-none items-center justify-center rounded-md bg-text text-2xl font-semibold text-bg">
-              A
-            </div>
+            <Logo size={48} priority />
             <div>
               <h1 className="text-xl leading-tight font-semibold text-text">Aura Platform</h1>
               <MonoLabel className="mt-1">Call intelligence</MonoLabel>
@@ -61,12 +59,10 @@ export default async function LoginPage({
           </ul>
         </div>
 
-        <Card shadow className="w-full space-y-5">
+        <Card elevated className="w-full space-y-5">
           {/* Compact brand lockup — the panel above replaces it from lg up. */}
           <div className="flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-md bg-text text-xl font-semibold text-bg">
-              A
-            </div>
+            <Logo size={40} priority />
             <div>
               <h1 className="text-sm leading-tight font-semibold text-text">Aura Platform</h1>
               <MonoLabel className="mt-0.5">Call intelligence</MonoLabel>

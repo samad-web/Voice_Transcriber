@@ -99,14 +99,23 @@ describe("CrmPermissionsGuard", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("C2 passes a BARE admin-key caller (no asserted user) without a lookup", async () => {
-    // Seed scripts, ops tooling, scripts/backfill-crm-objects.js. Same carve-out
-    // OwnerRoleGuard makes, and the reason `userId` is the literal "admin-key".
+  it("C2 denies a BARE admin-key caller (no asserted user) without a lookup", async () => {
+    // No carve-out: `userId` is the literal "admin-key", fails the uuid parse,
+    // and is denied the same as any other unresolvable identity. Nothing in
+    // this repository calls these routes as a bare admin key — checked
+    // directly: `scripts/backfill-crm-objects.js` writes the database, never
+    // `/v1/contacts`/`/v1/accounts`/`/v1/deals` — so there is no legitimate
+    // caller this would lock out. Ops tooling that needs this surface asserts
+    // a real, seeded user id, same as every other admin-key caller (C3).
     const { db, calls } = fakeDb(false);
     const guard = new CrmPermissionsGuard(new Reflector(), db);
     const { context } = contextFor(FixtureController.prototype.createContact, adminKeyPrincipal());
 
-    await expect(guard.canActivate(context)).resolves.toBe(true);
+    await expectHttpError(() => guard.canActivate(context), {
+      type: ForbiddenException,
+      message: "requires permission: create on contact",
+      status: 403,
+    });
     expect(calls).toHaveLength(0);
   });
 
@@ -268,18 +277,21 @@ describe("CrmPermissionsGuard", () => {
     expect(req.crmScope).toEqual({ scope: "owned", userId: USER_A });
   });
 
-  it("C13 leaves the bare admin key UNSCOPED — seed scripts see everything", async () => {
-    // Same carve-out as the permission check itself. A backfill that suddenly
-    // saw only "its own" records would silently do a fraction of its job.
+  it("C13 denies the bare admin key rather than leaving it UNSCOPED", async () => {
+    // Superseded case: this guard used to special-case a bare admin key to
+    // `{ scope: "all", userId: null }` with no lookup at all. Removed — see
+    // C2 and the guard's own header for why nothing depended on it and why
+    // it was backwards (an unresolvable-but-asserted id was denied while
+    // asserting nothing at all was granted everything).
     const { db, calls } = fakeDb(true, "owned");
     const guard = new CrmPermissionsGuard(new Reflector(), db);
-    const { context, req } = contextFor(
-      FixtureController.prototype.viewContact,
-      adminKeyPrincipal(),
-    );
+    const { context } = contextFor(FixtureController.prototype.viewContact, adminKeyPrincipal());
 
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(req.crmScope).toEqual({ scope: "all", userId: null });
+    await expectHttpError(() => guard.canActivate(context), {
+      type: ForbiddenException,
+      message: "requires permission: view on contact",
+      status: 403,
+    });
     expect(calls).toHaveLength(0);
   });
 
@@ -296,5 +308,40 @@ describe("CrmPermissionsGuard", () => {
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(req.crmScope?.scope).toBe("all");
+  });
+
+  // ── module gate (migration 0072's `organizations.enabled_modules`) ───────
+  //
+  // The check lives inside the ONE permission query as an extra JOIN
+  // condition, not a separate lookup — so from this guard's own point of
+  // view, "CRM disabled for the org" and "no matching grant" are the same
+  // zero-rows outcome already covered by C4/C7, and `fakeDb`'s boolean
+  // `granted` can't tell them apart. What CAN be pinned here is that the
+  // condition is actually IN the query text sent to the database — the live
+  // Postgres check (crm-connectors-and-console-auth's own verification
+  // pass) is what proves a real disabled org is actually denied.
+
+  it("C15 includes the enabled_modules check in the same query as the grant lookup", async () => {
+    const queries: string[] = [];
+    const db = {
+      withOrg: async (_orgId: string, fn: (client: unknown) => Promise<unknown>) => {
+        const client = {
+          query: async (sql: string) => {
+            queries.push(sql);
+            return { rows: [{ scope: "all" }] };
+          },
+        };
+        return fn(client);
+      },
+    } as unknown as DbService;
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context } = contextFor(
+      FixtureController.prototype.viewContact,
+      sessionPrincipal({ userId: USER_A }),
+    );
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toContain("'crm' = ANY(o.enabled_modules)");
   });
 });

@@ -8,6 +8,7 @@ import { startAsrPoller } from "./pipeline/asr-poll";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
 import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
+import { startCallCrmIntegritySweep } from "./pipeline/call-crm-integrity";
 import { startOutboxDrain } from "./pipeline/outbox";
 import { startFollowUpDrain } from "./pipeline/funnel-followup-outbox";
 import { startCalendarBusySync } from "./pipeline/calendar-busy-sync";
@@ -23,6 +24,7 @@ import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
+import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -36,6 +38,11 @@ async function bootstrap() {
   // module header for why this is opt-in and why stage/status are gated
   // separately from everything else it compares.
   startCrmReconcileSweep();
+  // Does a call's own AI read (outcome, quality score) agree with the deal it
+  // produced? ON by default, unlike the burn-in sweep above — this is a
+  // permanent triage queue (call_crm_integrity_flags), not a migration
+  // instrument. See the module header for the three flag types.
+  startCallCrmIntegritySweep();
   // Redelivers anything the inline attempt couldn't land. Runs regardless of
   // queue traffic, so a CRM that recovers overnight still gets yesterday's leads.
   startOutboxDrain();
@@ -124,13 +131,18 @@ async function bootstrap() {
   // off replies/meetings/inactivity that already exist. Pure computation, no
   // sends — see the module header for the safety-rule reasoning.
   startLeadScoringSweep();
+  // Meta lead ads pulled through the tenant's MCP server onto the SAME lead
+  // board the handset's calls land on. Off unless META_MCP_SYNC_ENABLED is
+  // exactly "true" — it makes outbound requests to a tenant-supplied URL.
+  const metaMcp = startMetaMcpSweep();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
   console.log(
     `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
-      "+ booking confirmations + call reminders + form nudges",
+      "+ booking confirmations + call reminders + form nudges" +
+      (metaMcp ? " + meta-mcp lead pull" : ""),
   );
 }
 

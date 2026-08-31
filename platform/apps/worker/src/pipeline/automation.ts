@@ -476,6 +476,34 @@ export async function sweepAutomationTriggers(): Promise<number> {
     queued += rowCount ?? 0;
   }
 
+  // A promised callback (outreach_journey_steps.due_at) passed unactioned.
+  // Same shape as task.overdue above: query everything overdue at all, one
+  // event per step per day, and let each rule's own `graceHours` condition
+  // (checked in matchesConditions) decide whether THIS rule cares yet.
+  const { rows: outreachOverdueRules } = await pool.query<{ org_id: string }>(
+    `SELECT DISTINCT org_id FROM automation_rules
+      WHERE trigger = 'outreach_step.overdue' AND status = 'active'`,
+  );
+  for (const rule of outreachOverdueRules) {
+    const { rowCount } = await pool.query(
+      `INSERT INTO automation_events (org_id, trigger, subject_type, subject_id, payload, dedupe_key)
+       SELECT ojs.org_id, 'outreach_step.overdue', 'outreach_step', ojs.id,
+              jsonb_build_object(
+                'dealId', oj.deal_id, 'contactId', oj.contact_id,
+                'journeyOwnerUserId', oj.owner_user_id,
+                'overdueHours', floor(EXTRACT(EPOCH FROM (now() - ojs.due_at)) / 3600)
+              ),
+              'outreach_step.overdue:' || ojs.id || ':' || to_char(now(), 'YYYY-MM-DD')
+         FROM outreach_journey_steps ojs
+         JOIN outreach_journeys oj ON oj.id = ojs.journey_id
+        WHERE ojs.org_id = $1 AND ojs.status = 'due'
+          AND ojs.due_at < now()
+       ON CONFLICT (org_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
+      [rule.org_id],
+    );
+    queued += rowCount ?? 0;
+  }
+
   return queued;
 }
 

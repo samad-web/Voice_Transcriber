@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { ConversationChannel, ConversationStatus, MessageDirection } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
+import { apiErrorMessage } from "../lib/api-error";
 
 /** One thread in the inbox list. */
 export interface Conversation {
@@ -124,11 +125,7 @@ export async function updateConversationAction(
       cache: "no-store",
       body: JSON.stringify(patch),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = (body as { message?: unknown })?.message ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/inbox");
     return { ok: true };
   } catch {
@@ -148,11 +145,7 @@ export async function fetchChannelTemplatesAction(
       headers,
       cache: "no-store",
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = (body as { message?: unknown })?.message;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     const data = (await res.json()) as { templates: WasiTemplate[] };
     return { templates: data.templates };
   } catch {
@@ -181,11 +174,7 @@ export async function sendWhatsAppMessageAction(
       cache: "no-store",
       body: JSON.stringify(message),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = (body as { message?: unknown })?.message;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
+    if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/inbox");
     return { ok: true };
   } catch {

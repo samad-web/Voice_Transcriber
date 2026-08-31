@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { Card, MonoLabel, Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
-import type { Lead, Stage } from "../types";
+import type { Lead, Project, Stage } from "../types";
 import { LeadsTable } from "./leads-table";
 
 export const metadata: Metadata = { title: "All Leads — Aura" };
@@ -35,14 +35,20 @@ export default async function LeadsPage({
   };
 
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
-  for (const key of ["stage", "status", "q", "sort", "telecallerId"]) {
+  for (const key of ["stage", "status", "q", "sort", "telecallerId", "projectId"]) {
     const value = one(key);
     if (value) query.set(key, value);
   }
   const offset = Math.max(0, Number(one("offset")) || 0);
   if (offset > 0) query.set("offset", String(offset));
 
-  const data = await ownerGet<ListResponse>(`/v1/leads?${query}`);
+  // Concurrent: the catalogue only supplies the filter chips, so a projects
+  // outage should cost the filter row, not the whole leads page. `?? []`
+  // rather than a failure branch — the table renders fine without it.
+  const [data, projects] = await Promise.all([
+    ownerGet<ListResponse>(`/v1/leads?${query}`),
+    ownerGet<{ projects: Project[] }>("/v1/projects"),
+  ]);
 
   if (!data) {
     return (
@@ -67,6 +73,7 @@ export default async function LeadsPage({
         <LeadsTable
           leads={data.leads}
           stages={data.stages}
+          projects={projects?.projects ?? []}
           total={data.total}
           limit={data.limit ?? PAGE_SIZE}
           offset={data.offset ?? 0}

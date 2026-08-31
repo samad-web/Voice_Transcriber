@@ -159,17 +159,48 @@
   --radius-sm: 6px; /* inputs, chips */
   --radius-md: 8px; /* buttons, cards */
   --radius-lg: 12px; /* modals, feature cards */
+  /* Matches marketing's own --mk-radius. Added for the console's brand-register
+     cards (doc 16 predates this; the landing-page redesign added the step). */
+  --radius-xl: 20px;
   --radius-full: 9999px;
 
   /* ── Elevation — borders do most of the work ────────────────────────────── */
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  /* "Lifted" elevation for brand-register surfaces — mirrors marketing's own
+     --mk-shadow-lift (a tinted glow, not just a bigger grey shadow). */
+  --shadow-lift: 0 2px 4px rgb(11 18 32 / 0.05), 0 20px 40px -20px rgb(59 107 238 / 0.32);
+  /* Card's new DEFAULT elevation — mirrors marketing's own --mk-shadow (a
+     soft, long-throw ambient shadow), so every card reads as "designed" like
+     .mk-card, not just the ones that opt into --shadow-lift. Console cards
+     used to default to the flatter --shadow-sm; that was the single biggest
+     reason the console still looked unbranded next to the landing page once
+     the sidebar and page headers were fixed. */
+  --shadow-card: 0 1px 2px rgb(11 18 32 / 0.04), 0 18px 40px -24px rgb(11 18 32 / 0.28);
 
   /* ── Motion (doc 16 §1.4) ───────────────────────────────────────────────── */
   --aura-duration-hover: 150ms;
   --aura-duration-enter: 200ms;
   --aura-ease: cubic-bezier(0, 0, 0.2, 1); /* ease-out */
+}
+
+/*
+ * ── Brand gradient ──────────────────────────────────────────────────────────
+ * The one canonical definition. Previously declared twice — once here
+ * implicitly via apps/marketing's own brand.css — which is exactly the drift
+ * doc 16's "one token set" rule exists to prevent. brand.css now references
+ * these instead of redeclaring the hexes. Plain custom properties, not inside
+ * the @theme block above: a gradient isn't a Tailwind colour/spacing
+ * namespace, so this is consumed via `style` / arbitrary values, the same way
+ * brand.css always used it. Constant across light and dark — the mark reads
+ * the same intensity on both grounds, only the surface around it changes.
+ */
+:root {
+  --brand-from: #00b4f0;
+  --brand-mid: #3b6bee;
+  --brand-to: #7b2ff7;
+  --brand-gradient: linear-gradient(115deg, var(--brand-from) 0%, var(--brand-mid) 52%, var(--brand-to) 100%);
 }
 
 /*
@@ -240,6 +271,12 @@
        one. */
     --color-terminal: #14181f;
     --color-terminal-border: #3d444d;
+
+    /* --shadow-card is the one shadow token that DOES change in dark mode —
+       unlike sm/md/lg above, it mirrors marketing's own --mk-shadow, which
+       needs actual black rather than a light-mode navy tint to register on a
+       dark ground at all. */
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 18px 40px -24px rgb(0 0 0 / 0.8);
   }
 }
 
@@ -277,6 +314,8 @@
 
   --color-terminal: #14181f;
   --color-terminal-border: #3d444d;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 18px 40px -24px rgb(0 0 0 / 0.8);
 }
 
 @layer base {

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Button, Card, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { startOAuthRedirect } from "../lib/oauth-redirect";
 import { connectBasicAction, disconnectAction, startOAuthAction } from "./actions";
 
 export interface ProviderView {
@@ -51,29 +52,32 @@ export interface ConnectionView {
 export function ConnectionsManager({
   providers,
   connections,
+  initialConnected = null,
+  initialError = null,
 }: {
   providers: ProviderView[];
   connections: ConnectionView[];
+  /** From the OAuth callback's `?connected=<email>` — shown once, on arrival. */
+  initialConnected?: string | null;
+  /** From the OAuth callback's `?error=<message>` — shown once, on arrival. */
+  initialError?: string | null;
 }) {
   const [openForm, setOpenForm] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [accountEmail, setAccountEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
+  const [connectedEmail, setConnectedEmail] = useState<string | null>(initialConnected);
   const [pending, startTransition] = useTransition();
 
   const byProvider = new Map(providers.map((p) => [p.id, p]));
 
   const beginOAuth = (provider: string) => {
     setError(null);
+    setConnectedEmail(null);
     startTransition(async () => {
       const result = await startOAuthAction(provider);
-      if (result.error || !result.authorizeUrl) {
-        setError(result.error ?? "Could not start sign-in");
-        return;
-      }
-      // Full navigation, not a popup: the provider's consent screen refuses to
-      // render in an iframe, and a popup gets blocked as often as not.
-      window.location.href = result.authorizeUrl;
+      const failure = startOAuthRedirect(result, "Could not start sign-in");
+      if (failure) setError(failure);
     });
   };
 
@@ -112,6 +116,14 @@ export function ConnectionsManager({
 
   return (
     <div className="space-y-6">
+      {connectedEmail ? (
+        <p
+          role="status"
+          className="rounded-md border border-success bg-success-subtle p-3 text-sm font-medium text-success-text"
+        >
+          Connected {connectedEmail}.
+        </p>
+      ) : null}
       {error ? (
         <p
           role="alert"

@@ -37,7 +37,7 @@ export function ErasureTool({ orgId }: { orgId: string }) {
       : [];
 
   return (
-    <Card shadow className="space-y-4 border-red-600">
+    <Card elevated className="space-y-4 border-red-600">
       <div className="flex items-center gap-2">
         <ShieldX className="h-4 w-4 text-red-600" />
         <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">

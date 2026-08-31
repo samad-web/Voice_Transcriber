@@ -37,6 +37,14 @@ async function main() {
     [DEV_WORKSPACE_ID, DEV_ORG_ID],
   );
 
+  // The editable board + its default pipeline (migration 0075). Needed here
+  // because `db:reset` runs migrate BEFORE seed: on a fresh database the
+  // migration's backfill finds no organizations, so Dev Org would be the one
+  // org in the system with no board. Same function the migration and the admin
+  // dashboard's tenant provisioning both call, and idempotent, so re-seeding an
+  // existing database is a no-op.
+  await client.query(`SELECT seed_default_board($1)`, [DEV_ORG_ID]);
+
   // Dev admin user (org_admin, full recording permissions). Password: "admin".
   // Dev-only credential login; production identifies users via OIDC (sso_subject).
   await client.query(

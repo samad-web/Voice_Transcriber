@@ -73,32 +73,42 @@ export class RazorpayWebhookController {
     // Idempotency: Razorpay retries a delivery until it gets a 200, and this
     // controller always returns 200 — so the ledger, not the HTTP response,
     // is what prevents a replay from double-crediting the invoice.
+    //
+    // The claim and the payment/invoice writes happen in one transaction: if
+    // they were separate statements (as before) and the process died between
+    // the claim committing and the writes running, Razorpay's retry would see
+    // "already processed" and the writes would never happen — a payment
+    // captured by Razorpay but stuck at status 'created' here forever.
     const eventKey = `${event}:${paymentId ?? linkId}`;
-    const inserted = await admin.query(
-      `INSERT INTO payment_webhook_events (provider, event_id) VALUES ('razorpay', $1)
-       ON CONFLICT (provider, event_id) DO NOTHING
-       RETURNING id`,
-      [eventKey],
-    );
-    if (inserted.rows.length === 0) return { ok: true }; // already processed
+    await this.db.withOrg(row.org_id, async (client) => {
+      const inserted = await client.query(
+        `INSERT INTO payment_webhook_events (provider, event_id) VALUES ('razorpay', $1)
+         ON CONFLICT (provider, event_id) DO NOTHING
+         RETURNING id`,
+        [eventKey],
+      );
+      if (inserted.rows.length === 0) return; // already processed
 
-    await admin.query(
-      `UPDATE payments SET status = 'paid', razorpay_payment_id = COALESCE($2, razorpay_payment_id), captured_at = now()
-        WHERE id = $1`,
-      [row.payment_row_id, paymentId ?? null],
-    );
-    await admin.query(
-      `UPDATE invoices SET
-          amount_paid = amount_paid + (SELECT amount FROM payments WHERE id = $2),
-          status = CASE WHEN amount_paid + (SELECT amount FROM payments WHERE id = $2) >= total THEN 'paid' ELSE status END
-        WHERE id = $1`,
-      [row.invoice_id, row.payment_row_id],
-    );
-    await admin.query(
-      `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'system', 'razorpay-webhook', 'payment.captured', 'invoice', $2)`,
-      [row.org_id, row.invoice_id],
-    );
+      await client.query(
+        `UPDATE payments SET status = 'paid', razorpay_payment_id = COALESCE($2, razorpay_payment_id), captured_at = now()
+          WHERE id = $1`,
+        [row.payment_row_id, paymentId ?? null],
+      );
+      // status <> 'void': a delayed/retried delivery for an invoice voided in
+      // the meantime must not resurrect it or add to a balance no one owes.
+      await client.query(
+        `UPDATE invoices SET
+            amount_paid = amount_paid + (SELECT amount FROM payments WHERE id = $2),
+            status = CASE WHEN amount_paid + (SELECT amount FROM payments WHERE id = $2) >= total THEN 'paid' ELSE status END
+          WHERE id = $1 AND status <> 'void'`,
+        [row.invoice_id, row.payment_row_id],
+      );
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+         VALUES ($1, 'system', 'razorpay-webhook', 'payment.captured', 'invoice', $2)`,
+        [row.org_id, row.invoice_id],
+      );
+    });
 
     return { ok: true };
   }

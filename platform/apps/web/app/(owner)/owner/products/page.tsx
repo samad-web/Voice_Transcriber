@@ -61,6 +61,7 @@ export default async function ProductsPage({
         <input
           type="search"
           name="q"
+          aria-label="Search products"
           defaultValue={sp.q ?? ""}
           placeholder="Name or SKU"
           className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-surface px-3 text-sm text-text placeholder:text-text-muted"

@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { call } from "@/lib/action-call";
 import { requireOperator } from "@/lib/operator-guard";
-import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Server actions for the CRM console. Every one of these goes through the API
@@ -22,35 +22,6 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
  * endpoint, so the operator check in `(platform)/layout.tsx` — which runs during
  * a render — is not on this path at all. See lib/operator-guard.ts.
  */
-
-async function call<T>(
-  path: string,
-  init: { method: string; body?: unknown; orgId?: string },
-): Promise<{ data?: T; error?: string }> {
-  try {
-    const res = await fetch(`${API_URL}${path}`, {
-      method: init.method,
-      headers: init.orgId ? orgHeaders(init.orgId) : adminHeaders,
-      cache: "no-store",
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    });
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      // Zod issues come back as an array; flatten them into something readable
-      // rather than dumping the raw validation object into the UI.
-      const message = payload?.message;
-      const text = Array.isArray(message)
-        ? message.map((m: { path?: string[]; message?: string }) =>
-            `${m.path?.join(".") ?? ""} ${m.message ?? ""}`.trim(),
-          ).join("; ")
-        : (message ?? JSON.stringify(payload));
-      return { error: `API ${res.status}: ${text}` };
-    }
-    return { data: payload as T };
-  } catch {
-    return { error: "API unreachable — is the API running?" };
-  }
-}
 
 /** Refresh whichever surface the change was made from. */
 function refresh(orgId?: string) {

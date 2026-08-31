@@ -9,6 +9,7 @@ import { z } from "zod";
 import { OwnerRole } from "@aura/shared";
 import type { Principal, PrincipalRequest } from "./auth-principal";
 import { OrgRegistryService } from "./org-registry.service";
+import { timingSafeStringEqual } from "./timing-safe-equal";
 import { AuthService } from "../modules/auth/auth.service";
 
 /**
@@ -55,7 +56,8 @@ export class AdminKeyGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<PrincipalRequest>();
 
     const adminKey = resolveAdminKey();
-    if (adminKey !== null && firstHeader(req.headers["x-admin-key"]) === adminKey) {
+    const presentedKey = firstHeader(req.headers["x-admin-key"]);
+    if (adminKey !== null && presentedKey !== undefined && timingSafeStringEqual(presentedKey, adminKey)) {
       const orgId = firstHeader(req.headers["x-org-id"]);
 
       // The admin key is a cross-tenant credential, so `x-org-id` picks the
@@ -77,20 +79,21 @@ export class AdminKeyGuard implements CanActivate {
       // Absent (any caller that hasn't been updated: seed scripts, ops
       // tooling) falls back to today's behaviour untouched.
       //
-      // SECURITY (08 §2.5): these two headers make owner-role enforcement
-      // ADVISORY, not enforced. The principal's persona is whatever the caller
-      // says it is, and OMITTING x-caller-owner-role leaves ownerRole null,
-      // which OwnerRoleGuard treats as "unchecked, pass" (owner-role.guard.ts).
-      // So any holder of the admin key — which is the whole platform's root
-      // credential — bypasses every @RequireOwnerRole by simply not sending a
-      // header, and can equally claim `owner` on a request the real user is
-      // only a `viewer` for. The premise "the web server is the only holder of
-      // the admin key" is the entire trust boundary; it is one leaked env var
-      // from being false, and 08 §0.2/§0.3 exist because that has to be assumed.
-      // Fixing it means the API resolving the caller's persona itself from the
-      // session/OIDC subject rather than accepting it as a header. NOT changed
-      // here: apps/web sends these headers today and every owner route depends
-      // on the null-means-pass behaviour (see server-api.ts Caller).
+      // `x-caller-user-id` stays in that "trusted fact" category: it names
+      // WHO the caller is claiming to be, the same kind of caller-asserted
+      // identity `x-org-id` already is for WHICH tenant — a real uuid, and
+      // one that only has any effect if it happens to match a real row.
+      //
+      // `x-caller-owner-role` used to be different: a caller-asserted
+      // PRIVILEGE, not just an identity, which is what made it exploitable
+      // in a way the identity headers aren't — the string "owner" always
+      // parses whether or not the caller actually holds that role, while a
+      // random uuid usually names no one. STAGE 2.5 (08 §2.5) — CLOSED:
+      // OwnerRoleGuard no longer trusts this value. For an admin-key
+      // principal it now looks up the real persona itself from `memberships`
+      // via `x-caller-user-id`, so this header is parsed and carried on
+      // `principal.ownerRole` below purely for introspection — nothing
+      // authorizes against it anymore (see owner-role.guard.ts).
       const callerUserId = z.string().uuid().safeParse(firstHeader(req.headers["x-caller-user-id"]));
       const callerOwnerRole = OwnerRole.safeParse(firstHeader(req.headers["x-caller-owner-role"]));
 

@@ -9,10 +9,12 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -107,7 +109,7 @@ export class ProductsController {
 
   @Post()
   @RequireCrmPermission("product", "create")
-  async create(@OrgId() orgId: string, @Body() body: unknown) {
+  async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateProductBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -121,14 +123,19 @@ export class ProductsController {
          RETURNING ${PRODUCT_COLUMNS}`,
         [orgId, p.name, p.sku ?? null, p.description ?? null, p.unitPrice, p.currency, p.taxRate],
       );
-      await this.audit(client, orgId, "product.create", product.id);
+      await this.audit(client, orgId, "product.create", product.id, req);
       return { product };
     });
   }
 
   @Patch(":id")
   @RequireCrmPermission("product", "edit")
-  async update(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: unknown) {
+  async update(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
     const parsed = UpdateProductBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -162,7 +169,7 @@ export class ProductsController {
         ],
       );
       if (!product) throw new NotFoundException("product not found");
-      await this.audit(client, orgId, "product.update", id);
+      await this.audit(client, orgId, "product.update", id, req);
       return { product };
     });
   }
@@ -172,11 +179,12 @@ export class ProductsController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'product', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'product', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

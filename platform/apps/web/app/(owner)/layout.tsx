@@ -23,6 +23,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // A6: which page group the sidebar leads with. Neither group is hidden by
   // this — see lib/crm-cutover.ts.
   const crmPrimary = crmShadowReadEnabled();
+  // Whether this ORG has the CRM module at all (migration 0072) — unlike
+  // crmPrimary, this does hide nav items. See nav.ts's CRM_GATED_HREFS.
+  const crmEnabled = owner.membership.enabledModules.includes("crm");
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row">
@@ -31,6 +34,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         area="owner"
         ownerRole={owner.membership.ownerRole}
         crmPrimary={crmPrimary}
+        crmEnabled={crmEnabled}
         title={company}
         subtitle="Sales Pipeline"
       />
@@ -39,6 +43,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         area="owner"
         ownerRole={owner.membership.ownerRole}
         crmPrimary={crmPrimary}
+        crmEnabled={crmEnabled}
         title={company}
         subtitle="Sales Pipeline"
       />

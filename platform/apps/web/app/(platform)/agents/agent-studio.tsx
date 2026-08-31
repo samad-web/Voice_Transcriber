@@ -1,17 +1,23 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { inputClass, selectClass } from "@/lib/form";
-import { activateAgentAction, createAgentAction, type AgentFieldInput } from "./actions";
+import {
+  activateAgentAction,
+  createAgentAction,
+  generateAgentAction,
+  type AgentFieldInput,
+} from "./actions";
 
 export interface AgentRow {
   id: string;
   name: string;
   version: number;
   is_active: boolean;
+  system_prompt: string;
   field_schema: { fields: AgentFieldInput[] };
   created_at: string;
 }
@@ -43,8 +49,46 @@ export function AgentStudio({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // "Start from" (clone) and "Describe with AI" (generate) both just
+  // prefill name/systemPrompt/fields above — the create flow below is
+  // unchanged regardless of how the form got filled in.
+  const [baseKey, setBaseKey] = useState("");
+  const [description, setDescription] = useState("");
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
   const updateField = (i: number, patch: Partial<AgentFieldInput>) =>
     setFields((prev) => prev.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
+
+  const applyBase = (key: string) => {
+    setBaseKey(key);
+    const base = agents.find((a) => `${a.id}-${a.version}` === key);
+    if (!base) return;
+    setName(`${base.name} (copy)`);
+    setSystemPrompt(base.system_prompt);
+    setFields(base.field_schema.fields.map((f) => ({ ...f })));
+  };
+
+  const generate = () => {
+    if (!description.trim()) return;
+    setGenerateError(null);
+    setError(null);
+    startTransition(async () => {
+      const base = agents.find((a) => `${a.id}-${a.version}` === baseKey);
+      const res = await generateAgentAction({
+        description,
+        baseAgentId: base?.id,
+        baseVersion: base?.version,
+        orgId,
+      });
+      if (res.error) {
+        setGenerateError(res.error);
+        return;
+      }
+      if (res.name) setName(res.name);
+      if (res.systemPrompt) setSystemPrompt(res.systemPrompt);
+      if (res.fields) setFields(res.fields);
+    });
+  };
 
   const submit = () =>
     startTransition(async () => {
@@ -66,6 +110,8 @@ export function AgentStudio({
       setError(res.error ?? null);
       if (!res.error) {
         setName("");
+        setBaseKey("");
+        setDescription("");
       }
     });
 
@@ -77,7 +123,7 @@ export function AgentStudio({
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Agent list */}
       <div className="space-y-4">
-        <Card shadow>
+        <Card elevated>
           <h4 className="text-xs font-mono text-black uppercase tracking-wider font-bold mb-4">
             Deployed Agents
           </h4>
@@ -126,13 +172,62 @@ export function AgentStudio({
 
       {/* Builder */}
       <div className="lg:col-span-2 space-y-6">
-        <Card shadow className="space-y-4">
+        <Card elevated className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Wand2 className="h-4 w-4" />
+            <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
+              Describe With AI
+            </h4>
+          </div>
+          <p className="text-xs text-neutral-400 font-sans font-medium">
+            Say what the agent should do — it fills in the name, system prompt and fields below for
+            you to review and adjust. Pick a &quot;Start from&quot; agent first to describe a
+            <em> change</em> to it instead of a fresh one.
+          </p>
+          <textarea
+            className={`${inputClass} h-20 leading-relaxed`}
+            placeholder="e.g. An agent that scores how urgent the lead is and flags any budget objections raised"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <BrutalButton
+            variant="secondary"
+            disabled={pending || !description.trim()}
+            onClick={generate}
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            {pending ? "GENERATING…" : "GENERATE"}
+          </BrutalButton>
+          {generateError ? (
+            <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
+              {generateError}
+            </p>
+          ) : null}
+        </Card>
+
+        <Card elevated className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
             <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
               New Agent
             </h4>
           </div>
+
+          {agents.length > 0 ? (
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono text-black uppercase tracking-wider font-bold flex items-center gap-1.5">
+                <Copy className="h-3 w-3" /> Start From
+              </label>
+              <select className={selectClass} value={baseKey} onChange={(e) => applyBase(e.target.value)}>
+                <option value="">Blank</option>
+                {agents.map((agent) => (
+                  <option key={`${agent.id}-${agent.version}`} value={`${agent.id}-${agent.version}`}>
+                    {agent.name} (v{agent.version})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
@@ -261,7 +356,7 @@ export function AgentStudio({
           ) : null}
         </Card>
 
-        <Card shadow>
+        <Card elevated>
           <MonoLabel className="mb-2">Compiled Gemini responseSchema (live)</MonoLabel>
           <div className="bg-black rounded-none p-4 text-[10px] font-mono text-neutral-300 overflow-x-auto max-h-72 overflow-y-auto border-2 border-black">
             <pre>{JSON.stringify(compiled, null, 2)}</pre>

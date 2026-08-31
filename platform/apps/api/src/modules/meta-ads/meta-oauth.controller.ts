@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Query, ServiceUnavailableException, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Query, Req, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { encryptSecret } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import {
@@ -50,7 +51,11 @@ export class MetaOAuthController {
   }
 
   @Get("callback")
-  async callback(@Query("code") code: string | undefined, @Query("state") state: string | undefined) {
+  async callback(
+    @Query("code") code: string | undefined,
+    @Query("state") state: string | undefined,
+    @Req() req: PrincipalRequest,
+  ) {
     const config = oauthConfig();
     if (!config) throw new ServiceUnavailableException("Meta Lead Ads is not configured on this deployment");
     if (!code || !state) return { connected: false, reason: "missing code or state" };
@@ -78,8 +83,8 @@ export class MetaOAuthController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'meta_connection.create', 'meta_connection', $2)`,
-        [verified.orgId, connection.id],
+         VALUES ($1, 'user', $2, 'meta_connection.create', 'meta_connection', $3)`,
+        [verified.orgId, req.principal?.userId ?? "dev-admin", connection.id],
       );
       return connection;
     });

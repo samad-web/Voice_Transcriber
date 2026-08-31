@@ -50,6 +50,32 @@ export interface ConversionRow {
 }
 
 /**
+ * One (plan, rep) pair — a plan applies org-wide, so a rep with activity
+ * under more than one active plan gets one row per plan rather than a single
+ * blended number nobody could audit back to a rate.
+ *
+ * `metricTotal` is read off the SAME identity axis `performance()` uses:
+ * `deals.telecaller_id` for `won_value`/`won_count`, `calls.telecaller_id`
+ * for `calls` — never `devices.telecaller_id` (today's holder, wrong for a
+ * commission a person earned while they held the phone) or `owner_user_id`
+ * (a different axis entirely, belonging to `sales_targets`).
+ */
+export interface CommissionRow {
+  planId: string;
+  planName: string;
+  metric: CommissionMetric;
+  rateType: CommissionRateType;
+  rate: number;
+  repId: string | null;
+  rep: string;
+  metricTotal: number;
+  commission: number;
+}
+
+export type CommissionMetric = "won_value" | "won_count" | "calls";
+export type CommissionRateType = "percent" | "flat_per_unit";
+
+/**
  * How likely a deal in this stage is to close, 0-1.
  *
  * Derived from the stage's POSITION rather than configured per stage: the
@@ -251,6 +277,156 @@ export class ReportsService {
           interactions: Number(interactionStats?.total ?? 0),
         },
       };
+    });
+  }
+
+  /**
+   * Rate × attainment for a window — a calculator, not payroll. See 0071's
+   * header for the boundary this deliberately stays behind: no accrual, no
+   * claw-back, no approval trail. Every active `commission_plans` row is
+   * recomputed fresh against the window on every call; nothing here is
+   * stored per-run, so there is nothing to reconcile when a deal unwinds —
+   * the next export simply reflects the deal's current state.
+   *
+   * One row per (plan, rep): a plan applies org-wide, so a rep active under
+   * two plans (say, a value plan and a call-volume plan) earns two rows
+   * rather than one blended figure nobody could trace back to a rate.
+   *
+   * ── IDENTITY AXIS, SAME AS `performance()` ────────────────────────────
+   *
+   * `won_value`/`won_count` come off `deals.telecaller_id`, scoped by
+   * `ownedDeals()` on `deals.owner_user_id` exactly as `performance()`'s
+   * `deal_stats` CTE does — the permission column and the attribution
+   * column are different columns on the same table, and both matter: get
+   * either one wrong and this either leaks another rep's commission or pays
+   * it to whoever currently holds their phone.
+   *
+   * `calls` comes off `calls.telecaller_id` (write-once as of 0068). It is
+   * deliberately NOT filtered by `ownedDeals()` / record scope: `calls` has
+   * no `owner_user_id` column, the same disconnect `performance()`'s own doc
+   * comment names for tasks and interactions ("a rep is a telecaller id, a
+   * console user is a user id, and there is no mapping between them
+   * today"). Inventing a filter here would either fabricate a join or hide
+   * every call-based plan from a scoped viewer; reporting it plainly, as
+   * `performance()` does for its workspace totals, is the honest reading —
+   * for a workspace-wide TOTAL, which carries no individual's number.
+   *
+   * This method's output is per-rep rows, not a total, and that changes the
+   * calculus: with no telecaller_id-to-userId mapping there is no way to pick
+   * out "the scoped viewer's own" row from a `calls`-metric plan, only
+   * "every rep's" or "none" — so a scoped (`owned`) viewer gets none for that
+   * metric rather than every colleague's commission amount. `won_value`/
+   * `won_count` need no such carve-out; `ownedDeals()` already narrows those
+   * to the viewer's own deals.
+   */
+  async commission(
+    orgId: string,
+    from: string,
+    to: string,
+    recordScope: CrmRecordScope = UNSCOPED,
+  ): Promise<{ from: string; to: string; rows: CommissionRow[] }> {
+    return this.db.withOrg(orgId, async (client) => {
+      const { rows: plans } = await client.query<{
+        id: string;
+        name: string;
+        metric: CommissionMetric;
+        rate_type: CommissionRateType;
+        rate: string;
+      }>(
+        `SELECT id, name, metric, rate_type, rate
+           FROM commission_plans
+          WHERE active = true
+          ORDER BY name ASC`,
+      );
+      if (plans.length === 0) return { from, to, rows: [] };
+
+      // Same shape as performance()'s deal_stats CTE — same ownedDeals()
+      // scoping on the same owner_user_id column, same telecaller_id
+      // attribution — but windowed on stage_changed_at rather than
+      // created_at: performance() asks "what was created in this window",
+      // while a commission window asks "what closed in it", the same
+      // question targets.controller.ts's attainment query answers the same
+      // way for the identical reason (a deal opened in March and won in
+      // July is July's number).
+      const { rows: dealStats } = await client.query<{
+        rep_id: string | null;
+        won_value: string;
+        won_count: string;
+      }>(
+        `SELECT d.telecaller_id AS rep_id,
+                COALESCE(sum(d.amount), 0) AS won_value,
+                count(*)                   AS won_count
+           FROM deals d
+          WHERE d.status = 'won'
+            AND d.stage_changed_at >= $1::date AND d.stage_changed_at < ($2::date + 1)
+                ${ownedDeals(recordScope, 3, "d")}
+          GROUP BY d.telecaller_id`,
+        scopedParams([from, to], recordScope),
+      );
+
+      // Deliberately unscoped — see the doc comment above.
+      const { rows: callStats } = await client.query<{ rep_id: string | null; calls: string }>(
+        `SELECT c.telecaller_id AS rep_id, count(*) AS calls
+           FROM calls c
+          WHERE c.started_at >= $1::date AND c.started_at < ($2::date + 1)
+          GROUP BY c.telecaller_id`,
+        [from, to],
+      );
+
+      const dealById = new Map(dealStats.map((r) => [r.rep_id, r]));
+      const callById = new Map(callStats.map((r) => [r.rep_id, r]));
+      const repIds = new Set<string | null>([...dealById.keys(), ...callById.keys()]);
+
+      // Names resolved once, for every rep id either stat touched.
+      const ids = [...repIds].filter((id): id is string => id !== null);
+      const { rows: telecallers } = await client.query<{ id: string; display_name: string }>(
+        ids.length
+          ? `SELECT id, display_name FROM telecallers WHERE id = ANY($1::uuid[])`
+          : `SELECT id, display_name FROM telecallers WHERE false`,
+        ids.length ? [ids] : [],
+      );
+      const nameById = new Map(telecallers.map((t) => [t.id, t.display_name]));
+      const repName = (id: string | null) => (id === null ? "Unassigned" : (nameById.get(id) ?? "Unassigned"));
+
+      const metricTotal = (metric: CommissionMetric, repId: string | null): number => {
+        if (metric === "won_value") return Number(dealById.get(repId)?.won_value ?? 0);
+        if (metric === "won_count") return Number(dealById.get(repId)?.won_count ?? 0);
+        return Number(callById.get(repId)?.calls ?? 0);
+      };
+
+      const rows: CommissionRow[] = [];
+      for (const plan of plans) {
+        // See the class doc comment: a `calls`-metric plan has no per-rep
+        // filter to apply for a scoped viewer, only "everyone" or "no one" —
+        // an empty result beats handing a rep their colleagues' compensation.
+        if (plan.metric === "calls" && recordScope.scope === "owned") continue;
+
+        const rate = Number(plan.rate);
+        // A rep only appears under a plan if they have SOME activity on that
+        // plan's metric — the deal-based and call-based rep sets rarely
+        // coincide, and a plan should not manufacture a zero row for every
+        // rep in the org regardless of which metric it pays on.
+        const candidates = plan.metric === "calls" ? callById.keys() : dealById.keys();
+        for (const repId of candidates) {
+          const total = metricTotal(plan.metric, repId);
+          const commission =
+            plan.rate_type === "percent" ? (total * rate) / 100 : total * rate;
+          rows.push({
+            planId: plan.id,
+            planName: plan.name,
+            metric: plan.metric,
+            rateType: plan.rate_type,
+            rate,
+            repId,
+            rep: repName(repId),
+            metricTotal: total,
+            commission: Number(commission.toFixed(2)),
+          });
+        }
+      }
+
+      rows.sort((a, b) => a.planName.localeCompare(b.planName) || b.commission - a.commission);
+      return { from, to, rows };
     });
   }
 

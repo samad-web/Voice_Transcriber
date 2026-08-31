@@ -21,48 +21,10 @@ import {
   updateQuotationAction,
   type Quotation,
   type QuotationItem,
-  type QuotationItemInput,
   type QuotationStatus,
 } from "../actions";
-import { formatMoney } from "../format";
-
-interface ItemRow {
-  key: string;
-  productId?: string;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  discountPct: string;
-  taxRate: string;
-  lineTotal: string | null;
-}
-
-function toRows(items: QuotationItem[]): ItemRow[] {
-  return items.map((item) => ({
-    key: item.id,
-    productId: item.product_id ?? undefined,
-    description: item.description,
-    quantity: String(Number(item.quantity)),
-    unitPrice: String(Number(item.unit_price)),
-    discountPct: item.discount_pct ? String(Number(item.discount_pct)) : "",
-    taxRate: item.tax_rate ? String(Number(item.tax_rate)) : "",
-    lineTotal: item.line_total,
-  }));
-}
-
-let rowSeq = 0;
-function newRow(): ItemRow {
-  rowSeq += 1;
-  return {
-    key: `new-${rowSeq}`,
-    description: "",
-    quantity: "1",
-    unitPrice: "",
-    discountPct: "",
-    taxRate: "",
-    lineTotal: null,
-  };
-}
+import { formatMoney } from "../../lib/format-money";
+import { sourceToLineItemRows, useLineItemRows } from "../../use-line-item-rows";
 
 const STATUS_OPTIONS: QuotationStatus[] = ["draft", "sent", "accepted", "rejected", "expired"];
 
@@ -95,7 +57,7 @@ export function QuotationDetail({
   const [headerError, setHeaderError] = useState<string | null>(null);
   const [headerPending, startHeader] = useTransition();
 
-  const [rows, setRows] = useState<ItemRow[]>(() => toRows(initialItems));
+  const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
   const [discountType, setDiscountType] = useState<"none" | "percent" | "amount">(
     initialQuotation.discount_type ?? "none",
   );
@@ -127,50 +89,28 @@ export function QuotationDetail({
     });
   };
 
-  const updateRow = (key: string, patch: Partial<ItemRow>) => {
-    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-  };
-
-  const removeRow = (key: string) => {
-    setRows((prev) => prev.filter((row) => row.key !== key));
-  };
-
   const saveItems = () => {
     setItemsError(null);
 
-    const parsed: QuotationItemInput[] = [];
-    for (const row of rows) {
-      if (!row.description.trim()) continue;
-      const quantity = Number(row.quantity);
-      const unitPrice = Number(row.unitPrice);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        setItemsError(`Enter a valid quantity for "${row.description}"`);
-        return;
-      }
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-        setItemsError(`Enter a valid unit price for "${row.description}"`);
-        return;
-      }
-      parsed.push({
-        productId: row.productId,
-        description: row.description.trim(),
-        quantity,
-        unitPrice,
-        discountPct: row.discountPct ? Number(row.discountPct) : undefined,
-        taxRate: row.taxRate ? Number(row.taxRate) : undefined,
-      });
+    const parsed = parse("A quotation needs at least one line item");
+    if (parsed.items === null) {
+      setItemsError(parsed.error);
+      return;
     }
-    if (parsed.length === 0) {
-      setItemsError("A quotation needs at least one line item");
+
+    const trimmedDiscount = discountValue.trim();
+    const discountNum = trimmedDiscount === "" ? 0 : Number(trimmedDiscount);
+    if (trimmedDiscount !== "" && (!Number.isFinite(discountNum) || discountNum < 0)) {
+      setItemsError("Enter a valid discount value");
       return;
     }
 
     startItems(async () => {
       const result = await updateQuotationAction(quotation.id, {
-        items: parsed,
+        items: parsed.items,
         discount: {
           type: discountType === "none" ? null : discountType,
-          value: Number(discountValue) || 0,
+          value: discountNum,
         },
       });
       if (result.error || !result.quotation) {
@@ -178,7 +118,7 @@ export function QuotationDetail({
         return;
       }
       setQuotation(result.quotation);
-      if (result.items) setRows(toRows(result.items));
+      if (result.items) setRows(sourceToLineItemRows(result.items));
       setDiscountType(result.quotation.discount_type ?? "none");
       setDiscountValue(
         result.quotation.discount_value ? String(Number(result.quotation.discount_value)) : "0",
@@ -281,7 +221,13 @@ export function QuotationDetail({
                       {row.lineTotal ? formatMoney(row.lineTotal, quotation.currency) : "unsaved"}
                     </TableCell>
                     <TableCell>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(row.key)}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeRow(row.key)}
+                        disabled={rows.length === 1}
+                      >
                         Remove
                       </Button>
                     </TableCell>
@@ -289,12 +235,7 @@ export function QuotationDetail({
                 ))}
                 <TableRow>
                   <TableCell colSpan={7}>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setRows((prev) => [...prev, newRow()])}
-                    >
+                    <Button type="button" variant="secondary" size="sm" onClick={addRow}>
                       + Add item
                     </Button>
                   </TableCell>
@@ -439,9 +380,22 @@ export function QuotationDetail({
               {invoiceError}
             </p>
           ) : null}
-          <Button type="button" size="sm" className="mt-3" loading={invoicePending} onClick={createInvoice}>
+          <Button
+            type="button"
+            size="sm"
+            className="mt-3"
+            loading={invoicePending}
+            onClick={createInvoice}
+            disabled={quotation.status !== "accepted"}
+          >
             Create invoice
           </Button>
+          {quotation.status !== "accepted" ? (
+            <p className="mt-2 text-xs text-text-muted">
+              Only an accepted quotation can be turned into an invoice — set the status above to
+              Accepted and save first.
+            </p>
+          ) : null}
         </Card>
       </div>
     </div>

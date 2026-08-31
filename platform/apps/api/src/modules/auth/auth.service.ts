@@ -42,7 +42,20 @@ export class AuthService {
   }
 
   // ── login: verify credentials, resolve org+role, mint a session ────────
-  async login(email: string, password: string): Promise<{ token: string; principal: Principal } | null> {
+  /**
+   * `orgId` is an optional caller hint (e.g. a returning user's last-used org,
+   * or a login screen that already knows which tenant it's for) — when given
+   * AND the user actually has that membership, it wins; otherwise this falls
+   * back to the earliest-created membership, same as before `orgId` existed.
+   * That fallback is what let a multi-org user sign in at all before this hint
+   * was plumbed through, so it stays rather than becoming an error: a stale or
+   * wrong hint should degrade to "your first org", not lock the user out.
+   */
+  async login(
+    email: string,
+    password: string,
+    orgId?: string,
+  ): Promise<{ token: string; principal: Principal } | null> {
     const {
       rows: [row],
     } = await this.db.adminPool().query(
@@ -51,9 +64,12 @@ export class AuthService {
          FROM users u
          JOIN memberships m ON m.user_id = u.id
         WHERE lower(u.email) = lower($1)
-        ORDER BY m.created_at ASC
+        -- The requested org sorts first when the caller supplied one AND the
+        -- user actually belongs to it; ties (no hint, or a hint that doesn't
+        -- match any membership) fall through to the original ordering.
+        ORDER BY ($2::uuid IS NOT NULL AND m.org_id = $2) DESC, m.created_at ASC
         LIMIT 1`,
-      [email],
+      [email, orgId ?? null],
     );
     if (!row || row.status !== "active") return null;
     if (!AuthService.verifyPassword(password, row.password_hash)) return null;
@@ -100,6 +116,7 @@ export class AuthService {
       recordingsListen: boolean;
       recordingsExport: boolean;
       workspaceId: string | null;
+      enabledModules: string[];
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
@@ -121,7 +138,8 @@ export class AuthService {
               m.recordings_listen AS "recordingsListen",
               m.recordings_export AS "recordingsExport",
               (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
-                ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId"
+                ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
+              o.enabled_modules AS "enabledModules"
          FROM memberships m
          JOIN organizations o ON o.id = m.org_id
         WHERE m.user_id = $1
@@ -130,6 +148,35 @@ export class AuthService {
     );
 
     return { memberships: rows, user };
+  }
+
+  /**
+   * The owner-console persona a real membership actually carries — used by
+   * `OwnerRoleGuard` to enforce `@RequireOwnerRole` for an admin-key caller
+   * (checklist 08 §2.5), instead of trusting the `x-caller-owner-role` header
+   * the same caller supplied. A Bearer session never needs this: its
+   * `ownerRole` was already read from this same table at token-resolution
+   * time (`principalFromToken`, above), not from anything the client sent.
+   *
+   * Three distinct outcomes, and the caller must be able to tell them apart:
+   *   - `undefined` — no membership row for this (user, org) pair AT ALL.
+   *     There is nothing here to derive a persona from, so there is nothing
+   *     to grant based on one; the caller treats this as a denial.
+   *   - `null` — a membership row exists but its `owner_role` predates 0018.
+   *     `resolveOwnerRole(null)` already has a documented default for this
+   *     (the most permissive persona) and that default must apply the same
+   *     way regardless of which auth mechanism resolved the membership.
+   *   - a real `OwnerRole` — the membership names one.
+   */
+  async ownerRoleFor(userId: string, orgId: string): Promise<OwnerRole | null | undefined> {
+    const {
+      rows: [row],
+    } = await this.db.adminPool().query<{ owner_role: string | null }>(
+      `SELECT owner_role FROM memberships WHERE user_id = $1 AND org_id = $2`,
+      [userId, orgId],
+    );
+    if (!row) return undefined;
+    return parseOwnerRole(row.owner_role);
   }
 
   /** Resolve a session bearer token to a principal (used by the guard). */

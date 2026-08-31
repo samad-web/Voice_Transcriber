@@ -9,6 +9,7 @@ import { Pool, type PoolClient } from "pg";
 export type { PoolClient } from "pg";
 
 export * from "./secrets";
+export * from "./ssrf-guard";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 

@@ -22,7 +22,19 @@ export interface CreatedKey {
   key?: string;
 }
 
-export async function createApiKeyAction(name: string, orgId?: string): Promise<CreatedKey> {
+/**
+ * `scopes` is required, with no default, mirroring the API (migration 0076).
+ *
+ * A key minted with no scopes can do nothing at all — the column defaults to
+ * the empty set precisely so a credential can never acquire authority by
+ * omission — so defaulting here would hand the operator a key that 403s on
+ * first use. Making the caller state it is the point.
+ */
+export async function createApiKeyAction(
+  name: string,
+  scopes: string[],
+  orgId?: string,
+): Promise<CreatedKey> {
   try {
     await requireOperator();
   } catch {
@@ -33,7 +45,7 @@ export async function createApiKeyAction(name: string, orgId?: string): Promise<
       method: "POST",
       headers: headersFor(orgId),
       cache: "no-store",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, scopes }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

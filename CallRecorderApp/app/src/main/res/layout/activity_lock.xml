@@ -59,11 +59,24 @@
         android:textColor="?attr/colorError"
         android:visibility="gone" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/unlockBtn"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="18dp"
-        android:text="@string/lock_unlock"
-        android:textSize="16sp" />
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/unlockBtn"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/lock_unlock"
+            android:textSize="16sp" />
+
+        <ProgressBar
+            android:id="@+id/unlockProgress"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center"
+            android:indeterminateTint="?attr/colorOnPrimary"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>

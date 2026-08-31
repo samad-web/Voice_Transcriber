@@ -104,7 +104,7 @@ export function TranscriptionToggle({
   };
 
   return (
-    <Card shadow className="space-y-3">
+    <Card elevated className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           {enabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}

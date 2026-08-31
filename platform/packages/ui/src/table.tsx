@@ -45,7 +45,7 @@ export function Table({
       tabIndex={0}
       role="region"
       aria-label={caption}
-      className={cx("overflow-x-auto rounded-md border border-border", className)}
+      className={cx("overflow-x-auto rounded-xl border border-border", className)}
     >
       <table className="w-full border-collapse text-sm">
         <caption
@@ -112,7 +112,7 @@ export function TableHeaderCell({
     <th
       scope={scope}
       className={cx(
-        "border-b border-border px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap text-text-muted",
+        "border-b border-border px-4 py-3 text-left text-xs font-medium whitespace-nowrap text-text-muted",
         className,
       )}
       {...rest}
@@ -128,7 +128,7 @@ export function TableCell({
   ...rest
 }: TdHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <td className={cx("px-4 py-2.5 align-middle text-text", className)} {...rest}>
+    <td className={cx("px-4 py-3 align-middle text-text", className)} {...rest}>
       {children}
     </td>
   );

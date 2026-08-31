@@ -20,6 +20,7 @@
 import { describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { CallStatus, CrmSyncStatus } from "../packages/shared/src/enums.js";
+import { API_SCOPES } from "../packages/shared/src/api-scopes.js";
 import {
   API_BASE,
   DATABASE_URL,
@@ -190,5 +191,169 @@ describe("migrate.ts — against the ephemeral stack", () => {
     } finally {
       await client.end();
     }
+  });
+
+  /**
+   * The same drift class, for the API-key scope vocabulary (0076).
+   *
+   * `api_keys_scopes_known` and `API_SCOPES` are two statements of one closed
+   * set, and this is the security-critical instance of the problem: if the
+   * array in the migration ever gains a value the zod enum lacks, a key could
+   * be minted holding a scope no route requires and no reviewer reading
+   * api-scopes.ts would ever see it.
+   *
+   * Written separately from the `it.each` above because that block matches
+   * `column = ANY(...)` constraints and this one is an array-containment
+   * (`scopes <@ ARRAY[...]`) — a different constraint shape, same failure mode.
+   */
+  it("api_keys.scopes CHECK matches API_SCOPES exactly", async () => {
+    const client = new Client({ connectionString: DATABASE_URL });
+    await client.connect();
+    try {
+      const { rows } = await client.query<{ def: string }>(
+        `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+          WHERE conrelid = 'api_keys'::regclass AND conname = 'api_keys_scopes_known'`,
+      );
+      expect(rows.length, "api_keys_scopes_known constraint is missing").toBe(1);
+      const inDb = [...rows[0].def.matchAll(/'([^']+)'::text/g)].map((m) => m[1]).sort();
+      expect(inDb).toEqual([...API_SCOPES].sort());
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+/**
+ * seed_default_board (migration 0075) — the ONE implementation of "this org has
+ * a board", called by three places that must not be allowed to diverge:
+ * 0075's own backfill, `seedBoardDefaults` in the admin dashboard's tenant
+ * provisioning (apps/api/src/modules/admin/admin.controller.ts), and the dev
+ * seed. A CRM created from the admin dashboard tomorrow has to come up
+ * identical to one that predates the migration; the only way to guarantee that
+ * is for all three to run the same code, and the only way to know they still
+ * do is to test the function itself.
+ *
+ * Each test runs inside a transaction it rolls back, so the ephemeral stack's
+ * schema is left exactly as the migration tests above left it.
+ */
+describe("seed_default_board — every provisioned tenant gets the same board", () => {
+  const ORG = "0000dead-0000-4000-8000-00000000b0a5";
+
+  async function withRollback<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+    const client = new Client({ connectionString: DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO organizations (id, name, enabled_modules) VALUES ($1, 'Seed Probe', ARRAY['aura'])`,
+        [ORG],
+      );
+      return await fn(client);
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+  }
+
+  it("gives a brand-new org a complete board from nothing", async () => {
+    await withRollback(async (client) => {
+      const {
+        rows: [{ seed_default_board: boardId }],
+      } = await client.query<{ seed_default_board: string }>(
+        `SELECT seed_default_board($1)`,
+        [ORG],
+      );
+      expect(boardId).toBeTruthy();
+
+      const {
+        rows: [shape],
+      } = await client.query<{
+        cols: number;
+        fallback: number;
+        mappings: number;
+        template: number;
+        pipelines: number;
+        binds_default_pipeline: boolean;
+      }>(
+        `SELECT (SELECT count(*)::int FROM board_columns WHERE board_id = $1) AS cols,
+                (SELECT count(*)::int FROM board_columns WHERE board_id = $1 AND is_fallback) AS fallback,
+                (SELECT count(*)::int FROM board_column_stages WHERE board_id = $1) AS mappings,
+                (SELECT jsonb_array_length(template) FROM boards WHERE id = $1) AS template,
+                (SELECT count(*)::int FROM deal_pipelines WHERE org_id = $2) AS pipelines,
+                (SELECT b.pipeline_id = p.id FROM boards b
+                   JOIN deal_pipelines p ON p.org_id = $2 AND p.is_default
+                  WHERE b.id = $1) AS binds_default_pipeline`,
+        [boardId, ORG],
+      );
+
+      // 6 lifecycle columns + the fallback; the fallback is deliberately NOT in
+      // board_column_stages, so mappings is 6 stages x 2 models.
+      expect(shape.cols).toBe(7);
+      expect(shape.fallback).toBe(1);
+      expect(shape.mappings).toBe(12);
+      expect(shape.template).toBe(7);
+      // A board needs a pipeline (NOT NULL), so the function creates one when
+      // the org has none — and binds to it rather than to a second one.
+      expect(shape.pipelines).toBe(1);
+      expect(shape.binds_default_pipeline).toBe(true);
+    });
+  });
+
+  it("is idempotent — a second call returns the same board and writes nothing", async () => {
+    await withRollback(async (client) => {
+      const first = await client.query<{ seed_default_board: string }>(
+        `SELECT seed_default_board($1)`,
+        [ORG],
+      );
+      const second = await client.query<{ seed_default_board: string }>(
+        `SELECT seed_default_board($1)`,
+        [ORG],
+      );
+      expect(second.rows[0].seed_default_board).toBe(first.rows[0].seed_default_board);
+
+      const {
+        rows: [after],
+      } = await client.query<{ boards: number; cols: number }>(
+        `SELECT (SELECT count(*)::int FROM boards WHERE org_id = $1) AS boards,
+                (SELECT count(*)::int FROM board_columns c
+                   JOIN boards b ON b.id = c.board_id WHERE b.org_id = $1) AS cols`,
+        [ORG],
+      );
+      expect(after.boards).toBe(1);
+      expect(after.cols).toBe(7);
+    });
+  });
+
+  /**
+   * The regression this pins: seedCrmDefaults used to INSERT a 'Sales Pipeline'
+   * with is_default = true unconditionally. Once seed_default_board also
+   * find-or-creates one, enabling the CRM module on an org would leave TWO
+   * default pipelines — and "exactly one default per org" is app-enforced only
+   * (0034 says so), so nothing in the database would have caught it.
+   */
+  it("enabling CRM after provisioning does not create a second default pipeline", async () => {
+    await withRollback(async (client) => {
+      await client.query(`SELECT seed_default_board($1)`, [ORG]);
+
+      // seedCrmDefaults' pipeline insert, verbatim.
+      await client.query(
+        `INSERT INTO deal_pipelines (org_id, name, stages, is_default)
+         SELECT $1, 'Sales Pipeline', $2::jsonb, true
+          WHERE NOT EXISTS (
+            SELECT 1 FROM deal_pipelines p WHERE p.org_id = $1 AND p.status = 'active')`,
+        [ORG, JSON.stringify([])],
+      );
+
+      const {
+        rows: [{ defaults, total }],
+      } = await client.query<{ defaults: number; total: number }>(
+        `SELECT count(*) FILTER (WHERE is_default)::int AS defaults,
+                count(*)::int AS total
+           FROM deal_pipelines WHERE org_id = $1`,
+        [ORG],
+      );
+      expect(defaults).toBe(1);
+      expect(total).toBe(1);
+    });
   });
 });

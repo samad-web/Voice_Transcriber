@@ -1,0 +1,236 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { CheckCircle2, Plug, TriangleAlert } from "lucide-react";
+import { Button, Card, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import {
+  connectMetaMcpAction,
+  disconnectMcpAction,
+  testMcpConnectionAction,
+  type McpCapabilities,
+  type McpConnection,
+} from "./actions";
+
+/**
+ * Connect a Meta MCP server, as an alternative to the OAuth flow above it.
+ *
+ * The token field is write-only by construction: the API never returns
+ * `access_token` on any read, so an existing connection shows a blank box and
+ * saving with it blank is how you keep the stored token. That is stated in
+ * the UI rather than left to be discovered.
+ */
+export function McpConnect({ initial }: { initial: McpConnection | null }) {
+  const [connection, setConnection] = useState<McpConnection | null>(initial);
+  const [capabilities, setCapabilities] = useState<McpCapabilities | null>(null);
+  const [serverUrl, setServerUrl] = useState(initial?.server_url ?? "");
+  const [token, setToken] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const connect = () => {
+    const url = serverUrl.trim();
+    if (!url) {
+      setError("Enter the MCP server URL");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await connectMetaMcpAction({
+        serverUrl: url,
+        accessToken: token.trim() || null,
+      });
+      if (result.error || !result.connection) {
+        setError(result.error ?? "Could not connect");
+        return;
+      }
+      setConnection(result.connection);
+      setCapabilities(result.capabilities ?? null);
+      setToken("");
+      setNotice("Connected.");
+    });
+  };
+
+  const test = () => {
+    if (!connection) return;
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await testMcpConnectionAction(connection.id);
+      if (result.connection) setConnection(result.connection);
+      setCapabilities(result.capabilities ?? null);
+      if (result.ok) setNotice("The server answered and the handshake succeeded.");
+      else setError(result.error ?? "The server did not answer");
+    });
+  };
+
+  const disconnect = () => {
+    if (!connection) return;
+    if (
+      !window.confirm(
+        "Disconnect this MCP server?\n\n" +
+          "The stored token is deleted. Leads already pulled in stay exactly where they are.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await disconnectMcpAction(connection.id);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setConnection(null);
+      setCapabilities(null);
+      setToken("");
+      setNotice("Disconnected.");
+    });
+  };
+
+  return (
+    <Card elevated className="max-w-2xl space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Plug className="h-4 w-4" aria-hidden="true" />
+          <MonoLabel>Meta via MCP</MonoLabel>
+        </div>
+        {connection ? (
+          <StatusChip tone={connection.status === "connected" ? "solid" : "danger"}>
+            {connection.status === "connected" ? "Connected" : "Error"}
+          </StatusChip>
+        ) : (
+          <StatusChip tone="muted">Not connected</StatusChip>
+        )}
+      </div>
+
+      <p className="text-sm leading-relaxed text-text-muted">
+        Point Aura at a Meta MCP server and it will pull your Lead Ads leads onto the
+        same board your phone leads land on — each one matched against your{" "}
+        <a href="/owner/projects" className="text-accent-text underline underline-offset-2">
+          project list
+        </a>{" "}
+        so it arrives already labelled. Unlike the Facebook sign-in above, this needs no
+        app review and no public callback URL.
+      </p>
+
+      <FormField label="MCP server URL" name="mcp-url">
+        <Input
+          value={serverUrl}
+          onChange={(e) => setServerUrl(e.target.value)}
+          placeholder="https://mcp.example.com/mcp"
+          inputMode="url"
+          maxLength={2000}
+        />
+      </FormField>
+
+      <FormField
+        label={connection ? "Access token (leave blank to keep the stored one)" : "Access token"}
+        name="mcp-token"
+      >
+        <Input
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          type="password"
+          autoComplete="off"
+          placeholder={connection ? "••••••••" : "Optional, if the server needs one"}
+          maxLength={4000}
+        />
+      </FormField>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" onClick={connect} loading={pending}>
+          {connection ? "Save & reconnect" : "Connect"}
+        </Button>
+        {connection ? (
+          <>
+            <Button type="button" variant="secondary" disabled={pending} onClick={test}>
+              Test connection
+            </Button>
+            <Button type="button" variant="ghost" disabled={pending} onClick={disconnect}>
+              Disconnect
+            </Button>
+          </>
+        ) : null}
+      </div>
+
+      {/* The most likely disappointment with this integration is a server that
+          handshakes cleanly and advertises no lead tool — it looks connected
+          and then never produces a lead. Saying so here is the difference
+          between a five-second fix and a week of wondering. */}
+      {capabilities ? (
+        <div
+          className={`flex items-start gap-2 rounded-md border p-3 text-xs ${
+            capabilities.canFetchLeads
+              ? "border-success bg-success-subtle text-success-text"
+              : "border-warning bg-warning-subtle text-warning-text"
+          }`}
+        >
+          {capabilities.canFetchLeads ? (
+            <CheckCircle2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <TriangleAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          )}
+          <span>
+            {capabilities.canFetchLeads ? (
+              <>
+                This server can fetch leads — using its{" "}
+                <code className="font-mono">{capabilities.leadTool}</code> tool
+                {capabilities.toolCount > 1 ? ` (of ${capabilities.toolCount} it offers)` : ""}.
+              </>
+            ) : (
+              <>
+                The server answered, but none of the {capabilities.toolCount} tools it offers
+                fetches leads. Leads will not arrive until it exposes one.
+              </>
+            )}
+          </span>
+        </div>
+      ) : null}
+
+      {connection?.status === "error" && connection.last_error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-danger bg-danger-subtle p-3 text-xs font-medium text-danger-text"
+        >
+          Last attempt failed: {connection.last_error}
+        </p>
+      ) : null}
+
+      {connection ? (
+        <dl className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
+          <div>
+            <dt className="text-text-muted">Server</dt>
+            <dd className="mt-0.5 font-medium break-words text-text">
+              {connection.server_info?.name ?? "—"}
+              {connection.server_info?.version ? ` v${connection.server_info.version}` : ""}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-text-muted">Last sync</dt>
+            <dd className="mt-0.5 font-medium text-text tabular-nums">
+              {connection.last_sync_at
+                ? new Date(connection.last_sync_at).toLocaleString()
+                : "Not yet"}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      {notice ? (
+        <p role="status" className="text-xs text-text-muted">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-danger bg-danger-subtle p-3 text-xs font-medium text-danger-text"
+        >
+          {error}
+        </p>
+      ) : null}
+    </Card>
+  );
+}

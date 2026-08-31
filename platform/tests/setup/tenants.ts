@@ -197,6 +197,12 @@ async function seedOne(client: Client, t: Tenant): Promise<void> {
     `${t.orgName} Workspace`,
   ]);
 
+  // The same board seeding real provisioning does (migration 0075), so an
+  // integration fixture is structurally identical to a tenant created through
+  // the admin dashboard. A fixture that differs from production is a fixture
+  // that passes tests production would fail.
+  await client.query(`SELECT seed_default_board($1)`, [t.orgId]);
+
   // sso_subject stays NULL on purpose. `DELETE /v1/owners/:userId` only reaches
   // Supabase when the revoked owner HAS a subject (owners.controller.ts:286),
   // and SUPABASE_URL is blank in childEnv() — a fixture with a subject would

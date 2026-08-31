@@ -376,7 +376,7 @@ export class DealsController {
         dealOwnerUserId: (deal as { owner_user_id?: string | null })?.owner_user_id ?? null,
       });
 
-      await this.audit(client, orgId, "deal.create", inserted.id);
+      await this.audit(client, orgId, "deal.create", inserted.id, req);
       return { deal };
     });
   }
@@ -406,13 +406,12 @@ export class DealsController {
       let status: string | null = null;
       let previous: { stage: string; status: string } | null = null;
       if (p.stage) {
+        const scoped = scopeClause("deal", recordScope, 2);
         const {
           rows: [existing],
         } = await client.query<{ pipeline_id: string; stage: string; status: string }>(
-          `SELECT pipeline_id, stage, status FROM deals WHERE id = $1${
-            scopeClause("deal", recordScope, 2) ? ` AND ${scopeClause("deal", recordScope, 2)}` : ""
-          }`,
-          scopeClause("deal", recordScope, 2) ? [id, recordScope.userId] : [id],
+          `SELECT pipeline_id, stage, status FROM deals WHERE id = $1${scoped ? ` AND ${scoped}` : ""}`,
+          scoped ? [id, recordScope.userId] : [id],
         );
         if (!existing) throw new NotFoundException("deal not found");
         const pipeline = await this.resolvePipeline(client, existing.pipeline_id);
@@ -517,7 +516,7 @@ export class DealsController {
         });
       }
 
-      await this.audit(client, orgId, p.stage ? "deal.stage_change" : "deal.update", id);
+      await this.audit(client, orgId, p.stage ? "deal.stage_change" : "deal.update", id, req);
       return { deal };
     });
   }
@@ -527,11 +526,12 @@ export class DealsController {
     orgId: string,
     action: string,
     targetId: string,
+    req: PrincipalRequest,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', 'dev-admin', $2, 'deal', $3)`,
-      [orgId, action, targetId],
+       VALUES ($1, 'user', $2, $3, 'deal', $4)`,
+      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
 }

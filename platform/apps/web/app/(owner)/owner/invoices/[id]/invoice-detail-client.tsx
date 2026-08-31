@@ -22,49 +22,11 @@ import {
   updateInvoiceAction,
   type Invoice,
   type InvoiceItem,
-  type InvoiceItemInput,
-  type InvoiceStatus,
   type Payment,
+  type InvoiceStatus,
 } from "../actions";
-import { formatMoney } from "../format";
-
-interface ItemRow {
-  key: string;
-  productId?: string;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  discountPct: string;
-  taxRate: string;
-  lineTotal: string | null;
-}
-
-function toRows(items: InvoiceItem[]): ItemRow[] {
-  return items.map((item) => ({
-    key: item.id,
-    productId: item.product_id ?? undefined,
-    description: item.description,
-    quantity: String(Number(item.quantity)),
-    unitPrice: String(Number(item.unit_price)),
-    discountPct: item.discount_pct ? String(Number(item.discount_pct)) : "",
-    taxRate: item.tax_rate ? String(Number(item.tax_rate)) : "",
-    lineTotal: item.line_total,
-  }));
-}
-
-let rowSeq = 0;
-function newRow(): ItemRow {
-  rowSeq += 1;
-  return {
-    key: `new-${rowSeq}`,
-    description: "",
-    quantity: "1",
-    unitPrice: "",
-    discountPct: "",
-    taxRate: "",
-    lineTotal: null,
-  };
-}
+import { formatMoney } from "../../lib/format-money";
+import { sourceToLineItemRows, useLineItemRows } from "../../use-line-item-rows";
 
 const STATUS_OPTIONS: InvoiceStatus[] = ["draft", "sent", "paid", "overdue", "void"];
 
@@ -100,7 +62,7 @@ export function InvoiceDetail({
   const [headerError, setHeaderError] = useState<string | null>(null);
   const [headerPending, startHeader] = useTransition();
 
-  const [rows, setRows] = useState<ItemRow[]>(() => toRows(initialItems));
+  const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
   const [discountType, setDiscountType] = useState<"none" | "percent" | "amount">(
     initialInvoice.discount_type ?? "none",
   );
@@ -138,50 +100,28 @@ export function InvoiceDetail({
     });
   };
 
-  const updateRow = (key: string, patch: Partial<ItemRow>) => {
-    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
-  };
-
-  const removeRow = (key: string) => {
-    setRows((prev) => prev.filter((row) => row.key !== key));
-  };
-
   const saveItems = () => {
     setItemsError(null);
 
-    const parsed: InvoiceItemInput[] = [];
-    for (const row of rows) {
-      if (!row.description.trim()) continue;
-      const quantity = Number(row.quantity);
-      const unitPrice = Number(row.unitPrice);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        setItemsError(`Enter a valid quantity for "${row.description}"`);
-        return;
-      }
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-        setItemsError(`Enter a valid unit price for "${row.description}"`);
-        return;
-      }
-      parsed.push({
-        productId: row.productId,
-        description: row.description.trim(),
-        quantity,
-        unitPrice,
-        discountPct: row.discountPct ? Number(row.discountPct) : undefined,
-        taxRate: row.taxRate ? Number(row.taxRate) : undefined,
-      });
+    const parsed = parse("An invoice needs at least one line item");
+    if (parsed.items === null) {
+      setItemsError(parsed.error);
+      return;
     }
-    if (parsed.length === 0) {
-      setItemsError("An invoice needs at least one line item");
+
+    const trimmedDiscount = discountValue.trim();
+    const discountNum = trimmedDiscount === "" ? 0 : Number(trimmedDiscount);
+    if (trimmedDiscount !== "" && (!Number.isFinite(discountNum) || discountNum < 0)) {
+      setItemsError("Enter a valid discount value");
       return;
     }
 
     startItems(async () => {
       const result = await updateInvoiceAction(invoice.id, {
-        items: parsed,
+        items: parsed.items,
         discount: {
           type: discountType === "none" ? null : discountType,
-          value: Number(discountValue) || 0,
+          value: discountNum,
         },
       });
       if (result.error || !result.invoice) {
@@ -189,7 +129,7 @@ export function InvoiceDetail({
         return;
       }
       setInvoice(result.invoice);
-      if (result.items) setRows(toRows(result.items));
+      if (result.items) setRows(sourceToLineItemRows(result.items));
       setDiscountType(result.invoice.discount_type ?? "none");
       setDiscountValue(
         result.invoice.discount_value ? String(Number(result.invoice.discount_value)) : "0",
@@ -221,6 +161,21 @@ export function InvoiceDetail({
   };
 
   const balanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
+
+  // "Paid" is a claim about money actually received — selecting it while a
+  // balance is still outstanding is very likely a mistake, so it gets the
+  // same window.confirm guard the rest of the console uses before any other
+  // consequential, hard-to-undo action (e.g. team-manager.tsx's member
+  // removal, device-actions.tsx's device actions).
+  const handleStatusChange = (next: InvoiceStatus) => {
+    if (next === "paid" && next !== status && balanceDue > 0) {
+      const ok = window.confirm(
+        `A balance of ${formatMoney(balanceDue, invoice.currency)} is still due on this invoice. Mark it paid anyway?`,
+      );
+      if (!ok) return;
+    }
+    setStatus(next);
+  };
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
@@ -305,7 +260,13 @@ export function InvoiceDetail({
                       {row.lineTotal ? formatMoney(row.lineTotal, invoice.currency) : "unsaved"}
                     </TableCell>
                     <TableCell>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(row.key)}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeRow(row.key)}
+                        disabled={rows.length === 1}
+                      >
                         Remove
                       </Button>
                     </TableCell>
@@ -313,12 +274,7 @@ export function InvoiceDetail({
                 ))}
                 <TableRow>
                   <TableCell colSpan={7}>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setRows((prev) => [...prev, newRow()])}
-                    >
+                    <Button type="button" variant="secondary" size="sm" onClick={addRow}>
                       + Add item
                     </Button>
                   </TableCell>
@@ -411,7 +367,10 @@ export function InvoiceDetail({
           ) : null}
           <div className="mt-3 space-y-3">
             <FormField label="Status" name="status">
-              <Select value={status} onChange={(e) => setStatus(e.target.value as InvoiceStatus)}>
+              <Select
+                value={status}
+                onChange={(e) => handleStatusChange(e.target.value as InvoiceStatus)}
+              >
                 {STATUS_OPTIONS.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -470,7 +429,10 @@ export function InvoiceDetail({
                 {formatMoney(invoice.tax_total, invoice.currency)}
               </dd>
             </div>
-            {invoice.cgst || invoice.sgst ? (
+            {/* The API returns these as Postgres numeric strings (e.g. "0.00"),
+                which are truthy even at zero — comparing the raw field would
+                show a "₹0.00" row on every domestic invoice. */}
+            {Number(invoice.cgst ?? 0) > 0 || Number(invoice.sgst ?? 0) > 0 ? (
               <div className="flex justify-between">
                 <dt className="text-text-muted">CGST + SGST</dt>
                 <dd className="font-medium text-text tabular-nums">
@@ -478,7 +440,7 @@ export function InvoiceDetail({
                 </dd>
               </div>
             ) : null}
-            {invoice.igst ? (
+            {Number(invoice.igst ?? 0) > 0 ? (
               <div className="flex justify-between">
                 <dt className="text-text-muted">IGST</dt>
                 <dd className="font-medium text-text tabular-nums">

@@ -245,7 +245,7 @@ export class ConnectionsController {
           token.expires_in ?? null,
         ],
       );
-      await audit(db, orgId, "connection.connect", connection.id);
+      await audit(db, orgId, "connection.connect", connection.id, req);
       return { connection, redirectPath: safeRedirectPath(pending.redirect_path) };
     });
   }
@@ -303,7 +303,7 @@ export class ConnectionsController {
           encryptSecret(secret),
         ],
       );
-      await audit(db, orgId, "connection.connect", connection.id);
+      await audit(db, orgId, "connection.connect", connection.id, req);
       return { connection };
     });
   }
@@ -326,7 +326,7 @@ export class ConnectionsController {
         [id, userId],
       );
       if (!removed) throw new NotFoundException("connection not found");
-      await audit(db, orgId, "connection.disconnect", id);
+      await audit(db, orgId, "connection.disconnect", id, req);
       return { disconnected: true };
     });
   }
@@ -363,10 +363,11 @@ async function audit(
   orgId: string,
   action: string,
   targetId: string,
+  req: PrincipalRequest,
 ): Promise<void> {
   await db.query(
     `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-     VALUES ($1, 'user', 'dev-admin', $2, 'connection', $3)`,
-    [orgId, action, targetId],
+     VALUES ($1, 'user', $2, $3, 'connection', $4)`,
+    [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
   );
 }

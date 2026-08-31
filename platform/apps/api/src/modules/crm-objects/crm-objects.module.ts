@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AccountsController } from "./accounts.controller";
+import { CallIntegrityController } from "./call-integrity.controller";
 import { ContactsController } from "./contacts.controller";
 import { DealsController } from "./deals.controller";
 import { InteractionsController } from "./interactions.controller";
@@ -18,6 +19,7 @@ import { PipelinesController } from "./pipelines.controller";
     ContactsController,
     DealsController,
     InteractionsController,
+    CallIntegrityController,
   ],
 })
 export class CrmObjectsModule {}

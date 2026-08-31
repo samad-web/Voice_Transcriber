@@ -32,7 +32,7 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
       : "danger";
 
   return (
-    <Card shadow className="space-y-4">
+    <Card elevated className="space-y-4">
       <div className="flex items-center gap-2">
         <FlaskConical className="h-4 w-4" />
         <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">

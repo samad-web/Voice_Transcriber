@@ -16,7 +16,7 @@ import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { ownerGet } from "@/lib/owner-context";
 import { NewQuotationDialog } from "./new-quotation-dialog";
-import { formatMoney } from "./format";
+import { formatMoney } from "../lib/format-money";
 import type { Quotation, QuotationStatus } from "./actions";
 
 export const metadata: Metadata = { title: "Quotations — Aura" };
@@ -91,10 +91,11 @@ export default async function QuotationsPage({
                 key={s.value || "all"}
                 href={href}
                 aria-current={active ? "page" : undefined}
+                style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
                 className={
-                  "inline-flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors duration-150 ease-out " +
+                  "inline-flex h-8 items-center rounded-full px-3 text-xs font-medium transition-colors duration-150 ease-out " +
                   (active
-                    ? "bg-accent text-accent-fg"
+                    ? "text-white"
                     : "border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text")
                 }
               >

@@ -1,5 +1,6 @@
 import {
   Activity,
+  AlertTriangle,
   CalendarDays,
   BarChart3,
   Building2,
@@ -11,6 +12,7 @@ import {
   LayoutGrid,
   ListFilter,
   ListChecks,
+  Layers,
   Megaphone,
   MessageCircle,
   MessagesSquare,
@@ -135,6 +137,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: ListFilter,
     title: "All Leads",
     context: "Pipeline",
+  },
+  {
+    href: "/owner/projects",
+    label: "Projects",
+    icon: Layers,
+    title: "Projects",
+    context: "Pipeline",
+    // Deliberately NOT in CRM_GATED_HREFS, alongside Lead Board and All
+    // Leads: the catalogue labels `leads`, which are core Aura, so a tenant
+    // without the CRM module still sees project chips on their board and
+    // still needs somewhere to edit the list behind them.
+    ownerRoles: ["owner", "manager"],
   },
   {
     href: "/owner/deals",
@@ -273,6 +287,16 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Settings",
     ownerRoles: ["owner", "manager"],
   },
+  {
+    href: "/owner/call-quality",
+    label: "Call Quality",
+    icon: AlertTriangle,
+    title: "Call Quality",
+    context: "Pipeline",
+    // A manager's review queue over the whole floor's calls, same restriction
+    // as Reports and the boards (design doc §9) — not a telecaller's own view.
+    ownerRoles: ["owner", "manager"],
+  },
 ];
 
 /**
@@ -284,14 +308,46 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
 const CRM_PRIMARY_HREFS = ["/owner/deals", "/owner/contacts", "/owner/accounts", "/owner/reports"];
 
 /**
+ * The CRM-object nav items — hidden entirely (not just reordered) when the
+ * org's `enabled_modules` (migration 0072) doesn't include 'crm'. Matched
+ * against what `CrmPermissionsGuard`'s `@RequireCrmPermission` actually
+ * gates on the API side (contact/account/deal/task/conversation/product/
+ * quotation/invoice — see the crm-objects, tasks, conversations, products,
+ * quotations and invoices controllers), plus Duplicates and Import, which
+ * are pure-CRM features not yet backend-gated
+ * but meaningless without CRM data. `/owner/board` and `/owner/leads` (the
+ * legacy `leads`-table pages) are deliberately NOT here — those are core
+ * Aura, independent of the CRM toggle.
+ */
+const CRM_GATED_HREFS = [
+  "/owner/deals",
+  "/owner/contacts",
+  "/owner/accounts",
+  "/owner/tasks",
+  "/owner/inbox",
+  "/owner/products",
+  "/owner/quotations",
+  "/owner/invoices",
+  "/owner/reports",
+  "/owner/duplicates",
+  "/owner/import",
+];
+
+/**
  * Which of `OWNER_NAV_ITEMS` a given owner-console persona may see, in what
  * order. `crmPrimary` (CRM_SHADOW_READ_ENABLED, resolved server-side and
  * passed down — see the owner layout) moves the CRM object pages to sit
- * right after Dashboard rather than after the legacy Board/All Leads pair.
- * Nothing is added, removed, or hidden; only the order changes.
+ * right after Dashboard rather than after the legacy Board/All Leads pair —
+ * nothing is added or removed by it, only the order changes. `crmEnabled`
+ * (the org's own `enabled_modules`, also resolved server-side) is different:
+ * it actually removes `CRM_GATED_HREFS` when the org doesn't have the CRM
+ * module, since those pages would otherwise 403 or show data that doesn't
+ * exist for that tenant.
  */
-export function ownerNavItemsFor(role: OwnerRole, crmPrimary = false): NavItem[] {
-  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role));
+export function ownerNavItemsFor(role: OwnerRole, crmPrimary = false, crmEnabled = true): NavItem[] {
+  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role)).filter(
+    (item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href),
+  );
   if (!crmPrimary) return visible;
 
   const crmGroup = visible.filter((item) => CRM_PRIMARY_HREFS.includes(item.href));

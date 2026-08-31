@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
@@ -27,7 +26,25 @@ export default async function AccountDetailPage({
   const { id } = await params;
 
   const detail = await ownerGet<{ account: Account; contacts: Contact[] }>(`/v1/accounts/${id}`);
-  if (!detail) notFound();
+
+  // ownerGet collapses every failure — network error, 404, 500 — to `null`
+  // with no way to tell them apart (see api-result.ts's `unwrap`), so this
+  // mirrors every list page in this area (leads, contacts, deals, accounts,
+  // board, duplicates) rather than reaching for `notFound()`, which would
+  // misreport a transient API outage as "this account does not exist".
+  if (!detail) {
+    return (
+      <>
+        <PageHeader title="Account" context="Account" />
+        <Card>
+          <MonoLabel>Data unavailable</MonoLabel>
+          <p className="mt-2 text-sm text-text-muted">
+            The platform API did not answer. If this persists, contact your provider.
+          </p>
+        </Card>
+      </>
+    );
+  }
   const { account, contacts } = detail;
 
   const phone = account.phone_prefix

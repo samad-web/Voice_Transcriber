@@ -18,8 +18,10 @@ import * as jwt from "jsonwebtoken";
 import { z } from "zod";
 import { DeviceConfig, DeviceRegisterRequest } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
 import { issueNonce, verifyNonce } from "../../common/device-nonce";
+import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -28,6 +30,11 @@ const SetTelecallerBody = z.object({
   name: z.string().trim().min(1).max(120),
   // Employee/agent code. Optional — most telecallers may never be given one.
   externalId: z.string().trim().max(64).nullable().optional(),
+  // True when this handset now belongs to a genuinely different person —
+  // mints a new telecaller identity instead of renaming the existing one.
+  // False (the default) is for correcting a typo in the current holder's
+  // own name.
+  reassign: z.boolean().default(false),
 });
 const AuthenticateBody = z.object({
   deviceId: z.string().uuid(),
@@ -36,6 +43,107 @@ const AuthenticateBody = z.object({
 });
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+
+// ── Fleet health (Phase 5) ───────────────────────────────────────────────────
+//
+// Thresholds for GET /devices/fleet-health below. Named + commented rather
+// than inline literals so a future tuning pass has one place to look, and so
+// a code reviewer sees the reasoning next to the number instead of just the
+// number.
+
+/** A device with no last_seen_at beacon at all has never checked in. */
+type Staleness = "never" | "<1h" | "1-24h" | "1-7d" | "stale";
+
+/**
+ * How long an ACTIVE device may go quiet before it counts as "stale" for
+ * display purposes. Every enrolled handset re-authenticates every 15 minutes
+ * (DEVICE_JWT_TTL_SECONDS) and beacons /devices/me/health on top of that, so
+ * these bands are generous multiples of that cadence, not the cadence itself.
+ */
+const STALE_UNDER_1H_HOURS = 1;
+const STALE_UNDER_24H_HOURS = 24;
+const STALE_UNDER_7D_HOURS = 24 * 7;
+
+/**
+ * An ACTIVE device silent longer than this needs attention. `logged_out` and
+ * `wiped` devices are deliberately excluded — going quiet is their whole
+ * point, not a fault — so this only ever fires against `status = 'active'`.
+ * Same 24h band as the STALE_UNDER_24H_HOURS display bucket: a device an
+ * admin already sees as "1-24h" is not yet a problem, one day+ is.
+ */
+const NEEDS_ATTENTION_STALE_HOURS = 24;
+
+/**
+ * Free on-device storage below this is close to blocking new recordings from
+ * ever landing (the handset stops accepting capture before it stops beaconing
+ * health). Picked well above zero so an admin has a runway to act — a
+ * lock-screen-only device can eat storage fast between two health beacons.
+ */
+const LOW_STORAGE_MB = 500;
+
+/**
+ * device_health.failure_counts is an open jsonb map (upload/transcribe retry
+ * counters etc., not a fixed key set), so this checks every value rather than
+ * one named key. A handful of transient retries is normal on flaky mobile
+ * data; a double-digit count on any one counter is not.
+ */
+const ELEVATED_FAILURE_COUNT = 5;
+
+function stalenessOf(lastSeenAt: string | Date | null, now: number): Staleness {
+  if (!lastSeenAt) return "never";
+  const ageHours = (now - new Date(lastSeenAt).getTime()) / (60 * 60 * 1000);
+  if (ageHours < STALE_UNDER_1H_HOURS) return "<1h";
+  if (ageHours < STALE_UNDER_24H_HOURS) return "1-24h";
+  if (ageHours < STALE_UNDER_7D_HOURS) return "1-7d";
+  return "stale";
+}
+
+interface LatestHealth {
+  batteryLevel: number | null;
+  freeStorageMb: number | null;
+  pendingUploads: number | null;
+  failureCounts: Record<string, number>;
+  ts: string;
+}
+
+/** Why a device tripped `needsAttention` — rendered as the web chip's tooltip. */
+function attentionReasons(
+  status: string,
+  lastSeenAt: string | Date | null,
+  now: number,
+  health: LatestHealth | null,
+): string[] {
+  const reasons: string[] = [];
+  if (
+    status === "active" &&
+    (!lastSeenAt || (now - new Date(lastSeenAt).getTime()) / (60 * 60 * 1000) > NEEDS_ATTENTION_STALE_HOURS)
+  ) {
+    reasons.push(`silent over ${NEEDS_ATTENTION_STALE_HOURS}h while active`);
+  }
+  if (health?.freeStorageMb != null && health.freeStorageMb < LOW_STORAGE_MB) {
+    reasons.push(`free storage under ${LOW_STORAGE_MB}MB`);
+  }
+  if (health?.failureCounts && Object.values(health.failureCounts).some((n) => Number(n) > ELEVATED_FAILURE_COUNT)) {
+    reasons.push("elevated failure count");
+  }
+  return reasons;
+}
+
+/**
+ * Latest device_health row per device. Same LATERAL shape as
+ * CONTACT_HISTORY_JOIN (calls.controller.ts) — ordered by the time column
+ * DESC LIMIT 1 — using the (device_id, ts DESC) index device_health already
+ * has, rather than a stored "current health" column that would drift the
+ * moment a newer beacon lands anywhere but here.
+ */
+const LATEST_HEALTH_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT battery_level, free_storage_mb, pending_uploads, failure_counts, ts
+      FROM device_health dh
+     WHERE dh.device_id = d.id
+     ORDER BY dh.ts DESC
+     LIMIT 1
+  ) h ON true`;
 
 @Controller("devices")
 export class DevicesController {
@@ -255,31 +363,40 @@ export class DevicesController {
           policy: row.consent_policy,
           onFailure: row.on_consent_failure,
         },
-        appLockPasswordHash: row.app_lock_password_hash,
+        // Spread-or-nothing rather than an explicit null: an absent key is the
+        // one shape Android's optString handles correctly. See the schema
+        // comment in packages/shared/src/device-api.ts.
+        ...(row.app_lock_password_hash
+          ? { appLockPasswordHash: row.app_lock_password_hash }
+          : {}),
       });
     });
   }
 
   /** Remote logout — device keeps its data but can no longer record or auth. */
   @Post(":id/logout")
-  @UseGuards(AdminKeyGuard, TenantGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
   async logout(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
   ) {
-    return this.setDeviceStatus(orgId, id, "logged_out");
+    return this.setDeviceStatus(orgId, id, "logged_out", req);
   }
 
   /** Remote wipe — device must delete local recordings + keys on next contact. */
   @Post(":id/wipe")
-  @UseGuards(AdminKeyGuard, TenantGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
   async wipe(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
   ) {
     // TODO (checklist §3.5): push FCM message so the device acts immediately
     // instead of on next config poll.
-    return this.setDeviceStatus(orgId, id, "wiped");
+    return this.setDeviceStatus(orgId, id, "wiped", req);
   }
 
   /**
@@ -295,6 +412,13 @@ export class DevicesController {
    * that route does not collect. Re-running with the same device links back
    * to the existing telecaller row instead of creating a duplicate, so this
    * doubles as "modify": call it again to correct a name or code.
+   *
+   * `reassign: true` is the other case — a genuinely different person now
+   * holds this handset. Without it, calling this with a new name RENAMES the
+   * existing telecaller row, which would silently relabel their whole call
+   * history as the new person's (0068). `reassign` always mints a fresh
+   * `telecallers` row and re-points the device at it, leaving the old
+   * identity's row and history untouched.
    */
   @Patch(":id/telecaller")
   @UseGuards(AdminKeyGuard, TenantGuard)
@@ -302,11 +426,13 @@ export class DevicesController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) deviceId: string,
     @Body() body: unknown,
+    @Req() req: PrincipalRequest,
   ) {
     const parsed = SetTelecallerBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const name = parsed.data.name;
     const externalId = parsed.data.externalId?.trim() || null;
+    const reassign = parsed.data.reassign;
 
     try {
       return await this.db.withOrg(orgId, async (client) => {
@@ -316,7 +442,7 @@ export class DevicesController {
         if (!device) throw new BadRequestException("device not found in this org");
 
         let telecallerId: string = device.telecaller_id;
-        if (telecallerId) {
+        if (telecallerId && !reassign) {
           await client.query(
             `UPDATE telecallers SET display_name = $2, external_id = $3 WHERE id = $1`,
             [telecallerId, name, externalId],
@@ -346,8 +472,8 @@ export class DevicesController {
 
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-           VALUES ($1, 'user', 'dev-admin', 'device.telecaller_set', 'device', $2, $3)`,
-          [orgId, deviceId, JSON.stringify({ name, externalId })],
+           VALUES ($1, 'user', $2, 'device.telecaller_set', 'device', $3, $4)`,
+          [orgId, req.principal?.userId ?? "dev-admin", deviceId, JSON.stringify({ name, externalId })],
         );
 
         return {
@@ -367,7 +493,7 @@ export class DevicesController {
     }
   }
 
-  private setDeviceStatus(orgId: string, deviceId: string, status: "logged_out" | "wiped") {
+  private setDeviceStatus(orgId: string, deviceId: string, status: "logged_out" | "wiped", req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         "UPDATE devices SET status = $2 WHERE id = $1 RETURNING id, status",
@@ -376,8 +502,8 @@ export class DevicesController {
       if (rows.length === 0) throw new BadRequestException("device not found in this org");
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', $2, 'device', $3)`,
-        [orgId, `device.${status === "wiped" ? "wipe" : "logout"}`, deviceId],
+         VALUES ($1, 'user', $2, $3, 'device', $4)`,
+        [orgId, req.principal?.userId ?? "dev-admin", `device.${status === "wiped" ? "wipe" : "logout"}`, deviceId],
       );
       return rows[0];
     });
@@ -395,6 +521,53 @@ export class DevicesController {
          ORDER BY created_at DESC`,
       );
       return { devices: rows };
+    });
+  }
+
+  /**
+   * Fleet health (Phase 5): staleness + latest telemetry per device, plus a
+   * computed `needsAttention` the web devices table (instance detail page)
+   * renders as a chip. A sibling to `list()` above — same table, same guard
+   * tier, richer computed fields drawn from device_health — not a
+   * replacement. Org-wide (not filtered to one instance) so the console can
+   * fetch it once per page load and key the result by device id, instead of
+   * one extra round trip per instance.
+   */
+  @Get("fleet-health")
+  @UseGuards(AdminKeyGuard, TenantGuard)
+  async fleetHealth(@OrgId() orgId: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query(
+        `SELECT d.id, d.instance_id, d.status, d.last_seen_at,
+                h.battery_level, h.free_storage_mb, h.pending_uploads, h.failure_counts, h.ts AS health_ts
+           FROM devices d
+           ${LATEST_HEALTH_JOIN}
+          ORDER BY d.created_at DESC`,
+      );
+
+      const now = Date.now();
+      const devices = rows.map((row) => {
+        const health: LatestHealth | null = row.health_ts
+          ? {
+              batteryLevel: row.battery_level,
+              freeStorageMb: row.free_storage_mb,
+              pendingUploads: row.pending_uploads,
+              failureCounts: row.failure_counts ?? {},
+              ts: row.health_ts,
+            }
+          : null;
+        const reasons = attentionReasons(row.status, row.last_seen_at, now, health);
+        return {
+          deviceId: row.id as string,
+          instanceId: row.instance_id as string,
+          staleness: stalenessOf(row.last_seen_at, now),
+          health,
+          needsAttention: reasons.length > 0,
+          attentionReasons: reasons,
+        };
+      });
+
+      return { devices };
     });
   }
 }

@@ -36,6 +36,17 @@ export interface PrincipalRequest extends Request {
    * principal shape and the guard that fills it in.
    */
   crmScope?: { scope: "all" | "owned"; userId: string | null };
+  /**
+   * The external integration key behind this request, written by `ApiKeyGuard`
+   * and absent on every other route.
+   *
+   * Separate from `principal` on purpose. A principal answers "who is acting";
+   * an API key has no who — there is no person, no membership and no role to
+   * resolve, which is exactly why its permissions come from `scopes` here
+   * rather than from the CRM permission grid. Keeping it in its own field means
+   * no existing guard or handler can mistake a headless credential for a user.
+   */
+  apiKey?: { id: string; orgId: string; scopes: string[] };
 }
 
 export const PERMISSIONS = ["recordings:listen", "recordings:export"] as const;

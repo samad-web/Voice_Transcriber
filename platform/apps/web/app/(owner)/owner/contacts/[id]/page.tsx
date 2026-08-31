@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
@@ -36,7 +35,24 @@ export default async function ContactDetailPage({
     ownerGet<{ deals: Deal[] }>(`/v1/contacts/${id}/deals`),
   ]);
 
-  if (!detail) notFound();
+  // ownerGet collapses every failure — network error, 404, 500 — to `null`
+  // with no way to tell them apart (see api-result.ts's `unwrap`), so this
+  // mirrors every list page in this area (leads, contacts, deals, accounts,
+  // board, duplicates) rather than reaching for `notFound()`, which would
+  // misreport a transient API outage as "this contact does not exist".
+  if (!detail) {
+    return (
+      <>
+        <PageHeader title="Contact" context="Contact" />
+        <Card>
+          <MonoLabel>Data unavailable</MonoLabel>
+          <p className="mt-2 text-sm text-text-muted">
+            The platform API did not answer. If this persists, contact your provider.
+          </p>
+        </Card>
+      </>
+    );
+  }
   const { contact } = detail;
   const deals = dealsResponse?.deals ?? [];
 
@@ -108,9 +124,10 @@ export default async function ContactDetailPage({
             <MonoLabel>Deals</MonoLabel>
             {deals.length === 0 ? (
               <p className="mt-3 text-xs text-text-muted">
-                {dealsResponse === null
-                  ? "Not visible with your permissions."
-                  : "No deals for this contact."}
+                {/* dealsResponse is null for ANY fetch failure — network error,
+                    404, 500 — not specifically a 403, so this stays neutral
+                    rather than implying a permissions problem. */}
+                {dealsResponse === null ? "Deals unavailable." : "No deals for this contact."}
               </p>
             ) : (
               <ul className="mt-3 divide-y divide-border rounded-md border border-border">

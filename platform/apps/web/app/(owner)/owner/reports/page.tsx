@@ -3,6 +3,8 @@ import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { formatValue } from "../types";
+import { CommissionPlansClient } from "./commission-plans-client";
+import type { CommissionPlan } from "./commission-actions";
 
 export const metadata: Metadata = { title: "Reports — Aura" };
 
@@ -50,6 +52,22 @@ interface PerformanceReport {
   workspace: { tasksCompleted: number; tasksOverdue: number; interactions: number };
 }
 
+interface CommissionReport {
+  from: string;
+  to: string;
+  rows: Array<{
+    planId: string;
+    planName: string;
+    metric: "won_value" | "won_count" | "calls";
+    rateType: "percent" | "flat_per_unit";
+    rate: number;
+    repId: string | null;
+    rep: string;
+    metricTotal: number;
+    commission: number;
+  }>;
+}
+
 interface AttainmentReport {
   attainment: Array<{
     targetId: string;
@@ -82,12 +100,15 @@ const pct = (value: number | null): string =>
  * role that may not read one still gets the others rather than an empty page.
  */
 export default async function ReportsPage() {
-  const [pipeline, conversion, performance, attainment] = await Promise.all([
-    ownerGet<PipelineReport>("/v1/reports/pipeline"),
-    ownerGet<ConversionReport>("/v1/reports/conversion"),
-    ownerGet<PerformanceReport>("/v1/reports/performance"),
-    ownerGet<AttainmentReport>("/v1/targets/attainment"),
-  ]);
+  const [pipeline, conversion, performance, attainment, commission, commissionPlans] =
+    await Promise.all([
+      ownerGet<PipelineReport>("/v1/reports/pipeline"),
+      ownerGet<ConversionReport>("/v1/reports/conversion"),
+      ownerGet<PerformanceReport>("/v1/reports/performance"),
+      ownerGet<AttainmentReport>("/v1/targets/attainment"),
+      ownerGet<CommissionReport>("/v1/reports/commission"),
+      ownerGet<{ plans: CommissionPlan[] }>("/v1/commission-plans"),
+    ]);
 
   if (!pipeline && !conversion && !performance) {
     return (
@@ -331,6 +352,63 @@ export default async function ReportsPage() {
               while a task assignee is a console user, and nothing maps between the two yet.
             </p>
           </>
+        )}
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <MonoLabel>Commission</MonoLabel>
+          <ExportLink report="commission" />
+        </div>
+        {!commission ? (
+          <NotPermitted />
+        ) : commission.rows.length === 0 ? (
+          <EmptyState
+            title="Nothing to show yet"
+            description="Add an active commission plan below, and any rep with activity in this window will appear here."
+          />
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+              <thead>
+                <tr>
+                  <Th>Plan</Th>
+                  <Th>Rep</Th>
+                  <Th right>Metric total</Th>
+                  <Th right>Commission</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {commission.rows.map((row) => (
+                  <tr key={`${row.planId}-${row.repId ?? "unassigned"}`}>
+                    <Td>{row.planName}</Td>
+                    <Td>{row.rep}</Td>
+                    <Td right>
+                      {row.metric === "won_value" ? formatValue(row.metricTotal) : row.metricTotal}
+                    </Td>
+                    <Td right>{formatValue(row.commission)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-text-muted">
+          Rate × attainment for the window, recomputed on every load — not payroll: no accrual, no
+          claw-back, no approval trail. Calls-based plans are not narrowed by record scope, the same
+          disconnect rep performance&apos;s task/interaction totals document: a rep is a telecaller,
+          not a console user, and nothing maps between the two.
+        </p>
+      </Card>
+
+      <Card>
+        <MonoLabel>Commission plans</MonoLabel>
+        {!commissionPlans ? (
+          <NotPermitted />
+        ) : (
+          <div className="mt-3">
+            <CommissionPlansClient plans={commissionPlans.plans} />
+          </div>
         )}
       </Card>
     </>

@@ -19,7 +19,7 @@ import { CreateCallRequest } from "@aura/shared";
 import { publishPipeline } from "@aura/queue";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { PermissionsGuard, RequirePermission } from "../../common/permissions.guard";
-import type { PrincipalRequest } from "../../common/auth-principal";
+import { principalHasPermission, type PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -128,7 +128,7 @@ export class CallsController {
       const {
         rows: [ctx],
       } = await client.query(
-        `SELECT d.status AS device_status, i.workspace_id,
+        `SELECT d.status AS device_status, d.telecaller_id, i.workspace_id,
                 o.status AS org_status, o.consent_policy, o.store_full_number
            FROM devices d
            JOIN instances i ON i.id = d.instance_id
@@ -166,16 +166,20 @@ export class CallsController {
         rows: [row],
       } = await client.query(
         `INSERT INTO calls
-           (org_id, workspace_id, device_id, direction, started_at, duration_s,
+           (org_id, workspace_id, device_id, telecaller_id, direction, started_at, duration_s,
             audio_source_used, status, consent_status,
             remote_number_prefix, remote_number_last3, remote_number_hash, remote_name,
             remote_number_full)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'AWAITING_AUDIO', $8, $9, $10, $11, $12, $13)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'AWAITING_AUDIO', $9, $10, $11, $12, $13, $14)
          RETURNING id`,
         [
           orgId,
           ctx.workspace_id,
           deviceId,
+          // Written once, at call creation — never updated afterward. A live
+          // join through the device would reproduce the reassignment bug
+          // (0068) one level deeper.
+          ctx.telecaller_id,
           call.direction,
           call.startedAt,
           call.durationS,
@@ -222,31 +226,39 @@ export class CallsController {
     const { uploadId, parts, sha256 } = parsed.data;
     const { orgId } = req.device;
 
-    const result = await this.db.withOrg(orgId, async (client) => {
+    // Read + validate under RLS, then get OUT of the transaction before the S3
+    // network calls. This route is @SkipThrottle() precisely because a
+    // tenant's whole device fleet can burst uploads from one office IP — a
+    // slow S3 round trip while holding a checked-out pool connection open
+    // would starve DB_POOL_MAX for every tenant, not just this one.
+    const rec = await this.db.withOrg(orgId, async (client) => {
       const {
-        rows: [rec],
+        rows: [row],
       } = await client.query(
         `SELECT r.s3_key, r.bytes, r.sha256, c.status
            FROM recordings r JOIN calls c ON c.id = r.call_id
           WHERE r.call_id = $1`,
         [callId],
       );
-      if (!rec) throw new NotFoundException("call not found");
-      if (rec.status !== "AWAITING_AUDIO") {
-        throw new ConflictException(`call is ${rec.status}, not awaiting audio`);
+      if (!row) throw new NotFoundException("call not found");
+      if (row.status !== "AWAITING_AUDIO") {
+        throw new ConflictException(`call is ${row.status}, not awaiting audio`);
       }
-      if (rec.sha256 !== sha256) {
+      if (row.sha256 !== sha256) {
         throw new BadRequestException("sha256 mismatch with call creation");
       }
+      return row;
+    });
 
-      await this.s3.completeMultipartUpload(rec.s3_key, uploadId, parts);
-      const head = await this.s3.headObject(rec.s3_key);
-      if (head.bytes !== Number(rec.bytes)) {
-        throw new BadRequestException(
-          `size mismatch: S3 has ${head.bytes}, expected ${rec.bytes}`,
-        );
-      }
+    // Outside any transaction / pool connection now.
+    await this.s3.completeMultipartUpload(rec.s3_key, uploadId, parts);
+    const head = await this.s3.headObject(rec.s3_key);
+    if (head.bytes !== Number(rec.bytes)) {
+      throw new BadRequestException(`size mismatch: S3 has ${head.bytes}, expected ${rec.bytes}`);
+    }
 
+    // Short, write-only transaction to record what S3 already confirmed.
+    const result = await this.db.withOrg(orgId, async (client) => {
       await client.query(
         `UPDATE calls SET status = 'UPLOADED' WHERE id = $1 AND status = 'AWAITING_AUDIO'`,
         [callId],
@@ -342,10 +354,20 @@ export class CallsController {
     });
   }
 
-  /** Detail: call + transcript + AI output for the drawer. */
+  /**
+   * Detail: call + transcript + AI output for the drawer.
+   *
+   * `recordings:listen` also gates the verbatim transcript, not just the audio
+   * — the text is the same privacy-sensitive artifact the audio route already
+   * treats specially, and a caller who cannot listen to a recording should not
+   * be able to read a word-for-word account of it instead. Redacted rather
+   * than 403ing the whole route: the call's status, AI summary and analytics
+   * stay visible to any tenant member, same as before this change.
+   */
   @Get(":id")
   @UseGuards(AdminKeyGuard, TenantGuard)
   async detail(
+    @Req() req: PrincipalRequest,
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
   ) {
@@ -375,11 +397,30 @@ export class CallsController {
         `SELECT field_key, value_text, value_num, value_bool FROM call_facts WHERE call_id = $1`,
         [callId],
       );
+      const { rows: analytics } = await client.query(
+        `SELECT quality_score, quality_criteria, agent_talk_seconds, customer_talk_seconds,
+                talk_ratio, interruption_count, longest_monologue_seconds,
+                risk_flags, has_escalation_risk
+           FROM call_analytics WHERE call_id = $1`,
+        [callId],
+      );
+
+      const canListen = req.principal != null && principalHasPermission(req.principal, "recordings:listen");
+      if (!canListen) {
+        call.remote_number_full = undefined;
+        if (transcripts[0]) {
+          transcripts[0].text = null;
+          transcripts[0].segments = null;
+        }
+      }
+
       return {
         call,
         transcript: transcripts[0] ?? null,
         aiOutput: outputs[0] ?? null,
         facts,
+        analytics: analytics[0] ?? null,
+        transcriptRedacted: !canListen,
       };
     });
   }
@@ -426,6 +467,7 @@ export class CallsController {
   async reprocess(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
+    @Req() req: PrincipalRequest,
   ) {
     const result = await this.db.withOrg(orgId, async (client) => {
       const {
@@ -457,8 +499,8 @@ export class CallsController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', 'dev-admin', 'call.reprocess', 'call', $2, $3)`,
-        [orgId, callId, JSON.stringify({ from: call.status })],
+         VALUES ($1, 'user', $2, 'call.reprocess', 'call', $3, $4)`,
+        [orgId, req.principal?.userId ?? "dev-admin", callId, JSON.stringify({ from: call.status })],
       );
       return { status: "UPLOADED" as const };
     });
@@ -488,7 +530,7 @@ export class CallsController {
    */
   @Post("reprocess-backlog")
   @UseGuards(AdminKeyGuard, TenantGuard)
-  async reprocessBacklog(@OrgId() orgId: string, @Body() body: unknown) {
+  async reprocessBacklog(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = ReprocessBacklogBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { statuses, sinceDays, limit } = parsed.data;
@@ -518,8 +560,8 @@ export class CallsController {
         // org-targeted audit row (tenancy.controller.ts:125).
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-           VALUES ($1, 'user', 'dev-admin', 'call.reprocess_backlog', 'organization', $2, $3::jsonb)`,
-          [orgId, orgId, JSON.stringify({ statuses, sinceDays, count: rows.length })],
+           VALUES ($1, 'user', $2, 'call.reprocess_backlog', 'organization', $3, $4::jsonb)`,
+          [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify({ statuses, sinceDays, count: rows.length })],
         );
       }
       return rows.map((r) => r.id);

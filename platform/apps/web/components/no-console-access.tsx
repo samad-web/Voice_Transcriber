@@ -15,7 +15,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 export function NoConsoleAccess({ email }: { email: string }) {
   return (
     <main className="min-h-dvh flex items-center justify-center p-6">
-      <Card shadow className="max-w-md space-y-4">
+      <Card elevated className="max-w-md space-y-4">
         <MonoLabel>No console access</MonoLabel>
         <p className="text-sm leading-relaxed text-text-muted">
           {email} is signed in but is not linked to an instance. Ask your

@@ -27,7 +27,7 @@ class AacEncoder(
     private val outFile: File,
     private val sampleRate: Int,
     private val channels: Int = 1,
-    private val bitRate: Int = 128_000,
+    private val bitRate: Int = 48_000,
 ) {
     private lateinit var codec: MediaCodec
     private lateinit var muxer: MediaMuxer

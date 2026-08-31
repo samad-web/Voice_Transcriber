@@ -60,11 +60,32 @@ export class MessagingWebhookController {
     if (!channel) throw new NotFoundException("unknown webhook");
 
     // Wasi (the user's own WhatsApp BSP, see wasi.ts) signs every delivery —
-    // unlike Evolution below, which has no signature scheme at all. Verified
-    // against the RAW bytes (main.ts's `rawBody: true`), same reasoning as
-    // the Razorpay webhook: re-serialising the parsed body can byte-differ.
+    // verified against the RAW bytes (main.ts's `rawBody: true`), same
+    // reasoning as the Razorpay webhook: re-serialising the parsed body can
+    // byte-differ.
     if (channel.provider === "wasi") {
       return this.receiveWasi(channel, body, req);
+    }
+
+    // Evolution (or any other relay) has no fixed signature contract Aura can
+    // rely on by default — the `:token` in the URL is the only credential,
+    // and the header comment above documents that a leaked token (proxy/CDN/
+    // error-tracker log) then forges messages with nothing else to stop it.
+    // `forward_secret` is the same per-channel column Wasi uses, generic
+    // across providers (messaging-channels.controller.ts's UpdateChannelBody
+    // never restricts it to `provider = 'wasi'`), so a tenant who configures
+    // one here — and points their relay's own webhook-signing setting at it,
+    // where the relay supports that — gets the same HMAC verification Wasi
+    // gets, closing the token-only gap. A channel with none configured keeps
+    // today's behaviour: nothing in Aura's control can force an arbitrary
+    // relay to start signing deliveries it was never told to sign.
+    if (channel.forwardSecret) {
+      const secret = decryptSecret(channel.forwardSecret);
+      const signatureHeader = req.headers["x-webhook-signature-256"] as string | undefined;
+      if (!secret || !req.rawBody || !verifyWasiSignature(req.rawBody, signatureHeader, secret)) {
+        // Same non-disclosure shape as everything else in this handler.
+        return { stored: false, reason: "signature verification failed" };
+      }
     }
 
     const adapted = adaptInbound(channel.channel, body);
@@ -143,9 +164,11 @@ export class MessagingWebhookController {
 }
 
 /**
- * `x-wasi-signature-256: sha256=<hex>` — HMAC-SHA256 over the raw JSON body,
- * keyed by the per-WABA forward secret. Constant-time compare, same
- * technique as every other HMAC check in this codebase.
+ * `<header>: sha256=<hex>` — HMAC-SHA256 over the raw JSON body, keyed by a
+ * channel's forward secret. Constant-time compare, same technique as every
+ * other HMAC check in this codebase. Used for Wasi's own
+ * `x-wasi-signature-256` header and, when a tenant has configured a secret
+ * on a non-Wasi channel, the platform's own `x-webhook-signature-256`.
  */
 export function verifyWasiSignature(rawBody: Buffer, header: string | undefined, secret: string): boolean {
   if (!header) return false;

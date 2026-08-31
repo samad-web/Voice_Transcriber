@@ -124,4 +124,5 @@
     <string name="lock_password_hint">Password</string>
     <string name="lock_wrong_password">Incorrect password</string>
     <string name="lock_unlock">Unlock</string>
+    <string name="lock_checking">Checking…</string>
 </resources>

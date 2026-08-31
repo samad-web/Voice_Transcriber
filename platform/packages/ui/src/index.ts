@@ -9,8 +9,12 @@
  * migrated it yet.
  */
 
+// ── Brand ──────────────────────────────────────────────────────────────────
+export { Logo, Wordmark } from "./logo";
+
 // ── v1 surface, restyled onto v2 tokens (props unchanged) ────────────────────
 export { Card } from "./card";
+export type { CardProps } from "./card";
 export { BrutalButton } from "./brutal-button";
 export { StatusChip } from "./status-chip";
 export { MonoLabel } from "./mono-label";

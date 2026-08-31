@@ -5,10 +5,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
   ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -30,6 +32,7 @@ export class PaymentsController {
   async createLink(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
@@ -80,8 +83,8 @@ export class PaymentsController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'dev-admin', 'payment.link_created', 'invoice', $2)`,
-        [orgId, id],
+         VALUES ($1, 'user', $2, 'payment.link_created', 'invoice', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", id],
       );
 
       return { payment, paymentLinkUrl: link.shortUrl };
