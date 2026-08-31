@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { CheckCircle2, Plug, TriangleAlert } from "lucide-react";
-import { Button, Card, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, FormField, Input, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import {
   connectMetaMcpAction,
   disconnectMcpAction,
@@ -27,6 +27,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const connect = () => {
     const url = serverUrl.trim();
@@ -65,16 +66,15 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
     });
   };
 
-  const disconnect = () => {
+  const disconnect = async () => {
     if (!connection) return;
-    if (
-      !window.confirm(
-        "Disconnect this MCP server?\n\n" +
-          "The stored token is deleted. Leads already pulled in stay exactly where they are.",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Disconnect this MCP server?",
+      body: "The stored token is deleted. Leads already pulled in stay exactly where they are.",
+      confirmLabel: "Disconnect",
+      tone: "danger",
+    });
+    if (!ok) return;
     setError(null);
     startTransition(async () => {
       const result = await disconnectMcpAction(connection.id);
@@ -148,7 +148,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
             <Button type="button" variant="secondary" disabled={pending} onClick={test}>
               Test connection
             </Button>
-            <Button type="button" variant="ghost" disabled={pending} onClick={disconnect}>
+            <Button type="button" variant="ghost" disabled={pending} onClick={() => void disconnect()}>
               Disconnect
             </Button>
           </>

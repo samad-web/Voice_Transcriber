@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import { reprocessBacklogAction, setTranscriptionEnabledAction } from "./actions";
 
 /**
@@ -42,17 +42,18 @@ export function TranscriptionToggle({
   const [note, setNote] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
-  const disable = () => {
-    if (
-      !window.confirm(
-        `Stop transcribing calls for ${instanceName}?\n\n` +
-          "Calls keep arriving and stay listed with their recordings — they just " +
-          "won't be transcribed or analysed until you switch this back on.",
-      )
-    ) {
-      return;
-    }
+  const disable = async () => {
+    const ok = await confirm({
+      title: `Stop transcribing calls for ${instanceName}?`,
+      body:
+        "Calls keep arriving and stay listed with their recordings — they just won't be " +
+        "transcribed or analysed until you switch this back on.",
+      confirmLabel: "Stop transcribing",
+      tone: "danger",
+    });
+    if (!ok) return;
     setError(null);
     setNote(null);
     startTransition(async () => {
@@ -148,7 +149,7 @@ export function TranscriptionToggle({
         <BrutalButton
           variant={enabled ? "secondary" : "primary"}
           disabled={pending}
-          onClick={enabled ? disable : () => setAsking(true)}
+          onClick={enabled ? () => void disable() : () => setAsking(true)}
         >
           {enabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
           {pending ? "SAVING…" : enabled ? "DISABLE TRANSCRIPTION" : "ENABLE TRANSCRIPTION"}

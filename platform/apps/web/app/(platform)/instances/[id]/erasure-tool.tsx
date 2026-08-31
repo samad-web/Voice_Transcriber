@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ShieldX } from "lucide-react";
-import { BrutalButton, Card, ConsolePanel, MonoLabel } from "@aura/ui";
+import { BrutalButton, Card, ConsolePanel, MonoLabel, useConfirm } from "@aura/ui";
 import { monoInputClass as inputClass } from "@/lib/form";
 import { triggerErasureAction, type ErasureReceipt } from "./actions";
 
@@ -10,18 +10,21 @@ export function ErasureTool({ orgId }: { orgId: string }) {
   const [callId, setCallId] = useState("");
   const [receipt, setReceipt] = useState<ErasureReceipt | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
-  const trigger = () =>
+  const trigger = async () => {
+    const ok = await confirm({
+      title: "Permanently erase this call?",
+      body: "Cascading erasure purges the call, its audio, transcript, AI output and extracted facts. This cannot be undone and there is no backup to restore from.",
+      confirmLabel: "Erase permanently",
+      tone: "danger",
+    });
+    if (!ok) return;
     startTransition(async () => {
-      if (
-        !window.confirm(
-          "Cascading erasure permanently purges the call, audio, transcript, AI output and facts. Continue?",
-        )
-      )
-        return;
       setReceipt(null);
       setReceipt(await triggerErasureAction(orgId, callId.trim()));
     });
+  };
 
   const receiptLines =
     receipt && !receipt.error
@@ -66,7 +69,7 @@ export function ErasureTool({ orgId }: { orgId: string }) {
         shadow
         className="w-full"
         disabled={pending || !callId.trim()}
-        onClick={trigger}
+        onClick={() => void trigger()}
       >
         <ShieldX className="h-4 w-4" />
         {pending ? "PURGING…" : "TRIGGER CASCADING ERASURE"}

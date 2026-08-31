@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
 import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./actions";
@@ -47,6 +47,7 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const create = () =>
     startTransition(async () => {
@@ -68,12 +69,21 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
       current.includes(value) ? current.filter((s) => s !== value) : [...current, value],
     );
 
-  const revoke = (id: string) =>
+  // Confirm BEFORE opening the transition, not inside it: an async transition
+  // stays pending for as long as the dialog is up, which would grey the whole
+  // panel out while the person is still deciding.
+  const revoke = async (id: string) => {
+    const ok = await confirm({
+      title: "Revoke this API key?",
+      body: "Any integration using it stops working immediately. The key's name, scopes and usage history are kept.",
+      confirmLabel: "Revoke key",
+      tone: "danger",
+    });
+    if (!ok) return;
     startTransition(async () => {
-      if (!window.confirm("Revoke this API key? Any integration using it stops working immediately."))
-        return;
       await revokeApiKeyAction(id, orgId);
     });
+  };
 
   // Sync handler, not `async`: React drops whatever an event handler returns, so
   // an async onClick hands it a promise nobody owns and a rejected clipboard
@@ -162,7 +172,7 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
                           variant="destructive"
                           className="px-2.5 py-1.5"
                           disabled={pending}
-                          onClick={() => revoke(k.id)}
+                          onClick={() => void revoke(k.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Revoke

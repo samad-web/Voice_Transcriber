@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, Unlock } from "lucide-react";
-import { Button, Card, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, FormField, Input, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import { setAppLockPasswordAction } from "./actions";
 
 /**
@@ -18,6 +18,7 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const save = () => {
     if (password.trim().length < 4) {
@@ -39,15 +40,14 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
     });
   };
 
-  const clear = () => {
-    if (
-      !window.confirm(
-        "Turn off the app lock for this instance?\n\n" +
-          "Every enrolled handset will open straight to the recordings list again.",
-      )
-    ) {
-      return;
-    }
+  const clear = async () => {
+    const ok = await confirm({
+      title: "Turn off the app lock?",
+      body: "Every enrolled handset will open straight to the recordings list again, with no password.",
+      confirmLabel: "Turn off lock",
+      tone: "danger",
+    });
+    if (!ok) return;
     setError(null);
     setNote(null);
     startTransition(async () => {

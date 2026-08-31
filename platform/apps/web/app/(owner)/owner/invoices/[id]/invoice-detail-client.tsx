@@ -16,6 +16,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useConfirm,
 } from "@aura/ui";
 import {
   createPaymentLinkAction,
@@ -55,6 +56,7 @@ export function InvoiceDetail({
 }) {
   const [invoice, setInvoice] = useState(initialInvoice);
   const [status, setStatus] = useState<InvoiceStatus>(initialInvoice.status);
+  const confirm = useConfirm();
   const [dueDate, setDueDate] = useState(initialInvoice.due_date ? initialInvoice.due_date.slice(0, 10) : "");
   const [notes, setNotes] = useState(initialInvoice.notes ?? "");
   const [customerGstin, setCustomerGstin] = useState(initialInvoice.customer_gstin ?? "");
@@ -163,15 +165,18 @@ export function InvoiceDetail({
   const balanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
 
   // "Paid" is a claim about money actually received — selecting it while a
-  // balance is still outstanding is very likely a mistake, so it gets the
-  // same window.confirm guard the rest of the console uses before any other
+  // balance is still outstanding is very likely a mistake, so it gets the same
+  // confirmation dialog the rest of the console uses before any other
   // consequential, hard-to-undo action (e.g. team-manager.tsx's member
   // removal, device-actions.tsx's device actions).
-  const handleStatusChange = (next: InvoiceStatus) => {
+  const handleStatusChange = async (next: InvoiceStatus) => {
     if (next === "paid" && next !== status && balanceDue > 0) {
-      const ok = window.confirm(
-        `A balance of ${formatMoney(balanceDue, invoice.currency)} is still due on this invoice. Mark it paid anyway?`,
-      );
+      const ok = await confirm({
+        title: "Mark this invoice paid?",
+        body: `A balance of ${formatMoney(balanceDue, invoice.currency)} is still due. Marking it paid records money you may not have received.`,
+        confirmLabel: "Mark paid",
+        tone: "danger",
+      });
       if (!ok) return;
     }
     setStatus(next);
@@ -369,7 +374,7 @@ export function InvoiceDetail({
             <FormField label="Status" name="status">
               <Select
                 value={status}
-                onChange={(e) => handleStatusChange(e.target.value as InvoiceStatus)}
+                onChange={(e) => void handleStatusChange(e.target.value as InvoiceStatus)}
               >
                 {STATUS_OPTIONS.map((s) => (
                   <option key={s} value={s}>

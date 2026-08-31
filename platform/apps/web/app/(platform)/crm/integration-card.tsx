@@ -14,7 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { CrmProviderSpec } from "@aura/shared";
-import { Button, Card, ConsolePanel, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, ConsolePanel, Input, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import {
   deleteIntegrationAction,
@@ -71,6 +71,7 @@ export function IntegrationCard({
   const [test, setTest] = useState<TestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const dead = integration.dead ?? 0;
   const queued = integration.queued ?? 0;
@@ -94,19 +95,20 @@ export function IntegrationCard({
   // otherwise" reasoning as runTest: a disconnect or pause/resume that fails
   // (network error, stale id, 500) used to just stop spinning with no sign
   // anything went wrong.
-  const remove = () =>
+  const remove = async () => {
+    const ok = await confirm({
+      title: `Disconnect ${integration.label ?? integration.provider}?`,
+      body: "Queued deliveries are dropped. Calls already synced stay in the destination CRM.",
+      confirmLabel: "Disconnect",
+      tone: "danger",
+    });
+    if (!ok) return;
     startTransition(async () => {
-      if (
-        !window.confirm(
-          `Disconnect ${integration.label ?? integration.provider}? Queued deliveries are dropped.`,
-        )
-      ) {
-        return;
-      }
       setTestError(null);
       const res = await deleteIntegrationAction(integration.id, orgId);
       if (res.error) setTestError(res.error);
     });
+  };
 
   const toggleStatus = () =>
     startTransition(async () => {
@@ -237,7 +239,7 @@ export function IntegrationCard({
             dialog is what actually guards it. */}
         <button
           type="button"
-          onClick={remove}
+          onClick={() => void remove()}
           disabled={pending}
           className="ml-auto shrink-0 cursor-pointer rounded-md border border-border-strong bg-surface p-2 text-danger transition-colors duration-150 ease-out hover:border-danger hover:bg-danger-subtle hover:text-danger-text disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-hover disabled:text-text-subtle"
           aria-label="Disconnect integration"

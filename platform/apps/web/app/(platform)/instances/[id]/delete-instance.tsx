@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, TriangleAlert } from "lucide-react";
-import { BrutalButton, Card, MonoLabel } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, useConfirm } from "@aura/ui";
 import { monoInputClass as inputClass } from "@/lib/form";
 import { deleteInstanceAction, type DeleteInstanceResult } from "./actions";
 
@@ -26,6 +26,7 @@ export function DeleteInstance({
   const [result, setResult] = useState<DeleteInstanceResult | null>(null);
   const [typed, setTyped] = useState("");
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const blocked = result?.blockedByCalls;
   const confirmed = typed.trim() === instanceName;
@@ -37,10 +38,14 @@ export function DeleteInstance({
       if (res.deleted) router.refresh();
     });
 
-  const safeDelete = () => {
-    if (!window.confirm(`Delete instance "${instanceName}"? Enrolled devices will be removed.`))
-      return;
-    run(false);
+  const safeDelete = async () => {
+    const ok = await confirm({
+      title: `Delete instance "${instanceName}"?`,
+      body: "Every enrolled device is removed and will stop recording. Calls already uploaded are kept.",
+      confirmLabel: "Delete instance",
+      tone: "danger",
+    });
+    if (ok) run(false);
   };
 
   if (result?.deleted) {
@@ -74,7 +79,7 @@ export function DeleteInstance({
           shadow
           className="w-full"
           disabled={pending}
-          onClick={safeDelete}
+          onClick={() => void safeDelete()}
         >
           <Trash2 className="h-4 w-4" />
           {pending ? "DELETING…" : "DELETE INSTANCE"}

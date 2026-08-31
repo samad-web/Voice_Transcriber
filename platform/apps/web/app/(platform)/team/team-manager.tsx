@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Plus, Trash2, UserPlus, Users } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass, selectClass } from "@/lib/form";
 import {
@@ -79,6 +79,7 @@ export function TeamManager({
   const [wsName, setWsName] = useState("");
   const [wsError, setWsError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
   const addMember = () =>
     startTransition(async () => {
@@ -120,11 +121,18 @@ export function TeamManager({
       updateMemberAction({ userId: m.userId, [key]: !m[key] }, orgId).then(() => undefined),
     );
 
-  const remove = (userId: string) =>
+  const remove = async (userId: string) => {
+    const ok = await confirm({
+      title: "Remove this member?",
+      body: "They lose access to this workspace immediately. Their account itself is not deleted.",
+      confirmLabel: "Remove member",
+      tone: "danger",
+    });
+    if (!ok) return;
     startTransition(async () => {
-      if (!window.confirm("Remove this member from the workspace?")) return;
       await removeMemberAction(userId, orgId);
     });
+  };
 
   const createWorkspace = () =>
     startTransition(async () => {
@@ -234,7 +242,7 @@ export function TeamManager({
                       </td>
                       <td className="py-4 px-4 text-right">
                         <button
-                          onClick={() => remove(m.userId)}
+                          onClick={() => void remove(m.userId)}
                           disabled={pending}
                           className="p-1.5 text-black hover:text-white hover:bg-black rounded-none border border-transparent hover:border-black disabled:opacity-40"
                           aria-label="Remove member"

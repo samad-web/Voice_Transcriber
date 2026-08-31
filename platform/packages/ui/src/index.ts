@@ -49,6 +49,8 @@ export {
 } from "./table";
 export { Dialog } from "./dialog";
 export type { DialogProps } from "./dialog";
+export { ConfirmProvider, useConfirm } from "./confirm";
+export type { ConfirmOptions } from "./confirm";
 export { Tooltip } from "./tooltip";
 export type { TooltipProps } from "./tooltip";
 

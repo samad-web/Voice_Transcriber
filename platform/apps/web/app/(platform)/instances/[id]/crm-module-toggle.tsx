@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Copy, Handshake } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
 import { setCrmEnabledAction } from "./actions";
 import type { OwnerRow } from "./owner-accounts";
 
@@ -32,17 +32,19 @@ export function CrmModuleToggle({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const confirm = useConfirm();
 
-  const toggle = (next: boolean) => {
-    if (
-      !next &&
-      !window.confirm(
-        `Turn off CRM for ${instanceName}?\n\n` +
-          "Contacts, Accounts, Deals and everything else in the CRM stay stored — " +
-          "the client's team just loses access to them until you switch this back on.",
-      )
-    ) {
-      return;
+  const toggle = async (next: boolean) => {
+    if (!next) {
+      const ok = await confirm({
+        title: `Turn off CRM for ${instanceName}?`,
+        body:
+          "Contacts, Accounts, Deals and everything else in the CRM stay stored — the client's " +
+          "team just loses access to them until you switch this back on.",
+        confirmLabel: "Turn off CRM",
+        tone: "danger",
+      });
+      if (!ok) return;
     }
     setError(null);
     startTransition(async () => {
@@ -76,7 +78,7 @@ export function CrmModuleToggle({
       <BrutalButton
         variant={enabled ? "secondary" : "primary"}
         disabled={pending}
-        onClick={() => toggle(!enabled)}
+        onClick={() => void toggle(!enabled)}
       >
         {pending ? "SAVING…" : enabled ? "DISABLE CRM" : "ENABLE CRM"}
       </BrutalButton>
