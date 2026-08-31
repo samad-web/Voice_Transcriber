@@ -2,7 +2,7 @@ import { ButtonLink, type ButtonSize, type ButtonVariant } from "./button";
 import { whatsappHref } from "@/lib/site";
 
 /**
- * The primary CTA (doc 10 §2). A plain `wa.me` deep link — no widget, no SDK,
+ * The primary CTA (doc 10 §2). A plain `wa.me` deep link - no widget, no SDK,
  * no third-party script, and therefore nothing in the JS budget and nothing to
  * declare in a privacy policy.
  *

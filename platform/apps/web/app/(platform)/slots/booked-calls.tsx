@@ -16,14 +16,14 @@ import { listBookingsAction, markAttendanceAction, type Booking } from "./action
  * does every morning.
  *
  * So this leads the page and the calendar follows it. Name, time, phone, email
- * — enough to pick up the phone without opening anything else.
+ * - enough to pick up the phone without opening anything else.
  *
  * ── AND WHY IT NOW HAS A SECOND VIEW ──────────────────────────────────────
  *
  * Marking a call attended or missed can only happen after it has run, and this
  * list showed only what was still ahead. The two questions are genuinely
- * different jobs at different times of day — "who am I speaking to" in the
- * morning, "how did yesterday go" at the end — so they are two views rather
+ * different jobs at different times of day - "who am I speaking to" in the
+ * morning, "how did yesterday go" at the end - so they are two views rather
  * than one list with everything in it, and the buttons only appear on the
  * calls that are actually markable.
  */
@@ -39,7 +39,7 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
   const [note, setNote] = useState<{ id: string; text: string; bad?: boolean } | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
 
-  // Skipped on first render — the server already fetched 14 upcoming days.
+  // Skipped on first render - the server already fetched 14 upcoming days.
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     if (!mounted) {
@@ -77,7 +77,7 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
       setNote({
         id: booking.id,
         text: !res.hasEnquirer
-          ? "Marked. No message was sent — this enquirer's details were erased."
+          ? "Marked. No message was sent - this enquirer's details were erased."
           : outcome === "attended"
             ? "Marked as attended. A thank-you message is queued."
             : // Named precisely: the follow-up is queued but the nurture stages
@@ -85,7 +85,7 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
               // going out when they are not is the failure this whole codebase
               // avoids elsewhere.
               `Marked as missed. A "sorry we missed you" message is queued, and the ` +
-              `three follow-ups are queued behind it — they only send if you have ` +
+              `three follow-ups are queued behind it - they only send if you have ` +
               `switched those templates on.`,
       });
     });
@@ -203,7 +203,7 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
                     </div>
 
                     {/* The enquirer's own name, not `booked_name`, when we have
-                        it — booked_name is a snapshot taken at booking and the
+                        it - booked_name is a snapshot taken at booking and the
                         submission is the record that gets corrected. */}
                     <p className="mt-1 text-sm font-medium text-text">
                       {b.enquirer_name ?? b.booked_name ?? "Name withheld"}

@@ -4,7 +4,7 @@ import { cx } from "./cx";
 export interface FeatureCardProps {
   title: ReactNode;
   description: ReactNode;
-  /** Decorative. Rendered aria-hidden — the title carries the meaning. */
+  /** Decorative. Rendered aria-hidden - the title carries the meaning. */
   icon?: ReactNode;
   /** Optional bottom line: a proof point, a link, a `StatusChip`. */
   footer?: ReactNode;

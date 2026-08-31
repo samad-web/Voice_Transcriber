@@ -1,4 +1,4 @@
--- 0008_crm_outbox.sql — configurable CRM dispatch + a durable outgoing queue.
+-- 0008_crm_outbox.sql - configurable CRM dispatch + a durable outgoing queue.
 --
 -- Before this, crm-dispatch was a single unauthenticated fetch whose body shape
 -- was hardcoded, with `attempts` written as a literal 1. A CRM that was briefly

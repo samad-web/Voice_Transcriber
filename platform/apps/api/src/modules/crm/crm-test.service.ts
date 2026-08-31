@@ -49,7 +49,7 @@ export interface CrmTestResult {
   /** Where the request went (or would have gone), after interpolation. */
   url: string;
   method: string;
-  /** Header names only — the value of an Authorization header is the secret. */
+  /** Header names only - the value of an Authorization header is the secret. */
   headerNames: string[];
   payload: unknown;
   /** Which call the sample came from, or null when it is synthetic. */
@@ -63,7 +63,7 @@ export interface CrmTestResult {
 }
 
 /**
- * Stand-in used when the workspace has no completed call yet — a new tenant
+ * Stand-in used when the workspace has no completed call yet - a new tenant
  * should be able to verify a connector before their first call, not after.
  * Shaped exactly like buildSourceDocument's output so field maps resolve.
  */
@@ -95,7 +95,7 @@ function syntheticSource(): Record<string, unknown> {
       diarized: true,
     },
     intelligence: {
-      summary: "Connection test from Aura — verifying this integration accepts a lead.",
+      summary: "Connection test from Aura - verifying this integration accepts a lead.",
       overall_intent: "Aura connection test",
       customer_intent: "n/a",
       agent_intent: "n/a",
@@ -206,11 +206,11 @@ export class CrmTestService {
       return { ...base, error: `missing configuration: ${request.missing.join(", ")}` };
     }
     // A dry run answers "what exactly would you send?" without creating a
-    // record in the customer's CRM — the safe thing to click first.
+    // record in the customer's CRM - the safe thing to click first.
     if (dryRun) return { ...base, ok: true };
 
     try {
-      // The endpoint is whatever the org typed into the connector form — an
+      // The endpoint is whatever the org typed into the connector form - an
       // org admin could otherwise point this server's outbound request at its
       // own internal network or a cloud metadata endpoint. See ssrf-guard.ts.
       await assertPublicHttpUrl(request.url);
@@ -238,7 +238,7 @@ export class CrmTestService {
           const found = pluckPath(JSON.parse(raw), integration.id_path);
           if (found !== null && found !== undefined) externalId = String(found);
         } catch {
-          // Non-JSON success body — the send worked, we just can't link it.
+          // Non-JSON success body - the send worked, we just can't link it.
         }
       }
 
@@ -282,7 +282,7 @@ export class CrmTestService {
   }
 
   /**
-   * The field-map source document, minus the signed recording URL — presigning
+   * The field-map source document, minus the signed recording URL - presigning
    * needs the worker's S3 client, and a test does not need a playable link.
    */
   private async sourceForCall(

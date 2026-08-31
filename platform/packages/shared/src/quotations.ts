@@ -29,7 +29,7 @@ export type DocumentDiscount = z.infer<typeof DocumentDiscount>;
 /**
  * One line: quantity * unitPrice, less its own line-level discount, then its
  * own line-level tax on top of the discounted amount (tax-on-discounted-price
- * is the GST-correct order — taxing the pre-discount price overcharges tax).
+ * is the GST-correct order - taxing the pre-discount price overcharges tax).
  */
 export function computeLineTotal(line: LineItemInput): number {
   const gross = line.quantity * line.unitPrice;
@@ -48,13 +48,13 @@ export interface DocumentTotals {
 /**
  * Rolls a set of already-computed line totals up into a document total, after
  * a document-level discount (applied to the pre-tax subtotal, same as
- * Kailash's proven `discount_type`/`discount_value` header fields — reused as
+ * Kailash's proven `discount_type`/`discount_value` header fields - reused as
  * a business-logic reference, not as code).
  *
  * `taxTotal` is reported separately from `total` because India-GST invoices
  * (migration 0060) need to show it broken out as cgst/sgst/igst on the
  * printed document even though this function doesn't know which split
- * applies — that's the caller's job (intra-state vs inter-state), this just
+ * applies - that's the caller's job (intra-state vs inter-state), this just
  * hands back the one number to split.
  */
 export function computeDocumentTotals(lines: LineItemInput[], discount: DocumentDiscount): DocumentTotals {
@@ -76,7 +76,7 @@ export function computeDocumentTotals(lines: LineItemInput[], discount: Document
     const lineTaxableBase = l.quantity * l.unitPrice * (1 - l.discountPct / 100);
     // Spread the document discount across lines proportionally so each
     // line's tax is computed on ITS post-discount share, not the whole
-    // document's — matters once lines carry different tax rates.
+    // document's - matters once lines carry different tax rates.
     const share = preTaxSubtotal > 0 ? lineTaxableBase / preTaxSubtotal : 0;
     const lineTaxableAfterDocDiscount = lineTaxableBase - discountAmount * share;
     return sum + lineTaxableAfterDocDiscount * (l.taxRate / 100);
@@ -92,7 +92,7 @@ export function computeDocumentTotals(lines: LineItemInput[], discount: Document
 
 /**
  * Splits a computed tax total into India-GST's cgst/sgst (intra-state, half
- * each) or igst (inter-state, all of it) — the API decides which applies by
+ * each) or igst (inter-state, all of it) - the API decides which applies by
  * comparing the org's home state to the invoice's place_of_supply; this just
  * does the arithmetic once that decision is made.
  */

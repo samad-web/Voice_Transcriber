@@ -83,8 +83,8 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
       const saved = result.project;
       setProjects((prev) => {
         const without = prev.filter((p) => p.id !== saved.id);
-        // The POST/PATCH response has no counts on it — it is the row, not the
-        // list — so the previous row's totals are carried over rather than
+        // The POST/PATCH response has no counts on it - it is the row, not the
+        // list - so the previous row's totals are carried over rather than
         // being shown as zero until the next full load.
         const previous = prev.find((p) => p.id === saved.id);
         return [
@@ -149,7 +149,7 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
       {projects.length === 0 ? (
         <EmptyState
           title="No projects yet"
-          description="Add the things you sell — a 3D website, an analytics agent — and calls will start being labelled with whichever one they were about."
+          description="Add the things you sell - a 3D website, an analytics agent - and calls will start being labelled with whichever one they were about."
         />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -275,8 +275,8 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
           <div className="space-y-2">
             <MonoLabel>Also heard as</MonoLabel>
             <p className="text-xs text-text-muted">
-              The name is matched automatically. Add anything else people say —
-              &ldquo;3d site&rdquo;, &ldquo;three d website&rdquo; — one per row.
+              The name is matched automatically. Add anything else people say -
+              &ldquo;3d site&rdquo;, &ldquo;three d website&rdquo; - one per row.
             </p>
             {draft.aliases.map((alias, i) => (
               <div key={i} className="flex items-center gap-2">

@@ -29,7 +29,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * The "hands" — owns the capture pipeline and lives as a microphone foreground
+ * The "hands" - owns the capture pipeline and lives as a microphone foreground
  * service so it survives while the call app is in front. Analogue of Cube ACR's
  * recording service + `ExternalRecordingWork`.
  */
@@ -58,7 +58,7 @@ class RecordingService : Service() {
         // Defense in depth for the activation gate: the receiver already checks,
         // but no capture may ever start on an un-enrolled/disabled device.
         if (!com.voicetranscriber.callrecorder.platform.ActivationStore.isRecordingAllowed(this)) {
-            Log.i(TAG, "beginRecording refused — device not activated or recording disabled")
+            Log.i(TAG, "beginRecording refused - device not activated or recording disabled")
             stopSelf()
             return
         }
@@ -104,13 +104,13 @@ class RecordingService : Service() {
         val entity = current?.copy(endedAt = System.currentTimeMillis())
         current = null
 
-        // IMPORTANT: do NOT stopSelf() before the DB write finishes — that cancels this
+        // IMPORTANT: do NOT stopSelf() before the DB write finishes - that cancels this
         // scope mid-delay and the recording is lost (the bug that made calls "not record").
         // Save first so a recording is never lost, then enrich, then stop the service.
         scope.launch {
             try {
                 if (entity != null && !hadAudio) {
-                    // Nothing was captured — e.g. a VoIP app holds the mic exclusively
+                    // Nothing was captured - e.g. a VoIP app holds the mic exclusively
                     // (Android blocks concurrent capture). Don't save an empty file.
                     Log.w(TAG, "No audio captured; discarding empty recording")
                     runCatching { File(entity.filePath).delete() }
@@ -131,7 +131,7 @@ class RecordingService : Service() {
                     // the record we upload from and must not lose the number.
                     // These were one value, so a saved contact meant the digits
                     // from the call log were dropped and the call reached the
-                    // server — and the customer's CRM — with no way to ring back.
+                    // server - and the customer's CRM - with no way to ring back.
                     // `Name(number)` is the form UploadWorker already splits.
                     val label = info?.name ?: info?.number ?: entity.callee
                     val direction = info?.direction ?: entity.direction
@@ -140,7 +140,7 @@ class RecordingService : Service() {
                         else -> info?.number ?: label
                     }
 
-                    // Rename the file to "<name> <date time>.m4a" — for phone AND VoIP.
+                    // Rename the file to "<name> <date time>.m4a" - for phone AND VoIP.
                     val newPath = RecordingNaming.renameToReadable(entity.filePath, label, entity.startedAt)
 
                     // Keep the recording as a plaintext .m4a by default so the rep can
@@ -164,7 +164,7 @@ class RecordingService : Service() {
                         }
                     dao.updateResolved(id, storedPath, callee, direction)
 
-                    // DB write is durable now — hand the recording to the upload subsystem.
+                    // DB write is durable now - hand the recording to the upload subsystem.
                     // (Enqueued AFTER the save so we never lose a recording; the worker
                     // itself re-checks the activation gate before touching the network.)
                     UploadScheduler.enqueue(applicationContext)

@@ -33,7 +33,7 @@ export default async function TeamPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (

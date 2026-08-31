@@ -4,34 +4,34 @@
    The shared design-system v2 tokens (doc 16 §1, defined in @aura/ui) stay the
    base: they are what keeps the console and this site one system. This file
    adds the marketing-only register on top, derived from three things the owner
-   supplied on 2026-08-08 — the Aura mark, and two reference landing pages.
+   supplied on 2026-08-08 - the Aura mark, and two reference landing pages.
 
    What each reference contributed, so the next person knows what was deliberate:
 
-   · Reference 1 (black / yellow, "ONLINE SHOPPING") — the confidence of the
+   · Reference 1 (black / yellow, "ONLINE SHOPPING") - the confidence of the
      display type. Very large, very heavy, tight tracking, sitting on a plain
      ground with real air around it. One saturated accent, used sparingly.
-   · Reference 2 (violet / blue, "E-COMMERCE") — the softness. A gradient wash
+   · Reference 2 (violet / blue, "E-COMMERCE") - the softness. A gradient wash
      behind the hero, fully-rounded pill CTAs, generous radii, light ground.
-   · The mark itself — the gradient. #00B4F0 → #7B2FF7 is read straight off the
+   · The mark itself - the gradient. #00B4F0 → #7B2FF7 is read straight off the
      logo, and it is the same register reference 2 was already working in, which
      is why these three inputs cohere rather than fight.
 
    THE ONE RULE: the gradient is the brand's single loud move. It appears on the
    mark, one hero wash, and the primary CTA. Nowhere else. Everything around it
-   stays quiet — near-white ground, deep ink type, one muted grey. The moment it
+   stays quiet - near-white ground, deep ink type, one muted grey. The moment it
    spreads to section backgrounds and card borders it stops reading as identity
    and starts reading as decoration.
    ────────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* --brand-from/mid/to/gradient now live in @aura/ui's theme.css — the one
+  /* --brand-from/mid/to/gradient now live in @aura/ui's theme.css - the one
      canonical definition (doc 16's "one token set"), since the console's own
      brand register needs them too. This file no longer redeclares the hexes;
      theme.css is imported above @import "./brand.css" in globals.css, so the
      custom properties are already in scope here. */
 
-  /* Marketing ground and ink. Both carry a slight cool bias toward the mark —
+  /* Marketing ground and ink. Both carry a slight cool bias toward the mark -
      a neutral grey here would read as unchosen next to that gradient. */
   --mk-ground:  #fbfcfe;
   --mk-surface: #ffffff;
@@ -93,7 +93,7 @@
 
 /* Body copy is ink, not grey.
    The muted tone read as de-emphasised on the sections that carry the argument
-   — the problem statement in particular is the most important prose on the
+   - the problem statement in particular is the most important prose on the
    page and was the faintest. Grey is for labels and captions; a paragraph
    somebody is meant to actually read gets full contrast. */
 .mk-lede {
@@ -103,7 +103,7 @@
   max-width: 56ch;
 }
 
-/* An eyebrow earns its place only when it says something structural — which
+/* An eyebrow earns its place only when it says something structural - which
    step this is, which of the four questions a section answers. */
 .mk-eyebrow {
   font-size: 0.75rem;
@@ -125,7 +125,7 @@
 
 /* ── Pill CTA ───────────────────────────────────────────────────────────
    Both references use a fully-rounded CTA; the gradient fill is where this
-   site spends its boldness. The lift on hover is 2px and 150ms — enough to
+   site spends its boldness. The lift on hover is 2px and 150ms - enough to
    feel responsive, not enough to feel like a toy. */
 
 .mk-cta {
@@ -176,7 +176,7 @@
      underneath stays faintly visible, which is what stops a sticky header from
      reading as a lid clamped over the page.
    · `saturate(180%)` before the blur. Blur alone greys out whatever passes
-     behind it — the gradient wash in particular goes muddy — and re-saturating
+     behind it - the gradient wash in particular goes muddy - and re-saturating
      restores the colour the blur just drained.
    · A 1px line, not a shadow. The header is a boundary, not an object floating
      above the page, and at 64px tall a shadow makes it look like a toolbar.
@@ -200,13 +200,13 @@
   .mk-header { background: var(--mk-ground); }
 }
 
-/* The lockup. Slightly tighter tracking than body type — a wordmark is a shape
+/* The lockup. Slightly tighter tracking than body type - a wordmark is a shape
    before it is a word.
 
    `min-height: 44px` is not decoration. The lockup's ink is only 30px tall, and
    a 30px tap target on a phone is below every published minimum (Apple HIG and
    WCAG 2.5.5 both say 44). The height is added as target area, not as visible
-   box, so nothing looks different — it is just no longer fiddly to hit. */
+   box, so nothing looks different - it is just no longer fiddly to hit. */
 .mk-brand {
   display: inline-flex;
   align-items: center;
@@ -239,13 +239,13 @@
   background: color-mix(in srgb, var(--mk-ink) 5%, transparent);
 }
 
-/* Header-sized pill. `.mk-cta` is scaled for the hero — at 1rem/2rem it eats a
-   64px bar — so the header gets the same object at a smaller size, not a
+/* Header-sized pill. `.mk-cta` is scaled for the hero - at 1rem/2rem it eats a
+   64px bar - so the header gets the same object at a smaller size, not a
    different object. The shadow shrinks with it; a hero-weight glow on a small
    button looks like a mistake. */
 .mk-cta-sm {
   padding: 0.55rem 1.15rem;
-  min-height: 44px;   /* same reasoning as .mk-brand — it measured 39px */
+  min-height: 44px;   /* same reasoning as .mk-brand - it measured 39px */
   font-size: 0.9063rem;
   box-shadow: 0 6px 16px -8px rgb(59 107 238 / 0.62);
 }
@@ -253,7 +253,7 @@
 .mk-cta-sm:hover { box-shadow: 0 10px 22px -10px rgb(59 107 238 / 0.7); }
 
 /* Keyboard focus. The pill CTAs have no border of their own, so a focus ring
-   drawn on the element edge would be swallowed by the gradient — offset it. */
+   drawn on the element edge would be swallowed by the gradient - offset it. */
 .mk-brand:focus-visible,
 .mk-nav-link:focus-visible,
 .mk-cta:focus-visible,
@@ -290,13 +290,13 @@
 /* The wash must NOT be clipped at the top of its section.
 
    The blobs are 28rem tall and sit at `top: -14rem`, which puts the circle's
-   vertical centre — its widest and most saturated slice — exactly on the
+   vertical centre - its widest and most saturated slice - exactly on the
    section's top edge. With `overflow: hidden` on the section that edge is a
    straight razor cut across the full width of the page, sitting immediately
    under the sticky header: the visible horizontal crease the owner reported.
 
    `overflow-x: clip` rather than `hidden` is what fixes it. `clip` does not
-   create a scroll container, which means the other axis may stay `visible` —
+   create a scroll container, which means the other axis may stay `visible` -
    `overflow-x: hidden` silently forces `overflow-y: auto` and would clip
    vertically no matter what we asked for. So the blob now runs up behind the
    translucent header and fades out on its own terms, while horizontal overflow
@@ -341,13 +341,13 @@
 /* The wash has to shrink with the viewport, and it was not.
 
    46rem is 736px. On a desktop that is a blob in the top-right corner with
-   most of it hanging off the canvas — an accent. On a 390px phone the SAME
+   most of it hanging off the canvas - an accent. On a 390px phone the SAME
    blob is nearly twice the screen width, so it stops being an accent and
    becomes the background: the entire top of the page rendered as a solid
    blue field with the headline sitting on top of it.
 
    So the geometry is re-stated per breakpoint rather than scaled, and the
-   opacity comes down with it — a wash covering most of the viewport needs to
+   opacity comes down with it - a wash covering most of the viewport needs to
    be fainter than one covering a corner, or the type contrast goes with it. */
 @media (max-width: 1023px) {
   .mk-wash::before,
@@ -367,7 +367,7 @@
    Two things move: the waveform, and the language of the transcript.
 
    NOT a GIF, deliberately. A GIF of this card would be a fixed-size raster of
-   text — soft on a retina screen, unreadable at a phone width, ~1-2 MB on the
+   text - soft on a retina screen, unreadable at a phone width, ~1-2 MB on the
    critical path, frozen in the light theme, unselectable, invisible to search
    engines and screen readers, and it would have to be re-exported every time a
    word of the copy changed. This is the same animation in a few hundred bytes
@@ -375,7 +375,7 @@
    `prefers-reduced-motion`, which a GIF cannot.
 
    The extracted panel underneath deliberately does NOT animate. The whole
-   point of the sequence is that the language changes and the output does not —
+   point of the sequence is that the language changes and the output does not -
    if the fields moved too, the card would just look busy instead of making an
    argument.
    ────────────────────────────────────────────────────────────────────────── */
@@ -398,7 +398,7 @@
 
 /* The language cross-fade. Both layers occupy the same grid cell, so the
    container is as tall as the taller of the two and neither is absolutely
-   positioned — an absolute layer would overflow the card the moment one
+   positioned - an absolute layer would overflow the card the moment one
    translation wrapped to a different number of lines. */
 .mk-lang {
   display: grid;
@@ -426,7 +426,7 @@
   100%      { opacity: 0; }
 }
 
-/* Reduced motion — the two animations are treated differently, on purpose.
+/* Reduced motion - the two animations are treated differently, on purpose.
 
    THE WAVEFORM STOPS. Thirty bars scaling up and down is real movement, it is
    decorative, and it is exactly what someone who turned this setting on has
@@ -438,7 +438,7 @@
    vestibular risk this media query exists to remove. Apple's own interface
    guidelines recommend a cross-dissolve as the REPLACEMENT for motion when
    reduced motion is set, not as another thing to strip out. And this fade
-   carries the card's entire argument — freeze it and a visitor with the
+   carries the card's entire argument - freeze it and a visitor with the
    setting on is left looking at a static card that makes no point at all.
 
    The `!important` is deliberate and narrow. It overrides the design system's
@@ -467,21 +467,21 @@
 /* ── Timeline: how it works ──────────────────────────────────────────────
    A connected rail through the four numbered steps, filling as you scroll.
 
-   NO JAVASCRIPT. This is CSS scroll-driven animation — `animation-timeline:
+   NO JAVASCRIPT. This is CSS scroll-driven animation - `animation-timeline:
    view()` ties each step's progress to its own position in the viewport. The
    usual way to build this is IntersectionObserver, which would make the
    homepage a client component and put a hydration bundle on the critical path
    of the busiest page on the site, for an effect the browser can now do itself.
 
    Everything is inside `@supports (animation-timeline: view())`, so the
-   default — and the outcome on any engine without it — is the finished state:
+   default - and the outcome on any engine without it - is the finished state:
    all four steps visible, rails drawn. The animation is additive polish and its
    absence costs nothing.
 
    THE SIZE CONSTRAINT. The owner's instruction was not to make this section
    taller. Four columns at `lg` is what makes that work: the 2x2 grid this
    replaces used two rows, so going one-across-four makes the section SHORTER
-   on a desktop. Below 1024px it stays 2x2, and on a phone it stays stacked —
+   on a desktop. Below 1024px it stays 2x2, and on a phone it stays stacked -
    both identical footprints to before, with a rail added inside the existing
    gap rather than new space.
    ────────────────────────────────────────────────────────────────────────── */
@@ -575,11 +575,11 @@
 @supports (animation-timeline: view()) {
   .mk-tl-step {
     /* Named so the rail can ride the STEP's timeline. Left to `view()` the
-       rail would be timed against its own box, which is a 2px line — its
+       rail would be timed against its own box, which is a 2px line - its
        entry range is a couple of pixels and the fill would snap rather than
        sweep. */
     /* Named so the rail can ride the STEP's timeline. Left to `view()` the
-       rail would be timed against its own box, which is a 2px line — its
+       rail would be timed against its own box, which is a 2px line - its
        entry range is a couple of pixels and the fill would snap rather than
        sweep. */
     view-timeline-name: --tl-step;
@@ -595,7 +595,7 @@
   /* THE STAGGER, and it is the whole reason this reads as a timeline.
 
      At `lg` all four steps sit in one row, so they enter the viewport at the
-     same instant and on a shared timeline they would all animate together —
+     same instant and on a shared timeline they would all animate together -
      a group fade-in, not a sequence. Offsetting each step's `animation-range`
      walks the reveal across the row, and the rails are timed to draw in the
      gaps between them: step 1 lands, the rail runs to step 2, step 2 lands,
@@ -605,7 +605,7 @@
      on a phone too, where the steps already enter one at a time and the offsets
      simply tighten the hand-off.
 
-     Everything is finished by 70% of entry — well before a step reaches the
+     Everything is finished by 70% of entry - well before a step reaches the
      middle of the screen. An animation still moving while you are reading it
      feels broken rather than smooth. */
   .mk-tl-step:nth-child(1) { animation-range: entry 5% entry 25%; }
@@ -622,7 +622,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    /* Movement out, progression kept — the same call as the hero card. The
+    /* Movement out, progression kept - the same call as the hero card. The
        translate is what this setting exists to remove; an opacity change and a
        line that lengthens carry no vestibular risk, and without them the
        timeline is four disconnected paragraphs.
@@ -640,7 +640,7 @@
 }
 
 /* ── Step numerals ───────────────────────────────────────────────────────
-   Numbered because "how it works" IS a sequence — the order carries real
+   Numbered because "how it works" IS a sequence - the order carries real
    information (a call cannot be extracted before it is transcribed). Numbering
    a set of unordered feature cards would be decoration; this is not. */
 

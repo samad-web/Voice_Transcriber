@@ -26,7 +26,7 @@ export interface OwnerRow {
  * Owner logins for this customer.
  *
  * An owner signs in to /owner and sees only this instance: their own pipeline,
- * their own telecallers. They never reach the operator console — that is the
+ * their own telecallers. They never reach the operator console - that is the
  * point of provisioning them here rather than handing over a shared login.
  */
 export function OwnerAccounts({
@@ -79,7 +79,7 @@ export function OwnerAccounts({
           <MonoLabel>Owner Logins</MonoLabel>
           <p className="text-xs text-neutral-500 font-sans mt-1.5 leading-relaxed max-w-md">
             A sign-in scoped to this instance only. Owners land on their own
-            dashboard, lead board and lead list — never the operator console.
+            dashboard, lead board and lead list - never the operator console.
           </p>
         </div>
         <StatusChip tone={owners.length > 0 ? "solid" : "muted"}>
@@ -91,7 +91,7 @@ export function OwnerAccounts({
         <div className="flex items-start gap-2.5 rounded-md border border-warning bg-warning-subtle p-3">
           <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
           <p className="text-sm leading-relaxed text-warning-text">
-            Supabase Auth is not configured on the API — set SUPABASE_URL and
+            Supabase Auth is not configured on the API - set SUPABASE_URL and
             SUPABASE_SERVICE_ROLE_KEY, then restart it. Logins cannot be created
             until then.
           </p>
@@ -216,7 +216,7 @@ export function OwnerAccounts({
 
       {result && !result.error && result.linkedExisting ? (
         <p className="text-xs font-mono font-bold uppercase text-neutral-500 border-2 border-black p-3">
-          {result.forEmail} already had an Aura login — it was linked to this
+          {result.forEmail} already had an Aura login - it was linked to this
           instance and keeps its existing password.
         </p>
       ) : null}
@@ -231,7 +231,7 @@ function PasswordReveal({ email, password }: { email: string; password: string }
   return (
     <div className="border-2 border-black bg-white p-3.5 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <MonoLabel>Temporary password — shown once</MonoLabel>
+        <MonoLabel>Temporary password - shown once</MonoLabel>
         <StatusChip tone="danger">Copy now</StatusChip>
       </div>
       <p className="text-xs font-sans text-neutral-600 break-all">{email}</p>
@@ -241,7 +241,7 @@ function PasswordReveal({ email, password }: { email: string; password: string }
       <BrutalButton
         variant="secondary"
         className="w-full"
-        // Sync, not `async` — see api-keys-manager.tsx: React discards an event
+        // Sync, not `async` - see api-keys-manager.tsx: React discards an event
         // handler's return value, so an async onClick turns a rejected
         // clipboard write (insecure origin, denied permission) into an
         // unhandled rejection. This password is shown once and never

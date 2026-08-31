@@ -10,7 +10,7 @@ import Script from "next/script";
  * developer machine sends events into the same property a real visitor's do,
  * and the numbers an ad account optimises against are then wrong in a way
  * nobody can see. It is a NEXT_PUBLIC_ value baked at BUILD time, so it has to
- * be a Docker build arg — setting it only at runtime does nothing.
+ * be a Docker build arg - setting it only at runtime does nothing.
  *
  * ── IT FIRES ON LOAD ───────────────────────────────────────────────────────
  *
@@ -25,13 +25,13 @@ import Script from "next/script";
  * but blocking first paint on a tag manager is how a fast landing page stops
  * being one, and `afterInteractive` still fires well before any visitor
  * finishes reading the hero. The trade is that a tag configured to rewrite the
- * page above the fold would flicker — none is, and none should be.
+ * page above the fold would flicker - none is, and none should be.
  *
  * ── THE `noscript` IFRAME ──────────────────────────────────────────────────
  *
  * Google's snippet includes one so that a visitor with JavaScript disabled is
  * still counted. It is included here for the same reason, and it is a real
- * request to Google in its own right — worth knowing, given it is the one part
+ * request to Google in its own right - worth knowing, given it is the one part
  * that runs when nothing else does.
  */
 

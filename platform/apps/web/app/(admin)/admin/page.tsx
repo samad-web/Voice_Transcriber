@@ -5,7 +5,7 @@ import { apiGetAdmin } from "@/lib/server-api";
 
 /**
  * Platform-admin console (us, not customers). Gated by `(admin)/layout.tsx`
- * (isOperator()) and, here, by operatorGate() itself — the layout's decision
+ * (isOperator()) and, here, by operatorGate() itself - the layout's decision
  * and this page's own data-fetching are not guaranteed to be sequenced by
  * Next's renderer, so the check has to be the first thing this function does
  * too. See operator-gate.tsx.
@@ -51,8 +51,8 @@ function stageTone(status?: string): "solid" | "muted" | "danger" {
 
 /**
  * The strip above each of the two panel cards below. Mirrors the equivalent
- * `PANEL_HEAD` in instances/[id]/page.tsx — same 1px rule, same subtle fill,
- * same label weight — so this page reads as part of the same console rather
+ * `PANEL_HEAD` in instances/[id]/page.tsx - same 1px rule, same subtle fill,
+ * same label weight - so this page reads as part of the same console rather
  * than a leftover from the old neo-brutalist system.
  */
 const PANEL_HEAD = "flex items-center gap-2 border-b border-border bg-bg-subtle px-5 py-3.5";
@@ -87,7 +87,7 @@ export default async function AdminPage() {
         <Card elevated>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (

@@ -5,7 +5,7 @@ import { BrutalButton, Input, Select } from "@aura/ui";
 import { generateSlotsAction } from "./actions";
 
 /**
- * Bulk generation — a working week of availability in one action.
+ * Bulk generation - a working week of availability in one action.
  *
  * Adding slots one at a time is fine for filling a one-off gap and hopeless for
  * "I am free 10 to 6, Monday to Friday, for the next month", which is what
@@ -14,7 +14,7 @@ import { generateSlotsAction } from "./actions";
  * THE BUFFER is the other half. Slots step by `duration + buffer`, so a
  * 30-minute call with a 10-minute gap produces 10:00, 10:40, 11:20 and nobody
  * is ever booked back-to-back. Zero is allowed, because back-to-back is a
- * legitimate choice — just not the default.
+ * legitimate choice - just not the default.
  *
  * The count below the fields is arithmetic for the operator, NOT a control:
  * every rule is enforced again by the API (92-day range, 600-slot ceiling,
@@ -36,7 +36,7 @@ export function Generator({
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon–Fri
+  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon-Fri
   const [dayStart, setDayStart] = useState("10:00");
   const [dayEnd, setDayEnd] = useState("18:00");
   const [duration, setDuration] = useState(30);
@@ -49,13 +49,13 @@ export function Generator({
    * The count, or WHY there is no count.
    *
    * This used to return a bare number and the UI said "0 slots per selected day
-   * — check the times against the meeting length" for every possible cause.
+   * - check the times against the meeting length" for every possible cause.
    * That sent people to look at the wrong field: the commonest way to get zero
    * is entering 4pm as `04:00`, which is four in the MORNING and therefore
    * before a midday start. The window is the problem and the meeting length is
    * innocent, so the message now names whichever thing is actually wrong.
    *
-   * The loop mirrors the server's exactly — a slot counts only if the whole
+   * The loop mirrors the server's exactly - a slot counts only if the whole
    * meeting fits before the day ends.
    */
   const preview = useMemo((): { count: number; problem?: string } => {
@@ -81,7 +81,7 @@ export function Generator({
       return {
         count: 0,
         problem:
-          `A ${duration}-minute meeting does not fit between ${dayStart} and ${dayEnd} — ` +
+          `A ${duration}-minute meeting does not fit between ${dayStart} and ${dayEnd} - ` +
           `that window is ${b - a} minutes.`,
       };
     }

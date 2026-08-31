@@ -23,7 +23,7 @@ import {
  * @aura/ui has no Textarea primitive yet (doc 18 §2 lists it as deliberately
  * deferred under "build only what a page uses"), and control-styles.ts is not
  * exported from the package index. This is the one console textarea, so it is
- * copied rather than left on the old 2px black border — which would be the only
+ * copied rather than left on the old 2px black border - which would be the only
  * brutalist edge left in the drawer. When Textarea lands, delete this.
  */
 const TEXTAREA_CLASS =
@@ -34,7 +34,7 @@ const TEXTAREA_CLASS =
  * One lead, opened from either view.
  *
  * The board and the list already hold the row, so the panel renders instantly
- * from what the caller passed and fetches only the call history — which is the
+ * from what the caller passed and fetches only the call history - which is the
  * part neither list can afford to carry for every card.
  */
 export function LeadDrawer({
@@ -227,10 +227,10 @@ export function LeadDrawer({
                 {lead.project_source === "extraction" && lead.project_name ? (
                   // Say plainly that a machine chose this and that changing it
                   // is final. Anyone correcting a wrong label deserves to know
-                  // the correction sticks — otherwise they will correct it
+                  // the correction sticks - otherwise they will correct it
                   // again next week and assume the system is broken.
                   <span className="text-xs text-text-subtle">
-                    Detected from the call — picking one below makes it yours
+                    Detected from the call - picking one below makes it yours
                   </span>
                 ) : null}
               </div>
@@ -301,7 +301,7 @@ export function LeadDrawer({
                 value={draft.value}
                 onChange={(e) => setDraft({ ...draft, value: e.target.value })}
                 inputMode="decimal"
-                placeholder="—"
+                placeholder="-"
                 className="tabular-nums"
               />
             </FormField>
@@ -380,7 +380,7 @@ export function LeadDrawer({
             </div>
             <div>
               <dt className="text-text-muted">Telecaller</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{lead.telecaller ?? "—"}</dd>
+              <dd className="mt-0.5 font-medium break-words text-text">{lead.telecaller ?? "-"}</dd>
             </div>
             <div>
               <dt className="text-text-muted">First seen</dt>
@@ -391,7 +391,7 @@ export function LeadDrawer({
             <div>
               <dt className="text-text-muted">Confidence</dt>
               <dd className="mt-0.5 font-medium text-text tabular-nums">
-                {num(lead.score) === null ? "—" : `${Math.round(num(lead.score)! * 100)}%`}
+                {num(lead.score) === null ? "-" : `${Math.round(num(lead.score)! * 100)}%`}
               </dd>
             </div>
           </dl>

@@ -52,7 +52,7 @@ export interface InboxFilters {
  * The inbox list.
  *
  * Every call re-resolves the owner from the session via ownerHeaders() rather
- * than trusting anything the client passed — the same shape crm-actions.ts
+ * than trusting anything the client passed - the same shape crm-actions.ts
  * uses, and the reason a client component can never widen its own scope.
  */
 export async function listConversationsAction(
@@ -100,11 +100,11 @@ export async function fetchThreadAction(
 }
 
 /**
- * Route, claim, read or close a thread — plus, since Kailash gap Milestone 3,
+ * Route, claim, read or close a thread - plus, since Kailash gap Milestone 3,
  * the one narrow send action below. Safety rule 3 is kept by that action's
  * own shape (whatsapp-send.controller.ts): a human composes it, it goes to
  * the address already on the conversation, and it's off by default behind
- * WHATSAPP_SENDING_ENABLED — not by this file having no mutations at all.
+ * WHATSAPP_SENDING_ENABLED - not by this file having no mutations at all.
  */
 export async function updateConversationAction(
   id: string,
@@ -155,7 +155,7 @@ export async function fetchChannelTemplatesAction(
 
 /**
  * Send one WhatsApp message into this conversation. See
- * whatsapp-send.controller.ts for the full gate chain this rides on — this
+ * whatsapp-send.controller.ts for the full gate chain this rides on - this
  * action does not duplicate any of it, it just relays whatever the API says
  * (including a friendly 503 when WHATSAPP_SENDING_ENABLED is off, or Wasi's
  * own rejection reason, e.g. an expired 24-hour session window).

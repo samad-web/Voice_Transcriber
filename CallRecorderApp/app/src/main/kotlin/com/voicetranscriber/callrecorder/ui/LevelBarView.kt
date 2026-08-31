@@ -9,7 +9,7 @@ import android.view.View
 /**
  * Live scrolling waveform. Call [push] with an amplitude (0f..1f) as audio plays; each
  * sample becomes a centered, mirrored vertical bar. New samples enter on the right and
- * older ones scroll off the left — the classic voice-level waveform.
+ * older ones scroll off the left - the classic voice-level waveform.
  */
 class LevelBarView @JvmOverloads constructor(
     context: Context,

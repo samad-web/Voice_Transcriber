@@ -18,7 +18,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * /compatibility — the highest-value page on the site (doc 10 §9).
+ * /compatibility - the highest-value page on the site (doc 10 §9).
  *
  * Two jobs at once. It answers objection #2 for a buyer mid-evaluation, and it
  * is the best organic-search asset this product has: "which phones record calls
@@ -26,7 +26,7 @@ export const metadata: Metadata = pageMetadata({
  * high-intent, low-competition queries, and we have hardware-verified answers
  * nobody else publishes.
  *
- * Both jobs depend on the same thing — the ❌ row being stated as plainly as
+ * Both jobs depend on the same thing - the ❌ row being stated as plainly as
  * the ✅ ones. A vendor that names its limits is trusted on everything else,
  * and a page that hedges will not rank for the query that matters most.
  *

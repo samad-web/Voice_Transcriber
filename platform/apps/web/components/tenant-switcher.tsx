@@ -8,7 +8,7 @@ export type { TenantOption };
  * The operator console manages every customer, but the org-scoped pages read
  * one tenant at a time (RLS is per-org). Without this control those pages
  * silently render the environment's DEV_ORG_ID and look like platform-wide
- * totals — the switcher makes the tenant the page is about explicit and
+ * totals - the switcher makes the tenant the page is about explicit and
  * changeable via `?org=`.
  */
 export function TenantSwitcher({

@@ -11,7 +11,7 @@ import { enqueueFollowUp } from "./funnel-followup-outbox";
  * ── OFF BY DEFAULT, AND IT STAYS THAT WAY UNTIL SOMEBODY DECIDES ───────────
  *
  * Every other message this platform sends is provoked by a human: an operator
- * presses Reject, a visitor submits a form. This one is not — it messages
+ * presses Reject, a visitor submits a form. This one is not - it messages
  * people who did nothing, on a timer, from an unofficial WhatsApp account. That
  * is close enough to unsolicited marketing that switching it on has to be a
  * deliberate act, so it requires FUNNEL_REMINDERS_ENABLED=true and does nothing
@@ -19,7 +19,7 @@ import { enqueueFollowUp } from "./funnel-followup-outbox";
  *
  * ── THE BACKLOG GUARD IS THE IMPORTANT PART ────────────────────────────────
  *
- * The obvious query — "open, no booking, older than three days" — matches every
+ * The obvious query - "open, no booking, older than three days" - matches every
  * enquiry ever received the first time it runs. Switching this on would send a
  * "just following up" message to people who enquired six months ago and have
  * long since forgotten, dozens at once, from an account that gets banned for
@@ -34,7 +34,7 @@ import { enqueueFollowUp } from "./funnel-followup-outbox";
 const AFTER_DAYS = positiveInt(process.env.FUNNEL_REMINDER_AFTER_DAYS, 3);
 
 /**
- * The far edge of the window. Must exceed AFTER_DAYS or nothing ever matches —
+ * The far edge of the window. Must exceed AFTER_DAYS or nothing ever matches -
  * checked at startup rather than discovered as silence.
  */
 const MAX_AGE_DAYS = positiveInt(process.env.FUNNEL_REMINDER_MAX_AGE_DAYS, 14);
@@ -115,7 +115,7 @@ export async function sweepFunnelReminders(limit = BATCH): Promise<number> {
  * Hourly, not by the minute.
  *
  * The window is measured in days, so a tighter loop cannot make a reminder
- * arrive meaningfully sooner — it would only re-run the same query sixty times
+ * arrive meaningfully sooner - it would only re-run the same query sixty times
  * to find the same nothing.
  */
 export function startFunnelReminderSweep(): NodeJS.Timeout | null {
@@ -131,14 +131,14 @@ export function startFunnelReminderSweep(): NodeJS.Timeout | null {
     // that is switched on and silently does nothing is worse than one that is
     // off, because nobody goes looking for it.
     console.error(
-      `funnel reminders: DISABLED — FUNNEL_REMINDER_MAX_AGE_DAYS (${MAX_AGE_DAYS}) must be ` +
+      `funnel reminders: DISABLED - FUNNEL_REMINDER_MAX_AGE_DAYS (${MAX_AGE_DAYS}) must be ` +
         `greater than FUNNEL_REMINDER_AFTER_DAYS (${AFTER_DAYS}), or no enquiry can ever match.`,
     );
     return null;
   }
 
   console.log(
-    `funnel reminders: ON — nudging open enquiries between ${AFTER_DAYS} and ${MAX_AGE_DAYS} ` +
+    `funnel reminders: ON - nudging open enquiries between ${AFTER_DAYS} and ${MAX_AGE_DAYS} ` +
       `days old, up to ${BATCH} per hour`,
   );
 

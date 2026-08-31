@@ -1,8 +1,8 @@
--- 0007_supabase_hardening.sql — safe to run on ANY Postgres.
+-- 0007_supabase_hardening.sql - safe to run on ANY Postgres.
 --
 -- On Supabase the schema lives in a database that also hosts PostgREST ("the
 -- Data API"), whose `anon` / `authenticated` roles are granted table access by
--- Supabase's default privileges. Our tenancy model does NOT use Supabase Auth —
+-- Supabase's default privileges. Our tenancy model does NOT use Supabase Auth -
 -- isolation comes from RLS keyed on current_setting('app.org_id'), which those
 -- roles can never set. Worse, tables without RLS (users, sessions bookkeeping,
 -- schema_migrations) would be plainly readable with the public anon key.
@@ -36,7 +36,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- PUBLIC (i.e. every role) must not reach the tables either — only aura_app,
+-- PUBLIC (i.e. every role) must not reach the tables either - only aura_app,
 -- which 0001/0003/0004 grant explicitly, and the owner running migrations.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;

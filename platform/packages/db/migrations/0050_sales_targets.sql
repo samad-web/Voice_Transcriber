@@ -1,7 +1,7 @@
--- 0050_sales_targets.sql — PRD Layer 5: what someone is expected to sell.
+-- 0050_sales_targets.sql - PRD Layer 5: what someone is expected to sell.
 --
 -- The reports built in Layer 3 answer "what happened". A target is the other
--- half — "what was supposed to happen" — and without it every number on the
+-- half - "what was supposed to happen" - and without it every number on the
 -- reports page is uncalibrated: 400,000 of won business is excellent or
 -- alarming depending entirely on what the quarter was for.
 --
@@ -10,7 +10,7 @@
 -- Layer 5 in the PRD reads "quotas, territories, comp plans". This is the
 -- quota, deliberately alone. Commission is payroll: it needs an accrual model,
 -- a claw-back rule for a deal that unwinds, an approval trail, and it ends up
--- in somebody's pay packet — which makes a bug in it a different category of
+-- in somebody's pay packet - which makes a bug in it a different category of
 -- problem from a wrong number on a dashboard. Territories are an assignment
 -- system, which needs routing rules the CRM does not have yet. Both are real
 -- work and neither is this migration's.
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sales_targets (
   org_id         uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   workspace_id   uuid REFERENCES workspaces(id) ON DELETE SET NULL,
 
-  -- Whose target. NULL means the whole org/workspace — a team number, which
+  -- Whose target. NULL means the whole org/workspace - a team number, which
   -- is the one most people set first and the only one that works before
   -- individual owners are assigned.
   owner_user_id  uuid REFERENCES users(id) ON DELETE CASCADE,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS sales_targets (
   period_end     date NOT NULL,
 
   -- What is being measured. 'won_value' is money closed, 'won_count' is deals
-  -- closed — a business selling few large contracts and one selling many small
+  -- closed - a business selling few large contracts and one selling many small
   -- ones do not have the same idea of a good month. App-validated, like every
   -- other small open set in this schema.
   metric         text NOT NULL DEFAULT 'won_value',
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS sales_targets (
 
 -- One target per person per metric per period. `owner_user_id` is nullable and
 -- NULL values never collide in a plain unique index, so the team target gets
--- its own partial index rather than being left unconstrained — otherwise
+-- its own partial index rather than being left unconstrained - otherwise
 -- "the team's Q3 number" could quietly exist five times.
 CREATE UNIQUE INDEX IF NOT EXISTS sales_targets_person
   ON sales_targets (org_id, owner_user_id, metric, period_start, period_end)
@@ -65,7 +65,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS sales_targets_team
   ON sales_targets (org_id, metric, period_start, period_end)
   WHERE owner_user_id IS NULL;
 
--- "What targets cover today" — the attainment query's shape.
+-- "What targets cover today" - the attainment query's shape.
 CREATE INDEX IF NOT EXISTS sales_targets_period_idx
   ON sales_targets (org_id, period_start, period_end);
 

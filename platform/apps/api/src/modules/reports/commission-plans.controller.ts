@@ -43,15 +43,15 @@ const COMMISSION_PLAN_COLUMNS = `id, workspace_id, name, metric, rate_type, rate
   created_at, updated_at`;
 
 /**
- * Commission plans (Phase 4, migration 0071) — org configuration, the same
+ * Commission plans (Phase 4, migration 0071) - org configuration, the same
  * tier as `PipelinesController`: `AdminKeyGuard` + `TenantGuard` only, no
  * `CrmPermissionsGuard`. A plan is a standing rate an org sets for itself,
- * not a CRM record a rep owns or a role can be scoped away from — nothing
+ * not a CRM record a rep owns or a role can be scoped away from - nothing
  * here reads `RecordScope`, on purpose, the same reason pipelines,
  * automation rules and outreach cadences don't either.
  *
  * The rate itself is only ever READ by `ReportsService.commission()`, which
- * multiplies it against a window's attainment on every call — this
+ * multiplies it against a window's attainment on every call - this
  * controller only maintains the rate, never computes a payout. See 0071's
  * header, and `sales_targets` (0050) before it, for the boundary that keeps
  * this a calculator input rather than payroll: no accrual, no claw-back, no
@@ -149,7 +149,7 @@ export class CommissionPlansController {
   }
 
   /**
-   * Deleted, not archived — `active` is already the soft toggle for "stop
+   * Deleted, not archived - `active` is already the soft toggle for "stop
    * applying this rate", so a hard delete is for cleaning up a plan that was
    * never right, the same distinction `sales_targets` draws for the same
    * reason: nothing else refers to a plan's id, `ReportsService.commission()`

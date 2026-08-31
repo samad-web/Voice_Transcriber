@@ -8,14 +8,14 @@ import { resolveTenantScope } from "@/lib/tenant-scope";
 import { RolesManager } from "./roles-manager";
 import type { Role } from "./types";
 
-export const metadata: Metadata = { title: "Roles — Aura" };
+export const metadata: Metadata = { title: "Roles - Aura" };
 
 /**
- * Roles & permissions admin — CRM Phase 1, E0.4. Same tenant-scoping shape
+ * Roles & permissions admin - CRM Phase 1, E0.4. Same tenant-scoping shape
  * as (platform)/crm and (platform)/custom-fields. Schema-only phase: this
  * page lets an operator define custom roles and edit any role's permission
  * grid, but nothing here is enforced yet and no role can be assigned to a
- * real membership — see roles.controller.ts's header.
+ * real membership - see roles.controller.ts's header.
  */
 export default async function RolesPage({
   searchParams,
@@ -40,7 +40,7 @@ export default async function RolesPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (

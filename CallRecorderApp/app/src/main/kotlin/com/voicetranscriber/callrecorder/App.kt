@@ -26,7 +26,7 @@ class App : Application() {
             NotificationChannel(
                 CHANNEL_RECORDING,
                 getString(R.string.channel_recording),
-                // LOW keeps it quiet but the recording notification stays visible —
+                // LOW keeps it quiet but the recording notification stays visible -
                 // an always-on indicator is intentional (transparency, and required for
                 // a microphone foreground service).
                 NotificationManager.IMPORTANCE_LOW,

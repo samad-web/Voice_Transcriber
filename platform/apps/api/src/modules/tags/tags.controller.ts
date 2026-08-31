@@ -37,8 +37,8 @@ const TagPatch = z
  *
  * ── TWO GUARD REGIMES IN ONE CONTROLLER, DELIBERATELY ───────────────────
  *
- * Managing the tag VOCABULARY — creating "price-sensitive", renaming it,
- * deleting it — is org configuration, and sits on AdminKeyGuard+TenantGuard
+ * Managing the tag VOCABULARY - creating "price-sensitive", renaming it,
+ * deleting it - is org configuration, and sits on AdminKeyGuard+TenantGuard
  * with pipelines, roles and custom-field definitions.
  *
  * ATTACHING a tag to a contact is editing that contact, and is gated on
@@ -93,7 +93,7 @@ export class TagsController {
         return { tag };
       } catch (err) {
         // The unique index is case-insensitive, so this fires on "VIP" when
-        // "vip" exists. Saying which name collided matters — otherwise the
+        // "vip" exists. Saying which name collided matters - otherwise the
         // operator retries the same word wondering why it failed.
         if (isUniqueViolation(err)) {
           throw new ConflictException(`a tag named "${parsed.data.name}" already exists`);
@@ -146,7 +146,7 @@ export class TagsController {
    *
    * The join tables CASCADE, so this really does remove the label everywhere
    * rather than leaving orphaned rows. That is destructive and irreversible,
-   * which is why the list endpoint returns usage counts — the console shows
+   * which is why the list endpoint returns usage counts - the console shows
    * "used on 34 contacts" before it asks.
    */
   @Delete("tags/:id")
@@ -182,7 +182,7 @@ export class TagsController {
          ON CONFLICT (contact_id, tag_id) DO NOTHING`,
         [orgId, contactId, tagId, actorUserId(req)],
       );
-      // Zero rows means the contact or the tag does not exist in this org —
+      // Zero rows means the contact or the tag does not exist in this org -
       // the SELECT matched nothing. Not distinguishable from an already
       // attached tag, so it is checked rather than guessed.
       if (!rowCount) await assertAttached(client, "contact_tags", "contact_id", contactId, tagId);

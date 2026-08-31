@@ -1,6 +1,6 @@
--- 0059_products_quotations.sql — Kailash gap Milestone 1, part 1: a product
+-- 0059_products_quotations.sql - Kailash gap Milestone 1, part 1: a product
 -- catalogue and quotations, so a rep can price something before there's
--- anything to invoice. Greenfield — no existing table modeled a price list or
+-- anything to invoice. Greenfield - no existing table modeled a price list or
 -- a line-item document before this.
 --
 -- Line-item math (quantity/unit_price/discount/tax -> line_total, then a
@@ -8,7 +8,7 @@
 -- here: it is computed once, in application code, by the pure function in
 -- packages/shared/src/quotations.ts, and written as plain numeric columns.
 -- Two engines agreeing on money math by accident is worse than one engine
--- owning it — see that file's header for the full reasoning.
+-- owning it - see that file's header for the full reasoning.
 
 -- ── Products ────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS products (
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS quotations (
   workspace_id     uuid REFERENCES workspaces(id) ON DELETE SET NULL,
   account_id       uuid REFERENCES accounts(id) ON DELETE SET NULL,
   contact_id       uuid REFERENCES contacts(id) ON DELETE SET NULL,
-  -- A deal being deleted must not be blocked by an old quote hanging off it —
+  -- A deal being deleted must not be blocked by an old quote hanging off it -
   -- SET NULL, not the RESTRICT deals.pipeline_id uses for a live pipeline.
   deal_id          uuid REFERENCES deals(id) ON DELETE SET NULL,
   quotation_number text NOT NULL,
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS quotation_items (
   discount_pct  numeric NOT NULL DEFAULT 0,
   tax_rate      numeric NOT NULL DEFAULT 0,
   -- Written by the API from computeLineTotal(), never trusted from the
-  -- client and never a generated column — see this file's header.
+  -- client and never a generated column - see this file's header.
   line_total    numeric NOT NULL DEFAULT 0,
   position      int NOT NULL DEFAULT 0,
   created_at    timestamptz NOT NULL DEFAULT now()
@@ -154,7 +154,7 @@ REVOKE ALL ON quotation_items FROM PUBLIC;
 -- Q-<year>-<0001>, unique per org. pg_advisory_xact_lock serializes
 -- concurrent callers on the SAME org (different orgs hash to different keys
 -- and never contend) for the life of the caller's transaction, so the
--- count-then-generate below can't race two creates into the same number —
+-- count-then-generate below can't race two creates into the same number -
 -- the alternative, a dedicated per-org sequence table, is more moving parts
 -- than this record volume ever needs.
 CREATE OR REPLACE FUNCTION next_quotation_number(p_org_id uuid) RETURNS text AS $$

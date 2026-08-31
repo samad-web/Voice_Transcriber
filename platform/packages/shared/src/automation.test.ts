@@ -69,7 +69,7 @@ describe("matchesConditions", () => {
 
   it("does not match a condition the subject has no field for", () => {
     // A stage condition on a contact event. The rule is misconfigured, and
-    // not firing is the right answer — firing on everything would be worse.
+    // not firing is the right answer - firing on everything would be worse.
     expect(matchesConditions({ stage: ["negotiation"] }, { contactId: "x" })).toBe(false);
   });
 
@@ -128,7 +128,7 @@ describe("AutomationRuleInput validation", () => {
     expect(parsed.actions[0]).toMatchObject({ dueInDays: 1, priority: "normal", assignTo: "deal_owner" });
   });
 
-  it("requires at least one action — a rule that does nothing is a bug", () => {
+  it("requires at least one action - a rule that does nothing is a bug", () => {
     expect(AutomationRuleInput.safeParse({ ...base, actions: [] }).success).toBe(false);
   });
 

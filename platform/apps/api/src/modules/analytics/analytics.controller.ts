@@ -74,8 +74,8 @@ export class AnalyticsController {
   /**
    * True cross-tenant rollup for the operator's Platform Hub.
    *
-   * `overview` above is per-org by construction — it reads under one RLS
-   * context — so a console built only on it can never answer "how is the whole
+   * `overview` above is per-org by construction - it reads under one RLS
+   * context - so a console built only on it can never answer "how is the whole
    * fleet doing", and its totals get mistaken for exactly that. This runs on
    * the admin pool (like the rest of the /admin surface) because no single org
    * context spans every tenant, and returns a per-tenant breakdown alongside

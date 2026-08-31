@@ -4,7 +4,7 @@ import { attendeeContact, durationSeconds } from "./calendar-sync";
 import type { NormalisedEvent } from "./calendar-providers";
 
 /**
- * A calendar is more revealing than a mailbox, not less — the times and names
+ * A calendar is more revealing than a mailbox, not less - the times and names
  * alone tell you about somebody's health, their beliefs, their childcare and
  * whether they are interviewing elsewhere. So the same rule the mail sync has
  * is pinned here just as explicitly, with the cases named rather than implied.
@@ -30,7 +30,7 @@ function event(overrides: Partial<NormalisedEvent> = {}): NormalisedEvent {
   };
 }
 
-describe("attendeeContact — what may enter the CRM", () => {
+describe("attendeeContact - what may enter the CRM", () => {
   it("records a meeting a known contact was invited to", () => {
     expect(attendeeContact(event(), SELF, known)).toBe(CONTACT_ID);
   });
@@ -81,7 +81,7 @@ describe("attendeeContact — what may enter the CRM", () => {
     expect(attendeeContact(big, SELF, known)).toBe(CONTACT_ID);
   });
 
-  it("matches a cancelled event too — that is how the removal path finds it", () => {
+  it("matches a cancelled event too - that is how the removal path finds it", () => {
     // attendeeContact must NOT filter cancellations out: the sync needs the
     // contact match to know which timeline row to delete.
     expect(attendeeContact(event({ cancelled: true }), SELF, known)).toBe(CONTACT_ID);

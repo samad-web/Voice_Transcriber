@@ -2,7 +2,7 @@
  * One TLS rule for every Postgres connection we open (CJS copy for the plain
  * node scripts; packages/db/src/index.ts has the identical logic for the pools).
  *
- * Managed Postgres — Supabase included — refuses plaintext connections, while
+ * Managed Postgres - Supabase included - refuses plaintext connections, while
  * the local docker instance has no certificate at all. Rather than sprinkling
  * `?sslmode=` through connection strings, decide from the host: anything that
  * isn't loopback or a compose service name gets TLS.

@@ -16,7 +16,7 @@ const VARIANT_ALIAS = {
  * It is a wrapper rather than `export { Button as BrutalButton }` for one
  * concrete reason: the old API's third variant is called `destructive` and the
  * new one calls it `danger`. A bare re-export would narrow the accepted union
- * and break `tsc` at four call sites the moment this landed — exactly the
+ * and break `tsc` at four call sites the moment this landed - exactly the
  * "console stops compiling" outcome the staged migration exists to avoid.
  *
  * `shadow` is accepted and ignored. The `4px 4px 0 rgba(0,0,0,1)` offset shadow

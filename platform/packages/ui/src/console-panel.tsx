@@ -10,7 +10,7 @@ const TONES = {
 /**
  * Terminal-style panel for raw JSON, pipeline logs and destructive-op output.
  *
- * It stays dark in BOTH modes on purpose. The terminal look is the affordance —
+ * It stays dark in BOTH modes on purpose. The terminal look is the affordance -
  * it tells the operator "this is machine output, not prose", and inverting it in
  * light mode would lose that. What changes from v1 is that it is now built from
  * its own named tokens (`--color-terminal*`) instead of `bg-black` + `text-green-400`,

@@ -13,11 +13,11 @@ function isNudge(template: MessageTemplateKey): boolean {
 }
 
 /**
- * Durable queue for funnel follow-up messages — doc 16 §3.6.
+ * Durable queue for funnel follow-up messages - doc 16 §3.6.
  *
  * Deliberately the same shape as `outbox.ts`: the queue IS the table, one row
  * per (submission, template), holding the pending send and when it may next be
- * tried. Attempts, exponential backoff (shared with the CRM outbox — the same
+ * tried. Attempts, exponential backoff (shared with the CRM outbox - the same
  * `backoffSeconds`), and a terminal `dead` state. A worker restart loses
  * nothing. §3.6 says to reuse this pattern rather than invent a second delivery
  * mechanism, and the reason is the same one that justified it for CRM sends: a
@@ -26,7 +26,7 @@ function isNudge(template: MessageTemplateKey): boolean {
  *
  * ── Three differences from the CRM outbox, each forced ──────────────────────
  *
- * 1. **No RLS context.** `marketing.funnel_submissions` has no `org_id` — doc 16
+ * 1. **No RLS context.** `marketing.funnel_submissions` has no `org_id` - doc 16
  *    §3.1 puts pre-customer personal data outside the tenant model on purpose.
  *    So this runs on the admin pool throughout and never calls
  *    `withOrgContext`. There is no tenant to scope to, and inventing one would
@@ -47,7 +47,7 @@ function isNudge(template: MessageTemplateKey): boolean {
  * Migration 0025 then added `channel`.
  *
  * Current shape, in short: (submission_id, template, channel) is unique, status
- * is pending | sent | dead, and `next_attempt_at IS NULL` means terminal — the
+ * is pending | sent | dead, and `next_attempt_at IS NULL` means terminal - the
  * same convention crm_sync_log uses. The authoritative definition is the two
  * migration files; this comment is a pointer, not a second copy, because a
  * duplicated schema in a comment is a schema that goes out of date.
@@ -79,8 +79,8 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 /**
  * The zone booked times are stated in.
  *
- * Read exactly the way the website reads it — `SCHEDULER_TIMEZONE` or
- * Asia/Kolkata — including the empty-string handling, because compose passes
+ * Read exactly the way the website reads it - `SCHEDULER_TIMEZONE` or
+ * Asia/Kolkata - including the empty-string handling, because compose passes
  * these as `${VAR:-}` and `??` keeps the empty string. That precise mistake
  * silently disabled the calendar on 2026-08-10; here it would hand Postgres
  * `AT TIME ZONE ''` and throw on every send instead, which is louder but no
@@ -117,7 +117,7 @@ export async function enqueueFollowUp(
   template: MessageTemplateKey,
   /**
    * REQUIRED, with no default, on purpose. This used to insert without naming a
-   * channel and the column defaults to 'email' — so a caller that simply forgot
+   * channel and the column defaults to 'email' - so a caller that simply forgot
    * would silently queue mail, which is the exact thing currently on hold.
    * Making it explicit means the compiler asks the question.
    */
@@ -126,7 +126,7 @@ export async function enqueueFollowUp(
   // ON CONFLICT names all THREE columns because migration 0025 widened the
   // unique index to (submission_id, template, channel). Postgres requires the
   // conflict target to match an actual unique index, so the old two-column
-  // form would not have silently over-deduped — it would have thrown
+  // form would not have silently over-deduped - it would have thrown
   // "no unique or exclusion constraint matching the ON CONFLICT specification"
   // on the first call. Nothing calls this yet, which is why it went unnoticed.
   await client.query(
@@ -145,7 +145,7 @@ export async function enqueueFollowUp(
  * costs one catalogue lookup and is the only thing standing between a
  * not-yet-migrated environment and an error every 60 seconds. Without it the
  * drain interval would throw an undefined-table error every 60 seconds forever,
- * burying real errors in the log — a self-inflicted outage on a service that is
+ * burying real errors in the log - a self-inflicted outage on a service that is
  * currently processing real customers' calls.
  *
  * Only the positive answer is cached. A negative is re-checked each tick, which
@@ -213,8 +213,8 @@ export async function drainFollowUps(limit = 100): Promise<number> {
      * booking knows: when the call is, and the Meet link.
      *
      * LATERAL with LIMIT 1 rather than a plain join, because a person can hold
-     * more than one slot over time — a cancelled booking and its replacement
-     * both point at the same submission — and a plain join would fan the outbox
+     * more than one slot over time - a cancelled booking and its replacement
+     * both point at the same submission - and a plain join would fan the outbox
      * row out into one copy per slot, sending the same confirmation twice.
      * Ordered by `booked_at DESC` so it is the most recent booking that gets
      * described, which is the one they just made.
@@ -222,8 +222,8 @@ export async function drainFollowUps(limit = 100): Promise<number> {
      * The slot label is formatted in SQL, in the booking timezone, with the
      * SAME `to_char` masks the website used to tell them the time
      * (apps/marketing/lib/funnel/slots.ts). A WhatsApp message that names a
-     * different hour from the confirmation screen — because one rendered in IST
-     * and the other in the container's UTC — would be read as a second,
+     * different hour from the confirmation screen - because one rendered in IST
+     * and the other in the container's UTC - would be read as a second,
      * conflicting appointment.
      */
     `SELECT f.id, f.submission_id, f.template, f.channel, f.attempts,
@@ -278,8 +278,8 @@ export async function drainFollowUps(limit = 100): Promise<number> {
          * The sweep only selects unfinished enquiries, but minutes pass before
          * the drain runs and this is exactly the window somebody uses to come
          * back on their own. Sending "you didn't finish, pick up where you left
-         * off" to a person who just answered every question — and may already
-         * have booked a call — is the worst message in the catalogue.
+         * off" to a person who just answered every question - and may already
+         * have booked a call - is the worst message in the catalogue.
          *
          * Terminal, not a retry: they are not going to become unfinished.
          */
@@ -340,7 +340,7 @@ export async function drainFollowUps(limit = 100): Promise<number> {
         }
       }
     } catch (err) {
-      // An unknown template or a dispatcher that threw. Terminal either way —
+      // An unknown template or a dispatcher that threw. Terminal either way -
       // both are bugs, and retrying a bug six times only delays noticing it.
       result = { ok: false, error: `render/send threw: ${(err as Error).message}`, terminal: true };
     }
@@ -377,7 +377,7 @@ export async function drainFollowUps(limit = 100): Promise<number> {
       const via = row.channel === "whatsapp" ? getWhatsAppSender().name : dispatcher.name;
       console.error(
         `funnel follow-up ${row.id}: gave up after ${attempts} attempt(s) via ` +
-          `${via} — ${result.ok ? "" : result.error}`,
+          `${via} - ${result.ok ? "" : result.error}`,
       );
     }
     processed++;
@@ -393,7 +393,7 @@ export async function drainFollowUps(limit = 100): Promise<number> {
       wa > 0 ? `${wa} via ${getWhatsAppSender().name}` : null,
       mail > 0 ? `${mail} via ${dispatcher.name}` : null,
     ].filter(Boolean);
-    console.log(`funnel follow-up: attempted ${processed} message(s) — ${parts.join(", ")}`);
+    console.log(`funnel follow-up: attempted ${processed} message(s) - ${parts.join(", ")}`);
   }
   return processed;
 }

@@ -9,12 +9,12 @@ export default async function PlatformLayout({ children }: { children: React.Rea
   const user = await getSessionUser();
 
   // Every page in this group resolves its org from DEV_ORG_ID, so a customer
-  // owner must never land here — they would be looking at another tenant's
+  // owner must never land here - they would be looking at another tenant's
   // calls. Send them to the console that is scoped to their own instance.
   const principal = await getPrincipal();
   if (principal?.kind === "owner") redirect("/owner");
 
-  // Signed in, not an owner, and not on PLATFORM_OPERATOR_EMAILS — which is
+  // Signed in, not an owner, and not on PLATFORM_OPERATOR_EMAILS - which is
   // now the default answer, not the exceptional one (see isOperator).
   if (principal && !isOperator(principal)) {
     return <NoConsoleAccess email={principal.email} />;

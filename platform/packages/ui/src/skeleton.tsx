@@ -6,7 +6,7 @@ import { cx } from "./cx";
  * `aria-hidden` + `role="presentation"`: a skeleton is a picture of content that
  * does not exist yet, and announcing a row of grey boxes is worse than
  * announcing nothing. The *container* is what should carry `aria-busy` while it
- * loads — this component cannot know where that boundary is.
+ * loads - this component cannot know where that boundary is.
  *
  * `animate-pulse` is flattened by the global `prefers-reduced-motion` rule in
  * theme.css, leaving a static block. That is the correct degradation: the

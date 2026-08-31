@@ -10,7 +10,7 @@ import { deleteInstanceAction, type DeleteInstanceResult } from "./actions";
 /**
  * Two-step decommission. The first click attempts the safe delete; the API
  * refuses if call history would be destroyed, and only then does the purge
- * confirmation appear — so the destructive path is never the default and is
+ * confirmation appear - so the destructive path is never the default and is
  * gated behind retyping the instance name.
  */
 export function DeleteInstance({
@@ -54,7 +54,7 @@ export function DeleteInstance({
         <MonoLabel>Instance deleted</MonoLabel>
         <p className="text-xs text-neutral-600 font-sans mt-2">
           Removed <span className="font-bold">{result.name}</span>
-          {result.purged?.length ? ` — purged ${result.purged.join(", ")}.` : "."}
+          {result.purged?.length ? ` - purged ${result.purged.join(", ")}.` : "."}
         </p>
       </Card>
     );

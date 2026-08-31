@@ -3,7 +3,7 @@ import { CustomFieldsController } from "./custom-fields.controller";
 import { CustomFieldValuesController } from "./custom-field-values.controller";
 
 /**
- * CRM Phase 1 foundation (E0.2) — org-definable fields on Contact/Account/Deal.
+ * CRM Phase 1 foundation (E0.2) - org-definable fields on Contact/Account/Deal.
  *
  * Two controllers, split along the line that matters: DEFINITIONS are org
  * configuration an admin edits once, VALUES are record data a rep edits all

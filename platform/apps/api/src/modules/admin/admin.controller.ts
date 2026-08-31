@@ -21,7 +21,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
-/** The 5 system roles seeded for every org — mirrors migration 0039's own seed. */
+/** The 5 system roles seeded for every org - mirrors migration 0039's own seed. */
 const SYSTEM_ROLES = [
   { key: "platform_admin", name: "Platform Admin" },
   { key: "org_admin", name: "Org Admin" },
@@ -36,15 +36,15 @@ const SYSTEM_ROLES = [
  * the 5 system roles with a full permission grid across every
  * `PermissionObjectType`, and a default deal pipeline. Called only when the
  * 'crm' module is being turned on for an org (createTenant's `enableCrm`
- * flag, or `PATCH tenants/:orgId/modules`) — never unconditionally. Without
+ * flag, or `PATCH tenants/:orgId/modules`) - never unconditionally. Without
  * it, an org with 'crm' enabled but never seeded would get:
  *  - zero CRM projection from calls (apps/worker/src/pipeline/pipeline.ts's
- *    "no default pipeline for org" — deals.controller.ts's resolvePipeline()
+ *    "no default pipeline for org" - deals.controller.ts's resolvePipeline()
  *    throws the same way on an explicit create), and
  *  - a 403 on every contact/account/deal/... route for every real user,
  *    because CrmPermissionsGuard's `roles` join has nothing to match (a bare
  *    admin key with no asserted user is the only caller that still gets
- *    through — see crm-permissions.guard.ts).
+ *    through - see crm-permissions.guard.ts).
  *
  * Object types are read from the shared `PermissionObjectType` enum rather
  * than hardcoded, so a future object type that widens that enum is seeded
@@ -84,7 +84,7 @@ async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void>
   // seedBoardDefaults (below) runs on every provisioning path and already
   // find-or-creates the org's default pipeline, because boards.pipeline_id is
   // NOT NULL. An unguarded INSERT here would therefore add a SECOND pipeline
-  // with is_default = true — and "exactly one default per org" is only
+  // with is_default = true - and "exactly one default per org" is only
   // app-enforced (0034 says so), so nothing in the database would stop it. The
   // same collision is reachable without boards at all: migration 0075 seeds a
   // pipeline for every org, so enabling 'crm' on a tenant created before this
@@ -111,7 +111,7 @@ async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void>
  * from the admin dashboard today is structurally identical to one that
  * predates the migration. A TypeScript copy of that SQL would drift the first
  * time either side was edited, and the failure mode is a tenant whose board
- * quietly differs from every other tenant's — invisible until someone tries to
+ * quietly differs from every other tenant's - invisible until someone tries to
  * reshape it.
  *
  * Idempotent by CONSTRUCTION, not by convention (unlike seedCrmDefaults): the
@@ -120,7 +120,7 @@ async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void>
  *
  * Runs for EVERY tenant, not only CRM ones. `/owner/board` is the leads board
  * and every org has leads; `enabled_modules` is what gates CRM access, not the
- * presence of seeded rows — the same reasoning updateModules already applies
+ * presence of seeded rows - the same reasoning updateModules already applies
  * when it declines to delete anything on module removal.
  */
 async function seedBoardDefaults(client: PoolClient, orgId: string): Promise<void> {
@@ -130,7 +130,7 @@ async function seedBoardDefaults(client: PoolClient, orgId: string): Promise<voi
 /**
  * Each pipeline stage as the state machine expresses it: the status a call sits
  * in while the stage runs, and the terminal status it lands on when that stage
- * throws. Derived from the CHECK constraint in migration 0001 — keep in step
+ * throws. Derived from the CHECK constraint in migration 0001 - keep in step
  * with it.
  */
 const PIPELINE_STAGES = [
@@ -149,7 +149,7 @@ const PIPELINE_STAGES = [
 const STUCK_AFTER_MS = 10 * 60 * 1000;
 
 const CreateTenantBody = z.object({
-  /** Customer company name — this is what the web calls an "instance". */
+  /** Customer company name - this is what the web calls an "instance". */
   name: z.string().min(1).max(160),
   workspaceName: z.string().min(1).max(120).default("Default"),
   consentPolicy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]).optional(),
@@ -158,7 +158,7 @@ const CreateTenantBody = z.object({
   tokenTtlMinutes: z.number().int().min(5).max(1440).default(15),
   tokenMaxUses: z.number().int().min(1).max(500).default(1),
   /**
-   * CRM must never be automatic — off by default. 'aura' is always included
+   * CRM must never be automatic - off by default. 'aura' is always included
    * (every tenant created here gets an instance/workspace/devices); this
    * flag decides whether 'crm' joins it. See org-modules.ts.
    */
@@ -171,7 +171,7 @@ const UpdateModulesBody = z.object({
 
 /**
  * Platform-operator (cross-tenant) surface. These endpoints span ALL orgs, so
- * they deliberately use the RLS-bypassing admin pool rather than withOrg — there
+ * they deliberately use the RLS-bypassing admin pool rather than withOrg - there
  * is no single org context. Guarded by the same dev AdminKeyGuard for now.
  */
 @Controller("admin")
@@ -184,10 +184,10 @@ export class AdminController {
    * Provision a customer: organization (the RLS boundary) + default workspace
    * + first instance + its one-time enrollment key, all atomically. CRM
    * (system roles/grants + a default deal pipeline, via seedCrmDefaults) is
-   * seeded only when `enableCrm` is explicitly set — never automatic; see
+   * seeded only when `enableCrm` is explicitly set - never automatic; see
    * org-modules.ts. Runs on the admin pool because the org does not exist
    * yet, so withOrg has nothing to scope to. The raw key is returned EXACTLY
-   * ONCE — only its hash is stored.
+   * ONCE - only its hash is stored.
    */
   @Post("tenants")
   async createTenant(@Body() body: unknown, @Req() req: PrincipalRequest) {
@@ -259,7 +259,7 @@ export class AdminController {
         enrollment: {
           orgId: org.id,
           instanceId: instance.id,
-          // Shown once, never retrievable again — only the hash is stored.
+          // Shown once, never retrievable again - only the hash is stored.
           adminKey: rawToken,
           expiresAt: token.expires_at,
           maxUses: token.max_uses,
@@ -274,12 +274,12 @@ export class AdminController {
   }
 
   /**
-   * Replace an org's module entitlement wholesale — the lever both "enable
+   * Replace an org's module entitlement wholesale - the lever both "enable
    * CRM for an existing client" and, later, "a plan upgrade" use (a plan
    * assignment will just call this with the plan's module set). If 'crm' is
    * newly present and the org has never been seeded, seedCrmDefaults runs
    * inline; if 'crm' is being removed, existing roles/pipeline rows are left
-   * alone — CrmPermissionsGuard's `enabled_modules` check is what actually
+   * alone - CrmPermissionsGuard's `enabled_modules` check is what actually
    * revokes access, not deleting data, so re-enabling later needs no reseed.
    */
   @Patch("tenants/:orgId/modules")
@@ -308,8 +308,8 @@ export class AdminController {
       if (modules.includes("crm")) {
         // Unconditional and safe: seed_default_board returns the existing
         // board untouched. It is here as well as in createTenant so a tenant
-        // provisioned before migration 0075 — or one whose board was archived
-        // — is repaired the moment someone touches its modules, rather than
+        // provisioned before migration 0075 - or one whose board was archived
+        // - is repaired the moment someone touches its modules, rather than
         // staying the one org in the fleet with no board.
         await seedBoardDefaults(client, orgId);
 
@@ -322,7 +322,7 @@ export class AdminController {
 
       await client.query(
         // `target_id` repeats orgId as its OWN parameter ($3), not a second
-        // reference to $1 — org_id is uuid and target_id is text, and reusing
+        // reference to $1 - org_id is uuid and target_id is text, and reusing
         // one placeholder for both types fails Postgres's parameter-type
         // inference ("inconsistent types deduced for parameter $1", 42P08).
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
@@ -362,7 +362,7 @@ export class AdminController {
    * how many calls sit in that stage, how many failed there, and whether
    * anything has been stuck in it beyond `STUCK_AFTER`. A stage with failures
    * is `degraded`; one holding a call longer than a pipeline run could
-   * plausibly take is `stalled` — that is the signal worth paging on, because
+   * plausibly take is `stalled` - that is the signal worth paging on, because
    * it means the worker died mid-call rather than merely erroring.
    */
   @Get("health")

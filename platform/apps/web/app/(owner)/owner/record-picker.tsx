@@ -11,15 +11,15 @@ const DEBOUNCE_MS = 250;
  * Pick a contact, account or deal by name.
  *
  * The last thing in the custom-field editor still rendering as a raw uuid box.
- * A lookup field defined by an admin was technically usable — you could paste
- * an id — which is the kind of "working" that means nobody ever uses it.
+ * A lookup field defined by an admin was technically usable - you could paste
+ * an id - which is the kind of "working" that means nobody ever uses it.
  *
  * ── IT SHOWS A NAME, NOT AN ID ────────────────────────────────────────────
  *
  * A stored value is a uuid, and a form that displays one is telling the reader
  * nothing. So a mounted picker with a value resolves that id to a label first.
  * If the record is gone or outside the reader's scope it says "unknown record"
- * rather than failing — a lookup pointing at something deleted should not
+ * rather than failing - a lookup pointing at something deleted should not
  * break the form it sits in.
  *
  * Search runs through the ordinary list endpoints, so it inherits their

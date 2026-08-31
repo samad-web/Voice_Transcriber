@@ -7,7 +7,7 @@ import { Button, Checkbox, Input } from "@aura/ui";
 import { setDeviceTelecallerAction } from "./actions";
 
 /**
- * Who is holding this handset — collected right here, the moment a device
+ * Who is holding this handset - collected right here, the moment a device
  * shows up as connected, instead of only after the fact from the org's own
  * owner dashboard (which can only rename, not attach an employee/agent code).
  * Saving again on an already-assigned device edits that telecaller in place;
@@ -74,7 +74,7 @@ export function TelecallerForm({
           aria-label="Telecaller ID"
           maxLength={64}
         />
-        {/* Only meaningful when editing an existing assignment — assigning an
+        {/* Only meaningful when editing an existing assignment - assigning an
             unassigned device for the first time is already "reassign"-shaped. */}
         {name ? (
           <Checkbox

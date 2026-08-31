@@ -18,8 +18,8 @@ import {
  *
  * ── THE FALLBACK IS THE POINT ──────────────────────────────────────────────
  *
- * Every failure mode here — table not migrated, row deleted, database briefly
- * unreachable — resolves to the copy compiled into `@aura/shared`, not to an
+ * Every failure mode here - table not migrated, row deleted, database briefly
+ * unreachable - resolves to the copy compiled into `@aura/shared`, not to an
  * error. A rejection sent in last month's wording is a minor annoyance. A
  * rejection that dead-letters because a SELECT timed out is a person who
  * enquired, was turned down, and never heard anything at all. Only one of those
@@ -27,14 +27,14 @@ import {
  *
  * The single exception is a template an operator has switched OFF. That is a
  * deliberate instruction, not a failure, and falling back to the code copy
- * would override it — so it is reported as terminal and the outbox records why.
+ * would override it - so it is reported as terminal and the outbox records why.
  *
  * ── BOTH CHANNELS, ONE CACHE ───────────────────────────────────────────────
  *
  * The table has always been keyed (key, channel); until migration 0053 only
  * whatsapp rows existed and this module only rendered them. It now renders
  * email from the same rows and the same catalogue, so the two channels cannot
- * drift into separate mechanisms — the only difference between them is that an
+ * drift into separate mechanisms - the only difference between them is that an
  * email also carries a subject.
  *
  * ── WHY IT IS CACHED ───────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ type StoredTemplate = { subject: string | null; body: string; enabled: boolean }
 let cache: Map<string, StoredTemplate> | null = null;
 let cachedAt = 0;
 
-/** Tests only — module state outlives a database change. */
+/** Tests only - module state outlives a database change. */
 export function resetMessageTemplateCacheForTests(): void {
   cache = null;
   cachedAt = 0;
@@ -135,7 +135,7 @@ export type TemplateVars = {
    * authorised, is a real booking with no Meet link at all. `fillTemplate`
    * treats `meet_link` as an OPTIONAL placeholder and deletes the sentence
    * containing it rather than substituting a word, so those people get a
-   * correct confirmation that simply does not mention joining online — instead
+   * correct confirmation that simply does not mention joining online - instead
    * of "Join on Google Meet here: there ." on their phone.
    */
   meetLink?: string;
@@ -150,7 +150,7 @@ export type TemplateVars = {
    * The link back into a half-finished form. Only for `resume_form` and
    * `resume_form_2`.
    *
-   * REQUIRED where the copy uses it, unlike the two above — see the check in
+   * REQUIRED where the copy uses it, unlike the two above - see the check in
    * `renderMessage`. A nudge with no link has nothing for the reader to do, so
    * its absence fails the send rather than trimming the sentence.
    */
@@ -180,7 +180,7 @@ function placeholderValues(vars: TemplateVars): Record<string, string | undefine
  * Render one stage on one channel.
  *
  * Returns `ok: false` for exactly three things, all terminal and all worth an
- * operator seeing: a stage that does not exist (a bug — an outbox row for a
+ * operator seeing: a stage that does not exist (a bug - an outbox row for a
  * stage nobody defined), a stage with no copy for this channel (a WhatsApp-only
  * stage queued on email), and one that has been switched off.
  */
@@ -196,7 +196,7 @@ export async function renderMessage(
   if (!fallback) {
     return {
       ok: false,
-      reason: `"${spec.label}" has no ${channel} copy — it is a ${
+      reason: `"${spec.label}" has no ${channel} copy - it is a ${
         channel === "email" ? "WhatsApp" : "email"
       }-only stage`,
     };
@@ -229,7 +229,7 @@ export async function renderMessage(
       ok: false,
       reason:
         `the "${spec.label}" message needs ${missing.map((m) => `{{${m}}}`).join(", ")} ` +
-        "and no value was available — check SITE_DOMAIN is set",
+        "and no value was available - check SITE_DOMAIN is set",
     };
   }
 

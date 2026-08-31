@@ -3,7 +3,7 @@ import { assertPublicHttpUrl } from "./ssrf-guard";
 
 /**
  * A tenant types this URL into a CRM connector or webhook field, and it is
- * then fetched FROM our own servers — so the one property that matters is
+ * then fetched FROM our own servers - so the one property that matters is
  * that every address an attacker could reach our own network through is
  * refused, while a normal public receiver still goes through. DNS resolution
  * is mocked rather than exercised for real: a test that depends on what a

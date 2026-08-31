@@ -10,7 +10,7 @@ import { StageHistory } from "./stage-history";
 import { TaskList } from "./task-list";
 import { formatValue, num, relativeTime, type Deal, type Stage } from "./types";
 
-/** Same hand-copied textarea chrome as lead-drawer.tsx — see that file's note. */
+/** Same hand-copied textarea chrome as lead-drawer.tsx - see that file's note. */
 const TEXTAREA_CLASS =
   "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
   "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
@@ -18,7 +18,7 @@ const TEXTAREA_CLASS =
 /**
  * One deal, opened from the board.
  *
- * CRM Phase 1 foundation (E0.1) — deliberately the same shape as
+ * CRM Phase 1 foundation (E0.1) - deliberately the same shape as
  * lead-drawer.tsx: instant render from the row the caller already holds, and
  * patches reported upward via onChanged rather than owning source-of-truth
  * state.
@@ -192,7 +192,7 @@ export function DealDrawer({
                 value={draft.amount}
                 onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
                 inputMode="decimal"
-                placeholder="—"
+                placeholder="-"
                 className="tabular-nums"
               />
             </FormField>
@@ -262,13 +262,13 @@ export function DealDrawer({
             <div>
               <dt className="text-text-muted">Contact</dt>
               <dd className="mt-0.5 font-medium break-words text-text">
-                {deal.contact_name ?? "—"}
+                {deal.contact_name ?? "-"}
               </dd>
             </div>
             <div>
               <dt className="text-text-muted">Account</dt>
               <dd className="mt-0.5 font-medium break-words text-text">
-                {deal.account_name ?? "—"}
+                {deal.account_name ?? "-"}
               </dd>
             </div>
             <div>

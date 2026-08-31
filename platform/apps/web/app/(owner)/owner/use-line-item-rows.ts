@@ -4,7 +4,7 @@ import { useState } from "react";
 
 /**
  * The line-item row model shared by invoices, quotations, and the
- * new-quotation dialog — previously the `ItemRow`/`ItemDraft` type, its
+ * new-quotation dialog - previously the `ItemRow`/`ItemDraft` type, its
  * `toRows`/`newRow` helpers, and its per-row validation loop were duplicated
  * near-verbatim in all three files. This module is the one copy; the three
  * call sites use `useLineItemRows()` for the row state and `parse()` (backed
@@ -31,7 +31,7 @@ export interface LineItemInput {
   taxRate?: number;
 }
 
-/** The shape common to InvoiceItem and QuotationItem — everything a row needs to hydrate from. */
+/** The shape common to InvoiceItem and QuotationItem - everything a row needs to hydrate from. */
 export interface LineItemSource {
   id: string;
   product_id: string | null;
@@ -45,7 +45,7 @@ export interface LineItemSource {
 
 let rowSeq = 0;
 
-/** A fresh, empty row — quantity defaults to "1" the way every "+ Add item" always has. */
+/** A fresh, empty row - quantity defaults to "1" the way every "+ Add item" always has. */
 export function createLineItemRow(): LineItemRow {
   rowSeq += 1;
   return {
@@ -75,7 +75,7 @@ export function sourceToLineItemRows(items: LineItemSource[]): LineItemRow[] {
 /**
  * Whether a row carries anything beyond its just-created defaults. A row
  * fresh off "+ Add item" (quantity "1", everything else blank) is not
- * "content" — it's an empty slot nobody has used yet, and saving with it
+ * "content" - it's an empty slot nobody has used yet, and saving with it
  * still in that state should stay a silent no-op, same as today. The moment
  * someone types a price, a discount, a tax rate, or changes the quantity, the
  * row shows intent and a blank description on it becomes a real mistake

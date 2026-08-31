@@ -29,7 +29,7 @@ import { DbService } from "../../db/db.service";
 
 /**
  * `period_start`/`period_end` go through to_char rather than being returned
- * raw — the same trap that shipped `tasks.due_on` and
+ * raw - the same trap that shipped `tasks.due_on` and
  * `deals.expected_close_date` a day early on this platform's +05:30 host
  * before it was caught live. A quarter that starts "2026-06-30" is a
  * different quarter.
@@ -71,7 +71,7 @@ const ListQuery = z.object({
  * something a read-only role should be able to do.
  *
  * The `owned` scope applies. A rep restricted to their own records sees their
- * own target and their own attainment, and not the team's — which is the
+ * own target and their own attainment, and not the team's - which is the
  * whole point of having configured that scope.
  */
 @Controller("targets")
@@ -123,7 +123,7 @@ export class TargetsController {
   /**
    * Attainment: each target beside what has actually been closed against it.
    *
-   * Actuals come from `deals` on `owner_user_id` and `stage_changed_at` —
+   * Actuals come from `deals` on `owner_user_id` and `stage_changed_at` -
    * when the deal became won, not when it was created. A deal opened in March
    * and won in July belongs to July's number, which is the one anybody
    * measuring a quarter means.
@@ -231,7 +231,7 @@ export class TargetsController {
       }
 
       // ON CONFLICT on both partial unique indexes would need two statements,
-      // so the overlap is checked explicitly — and it gives a message that
+      // so the overlap is checked explicitly - and it gives a message that
       // says what happened rather than surfacing a 23505.
       const clash = await client.query(
         `SELECT 1 FROM sales_targets
@@ -271,7 +271,7 @@ export class TargetsController {
   /**
    * Deleted, not archived.
    *
-   * A target holds no history that anything else refers to — attainment is
+   * A target holds no history that anything else refers to - attainment is
    * computed live from `deals`, so removing a target removes a comparison and
    * nothing else. Contrast a custom field, which is archived because records
    * still carry its values.
@@ -285,7 +285,7 @@ export class TargetsController {
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      // A scoped rep can only delete their own target — and in practice
+      // A scoped rep can only delete their own target - and in practice
       // should not be setting targets at all, which is what `deal:edit`
       // being required already expresses.
       const scoped = scopeClause("deal", recordScope, 2);

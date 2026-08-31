@@ -5,7 +5,7 @@ import type { ConnectionProviderSpec } from "@aura/shared";
  * The provider-agnostic half of the OAuth handshake (PRD Layer 1).
  *
  * Pure functions, no database and no network, so the parts that are easy to
- * get subtly wrong — PKCE, state, the redirect URI — are directly testable
+ * get subtly wrong - PKCE, state, the redirect URI - are directly testable
  * without standing up a provider.
  */
 
@@ -111,7 +111,7 @@ export async function exchangeCode(
  * The payload is NOT verified here, and that is safe for this one use only:
  * it arrived over TLS directly from the provider's token endpoint in response
  * to our own client-authenticated request, not from the browser. It is used
- * as a display label and a dedup key, never as an authorization decision —
+ * as a display label and a dedup key, never as an authorization decision -
  * `user_id` on the row comes from our own session, never from this token.
  */
 export function emailFromIdToken(idToken: string | undefined): string | null {

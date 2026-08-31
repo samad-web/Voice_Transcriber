@@ -1,4 +1,4 @@
--- 0042_fuzzy_dedupe.sql — Track A5: trigram matching for the duplicate queue.
+-- 0042_fuzzy_dedupe.sql - Track A5: trigram matching for the duplicate queue.
 --
 -- Phase 1 shipped exact-match dedup only (external_id collisions; phone and
 -- email cannot collide among active rows because 0035 already made them
@@ -9,7 +9,7 @@
 --
 -- `pg_trgm` is the first Postgres extension this codebase has ever needed, and
 -- whether the production Supabase project permits CREATE EXTENSION to the
--- migration role was never confirmed — it was the open question that got
+-- migration role was never confirmed - it was the open question that got
 -- fuzzy matching dropped from Phase 1 in the first place. So the CREATE is
 -- wrapped in an exception handler: if the role may not install it, the
 -- migration logs a NOTICE and completes rather than aborting and taking every
@@ -19,7 +19,7 @@
 -- time whether the extension is actually present, and reports fuzzy matching
 -- as unavailable instead of 500ing. Exact-match scanning is unaffected either
 -- way. So this ships safely into an environment where the answer is still
--- unknown, and starts working the moment somebody enables it — no code change
+-- unknown, and starts working the moment somebody enables it - no code change
 -- needed, only `CREATE EXTENSION pg_trgm;` by a role that may.
 
 DO $$

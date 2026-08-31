@@ -5,19 +5,19 @@
  * map. This module turns those three into a concrete HTTP request. Keeping it
  * pure (no fetch, no db, no node builtins) means the API can render a preview
  * for the console and the worker can render the real request from exactly the
- * same functions — a payload that looks right in the UI is the payload that
+ * same functions - a payload that looks right in the UI is the payload that
  * gets sent.
  */
 
 /**
  * How the credential is attached to the request.
  *
- *  none          — no credential (open webhook)
- *  bearer        — Authorization: Bearer <secret>
- *  header        — <header>: <secret>                    e.g. api-key, X-API-Key
- *  header_prefix — <header>: <prefix><secret>            e.g. Authorization: Zoho-oauthtoken …
- *  basic         — Authorization: Basic base64(<secret>:)  API key as the username
- *  query         — ?<header>=<secret> appended to the URL
+ *  none          - no credential (open webhook)
+ *  bearer        - Authorization: Bearer <secret>
+ *  header        - <header>: <secret>                    e.g. api-key, X-API-Key
+ *  header_prefix - <header>: <prefix><secret>            e.g. Authorization: Zoho-oauthtoken …
+ *  basic         - Authorization: Basic base64(<secret>:)  API key as the username
+ *  query         - ?<header>=<secret> appended to the URL
  *
  * `oauth2` is deliberately absent: nothing here needs to change to add it
  * later, because a refreshed access token is just a bearer secret.
@@ -36,7 +36,7 @@ export const CRM_AUTH_SCHEMES: CrmAuthScheme[] = [
 export type CrmMethod = "POST" | "PUT" | "PATCH";
 
 /**
- * Dotted path lookup, with numeric segments indexing arrays — Zoho answers
+ * Dotted path lookup, with numeric segments indexing arrays - Zoho answers
  * `{"data":[{"details":{"id":"…"}}]}`, so `data.0.details.id` has to work.
  */
 export function pluckPath(source: unknown, path: string): unknown {
@@ -177,7 +177,7 @@ function walk(
     }
     if (hasPlaceholder(node)) {
       const out = renderTemplate(node, vars);
-      // Unresolved and nothing left over — the string was only the placeholder.
+      // Unresolved and nothing left over - the string was only the placeholder.
       return out.missing.length > 0 && out.value === "" ? EMPTY : out.value;
     }
     return node;
@@ -219,7 +219,7 @@ function walk(
  * Drop nulls before sending.
  *
  * A call that never mentioned a budget produces `budget: null`, and several
- * CRMs treat an explicit null as "clear this field" — which would erase data
+ * CRMs treat an explicit null as "clear this field" - which would erase data
  * on the receiving side rather than leave it alone. Objects that empty out
  * entirely are removed too, so a phones[] whose only entry had no number
  * doesn't arrive as `[{}]`.
@@ -242,7 +242,7 @@ export function prune(value: unknown): unknown {
 }
 
 /**
- * `prune` at the top level, where an empty result must still be an object —
+ * `prune` at the top level, where an empty result must still be an object -
  * `JSON.stringify(undefined)` is the string "undefined", which is not a body.
  */
 export function pruneBody(value: unknown): unknown {
@@ -256,7 +256,7 @@ export function applyAuth(
   secret: string | null,
   header: string,
   prefix: string,
-  /** Base64 encoder — node's Buffer in the worker, btoa in a browser preview. */
+  /** Base64 encoder - node's Buffer in the worker, btoa in a browser preview. */
   base64: (input: string) => string,
 ): { headers: Record<string, string>; query: Record<string, string> } {
   if (scheme === "none" || !secret) return { headers: {}, query: {} };
@@ -268,7 +268,7 @@ export function applyAuth(
     case "header_prefix":
       return { headers: { [header || "Authorization"]: `${prefix}${secret}` }, query: {} };
     case "basic":
-      // API key as username with an empty password — Close's documented scheme.
+      // API key as username with an empty password - Close's documented scheme.
       return { headers: { authorization: `Basic ${base64(`${secret}:`)}` }, query: {} };
     case "query":
       return { headers: {}, query: { [header || "api_token"]: secret } };
@@ -302,7 +302,7 @@ export interface ResolvedCrmRequest {
  * endpoint and headers, then attach the credential.
  *
  * Lives here rather than in the worker so the console's "test connection" and
- * the worker's real send resolve identically — a test that passes against a
+ * the worker's real send resolve identically - a test that passes against a
  * different URL than production uses is worse than no test at all. The secret
  * arrives already decrypted and base64 is injected, keeping this module free
  * of node builtins so the web bundle can import its siblings.

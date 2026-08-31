@@ -15,7 +15,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * /terms — the commercial and usage contract.
+ * /terms - the commercial and usage contract.
  *
  * 404s until `TERMS_READY`, which needs three clauses no engineer should write:
  * the liability cap, the indemnity, and the fee terms. See lib/legal.ts.

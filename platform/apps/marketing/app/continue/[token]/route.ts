@@ -16,7 +16,7 @@ import { setFunnelSession } from "@/lib/funnel/session";
  *
  * It has to SET a cookie, and a Server Component cannot. A page would have to
  * render something that then posted the token back, which puts the credential
- * in the DOM — the exact thing lib/funnel/session.ts exists to avoid.
+ * in the DOM - the exact thing lib/funnel/session.ts exists to avoid.
  *
  * ── WHY OPENING IT TWICE IS FINE ───────────────────────────────────────────
  *
@@ -36,7 +36,7 @@ export async function GET(
   const target = await resolveResumeToken(token);
 
   if (!target) {
-    // Unknown, expired, already finished, or erased — one destination for all
+    // Unknown, expired, already finished, or erased - one destination for all
     // four. Telling a holder of a guessed token which one it was tells them
     // whether they guessed a real enquiry.
     redirect("/start?link=expired");

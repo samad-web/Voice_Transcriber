@@ -6,14 +6,14 @@ import { requireOperator } from "@/lib/operator-guard";
 
 /**
  * Every action below is called from the drawer, which now opens over calls
- * belonging to any tenant — not just the environment's DEV_ORG_ID. Omitting
+ * belonging to any tenant - not just the environment's DEV_ORG_ID. Omitting
  * `orgId` keeps the old dev-org behaviour for the standalone /calls page;
  * passing it is what makes the instance-scoped explorer work at all, since
  * reading a call under the wrong org context is a 404 under RLS.
  *
  * That freedom is exactly why each of these opens with `requireOperator()`.
  * These are the actions that hand back transcripts and presigned recording
- * audio, under an org id the caller chose, using the root admin key — and a
+ * audio, under an org id the caller chose, using the root admin key - and a
  * Server Action is an independently-addressable POST endpoint, so the
  * `(platform)` layout's operator gate (a render-time check) never runs for one.
  * See lib/operator-guard.ts.
@@ -89,7 +89,7 @@ export interface CallDetailData {
     next_attempt_at?: string | null;
     /**
      * Contact history for the number on the other end. All null when the number
-     * was withheld — there is nothing to count, and claiming "first contact"
+     * was withheld - there is nothing to count, and claiming "first contact"
      * for every anonymous caller would be worse than saying nothing.
      */
     calls_in?: number | null;

@@ -16,23 +16,23 @@ function detailLine(flag: CallIntegrityFlag): string {
     case "no_deal_from_positive_call":
       return `Read as "${d.outcome ?? "interested"}"${
         typeof d.qualityScore === "number" ? ` (quality ${d.qualityScore}/100)` : ""
-      } — no deal or contact was ever created from it.`;
+      } - no deal or contact was ever created from it.`;
     case "outcome_status_contradiction":
       return `Read as "${d.outcome ?? "?"}", but the deal is marked "${d.dealStatus ?? "?"}".`;
     case "stalled_after_positive_call":
       return `First call read as "${d.firstCallOutcome ?? "interested"}"${
         typeof d.firstCallQuality === "number" ? ` (quality ${d.firstCallQuality}/100)` : ""
-      } — no activity since.`;
+      } - no activity since.`;
     default:
       return "";
   }
 }
 
-/** Review queue for /v1/call-integrity-flags — dismiss what's fine, resolve what got fixed. */
+/** Review queue for /v1/call-integrity-flags - dismiss what's fine, resolve what got fixed. */
 export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }) {
   const [flags, setFlags] = useState(initial);
   const [error, setError] = useState<string | null>(null);
-  // Which single flag is mid-action, not a workspace-wide flag — acting on one
+  // Which single flag is mid-action, not a workspace-wide flag - acting on one
   // card must not disable the buttons on every other open flag.
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -41,7 +41,7 @@ export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }
     setError(null);
     setPendingId(flag.id);
     // Optimistic: drop it from the queue immediately, then roll back on
-    // failure — the same contract task-list.tsx's complete() uses for acting
+    // failure - the same contract task-list.tsx's complete() uses for acting
     // on one row in a list.
     setFlags((prev) => prev.filter((f) => f.id !== flag.id));
     startTransition(async () => {

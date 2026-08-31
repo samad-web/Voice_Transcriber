@@ -8,13 +8,13 @@ import { resolveTenantScope } from "@/lib/tenant-scope";
 import { TargetsManager, type AttainmentRow, type TeamMember } from "./targets-manager";
 import type { SalesTarget } from "./actions";
 
-export const metadata: Metadata = { title: "Targets — Aura" };
+export const metadata: Metadata = { title: "Targets - Aura" };
 
 /**
  * Sales targets (PRD Layer 5, migration 0050).
  *
  * The reports page answers "what happened". This is where somebody says what
- * was supposed to happen — without it, every figure on that page is
+ * was supposed to happen - without it, every figure on that page is
  * uncalibrated: 400,000 closed is excellent or alarming depending entirely on
  * what the quarter was for.
  *
@@ -31,7 +31,7 @@ export default async function TargetsPage({
   const { org } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 
-  // `?all=1` — the management view is every target, not just the period that
+  // `?all=1` - the management view is every target, not just the period that
   // happens to cover today. A quarter set last week for next quarter would
   // otherwise be invisible on the screen that created it.
   const [targets, members, attainment] = await Promise.all([
@@ -50,7 +50,7 @@ export default async function TargetsPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (

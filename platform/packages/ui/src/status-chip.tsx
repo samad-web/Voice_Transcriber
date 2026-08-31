@@ -15,22 +15,22 @@ import { cx } from "./cx";
 const TONES = {
   solid: {
     className: "border-transparent bg-text text-bg",
-    // Filled disc — "on / active".
+    // Filled disc - "on / active".
     glyph: <circle cx="5" cy="5" r="3.5" fill="currentColor" />,
   },
   muted: {
     className: "border-border bg-surface-hover text-text",
-    // Bar — "neutral / informational".
+    // Bar - "neutral / informational".
     glyph: <rect x="1.5" y="4" width="7" height="2" rx="1" fill="currentColor" />,
   },
   outline: {
     className: "border-border-strong bg-transparent text-text-muted",
-    // Hollow ring — "inactive / not yet".
+    // Hollow ring - "inactive / not yet".
     glyph: <circle cx="5" cy="5" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />,
   },
   danger: {
     className: "border-danger-text/30 bg-danger-subtle text-danger-text",
-    // Triangle — "attention". The only pointed silhouette in the set.
+    // Triangle - "attention". The only pointed silhouette in the set.
     glyph: <path d="M5 1 L9.3 8.5 H0.7 Z" fill="currentColor" />,
   },
 } as const;

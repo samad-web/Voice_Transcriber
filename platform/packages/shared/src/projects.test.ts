@@ -23,7 +23,7 @@ describe("detectProjects", () => {
   it("finds a project by an alias and reports which alias matched", () => {
     const hits = detectProjects("we walked through the 3d site", CATALOGUE);
     expect(hits[0].projectId).toBe("p-3d");
-    // Explaining the label is the point — an unexplained guess is not
+    // Explaining the label is the point - an unexplained guess is not
     // actionable when the owner thinks it is wrong.
     expect(hits[0].matchedOn).toBe("3d site");
   });
@@ -53,7 +53,7 @@ describe("detectProjects", () => {
    * is exactly the kind of hit that puts a wrong label on a lead and teaches
    * the owner to ignore the column.
    */
-  it("matches whole tokens only — never a substring of a longer word", () => {
+  it("matches whole tokens only - never a substring of a longer word", () => {
     expect(detectProjects("the aurora borealis project", CATALOGUE)).toEqual([]);
     expect(detectProjects("we discussed auras", CATALOGUE)).toEqual([]);
     expect(detectProjects("Aura", CATALOGUE)[0]?.projectId).toBe("p-aura");

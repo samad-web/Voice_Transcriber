@@ -23,7 +23,7 @@ import {
   type PipelineRow,
 } from "./reports.service";
 
-/** `YYYY-MM-DD`, same contract as tasks.dueOn — a report window is days, not instants. */
+/** `YYYY-MM-DD`, same contract as tasks.dueOn - a report window is days, not instants. */
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
 const WindowQuery = z.object({
@@ -47,13 +47,13 @@ function resolveWindow(from?: string, to?: string): { from: string; to: string }
 /**
  * Reporting & analytics (PRD Layer 3) over the CRM object model.
  *
- * Read-only — no migration backs this module, it aggregates what Tracks A2-A4
+ * Read-only - no migration backs this module, it aggregates what Tracks A2-A4
  * already store. Distinct from the existing `/v1/analytics`, which reports on
  * CALL VOLUME and device fleet health; this reports on the pipeline.
  *
  * PERMISSIONS. Viewing requires `deal:view`; CSV export requires
  * `deal:export`. That split is the first real use of the `export` action,
- * which has existed in the grid since 0039 and gated nothing — and it is a
+ * which has existed in the grid since 0039 and gated nothing - and it is a
  * genuine distinction rather than decoration: reading a number on screen and
  * walking out with every deal's value in a file are different acts, and an
  * org that hands a contractor `view` should be able to withhold the second.
@@ -139,7 +139,7 @@ export class ReportsController {
 
     const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
     // The export carries the SAME scope as the on-screen report. A CSV that
-    // widened it would be the leak with the longest legs — a file, off the
+    // widened it would be the leak with the longest legs - a file, off the
     // platform, with no permission attached to it any more.
     const csv = await this.render(name.data, orgId, from, to, recordScope, parsed.data.pipelineId);
 
@@ -153,7 +153,7 @@ export class ReportsController {
       .send(csv);
   }
 
-  /** Renders through the SAME service the JSON routes use — the two views of
+  /** Renders through the SAME service the JSON routes use - the two views of
    *  a report must never be able to disagree about the numbers. */
   private async render(
     name: ReportName,

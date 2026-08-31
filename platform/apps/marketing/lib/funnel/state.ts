@@ -4,7 +4,7 @@
  *
  * Client-safe by construction: types and string constants only. It is a separate
  * module from ./actions.ts because a `"use server"` file may only export async
- * functions — a type exported from there is a build error, and a constant
+ * functions - a type exported from there is a build error, and a constant
  * exported from there becomes an RPC endpoint.
  */
 
@@ -28,7 +28,7 @@ export const F = {
   crmChoice: "crm_choice",
   crmOther: "crm_other",
   wantsCustomCrm: "wants_custom_crm",
-  // plumbing — see ./actions.ts
+  // plumbing - see ./actions.ts
   honeypot: "company_website",
   renderedAt: "rendered_at",
   utm: "utm",
@@ -44,7 +44,7 @@ export interface StepOneState {
   /** Errors keyed by field name, rendered under the control by `FormField`. */
   errors: FieldErrors;
   /**
-   * A message that belongs to the form rather than to one field — a rate-limit
+   * A message that belongs to the form rather than to one field - a rate-limit
    * refusal, a database outage. Never says which answer caused anything.
    */
   formError?: string;
@@ -59,7 +59,7 @@ export const STEP_ONE_INITIAL: StepOneState = { status: "idle", errors: {} };
  *
  * `outcome` is deliberately coarse. Doc 16 §3.2: never tell the respondent which
  * answer decided it. "booking" vs "contact" is the whole vocabulary the client
- * gets — no score, no reason, no threshold, and nothing that could be diffed
+ * gets - no score, no reason, no threshold, and nothing that could be diffed
  * across two submissions to reverse-engineer the rule.
  */
 export type FunnelOutcome = "booking" | "contact";

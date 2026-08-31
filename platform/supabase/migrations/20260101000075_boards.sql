@@ -1,8 +1,8 @@
--- 0075_boards.sql — a BOARD as a thing the tenant owns and can reshape.
+-- 0075_boards.sql - a BOARD as a thing the tenant owns and can reshape.
 --
 -- Today a board column is an element in a jsonb array: organizations.lead_stages
 -- for /owner/board, deal_pipelines.stages for /owner/deals. Neither has a stable
--- identity, a position, a probability, or a soft delete — and there is no writer
+-- identity, a position, a probability, or a soft delete - and there is no writer
 -- of organizations.lead_stages anywhere in apps/ or packages/, so the lead
 -- board's columns are frozen configuration that nobody, including the owner,
 -- can change. This migration makes a column a ROW.
@@ -13,7 +13,7 @@
 -- read time through board_column_stages; the only board-owned per-card datum is
 -- `position`, an ordering hint. A drop writes leads.stage / deals.stage through
 -- the record tables, exactly as today. Drop every table in this file and the
--- boards still render, in last_activity_at order, one column per stage — which
+-- boards still render, in last_activity_at order, one column per stage - which
 -- is both the rollback story and a test (boards/board-drop.spec.ts).
 --
 -- ── TWO MAPPINGS, NOT ONE ─────────────────────────────────────────────────
@@ -48,7 +48,7 @@
 -- ATTACHED by 0076, once applyColumnMove is the only writer.
 --
 -- In particular this migration does NOT create a board for each existing
--- crm_project. It is tempting — "a project without a board cannot exist" — but
+-- crm_project. It is tempting - "a project without a board cannot exist" - but
 -- the board resolver keys a lead's board off leads.project_id, so seeding
 -- project boards here would silently move every project-labelled lead off the
 -- default board the moment reads switch on. That is precisely the invisible
@@ -60,7 +60,7 @@
 --
 -- Deliberately NOT deal_pipelines. That table's object_type is
 -- CHECK (object_type = 'deal') (0034), so it can never describe a board that
--- renders leads too — and a board renders both models by design, because that
+-- renders leads too - and a board renders both models by design, because that
 -- is the only way /owner/board and /owner/deals stop being able to disagree.
 
 CREATE TABLE IF NOT EXISTS boards (
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS boards (
     CHECK (render_default IN ('lead', 'deal')),
 
   -- The shape a human last BLESSED, and the target of "Restore the columns".
-  -- Never written by a reshape — only by POST /v1/boards/:id/template. A
+  -- Never written by a reshape - only by POST /v1/boards/:id/template. A
   -- restore target that silently tracks the current shape is not a safety net,
   -- it is a snapshot of the mess.
   template     jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS boards (
 CREATE UNIQUE INDEX IF NOT EXISTS boards_org_key_unique
   ON boards (org_id, key);
 -- One board per project. A real constraint where deal_pipelines' "exactly one
--- default" is only app-enforced (pipelines.controller.ts) — one fewer invariant
+-- default" is only app-enforced (pipelines.controller.ts) - one fewer invariant
 -- living in TypeScript.
 CREATE UNIQUE INDEX IF NOT EXISTS boards_org_project_unique
   ON boards (org_id, project_id) WHERE project_id IS NOT NULL;
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS board_columns (
 
   -- The machine key, carried by automation rule configs, saved filters and the
   -- Android client. IMMUTABLE after creation, enforced by the trigger below
-  -- rather than by app code alone — the app is not the only thing with a psql
+  -- rather than by app code alone - the app is not the only thing with a psql
   -- prompt. Same regex as LeadStage.key (packages/shared/src/leads.ts).
   key            text NOT NULL
                    CHECK (key ~ '^[a-z][a-z0-9_]*$' AND length(key) <= 40),
@@ -169,12 +169,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS board_columns_one_fallback
   ON board_columns (board_id) WHERE is_fallback AND archived_at IS NULL;
 -- `position` is deliberately NOT unique: a partial unique index cannot be
 -- DEFERRABLE, so a reorder would need a two-phase shuffle. Order is
--- (position, key), which is total and stable — the same argument
+-- (position, key), which is total and stable - the same argument
 -- crm_projects.sort_order already makes.
 CREATE INDEX IF NOT EXISTS board_columns_board_pos
   ON board_columns (board_id, position, key) WHERE archived_at IS NULL;
 
--- ── board_column_stages — boardColumnFor(stage), the REVERSE map ──────────
+-- ── board_column_stages - boardColumnFor(stage), the REVERSE map ──────────
 --
 -- Several lifecycle stages may file into one column; the primary key is what
 -- makes "a stage mapped to two columns" fail in the database rather than in a
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS board_column_stages (
 CREATE INDEX IF NOT EXISTS board_column_stages_col
   ON board_column_stages (column_id);
 
--- ── board_cards — position, and nothing else ──────────────────────────────
+-- ── board_cards - position, and nothing else ──────────────────────────────
 --
 -- No stage, no status, no column_id. A column_id here would be a cached
 -- derivation that can go stale, and the instant this table can hold a placement
@@ -218,7 +218,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS board_cards_unique
 CREATE INDEX IF NOT EXISTS board_cards_order
   ON board_cards (board_id, position);
 
--- ── lead_stage_transitions — the ledger leads have never had ──────────────
+-- ── lead_stage_transitions - the ledger leads have never had ──────────────
 --
 -- deals have had one since 0046; leads carry only stage_changed_at, so "how did
 -- this lead get here" is unanswerable. Same shape, same reasons, deliberately
@@ -249,7 +249,7 @@ CREATE INDEX IF NOT EXISTS lead_stage_transitions_lead
 CREATE INDEX IF NOT EXISTS lead_stage_transitions_org_time
   ON lead_stage_transitions (org_id, occurred_at DESC);
 
--- ── crm_bridge_failures — divergence written down ─────────────────────────
+-- ── crm_bridge_failures - divergence written down ─────────────────────────
 --
 -- The replacement for owner/leads.controller.ts's propagateStageToDeal, which
 -- ends in `catch (err) { console.error(... "non-blocking") }` and returns 200:
@@ -278,7 +278,7 @@ CREATE TABLE IF NOT EXISTS crm_bridge_failures (
 CREATE INDEX IF NOT EXISTS crm_bridge_failures_open
   ON crm_bridge_failures (org_id, created_at DESC) WHERE resolved_at IS NULL;
 
--- ── lead_projects — one person, several things they are buying ────────────
+-- ── lead_projects - one person, several things they are buying ────────────
 --
 -- 0073 gave a CALL many projects (call_projects) but gave a LEAD exactly one
 -- (leads.project_id), on the reasoning that a card carries one project because
@@ -286,17 +286,17 @@ CREATE INDEX IF NOT EXISTS crm_bridge_failures_open
 -- person means one sale. It does not hold on a floor where two telecallers work
 -- the same person on different offerings:
 --
---   upsertLead dedups on (workspace_id, contact_number_hash) — the counterparty
---   number, not the telecaller and not the project — so both calls land on ONE
+--   upsertLead dedups on (workspace_id, contact_number_hash) - the counterparty
+--   number, not the telecaller and not the project - so both calls land on ONE
 --   lead. detectCallProjects then overwrites leads.project_id with the newest
 --   call's strongest hit. The first project is not merely demoted, it stops
 --   being visible anywhere on the record, and the card silently leaves one
 --   project's board for another's. Because the pipeline is queue-driven, the
---   winner is not even the later call — it is whichever finished last.
+--   winner is not even the later call - it is whichever finished last.
 --
 -- The evidence was never lost: call_projects has always kept every hit. What
 -- was missing is the roll-up. This table is to leads what call_projects is to
--- calls, and leads.project_id becomes the derived PRIMARY — the display
+-- calls, and leads.project_id becomes the derived PRIMARY - the display
 -- summary, not the record. Same four-value `source` vocabulary, so the
 -- human-owns-it rule reads identically at both levels.
 --
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS lead_projects (
   -- "two primaries" is unrepresentable rather than merely discouraged.
   is_primary boolean NOT NULL DEFAULT false,
 
-  -- Which conversation first put this project on this lead — the provenance a
+  -- Which conversation first put this project on this lead - the provenance a
   -- telecaller needs when they ask "who said we were doing LexDraft?".
   first_call_id uuid REFERENCES calls(id) ON DELETE SET NULL,
 
@@ -327,7 +327,7 @@ CREATE TABLE IF NOT EXISTS lead_projects (
 
 CREATE UNIQUE INDEX IF NOT EXISTS lead_projects_one_primary
   ON lead_projects (lead_id) WHERE is_primary;
--- "Every lead touching this project" — the query the project detail view is,
+-- "Every lead touching this project" - the query the project detail view is,
 -- and the one a per-project board needs.
 CREATE INDEX IF NOT EXISTS lead_projects_project
   ON lead_projects (org_id, project_id);
@@ -335,7 +335,7 @@ CREATE INDEX IF NOT EXISTS lead_projects_project
 -- ── ASSIGNMENT, which the CRM has never had ───────────────────────────────
 --
 -- deals.telecaller_id and leads.telecaller_id are WRITE-ONCE ATTRIBUTION
--- snapshots — 0036 says so in as many words, and 0017 explains why: reassigning
+-- snapshots - 0036 says so in as many words, and 0017 explains why: reassigning
 -- a handset must not silently move who gets credit for a deal already in
 -- flight. Nothing in the repo can update either column, and nothing should.
 --
@@ -369,7 +369,7 @@ CREATE INDEX IF NOT EXISTS leads_org_assigned
 -- Binding a handset to a telecaller exists fleet-wide already, for attribution.
 -- If the CRM board rode on that binding, the day the feature flag flips every
 -- bound phone in every tenant would gain CRM read and write with no admin
--- action — authorization by side effect, outside the role model in
+-- action - authorization by side effect, outside the role model in
 -- packages/shared/src/permissions.ts. So it is its own explicit, revocable,
 -- default-off grant.
 ALTER TABLE devices
@@ -463,7 +463,7 @@ DO $$ BEGIN
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- ── seed_default_board — the ONE implementation of "a board exists" ───────
+-- ── seed_default_board - the ONE implementation of "a board exists" ───────
 --
 -- Called twice, and that is the entire point of it being a function:
 --   * by this migration's backfill, once per existing org;
@@ -500,7 +500,7 @@ BEGIN
 
   -- ONE stage vocabulary for both halves. The pipeline and the board columns
   -- are derived from the same list in the same statement, so "the deal stages
-  -- and the board columns disagree" is not a state this can produce — which is
+  -- and the board columns disagree" is not a state this can produce - which is
   -- the invariant the forward bridge (board_columns.deal_stage_key NOT NULL)
   -- depends on.
   SELECT COALESCE(NULLIF(o.lead_stages, '[]'::jsonb), '[
@@ -588,7 +588,7 @@ END $fn$;
 --     future tenant will be provisioned with.
 SELECT seed_default_board(o.id) FROM organizations o ORDER BY o.created_at;
 
--- (2) ORPHAN RESCUE — nothing is migrated with cards stranded.
+-- (2) ORPHAN RESCUE - nothing is migrated with cards stranded.
 --     A deal whose stage is not in its pipeline is counted and HIDDEN today
 --     (deals.controller.ts's `orphaned`, and the lead board's equivalent). Here
 --     those ghosts become real, visible, appended columns, each with a
@@ -635,7 +635,7 @@ SELECT l.org_id, l.id, l.project_id, COALESCE(l.project_source, 'extraction'), t
  WHERE l.project_id IS NOT NULL
 ON CONFLICT (lead_id, project_id) DO NOTHING;
 
---     Then every OTHER project any of this lead's calls was about — the hits
+--     Then every OTHER project any of this lead's calls was about - the hits
 --     detectCallProjects recorded on call_projects and then discarded when it
 --     collapsed them to a single winner. This is the recovery of the second
 --     telecaller's conversation: it was never lost, only unreachable. The join

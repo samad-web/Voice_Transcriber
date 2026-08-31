@@ -72,7 +72,7 @@ export async function fetchJourneysAction(
 /**
  * Record that a rung was done or deliberately skipped.
  *
- * It does NOT send anything — the rep made the call or wrote the message
+ * It does NOT send anything - the rep made the call or wrote the message
  * themselves, and this writes down that they did. The platform has no
  * automated sending path, by design.
  */

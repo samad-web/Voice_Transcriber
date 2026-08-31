@@ -9,7 +9,7 @@ import { InteractionTimeline } from "../../interaction-timeline";
 import { TaskList } from "../../task-list";
 import { formatValue, relativeTime, type Contact, type Deal } from "../../types";
 
-export const metadata: Metadata = { title: "Contact — Aura" };
+export const metadata: Metadata = { title: "Contact - Aura" };
 
 /**
  * One contact, with the unified timeline (Track A2) as the centrepiece.
@@ -35,7 +35,7 @@ export default async function ContactDetailPage({
     ownerGet<{ deals: Deal[] }>(`/v1/contacts/${id}/deals`),
   ]);
 
-  // ownerGet collapses every failure — network error, 404, 500 — to `null`
+  // ownerGet collapses every failure - network error, 404, 500 - to `null`
   // with no way to tell them apart (see api-result.ts's `unwrap`), so this
   // mirrors every list page in this area (leads, contacts, deals, accounts,
   // board, duplicates) rather than reaching for `notFound()`, which would
@@ -93,15 +93,15 @@ export default async function ContactDetailPage({
             <dl className="mt-3 space-y-2.5 text-xs">
               <div>
                 <dt className="text-text-muted">Email</dt>
-                <dd className="mt-0.5 font-medium break-words text-text">{contact.email ?? "—"}</dd>
+                <dd className="mt-0.5 font-medium break-words text-text">{contact.email ?? "-"}</dd>
               </div>
               <div>
                 <dt className="text-text-muted">Phone</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">{phone ?? "—"}</dd>
+                <dd className="mt-0.5 font-medium text-text tabular-nums">{phone ?? "-"}</dd>
               </div>
               <div>
                 <dt className="text-text-muted">Title</dt>
-                <dd className="mt-0.5 font-medium break-words text-text">{contact.title ?? "—"}</dd>
+                <dd className="mt-0.5 font-medium break-words text-text">{contact.title ?? "-"}</dd>
               </div>
               <div>
                 <dt className="text-text-muted">Calls</dt>
@@ -124,8 +124,8 @@ export default async function ContactDetailPage({
             <MonoLabel>Deals</MonoLabel>
             {deals.length === 0 ? (
               <p className="mt-3 text-xs text-text-muted">
-                {/* dealsResponse is null for ANY fetch failure — network error,
-                    404, 500 — not specifically a 403, so this stays neutral
+                {/* dealsResponse is null for ANY fetch failure - network error,
+                    404, 500 - not specifically a 403, so this stays neutral
                     rather than implying a permissions problem. */}
                 {dealsResponse === null ? "Deals unavailable." : "No deals for this contact."}
               </p>

@@ -12,7 +12,7 @@ import { CallsExplorer, type CallRow } from "./calls-explorer";
 /**
  * Cross-tenant call log. Calls are readable only under one org context at a
  * time (RLS), so the page reads the tenant named in `?org=` and falls back to
- * the environment's dev org — with a switcher, so the operator can tell which
+ * the environment's dev org - with a switcher, so the operator can tell which
  * customer these calls belong to instead of assuming they are all of them.
  */
 export default async function CallsPage({
@@ -84,7 +84,7 @@ export default async function CallsPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with{" "}
+            Could not reach the API - start it with{" "}
             <code className="font-mono">pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
@@ -101,7 +101,7 @@ export default async function CallsPage({
           description={
             onlyFollowUps
               ? "Every call in this log is a first contact. A caller who rings back a second time appears here."
-              : "Enroll a device on this tenant and record the first call — it lands here within a minute of the call ending."
+              : "Enroll a device on this tenant and record the first call - it lands here within a minute of the call ending."
           }
         />
       ) : (

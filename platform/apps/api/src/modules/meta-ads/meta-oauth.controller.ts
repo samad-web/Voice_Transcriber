@@ -25,7 +25,7 @@ function oauthConfig(): MetaOAuthConfig | null {
 /**
  * Connecting a Facebook Page for Lead Ads capture (Kailash gap Milestone 4).
  *
- * A human clicks "Connect Facebook Page" — /start returns Meta's own OAuth
+ * A human clicks "Connect Facebook Page" - /start returns Meta's own OAuth
  * consent URL; the browser is redirected there directly, does the
  * click-through in Meta's UI, and comes back to /callback. Aura never sees a
  * password, only the resulting code.
@@ -33,7 +33,7 @@ function oauthConfig(): MetaOAuthConfig | null {
  * NOT full multi-page selection UI (that needs a web frontend, out of scope
  * for this backend-only milestone): /callback auto-connects the FIRST Page
  * Meta returns for this user. A future page-picker can pass `pageId` through
- * unchanged — see how it round-trips through the signed state below.
+ * unchanged - see how it round-trips through the signed state below.
  */
 @Controller("meta/oauth")
 export class MetaOAuthController {
@@ -61,7 +61,7 @@ export class MetaOAuthController {
     if (!code || !state) return { connected: false, reason: "missing code or state" };
 
     const verified = verifyOAuthState(state, config.appSecret);
-    if (!verified) return { connected: false, reason: "invalid or expired state — start the connection again" };
+    if (!verified) return { connected: false, reason: "invalid or expired state - start the connection again" };
 
     const { accessToken: userToken } = await exchangeCodeForToken(config, code);
     const pages = await listManagedPages(userToken);

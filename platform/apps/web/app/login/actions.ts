@@ -10,7 +10,7 @@ export interface LoginResult {
   error?: string;
 }
 
-/** Only allow same-origin relative paths back from ?next= — no open redirect. */
+/** Only allow same-origin relative paths back from ?next= - no open redirect. */
 function safeNext(next: string | undefined): string {
   if (!next || !next.startsWith("/") || next.startsWith("//")) return "/dashboard";
   return next;
@@ -27,7 +27,7 @@ export async function signInAction(
   next?: string,
 ): Promise<LoginResult> {
   if (!AUTH_ENABLED) {
-    return { error: "Supabase auth is not configured — set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." };
+    return { error: "Supabase auth is not configured - set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY." };
   }
 
   const supabase = await createClient();
@@ -38,7 +38,7 @@ export async function signInAction(
 
   if (error) {
     // Supabase returns the same message for unknown user and wrong password,
-    // which is what we want — don't leak which accounts exist.
+    // which is what we want - don't leak which accounts exist.
     return { error: error.message };
   }
 
@@ -52,8 +52,8 @@ export async function signInAction(
  * ── WHY THIS DOES MORE THAN CALL signOut() ─────────────────────────────────
  *
  * `signOut()` defaults to `scope: "global"`, which POSTs to Supabase to revoke
- * every refresh token for the user. When that request fails — an already
- * expired access token answers 401/403, and a network blip answers nothing —
+ * every refresh token for the user. When that request fails - an already
+ * expired access token answers 401/403, and a network blip answers nothing -
  * supabase-js throws, and it throws BEFORE clearing the local cookies. The
  * whole action then unwinds: no cookie cleared, no redirect, and from the
  * outside the button simply does nothing while the operator is still signed in.
@@ -76,7 +76,7 @@ export async function signOutAction() {
     try {
       await supabase.auth.signOut({ scope: "local" });
     } catch {
-      // Deliberately ignored — the cookie clear below is what actually ends
+      // Deliberately ignored - the cookie clear below is what actually ends
       // the session as far as this browser is concerned, and it must happen
       // whether or not Supabase was reachable.
     }

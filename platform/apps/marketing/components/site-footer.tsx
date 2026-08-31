@@ -10,7 +10,7 @@ import { BRAND, BRAND_LINE, CONSOLE_ENTRY, LEGAL_ENTITY, NAV } from "@/lib/site"
  * Doc 10 §14 requires /security, /privacy, /dpa and /consent to be live AND
  * linked from here. /privacy, /dpa and /terms are now WRITTEN and routed, but
  * each stays unpublished until the company facts it needs are filled in
- * (lib/legal.ts) — a 404 behind "Privacy policy" on a site whose central claim
+ * (lib/legal.ts) - a 404 behind "Privacy policy" on a site whose central claim
  * is data protection is worse than an honest "not published yet". The lists
  * below are derived from the same flag the pages use, so the two cannot
  * disagree.
@@ -20,7 +20,7 @@ import { BRAND, BRAND_LINE, CONSOLE_ENTRY, LEGAL_ENTITY, NAV } from "@/lib/site"
  * · The Product column listed five links, three of which (/#integrations,
  *   /#custom-crm, /#pricing) pointed at sections the homepage cut. It now
  *   renders NAV, so it cannot drift out of step with the page again.
- * · The mark was a hardcoded "A" in a box — a placeholder that outlived the
+ * · The mark was a hardcoded "A" in a box - a placeholder that outlived the
  *   real logo arriving. It uses the same Logo component as everywhere else.
  * · Console sign-in points at /admin rather than the console origin directly,
  *   so the door has one address and CONSOLE_URL is referenced in one place.
@@ -41,7 +41,7 @@ const LIVE = [
  * The legal documents that are actually publishable.
  *
  * DERIVED, not hand-listed. Each page carries a `ready` flag from lib/legal.ts,
- * which is false while any company fact it needs is unset — and the pages
+ * which is false while any company fact it needs is unset - and the pages
  * themselves 404 on the same flag. So the footer cannot link a 404, and a
  * document that goes live appears here without anyone remembering to add it.
  *
@@ -62,7 +62,7 @@ export function SiteFooter() {
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <p className="flex items-center gap-2.5 font-semibold text-text">
-              {/* Not `priority` — the footer is below the fold on every page,
+              {/* Not `priority` - the footer is below the fold on every page,
                   and preloading it would compete with the hero mark. */}
               <Logo size={28} priority={false} />
               {BRAND}
@@ -107,7 +107,7 @@ export function SiteFooter() {
             <ul className="mt-3 space-y-2">
               <li>
                 {/* A plain anchor, not next/link. /admin is a route handler
-                    that 307s to another origin — a client-side navigation
+                    that 307s to another origin - a client-side navigation
                     would prefetch it on hover and then have to unwind a
                     cross-origin redirect the router cannot follow. This wants
                     a full document request. */}

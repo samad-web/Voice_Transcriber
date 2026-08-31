@@ -1,4 +1,4 @@
--- 0069_call_analytics.sql — AI call-quality scoring, talk-ratio/interruption
+-- 0069_call_analytics.sql - AI call-quality scoring, talk-ratio/interruption
 -- coaching metrics, and risk-phrase spotting, one row per call.
 --
 -- All three read the same diarized transcript once: quality scoring and risk
@@ -6,7 +6,7 @@
 -- (no second LLM round trip), while talk-ratio/interruptions are computed in
 -- plain TypeScript from the segments that call already returns. Every
 -- quality/risk column is nullable and written independently of the talk
--- metrics — a call whose LLM read degraded still gets its talk-ratio, and a
+-- metrics - a call whose LLM read degraded still gets its talk-ratio, and a
 -- call with no segments still gets whatever the LLM half produced.
 
 CREATE TABLE IF NOT EXISTS call_analytics (
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS call_analytics (
   quality_score          int,
   quality_criteria       jsonb,
 
-  -- Talk-ratio / interruption coaching metrics — pure computation, no LLM.
+  -- Talk-ratio / interruption coaching metrics - pure computation, no LLM.
   agent_talk_seconds     int,
   customer_talk_seconds  int,
   talk_ratio             numeric,

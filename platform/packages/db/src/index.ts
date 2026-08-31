@@ -3,7 +3,7 @@ import { Pool, type PoolClient } from "pg";
 
 /**
  * Re-exported so callers can type a helper that takes the client
- * `withOrgContext` hands them, without depending on `pg` directly — the apps
+ * `withOrgContext` hands them, without depending on `pg` directly - the apps
  * talk to Postgres only through this package.
  */
 export type { PoolClient } from "pg";
@@ -15,7 +15,7 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"])
 
 /**
  * One TLS rule for every pool (mirrored in packages/db/ssl.js for the plain
- * node scripts). Managed Postgres — Supabase included — refuses plaintext,
+ * node scripts). Managed Postgres - Supabase included - refuses plaintext,
  * while the local docker instance has no certificate, so the host decides.
  * Supabase's chain is not in Node's default store; set DB_SSL_CA to a PEM path
  * for full verification.
@@ -38,9 +38,9 @@ function sslFor(connectionString: string) {
 let pool: Pool | undefined;
 
 /**
- * Runtime pool — connects as the NON-superuser `aura_app` role so Postgres
+ * Runtime pool - connects as the NON-superuser `aura_app` role so Postgres
  * RLS is actually enforced (superusers and table owners bypass it, which is
- * the classic and expensive mistake — design doc §2).
+ * the classic and expensive mistake - design doc §2).
  */
 export function getPool(): Pool {
   if (!pool) {
@@ -54,7 +54,7 @@ export function getPool(): Pool {
 
 /**
  * Run `fn` inside a transaction with `app.org_id` set transaction-locally.
- * Every tenant-scoped query MUST go through this — RLS policies filter on
+ * Every tenant-scoped query MUST go through this - RLS policies filter on
  * current_setting('app.org_id') and default-deny when it is unset.
  */
 export async function withOrgContext<T>(
@@ -80,7 +80,7 @@ export async function withOrgContext<T>(
 let adminPool: Pool | undefined;
 
 /**
- * Admin/owner pool — bypasses RLS. Use ONLY for flows that legitimately run
+ * Admin/owner pool - bypasses RLS. Use ONLY for flows that legitimately run
  * before an org context exists (device enrollment token lookup, bootstrap).
  * Everything tenant-scoped goes through withOrgContext().
  */

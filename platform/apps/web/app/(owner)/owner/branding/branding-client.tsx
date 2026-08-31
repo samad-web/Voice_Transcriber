@@ -84,7 +84,7 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
         </p>
       ) : null}
 
-      <FormField label="Logo URL" name="logoUrl" hint="A link to an already-hosted image — there's no upload here.">
+      <FormField label="Logo URL" name="logoUrl" hint="A link to an already-hosted image - there's no upload here.">
         <Input
           value={logoUrl}
           onChange={(e) => {

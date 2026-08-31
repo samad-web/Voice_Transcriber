@@ -13,10 +13,10 @@ export interface SearchResult {
 /**
  * Full-text search runs under one org context (RLS scopes the join to `calls`),
  * so without an explicit tenant it only ever searched the environment's dev
- * org — and reported "no transcripts matched" for every other customer, which
+ * org - and reported "no transcripts matched" for every other customer, which
  * is indistinguishable from the term genuinely not appearing.
  *
- * Which is also why the caller may name any tenant — and why the operator check
+ * Which is also why the caller may name any tenant - and why the operator check
  * has to happen *here*. A Server Action is its own POST endpoint; the
  * `(platform)` layout gate runs on a render and never on an invocation, so
  * without this line any signed-in account could search another customer's
@@ -44,6 +44,6 @@ export async function searchTranscriptsAction(
     const data = (await res.json()) as { results?: SearchResult[] };
     return { results: data.results ?? [] };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }

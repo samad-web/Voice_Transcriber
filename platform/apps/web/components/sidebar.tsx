@@ -16,11 +16,11 @@ export function Sidebar({
   /** Owner-console persona (design doc §9); ignored when area !== "owner". */
   ownerRole,
   /** A6's shadow-read flag (CRM_SHADOW_READ_ENABLED), resolved server-side by
-   *  the owner layout — a client component cannot read that env var itself. */
+   *  the owner layout - a client component cannot read that env var itself. */
   crmPrimary = false,
   /** Whether this org has the CRM module (enabled_modules, migration 0072),
    *  resolved server-side by the owner layout. Hides CRM-object nav items
-   *  entirely when false — see nav.ts's CRM_GATED_HREFS. */
+   *  entirely when false - see nav.ts's CRM_GATED_HREFS. */
   crmEnabled = true,
   /** Rail heading. The owner console shows their company name here. */
   title = "Aura Platform",
@@ -38,7 +38,7 @@ export function Sidebar({
   const items =
     area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled) : NAV_ITEMS;
   // Longest-prefix match against every item at once, not each item tested
-  // independently — otherwise Dashboard (href "/owner") matches the prefix
+  // independently - otherwise Dashboard (href "/owner") matches the prefix
   // test on every other owner route too, and both it and the real current
   // item render as active together.
   const active = navItemFor(pathname, items);
@@ -48,7 +48,7 @@ export function Sidebar({
       <div className="space-y-8">
         <div className="flex items-center gap-3 px-2">
           {/* Brand-register pass: the console now carries the real mark, matching
-             the landing page — the old neutral-square reasoning (doc 16 §1.1,
+             the landing page - the old neutral-square reasoning (doc 16 §1.1,
              "accent is scarce, don't compete with the active-item signal") is
              superseded by the owner's decision to adopt the full landing
              register here. The active item below still gets its own gradient
@@ -72,7 +72,7 @@ export function Sidebar({
                 style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
                 className={`flex w-full items-center gap-3 rounded-full px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out ${
                   isActive
-                    ? // The gradient fill is the "you are here" signal now —
+                    ? // The gradient fill is the "you are here" signal now -
                       // white holds contrast against every stop (same pairing
                       // marketing's CTA already ships in production).
                       "text-white"
@@ -119,7 +119,7 @@ export function Sidebar({
               · a Supabase account with no email → `""` → no button, with a
                 perfectly real session running.
 
-            Signing out with no session is harmless — signOutAction clears what
+            Signing out with no session is harmless - signOutAction clears what
             is there and redirects to /login. Being unable to sign out on a
             shared machine is not. A button that occasionally does nothing
             beats a missing one. */}

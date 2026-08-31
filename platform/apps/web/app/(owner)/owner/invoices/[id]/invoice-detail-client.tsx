@@ -40,7 +40,7 @@ function paymentTone(status: Payment["status"]): "solid" | "outline" | "danger" 
 /**
  * The invoice detail page's interactive half: header (status/due
  * date/GST/notes), the line-item table, payment history, and the one button
- * that actually matters — Collect Payment. That last one is deliberately its
+ * that actually matters - Collect Payment. That last one is deliberately its
  * own island of state: the payment link it mints has nowhere else to live
  * (the payments list the API returns has no URL field, only an id), so it
  * must survive whatever else on this page saves and re-renders around it.
@@ -164,7 +164,7 @@ export function InvoiceDetail({
 
   const balanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
 
-  // "Paid" is a claim about money actually received — selecting it while a
+  // "Paid" is a claim about money actually received - selecting it while a
   // balance is still outstanding is very likely a mistake, so it gets the same
   // confirmation dialog the rest of the console uses before any other
   // consequential, hard-to-undo action (e.g. team-manager.tsx's member
@@ -348,7 +348,7 @@ export function InvoiceDetail({
                         {new Date(payment.created_at).toLocaleString()}
                       </TableCell>
                       <TableCell className="text-text-muted">
-                        {payment.captured_at ? new Date(payment.captured_at).toLocaleString() : "—"}
+                        {payment.captured_at ? new Date(payment.captured_at).toLocaleString() : "-"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -425,7 +425,7 @@ export function InvoiceDetail({
                   ? invoice.discount_type === "percent"
                     ? `${Number(invoice.discount_value ?? 0)}%`
                     : formatMoney(invoice.discount_value, invoice.currency)
-                  : "—"}
+                  : "-"}
               </dd>
             </div>
             <div className="flex justify-between">
@@ -435,7 +435,7 @@ export function InvoiceDetail({
               </dd>
             </div>
             {/* The API returns these as Postgres numeric strings (e.g. "0.00"),
-                which are truthy even at zero — comparing the raw field would
+                which are truthy even at zero - comparing the raw field would
                 show a "₹0.00" row on every domestic invoice. */}
             {Number(invoice.cgst ?? 0) > 0 || Number(invoice.sgst ?? 0) > 0 ? (
               <div className="flex justify-between">
@@ -479,15 +479,15 @@ export function InvoiceDetail({
           <dl className="mt-3 space-y-2.5 text-xs">
             <div>
               <dt className="text-text-muted">Account</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{invoice.account_id ?? "—"}</dd>
+              <dd className="mt-0.5 font-medium break-words text-text">{invoice.account_id ?? "-"}</dd>
             </div>
             <div>
               <dt className="text-text-muted">Contact</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{invoice.contact_id ?? "—"}</dd>
+              <dd className="mt-0.5 font-medium break-words text-text">{invoice.contact_id ?? "-"}</dd>
             </div>
             <div>
               <dt className="text-text-muted">Deal</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{invoice.deal_id ?? "—"}</dd>
+              <dd className="mt-0.5 font-medium break-words text-text">{invoice.deal_id ?? "-"}</dd>
             </div>
             {invoice.quotation_id ? (
               <div>
@@ -508,7 +508,7 @@ export function InvoiceDetail({
         <Card>
           <MonoLabel>Collect payment</MonoLabel>
           <p className="mt-2 text-xs text-text-muted">
-            Generates a Razorpay payment link. Nothing is emailed or texted automatically — copy the
+            Generates a Razorpay payment link. Nothing is emailed or texted automatically - copy the
             link and share it yourself.
           </p>
           {paymentError ? (

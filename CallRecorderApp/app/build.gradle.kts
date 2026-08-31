@@ -10,7 +10,7 @@ plugins {
  * Release signing comes from keystore.properties (gitignored, next to this
  * file's parent) or, on a build server, from environment variables. When
  * neither is present the release signing config is simply not created, so
- * `assembleDebug` still works on a fresh checkout — only `assembleRelease`
+ * `assembleDebug` still works on a fresh checkout - only `assembleRelease`
  * fails, and it fails loudly rather than silently emitting an unsigned APK.
  */
 val keystorePropsFile = rootProject.file("keystore.properties")
@@ -29,9 +29,9 @@ android {
 
     defaultConfig {
         applicationId = "com.voicetranscriber.callrecorder"
-        minSdk = 26          // Android 8.0 — accessibility + AudioRecord baseline
+        minSdk = 26          // Android 8.0 - accessibility + AudioRecord baseline
         targetSdk = 34
-        // Bump versionCode on EVERY release build that leaves this machine —
+        // Bump versionCode on EVERY release build that leaves this machine -
         // Android refuses to install an APK whose code is lower than the one
         // already on the device.
         versionCode = 3
@@ -46,7 +46,7 @@ android {
                 keyAlias = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
                 keyPassword = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
                 // minSdk is 26, so v1/JAR signing (only needed below API 24) is
-                // redundant — AGP drops it anyway. v2 is what gets verified.
+                // redundant - AGP drops it anyway. v2 is what gets verified.
                 enableV2Signing = true
                 enableV3Signing = true
             }
@@ -70,7 +70,7 @@ android {
     buildFeatures { viewBinding = true }
 }
 
-// An unsigned release APK cannot be installed and is easy to ship by accident —
+// An unsigned release APK cannot be installed and is easy to ship by accident -
 // stop the build instead of producing app-release-unsigned.apk.
 tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
     doFirst {
@@ -88,7 +88,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
-    // Pull-to-refresh on the recordings list — re-runs the OEM ingest on demand, since the
+    // Pull-to-refresh on the recordings list - re-runs the OEM ingest on demand, since the
     // automatic import only fires ~15s after a call ends and on a 15-minute cycle.
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.activity:activity-ktx:1.9.3")

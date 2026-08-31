@@ -22,7 +22,7 @@ export interface Invoice {
   invoice_number: string;
   status: InvoiceStatus;
   currency: string;
-  /** Postgres numeric — these all come back as strings. Number() before formatting. */
+  /** Postgres numeric - these all come back as strings. Number() before formatting. */
   subtotal: string;
   discount_type: "percent" | "amount" | null;
   discount_value: string | null;
@@ -85,7 +85,7 @@ export interface InvoicePatch {
   notes?: string | null;
   customerGstin?: string | null;
   placeOfSupply?: string | null;
-  /** A full replacement of the line items — never a partial patch of one row. */
+  /** A full replacement of the line items - never a partial patch of one row. */
   items?: InvoiceItemInput[];
 }
 
@@ -102,7 +102,7 @@ async function message(res: Response): Promise<string> {
 
 /**
  * The primary way an invoice gets created in this console: clone an existing
- * quotation into a new draft invoice. No body — the API copies everything
+ * quotation into a new draft invoice. No body - the API copies everything
  * (items, discount, currency, account/contact/deal) from the quotation.
  */
 export async function createInvoiceFromQuotationAction(
@@ -152,7 +152,7 @@ export async function updateInvoiceAction(
 
 /**
  * Mint a Razorpay payment link. A human clicks the button that calls this,
- * gets back a URL, and shares it themselves — there is no auto-send here or
+ * gets back a URL, and shares it themselves - there is no auto-send here or
  * on the API side. Can fail with a 503 (Razorpay not configured on this
  * deployment) or a 400 (nothing outstanding); both come back as `error` for
  * the caller to render as plain text, not to treat as a crash.

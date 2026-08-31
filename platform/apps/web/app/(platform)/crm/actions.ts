@@ -6,7 +6,7 @@ import { requireOperator } from "@/lib/operator-guard";
 
 /**
  * Server actions for the CRM console. Every one of these goes through the API
- * rather than the database directly — the admin key stays server-side and the
+ * rather than the database directly - the admin key stays server-side and the
  * validation, encryption and audit trail live in one place.
  *
  * Every action takes an optional `orgId`. Without it the request is pinned to
@@ -19,8 +19,8 @@ import { requireOperator } from "@/lib/operator-guard";
  * The `orgId` is attacker-controlled by construction, the credential behind it
  * is the root admin key, and these actions hold a tenant's CRM secrets and their
  * delivery payloads. A Server Action is an independently-addressable POST
- * endpoint, so the operator check in `(platform)/layout.tsx` — which runs during
- * a render — is not on this path at all. See lib/operator-guard.ts.
+ * endpoint, so the operator check in `(platform)/layout.tsx` - which runs during
+ * a render - is not on this path at all. See lib/operator-guard.ts.
  */
 
 /** Refresh whichever surface the change was made from. */

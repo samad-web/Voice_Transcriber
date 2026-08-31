@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * bookings it decides to message.
  *
  * A wrong predicate here does not throw. It sends a WhatsApp message to a real
- * person — possibly one who booked days ago under an explicit promise that we
+ * person - possibly one who booked days ago under an explicit promise that we
  * would not message them, possibly about a call that has already happened. The
  * account this sends from carries a ban risk for exactly that. So the guard
  * clauses are asserted as query text: delete one and a test fails, rather than
@@ -64,7 +64,7 @@ describe("which bookings it selects", () => {
     // This NOT EXISTS is the whole safety mechanism. Migration 0032 wrote a
     // 'dead' row for every booking that existed when this shipped, so the
     // backlog is skipped by virtue of having a row at all. A status filter
-    // added here — `AND f.status = 'sent'`, say — would make those rows
+    // added here - `AND f.status = 'sent'`, say - would make those rows
     // invisible and message the entire backlog on the next tick.
     expect(text).toContain("NOT EXISTS");
     expect(text).toContain("f.template = 'booking_confirmed'");
@@ -113,7 +113,7 @@ describe("what it queues", () => {
 
     const { sweepBookingConfirmations } = await load();
 
-    // One bad row must not strand the confirmations behind it — the failure
+    // One bad row must not strand the confirmations behind it - the failure
     // mode a plain `for … await` without the try/catch would produce.
     expect(await sweepBookingConfirmations()).toBe(1);
     expect(enqueueFollowUp).toHaveBeenCalledTimes(2);

@@ -75,7 +75,7 @@ export default async function DashboardPage({
   const successRate =
     data && data.calls.total > 0
       ? ((data.calls.complete / data.calls.total) * 100).toFixed(1)
-      : "—";
+      : "-";
   const minutes = Math.round((data?.calls.total_seconds ?? 0) / 60);
   const tokens = (data?.usage.llm_tokens_in ?? 0) + (data?.usage.llm_tokens_out ?? 0);
 
@@ -168,7 +168,7 @@ export default async function DashboardPage({
                         {Math.round(t.total_seconds / 60)}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-xs text-neutral-500">
-                        {t.last_call_at ? new Date(t.last_call_at).toLocaleDateString() : "—"}
+                        {t.last_call_at ? new Date(t.last_call_at).toLocaleDateString() : "-"}
                       </td>
                     </tr>
                   ))}
@@ -228,7 +228,7 @@ export default async function DashboardPage({
 
             <Card>
               <MonoLabel>
-                Call ingest — last 7 days{activeTenant ? ` · ${activeTenant.name}` : ""}
+                Call ingest - last 7 days{activeTenant ? ` · ${activeTenant.name}` : ""}
               </MonoLabel>
               {data.byDay.length === 0 ? (
                 <p className="text-sm text-neutral-500 mt-3 font-sans">

@@ -5,7 +5,7 @@
  * The tenant boundary used to live in ~70 hand-written `orgIdFromHeader(...)`
  * calls, one per handler, where forgetting one was silent rather than a
  * compile error. It now lives in `TenantGuard` + `@OrgId()`. These checks stop
- * the old shape from creeping back in — they are grep, not tests, and cost
+ * the old shape from creeping back in - they are grep, not tests, and cost
  * nothing to run on every build.
  *
  *   1. No handler reads the `x-org-id` header itself.
@@ -39,23 +39,23 @@ for (const file of walk(MODULES)) {
   lines.forEach((line, i) => {
     const at = `${rel(file)}:${i + 1}`;
 
-    // 1. Reading the header directly bypasses the guard's resolution — the
+    // 1. Reading the header directly bypasses the guard's resolution - the
     //    admin-key path trusts that header, so a handler that reads it itself
     //    is deciding its own tenant again.
     if (/@Headers\(\s*["']x-org-id["']\s*\)|headers\[["']x-org-id["']\]/.test(line)) {
-      failures.push(`${at}  reads x-org-id directly — inject @OrgId() instead`);
+      failures.push(`${at}  reads x-org-id directly - inject @OrgId() instead`);
     }
 
     // 3. The old helper.
     if (/\borgIdFromHeader\b/.test(line)) {
-      failures.push(`${at}  uses orgIdFromHeader — removed; use @OrgId()`);
+      failures.push(`${at}  uses orgIdFromHeader - removed; use @OrgId()`);
     }
 
     // 2. Authentication without tenant scoping. @CrossTenant() is the opt-out,
     //    and it is checked at the route/class level by the guard itself, so the
     //    guard still has to be mounted.
     if (/@UseGuards\([^)]*\bAdminKeyGuard\b/.test(line) && !/\bTenantGuard\b/.test(line)) {
-      failures.push(`${at}  AdminKeyGuard without TenantGuard — every authenticated route is tenant-scoped`);
+      failures.push(`${at}  AdminKeyGuard without TenantGuard - every authenticated route is tenant-scoped`);
     }
   });
 }
@@ -70,4 +70,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("tenancy check OK — no handler resolves its own org");
+console.log("tenancy check OK - no handler resolves its own org");

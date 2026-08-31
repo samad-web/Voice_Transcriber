@@ -34,8 +34,8 @@ const INTERACTION_COLUMNS = `i.id, i.type, i.direction, i.contact_id, i.account_
 /**
  * The unified interaction timeline (Track A2, migration 0040).
  *
- * Routes are NESTED under the object they describe — `GET /v1/contacts/:id/
- * interactions` rather than `GET /v1/interactions?contactId=` — because that
+ * Routes are NESTED under the object they describe - `GET /v1/contacts/:id/
+ * interactions` rather than `GET /v1/interactions?contactId=` - because that
  * is what makes the permission gate correct. `CrmPermissionsGuard` reads
  * STATIC decorator metadata, so a single flat endpoint filtered by query
  * param could not decide whether to demand `contact:view` or `deal:view`; the
@@ -43,14 +43,14 @@ const INTERACTION_COLUMNS = `i.id, i.type, i.direction, i.contact_id, i.account_
  *
  * Shares the `contacts`/`accounts`/`deals` prefixes from a separate
  * controller, the same way NotesController shares `calls` with
- * CallsController — the timeline is one concern and belongs in one file, even
+ * CallsController - the timeline is one concern and belongs in one file, even
  * though it hangs off three parents.
  *
  * Gated on the PARENT's `view`, not on some interaction-level permission:
  * `PermissionObjectType` is `contact|account|deal` only, and a contact's
  * timeline is a fact about that contact. Note the rows carry `deal_id`, so a
- * role with `contact:view` but not `deal:view` learns that some deal exists —
- * an id and nothing more, no deal fields — which is the same exposure
+ * role with `contact:view` but not `deal:view` learns that some deal exists -
+ * an id and nothing more, no deal fields - which is the same exposure
  * `contacts.account_id` already carries on the contact row itself.
  */
 @Controller()
@@ -82,7 +82,7 @@ export class InteractionsController {
 
   /**
    * An account's timeline is its own rows PLUS every row belonging to a
-   * contact that works there — an account with no direct interactions but
+   * contact that works there - an account with no direct interactions but
    * three busy contacts should not look dormant. Resolved through the
    * subquery at read time rather than denormalised onto `interactions.
    * account_id`, so re-parenting a contact (a merge, an admin edit) moves its
@@ -132,7 +132,7 @@ export class InteractionsController {
 
   /**
    * Logging against a deal also stamps the deal's contact, so the note shows
-   * up on that person's timeline too — which is what a rep means by "log a
+   * up on that person's timeline too - which is what a rep means by "log a
    * call with Priya about the Acme deal".
    */
   @Post("deals/:id/interactions")
@@ -200,7 +200,7 @@ export class InteractionsController {
     req: PrincipalRequest,
     recordScope: CrmRecordScope,
   ) {
-    // The parent comes from the PATH, so the body may not also name one —
+    // The parent comes from the PATH, so the body may not also name one -
     // otherwise `POST /contacts/A/interactions {contactId: B}` would write to
     // B while having been permission-checked against A.
     const parsed = InteractionInput.safeParse({ ...(body as object), ...attach });
@@ -281,7 +281,7 @@ export class InteractionsController {
 
 /**
  * FK violations bypass RLS and surface as a 500, so confirm the parent is
- * visible in THIS org first — same reasoning (and same fix) as
+ * visible in THIS org first - same reasoning (and same fix) as
  * NotesController's call check.
  */
 async function assertExists(
@@ -292,7 +292,7 @@ async function assertExists(
 ): Promise<void> {
   // The `owned` scope applies to the PARENT, which is what this route was
   // permission-checked against. Without it a scoped rep could read a
-  // colleague's whole deal timeline by knowing the deal's id — the record
+  // colleague's whole deal timeline by knowing the deal's id - the record
   // itself would 404, but its history would not.
   const objectType = table.replace(/s$/, "") as "contact" | "account" | "deal";
   const scoped = scopeClause(objectType, recordScope, 2);
@@ -305,7 +305,7 @@ async function assertExists(
 
 /**
  * `interactions.actor_user_id` is a real uuid FK, but the dev admin-key path
- * leaves `principal.userId` as the literal string "admin-key" — inserting
+ * leaves `principal.userId` as the literal string "admin-key" - inserting
  * that raises 22P02. Same validate-or-null helper merge.controller.ts needs
  * for `merge_log.performed_by`.
  */

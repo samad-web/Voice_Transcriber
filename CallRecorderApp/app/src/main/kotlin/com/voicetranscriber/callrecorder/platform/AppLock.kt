@@ -11,14 +11,14 @@ import javax.crypto.spec.PBEKeySpec
  * Format: `pbkdf2$<iterations>$<saltHex>$<hashHex>`, produced server-side by
  * `apps/api/src/common/app-lock-hash.ts`. PBKDF2-HMAC-SHA256 was picked
  * specifically because `SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")`
- * has been available since API 26 — this app's minSdk — so no third-party
+ * has been available since API 26 - this app's minSdk - so no third-party
  * crypto dependency is needed, and Node's `crypto.pbkdf2Sync` produces a
  * byte-identical key for the same salt/iterations/keylen (both are plain
  * RFC 8018 PBKDF2).
  */
 object AppLock {
 
-    /** Tracks whether the password has been entered since this process started —
+    /** Tracks whether the password has been entered since this process started -
      *  resets on every cold start, which is what makes the lock "every time the
      *  app is opened" rather than a one-time unlock. */
     @Volatile

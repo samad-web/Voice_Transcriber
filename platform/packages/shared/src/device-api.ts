@@ -56,7 +56,7 @@ export const DeviceConfig = z.object({
   /**
    * Per-instance mobile app-lock, set on the Instance page in the CRM.
    * `pbkdf2$<iterations>$<saltHex>$<hashHex>` (see app-lock-hash.ts) or null
-   * when the org hasn't set one — the device verifies a typed password
+   * when the org hasn't set one - the device verifies a typed password
    * against this offline, it is never sent back to the server.
    */
   /**
@@ -65,7 +65,7 @@ export const DeviceConfig = z.object({
    * that already cost a device-bricking bug once: `JSONObject.optString(name,
    * fallback)` honours the fallback only for an ABSENT key and returns the
    * string "null" for a JSON null. The client now guards with `isNull` too
-   * (PlatformApi.fetchConfig) — this is the other half, so a client that
+   * (PlatformApi.fetchConfig) - this is the other half, so a client that
    * forgets the guard is not punished for it.
    */
   appLockPasswordHash: z.string().nullable().optional(),

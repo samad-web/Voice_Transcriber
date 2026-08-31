@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0024 — the follow-up outbox, and rejecting a lead
+-- 0024 - the follow-up outbox, and rejecting a lead
 --
 -- TWO THINGS THAT BELONG TOGETHER
 --
@@ -13,7 +13,7 @@
 -- apps/worker/src/pipeline/funnel-followup-outbox.ts has been written against
 -- this table since slice 4 and has been no-oping ever since, guarded by a
 -- `to_regclass` check, because the table lived only as a comment in that file.
--- The DDL below is that comment, VERBATIM apart from the added template — the
+-- The DDL below is that comment, VERBATIM apart from the added template - the
 -- module says "it must land verbatim, or this must be updated to match", and
 -- the drain re-checks for the table every tick, so it starts working the
 -- moment this runs. No restart.
@@ -78,7 +78,7 @@ ALTER TABLE marketing.funnel_submissions
 -- apps/api and apps/worker both reach this schema through the admin pool, which
 -- connects as the role that OWNS it, so no grant is needed for either.
 --
--- `aura_marketing` — the public website — is given NOTHING on funnel_followups.
+-- `aura_marketing` - the public website - is given NOTHING on funnel_followups.
 -- 0020 set ALTER DEFAULT PRIVILEGES granting SELECT/INSERT/UPDATE on future
 -- tables in this schema, so it would otherwise inherit all three, and a public
 -- unauthenticated server that can INSERT into an outbox is a public server that

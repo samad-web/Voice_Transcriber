@@ -1,4 +1,4 @@
--- 0074_mcp_connections.sql — an MCP server a tenant has connected, and the
+-- 0074_mcp_connections.sql - an MCP server a tenant has connected, and the
 -- leads pulled through it.
 --
 -- ── WHY A SEPARATE TABLE FROM connected_accounts (0043) ─────────────────
@@ -16,7 +16,7 @@
 --
 -- Because it is not Meta-specific. `provider` is free text, validated in the
 -- app, exactly like connected_accounts.provider and marketing_sources.channel
--- — so the second MCP server a tenant connects is a row, not a migration.
+-- - so the second MCP server a tenant connects is a row, not a migration.
 -- Meta is simply the first one that has a consumer written for it.
 
 CREATE TABLE IF NOT EXISTS mcp_connections (
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS mcp_connections (
   org_id       uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
 
   -- Which integration this server backs ('meta' today). App-validated, no
-  -- CHECK — same call 0043 made for connected_accounts.provider.
+  -- CHECK - same call 0043 made for connected_accounts.provider.
   provider     text NOT NULL,
   -- The tenant's own name for it, when they run more than one.
   label        text,
@@ -51,8 +51,8 @@ CREATE TABLE IF NOT EXISTS mcp_connections (
   server_info  jsonb NOT NULL DEFAULT '{}'::jsonb,
   tools        jsonb NOT NULL DEFAULT '[]'::jsonb,
 
-  -- Sync bookkeeping. `cursor` is opaque and provider-defined — a timestamp
-  -- for one server, a page token for another — so it is text, not a typed
+  -- Sync bookkeeping. `cursor` is opaque and provider-defined - a timestamp
+  -- for one server, a page token for another - so it is text, not a typed
   -- column that would only fit whichever provider was written first.
   last_sync_at timestamptz,
   cursor       text,
@@ -95,7 +95,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- ── the lead-ads ledger learns about `leads` and about MCP ──────────────
 --
 -- `meta_leadgen_events` (0063) already has the unique `leadgen_id` that makes
--- ingestion idempotent, and that property is exactly what a PULL needs too —
+-- ingestion idempotent, and that property is exactly what a PULL needs too -
 -- a sweep that re-reads an overlapping window must not create the lead twice.
 -- So the MCP path reuses this table rather than growing a parallel one with
 -- the same unique index on it.
@@ -108,7 +108,7 @@ ALTER TABLE meta_leadgen_events
     CHECK (source IN ('webhook', 'mcp'));
 
 -- THE GAP THIS CLOSES. 0063 created a contact and a deal for every Meta lead
--- and no `leads` row — but the owner console's board and list read `leads`,
+-- and no `leads` row - but the owner console's board and list read `leads`,
 -- not deals (the A6 cutover has not happened). So every Meta lead ever
 -- captured has been invisible on the two pages an owner actually works in.
 -- Recording the lead here lets the ingest path stay idempotent about it.

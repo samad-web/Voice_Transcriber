@@ -7,7 +7,7 @@
 # The commands here describe the CADDY layout only. A host that already runs
 # nginx on :80/:443 needs `-f docker-compose.nginx.yml` as well, and that
 # overlay is the ONLY thing publishing the loopback ports nginx proxies to.
-# Omitting it does not fail — compose happily recreates the containers without
+# Omitting it does not fail - compose happily recreates the containers without
 # published ports, and every recreated service disappears behind a 502 while
 # `docker ps` shows them all healthy. That outage happened on 2026-08-10.
 #
@@ -24,7 +24,7 @@
 # plain .env). Omit it and APP_DOMAIN et al resolve empty and the stack refuses
 # to start.
 #
-# Postgres is NOT here — the database is Supabase (see DEPLOYMENT.md §2).
+# Postgres is NOT here - the database is Supabase (see DEPLOYMENT.md §2).
 # Redis, RabbitMQ and MinIO stay local to the box and are never published.
 
 name: aura
@@ -52,7 +52,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.production}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data       # certificates — losing this re-issues (rate limits!)
+      - caddy_data:/data       # certificates - losing this re-issues (rate limits!)
       - caddy_config:/config
     depends_on:
       - api
@@ -88,19 +88,19 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
       args:
-        # Inlined into the client bundle at build time — changing any of these
+        # Inlined into the client bundle at build time - changing any of these
         # needs a rebuild, not a restart.
         NEXT_PUBLIC_API_URL: https://${APP_DOMAIN}
         # The console is served under /admin, because the marketing site now
         # holds the root of this same host. Next bakes this into every link,
         # every Server Action endpoint and every /_next/static asset URL, so it
-        # is a BUILD arg — a restart with it changed does nothing.
+        # is a BUILD arg - a restart with it changed does nothing.
         #
         # Defaults to /admin. Set it to an empty string to serve the console at
         # the root again, which is what a deployment without a marketing site
         # would want.
         NEXT_PUBLIC_BASE_PATH: ${CONSOLE_BASE_PATH-/admin}
-        # Supabase Auth — omit and the console ships with sign-in disabled.
+        # Supabase Auth - omit and the console ships with sign-in disabled.
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     image: aura-web:latest
@@ -114,7 +114,7 @@ services:
       - api
 
   # The public marketing site. Separate image, separate container, separate
-  # credential from the console — see docker/marketing.Dockerfile for why.
+  # credential from the console - see docker/marketing.Dockerfile for why.
   marketing:
     build:
       context: .
@@ -128,7 +128,7 @@ services:
         # Meta Pixel, Google Tag Manager and Microsoft Clarity. Unset means
         # none of them load and the Lead event is a no-op, which is what
         # preview and local builds want. All three fire on page load with no
-        # consent prompt (owner's decision, 2026-08-09) — see the note in
+        # consent prompt (owner's decision, 2026-08-09) - see the note in
         # components/meta-pixel.tsx.
         NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
         NEXT_PUBLIC_GTM_ID: ${NEXT_PUBLIC_GTM_ID:-}
@@ -139,7 +139,7 @@ services:
     #
     # Every other service here loads that file wholesale. This one must not:
     # it holds ADMIN_API_KEY (a cross-tenant root credential), the Supabase
-    # service-role key, the S3 secret and the Evolution API key — none of
+    # service-role key, the S3 secret and the Evolution API key - none of
     # which this container has any use for.
     #
     # This is the one container serving unauthenticated traffic from the open
@@ -160,7 +160,7 @@ services:
       DB_SSL: ${DB_SSL:-1}
       # ── Google Calendar ────────────────────────────────────────────────
       # Without all three, getScheduler() returns UnavailableScheduler and a
-      # booking is recorded in the database but never mirrored to a calendar —
+      # booking is recorded in the database but never mirrored to a calendar -
       # which is silent, because the visitor still gets a valid confirmation.
       # The private key is a real secret and the only one here that is not a
       # database credential; it is scoped to one calendar, not the Workspace.
@@ -168,12 +168,12 @@ services:
       GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
       GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:-}
       # Optional, and the difference between an event on the team's calendar and
-      # an event the LEAD is actually invited to — a service account cannot add
+      # an event the LEAD is actually invited to - a service account cannot add
       # attendees without domain-wide delegation acting as a real mailbox.
       GOOGLE_CALENDAR_IMPERSONATE_SUBJECT: ${GOOGLE_CALENDAR_IMPERSONATE_SUBJECT:-}
       # Calendars consulted for availability but never written to. Required when
       # GOOGLE_CALENDAR_ID is a calendar the service account owns rather than the
-      # team's real one — otherwise the picker sees only its own empty calendar
+      # team's real one - otherwise the picker sees only its own empty calendar
       # and offers times the team is already busy. Read access is enough.
       GOOGLE_BUSY_CALENDAR_IDS: ${GOOGLE_BUSY_CALENDAR_IDS:-}
       # Booking slot generation defaults. All optional.
@@ -189,8 +189,8 @@ services:
     # outage caused by something the visitor cannot see.
 
   # One-shot: applies packages/db/migrations to Supabase, sets the runtime
-  # role's password from APP_DB_PASSWORD, then fails the deploy — loudly, here,
-  # rather than leaking a tenant's data later — if any org_id table is missing
+  # role's password from APP_DB_PASSWORD, then fails the deploy - loudly, here,
+  # rather than leaking a tenant's data later - if any org_id table is missing
   # FORCE RLS or a real org_isolation policy (08 §1.5). `--structural-only` is
   # the read-only half of packages/db/verify-rls.js: the full check refuses to
   # run against anything but a local/disposable host, which Supabase never is.

@@ -8,7 +8,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { TelecallerName } from "./telecaller-name";
 import { formatDuration, formatValue, num, relativeTime, type Overview } from "./types";
 
-export const metadata: Metadata = { title: "Dashboard — Aura" };
+export const metadata: Metadata = { title: "Dashboard - Aura" };
 
 /** The "see everything" link that sits opposite a panel's own label. */
 const PANEL_LINK =
@@ -17,7 +17,7 @@ const PANEL_LINK =
 /**
  * The owner's landing page: how the desk is performing and what the pipeline
  * is worth, over a rolling window. Everything here is scoped by the session's
- * org — see lib/owner-context.
+ * org - see lib/owner-context.
  */
 export default async function OwnerDashboardPage({
   searchParams,
@@ -26,7 +26,7 @@ export default async function OwnerDashboardPage({
 }) {
   const { days: daysParam } = await searchParams;
   const days = Math.min(365, Math.max(1, Number(daysParam) || 30));
-  // A6, Milestone 4: same page, same Overview shape — only which table it's
+  // A6, Milestone 4: same page, same Overview shape - only which table it's
   // read from forks, behind the shadow-read flag. See lib/crm-cutover.ts.
   const crmPrimary = crmShadowReadEnabled();
   const data = await ownerGet<Overview>(
@@ -49,7 +49,7 @@ export default async function OwnerDashboardPage({
 
   // The board/leads pages don't accept a ?stage=/?focus= query yet, so the
   // CRM-primary links point at the plain page rather than a param it would
-  // silently ignore — see CRM_STATUS.md, A6 Milestone 4.
+  // silently ignore - see CRM_STATUS.md, A6 Milestone 4.
   const pipelineHref = crmPrimary ? "/owner/deals" : "/owner/board";
   const pipelineLinkLabel = crmPrimary ? "Open deals board →" : "Open board →";
   const stageHref = (stageKey: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`);
@@ -172,7 +172,7 @@ export default async function OwnerDashboardPage({
         </Card>
 
         <Card elevated className="space-y-4">
-          <MonoLabel>Calls and new leads — last {days} days</MonoLabel>
+          <MonoLabel>Calls and new leads - last {days} days</MonoLabel>
           {byDay.length === 0 ? (
             <p className="py-10 text-center text-sm text-text-muted">No activity in this window</p>
           ) : (
@@ -220,7 +220,7 @@ export default async function OwnerDashboardPage({
           <p className="py-10 text-center text-sm text-text-muted">No handsets enrolled yet</p>
         ) : (
           // tabIndex+role so the horizontal scroll is reachable without a mouse
-          // (WCAG 2.1.1) — the kit's <Table> does the same, but it draws its own
+          // (WCAG 2.1.1) - the kit's <Table> does the same, but it draws its own
           // border and this table already sits inside a bordered Card.
           <div tabIndex={0} role="region" aria-label="Telecaller performance" className="overflow-x-auto">
             <table className="w-full min-w-[760px] border-collapse text-left text-sm">
@@ -339,7 +339,7 @@ export default async function OwnerDashboardPage({
 
 /**
  * Leads/deals only appear once a call's extraction qualifies, so an empty
- * pipeline is usually a setup gap rather than a quiet week — say which.
+ * pipeline is usually a setup gap rather than a quiet week - say which.
  */
 function EmptyPipeline({ crmPrimary }: { crmPrimary: boolean }) {
   const noun = crmPrimary ? "deal" : "lead";

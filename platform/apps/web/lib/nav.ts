@@ -41,7 +41,7 @@ export type NavArea = "platform" | "owner";
 
 export interface NavItem {
   href: string;
-  /** Sidebar label — short, fits the 16rem rail. */
+  /** Sidebar label - short, fits the 16rem rail. */
   label: string;
   icon: LucideIcon;
   /** The page's own <PageHeader> title. Kept here so the loading skeleton can
@@ -128,7 +128,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     title: "Lead Board",
     context: "Pipeline",
     // Telecaller's nav is Dashboard + All Leads (self-filtered) + their own
-    // team profile once that route lands (design doc §9) — not the full board.
+    // team profile once that route lands (design doc §9) - not the full board.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -156,7 +156,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Handshake,
     title: "Deals",
     context: "Pipeline",
-    // Same persona restriction as the lead board (design doc §9) — a
+    // Same persona restriction as the lead board (design doc §9) - a
     // telecaller's nav stays Dashboard + All Leads, not the full pipeline.
     ownerRoles: ["owner", "manager"],
   },
@@ -233,7 +233,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     title: "Reports",
     context: "Pipeline",
     // Pipeline value and per-rep win rates are a manager's view of the team,
-    // not a telecaller's view of their own work — same restriction the boards
+    // not a telecaller's view of their own work - same restriction the boards
     // carry (design doc §9).
     ownerRoles: ["owner", "manager"],
   },
@@ -294,13 +294,13 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     title: "Call Quality",
     context: "Pipeline",
     // A manager's review queue over the whole floor's calls, same restriction
-    // as Reports and the boards (design doc §9) — not a telecaller's own view.
+    // as Reports and the boards (design doc §9) - not a telecaller's own view.
     ownerRoles: ["owner", "manager"],
   },
 ];
 
 /**
- * The CRM object pages — what A6's shadow-read flag promotes to sit right
+ * The CRM object pages - what A6's shadow-read flag promotes to sit right
  * after Dashboard, above the legacy Board/All Leads pair, once it's on.
  * Neither page group is ever hidden by this: the legacy pair stays exactly
  * where it is, one click away, for the whole burn-in period.
@@ -308,15 +308,15 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
 const CRM_PRIMARY_HREFS = ["/owner/deals", "/owner/contacts", "/owner/accounts", "/owner/reports"];
 
 /**
- * The CRM-object nav items — hidden entirely (not just reordered) when the
+ * The CRM-object nav items - hidden entirely (not just reordered) when the
  * org's `enabled_modules` (migration 0072) doesn't include 'crm'. Matched
  * against what `CrmPermissionsGuard`'s `@RequireCrmPermission` actually
  * gates on the API side (contact/account/deal/task/conversation/product/
- * quotation/invoice — see the crm-objects, tasks, conversations, products,
+ * quotation/invoice - see the crm-objects, tasks, conversations, products,
  * quotations and invoices controllers), plus Duplicates and Import, which
  * are pure-CRM features not yet backend-gated
  * but meaningless without CRM data. `/owner/board` and `/owner/leads` (the
- * legacy `leads`-table pages) are deliberately NOT here — those are core
+ * legacy `leads`-table pages) are deliberately NOT here - those are core
  * Aura, independent of the CRM toggle.
  */
 const CRM_GATED_HREFS = [
@@ -336,8 +336,8 @@ const CRM_GATED_HREFS = [
 /**
  * Which of `OWNER_NAV_ITEMS` a given owner-console persona may see, in what
  * order. `crmPrimary` (CRM_SHADOW_READ_ENABLED, resolved server-side and
- * passed down — see the owner layout) moves the CRM object pages to sit
- * right after Dashboard rather than after the legacy Board/All Leads pair —
+ * passed down - see the owner layout) moves the CRM object pages to sit
+ * right after Dashboard rather than after the legacy Board/All Leads pair -
  * nothing is added or removed by it, only the order changes. `crmEnabled`
  * (the org's own `enabled_modules`, also resolved server-side) is different:
  * it actually removes `CRM_GATED_HREFS` when the org doesn't have the CRM

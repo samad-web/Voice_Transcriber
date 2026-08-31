@@ -10,7 +10,7 @@ import {
  * The published privacy policy (§5) states a retention period for the marketing
  * funnel. This is what makes that sentence true. Until it existed the marketing
  * database had no expiry at all, and a stated period that nothing enforces is a
- * worse position than stating none — it is a disclosure you are visibly not
+ * worse position than stating none - it is a disclosure you are visibly not
  * honouring, which is the version a regulator finds interesting.
  *
  * The number is NOT configurable by environment variable, on purpose. It is
@@ -70,7 +70,7 @@ export async function sweepExpiredEnquiries(
   // call from a script or a test cannot bypass it either.
   if (!Number.isInteger(days) || days < FUNNEL_ENQUIRY_RETENTION_FLOOR_DAYS) {
     throw new Error(
-      `funnel retention: refusing to run with ${days} days — the floor is ` +
+      `funnel retention: refusing to run with ${days} days - the floor is ` +
         `${FUNNEL_ENQUIRY_RETENTION_FLOOR_DAYS}. This deletes real enquiries and is not reversible.`,
     );
   }
@@ -90,7 +90,7 @@ export async function sweepExpiredEnquiries(
     [days, limit],
   );
 
-  // Step 2 — see the header. Runs unconditionally, not only when step 1 deleted
+  // Step 2 - see the header. Runs unconditionally, not only when step 1 deleted
   // something, because it is also the repair for slots orphaned by an erasure.
   const { rowCount: scrubbed } = await pool.query(
     `UPDATE marketing.booking_slots
@@ -124,19 +124,19 @@ export async function sweepExpiredEnquiries(
  * No enable flag, unlike the reminder sweep. That one sends messages to people
  * who did not ask for them and should be a deliberate act; this one honours a
  * published commitment, and defaulting it OFF would mean the promise is unkept
- * in exactly the deployments nobody has configured — which is all of them.
+ * in exactly the deployments nobody has configured - which is all of them.
  */
 export function startFunnelRetentionSweep(): NodeJS.Timeout | null {
   const days = retentionDays();
   if (!Number.isInteger(days) || days < FUNNEL_ENQUIRY_RETENTION_FLOOR_DAYS) {
     console.error(
-      `funnel retention: DISABLED — ${days} days is below the ${FUNNEL_ENQUIRY_RETENTION_FLOOR_DAYS}-day floor. ` +
+      `funnel retention: DISABLED - ${days} days is below the ${FUNNEL_ENQUIRY_RETENTION_FLOOR_DAYS}-day floor. ` +
         `Fix FUNNEL_ENQUIRY_RETENTION_DAYS in @aura/shared.`,
     );
     return null;
   }
 
-  console.log(`funnel retention: ON — enquiries deleted after ${days} days`);
+  console.log(`funnel retention: ON - enquiries deleted after ${days} days`);
 
   // First pass shortly after boot rather than a full day later, so a fresh
   // deployment does not sit for 24 hours with expired data it has promised to

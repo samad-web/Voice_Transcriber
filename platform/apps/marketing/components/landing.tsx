@@ -6,8 +6,8 @@ import { Proof } from "@/components/proof";
  *
  * Cut down from thirteen on 2026-08-08 at the owner's instruction: explain the
  * application, and give it one way in. Everything that used to sit here and is
- * not one of these five — pricing, integrations grid, FAQ, language proof,
- * compatibility teaser, the trust block, the custom-CRM fork — still exists as
+ * not one of these five - pricing, integrations grid, FAQ, language proof,
+ * compatibility teaser, the trust block, the custom-CRM fork - still exists as
  * components and on its own pages. It is off the homepage, not deleted.
  *
  * The single conversion target is the form at /start. Every CTA on this page
@@ -18,8 +18,8 @@ import { Proof } from "@/components/proof";
 const CTA_HREF = "/start";
 
 /* ── 1 · Hero ──────────────────────────────────────────────────────────────
-   The claim, one button, and the product's actual sequence — a call becoming a
-   row — rather than stock illustration, because the sequence IS the pitch and
+   The claim, one button, and the product's actual sequence - a call becoming a
+   row - rather than stock illustration, because the sequence IS the pitch and
    a drawing of shopping bags would not be.
 
    The logo lockup that used to open this section is gone. The sticky header
@@ -28,7 +28,7 @@ const CTA_HREF = "/start";
    Repeating a logo does not make it register harder.
 
    Padding steps three times instead of twice. `pt-20 pb-24` is 80/96px, which
-   is right on a 1440px canvas and is a fifth of the screen on a 390px phone —
+   is right on a 1440px canvas and is a fifth of the screen on a 390px phone -
    space a mobile visitor pays for in scrolling before they reach anything. */
 
 function Hero() {
@@ -37,14 +37,14 @@ function Hero() {
       <div className="mk-wash" />
       <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-10 px-5 pt-6 pb-14 sm:gap-12 sm:px-6 sm:pt-10 sm:pb-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14 lg:pt-16 lg:pb-32">
         {/* Capped at a readable measure below `lg`. Without it, the headline
-            runs the full 768px of a tablet — around 90 characters, well past
-            the 45-75 that stays comfortable to read — while the lede stops at
+            runs the full 768px of a tablet - around 90 characters, well past
+            the 45-75 that stays comfortable to read - while the lede stops at
             56ch and leaves a ragged column of dead space beside it. */}
         {/* HEADLINE = the dream outcome, and the effort removed from it.
             "The data that's worth saving" named what we sell; an owner does not
             want data, they want to know which telecaller is losing them deals.
-            The second clause kills the objection the first one raises — "so I
-            have to listen to all of them?" — before it is asked. */}
+            The second clause kills the objection the first one raises - "so I
+            have to listen to all of them?" - before it is asked. */}
         <div className="max-w-[36rem] lg:max-w-none">
           <h1 className="mk-display mk-h1">
             Know what your team is really saying{" "}
@@ -62,7 +62,7 @@ function Hero() {
                 button's mechanics; this names the thing the visitor ends up
                 with, which is the only reason anyone presses anything.
 
-                First person on purpose — "Book my call", not "Book your call".
+                First person on purpose - "Book my call", not "Book your call".
                 It reads as the visitor's own words rather than the site giving
                 an instruction. */}
             <Link href={CTA_HREF} className="mk-cta">
@@ -101,7 +101,7 @@ function Hero() {
 
 /**
  * The alt text carries the whole point of the image, because for anyone who
- * cannot see it the animation IS the argument. It is long on purpose — an
+ * cannot see it the animation IS the argument. It is long on purpose - an
  * image that makes a claim needs alt text that makes the same claim.
  */
 const VISUAL_ALT =
@@ -112,7 +112,7 @@ const VISUAL_ALT =
   "next step advance by Friday. Aura extracts the same details from either language.";
 
 /**
- * The product's own sequence — a live call becoming a CRM row.
+ * The product's own sequence - a live call becoming a CRM row.
  *
  * Shipped as an animated image at the owner's instruction (2026-08-08), after
  * the CSS version turned out to be invisible on their machine: Windows had
@@ -127,7 +127,7 @@ const VISUAL_ALT =
  * SIX FILES, and the browser downloads exactly one:
  *
  *   hero-card-sm.webp       460 KB   phones (≤640px), 700px wide
- *   hero-card.webp          770 KB   tablet and up, 1064px wide — retina
+ *   hero-card.webp          770 KB   tablet and up, 1064px wide - retina
  *   hero-card.gif          2.04 MB   fallback, light
  *   hero-card-dark-sm.webp  290 KB   phones, dark
  *   hero-card-dark.webp     430 KB   tablet and up, dark
@@ -137,7 +137,7 @@ const VISUAL_ALT =
  *
  * · TWO WIDTHS, because the card renders about 330px on a phone and up to
  *   554px on desktop. Sending 1064px of retina detail to a phone on 4G costs
- *   300 KB to paint pixels that screen cannot resolve — and a phone on 4G in
+ *   300 KB to paint pixels that screen cannot resolve - and a phone on 4G in
  *   Tamil Nadu is precisely who this page is written for.
  * · TWO THEMES, because a raster cannot re-colour itself. Without the dark
  *   pair a dark-mode visitor gets a white slab in the middle of a black page.
@@ -176,13 +176,13 @@ function CallToLeadVisual() {
         width={700}
         height={737}
         // Intrinsic size declared so the browser reserves the box before the
-        // file lands — without it the hero reflows on load, which is both a
+        // file lands - without it the hero reflows on load, which is both a
         // Core Web Vitals penalty and visibly janky.
         //
         // The radius and shadow are applied HERE rather than baked into the
         // image. Baking them meant capturing a flat page-ground around the
         // card, which then showed as a hard-edged rectangle sitting on top of
-        // the hero's gradient wash — a visible vertical seam beside the card.
+        // the hero's gradient wash - a visible vertical seam beside the card.
         // The raster is now the card face only; CSS clips the corners and
         // draws the lift, so it stays theme-aware and seamless.
         className="mx-auto block h-auto w-full"
@@ -257,7 +257,7 @@ function Problem() {
 }
 
 /* ── 3 · How it works ─────────────────────────────────────────────────────
-   Numbered, because this is genuinely a sequence — a call cannot be extracted
+   Numbered, because this is genuinely a sequence - a call cannot be extracted
    before it has been transcribed. Numbering a set of unordered feature cards
    would be decoration; here the order carries information. */
 
@@ -276,7 +276,7 @@ const STEPS = [
   },
   {
     // Named connectors, and ONLY the eleven that are actually live. Zoho,
-    // Salesforce, monday.com and Dynamics are OAuth-pending in the catalogue —
+    // Salesforce, monday.com and Dynamics are OAuth-pending in the catalogue -
     // naming Zoho here would be the single most damaging thing on the page,
     // because it is the CRM most of this market already runs.
     t: "It becomes a lead in your CRM",
@@ -298,7 +298,7 @@ function HowItWorks() {
         </h2>
 
         {/* A connected timeline, filling as you scroll. The rail and the reveal
-            are CSS scroll-driven animation (brand.css) — no IntersectionObserver,
+            are CSS scroll-driven animation (brand.css) - no IntersectionObserver,
             so the homepage stays a server component with no hydration bundle.
             Four across at `lg` keeps the section shorter than the 2x2 grid it
             replaced. */}
@@ -396,7 +396,7 @@ function FinalCta() {
       >
         {/* THE OFFER, STATED. This section used to ask for a click and describe
             the offer in passing underneath it. The offer was always the strong
-            part — a read of your own calls, before you buy anything — and it
+            part - a read of your own calls, before you buy anything - and it
             was doing none of the work because it was never named. */}
         <p
           className="mb-4 text-xs font-semibold uppercase tracking-widest"
@@ -430,7 +430,7 @@ function FinalCta() {
             and each one is answerable in five words because there is a real
             page behind it (/compatibility, /security, /consent). Answering them
             here rather than making someone go and find the page is the whole
-            point — an unanswered objection at the button is a closed tab. */}
+            point - an unanswered objection at the button is a closed tab. */}
         <ul
           className="mx-auto mt-8 flex max-w-2xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm"
           style={{ color: "rgb(255 255 255 / 0.85)" }}
@@ -463,7 +463,7 @@ export function Landing() {
       <Problem />
       <HowItWorks />
       <Outcomes />
-      {/* Renders only when there is a real quote to show — see components/proof.tsx. */}
+      {/* Renders only when there is a real quote to show - see components/proof.tsx. */}
       <Proof />
       <FinalCta />
     </div>

@@ -89,7 +89,7 @@ object PlatformApi {
         return DeviceConfig(
             recordingEnabled = response.getBoolean("recordingEnabled"),
             version = response.getInt("version"),
-            // `isNull` FIRST — the same guard fetchCallResult already uses for
+            // `isNull` FIRST - the same guard fetchCallResult already uses for
             // `transcript` below, and for the same reason. Android's
             // `optString(name, fallback)` returns the fallback only when the key
             // is ABSENT; for a JSON null it returns the four-character string
@@ -99,7 +99,7 @@ object PlatformApi {
             // by default (migration 0066: "NULL = no lock (default, backward
             // compatible with every already-enrolled fleet)"), so this key is
             // null for essentially every fleet. Stored raw, "null" is not null,
-            // so LockActivity gates the app on it — and AppLock.verify requires
+            // so LockActivity gates the app on it - and AppLock.verify requires
             // `pbkdf2$iterations$salt$hash`, which "null" can never satisfy. As
             // LockActivity is the only exported LAUNCHER (MainActivity and
             // AdminActivationActivity are exported="false"), the handset would
@@ -110,7 +110,7 @@ object PlatformApi {
         )
     }
 
-    /** POST /v1/devices/me/health — periodic device telemetry for the fleet dashboard. */
+    /** POST /v1/devices/me/health - periodic device telemetry for the fleet dashboard. */
     fun reportHealth(
         baseUrl: String,
         accessToken: String,
@@ -131,7 +131,7 @@ object PlatformApi {
         request(baseUrl, "POST", "/devices/me/health", body, bearer = accessToken)
     }
 
-    /** POST /v1/devices/me/events — batch of lightweight device events (e.g. call detected). */
+    /** POST /v1/devices/me/events - batch of lightweight device events (e.g. call detected). */
     fun reportEvents(baseUrl: String, accessToken: String, events: List<JSONObject>) {
         if (events.isEmpty()) return
         val array = JSONArray()
@@ -141,7 +141,7 @@ object PlatformApi {
 
     data class CallResult(val status: String, val transcript: String?)
 
-    /** GET /v1/devices/me/calls/{id} — pipeline status + transcript for a call this device uploaded. */
+    /** GET /v1/devices/me/calls/{id} - pipeline status + transcript for a call this device uploaded. */
     fun fetchCallResult(baseUrl: String, accessToken: String, callId: String): CallResult {
         val response = request(baseUrl, "GET", "/devices/me/calls/$callId", null, bearer = accessToken)
         val transcript = if (response.isNull("transcript")) null else response.optString("transcript", null)

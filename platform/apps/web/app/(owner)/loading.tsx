@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { OWNER_NAV_ITEMS, navItemFor } from "@/lib/nav";
 
 /**
- * Suspense boundary for the owner console — same reasoning as the platform
+ * Suspense boundary for the owner console - same reasoning as the platform
  * group's: without it a nav click waits on the page's server fetch before
  * anything moves, including the sidebar's own active state.
  *

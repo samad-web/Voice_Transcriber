@@ -2,8 +2,8 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 
 /**
- * Link-shaped button. Every CTA on this site navigates — there is not a single
- * onClick on a content page — so the primitive is an anchor, not a `<button>`,
+ * Link-shaped button. Every CTA on this site navigates - there is not a single
+ * onClick on a content page - so the primitive is an anchor, not a `<button>`,
  * and the whole marketing surface works with zero client JavaScript.
  *
  * Variants follow doc 16 §2.1: primary (accent fill) · secondary (border) ·
@@ -16,7 +16,7 @@ export type ButtonSize = "sm" | "md" | "lg";
 const BASE =
   "inline-flex items-center justify-center gap-2 rounded-md font-medium " +
   "transition-colors duration-150 ease-out " +
-  // Never removed. Doc 16 §1.5 — with no heavy borders in this system, the
+  // Never removed. Doc 16 §1.5 - with no heavy borders in this system, the
   // focus ring is the only affordance a keyboard user gets.
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
@@ -83,7 +83,7 @@ export function ButtonLink({
   );
 }
 
-/** A text link inside prose. Underlined by default — colour alone is not a
+/** A text link inside prose. Underlined by default - colour alone is not a
  *  sufficient affordance for a link in running text (WCAG 1.4.1). */
 export function TextLink({
   href,

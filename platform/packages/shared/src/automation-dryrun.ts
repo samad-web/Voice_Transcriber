@@ -1,5 +1,5 @@
 /**
- * Workflow DRY RUN — "if this rule had been live last month, what would it
+ * Workflow DRY RUN - "if this rule had been live last month, what would it
  * have done?"
  *
  * ── WHY ─────────────────────────────────────────────────────────────────
@@ -11,8 +11,8 @@
  *
  * ── PURE, AND WHY THAT MATTERS HERE ─────────────────────────────────────
  *
- * No database, no clock, no `process.env`. Every input — the rule, the
- * historical events, the instant — is handed in. The projection is therefore
+ * No database, no clock, no `process.env`. Every input - the rule, the
+ * historical events, the instant - is handed in. The projection is therefore
  * testable at exact boundaries, and, more importantly, it CANNOT write
  * anything: a preview that could mutate a record would defeat its own purpose.
  * `server`-side code does the fetching; this file does the thinking.
@@ -21,7 +21,7 @@
  *
  * The walk below mirrors the worker's `processEvent()` step for step:
  * validation of conditions and actions first, then `matchesConditions()`, then
- * the actions in order. Same functions, not a re-implementation — a preview
+ * the actions in order. Same functions, not a re-implementation - a preview
  * that diverges from the executor is worse than none, because it is believed.
  *
  * Aura's engine makes this unusually honest. Rules are single-shot: there are
@@ -34,7 +34,7 @@
  * ── WHAT IT CANNOT KNOW, SAID OUT LOUD ──────────────────────────────────
  *
  * Anything depending on database state at execution time. Those are returned
- * as `approximations` rather than being quietly assumed to succeed — the same
+ * as `approximations` rather than being quietly assumed to succeed - the same
  * discipline B2 Consultants' dry run applies, and the reason its output can be
  * trusted where a bare "12 matches" could not.
  */
@@ -58,7 +58,7 @@ export interface DryRunEvent {
   occurredAt: Date;
 }
 
-/** The rule being previewed. May be unsaved — a preview precedes saving. */
+/** The rule being previewed. May be unsaved - a preview precedes saving. */
 export interface DryRunRule {
   trigger: AutomationTrigger;
   conditions: unknown;
@@ -85,7 +85,7 @@ export interface ProjectedFiring {
 }
 
 export interface DryRunResult {
-  /** Events considered — the whole window, matched or not. */
+  /** Events considered - the whole window, matched or not. */
   eventsConsidered: number;
   /** How many the conditions matched. */
   matched: number;
@@ -93,7 +93,7 @@ export interface DryRunResult {
   firings: ProjectedFiring[];
   /**
    * Things this projection could not determine. Never empty when an action
-   * depends on live state — see the header.
+   * depends on live state - see the header.
    */
   approximations: string[];
   /** Set when the rule itself does not validate; nothing is projected. */
@@ -131,7 +131,7 @@ export function projectDryRun(
 
   // Only this rule's own trigger. The caller normally filters in SQL too, but
   // a preview that silently counted another trigger's events would overstate
-  // the blast radius — the one number somebody reads off this screen.
+  // the blast radius - the one number somebody reads off this screen.
   const relevant = events.filter((e) => e.trigger === rule.trigger);
 
   for (const event of relevant) {
@@ -158,7 +158,7 @@ export function projectDryRun(
   }
   if (relevant.length === 0) {
     approximations.add(
-      "No events for this trigger in the window — the rule may be correct and simply untested. Widen the window, or check that the trigger fires at all.",
+      "No events for this trigger in the window - the rule may be correct and simply untested. Widen the window, or check that the trigger fires at all.",
     );
   }
 
@@ -179,8 +179,8 @@ function describeAction(
   switch (action.type) {
     case "create_task": {
       const target = resolveTarget(action.assignTo, subject);
-      // A task with no assignee is legal — 0041 makes assignee_user_id
-      // nullable so it sits in a shared queue — so this is a note, not a
+      // A task with no assignee is legal - 0041 makes assignee_user_id
+      // nullable so it sits in a shared queue - so this is a note, not a
       // block. Saying it matters: "assigned to the deal owner" silently
       // becoming "assigned to nobody" is the difference between a rule that
       // works and one that fills an unwatched queue.

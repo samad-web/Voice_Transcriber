@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0052 — the digital-presence answer couldn't be saved
+-- 0052 - the digital-presence answer couldn't be saved
 --
 -- THE BUG THIS FIXES
 --
@@ -7,14 +7,14 @@
 -- own grants section reasoned that no GRANT was needed, because "0020 granted
 -- SELECT, INSERT, UPDATE table-wide on these tables". That is true for
 -- funnel_submissions and false for funnel_contact_history: 0020 gave that
--- table only SELECT and INSERT table-wide — every UPDATE-able column on it
+-- table only SELECT and INSERT table-wide - every UPDATE-able column on it
 -- has had to be granted BY NAME ever since, which is exactly what 0022 (the
 -- original seven answer columns) and 0028 (crm_satisfied) each did. 0051
 -- missed the same step for digital_presence.
 --
 -- The result, confirmed live in production via `docker logs`: every step-2
 -- submission that reached recordQualification() failed with "permission
--- denied for table funnel_contact_history" — the same failure 0022 exists to
+-- denied for table funnel_contact_history" - the same failure 0022 exists to
 -- describe, recurring for a column that just added itself to the SET list.
 -- Visitors saw "We couldn't save your answers", and anyone who came back
 -- after the 2-hour session cookie aged out saw "Your session expired"

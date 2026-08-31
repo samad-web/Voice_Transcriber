@@ -18,7 +18,7 @@ import type { DbClient } from "./crm-dispatch";
  *
  * The API enqueues one row per thing-that-happened and returns; this drains
  * the queue. That split keeps a tenant's own configuration off the critical
- * path of every console action — a rule with four actions must not make
+ * path of every console action - a rule with four actions must not make
  * dragging a card slower, and a rule that throws must not turn a successful
  * stage change into a 500 the user has to interpret.
  *
@@ -26,14 +26,14 @@ import type { DbClient } from "./crm-dispatch";
  *
  * Rules can move deals; a moved deal is a stage change; a stage change is a
  * trigger. That is a loop unless something stops it, and the something is not
- * a depth counter — it is that NOTHING IN THIS FILE ENQUEUES AN EVENT. Only
+ * a depth counter - it is that NOTHING IN THIS FILE ENQUEUES AN EVENT. Only
  * the API (a person did something) and the sweep below (a deadline passed)
  * ever insert into automation_events.
  *
  * The cost is real and worth naming: a rule cannot chain into another rule.
  * "When it goes idle, move it to Nurture" will not then fire "when it enters
  * Nurture, create a task". Somebody will eventually want that, and the answer
- * is an explicit, bounded chain depth — not the accidental recursion that
+ * is an explicit, bounded chain depth - not the accidental recursion that
  * removing this constraint would give them.
  *
  * ── NO SEND ACTION ────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ import type { DbClient } from "./crm-dispatch";
  * the console: tasks, notifications, notes, field values, stage moves. A rule
  * that misfires at 3am creates work somebody deletes. A rule that could send
  * mail would reach customers who never asked to be in this CRM, and could not
- * be recalled. Sending stays where B4 put it — one message, composed by a
+ * be recalled. Sending stays where B4 put it - one message, composed by a
  * person, who confirmed the recipient.
  */
 
@@ -114,7 +114,7 @@ export async function applyActions(
               action.priority,
             ],
           );
-          // Telling the assignee, on the same terms as a hand-created task —
+          // Telling the assignee, on the same terms as a hand-created task -
           // an automation that silently fills somebody's queue is worse than
           // one that does nothing, because they find out by being behind.
           if (assignee && rows[0]) {
@@ -128,7 +128,7 @@ export async function applyActions(
           outcomes.push({
             type: action.type,
             ok: true,
-            detail: assignee ? "assigned" : "unassigned — nobody to give it to",
+            detail: assignee ? "assigned" : "unassigned - nobody to give it to",
           });
           break;
         }
@@ -303,7 +303,7 @@ async function moveStage(
     [dealId, stage, status],
   );
   // The ledger records WHO moved it, and for an automation that is not a
-  // user — `actor_label` carries it, the same two-column shape interactions
+  // user - `actor_label` carries it, the same two-column shape interactions
   // uses for a device.
   await client.query(
     `INSERT INTO deal_stage_transitions
@@ -398,7 +398,7 @@ export async function drainAutomationEvents(): Promise<number> {
       processed++;
     } catch (err) {
       // attempts is incremented WITHOUT setting processed_at, so it retries
-      // until MAX_ATTEMPTS and then parks — visible in the table rather than
+      // until MAX_ATTEMPTS and then parks - visible in the table rather than
       // silently gone.
       await getAdminPool().query(
         `UPDATE automation_events SET attempts = attempts + 1, error = $2 WHERE id = $1`,
@@ -414,7 +414,7 @@ export async function drainAutomationEvents(): Promise<number> {
  * The triggers no person causes: a deadline passing.
  *
  * Enqueues rather than executing, so sweep-produced events go through exactly
- * the same path as everything else — one place where rules are matched and
+ * the same path as everything else - one place where rules are matched and
  * one place where runs are recorded.
  *
  * Both queries are guarded by "does any rule actually want this?", so a

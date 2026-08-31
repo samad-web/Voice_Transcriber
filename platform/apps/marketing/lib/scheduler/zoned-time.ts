@@ -83,7 +83,7 @@ export function zonedDateParts(
  * pass two re-reads the offset at that corrected instant. That converges for
  * every real zone, and the market this ships to (Asia/Kolkata) has no DST at
  * all, so pass two is a no-op there. For a DST zone the residual ambiguity is
- * the hour that repeats or the hour that does not exist at a transition — the
+ * the hour that repeats or the hour that does not exist at a transition - the
  * generator only ever asks for business hours, which no jurisdiction schedules
  * a transition inside.
  */
@@ -101,7 +101,7 @@ export function zonedTimeToUtc(
   return new Date(secondPass);
 }
 
-/** `10:30` → minutes since midnight. Throws on anything else — a malformed
+/** `10:30` → minutes since midnight. Throws on anything else - a malformed
  *  business-hours env var must fail at boot, not silently open the calendar. */
 export function parseClock(value: string): number {
   const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());

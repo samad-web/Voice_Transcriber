@@ -6,7 +6,7 @@ import { DbService } from "../../db/db.service";
 import { deleteCalendarEvents } from "./google-calendar-delete";
 
 /**
- * Marketing funnel leads — the platform-operator surface.
+ * Marketing funnel leads - the platform-operator surface.
  *
  * Cross-tenant by nature: an enquiry has no org yet, which is the whole point,
  * so this uses the admin pool exactly as AdminController does. The admin pool
@@ -17,9 +17,9 @@ import { deleteCalendarEvents } from "./google-calendar-delete";
  * There is deliberately no provisioning logic here. Converting a lead is two
  * steps that already exist:
  *
- *   1. POST /v1/admin/tenants   — creates the org, workspace, instance and the
+ *   1. POST /v1/admin/tenants   - creates the org, workspace, instance and the
  *                                 one-time enrollment key. Tested, in use.
- *   2. POST /v1/admin/leads/:id/link — records that THIS enquiry became THAT org.
+ *   2. POST /v1/admin/leads/:id/link - records that THIS enquiry became THAT org.
  *
  * Re-implementing step 1 here would mean two copies of a five-table transaction
  * that mints a credential, drifting apart the first time either is touched.
@@ -37,14 +37,14 @@ const RejectBody = z.object({
   /**
    * Queue the rejection EMAIL.
    *
-   * DEFAULT FALSE — email is on hold at the owner's instruction (2026-08-08)
+   * DEFAULT FALSE - email is on hold at the owner's instruction (2026-08-08)
    * while WhatsApp is the channel being used. The code path is intact and
    * tested; it is simply not the default. Flip this back to `true` when a mail
    * provider is configured and the decision is reversed.
    */
   notify: z.boolean().default(false),
   /**
-   * Queue the rejection WHATSAPP message. DEFAULT TRUE — this is now the
+   * Queue the rejection WHATSAPP message. DEFAULT TRUE - this is now the
    * channel this business actually replies on, and the one the funnel collects
    * a number for.
    */
@@ -119,7 +119,7 @@ export class LeadsController {
          -- legitimately touch several slots over its life (booked, released by a
          -- reject, booked again), and a plain join would emit one lead row per
          -- slot and silently duplicate the lead in the list. Only slots still in
-         -- 'booked' count — a released or cancelled one is not a call anybody is
+         -- 'booked' count - a released or cancelled one is not a call anybody is
          -- turning up to. Newest first, because a rebooking supersedes.
          LEFT JOIN LATERAL (
            SELECT b.starts_at, b.ends_at, b.meeting_url
@@ -145,7 +145,7 @@ export class LeadsController {
    * The whole point of the button is that the person hears back. Marking the
    * row and queueing the email in the SAME transaction is what makes that
    * true: if the outbox insert fails, the rejection rolls back too, and the
-   * lead stays in the operator's queue looking undone — which it is. The
+   * lead stays in the operator's queue looking undone - which it is. The
    * alternative, a rejected lead with no message queued, is silent and
    * invisible, and the person is simply never told.
    *
@@ -167,7 +167,7 @@ export class LeadsController {
    * will not touch, and both need a human to be able to act:
    *
    *   · bookings that predate the feature, which migration 0032 settled as
-   *     'dead' precisely so nobody was messaged retrospectively — but the
+   *     'dead' precisely so nobody was messaged retrospectively - but the
    *     operator may still want to send one particular person their link;
    *   · a genuine resend, when the first message failed, or the person says
    *     they never got it.
@@ -176,7 +176,7 @@ export class LeadsController {
    *
    * The outbox's unique key makes `enqueueFollowUp` idempotent per (submission,
    * template, channel), which is right for the automatic path and wrong here:
-   * with an existing row — 'dead' from 0032, 'sent' from an earlier send — an
+   * with an existing row - 'dead' from 0032, 'sent' from an earlier send - an
    * INSERT ... ON CONFLICT DO NOTHING would return quietly and send nothing,
    * while the console reported success. Pressing a button labelled "Send" and
    * having nothing sent, with no error, is the worst of the available
@@ -251,8 +251,8 @@ export class LeadsController {
         startsAt: lead.starts_at,
         /**
          * Reported so the console can say which message is actually going out.
-         * With no Meet link the copy is still correct — `fillTemplate` removes
-         * the sentence rather than substituting a word — but it confirms a time
+         * With no Meet link the copy is still correct - `fillTemplate` removes
+         * the sentence rather than substituting a word - but it confirms a time
          * without a way to join, and an operator pressing this to get someone a
          * link deserves to be told that is not what happened.
          */
@@ -302,7 +302,7 @@ export class LeadsController {
 
       // ON CONFLICT DO NOTHING against funnel_followups_once, which is now
       // (submission_id, template, channel): a lead rejected, un-rejected and
-      // rejected again must not be messaged twice on the same channel — but
+      // rejected again must not be messaged twice on the same channel - but
       // email and WhatsApp are separate rows and neither blocks the other.
       const queue = async (channel: "email" | "whatsapp") => {
         const q = await client.query(
@@ -328,7 +328,7 @@ export class LeadsController {
       //
       // Rejecting someone who has booked a call used to leave that call in the
       // diary. The operator had an appointment on Monday with a person they had
-      // just declined, and the slot stayed unavailable to a real prospect —
+      // just declined, and the slot stayed unavailable to a real prospect -
       // found on 2026-08-09 by rejecting a test lead that held a slot and
       // watching it sit there.
       //
@@ -338,13 +338,13 @@ export class LeadsController {
       //
       // Read BEFORE the update, in two statements rather than one.
       // `UPDATE ... RETURNING` in Postgres returns the NEW row, so returning
-      // calendar_event_id from the update would report NULL every time — the
+      // calendar_event_id from the update would report NULL every time - the
       // value it was just set to. Both statements are inside this transaction,
       // so nothing can slip between them.
       //
       // Why the id matters: the slot row has to be wiped so the time can be
       // booked again, but a Google Calendar event may still exist for it, and
-      // this API cannot delete that — the calendar client lives in the
+      // this API cannot delete that - the calendar client lives in the
       // marketing app. So it is handed back and the console tells the operator,
       // rather than the event silently outliving the booking it belonged to.
       const { rows: released } = await client.query<{
@@ -388,7 +388,7 @@ export class LeadsController {
 
       // NO audit_log ROW HERE, and that is not an omission.
       //
-      // `audit_log.org_id` is NOT NULL — it is a tenant-scoped table under RLS,
+      // `audit_log.org_id` is NOT NULL - it is a tenant-scoped table under RLS,
       // and a rejected lead has no organization by definition (that is what
       // rejecting it means). The convert path can write there because
       // provisioning produces a real org id first; this one cannot, and passing
@@ -403,7 +403,7 @@ export class LeadsController {
       //
       // AFTER the commit, never inside it. A delete inside the transaction
       // would mean a later rollback leaves the event cancelled against a slot
-      // that is still booked — a meeting that vanished from the calendar while
+      // that is still booked - a meeting that vanished from the calendar while
       // the database still expects it, which nobody would notice until the
       // person turned up. Committing first inverts that into the recoverable
       // failure: the event survives against a released slot, which is visible
@@ -534,7 +534,7 @@ export class LeadsController {
 
       await client.query("COMMIT");
 
-      // Cancel the meetings too, after the commit — same reasoning as reject.
+      // Cancel the meetings too, after the commit - same reasoning as reject.
       // Deleting the person while leaving their call in the team's diary is the
       // same bug in a worse place: an erasure request that leaves their name on
       // a calendar event has not erased them.

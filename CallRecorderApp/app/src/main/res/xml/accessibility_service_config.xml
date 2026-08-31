@@ -5,7 +5,7 @@
   active window (to read the callee's name from the declared view IDs).
 
   NOTE: Google Play policy prohibits using the Accessibility API for call recording,
-  so an app relying on this config cannot be distributed on Play — sideload only.
+  so an app relying on this config cannot be distributed on Play - sideload only.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"

@@ -5,7 +5,7 @@ import { query, withTransaction } from "./db";
  * Reading and claiming booking slots from the public funnel. SERVER ONLY.
  *
  * The marketing site connects as `aura_marketing`, which migrations 0023 and
- * 0027 give SELECT on this table plus UPDATE on exactly six columns — status,
+ * 0027 give SELECT on this table plus UPDATE on exactly six columns - status,
  * submission_id, booked_at, booked_name, calendar_event_id, calendar_error. It
  * cannot INSERT. That is the whole security model of this file: the website may
  * show the diary and take an appointment out of it, and it categorically cannot
@@ -13,7 +13,7 @@ import { query, withTransaction } from "./db";
  *
  * ── HOW THIS RELATES TO lib/scheduler (GOOGLE CALENDAR) ────────────────────
  *
- * Both exist, and they are not alternatives — they were, and that was the bug.
+ * Both exist, and they are not alternatives - they were, and that was the bug.
  * Until 0027 the funnel booked into this table and `lib/scheduler` was reached
  * only by /booked, so a real booking produced a confirmed visitor, a 'booked'
  * row, and no calendar event anywhere.
@@ -31,7 +31,7 @@ import { query, withTransaction } from "./db";
 
 export interface OpenSlot {
   id: string;
-  /** e.g. "Tue, 11 Aug" — rendered by Postgres in the team's zone. */
+  /** e.g. "Tue, 11 Aug" - rendered by Postgres in the team's zone. */
   dayLabel: string;
   /** e.g. "18:30" */
   timeLabel: string;
@@ -43,7 +43,7 @@ export interface OpenSlot {
  *
  * FOUR HOURS, set 2026-08-10 on the owner's instruction (was two). Overridable
  * with SCHEDULER_MIN_NOTICE_MINUTES, and this is the floor the code assumes
- * when nothing is set — the two places that need it agree because they both
+ * when nothing is set - the two places that need it agree because they both
  * read this constant rather than repeating a number.
  */
 export const DEFAULT_NOTICE_MINUTES = 240;
@@ -53,14 +53,14 @@ export const DEFAULT_NOTICE_MINUTES = 240;
  *
  * `starts_at > now() + notice` is not decoration. Offering a slot twenty minutes
  * from now produces a booking nobody on the team sees in time, which is worse
- * than offering nothing — the visitor believes they have an appointment and the
+ * than offering nothing - the visitor believes they have an appointment and the
  * calendar agrees, and only the human is missing.
  *
  * `external_busy_at IS NULL` is the other half, and it comes from the opposite
  * direction: the worker's calendar sweep sets it on any open slot the team is
  * already busy for in Google (migration 0030). Without it the funnel offers
  * times that look free here and are not free to the human who has to show up.
- * Applied to the CLAIM as well, for the same reason the notice window is — the
+ * Applied to the CLAIM as well, for the same reason the notice window is - the
  * picker can sit open while a sweep runs behind it.
  */
 export async function listOpenSlots(
@@ -126,8 +126,8 @@ export type BookResult =
  *
  * The claim used to guard on `starts_at > now()`, which only rules out a slot
  * that has already begun. The picker is rendered once and can sit on screen for
- * as long as the visitor likes — read the page at 09:00, choose 13:00, submit
- * at 12:30 — so the minimum-notice rule was enforceable only at the moment the
+ * as long as the visitor likes - read the page at 09:00, choose 13:00, submit
+ * at 12:30 - so the minimum-notice rule was enforceable only at the moment the
  * list was drawn, and a booking inside the window was reachable by doing
  * nothing more unusual than hesitating. Both queries now apply the same
  * interval, so the guarantee holds at the point it actually matters.
@@ -168,7 +168,7 @@ export async function bookSlot(
   const row = rows[0]!;
 
   // The slot is now genuinely claimed. Mirroring it into Google Calendar comes
-  // second and cannot undo it — see syncBookingToCalendar.
+  // second and cannot undo it - see syncBookingToCalendar.
   const meetingUrl = await syncBookingToCalendar(
     slotId,
     submissionId,
@@ -191,7 +191,7 @@ export type RescheduleResult =
     }
   /** The new time went to somebody else, or slipped inside the notice window. */
   | { ok: false; reason: "taken" }
-  /** The old booking is no longer theirs to move — cancelled, or already moved. */
+  /** The old booking is no longer theirs to move - cancelled, or already moved. */
   | { ok: false; reason: "gone" };
 
 /**
@@ -214,7 +214,7 @@ export type RescheduleResult =
  * ── ORDER: RELEASE FIRST ───────────────────────────────────────────────────
  *
  * Releasing before claiming lets somebody move to an ADJACENT slot without
- * fighting themselves for it, and — more importantly — it is the order that
+ * fighting themselves for it, and - more importantly - it is the order that
  * makes `booking_slots_starts_uniq` a non-issue, since the old row goes back to
  * 'open' before the new one is touched.
  *
@@ -224,7 +224,7 @@ export type RescheduleResult =
  * set, never from the request body. Pinning the release to it means a token for
  * one booking cannot release a different one, even if a slot id were guessed.
  *
- * Google is told AFTER the commit, in the caller — the database decides, the
+ * Google is told AFTER the commit, in the caller - the database decides, the
  * calendar mirrors, and a Google failure must never undo a real reservation.
  */
 export async function rescheduleSlot(
@@ -278,7 +278,7 @@ export async function rescheduleSlot(
     );
     if (claimed.length === 0) {
       // Throwing is what rolls back the release above. Caught immediately below
-      // and turned back into an ordinary "taken" answer — the visitor sees the
+      // and turned back into an ordinary "taken" answer - the visitor sees the
       // same message they would from a lost race on a first booking, and their
       // original slot is still theirs.
       throw new SlotUnavailable();
@@ -299,7 +299,7 @@ export async function rescheduleSlot(
   });
 }
 
-/** Internal control flow for `rescheduleSlot` — never escapes this module. */
+/** Internal control flow for `rescheduleSlot` - never escapes this module. */
 class SlotUnavailable extends Error {}
 
 /**
@@ -315,7 +315,7 @@ class SlotUnavailable extends Error {}
  * So the claim lands first, which means by the time this runs the visitor is
  * already being shown a confirmation. A calendar failure therefore MUST NOT
  * fail the booking. Throwing here would tell someone their booking failed when
- * the slot is genuinely reserved for them — and they would try again and find
+ * the slot is genuinely reserved for them - and they would try again and find
  * their own slot taken. The error is recorded on the row instead, and migration
  * 0027's partial index makes "booked but not in the calendar" a one-line query.
  *
@@ -323,7 +323,7 @@ class SlotUnavailable extends Error {}
  *
  * Without Google credentials `getScheduler()` returns `UnavailableScheduler`,
  * whose `book()` throws by design. That throw means "a caller invented a slot",
- * which is not what happened here — the slot is real, it came out of the
+ * which is not what happened here - the slot is real, it came out of the
  * operator's own diary. The DB-backed booking system works standalone and
  * always has. So `configured` is checked first and the sync is skipped quietly
  * rather than writing a misleading error onto every booking in a deployment
@@ -341,9 +341,9 @@ async function syncBookingToCalendar(
      * Two very different situations arrive here, and conflating them is what
      * made this invisible for three bookings.
      *
-     *   Nobody configured a calendar  — expected, and correctly silent. The
+     *   Nobody configured a calendar  - expected, and correctly silent. The
      *                                   DB-backed booking system works alone.
-     *   A calendar IS configured and was REJECTED — a misconfiguration. The
+     *   A calendar IS configured and was REJECTED - a misconfiguration. The
      *                                   booking looks identical to the visitor
      *                                   and the row looks identical to an
      *                                   operator: event id NULL, error NULL.
@@ -387,7 +387,7 @@ async function syncBookingToCalendar(
 
     const submission = people[0];
     if (!submission) {
-      // The submission vanished between claiming the slot and reading it back —
+      // The submission vanished between claiming the slot and reading it back -
       // an erasure request landing mid-booking is the only realistic cause.
       // Recorded rather than thrown: the slot is still legitimately taken.
       await recordCalendarOutcome(slotId, null, "submission not found when creating the event");

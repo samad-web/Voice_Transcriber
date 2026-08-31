@@ -9,13 +9,13 @@ export interface Step {
 }
 
 /**
- * "How it works" — a numbered sequence. Horizontal on desktop, stacked on
+ * "How it works" - a numbered sequence. Horizontal on desktop, stacked on
  * mobile (doc 10 §3, row 4).
  *
  * An `<ol>`, because the order is the information: handset → upload → AI →
  * CRM. On an unordered list a screen-reader user gets four unrelated cards.
  *
- * The visible number badges are `aria-hidden` — the `<ol>` already announces
+ * The visible number badges are `aria-hidden` - the `<ol>` already announces
  * "1 of 4", and a badge reading "1" next to it produces "1, 1 Capture".
  *
  * The connector rule between steps is drawn with a border on the list item

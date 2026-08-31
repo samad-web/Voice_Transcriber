@@ -32,7 +32,7 @@ export default async function InstancesPage() {
 
       <div className="flex justify-between items-center gap-4">
         <p className="text-xs text-neutral-500 font-sans font-medium max-w-xl">
-          One instance per customer company. Each gets its own isolated tenant — calls, recordings
+          One instance per customer company. Each gets its own isolated tenant - calls, recordings
           and devices never cross between instances.
         </p>
         <Link href="/instances/new">
@@ -47,14 +47,14 @@ export default async function InstancesPage() {
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : data.tenants.length === 0 ? (
         <Card className="flex flex-col items-center py-12 gap-3">
           <Building2 className="h-8 w-8 text-neutral-300" />
           <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-            No instances yet — create one to onboard your first customer
+            No instances yet - create one to onboard your first customer
           </p>
         </Card>
       ) : (

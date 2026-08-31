@@ -9,13 +9,13 @@ import { enqueueFollowUp } from "./funnel-followup-outbox";
  *
  * The obvious design is to insert the outbox row inside the transaction that
  * claims the slot. That transaction runs in the marketing app, as
- * `aura_marketing`, which holds NO grant on `marketing.funnel_followups` — a
+ * `aura_marketing`, which holds NO grant on `marketing.funnel_followups` - a
  * deliberate refusal repeated by migrations 0024, 0025 and 0032. The marketing
  * container is the only one serving unauthenticated public traffic; a public
  * server that can insert into the outbox is a public server that can make us
  * send WhatsApp messages to arbitrary numbers.
  *
- * So the booking writes only what it owns — the slot — and the worker, which is
+ * So the booking writes only what it owns - the slot - and the worker, which is
  * unreachable from the internet, notices and queues the message. The cost is up
  * to one sweep interval of delay on a confirmation. That is the right trade:
  * the person has just seen a confirmation screen with the Meet link on it, so
@@ -91,8 +91,8 @@ export async function sweepBookingConfirmations(): Promise<number> {
 /**
  * Every 60 seconds, matching the follow-up drain it feeds.
  *
- * A tighter loop would not make delivery meaningfully faster — the drain it
- * queues into runs on the same interval — and this is one more timer on a
+ * A tighter loop would not make delivery meaningfully faster - the drain it
+ * queues into runs on the same interval - and this is one more timer on a
  * process already running several.
  */
 export function startBookingConfirmations(): NodeJS.Timeout {

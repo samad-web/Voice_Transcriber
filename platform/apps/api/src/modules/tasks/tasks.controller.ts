@@ -25,7 +25,7 @@ import { DbService } from "../../db/db.service";
 const ListQuery = z.object({
   status: z.enum(["open", "done", "cancelled"]).optional(),
   assigneeUserId: z.string().uuid().optional(),
-  /** `?mine=1` — resolves to the caller, so the console needn't know its own id. */
+  /** `?mine=1` - resolves to the caller, so the console needn't know its own id. */
   mine: z.coerce.boolean().optional(),
   dealId: z.string().uuid().optional(),
   contactId: z.string().uuid().optional(),
@@ -41,7 +41,7 @@ const ListQuery = z.object({
  * `due_on` is rendered with to_char, NOT returned raw.
  *
  * node-postgres parses a `date` column into a JS Date at the SERVER PROCESS's
- * local midnight, and JSON.stringify then emits it as UTC — so on any
+ * local midnight, and JSON.stringify then emits it as UTC - so on any
  * positive-offset host (this platform runs in IST, +05:30) a task due
  * 2026-08-01 goes out as "2026-07-31T18:30:00.000Z" and every due date reads
  * a day early. Caught live; a typecheck cannot see it, because the types are
@@ -53,13 +53,13 @@ const TASK_COLUMNS = `t.id, t.workspace_id, t.title, t.notes, t.contact_id, t.ac
   t.status, t.priority, t.completed_at, t.created_at, t.updated_at`;
 
 /**
- * Follow-up tasks (Track A3, migration 0041) — "call Priya back on Thursday".
+ * Follow-up tasks (Track A3, migration 0041) - "call Priya back on Thursday".
  *
  * Gated on the `task` object type, which joined `PermissionObjectType` with
  * this change; 0041 seeds every system role's task grants to match its
  * contact grants, so no existing user loses access when these routes appear.
  *
- * Sorting is a whitelisted map, never caller SQL — same pattern as
+ * Sorting is a whitelisted map, never caller SQL - same pattern as
  * owner/leads.controller.ts. `due` puts undated tasks last rather than first:
  * a task with no date is not the most urgent thing on the list, which is what
  * a plain ASC would claim.
@@ -96,7 +96,7 @@ export class TasksController {
       const add = (clause: string, value: unknown) => {
         params.push(value);
         // Global replace: the `task` owned-scope clause has two `$?`
-        // placeholders bound to the same value (assignee OR creator) — see
+        // placeholders bound to the same value (assignee OR creator) - see
         // scopeFilter() in common/crm-scope.ts. A single-occurrence replace
         // left the second one as a literal "$?", a Postgres syntax error.
         where.push(clause.replace(/\$\?/g, `$${params.length}`));
@@ -119,12 +119,12 @@ export class TasksController {
       }
 
       // The `owned` half of the permission grid. For a task that means either
-      // END of it — assignee or creator — because a rep who asked a colleague
+      // END of it - assignee or creator - because a rep who asked a colleague
       // to do something still needs to see it. See common/crm-scope.ts.
       const owned = scopeFilter("task", recordScope, "t");
       if (owned) add(owned.sql, owned.value);
 
-      // Overdue means open AND past due — a completed task that was late is
+      // Overdue means open AND past due - a completed task that was late is
       // not something anyone still needs to act on.
       if (q.overdue) where.push("t.status = 'open' AND t.due_on IS NOT NULL AND t.due_on < current_date");
 
@@ -216,7 +216,7 @@ export class TasksController {
 
       // Telling the assignee is the difference between a task list and a
       // to-do list somebody has to remember to check. `notify` drops it when
-      // the assignee IS the creator — being told you gave yourself a task is
+      // the assignee IS the creator - being told you gave yourself a task is
       // exactly the noise that teaches people to ignore the bell.
       if (task.assignee_user_id) {
         await notify(
@@ -279,7 +279,7 @@ export class TasksController {
       if (sets.length === 0) throw new BadRequestException("no fields to update");
 
       // A scoped user editing a task that is neither theirs to do nor theirs
-      // to have asked for matches no row — same 404-not-403 contract the other
+      // to have asked for matches no row - same 404-not-403 contract the other
       // CRM objects use.
       const scopedUpdate = scopeClause("task", recordScope, params.length + 1);
       if (scopedUpdate) params.push(recordScope.userId);
@@ -335,7 +335,7 @@ export class TasksController {
   }
 }
 
-/** No-op when the id is absent — every reference on a task is optional. */
+/** No-op when the id is absent - every reference on a task is optional. */
 async function assertVisible(
   client: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> },
   table: "contacts" | "accounts" | "deals" | "users",
@@ -348,7 +348,7 @@ async function assertVisible(
   if (!found.rowCount) throw new BadRequestException(`${table.replace(/s$/, "")} not found`);
 }
 
-/** Same validate-or-null helper merge/interactions need — see those files. */
+/** Same validate-or-null helper merge/interactions need - see those files. */
 function actorUserId(req: PrincipalRequest): string | null {
   const parsed = z.string().uuid().safeParse(req.principal?.userId);
   return parsed.success ? parsed.data : null;

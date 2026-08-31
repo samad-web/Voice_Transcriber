@@ -3,20 +3,20 @@ import type { PermissionObjectType, PermissionScope } from "@aura/shared";
 import type { PrincipalRequest } from "./auth-principal";
 
 /**
- * Row-level scope for the CRM objects — the `owned` half of migration 0039's
+ * Row-level scope for the CRM objects - the `owned` half of migration 0039's
  * permission grid.
  *
  * ── WHY THIS IS NOT IN THE GUARD ──────────────────────────────────────────
  *
  * A guard answers yes or no to a whole request. "This role may view deals, but
- * only their own" is not a yes-or-no question about the request — it is a
+ * only their own" is not a yes-or-no question about the request - it is a
  * predicate on every row the request touches, and the only place that can be
  * applied is the query. So `CrmPermissionsGuard` resolves the scope and hands
  * it to the controller through the request; each query adds the filter.
  *
  * That split is worth stating because it has a failure mode: a controller that
  * forgets to apply the filter is not a compile error, it is a silent leak. Two
- * things push against that — `scopeFilter()` is the only way to build the
+ * things push against that - `scopeFilter()` is the only way to build the
  * predicate, so it is greppable, and `crm-scope.spec.ts` pins the column each
  * object scopes on.
  *
@@ -25,7 +25,7 @@ import type { PrincipalRequest } from "./auth-principal";
  * Contact, account and deal all carry `owner_user_id`, so ownership is
  * literal. A task does not: it has an assignee and a creator, and a rep who
  * asked a colleague to do something still needs to see it. So a task is
- * "yours" if you are either end of it — which is what a person means when they
+ * "yours" if you are either end of it - which is what a person means when they
  * say "my tasks", and narrower than it sounds, since it is still only tasks
  * you are actually part of.
  */
@@ -62,12 +62,12 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   // Tasks are handled by ownerPredicate's two-column branch below.
   task: null,
   // A conversation's owner is whoever it is assigned to. An UNASSIGNED thread
-  // is therefore invisible to an `owned`-scoped role — which is the intended
+  // is therefore invisible to an `owned`-scoped role - which is the intended
   // reading: the shared queue belongs to whoever can see all of it, and a rep
   // scoped to their own work should not be answering correspondence nobody
   // has routed to them.
   conversation: "assigned_user_id",
-  // A product is a shared catalogue entry, not a person's record — no owner
+  // A product is a shared catalogue entry, not a person's record - no owner
   // column exists and none of its routes use RecordScope/scopeClause.
   product: null,
   quotation: "owner_user_id",
@@ -91,7 +91,7 @@ export function scopeFilter(
   if (scope.scope !== "owned") return null;
   // A scoped role with no resolvable user is a contradiction the guard should
   // already have refused. Returning a predicate that matches NOTHING is the
-  // safe reading of it — an empty list beats everyone's list.
+  // safe reading of it - an empty list beats everyone's list.
   const userId = scope.userId ?? "00000000-0000-0000-0000-000000000000";
 
   const prefix = alias ? `${alias}.` : "";
@@ -99,7 +99,7 @@ export function scopeFilter(
 
   if (column) return { sql: `${prefix}${column} = $?`, value: userId };
 
-  // `task` is the one object with no single owner column — either end of it.
+  // `task` is the one object with no single owner column - either end of it.
   // Both branches compare to the SAME parameter, so the caller still
   // substitutes exactly one value.
   if (objectType === "task") {
@@ -110,7 +110,7 @@ export function scopeFilter(
   }
 
   // Any other null-column object (e.g. `product`, a shared catalogue entry
-  // with no per-record owner) has nothing to restrict `owned` scope BY — that
+  // with no per-record owner) has nothing to restrict `owned` scope BY - that
   // scope should never actually be granted for it, but if it somehow is, the
   // safe reading is "no narrower than `all`", not a query against columns the
   // table doesn't have.
@@ -119,7 +119,7 @@ export function scopeFilter(
 
 /**
  * The same predicate for a query that builds its own parameter list, where
- * `$?` substitution is not available — `WHERE id = $1 AND <this>`.
+ * `$?` substitution is not available - `WHERE id = $1 AND <this>`.
  *
  * Takes the parameter INDEX rather than interpolating the id, because a uuid
  * from a header is still caller-influenced input and this file should contain

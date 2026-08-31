@@ -7,7 +7,7 @@ import { safeNotificationPath, type NotificationInput } from "@aura/shared";
  * Callers so far: task assignment (tasks.controller.ts) and the Layer 2 rule
  * engine. Both go through here rather than writing the table, because the
  * dedupe and link rules below are easy to get subtly wrong in a way nothing
- * fails loudly about — a duplicated notification just quietly trains people
+ * fails loudly about - a duplicated notification just quietly trains people
  * to ignore the bell.
  */
 
@@ -16,7 +16,7 @@ type Queryable = {
 };
 
 /**
- * Returns whether a row was actually written — false means an identical
+ * Returns whether a row was actually written - false means an identical
  * notification already existed and the dedupe key collapsed it.
  *
  * Never notifies a person about their own action. Being told "you assigned

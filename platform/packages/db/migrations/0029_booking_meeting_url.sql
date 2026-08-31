@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0029 — the Google Meet link for a booked call
+-- 0029 - the Google Meet link for a booked call
 --
 -- Google mints a Meet URL when the calendar event is created with a
 -- `conferenceData.createRequest`. It cannot be constructed or guessed, and it
@@ -28,7 +28,7 @@ ALTER TABLE marketing.booking_slots
 -- extend it for the same reason: a column-scoped grant does not cover columns
 -- added later. Without this the public site would create the meeting, receive
 -- the link, and fail with "permission denied for column meeting_url" while
--- writing it down — after the slot was already claimed.
+-- writing it down - after the slot was already claimed.
 ------------------------------------------------------------------------------
 
 GRANT UPDATE (meeting_url) ON marketing.booking_slots TO aura_marketing;
@@ -40,7 +40,7 @@ GRANT UPDATE (meeting_url) ON marketing.booking_slots TO aura_marketing;
 -- applied migration is a record of what ran, not a document to edit.
 --
 -- Guarded on the OLD text. If an operator has since reworded this message in
--- the console, theirs wins and this does nothing — a migration that silently
+-- the console, theirs wins and this does nothing - a migration that silently
 -- overwrote hand-written copy would make the editor untrustworthy.
 --
 -- `{{meet_link}}` is OPTIONAL: fillTemplate() deletes the sentence containing

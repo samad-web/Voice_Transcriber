@@ -39,7 +39,7 @@ class AacEncoder(
     private var finished = false
     private var released = false
 
-    /** Total per-channel frames queued so far — the presentation clock source. */
+    /** Total per-channel frames queued so far - the presentation clock source. */
     private var framesQueued = 0L
 
     /** True if encoding failed; the output file should be considered unusable. */
@@ -74,7 +74,7 @@ class AacEncoder(
             while (offset < length) {
                 val inIndex = codec.dequeueInputBuffer(TIMEOUT_US)
                 if (inIndex < 0) {
-                    // No free input buffer yet — drain outputs and retry WITHOUT
+                    // No free input buffer yet - drain outputs and retry WITHOUT
                     // advancing the offset, so no audio is lost.
                     drain(endOfStream = false)
                     continue

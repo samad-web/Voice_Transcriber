@@ -1,8 +1,8 @@
--- 0045_custom_field_value_provenance.sql — who put this value here.
+-- 0045_custom_field_value_provenance.sql - who put this value here.
 --
 -- 0037 created the three value tables and A4 taught the worker to fill them
 -- from AI extraction. Both were written when exactly one thing wrote these
--- rows, which made "newest extraction wins" an unambiguous rule — and
+-- rows, which made "newest extraction wins" an unambiguous rule - and
 -- apps/worker/src/pipeline/custom-fields.ts says so in its own header:
 --
 --   "WORTH KNOWING when a value-EDITING UI lands: today nothing but this
@@ -18,7 +18,7 @@
 -- my numbers".
 --
 -- So: every row records who wrote it, and the extraction path refuses to
--- overwrite a human. Same precedent as `leads` — upsertLead deliberately
+-- overwrite a human. Same precedent as `leads` - upsertLead deliberately
 -- never touches `stage`/`status` because a person owns those.
 
 DO $$

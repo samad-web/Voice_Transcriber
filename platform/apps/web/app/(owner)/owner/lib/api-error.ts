@@ -1,8 +1,8 @@
 /**
  * Turn a failed API response into a message worth showing.
  *
- * NestJS's ValidationPipe answers a rejected body with `{ message: [...] }` —
- * one entry per failed field — so a naive `body.message` read (and the bare
+ * NestJS's ValidationPipe answers a rejected body with `{ message: [...] }` -
+ * one entry per failed field - so a naive `body.message` read (and the bare
  * `API 400` fallback that follows it) throws that detail away. This joins the
  * array back into one line; a plain string `message` (everything else the API
  * throws) passes through unchanged.

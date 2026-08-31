@@ -17,14 +17,14 @@ interface RecordingDao {
     @Query("SELECT * FROM recordings ORDER BY startedAt DESC")
     fun observeAll(): Flow<List<RecordingEntity>>
 
-    /** Every known file path — the dedupe set for OEM-recording ingestion. */
+    /** Every known file path - the dedupe set for OEM-recording ingestion. */
     @Query("SELECT filePath FROM recordings")
     suspend fun allFilePaths(): List<String>
 
     /**
      * Our own (non-OEM) captures overlapping a time window. Used to drop the near-end-only
      * duplicate once the OEM's both-ends recording of the same call has been ingested.
-     * Already-uploaded rows are excluded — that send can't be taken back.
+     * Already-uploaded rows are excluded - that send can't be taken back.
      */
     @Query(
         "SELECT * FROM recordings " +

@@ -9,8 +9,8 @@ import { listRescheduleSlotsAction, rescheduleToSlotAction } from "./actions";
  *
  * Deliberately the same shape as `SlotPicker` in ../start/funnel-form.tsx, and
  * the same absolute rule: it renders NOTHING until it knows there are real
- * slots. The list is fetched after the card paints, and while it is loading —
- * and if it comes back empty — the visitor is told to reply to the message
+ * slots. The list is fetched after the card paints, and while it is loading -
+ * and if it comes back empty - the visitor is told to reply to the message
  * instead. Doc 16 §0.4: a time that is not genuinely bookable must never
  * appear, so the honest fallback is the default state and the calendar is what
  * has to prove itself.

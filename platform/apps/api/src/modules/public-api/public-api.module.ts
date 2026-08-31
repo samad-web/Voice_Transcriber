@@ -7,7 +7,7 @@ import { PublicApiController } from "./public-api.controller";
 
 /**
  * The external surface: one credential (`api_keys`, 0076), one service, two
- * transports — REST for backends and MCP for model-driven agents.
+ * transports - REST for backends and MCP for model-driven agents.
  *
  * Deliberately does NOT import AuthModule. Every other controller module pulls
  * it in for `AdminKeyGuard`, which needs `AuthService` to resolve user

@@ -1,10 +1,10 @@
 /**
- * `lib/owner-context.ts` — who is signed in, and may they run the operator
+ * `lib/owner-context.ts` - who is signed in, and may they run the operator
  * console (inventory 13 §3, road map §0.1).
  *
  * `isOperator()` is the single gate in front of every tenant's calls,
  * transcripts and recording audio, and until this file it had no test at all.
- * The Stage 0.1 fix made it fail CLOSED — an empty `PLATFORM_OPERATOR_EMAILS`
+ * The Stage 0.1 fix made it fail CLOSED - an empty `PLATFORM_OPERATOR_EMAILS`
  * means NOBODY, where it used to mean EVERYBODY, which turned
  * `self-signup → sign in → no membership → operator` into a cross-tenant read
  * of the whole platform. The first case below is the regression test for
@@ -13,7 +13,7 @@
  * WHY THE `load()` DANCE. `OPERATOR_EMAILS` (owner-context.ts:63) and
  * `AUTH_ENABLED` (supabase/config.ts:20) are both computed ONCE at module
  * load. Setting an env var after importing the module therefore tests nothing
- * at all — the constant has already been frozen from whatever the shell
+ * at all - the constant has already been frozen from whatever the shell
  * happened to export. Every case must `vi.stubEnv` first, `vi.resetModules()`,
  * and then `await import()` a fresh copy. `load()` is that sequence, and it is
  * the only way any of these assertions mean anything.
@@ -26,7 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Principal } from "./owner-context";
 
 // Hoisted by vitest above the imports. The factory re-runs after every
-// `vi.resetModules()`, so each `load()` gets a FRESH `getSessionUser` mock —
+// `vi.resetModules()`, so each `load()` gets a FRESH `getSessionUser` mock -
 // which is why `load()` returns it rather than closing over one.
 vi.mock("@/lib/supabase/server", () => ({
   getSessionUser: vi.fn(),
@@ -44,13 +44,13 @@ const OPERATOR_EMAIL = "ops@aura.local";
 const OWNER_EMAIL = "owner@rdinterlock.example";
 const SUPABASE_SUBJECT = "9f1c0d5e-0000-4000-8000-00000000abcd";
 
-/** A row exactly as `/v1/auth/context` returns it — `ownerRole` is `string|null`
+/** A row exactly as `/v1/auth/context` returns it - `ownerRole` is `string|null`
  *  there and only becomes an `OwnerRole` after `resolveOwnerRole` (line 143). */
 const rawMembership = (over: Record<string, unknown> = {}) => ({
   orgId: ORG_B,
   orgName: "RD Interlock Brick",
   orgStatus: "active",
-  // `memberships.role` (migration 0001) — a different vocabulary from ownerRole.
+  // `memberships.role` (migration 0001) - a different vocabulary from ownerRole.
   role: "org_admin",
   // The seed does NOT set owner_role (inventory 13 §5.0), so null is the
   // realistic wire value, not "owner".
@@ -77,7 +77,7 @@ interface LoadOptions {
 }
 
 /**
- * Stub the env, drop the module cache, import fresh. In that order — see the
+ * Stub the env, drop the module cache, import fresh. In that order - see the
  * header. Returns the real module plus the fetch spy so a case can assert on
  * the one server-to-server call `getPrincipal` makes.
  */
@@ -114,7 +114,7 @@ let errorSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   // owner-context.ts:72-79 shouts at module load whenever the allowlist is
   // empty with auth on. That is deliberate and most cases here trigger it, so
-  // silence it — and one case below asserts it actually fires.
+  // silence it - and one case below asserts it actually fires.
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -138,7 +138,7 @@ describe("isOperator", () => {
 
   it("FAILS CLOSED: an empty allowlist with auth enabled admits NOBODY", async () => {
     // THE regression test for Stage 0.1. Before the fix this returned true and
-    // any self-signup account with no membership was a platform operator —
+    // any self-signup account with no membership was a platform operator -
     // every tenant's calls, transcripts and recording audio. Both spellings of
     // "empty" have to hold, because a deploy that forgets the variable and a
     // deploy that sets it blank are the same mistake.
@@ -160,7 +160,7 @@ describe("isOperator", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("allows an empty allowlist ONLY when auth is unconfigured — the local-dev escape", async () => {
+  it("allows an empty allowlist ONLY when auth is unconfigured - the local-dev escape", async () => {
     // owner-context.ts:178. Narrow by construction: it requires
     // NEXT_PUBLIC_SUPABASE_URL/ANON_KEY to be absent, which is never true of a
     // deployed console (they are baked in at image build, docker/web.Dockerfile).
@@ -252,8 +252,8 @@ describe("isOperator", () => {
   it("does NOT trim the principal's own email (today's behaviour)", async () => {
     // Asymmetry worth knowing about: the env list is trimmed entry by entry
     // (:65) but the principal's email is only lower-cased (:185). Harmless
-    // today — the value comes from `supabase.auth.getUser()`, which never
-    // returns a padded address — and pinned so that a future path which builds
+    // today - the value comes from `supabase.auth.getUser()`, which never
+    // returns a padded address - and pinned so that a future path which builds
     // a Principal from somewhere less tidy (a JWT claim, Stage 2.1) fails here
     // rather than silently locking an operator out.
     const { isOperator } = await load({ operatorEmails: OPERATOR_EMAIL, authEnabled: true });
@@ -271,7 +271,7 @@ describe("getPrincipal", () => {
     });
 
     await expect(getPrincipal()).resolves.toBeNull();
-    // No session means nothing to resolve — the API is never called.
+    // No session means nothing to resolve - the API is never called.
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -309,7 +309,7 @@ describe("getPrincipal", () => {
   /**
    * DEV_USER_ID exists because the synthetic principal's `userId` is what
    * `orgHeaders` sends as `x-caller-user-id`, and `CrmPermissionsGuard`
-   * refuses a principal without a valid uuid there — so with it unset every
+   * refuses a principal without a valid uuid there - so with it unset every
    * CRM-object page 403s and renders "Data unavailable" in exactly the
    * local-dev mode this branch exists to support.
    */
@@ -327,8 +327,8 @@ describe("getPrincipal", () => {
   /**
    * THE SECURITY PROPERTY, pinned. DEV_USER_ID must be readable ONLY on the
    * no-session/auth-unconfigured branch. If it ever leaked into the
-   * real-session path — say someone "helpfully" wrote `userId ?? DEV_USER_ID`
-   * — a deployment that set it would hand every signed-in visitor a borrowed
+   * real-session path - say someone "helpfully" wrote `userId ?? DEV_USER_ID`
+   * - a deployment that set it would hand every signed-in visitor a borrowed
    * identity. Both halves are asserted: the value the API returned wins, and
    * an API that returns no user still yields null rather than falling back.
    */
@@ -374,7 +374,7 @@ describe("getPrincipal", () => {
   it("asks the API who this SUBJECT is, with cross-tenant headers and no org", async () => {
     // The binding is resolved server-side from the verified session; nothing
     // the client sends names the org. Pinning the request shape is how that
-    // stays true — an `x-org-id` appearing here would mean the console had
+    // stays true - an `x-org-id` appearing here would mean the console had
     // started asserting a tenant instead of asking for one.
     const { getPrincipal, fetchMock } = await load({
       operatorEmails: OPERATOR_EMAIL,
@@ -407,7 +407,7 @@ describe("getPrincipal", () => {
 
     const principal = await getPrincipal();
     expect(principal?.kind).toBe("operator");
-    // They keep /owner too — `membership` is what gates that, and it survives.
+    // They keep /owner too - `membership` is what gates that, and it survives.
     expect(principal?.membership?.orgId).toBe(ORG_B);
     expect(isOperator(principal)).toBe(true);
   });
@@ -469,7 +469,7 @@ describe("getPrincipal", () => {
     // "API offline" state instead of a 500. The consequence is that a session
     // WITH a membership comes back looking exactly like one with none:
     // `kind: "operator"`, `membership: null`. That is safe only because
-    // `isOperator` still demands the allowlist — the API being down must not
+    // `isOperator` still demands the allowlist - the API being down must not
     // promote an owner into a platform operator. Pin BOTH halves; the second is
     // the security property.
     for (const outcome of ["throws", "500", "not-json"] as const) {

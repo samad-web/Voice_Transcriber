@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0033 — nudging people who stopped halfway, with a link back into their form
+-- 0033 - nudging people who stopped halfway, with a link back into their form
 --
 -- `status = 'contact_captured'` already means exactly "gave us their details at
 -- step 1 and never answered the qualifying questions". Three people are sitting
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS marketing.funnel_resume_tokens (
 -- A submission can hold more than one live token: only the hash is stored, so
 -- the raw value of the first nudge's token cannot be recovered to reuse in the
 -- second, and each nudge therefore mints its own. Both stay valid until they
--- expire, which is the harmless outcome — they are two links to the same form,
+-- expire, which is the harmless outcome - they are two links to the same form,
 -- and the form itself refuses once the enquiry is finished.
 --
 -- The index earns its place regardless: Postgres does NOT create one for a
@@ -78,7 +78,7 @@ CREATE INDEX IF NOT EXISTS funnel_resume_tokens_submission
 --
 -- TWO templates, not one sent twice. The outbox's unique key is
 -- (submission_id, template, channel) and that is what guarantees a person is
--- never messaged twice for the same stage — the property worth keeping. A
+-- never messaged twice for the same stage - the property worth keeping. A
 -- second nudge is therefore a second stage, which also means the operator can
 -- word the follow-up differently from the first, and switch either off alone.
 ------------------------------------------------------------------------------
@@ -104,8 +104,8 @@ ALTER TABLE marketing.funnel_followups
 -- Deliberately short. Evolution drives an ordinary WhatsApp account over the
 -- unofficial web protocol, and long, uniform, business-shaped messages to
 -- people who are not contacts are what gets a number flagged. These go to
--- someone who did not finish a form — the least engaged audience the funnel
--- messages — so brevity is a deliverability decision, not a style one.
+-- someone who did not finish a form - the least engaged audience the funnel
+-- messages - so brevity is a deliverability decision, not a style one.
 --
 -- ON CONFLICT DO NOTHING so a redeploy never overwrites an operator's edits.
 --
@@ -125,7 +125,7 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
 
 ('resume_form', 'whatsapp',
  'Hi {{first_name}}, you started telling us about your business on Aura but didn''t finish. ' ||
- 'It takes under a minute — pick up where you left off: {{resume_link}}',
+ 'It takes under a minute - pick up where you left off: {{resume_link}}',
  false),
 
 ('resume_form_2', 'whatsapp',
@@ -142,7 +142,7 @@ ON CONFLICT (key, channel) DO NOTHING;
 -- `used_at` when somebody opens one. It must never be able to CREATE one: an
 -- internet-facing server that can mint resume tokens is an internet-facing
 -- server that can mint working links into any enquiry in the table. Minting is
--- the worker's job, which is not reachable from the internet — the same
+-- the worker's job, which is not reachable from the internet - the same
 -- boundary 0024, 0025 and 0032 drew around the outbox.
 --
 -- SELECT is table-scoped so a column added by a later migration is covered;

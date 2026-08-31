@@ -2,7 +2,7 @@ import { Section, SectionHeading } from "../ui/layout";
 import { FeatureCard } from "../ui/content";
 
 /**
- * What you get — six outcome cards, taken from doc 10 §5.3's left/right table.
+ * What you get - six outcome cards, taken from doc 10 §5.3's left/right table.
  * The rule there is the whole point: the card title is the outcome the owner
  * cares about, never the feature name. "Know why you lose", not "objection
  * extraction".

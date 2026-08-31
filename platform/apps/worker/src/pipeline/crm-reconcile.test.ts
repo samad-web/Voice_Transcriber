@@ -4,7 +4,7 @@ import { includeStageEnabled, reconcileEnabled, reconcileOrg } from "./crm-recon
 
 /**
  * The flags follow email-send.ts's convention exactly (strict "true", near
- * misses stay off) — pinned the same way email-send.spec.ts pins its own.
+ * misses stay off) - pinned the same way email-send.spec.ts pins its own.
  */
 describe("reconcileEnabled", () => {
   it("is OFF when unset", () => {
@@ -21,7 +21,7 @@ describe("reconcileEnabled", () => {
 });
 
 describe("includeStageEnabled", () => {
-  it("is OFF by default — stage/status only mean something once Milestone 2 is verified live", () => {
+  it("is OFF by default - stage/status only mean something once Milestone 2 is verified live", () => {
     expect(includeStageEnabled({})).toBe(false);
   });
 
@@ -53,7 +53,7 @@ const MATCHING_ROW = {
   deal_facts: { customer_name: "Rajesh", brick_quantity: 5000 },
   deal_call_count: 2,
   deal_last_activity_at: new Date("2026-08-06T09:15:00.000Z"),
-  deal_stage: "contacted", // deliberately different — must be IGNORED unless includeStage
+  deal_stage: "contacted", // deliberately different - must be IGNORED unless includeStage
   deal_status: "open",
   contact_id: "contact-1",
   contact_name: "Rajesh",
@@ -138,7 +138,7 @@ describe("reconcileOrg", () => {
     expect(fields).toEqual(["deal.amount", "deal.call_count", "deal.facts", "deal.name"]);
   });
 
-  it("ignores a stage/status mismatch by default — Milestone 2 divergence is expected until verified live", async () => {
+  it("ignores a stage/status mismatch by default - Milestone 2 divergence is expected until verified live", async () => {
     const { client, logged } = fakeReconcileDb([MATCHING_ROW]); // deal_stage differs from lead_stage
     await reconcileOrg(client, "org-1");
     expect(logged.find((l) => l.field === "deal.stage")).toBeUndefined();
@@ -169,7 +169,7 @@ describe("reconcileOrg", () => {
   it("logs again when a mismatch's value actually changes between sweeps", async () => {
     const { client, logged, setRows } = fakeReconcileDb([{ ...MATCHING_ROW, deal_name: "Stale Name" }]);
     await reconcileOrg(client, "org-1");
-    // The lead's title moved again — a fresh divergence, not the same one.
+    // The lead's title moved again - a fresh divergence, not the same one.
     setRows([{ ...MATCHING_ROW, lead_title: "Rajesh Kumar", deal_name: "Stale Name" }]);
     await reconcileOrg(client, "org-1");
     expect(logged.filter((l) => l.field === "deal.name")).toHaveLength(2);

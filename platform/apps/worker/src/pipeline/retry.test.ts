@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The stall sweep — the third way a call goes missing.
+ * The stall sweep - the third way a call goes missing.
  *
  * `retryDueCalls` covers a run that failed and said so, `requeueStuckUploads` a
  * wake-up that never arrived. Neither covers a worker killed while it held the
  * call: the row keeps the in-flight status of the stage it died in, which is
  * neither `FAILED_%` nor `UPLOADED`, so both existing sweeps skip it forever
  * and the customer's transcript never appears. What is asserted below is the
- * pair of properties that makes recovery safe rather than just possible — the
+ * pair of properties that makes recovery safe rather than just possible - the
  * claim is conditional, and the failure goes through the same `fail()` an
  * inline stage failure does, so the retry machinery already in place picks the
  * call up unchanged.
@@ -28,7 +28,7 @@ interface Recorded {
 let stalledRows: Array<Record<string, unknown>> = [];
 /** Statements issued inside the tenant transaction, in order. */
 let issued: Recorded[] = [];
-/** Whether the conditional claim matches — false models losing the race. */
+/** Whether the conditional claim matches - false models losing the race. */
 let claimSucceeds = true;
 
 vi.mock("@aura/db", () => ({
@@ -58,12 +58,12 @@ vi.mock("@aura/db", () => ({
     }),
 }));
 
-// The sweep never publishes — it hands the call to retryDueCalls, which does.
+// The sweep never publishes - it hands the call to retryDueCalls, which does.
 vi.mock("@aura/queue", () => ({ publishPipeline: vi.fn() }));
 
 /**
- * PIPELINE_STALL_MS is read at module load, so — exactly as report 12 §5.6
- * describes for PIPELINE_MAX_ATTEMPTS — a machine that exports it would change
+ * PIPELINE_STALL_MS is read at module load, so - exactly as report 12 §5.6
+ * describes for PIPELINE_MAX_ATTEMPTS - a machine that exports it would change
  * what these tests assert. Stub it away and re-import so the timeout under test
  * is the code's, not the environment's.
  */
@@ -163,7 +163,7 @@ describe("failStalledCalls", () => {
   });
 
   it("fails nothing when the claim loses the race", async () => {
-    // Someone else moved the row between the cross-tenant scan and the write —
+    // Someone else moved the row between the cross-tenant scan and the write -
     // another sweeper, or the operator pressing Reprocess. Writing FAILED_* now
     // would stamp over a call that is legitimately running again.
     stalledRows = [stalledRow("SYNCING")];
@@ -181,7 +181,7 @@ describe("failStalledCalls", () => {
 
     // Failing a slow call costs a second round of billed ASR + analyze, and on
     // SYNCING a second delivery into a customer's CRM, so the window is an hour
-    // by default — and longer than asr-poll's own 30-minute job timeout, which
+    // by default - and longer than asr-poll's own 30-minute job timeout, which
     // owns anything parked in TRANSCRIBING with a job outstanding.
     const seconds = Number(issued[0].values[2]);
     expect(seconds).toBeGreaterThanOrEqual(30 * 60);

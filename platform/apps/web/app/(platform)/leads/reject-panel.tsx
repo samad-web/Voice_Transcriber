@@ -9,22 +9,22 @@ import { rejectLeadAction, type Lead } from "./actions";
  *
  * ── THREE WAYS THE PERSON CAN BE TOLD, AND THEY ARE NOT EQUIVALENT ─────────
  *
- * WHATSAPP, QUEUED — THE DEFAULT since 2026-08-08, at the owner's instruction:
+ * WHATSAPP, QUEUED - THE DEFAULT since 2026-08-08, at the owner's instruction:
  * email is on hold and WhatsApp is the channel this market actually replies on.
  * It goes through Evolution API (apps/worker/src/pipeline/whatsapp.ts), which
  * drives a real WhatsApp account and can therefore send the free-form text this
  * funnel wants. Meta's official Cloud API cannot: outside a 24-hour reply
  * window it permits only pre-approved template messages. The trade is that
  * Evolution is unofficial and the account carries a ban risk if it is used like
- * a bulk sender — fine for replying to someone who contacted you first, which
+ * a bulk sender - fine for replying to someone who contacted you first, which
  * is exactly what a rejection is.
  *
- * EMAIL — OFF by default, code path intact. Queued inside the same transaction
+ * EMAIL - OFF by default, code path intact. Queued inside the same transaction
  * as the rejection when enabled, so the two cannot come apart. Turn it back on
  * by ticking the box; it becomes the default again when a mail provider is
  * configured and the decision is reversed.
  *
- * WHATSAPP, BY HAND — the `wa.me` link. It always works, needs no server
+ * WHATSAPP, BY HAND - the `wa.me` link. It always works, needs no server
  * configuration, and is the honest fallback while Evolution is unconfigured. It
  * opens WhatsApp with the number and message filled in; a human presses send.
  *
@@ -60,7 +60,7 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
     return (
       <div className="mt-4 rounded-md border border-border bg-bg-subtle p-4">
         <p className="text-sm font-semibold text-text">{lead.name} was rejected.</p>
-        {/* "Queued", not "sent", and the caveat is not hedging — it is the
+        {/* "Queued", not "sent", and the caveat is not hedging - it is the
             difference between what happened and what the operator will assume
             happened. The worker's dispatcher falls back to LogOnlyFollowUpDispatcher
             when FUNNEL_FOLLOWUP_ENDPOINT is unset, which writes the message to
@@ -77,7 +77,7 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
               sending it.
             </>
           ) : (
-            "No email was queued — one had already been sent to this person."
+            "No email was queued - one had already been sent to this person."
           )}
         </p>
 
@@ -88,7 +88,7 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
           </p>
         ) : null}
 
-        {/* Rejecting used to leave a booked call sitting in the diary — an
+        {/* Rejecting used to leave a booked call sitting in the diary - an
             appointment with someone just declined, and an hour no real prospect
             could take. The slot is handed back now, and saying so matters: the
             operator would otherwise have no way to know their Monday afternoon
@@ -143,7 +143,7 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
               Open WhatsApp with the message
             </a>
             <p className="mt-1.5 text-xs text-text-muted">
-              Opens WhatsApp with the text ready. You still press send — we have no WhatsApp
+              Opens WhatsApp with the text ready. You still press send - we have no WhatsApp
               Business API account, and Meta does not allow free-form business-initiated messages
               without approved templates.
             </p>
@@ -170,7 +170,7 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
         Also send the rejection email
       </label>
       <p className="mt-1 pl-6 text-xs text-text-muted">
-        On hold — no mail provider is configured, so this would be logged rather than sent.
+        On hold - no mail provider is configured, so this would be logged rather than sent.
       </p>
 
       <label className="mt-2 flex items-center gap-2 text-xs text-text">

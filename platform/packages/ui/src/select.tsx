@@ -15,7 +15,7 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
  * reader regressions in a design system, and it costs a client bundle on every
  * page that uses one. The native control gets type-ahead, mobile's native
  * picker, and correct announcement for free. The trade is that the option list
- * cannot be styled — which for a CRM picker and a country code is no loss.
+ * cannot be styled - which for a CRM picker and a country code is no loss.
  *
  * `appearance-none` + our own chevron so the closed state matches Input; the
  * chevron is `pointer-events-none` so clicks fall through to the select, and

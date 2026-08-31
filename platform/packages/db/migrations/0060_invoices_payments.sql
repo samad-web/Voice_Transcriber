@@ -1,4 +1,4 @@
--- 0060_invoices_payments.sql — Kailash gap Milestone 1, part 2: invoices
+-- 0060_invoices_payments.sql - Kailash gap Milestone 1, part 2: invoices
 -- (with India-GST fields, since that is this business's actual market) and
 -- Razorpay payment collection. Depends on 0059 (products/quotations).
 --
@@ -6,7 +6,7 @@
 -- (Sirah CRM) proven pattern, re-implemented against this app's own guard/
 -- audit conventions rather than copied: POST /invoices/:id/payment-link is a
 -- human clicking "Collect Payment" and only ever creates a Razorpay Payment
--- Link with notify:{sms:false,email:false} (the rep shares the link) — it can
+-- Link with notify:{sms:false,email:false} (the rep shares the link) - it can
 -- never mark an invoice paid by itself. Only the signed razorpay-webhook
 -- controller, verified with a raw-body HMAC compare, can do that.
 
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   subtotal        numeric NOT NULL DEFAULT 0,
   discount_type   text CHECK (discount_type IN ('percent', 'amount')),
   discount_value  numeric NOT NULL DEFAULT 0,
-  -- India GST split, per this business's actual invoicing requirement — not a
+  -- India GST split, per this business's actual invoicing requirement - not a
   -- generic international tax model. cgst+sgst for an intra-state sale,
   -- igst for inter-state; the API decides which pair applies, this table just
   -- holds whichever the API computed.
@@ -223,7 +223,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── Number generation ───────────────────────────────────────────────────
--- Same technique as next_quotation_number() in 0059 — see its comment.
+-- Same technique as next_quotation_number() in 0059 - see its comment.
 CREATE OR REPLACE FUNCTION next_invoice_number(p_org_id uuid) RETURNS text AS $$
 DECLARE
   yr  text := to_char(now(), 'YYYY');

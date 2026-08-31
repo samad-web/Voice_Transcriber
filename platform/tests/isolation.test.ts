@@ -9,7 +9,7 @@
  * ── WHY EVERY ENTRY HAS BOTH DIRECTIONS ─────────────────────────────────────
  *
  * A loop that only asserts "tenant A gets 404 for tenant B's id" is trivially
- * satisfied by an API that 404s everything — a broken route, a typo'd path, a
+ * satisfied by an API that 404s everything - a broken route, a typo'd path, a
  * guard that rejects the fixture's own credential, or a seed that never ran all
  * produce a green suite. So `positive` is mandatory wherever `negative` exists,
  * and the runner refuses to accept an entry that has one without the other.
@@ -22,11 +22,11 @@
  * "Not found" is not one behaviour on this platform, and pretending it is would
  * hide the interesting cases. Three distinct shapes occur, each asserted by name:
  *
- *   404  the common case — the handler checked and threw NotFoundException.
+ *   404  the common case - the handler checked and threw NotFoundException.
  *   400  `POST /v1/devices/:id/logout` and `/wipe` throw BadRequestException,
  *        not NotFoundException (devices.controller.ts:282). A test written to
  *        expect 404 there fails against correct code.
- *   2xx + an EMPTY RESULT — `GET /v1/calls/:id/notes` (empty array),
+ *   2xx + an EMPTY RESULT - `GET /v1/calls/:id/notes` (empty array),
  *        `GET /v1/crm/integrations/:id/deliveries` (empty array) and
  *        `POST /v1/crm/integrations/:id/retry-dead` (`{requeued: 0}`) answer
  *        success with nothing in them. Those three never look up the parent row
@@ -37,7 +37,7 @@
  * ── 200 IS NOT THE SUCCESS CODE ─────────────────────────────────────────────
  *
  * Nest answers 201 from a `@Post` handler unless the handler carries an explicit
- * `@HttpCode` — and `grep -rn HttpCode apps/api/src` finds none. So every POST
+ * `@HttpCode` - and `grep -rn HttpCode apps/api/src` finds none. So every POST
  * in this table succeeds with **201**, and a case that asserts a literal 200 on
  * a POST is asserting a status the API has never returned. `expectOk` (2xx) is
  * the right assertion almost everywhere; where an exact code is asserted on a
@@ -78,7 +78,7 @@ import {
 // Request + assertion helpers
 // ---------------------------------------------------------------------------
 
-/** A v4-shaped uuid that names no organization — doc 13 §2.1 case A3. */
+/** A v4-shaped uuid that names no organization - doc 13 §2.1 case A3. */
 const GHOST_ORG = "00000000-0000-4000-8000-00000000dead";
 
 /** The literal from tests/setup/env.ts, read back off a caller so the two
@@ -91,7 +91,7 @@ const patch = (t: Tenant, path: string, body?: unknown) => call(asTenant(t), "PA
 const del = (t: Tenant, path: string) => call(asTenant(t), "DELETE", path);
 
 function expectStatus(res: ApiResponse, status: number, why: string): void {
-  expect(res.status, `${why} — expected ${status}, got ${res.status}: ${res.text}`).toBe(status);
+  expect(res.status, `${why} - expected ${status}, got ${res.status}: ${res.text}`).toBe(status);
 }
 
 function expectDenied(res: ApiResponse, status: number, message: RegExp): void {
@@ -111,7 +111,7 @@ function expectOk(res: ApiResponse): void {
 type Witness = { sql: string; params: unknown[] };
 
 // ---------------------------------------------------------------------------
-// The route table — doc 13 §1.1, tenant-scoped rows only
+// The route table - doc 13 §1.1, tenant-scoped rows only
 // ---------------------------------------------------------------------------
 
 interface RouteCase {
@@ -120,7 +120,7 @@ interface RouteCase {
   route: string;
   /**
    * Which pool the handler queries. `adminPool` means RLS is BYPASSED and the
-   * application check is the ONLY thing scoping the route — doc 13 §1.3.
+   * application check is the ONLY thing scoping the route - doc 13 §1.3.
    */
   pool: "withOrg" | "adminPool" | "withOrg+adminPool" | "none";
   /** Set instead of negative/positive when the route cannot be looped. */
@@ -195,7 +195,7 @@ const ROUTES: RouteCase[] = [
     negative: async () => {
       // No id in the path: the isolation claim is that what A creates lands in
       // A and is invisible to B. `api_keys` is one of the routes doc 13 §1.4
-      // names as having zero defence in depth — the INSERT names org_id, but
+      // names as having zero defence in depth - the INSERT names org_id, but
       // nothing re-checks it on read.
       const created = await post(A, "/apikeys", { name: "made-by-a" });
       expectOk(created);
@@ -343,7 +343,7 @@ const ROUTES: RouteCase[] = [
       );
     },
     positive: async () => {
-      // ANALYZE_STUB=1 (childEnv) makes this deterministic and offline —
+      // ANALYZE_STUB=1 (childEnv) makes this deterministic and offline -
       // `analyzeTranscript` short-circuits at packages/llm/src/index.ts:199.
       expectOk(await post(A, `/agents/${A.agentId}/test`, { callId: A.callId }));
     },
@@ -358,7 +358,7 @@ const ROUTES: RouteCase[] = [
       const res = await get(A, "/analytics/overview");
       expectOk(res);
       // Both tenants hold exactly one call and one device. A total of 2 would
-      // be the aggregate leaking across the boundary — the failure mode a
+      // be the aggregate leaking across the boundary - the failure mode a
       // per-row id check cannot see.
       expect(res.body.calls.total).toBe(1);
       expect(res.body.devices.total).toBe(1);
@@ -403,12 +403,12 @@ const ROUTES: RouteCase[] = [
     n: 21,
     route: "GET /v1/billing/invoices",
     pool: "none",
-    // doc 13 §1.5: passes TenantGuard but never touches a tenant table — it
+    // doc 13 §1.5: passes TenantGuard but never touches a tenant table - it
     // returns the literal `{invoices: []}` (billing.controller.ts:65). Looping
     // it would assert "A's response differs from B's" against two identical
     // constants and fail for a reason that has nothing to do with tenancy.
     excluded:
-      "returns a constant `{invoices: []}` — no tenant data exists for A and B to differ on",
+      "returns a constant `{invoices: []}` - no tenant data exists for A and B to differ on",
   },
 
   // ── calls ────────────────────────────────────────────────────────────────
@@ -420,7 +420,7 @@ const ROUTES: RouteCase[] = [
       const res = await get(A, "/calls");
       expectOk(res);
       expect(res.body.calls.map((c: any) => c.id)).not.toContain(B.callId);
-      // `total` is a separate COUNT query with the same predicate — a scoping
+      // `total` is a separate COUNT query with the same predicate - a scoping
       // bug in one and not the other is exactly what "showing 1 of 2" looks like.
       expect(res.body.total).toBe(1);
     },
@@ -458,7 +458,7 @@ const ROUTES: RouteCase[] = [
     positive: async () => {
       const res = await get(A, `/calls/${A.callId}/audio`);
       expectOk(res);
-      // The presigned URL must name A's own key — a leak here hands out a URL
+      // The presigned URL must name A's own key - a leak here hands out a URL
       // that works, which no status code would reveal.
       expect(res.body.url).toContain(`org/${A.orgId}/calls/${A.callId}.m4a`);
       expect(res.body.url).not.toContain(B.orgId);
@@ -484,7 +484,7 @@ const ROUTES: RouteCase[] = [
     pool: "withOrg",
     witness: bCall,
     negative: async () => {
-      // No id in the path — the tenant scope is entirely implicit, which is
+      // No id in the path - the tenant scope is entirely implicit, which is
       // what makes a bulk UPDATE the worst place for it to be wrong. One
       // request would rewind BOTH tenants' backlogs if it were.
       const res = await post(A, "/calls/reprocess-backlog", { statuses: ["COMPLETE"] });
@@ -499,7 +499,7 @@ const ROUTES: RouteCase[] = [
       // answered 500. Reading only the call status afterwards reported "did not
       // move" and hid the 500 that caused it.
       expectOk(await post(A, "/calls/reprocess-backlog", { statuses: ["COMPLETE"] }));
-      // The rewind is SYNCHRONOUS — the DB flip is the source of truth and the
+      // The rewind is SYNCHRONOUS - the DB flip is the source of truth and the
       // queue is only a wake-up (calls.controller.ts:528), exactly as the
       // single-call path works, and global.ts does not even start the worker.
       // So this is a straight read, not a poll.
@@ -526,7 +526,7 @@ const ROUTES: RouteCase[] = [
     negative: async () => {
       // EMPTY RESULT, not 404. notes.controller.ts:34 selects straight from
       // call_notes without ever looking up the parent call, so RLS on
-      // call_notes is the only thing scoping it — there is no application
+      // call_notes is the only thing scoping it - there is no application
       // check here to fall back on.
       const res = await get(A, `/calls/${B.callId}/notes`);
       expectStatus(res, 200, "foreign call's notes");
@@ -562,7 +562,7 @@ const ROUTES: RouteCase[] = [
     pool: "none",
     // doc 13 §1.5. The catalogue is a static export from @aura/shared
     // (crm.controller.ts:135); identical for every tenant by construction.
-    excluded: "serves the static @aura/shared catalogue — identical for every tenant",
+    excluded: "serves the static @aura/shared catalogue - identical for every tenant",
   },
   {
     n: 32,
@@ -629,7 +629,7 @@ const ROUTES: RouteCase[] = [
       expectOk(res);
       expect(res.body.integrations.map((i: any) => i.id)).not.toContain(B.crmIntegrationId);
       // The three per-row counters are correlated subqueries over crm_sync_log
-      // with no org predicate of their own — if RLS were off they would count
+      // with no org predicate of their own - if RLS were off they would count
       // both tenants' deliveries into A's row.
       expect(res.body.integrations[0].dead).toBe(1);
     },
@@ -737,7 +737,7 @@ const ROUTES: RouteCase[] = [
     pool: "withOrg",
     witness: bSyncRow,
     negative: async () => {
-      // EMPTY RESULT, not 404 — a bulk UPDATE keyed on integration_id with no
+      // EMPTY RESULT, not 404 - a bulk UPDATE keyed on integration_id with no
       // org check (crm.controller.ts:489). The status says nothing; the witness
       // is the assertion.
       //
@@ -762,7 +762,7 @@ const ROUTES: RouteCase[] = [
     pool: "withOrg",
     witness: bDevice,
     negative: async () => {
-      // 400, NOT 404 — devices.controller.ts:282 throws BadRequestException.
+      // 400, NOT 404 - devices.controller.ts:282 throws BadRequestException.
       expectDenied(await post(A, `/devices/${B.deviceId}/logout`), 400, /device not found in this org/);
     },
     positive: async () => {
@@ -845,7 +845,7 @@ const ROUTES: RouteCase[] = [
       expectOk(res);
       expect(res.body.instance.id).toBe(A.instanceId);
       // The detail page's two child lists are separate queries keyed on
-      // instance_id with no org predicate — both must be scoped by RLS.
+      // instance_id with no org predicate - both must be scoped by RLS.
       expect(res.body.devices.map((d: any) => d.id)).toEqual([A.deviceId]);
     },
   },
@@ -866,7 +866,7 @@ const ROUTES: RouteCase[] = [
     },
     positive: async () => {
       // A's instance has one call, so the plain DELETE is a 409 by design
-      // (instances.controller.ts:199) — that refusal already proves the row was
+      // (instances.controller.ts:199) - that refusal already proves the row was
       // found in A's org, and purgeCalls=true then completes it.
       expectStatus(await del(A, `/instances/${A.instanceId}`), 409, "instance still has calls");
       expectOk(await del(A, `/instances/${A.instanceId}?purgeCalls=true`));
@@ -938,7 +938,7 @@ const ROUTES: RouteCase[] = [
       expectOk(res);
       expect(res.body.lead.id).toBe(A.leadId);
       // The call history is matched on the contact hash with no org predicate
-      // (leads.controller.ts:207) — B's calls must not appear even though B's
+      // (leads.controller.ts:207) - B's calls must not appear even though B's
       // contact hash is a different number entirely.
       expect(res.body.calls.map((c: any) => c.id)).toEqual([A.callId]);
     },
@@ -987,7 +987,7 @@ const ROUTES: RouteCase[] = [
     witness: bDevice,
     negative: async () => {
       // No x-caller-owner-role header is sent, and that is deliberate: doc 13
-      // §2.4 O4 — an admin-key caller that omits it passes every
+      // §2.4 O4 - an admin-key caller that omits it passes every
       // @RequireOwnerRole. This test is about tenancy, and it must not be able
       // to pass because the persona guard rejected it for an unrelated reason.
       expectDenied(
@@ -1042,8 +1042,8 @@ const ROUTES: RouteCase[] = [
       );
     },
     positive: async () => {
-      // 409, and that IS the positive result. The membership lookup succeeded —
-      // which is the reachability claim — and the handler then refused on a
+      // 409, and that IS the positive result. The membership lookup succeeded -
+      // which is the reachability claim - and the handler then refused on a
       // different ground: the fixture owner has no sso_subject, so there is no
       // console login to reset (owners.controller.ts:210). Anything that
       // reached Supabase from a test would be a defect in the harness.
@@ -1059,7 +1059,7 @@ const ROUTES: RouteCase[] = [
     witness: bOwnerMembership,
     negative: async () => {
       // The one route that deliberately mixes pools: after the RLS-scoped
-      // delete it asks `adminPool()` — RLS OFF — whether this human holds a
+      // delete it asks `adminPool()` - RLS OFF - whether this human holds a
       // membership anywhere else (owners.controller.ts:287). The witness is
       // what proves the RLS-scoped half stayed scoped.
       expectDenied(await del(A, `/owners/${B.userId}`), 404, /owner not found in this instance/);
@@ -1069,7 +1069,7 @@ const ROUTES: RouteCase[] = [
       expectOk(res);
       expect(res.body.revoked).toBe(true);
       // No sso_subject on the fixture owner, so the Supabase branch is never
-      // entered — see the tenants.ts comment on why that is deliberate.
+      // entered - see the tenants.ts comment on why that is deliberate.
       expect(res.body.loginDeleted).toBe(false);
     },
   },
@@ -1081,13 +1081,13 @@ const ROUTES: RouteCase[] = [
     pool: "withOrg",
     witness: bCall,
     negative: async () => {
-      // 404 — and the status code is load-bearing here in a way it is nowhere
+      // 404 - and the status code is load-bearing here in a way it is nowhere
       // else in this table.
       //
       // This case previously asserted `200 {status: "COMPLETED", purged: []}`,
       // which is what the handler really did: every statement is an unqualified
       // DELETE keyed on call_id, and the receipt was minted unconditionally at
-      // the end. No data leaked — RLS scoped the DELETEs — but tenant A walked
+      // the end. No data leaked - RLS scoped the DELETEs - but tenant A walked
       // away with an HMAC-signed (JWT_SECRET), hashed attestation that tenant
       // B's call had been erased, for a call it cannot see and that was never
       // touched. Report 12 §3.6: a receipt that overstates what was deleted is
@@ -1127,7 +1127,7 @@ const ROUTES: RouteCase[] = [
       const res = await get(A, "/members");
       expectOk(res);
       expect(res.body.members.map((m: any) => m.email)).not.toContain(B.userEmail);
-      // The shared human IS a member of both — they must appear exactly once,
+      // The shared human IS a member of both - they must appear exactly once,
       // with A's row, not twice.
       const shared = res.body.members.filter((m: any) => m.email === SHARED_USER.email);
       expect(shared).toHaveLength(1);
@@ -1174,7 +1174,7 @@ const ROUTES: RouteCase[] = [
     // same `user_id` is the same human in every org they belong to, and
     // `users` has no org_id and no RLS at all.
     negative: async () => {
-      // (a) The shared human, edited under A. This SUCCEEDS — and must leave
+      // (a) The shared human, edited under A. This SUCCEEDS - and must leave
       //     B's row for the same person byte-identical. The `witness` above is
       //     the assertion; a leak here is a 200 with no error anywhere.
       const shared = await patch(A, `/members/${SHARED_USER.id}`, { role: "workspace_admin" });
@@ -1248,7 +1248,7 @@ const ROUTES: RouteCase[] = [
     pool: "withOrg",
     witness: bOrg,
     negative: async () => {
-      // No id in the path at all — the org is entirely implicit, and the
+      // No id in the path at all - the org is entirely implicit, and the
       // handler ends with an unqualified `UPDATE instances SET config_version =
       // config_version + 1 WHERE org_id = $1` (tenancy.controller.ts:119).
       // A policy change that reached B would silently re-configure another
@@ -1332,7 +1332,7 @@ beforeAll(async () => {
 
 // Every case re-seeds. The DELETE and PATCH cases consume the very rows the
 // next case asserts on, and a shared fixture would make the suite's result
-// depend on its execution order — the failure mode that is hardest to read and
+// depend on its execution order - the failure mode that is hardest to read and
 // easiest to "fix" by deleting the assertion that noticed.
 beforeEach(async () => {
   await seedTenants();
@@ -1341,7 +1341,7 @@ beforeEach(async () => {
 describe("the fixture contract itself", () => {
   // Doc 13 §5.7 trap 3. These three literals are what the doc says
   // sha256(digits) is; deriving them and then pinning them is what keeps the
-  // fixture honest in both directions — a changed derivation fails here rather
+  // fixture honest in both directions - a changed derivation fails here rather
   // than silently producing a self-consistent but wrong fixture.
   it("derives the number fragments exactly as calls.controller.ts:155-158 does", () => {
     expect(CONTACT_A.hash).toBe(
@@ -1403,7 +1403,7 @@ describe.each(ROUTES)("#$n $route", (rc) => {
     // Deliberately a passing, named test and not an `it.skip`: doc 13 §1.5 is
     // explicit that these must be excluded WITH a reason and not left to
     // silently pass. A reader scanning the output sees the exclusion and why.
-    it(`is excluded from the loop — ${rc.excluded}`, () => {
+    it(`is excluded from the loop - ${rc.excluded}`, () => {
       expect(rc.excluded).toBeTruthy();
     });
     return;
@@ -1426,13 +1426,13 @@ describe.each(ROUTES)("#$n $route", (rc) => {
 });
 
 // ---------------------------------------------------------------------------
-// Session pinning — the credential that CANNOT be aimed at another tenant
+// Session pinning - the credential that CANNOT be aimed at another tenant
 // ---------------------------------------------------------------------------
 
 describe("session pinning (doc 13 §2.1 A9/A10, §2.2 T6)", () => {
   /**
    * `AdminKeyGuard:114` overwrites `x-org-id` with the session's own org before
-   * TenantGuard ever reads it. This is the mechanism Stage 2.4 depends on — the
+   * TenantGuard ever reads it. This is the mechanism Stage 2.4 depends on - the
    * plan's highest-risk item is the web tier giving up its root key, and what it
    * gives it up FOR is this path. If a session could be steered by a header, the
    * replacement credential would be strictly worse than the one it replaces.
@@ -1465,7 +1465,7 @@ describe("session pinning (doc 13 §2.1 A9/A10, §2.2 T6)", () => {
     ];
 
   it.each(pinnedRoutes)(
-    "%s — a tenant-A session sending x-org-id: <tenant B> still gets tenant A",
+    "%s - a tenant-A session sending x-org-id: <tenant B> still gets tenant A",
     async (_label, request, assertIsA) => {
       const plain = await request(asSession(A));
       expectOk(plain);
@@ -1490,7 +1490,7 @@ describe("session pinning (doc 13 §2.1 A9/A10, §2.2 T6)", () => {
     expectOk(await call(asSessionClaiming(A, B), "GET", `/calls/${A.callId}`));
   });
 
-  it("the admin key IS steerable by x-org-id — which is why the loop above exists", async () => {
+  it("the admin key IS steerable by x-org-id - which is why the loop above exists", async () => {
     // Not a defect; it is the documented contract of a cross-tenant credential
     // (AdminKeyGuard's header comment). Pinned here because it is the premise
     // the whole isolation loop rests on: if this stopped being true, every
@@ -1503,7 +1503,7 @@ describe("session pinning (doc 13 §2.1 A9/A10, §2.2 T6)", () => {
 
   it("an admin key naming an org that does not exist is a 404, not an empty read", async () => {
     // doc 13 §2.1 A3. Without this check a typo'd org id reads as "this tenant
-    // has no data" rather than "wrong id" — the failure that looks like data
+    // has no data" rather than "wrong id" - the failure that looks like data
     // loss to a customer.
     const res = await call(
       { label: "admin-key/ghost", headers: { "x-admin-key": adminKey(), "x-org-id": GHOST_ORG } },

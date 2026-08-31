@@ -15,7 +15,7 @@ import {
  *
  * The queue IS the table: crm_sync_log holds one row per (call, integration)
  * with the pending send and when it may next be tried. A worker restart, a
- * broker purge or a redeploy therefore loses nothing — anything still due is
+ * broker purge or a redeploy therefore loses nothing - anything still due is
  * picked up by the next drain. That is the whole reason this isn't a RabbitMQ
  * delayed-retry queue: a lead that took a five-minute call to obtain should not
  * be destroyed by an infrastructure hiccup.
@@ -158,7 +158,7 @@ async function attemptOne(
 
   if (status === "dead") {
     console.error(
-      `call ${callId}: CRM delivery gave up after ${attempts} attempt(s) — ` +
+      `call ${callId}: CRM delivery gave up after ${attempts} attempt(s) - ` +
         `${result.status ?? "no response"} ${result.error ?? ""}`,
     );
   }
@@ -170,7 +170,7 @@ async function attemptOne(
  *
  * Each integration is capped per tick at its share of rate_limit_per_min, so a
  * backlog that built up during an outage doesn't stampede the receiver the
- * moment it recovers — the exact moment it is least able to cope.
+ * moment it recovers - the exact moment it is least able to cope.
  */
 export async function drainOutbox(intervalMs = 15_000): Promise<number> {
   const share = Math.max(1, Math.round(intervalMs / 60_000 * 1000) / 1000);

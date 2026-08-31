@@ -20,7 +20,7 @@
  * grievance officer is a false statutory disclosure**, not a typo. India's DPDP
  * Act 2023 §13 requires a named, reachable grievance officer, and IT Rules 2021
  * r.3(2) the same. A page that names a person who does not hold that role is
- * worse than the honest "not published yet" the footer shows today — it is the
+ * worse than the honest "not published yet" the footer shows today - it is the
  * kind of thing that turns a data complaint into a regulatory one.
  *
  * The same logic covers the registered name, the CIN and the addresses. I can
@@ -33,9 +33,9 @@
  * doing, both flagged in `Build docs/legal/00_COVER_NOTE.md`:
  *
  *   1. Counsel review. These are engineering drafts. Every factual claim about
- *      the system was checked against the source, but the legal framing — DPDP
+ *      the system was checked against the source, but the legal framing - DPDP
  *      consent basis, whether the liability cap is enforceable in India, GDPR
- *      Art. 28 sufficiency for a future EU customer — needs a lawyer.
+ *      Art. 28 sufficiency for a future EU customer - needs a lawyer.
  *   2. ~~The enquiry-retention job.~~ BUILT, 2026-08-09. `enquiryRetentionDays`
  *      is no longer a promise with nothing behind it: the number comes from
  *      `FUNNEL_ENQUIRY_RETENTION_DAYS` in @aura/shared, and
@@ -96,7 +96,7 @@ export interface LegalDetails {
 
   /**
    * Clauses a lawyer must draft. These are not lookups and there is no sensible
-   * default — a liability cap I invented would be either unenforceable or
+   * default - a liability cap I invented would be either unenforceable or
    * ruinous, and I cannot tell you which.
    */
   liabilityClause: string | null;
@@ -120,7 +120,7 @@ export const LEGAL: LegalDetails = {
   telephone: null,
   effectiveDate: null,
   // DECIDED, and enforced. Not null like the rest, because this one is not a
-  // fact about the company — it is a policy choice, and it now has a job behind
+  // fact about the company - it is a policy choice, and it now has a job behind
   // it (apps/worker/src/pipeline/funnel-retention.ts). Both read the same
   // constant, so the published policy cannot drift from what actually deletes.
   enquiryRetentionDays: FUNNEL_ENQUIRY_RETENTION_DAYS,
@@ -139,7 +139,7 @@ export const LEGAL: LegalDetails = {
  *
  * Split from the per-document lists because the privacy policy can be complete
  * while the terms are still waiting on a lawyer, and there is no reason to
- * withhold a finished privacy policy — the document India actually requires —
+ * withhold a finished privacy policy - the document India actually requires -
  * because the liability cap is unsettled.
  */
 const CORE: Array<keyof LegalDetails> = [

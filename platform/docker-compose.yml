@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: aura_dev_password
       POSTGRES_DB: callintel
     ports:
-      # 5433 on the host — a native PostgreSQL install already owns 5432
+      # 5433 on the host - a native PostgreSQL install already owns 5432
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data

@@ -3,7 +3,7 @@ import { Card, Logo, MonoLabel } from "@aura/ui";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "Sign in — Aura Platform" };
+export const metadata: Metadata = { title: "Sign in - Aura Platform" };
 
 const HIGHLIGHTS = [
   "Call capture across your enrolled device fleet",
@@ -26,7 +26,7 @@ export default async function LoginPage({
   return (
     <main className="flex min-h-dvh items-center justify-center p-4 sm:p-6">
       <div className="grid w-full max-w-md grid-cols-1 items-center gap-6 lg:max-w-4xl lg:grid-cols-2 lg:gap-8">
-        {/* Brand panel — desktop only; phones get the compact header in the card. */}
+        {/* Brand panel - desktop only; phones get the compact header in the card. */}
         <div className="hidden flex-col gap-6 pr-2 lg:flex">
           <div className="flex items-center gap-3">
             <Logo size={48} priority />
@@ -36,7 +36,7 @@ export default async function LoginPage({
             </div>
           </div>
 
-          {/* The brand line. Kept verbatim; only the type it is set in changed —
+          {/* The brand line. Kept verbatim; only the type it is set in changed -
               the brutalist uppercase display face is retired (doc 16 §1.2). */}
           <p className="text-4xl leading-tight font-semibold tracking-tight text-text xl:text-5xl">
             Every call,
@@ -60,7 +60,7 @@ export default async function LoginPage({
         </div>
 
         <Card elevated className="w-full space-y-5">
-          {/* Compact brand lockup — the panel above replaces it from lg up. */}
+          {/* Compact brand lockup - the panel above replaces it from lg up. */}
           <div className="flex items-center gap-3 lg:hidden">
             <Logo size={40} priority />
             <div>
@@ -76,7 +76,7 @@ export default async function LoginPage({
 
           {AUTH_ENABLED ? null : (
             <p className="rounded-md border border-warning bg-warning-subtle p-3 text-sm leading-relaxed text-warning-text">
-              Supabase auth not configured — set NEXT_PUBLIC_SUPABASE_URL and
+              Supabase auth not configured - set NEXT_PUBLIC_SUPABASE_URL and
               NEXT_PUBLIC_SUPABASE_ANON_KEY, then restart the web app.
             </p>
           )}

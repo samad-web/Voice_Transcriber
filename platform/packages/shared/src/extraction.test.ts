@@ -13,7 +13,7 @@ import {
  * One tenant-authored field list drives three things: the provider's
  * responseSchema, the post-hoc validation that decides
  * ai_outputs.validation_status, and the call_facts projection. A compiler bug is
- * therefore not a bad field — it is an entire tenant's extraction going wrong
+ * therefore not a bad field - it is an entire tenant's extraction going wrong
  * at once, and validation_status is what qualifyLead reads to decide whether the
  * call becomes a lead.
  *
@@ -98,7 +98,7 @@ describe("compileToJsonSchema", () => {
   });
 
   it("carries the tenant's description onto every property", () => {
-    // The description IS the prompt for that field — a dropped one silently
+    // The description IS the prompt for that field - a dropped one silently
     // degrades extraction quality with no error anywhere.
     const compiled = compileToJsonSchema(RD_SCHEMA) as {
       properties: Record<string, { description?: unknown }>;
@@ -108,7 +108,7 @@ describe("compileToJsonSchema", () => {
     }
   });
 
-  it("does NOT emit min/max — the range is enforced after the call, not by the schema", () => {
+  it("does NOT emit min/max - the range is enforced after the call, not by the schema", () => {
     // brick_quantity declares min 0 / max 10,000,000. Pinned because a reader
     // could reasonably assume the provider enforces it; it does not, and
     // validateExtraction is the only thing that does.
@@ -146,8 +146,8 @@ describe("compileToJsonSchema", () => {
 
   /**
    * An enum with no options is unsatisfiable: it would compile to
-   * `{ enum: [] }`, validate every call as failed, and — with the default lead
-   * rules — silently stop the tenant's board receiving anything. Rejected at
+   * `{ enum: [] }`, validate every call as failed, and - with the default lead
+   * rules - silently stop the tenant's board receiving anything. Rejected at
    * parse time so the agent editor shows it to the author.
    */
   it("rejects an enum field that declares no options instead of compiling an empty enum", () => {
@@ -177,7 +177,7 @@ describe("compileToJsonSchema", () => {
   });
 
   it("still accepts an enum that declares options", () => {
-    // The guard must not catch the ordinary case — RD_SCHEMA above parses, and
+    // The guard must not catch the ordinary case - RD_SCHEMA above parses, and
     // a single-option enum is legal (a yes-only dropdown is odd, not broken).
     expect(() =>
       ExtractionSchema.parse({
@@ -190,7 +190,7 @@ describe("compileToJsonSchema", () => {
 
   it("reads a STORED agent version with an optionless enum as an unconstrained string", () => {
     // Agents are versioned and immutable, so a version saved before the guard
-    // above cannot be corrected in place — and a call analysed today must not
+    // above cannot be corrected in place - and a call analysed today must not
     // blow up on a config that was legal when it was written. Reading degrades
     // the field to a plain string, which both un-breaks the tenant's validation
     // and is what the author meant by leaving the options blank.
@@ -228,7 +228,7 @@ describe("compileToJsonSchema", () => {
   });
 });
 
-describe("validateExtraction — structural checks", () => {
+describe("validateExtraction - structural checks", () => {
   it("accepts the extraction the real agent produces", () => {
     expect(validateExtraction(RD_SCHEMA, RD_OUTPUT)).toStrictEqual([]);
   });
@@ -244,7 +244,7 @@ describe("validateExtraction — structural checks", () => {
 
   it("accepts an empty object for an all-optional schema", () => {
     // `JSON.parse(res.text || "{}")` means an empty provider reply arrives here
-    // as `{}`. It validates — and is then rejected by qualifyLead's minFilled,
+    // as `{}`. It validates - and is then rejected by qualifyLead's minFilled,
     // which is the layer that owns "nothing was said".
     expect(validateExtraction(RD_SCHEMA, {})).toStrictEqual([]);
   });
@@ -282,7 +282,7 @@ describe("validateExtraction — structural checks", () => {
   });
 });
 
-describe("validateExtraction — per-type checks", () => {
+describe("validateExtraction - per-type checks", () => {
   it("rejects a number that arrived as a string", () => {
     // The common provider failure: "5000" instead of 5000. It must be caught,
     // because call_facts writes numbers to value_num and the CRM field map
@@ -366,7 +366,7 @@ describe("validateExtraction — per-type checks", () => {
   });
 
   /**
-   * The check was `Date.parse`, which accepts a bare year — so a model that
+   * The check was `Date.parse`, which accepts a bare year - so a model that
    * answered a quotation_date question with the QUANTITY ("5000") produced a
    * value that validated cleanly and reached the customer's CRM as the year
    * 5000. A quantity is the single most likely wrong answer for this field.
@@ -415,7 +415,7 @@ describe("validateExtraction — per-type checks", () => {
 
   it("rejects a string[] that arrived as a JSON string rather than an array", () => {
     // Exactly what call_facts stores for this type, so a re-validation of a
-    // stored fact would fail — the validator only ever sees provider output.
+    // stored fact would fail - the validator only ever sees provider output.
     expect(
       validateExtraction(RD_SCHEMA, { objections: '["price too high","delivery slow"]' }),
     ).toStrictEqual(['"objections" must be an array of strings']);
@@ -437,7 +437,7 @@ describe("validateExtraction — per-type checks", () => {
     ]);
   });
 
-  it("does NOT filter the model's absent-marker words — that is the worker's job", () => {
+  it("does NOT filter the model's absent-marker words - that is the worker's job", () => {
     // "null"/"N/A"/"not_discussed" are valid strings and validate cleanly here.
     // They are stripped by isAbsent in worker pipeline.ts:60-79 before the facts
     // projection. Pinned so nobody assumes this layer already handled it.

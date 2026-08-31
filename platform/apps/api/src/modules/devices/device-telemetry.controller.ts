@@ -42,7 +42,7 @@ const EventsBody = z.object({
 export class DeviceTelemetryController {
   constructor(private readonly db: DbService) {}
 
-  /** Periodic health beacon — one row per report, plus a last-seen touch. */
+  /** Periodic health beacon - one row per report, plus a last-seen touch. */
   @Post("health")
   async health(@Req() req: DeviceRequest, @Body() body: unknown) {
     const parsed = HealthBody.safeParse(body);
@@ -72,7 +72,7 @@ export class DeviceTelemetryController {
     });
   }
 
-  /** Batched client-side events — audited as a single batch for now. */
+  /** Batched client-side events - audited as a single batch for now. */
   @Post("events")
   async events(@Req() req: DeviceRequest, @Body() body: unknown) {
     const parsed = EventsBody.safeParse(body);
@@ -93,7 +93,7 @@ export class DeviceTelemetryController {
   /**
    * Lets the phone read back the pipeline result for a call it uploaded, so the
    * app can show the transcript + AI extraction in its own recordings list.
-   * Scoped to the calling device — a device can only see its own calls.
+   * Scoped to the calling device - a device can only see its own calls.
    */
   @Get("calls/:callId")
   async callResult(@Req() req: DeviceRequest, @Param("callId", ParseUUIDPipe) callId: string) {

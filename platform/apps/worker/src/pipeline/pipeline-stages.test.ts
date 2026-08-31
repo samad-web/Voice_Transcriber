@@ -8,7 +8,7 @@ import { MAX_PIPELINE_ATTEMPTS, processCall, retryBackoffSeconds } from "./pipel
 /**
  * The failure path of each pipeline stage.
  *
- * The thing under test is not "does transcode work" — it is a pass-through
+ * The thing under test is not "does transcode work" - it is a pass-through
  * today and cannot work incorrectly. It is what happens when a stage *throws*,
  * which is the one path in this file that used to have no code at all: report
  * 12 §4.3 records that `fail()` was only ever called with `'ASR'` and
@@ -45,7 +45,7 @@ function fakeClient() {
       issued.push({ text, values });
       if (throwOn && throwOn.match.test(text)) throw throwOn.error;
 
-      // priorAttempts — a first run, so nothing failed yet.
+      // priorAttempts - a first run, so nothing failed yet.
       if (/SELECT pipeline_attempts/.test(text)) {
         return { rows: [{ pipeline_attempts: 0 }], rowCount: 1 };
       }
@@ -56,11 +56,11 @@ function fakeClient() {
           rowCount: 1,
         };
       }
-      // fail() — returns the attempt it just recorded.
+      // fail() - returns the attempt it just recorded.
       if (/pipeline_attempts = pipeline_attempts \+ 1/.test(text)) {
         return { rows: [{ pipeline_attempts: 1 }], rowCount: 1 };
       }
-      // advance() — the optimistic transition, which wins unless a test is
+      // advance() - the optimistic transition, which wins unless a test is
       // modelling the row having been moved by someone else.
       if (/UPDATE calls\s+SET status = \$3/.test(text)) {
         return claimSucceeds ? { rows: [{ id: CALL_ID }], rowCount: 1 } : { rows: [], rowCount: 0 };
@@ -96,7 +96,7 @@ beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => undefined);
 });
 
-describe("processCall — transcode failure", () => {
+describe("processCall - transcode failure", () => {
   // Everything inside the transcode stage runs under one try; this is the
   // statement that stage issues today, and the ffmpeg call will sit beside it.
   const IN_TRANSCODE = /error_message = NULL, next_attempt_at = NULL/;
@@ -115,7 +115,7 @@ describe("processCall — transcode failure", () => {
   it("writes a status the CHECK constraint and the sweepers both accept", async () => {
     // A typo here (FAILED_TRANSCODING, say) would be rejected by
     // calls_status_check at runtime and would never match the sweeper's
-    // `status LIKE 'FAILED_%'`, so the call would strand exactly as before —
+    // `status LIKE 'FAILED_%'`, so the call would strand exactly as before -
     // with the code looking correct.
     throwOn = { match: IN_TRANSCODE, error: new Error("ffmpeg: exited with code 1") };
     await processCall({ callId: CALL_ID, orgId: ORG_ID });
@@ -143,7 +143,7 @@ describe("processCall — transcode failure", () => {
     expect(failed.values[3]).toBe(MAX_PIPELINE_ATTEMPTS);
     expect(failed.values[4]).toBe(retryBackoffSeconds(1));
     expect(failed.text).toMatch(/next_attempt_at = CASE/);
-    // Attempt counted, and any stale batch-ASR job dropped — a retry submits
+    // Attempt counted, and any stale batch-ASR job dropped - a retry submits
     // its own, and the poller must not be left holding the old id.
     expect(failed.text).toMatch(/pipeline_attempts = pipeline_attempts \+ 1/);
     expect(failed.text).toMatch(/asr_job_id = NULL/);
@@ -161,7 +161,7 @@ describe("processCall — transcode failure", () => {
   it("does not fail a call it never claimed", async () => {
     // Idempotent replay: another worker already moved the call out of UPLOADED,
     // so the claim matches nothing. Stamping FAILED_TRANSCODE here would fail
-    // that worker's run rather than ours — which is why the claim deliberately
+    // that worker's run rather than ours - which is why the claim deliberately
     // sits OUTSIDE the try, and this is the test that keeps it there.
     claimSucceeds = false;
     throwOn = { match: IN_TRANSCODE, error: new Error("ffmpeg: exited with code 1") };
@@ -174,10 +174,10 @@ describe("processCall — transcode failure", () => {
   });
 });
 
-describe("processCall — the other stages still fail as they did", () => {
+describe("processCall - the other stages still fail as they did", () => {
   it("still lands an ASR-stage throw on FAILED_ASR", async () => {
     // The recording lookup is the first statement of the ASR stage. It sits
-    // inside that stage's try — including the duration read that precedes it,
+    // inside that stage's try - including the duration read that precedes it,
     // which used to be outside and could throw straight out of processCall.
     throwOn = {
       match: /SELECT s3_key FROM recordings/,

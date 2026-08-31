@@ -80,7 +80,7 @@ const CustomIntegrationBody = z.object({
   onlyQualified: z.boolean().default(false),
 });
 
-// Every field optional — this is a partial update of an existing integration.
+// Every field optional - this is a partial update of an existing integration.
 const UpdateIntegrationBody = z.object({
   label: z.string().min(1).max(120).optional(),
   webhookUrl: z.string().url().optional(),
@@ -101,7 +101,7 @@ const UpdateIntegrationBody = z.object({
 });
 
 /**
- * Never return auth_secret — only whether one is set. `config` IS returned:
+ * Never return auth_secret - only whether one is set. `config` IS returned:
  * it holds hosts and ids the operator needs to see, which is exactly why
  * credentials must not be put there.
  */
@@ -137,7 +137,7 @@ export class CrmController {
     return { providers: CRM_PROVIDERS, sourcePaths: CRM_SOURCE_PATHS };
   }
 
-  /** Connect a catalogue provider — the normal path. */
+  /** Connect a catalogue provider - the normal path. */
   @Post("integrations")
   async connect(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = ConnectProviderBody.safeParse(body);
@@ -147,7 +147,7 @@ export class CrmController {
     const provider = crmProvider(cfg.provider);
     if (!provider) {
       throw new BadRequestException(
-        `unknown provider "${cfg.provider}" — GET /v1/crm/providers lists the catalogue, ` +
+        `unknown provider "${cfg.provider}" - GET /v1/crm/providers lists the catalogue, ` +
           "or POST /v1/crm/integrations/custom to specify one by hand",
       );
     }
@@ -157,7 +157,7 @@ export class CrmController {
       : provider.targets[0];
     if (!target) {
       throw new BadRequestException(
-        `provider "${provider.id}" has no target "${cfg.target}" — ` +
+        `provider "${provider.id}" has no target "${cfg.target}" - ` +
           `available: ${provider.targets.map((t) => t.id).join(", ")}`,
       );
     }
@@ -166,7 +166,7 @@ export class CrmController {
       throw new BadRequestException(`${provider.auth.secretLabel} is required for ${provider.label}`);
     }
 
-    // Apply the spec's defaults first — a required field with a default (Zoho's
+    // Apply the spec's defaults first - a required field with a default (Zoho's
     // data centre, Salesforce's API version) is satisfied by that default, and
     // reporting it as missing would force clients to echo back a value the
     // catalogue already supplies.
@@ -217,7 +217,7 @@ export class CrmController {
           orgId,
           cfg.workspaceId,
           provider.id,
-          cfg.label ?? `${provider.label} — ${target.label}`,
+          cfg.label ?? `${provider.label} - ${target.label}`,
           target.id,
           // Kept in step with `endpoint` so an older reader still resolves a URL.
           JSON.stringify({ url: target.endpoint }),
@@ -320,7 +320,7 @@ export class CrmController {
 
   /**
    * Partial update: endpoint, auth, headers, config, mapping, retry budget or
-   * status. Only the supplied keys change — COALESCE leaves the rest alone, so
+   * status. Only the supplied keys change - COALESCE leaves the rest alone, so
    * rotating a secret can't accidentally clear the field map.
    */
   @Patch("integrations/:id")
@@ -411,7 +411,7 @@ export class CrmController {
    * workspace has one, and a synthetic call otherwise.
    *
    * Worth its own endpoint because the alternative is finding out from a dead
-   * outbox row after a customer's call has already been lost — a credential
+   * outbox row after a customer's call has already been lost - a credential
    * typo should surface while the operator is still looking at the form.
    */
   @Post("integrations/:id/test")
@@ -424,7 +424,7 @@ export class CrmController {
     return this.tester.test(orgId, id, dryRun.success ? dryRun.data.dryRun : false);
   }
 
-  /** Recent deliveries for one integration — the operator's debugging view. */
+  /** Recent deliveries for one integration - the operator's debugging view. */
   @Get("integrations/:id/deliveries")
   async deliveries(
     @OrgId() orgId: string,
@@ -477,13 +477,13 @@ export class CrmController {
       );
       if (!row) throw new NotFoundException("delivery not found in this org");
       await this.audit(client, orgId, "crm.retry", row.integration_id, req);
-      // The worker's drain picks it up on the next tick — retrying inline here
+      // The worker's drain picks it up on the next tick - retrying inline here
       // would put a 20s CRM timeout in the middle of an HTTP request.
       return { requeued: true, delivery: row };
     });
   }
 
-  /** Requeue every dead delivery for an integration — the "I fixed it" button. */
+  /** Requeue every dead delivery for an integration - the "I fixed it" button. */
   @Post("integrations/:id/retry-dead")
   async retryDead(
     @OrgId() orgId: string,

@@ -19,7 +19,7 @@ import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
-// Platform_admin is reserved for internal staff — tenant self-service is limited
+// Platform_admin is reserved for internal staff - tenant self-service is limited
 // to these four roles (design doc §3.4).
 const Role = z.enum(["org_admin", "workspace_admin", "workspace_member", "viewer"]);
 
@@ -35,7 +35,7 @@ const CreateMemberBody = z.object({
 const UpdateMemberBody = z.object({
   role: Role.optional(),
   /**
-   * Assign a `roles` row (migration 0039) — including a CUSTOM one, which the
+   * Assign a `roles` row (migration 0039) - including a CUSTOM one, which the
    * legacy `role` enum above cannot express. Null clears it, which falls the
    * member back to the grants of whatever system role `role` names.
    *
@@ -153,7 +153,7 @@ export class MembersController {
 
     return this.db.withOrg(orgId, async (client) => {
       // An explicit roleId must name a role in THIS org. Checked up front rather
-      // than left to the FK, which would only catch a wholly non-existent id —
+      // than left to the FK, which would only catch a wholly non-existent id -
       // a real role belonging to a DIFFERENT tenant would satisfy the constraint
       // while granting this member another org's permission grid.
       if (p.roleId != null) {
@@ -168,7 +168,7 @@ export class MembersController {
         // `org_id = $5` is defence in depth, not the primary control. Today the
         // primary control is RLS: withOrg runs on getPool() as `aura_app`, which
         // 0001 creates NOBYPASSRLS, and memberships carries FORCE ROW LEVEL
-        // SECURITY with both USING and WITH CHECK on org_id — so the statement is
+        // SECURITY with both USING and WITH CHECK on org_id - so the statement is
         // already narrowed to the current tenant and cannot reach another org's
         // row. What it did NOT have was any org predicate of its own, and a
         // person's membership set is inherently cross-org: the same user_id is
@@ -184,12 +184,12 @@ export class MembersController {
         // "set this person's role here" means all of them. The plural
         // `{ memberships: rows }` response is that intent. See 0018's header,
         // which is why owner_role is a separate column rather than a reuse of
-        // `role` — an operator's team edit must never regrade a live owner
+        // `role` - an operator's team edit must never regrade a live owner
         // console login.
         //
         // role_id has three cases, in priority order: an explicit roleId wins
         // (including an explicit null, which is why the "was it supplied?" flag
-        // is a separate parameter from the value — COALESCE cannot tell "clear
+        // is a separate parameter from the value - COALESCE cannot tell "clear
         // it" from "leave it alone"); otherwise a role change re-syncs it to the
         // matching system role; otherwise it is left exactly as it was.
         `UPDATE memberships SET
@@ -238,7 +238,7 @@ export class MembersController {
     return this.db.withOrg(orgId, async (client) => {
       // RLS scopes this DELETE to the current org; the global user row is left
       // intact. `org_id = $2` restates that in the statement itself for the same
-      // reason as the PATCH above — an unqualified `WHERE user_id = $1` on
+      // reason as the PATCH above - an unqualified `WHERE user_id = $1` on
       // memberships is one pool swap away from deleting a human's access to
       // every tenant they belong to.
       const res = await client.query("DELETE FROM memberships WHERE user_id = $1 AND org_id = $2", [

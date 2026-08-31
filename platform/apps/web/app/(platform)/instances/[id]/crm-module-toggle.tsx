@@ -10,11 +10,11 @@ import type { OwnerRow } from "./owner-accounts";
 /**
  * CRM on/off for one tenant (migration 0072, `organizations.enabled_modules`).
  *
- * Off by default at creation — see instances/new/instance-form.tsx. Turning
+ * Off by default at creation - see instances/new/instance-form.tsx. Turning
  * it on here seeds the 5 system roles + a default deal pipeline the first
  * time (idempotent: re-enabling after a disable does not reseed). Turning it
- * off does not delete anything already seeded — it revokes access via
- * CrmPermissionsGuard's module check — so flipping it back on later picks
+ * off does not delete anything already seeded - it revokes access via
+ * CrmPermissionsGuard's module check - so flipping it back on later picks
  * up exactly where the tenant left off.
  */
 export function CrmModuleToggle({
@@ -26,7 +26,7 @@ export function CrmModuleToggle({
   orgId: string;
   enabled: boolean;
   instanceName: string;
-  /** Owner accounts for this instance — the people who can actually sign in. */
+  /** Owner accounts for this instance - the people who can actually sign in. */
   owners: OwnerRow[];
 }) {
   const router = useRouter();
@@ -39,7 +39,7 @@ export function CrmModuleToggle({
       const ok = await confirm({
         title: `Turn off CRM for ${instanceName}?`,
         body:
-          "Contacts, Accounts, Deals and everything else in the CRM stay stored — the client's " +
+          "Contacts, Accounts, Deals and everything else in the CRM stay stored - the client's " +
           "team just loses access to them until you switch this back on.",
         confirmLabel: "Turn off CRM",
         tone: "danger",
@@ -95,7 +95,7 @@ export function CrmModuleToggle({
 /**
  * Where this client signs in, shown the moment CRM is switched on.
  *
- * Enabling the module is only half of handing a CRM over — the operator still
+ * Enabling the module is only half of handing a CRM over - the operator still
  * has to tell somebody where to go and confirm a login exists. That answer used
  * to live only in this repo's docs, so it was retold by hand every time.
  *
@@ -136,7 +136,7 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
         variant="secondary"
         className="w-full"
         disabled={!url}
-        // Sync, not `async` — same reasoning as PasswordReveal in
+        // Sync, not `async` - same reasoning as PasswordReveal in
         // owner-accounts.tsx: React discards the return value, so an async
         // handler turns a rejected clipboard write into an unhandled rejection.
         onClick={() => {
@@ -166,7 +166,7 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
         </div>
       ) : (
         <p className="text-xs text-red-700 font-sans font-medium border-2 border-red-600 bg-red-50 p-2.5 leading-relaxed">
-          Nobody can sign in yet. Create one in <strong>Owner accounts</strong> above — that makes
+          Nobody can sign in yet. Create one in <strong>Owner accounts</strong> above - that makes
           the login and grants access to this instance in a single step, and shows a temporary
           password once.
         </p>

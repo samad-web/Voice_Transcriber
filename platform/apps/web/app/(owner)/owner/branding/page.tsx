@@ -4,12 +4,12 @@ import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { BrandingForm, type BrandingView } from "./branding-client";
 
-export const metadata: Metadata = { title: "Branding — Aura" };
+export const metadata: Metadata = { title: "Branding - Aura" };
 
 /**
  * Org logo/colors (Kailash gap Milestone 4, migration 0065).
  *
- * GET /org returns the whole org row — `branding` is one jsonb column on it,
+ * GET /org returns the whole org row - `branding` is one jsonb column on it,
  * any subset of {logoUrl, primaryColor, secondaryColor, browserTitle} may be
  * present, `{}` if never configured. Defaulted to "" here so the form below
  * can stay a set of plain controlled inputs.
@@ -44,7 +44,7 @@ export default async function BrandingPage() {
       <PageHeader title="Branding" context="Settings" />
       <p className="max-w-2xl text-sm text-text-muted">
         Set the logo and colors shown across this org&rsquo;s console, plus the title shown in the
-        browser tab. Only the fields you change are sent — anything you leave alone keeps its
+        browser tab. Only the fields you change are sent - anything you leave alone keeps its
         current value.
       </p>
       <BrandingForm initial={initial} />

@@ -12,7 +12,7 @@ import { connectProviderAction } from "./actions";
  * The form is rendered from the provider spec rather than hand-written per
  * CRM: config fields, their help text and the credential's real name all come
  * from the same object the worker dispatches against. That is what keeps the
- * console honest — a field only appears here because something actually reads
+ * console honest - a field only appears here because something actually reads
  * it at send time.
  */
 
@@ -297,7 +297,7 @@ function ConnectForm({
 
       <FormField label="Name (optional)" name="crm-label">
         <Input
-          placeholder={`${provider.label} — ${target?.label ?? ""}`}
+          placeholder={`${provider.label} - ${target?.label ?? ""}`}
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
@@ -307,7 +307,7 @@ function ConnectForm({
         <MonoLabel>Starting field map</MonoLabel>
         <p className="text-sm leading-snug text-text-muted">
           {Object.keys(target?.fieldMap ?? {}).length === 0
-            ? "No preset — the full call envelope is sent until you define a mapping."
+            ? "No preset - the full call envelope is sent until you define a mapping."
             : "A sensible first mapping is applied on connect. Edit it on the integration card afterwards."}
         </p>
         {Object.entries(target?.fieldMap ?? {}).map(([dest, path]) => (

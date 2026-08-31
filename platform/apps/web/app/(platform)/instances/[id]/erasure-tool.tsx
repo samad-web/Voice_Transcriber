@@ -31,11 +31,11 @@ export function ErasureTool({ orgId }: { orgId: string }) {
       ? [
           `status      : ${receipt.status ?? "erased"}`,
           `call_id     : ${receipt.callId ?? callId}`,
-          `erased_utc  : ${receipt.erasedAtUtc ?? "—"}`,
+          `erased_utc  : ${receipt.erasedAtUtc ?? "-"}`,
           "purged      :",
           ...(receipt.purged ?? []).map((p) => `  - ${p}`),
-          `receipt_hash: ${receipt.receiptHash ?? "—"}`,
-          `signature   : ${receipt.signature ?? "—"}`,
+          `receipt_hash: ${receipt.receiptHash ?? "-"}`,
+          `signature   : ${receipt.signature ?? "-"}`,
         ]
       : [];
 

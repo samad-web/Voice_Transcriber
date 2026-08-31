@@ -8,7 +8,7 @@ const META_SHAPE = {
       id: "lead_1",
       created_time: "2026-08-28T10:00:00+0000",
       form_id: "form_99",
-      form_name: "3D Website — Showroom enquiry",
+      form_name: "3D Website - Showroom enquiry",
       campaign_name: "Diwali push",
       page_id: "page_5",
       field_data: [
@@ -84,7 +84,7 @@ describe("normalizeLeads", () => {
    */
   it("builds match text from the form, campaign and every answer", () => {
     const [lead] = normalizeLeads(META_SHAPE);
-    expect(lead.text).toContain("3D Website — Showroom enquiry");
+    expect(lead.text).toContain("3D Website - Showroom enquiry");
     expect(lead.text).toContain("Diwali push");
     expect(lead.text).toContain("A 3d site for our showroom");
     // The contact's own details ride along; harmless, and a name that happens

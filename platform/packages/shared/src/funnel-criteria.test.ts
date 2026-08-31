@@ -39,7 +39,7 @@ describe("the default criteria reproduce the hard-coded rules exactly", () => {
    *
    * The editor ships with the three clauses `qualify()` has always applied,
    * expressed as data. If the two ever disagree, turning the feature on
-   * silently re-sorts every future lead — and nobody would find out from a
+   * silently re-sorts every future lead - and nobody would find out from a
    * failure, only from a quarter of bad numbers. So they are compared over
    * every answer combination that exists.
    */
@@ -239,7 +239,7 @@ describe("validateCriteria", () => {
   });
 
   it("ACCEPTS a rule with no conditions", () => {
-    // Saving a half-built rule must be possible — an operator adds the rule,
+    // Saving a half-built rule must be possible - an operator adds the rule,
     // then the conditions. It simply never fires, which the editor says.
     const c = base();
     c.rules[0]!.conditions = [];
@@ -256,7 +256,7 @@ describe("validateCriteria", () => {
 describe("describeRule", () => {
   it("reads back as a sentence, with labels not values", () => {
     expect(describeRule(DEFAULT_FUNNEL_CRITERIA.rules[0]!)).toBe(
-      "Monthly telemarketing budget is at least ₹30,000 – ₹40,000 AND " +
+      "Monthly telemarketing budget is at least ₹30,000 - ₹40,000 AND " +
         "How soon do you need this? is As soon as possible",
     );
   });

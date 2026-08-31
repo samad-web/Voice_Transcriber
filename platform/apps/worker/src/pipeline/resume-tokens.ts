@@ -7,13 +7,13 @@ import { getAdminPool } from "@aura/db";
  * ── THE TOKEN IS A BEARER CREDENTIAL ───────────────────────────────────────
  *
  * Whoever holds it can read and complete one stranger's enquiry. That is a low
- * ceiling — the data behind it is the name, email and phone THEY typed, plus
- * six multiple-choice answers — but it is not nothing, and it travels over
+ * ceiling - the data behind it is the name, email and phone THEY typed, plus
+ * six multiple-choice answers - but it is not nothing, and it travels over
  * WhatsApp where it will sit in a chat log indefinitely.
  *
  * So it is treated like a session token, not like an id:
  *
- *   · 32 bytes from a CSPRNG. Not a uuid — uuids are for identifying rows, and
+ *   · 32 bytes from a CSPRNG. Not a uuid - uuids are for identifying rows, and
  *     v4 gives 122 bits with a recognisable shape that invites guessing at the
  *     rest of the table.
  *   · Only sha256 of it is stored. A dump of `funnel_resume_tokens` is then not
@@ -26,7 +26,7 @@ import { getAdminPool } from "@aura/db";
  * Migration 0033 gives `aura_marketing` SELECT and `UPDATE (used_at)` and
  * nothing else. An internet-facing server that can INSERT here is one that can
  * mint a working link into any enquiry in the table. The worker is not
- * reachable from the internet — the same boundary the outbox draws.
+ * reachable from the internet - the same boundary the outbox draws.
  */
 
 /** 14 days. Must comfortably outlive the second nudge, which lands at 2 days. */
@@ -61,7 +61,7 @@ export function hashResumeToken(raw: string): string {
  * valid until they expire, which is harmless: they are two links to the same
  * form, and the form refuses either once the enquiry is finished.
  *
- * Returns null when there is no site URL to build against — see funnelSiteUrl.
+ * Returns null when there is no site URL to build against - see funnelSiteUrl.
  */
 export async function mintResumeLink(submissionId: string): Promise<string | null> {
   const site = funnelSiteUrl();

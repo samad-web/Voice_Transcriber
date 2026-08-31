@@ -17,7 +17,7 @@ export interface Product {
   name: string;
   sku: string | null;
   description: string | null;
-  /** Postgres numeric — comes back as a string. Number() before formatting. */
+  /** Postgres numeric - comes back as a string. Number() before formatting. */
   unit_price: string;
   currency: string;
   tax_rate: string;

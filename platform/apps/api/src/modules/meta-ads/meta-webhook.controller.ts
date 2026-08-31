@@ -18,23 +18,23 @@ interface MetaWebhookBody {
 /**
  * Inbound Facebook/Instagram Lead Ads webhook (Kailash gap Milestone 4).
  *
- * Unauthenticated by necessity — same class of exception as
+ * Unauthenticated by necessity - same class of exception as
  * messaging/webhook/:token and /webhooks/razorpay: Meta cannot present an
  * admin key, so the org is resolved from the (untrusted) page_id in the
- * payload, on the admin pool, before a signature is even checked — and then
+ * payload, on the admin pool, before a signature is even checked - and then
  * verified with THAT org's own access-token-holding connection's app
  * secret... except Meta signs with the platform APP secret, not a per-page
  * one, so verification happens with META_APP_SECRET directly, same as the
  * WhatsApp Cloud API's own webhook would.
  *
  * Captures land on `contacts`/`deals` directly, NOT the legacy `leads` table
- * — see this migration's header (0063) for why.
+ * - see this migration's header (0063) for why.
  */
 @Controller("meta/webhook")
 export class MetaWebhookController {
   constructor(private readonly db: DbService) {}
 
-  /** Meta's subscription handshake — confirms this endpoint is really us. */
+  /** Meta's subscription handshake - confirms this endpoint is really us. */
   @Get()
   verify(
     @Query("hub.mode") mode: string | undefined,
@@ -55,7 +55,7 @@ export class MetaWebhookController {
     const rawBody = req.rawBody;
     const signature = req.headers["x-hub-signature-256"] as string | undefined;
     const appSecret = process.env.META_APP_SECRET;
-    // Always 2xx once the signature is good or absent-by-config — Meta retries
+    // Always 2xx once the signature is good or absent-by-config - Meta retries
     // aggressively on anything else, same reasoning as every other webhook
     // here. A bad signature is silently dropped, never disclosed.
     if (!rawBody || !appSecret || !verifyMetaSignature(rawBody, signature, appSecret)) {
@@ -91,7 +91,7 @@ export class MetaWebhookController {
       `SELECT org_id, access_token FROM meta_connections WHERE page_id = $1 AND status = 'connected'`,
       [pageId],
     );
-    if (!connection) return; // unknown/disconnected Page — nothing to attach this to
+    if (!connection) return; // unknown/disconnected Page - nothing to attach this to
 
     const pageToken = decryptSecret(connection.access_token);
     if (!pageToken) return;
@@ -131,13 +131,13 @@ export class MetaWebhookController {
       // FIND-OR-CREATE, not a bare INSERT.
       //
       // This used to be an unguarded `INSERT INTO contacts`, and `contacts`
-      // carries TWO partial unique indexes — `contacts_org_phone` and
+      // carries TWO partial unique indexes - `contacts_org_phone` and
       // `contacts_org_email` (0035_accounts_and_contacts.sql). So a lead from
       // somebody the tenant already knows raised 23505; `withOrg` is a real
       // transaction, so the ROLLBACK also destroyed the `meta_leadgen_events`
       // claim taken above; the throw was swallowed by the caller's .catch and
       // the handler still answered `{ ok: true }`. Meta saw a 200, never
-      // redelivered, and the lead was gone silently and permanently — and the
+      // redelivered, and the lead was gone silently and permanently - and the
       // better a customer they already were, the more certain the loss.
       //
       // Two lookups rather than one ON CONFLICT because a single conflict
@@ -163,7 +163,7 @@ export class MetaWebhookController {
 
       if (contact) {
         // Attribute the returning person to this campaign without overwriting
-        // anything a human curated. COALESCE only fills blanks — an existing
+        // anything a human curated. COALESCE only fills blanks - an existing
         // marketing source is the FIRST touch that won them, and a later ad
         // click must not rewrite that history.
         await client.query(
@@ -202,7 +202,7 @@ export class MetaWebhookController {
           `INSERT INTO deals (org_id, pipeline_id, contact_id, name, stage, status, marketing_source_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING id`,
-          [connection.org_id, pipeline.id, contact.id, `${displayName} — Facebook lead`, stage, status, source.id],
+          [connection.org_id, pipeline.id, contact.id, `${displayName} - Facebook lead`, stage, status, source.id],
         );
         dealId = deal.id;
       }

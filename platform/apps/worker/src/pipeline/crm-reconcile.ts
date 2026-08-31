@@ -4,7 +4,7 @@ import { getAdminPool, withOrgContext } from "@aura/db";
  * A6, Milestone 3: does the dual-write still agree with itself?
  *
  * `projectLeadToCrm` (crm-objects.ts) has written a `contacts`/`deals` row
- * alongside every qualifying lead since M3 of CRM Phase 1 — but nothing has
+ * alongside every qualifying lead since M3 of CRM Phase 1 - but nothing has
  * ever checked that the two sides stay in agreement once a human starts
  * editing either one. This sweep is that check, run continuously through the
  * A6 burn-in period so the eventual read/write cutover is backed by evidence,
@@ -22,24 +22,24 @@ import { getAdminPool, withOrgContext } from "@aura/db";
  * ── STAGE/STATUS ARE GATED SEPARATELY ───────────────────────────────────────
  *
  * A6's Milestone 2 taught a lead's `PATCH` to push its stage/status onto the
- * linked deal — but before that landed, every touched lead's stage diverged
+ * linked deal - but before that landed, every touched lead's stage diverged
  * from its deal by construction (projectLeadToCrm only sets a deal's stage
  * ONCE, on creation). Comparing stage/status is only informative once
  * Milestone 2 is verified live in a given environment, so it's a second flag
- * (CRM_RECONCILE_INCLUDE_STAGE) rather than bundled into the main one —
+ * (CRM_RECONCILE_INCLUDE_STAGE) rather than bundled into the main one -
  * flipping it on prematurely would flood the log with a divergence everyone
  * already knows about.
  *
  * ── WHAT IT DOES NOT FLAG ────────────────────────────────────────────────────
  *
  * `deals.owner_user_id`/telecaller assignment: there is no mapping from a
- * lead's `telecaller_device_id` (a device) to a deal's owner (a user) —
- * CRM_STATUS.md already states why — so this was never something the two
+ * lead's `telecaller_device_id` (a device) to a deal's owner (a user) -
+ * CRM_STATUS.md already states why - so this was never something the two
  * sides could agree on, and comparing it would just be permanent noise.
  */
 
 const BATCH = positiveInt(process.env.CRM_RECONCILE_BATCH, 500);
-/** Only leads touched recently — a lead that has matched for months needs no more sweeps. */
+/** Only leads touched recently - a lead that has matched for months needs no more sweeps. */
 const WINDOW_DAYS = positiveInt(process.env.CRM_RECONCILE_WINDOW_DAYS, 3);
 
 function positiveInt(raw: string | undefined, fallback: number): number {
@@ -209,7 +209,7 @@ function findMismatches(row: JoinedRow, includeStage: boolean): Finding[] {
 type Queryable = { query: <R = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }> };
 
 /**
- * Insert one finding, but only if it's NEW — the most recently logged row
+ * Insert one finding, but only if it's NEW - the most recently logged row
  * for this (lead, field) pair had a different lead/crm value, or there is no
  * prior row at all. A persistently-legitimate divergence (a deal a human
  * keeps editing on purpose) would otherwise re-log identically every sweep.
@@ -235,7 +235,7 @@ async function logIfChanged(client: Queryable, orgId: string, leadId: string, f:
 /**
  * Compare one org's recently-active leads against their dual-written
  * deal/contact. Returns how many NEW findings were logged (not how many
- * leads were checked — most sweeps find nothing new to say).
+ * leads were checked - most sweeps find nothing new to say).
  */
 export async function reconcileOrg(client: Queryable, orgId: string): Promise<number> {
   const includeStage = includeStageEnabled();
@@ -267,7 +267,7 @@ export async function reconcileOrg(client: Queryable, orgId: string): Promise<nu
   return logged;
 }
 
-/** Runs across every active org, each under its own RLS context — same shape as reaper.ts. */
+/** Runs across every active org, each under its own RLS context - same shape as reaper.ts. */
 export async function sweepCrmReconciliation(): Promise<number> {
   if (!reconcileEnabled()) return 0;
 
@@ -283,7 +283,7 @@ export async function sweepCrmReconciliation(): Promise<number> {
   return total;
 }
 
-/** Every 30 minutes — frequent enough to catch drift during a burn-in without hammering every org's tables. */
+/** Every 30 minutes - frequent enough to catch drift during a burn-in without hammering every org's tables. */
 export function startCrmReconcileSweep(): NodeJS.Timeout | null {
   if (!reconcileEnabled()) {
     console.log("crm reconcile: OFF (set CRM_RECONCILE_ENABLED=true to run the A6 shadow-read burn-in check)");
@@ -291,7 +291,7 @@ export function startCrmReconcileSweep(): NodeJS.Timeout | null {
   }
 
   console.log(
-    `crm reconcile: ON — comparing leads touched in the last ${WINDOW_DAYS}d against their dual-written deal/contact` +
+    `crm reconcile: ON - comparing leads touched in the last ${WINDOW_DAYS}d against their dual-written deal/contact` +
       (includeStageEnabled() ? " (including stage/status)" : " (stage/status excluded until Milestone 2 is verified live)"),
   );
 

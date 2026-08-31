@@ -6,7 +6,7 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Automation rules (PRD Layer 2). Operator console, alongside /custom-fields
- * and /roles — the other two org-configuration surfaces.
+ * and /roles - the other two org-configuration surfaces.
  *
  * Same shape as (platform)/custom-fields/actions.ts deliberately, including
  * `requireOperator()` as the first statement of every export rather than
@@ -63,7 +63,7 @@ async function call<T>(
     }
     return { data: payload as T };
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * `OrgRoleGuard` — enforces `@RequireOrgRole(...)` against `principal.role`
+ * `OrgRoleGuard` - enforces `@RequireOrgRole(...)` against `principal.role`
  * directly, for the org-administration routes that are not CRM records at
  * all (members, api keys, org policy/branding, a role's own grant grid,
  * device wipe/logout, workspace creation, GDPR/DPDP erasure).
@@ -46,7 +46,7 @@ describe("OrgRoleGuard", () => {
     expect(guard.canActivate(context)).toBe(true);
   });
 
-  it("O3 denies a viewer session — the escalation this guard exists to close", async () => {
+  it("O3 denies a viewer session - the escalation this guard exists to close", async () => {
     // Before this guard, a freshly-invited viewer could PATCH their own
     // membership's role to org_admin: nothing downstream ever read
     // `principal.role`. This is that exact scenario.
@@ -78,7 +78,7 @@ describe("OrgRoleGuard", () => {
     }
   });
 
-  it("O5 allows the admin key — the platform's own root credential, not a tenant role", async () => {
+  it("O5 allows the admin key - the platform's own root credential, not a tenant role", async () => {
     const guard = new OrgRoleGuard(new Reflector());
     const { context } = contextFor(FixtureController.prototype.promoteMember, adminKeyPrincipal());
 

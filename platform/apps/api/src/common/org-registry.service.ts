@@ -12,7 +12,7 @@ import { DbService } from "../db/db.service";
  * exist" are very different answers to be conflating.
  *
  * Cached because the check sits in front of every request and the answer is
- * effectively static — an org id is created once and never changes. Only
+ * effectively static - an org id is created once and never changes. Only
  * positive results are cached: a miss must stay queryable so a tenant created
  * seconds ago is not rejected for the rest of the TTL.
  */
@@ -32,7 +32,7 @@ export class OrgRegistryService {
     if (cachedAt !== undefined && now - cachedAt < OrgRegistryService.TTL_MS) return true;
 
     // Admin pool: this runs before an org context exists, which is the whole
-    // point — asking under RLS would beg the question.
+    // point - asking under RLS would beg the question.
     const { rows } = await this.db
       .adminPool()
       .query("SELECT 1 FROM organizations WHERE id = $1", [orgId]);

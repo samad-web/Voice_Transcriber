@@ -25,7 +25,7 @@ const WindowQuery = z.object({
 const TelecallerBody = z.object({
   /** Empty string clears it, falling the console back to the device label. */
   name: z.string().max(120),
-  // True when this handset now belongs to a genuinely different person —
+  // True when this handset now belongs to a genuinely different person -
   // mints a new telecaller identity instead of renaming the existing one.
   // False (the default) is for correcting a typo in the current holder's
   // own name.
@@ -35,8 +35,8 @@ const TelecallerBody = z.object({
 /**
  * The customer owner's view of their own instance (§4.2).
  *
- * Everything here is a rollup of data the tenant already owns — calls, leads
- * and the handsets they came from — scoped by RLS to the org on the request.
+ * Everything here is a rollup of data the tenant already owns - calls, leads
+ * and the handsets they came from - scoped by RLS to the org on the request.
  * The owner console reads only these endpoints plus /v1/leads, which is why it
  * can be given to a customer without exposing the operator surface.
  */
@@ -102,7 +102,7 @@ export class OwnerController {
        * belongs to whoever's phone first qualified it, so credit does not move
        * when a colleague later picks up the follow-up call.
        *
-       * Every active device is listed even with no activity — "made no calls
+       * Every active device is listed even with no activity - "made no calls
        * this month" is exactly what an owner needs to see. A retired handset is
        * hidden only once it has nothing in the window either; its calls are in
        * the totals above, so dropping it unconditionally would leave the
@@ -127,7 +127,7 @@ export class OwnerController {
               GROUP BY device_id, telecaller_id
            -- Reassignment-safe (0068): a call only counts toward THIS device's
            -- row if it was made while attributed to the SAME telecaller this
-           -- device currently points at — so a phone handed to a new hire
+           -- device currently points at - so a phone handed to a new hire
            -- stops inheriting the previous holder's history. IS NOT DISTINCT
            -- FROM (not =) so an org that has never assigned a telecaller at
            -- all still sees its devices' plain call counts, matching NULL to
@@ -188,7 +188,7 @@ export class OwnerController {
    * `deal_pipelines` instead of `leads`. Deliberately returns the exact same
    * shape `overview()` does (including the `leads`/`byDay[].leads` field
    * names) so `owner/page.tsx` can call either endpoint and render with the
-   * same JSX — only the data source forks, not the page. See
+   * same JSX - only the data source forks, not the page. See
    * `/owner/reports` for forecast/funnel/rep-performance detail; this is
    * only the KPI-row-plus-recent-activity shape that endpoint doesn't cover.
    */
@@ -254,7 +254,7 @@ export class OwnerController {
       });
 
       // Same device-level call stats as overview()'s telecaller rollup, but
-      // the deal aggregate joins on `telecaller_id` (a `telecallers` row —
+      // the deal aggregate joins on `telecaller_id` (a `telecallers` row -
       // what deals.telecaller_id already is, copied from the lead at
       // projection time) rather than `telecaller_device_id`, since that is
       // the identity a deal actually carries.
@@ -275,7 +275,7 @@ export class OwnerController {
                FROM calls
               WHERE started_at > now() - make_interval(days => $1)
               GROUP BY device_id, telecaller_id
-           -- Reassignment-safe (0068) — see overview()'s identical join for why.
+           -- Reassignment-safe (0068) - see overview()'s identical join for why.
            ) c ON c.device_id = d.id AND c.telecaller_id IS NOT DISTINCT FROM d.telecaller_id
            LEFT JOIN (
              SELECT telecaller_id,
@@ -335,10 +335,10 @@ export class OwnerController {
    * Also keeps the `telecallers` identity table (0017) in sync: a device gets
    * linked to a telecaller row the first time it is named, and that row's
    * display name is updated on every rename after. Clearing the name (empty
-   * string) leaves the linkage untouched — the identity persists even if the
+   * string) leaves the linkage untouched - the identity persists even if the
    * label is temporarily blanked.
    *
-   * `reassign: true` is for the other case — a genuinely different person now
+   * `reassign: true` is for the other case - a genuinely different person now
    * holds this handset. Without it, renaming would relabel the existing
    * telecaller's identity row in place, silently moving their whole call
    * history onto the new name (0068). `reassign` always mints a fresh

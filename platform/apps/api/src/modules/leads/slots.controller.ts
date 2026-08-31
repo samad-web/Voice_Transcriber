@@ -5,15 +5,15 @@ import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
- * Bookable slots — the sales team's diary, owned by the application.
+ * Bookable slots - the sales team's diary, owned by the application.
  *
  * Cross-tenant: a slot belongs to the platform, not to any customer org, so
  * this uses the admin pool like the rest of the operator surface.
  *
  * ── WHY POSTGRES DOES THE TIME-ZONE ARITHMETIC ──────────────────────────────
  *
- * The console sends a wall-clock date and time plus a zone name — "11 August,
- * 18:30, Asia/Kolkata" — and the column is `timestamptz`, an absolute instant.
+ * The console sends a wall-clock date and time plus a zone name - "11 August,
+ * 18:30, Asia/Kolkata" - and the column is `timestamptz`, an absolute instant.
  * Converting between them correctly means knowing that zone's UTC offset ON
  * THAT DATE, which changes across a DST boundary.
  *
@@ -23,7 +23,7 @@ import { DbService } from "../../db/db.service";
  *
  *     ($1::date + $2::time) AT TIME ZONE $3
  *
- * India has no DST so this is currently academic — but the scheduler's zone is
+ * India has no DST so this is currently academic - but the scheduler's zone is
  * configurable, and "correct only for Asia/Kolkata" is the kind of assumption
  * that surfaces as a one-hour-wrong appointment in a market you just entered.
  */
@@ -42,7 +42,7 @@ const BookedQuery = z.object({
   /** How far ahead to look. Capped so a typo cannot ask for the whole table. */
   days: z.coerce.number().int().min(1).max(365).optional(),
   timeZone: z.string().min(1).max(64).optional(),
-  /** Include calls that have already happened — for "did we do that one?". */
+  /** Include calls that have already happened - for "did we do that one?". */
   includePast: z.coerce.boolean().optional(),
   /**
    * How far BACK to look when includePast is set. Bounded, and not by the same
@@ -99,7 +99,7 @@ const GenerateBody = z.object({
   dayStart: z.string().regex(HH_MM),
   dayEnd: z.string().regex(HH_MM),
   durationMinutes: z.number().int().min(5).max(480),
-  /** 0 is legitimate — back-to-back is a choice, just not the default. */
+  /** 0 is legitimate - back-to-back is a choice, just not the default. */
   bufferMinutes: z.number().int().min(0).max(240).default(0),
   timeZone: z.string().min(1).max(64).default("Asia/Kolkata"),
   actor: z.string().min(1).max(200).optional(),
@@ -118,7 +118,7 @@ const fromMinutes = (mins: number): string =>
  *
  * `Date.UTC` and `getUTCDay`, deliberately: this walks calendar dates, and
  * using local-time constructors would shift the whole range by a day for any
- * server running west of UTC. There is no zone here — these are labels, and the
+ * server running west of UTC. There is no zone here - these are labels, and the
  * zone is applied to them later by Postgres.
  */
 function datesBetween(from: string, to: string): string[] {
@@ -181,7 +181,7 @@ export class SlotsController {
    *
    * That endpoint answers "what does my diary look like", and the console
    * renders it as a month grid where a dot means SLOTS EXIST on that day. It
-   * cannot answer "who am I speaking to today" — an empty Tuesday and a
+   * cannot answer "who am I speaking to today" - an empty Tuesday and a
    * fully-booked Tuesday look identical, and finding out costs a click per day.
    *
    * It also could not answer it even with a filter, because the useful part is
@@ -191,7 +191,7 @@ export class SlotsController {
    *
    * LEFT JOIN, not INNER. `submission_id` is ON DELETE SET NULL (0023) so an
    * enquirer erased under a DPDP request leaves the appointment standing with
-   * the person detached — deliberately, so the operator's calendar does not
+   * the person detached - deliberately, so the operator's calendar does not
    * silently lose an hour they have committed. An inner join would hide exactly
    * those rows, which is the opposite of what the operator needs to see.
    */
@@ -290,7 +290,7 @@ export class SlotsController {
    * ── THE BUFFER ──────────────────────────────────────────────────────────
    *
    * Slots advance by `durationMinutes + bufferMinutes`, so a 30-minute call
-   * with a 10-minute buffer produces 10:00, 10:40, 11:20 — never 10:00, 10:30,
+   * with a 10-minute buffer produces 10:00, 10:40, 11:20 - never 10:00, 10:30,
    * 11:00. The gap is built into the spacing rather than enforced at booking
    * time, which matters: a buffer that only exists as a rule at booking has to
    * be re-checked on every write and is invisible to anyone reading the table.
@@ -307,7 +307,7 @@ export class SlotsController {
    * A month of weekdays at 12 a day is ~250 rows. As 250 round trips over a
    * pooled connection to Seoul that is a visibly slow button; as one multi-row
    * INSERT it is a single hop. The wall-clock date and time still go in as
-   * parameters and Postgres still does the zone conversion — the same
+   * parameters and Postgres still does the zone conversion - the same
    * `($n::date + $n::time) AT TIME ZONE $tz` as the single-slot path, just
    * repeated per row.
    *
@@ -334,7 +334,7 @@ export class SlotsController {
       throw new BadRequestException(`range is limited to ${MAX_DAYS} days`);
     }
 
-    // (date, time) pairs on the local calendar. No Date objects, no zones —
+    // (date, time) pairs on the local calendar. No Date objects, no zones -
     // this is wall-clock arithmetic in minutes, and the zone is applied once,
     // by Postgres, when the row is written.
     const pairs: Array<[string, string]> = [];
@@ -383,7 +383,7 @@ export class SlotsController {
    * has been contacted and they have not; messaged-but-not-recorded means the
    * next person to look sees an unmarked call and marks it again, sending a
    * second copy. Both write to the same database, so there is no excuse for
-   * them to be able to come apart — the same reasoning `reject()` follows.
+   * them to be able to come apart - the same reasoning `reject()` follows.
    *
    * ── `attendance IS NULL` IS WHAT MAKES THE BUTTON SAFE TO PRESS TWICE ────
    *
@@ -397,12 +397,12 @@ export class SlotsController {
    * A sweep would have to keep asking "which no-shows are 24 hours old and have
    * not been nurtured", every minute, forever. The no-show is a discrete event
    * with a known time, so the three rows can simply be written with their send
-   * instants already stamped — the same design the call reminders use, and it
+   * instants already stamped - the same design the call reminders use, and it
    * means the drip survives a worker restart without a sweep existing at all.
    *
    * They are queued even while the nurture templates are switched off. The
    * drain resolves a disabled template as terminal and records why, so nothing
-   * is sent — but the intent is recorded, and switching the templates on does
+   * is sent - but the intent is recorded, and switching the templates on does
    * not require replaying history.
    */
   @Post(":id/attendance")
@@ -432,7 +432,7 @@ export class SlotsController {
       if (rows.length === 0) {
         await client.query("ROLLBACK");
         throw new NotFoundException(
-          "no booked call with that id is waiting to be marked — it may already have been",
+          "no booked call with that id is waiting to be marked - it may already have been",
         );
       }
 
@@ -443,7 +443,7 @@ export class SlotsController {
        *
        * `submission_id` is ON DELETE SET NULL, so a call whose lead was erased
        * under a DPDP request still stands in the diary and is still worth
-       * marking — the operator's record of their own week. There is simply
+       * marking - the operator's record of their own week. There is simply
        * nobody left to write to, and queueing rows the drain would dead-letter
        * with "no recipient" would turn a correct outcome into a log full of
        * failures.
@@ -510,7 +510,7 @@ export class SlotsController {
    * Cancel a slot.
    *
    * Never a hard DELETE. A booked slot has someone's expectation attached to it,
-   * and a row that vanishes takes the evidence of that appointment with it —
+   * and a row that vanishes takes the evidence of that appointment with it -
    * including who was booked and when. Cancelling keeps the record and frees the
    * time, because the unique index that reserves `starts_at` ignores cancelled
    * rows.

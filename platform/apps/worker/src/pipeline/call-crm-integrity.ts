@@ -4,7 +4,7 @@ import { getAdminPool, withOrgContext } from "@aura/db";
  * Does a call's own AI read agree with what the CRM ended up recording?
  *
  * Structurally similar to crm-reconcile.ts (org iteration → withOrgContext,
- * batch/window consts) but a DIFFERENT comparison — that sweep checks
+ * batch/window consts) but a DIFFERENT comparison - that sweep checks
  * leads↔deals/contacts staying in sync with each other; this checks a call's
  * OWN outcome/quality signal against the deal it produced (or failed to).
  * Unlike crm-reconcile, this is ON BY DEFAULT: it is a permanent product
@@ -12,22 +12,22 @@ import { getAdminPool, withOrgContext } from "@aura/db";
  * not an opt-in burn-in instrument for a migration in progress.
  *
  * Three flag types, deliberately kept structural (comparable in one query)
- * rather than semantic — this is a triage queue for a human, not a verdict:
+ * rather than semantic - this is a triage queue for a human, not a verdict:
  *
  * - no_deal_from_positive_call: the call read as interested (or scored well)
  *   but produced no deal at all. Either the lead-qualification rule missed
  *   it, or the agent never actually logged the outcome anywhere durable.
  * - outcome_status_contradiction: the call's read and the deal's current
- *   status point opposite directions — not_interested but won, or a
+ *   status point opposite directions - not_interested but won, or a
  *   strong-signal call whose deal is marked lost.
  * - stalled_after_positive_call: a deal that started from a clearly
- *   promising call has gone quiet — the SLA-adjacent case, only knowable
+ *   promising call has gone quiet - the SLA-adjacent case, only knowable
  *   after time passes, which is why this runs as a sweep and not inline in
  *   the pipeline (pipeline.ts only ever sees the instant the call completed).
  */
 
 const BATCH = positiveInt(process.env.CALL_CRM_INTEGRITY_BATCH, 500);
-/** Only calls completed recently — an old call's integrity is either already
+/** Only calls completed recently - an old call's integrity is either already
  *  flagged or already resolved; re-scanning it forever adds nothing. */
 const WINDOW_DAYS = positiveInt(process.env.CALL_CRM_INTEGRITY_WINDOW_DAYS, 7);
 /** How stale a deal must be before "no update since a promising call" counts. */
@@ -165,7 +165,7 @@ export async function checkOrgIntegrity(client: Queryable, orgId: string): Promi
       WHERE d.status = 'open'
         AND d.last_activity_at < now() - make_interval(days => $1)
         -- Bounded window: a deal stale for months has either already been
-        -- flagged or is being tracked some other way — re-flagging it forever
+        -- flagged or is being tracked some other way - re-flagging it forever
         -- would just be noise the owner has already dismissed once.
         AND d.last_activity_at > now() - make_interval(days => $2)
       LIMIT $3`,
@@ -199,7 +199,7 @@ export async function checkOrgIntegrity(client: Queryable, orgId: string): Promi
   return logged;
 }
 
-/** Runs across every active org, each under its own RLS context — same shape as crm-reconcile.ts. */
+/** Runs across every active org, each under its own RLS context - same shape as crm-reconcile.ts. */
 export async function sweepCallCrmIntegrity(): Promise<number> {
   const { rows: orgs } = await getAdminPool().query<{ id: string }>(
     "SELECT id FROM organizations WHERE status = 'active'",
@@ -213,7 +213,7 @@ export async function sweepCallCrmIntegrity(): Promise<number> {
   return total;
 }
 
-/** Every 30 minutes, same cadence as crm-reconcile — frequent enough to catch
+/** Every 30 minutes, same cadence as crm-reconcile - frequent enough to catch
  *  drift without hammering every org's calls/deals tables. */
 export function startCallCrmIntegritySweep(): NodeJS.Timeout {
   const interval = positiveInt(process.env.CALL_CRM_INTEGRITY_INTERVAL_MS, 30 * 60 * 1000);

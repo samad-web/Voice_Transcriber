@@ -9,7 +9,7 @@ export interface SectionHeadingProps {
   align?: "left" | "center";
   /**
    * Heading level. Marketing pages have exactly one `h1` (the hero), so every
-   * other section is an `h2` — hence the default. Pass `h3` for a subsection.
+   * other section is an `h2` - hence the default. Pass `h3` for a subsection.
    * This is a prop rather than a guess because a skipped level is a real
    * navigation failure for screen-reader users, and only the page knows.
    */
@@ -28,7 +28,7 @@ export interface SectionHeadingProps {
  * screen-reader user navigates by would be full of that noise.
  *
  * Sentence case. The uppercase-heading convention is retired
- * (`16_DESIGN_SYSTEM_V2_AND_FUNNEL.md` §1.2) — it hurts scanning and is hostile
+ * (`16_DESIGN_SYSTEM_V2_AND_FUNNEL.md` §1.2) - it hurts scanning and is hostile
  * to Tamil, Hindi and Telugu, which have no case at all.
  */
 export function SectionHeading({

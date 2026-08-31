@@ -4,7 +4,7 @@
  *
  * The worker projects a lead as part of the pipeline, so only calls completed
  * after that shipped have one. A customer onboarded earlier would open their
- * board to an empty pipeline despite months of history — this replays the same
+ * board to an empty pipeline despite months of history - this replays the same
  * projection over their finished calls.
  *
  * Safe to re-run: upsertLead dedupes on the counterparty number and recomputes

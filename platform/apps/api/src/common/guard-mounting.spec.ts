@@ -2,7 +2,7 @@
  * Are the guards MOUNTED where inventory 13 §1.1 says they are?
  *
  * The other five suites prove each guard is correct in isolation. None of them
- * would notice a route that simply forgot to mount one — and an unmounted guard
+ * would notice a route that simply forgot to mount one - and an unmounted guard
  * is indistinguishable from no tenant boundary at all. `scripts/check-tenancy.js`
  * covers part of this, but it is a GREP over controller source: it can be
  * satisfied by a `@UseGuards(AdminKeyGuard, TenantGuard)` inside a comment or a
@@ -21,7 +21,7 @@
  * doc is the older artefact, not the authority.
  *
  * SAFETY: this imports controller CLASSES only. It never constructs one, never
- * builds a Nest application, and deliberately does NOT import `app.module.ts` —
+ * builds a Nest application, and deliberately does NOT import `app.module.ts` -
  * that module's `ConfigModule.forRoot({ envFilePath: [...] })` (app.module.ts:27-30)
  * would read `.env`, and in this repository `.env` points at production. Reading
  * class metadata needs none of that. Controller modules do run their top-level
@@ -65,7 +65,7 @@ import { CustomFieldValuesController } from "../modules/custom-fields/custom-fie
 import { DeviceTelemetryController } from "../modules/devices/device-telemetry.controller";
 import { DevicesController } from "../modules/devices/devices.controller";
 import { InstancesController } from "../modules/devices/instances.controller";
-// Two different controllers are both called `LeadsController` — the owner's
+// Two different controllers are both called `LeadsController` - the owner's
 // view of their own leads, and the platform operator's view of marketing funnel
 // enquiries. Aliased rather than renamed: they are genuinely both "leads" to
 // their own audience, and the filesystem check below compares normalised names,
@@ -133,7 +133,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // ── the marketing funnel's operator surface (LeadsModule) ─────────────────
   // Added late. These three shipped without being listed here, so for the
   // duration of that gap this suite's "reflects over EVERY controller file"
-  // assertion was red — which is the check working, not a formality: none of
+  // assertion was red - which is the check working, not a formality: none of
   // the guard assertions below were seeing ten live cross-tenant routes that
   // carry the root ADMIN_API_KEY and read every enquirer's phone number.
   FunnelLeadsController,
@@ -146,7 +146,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // filesystem check exists: all seven shipped across M2-M6 without being
   // listed here, so every assertion below was blind to 33 live tenant-scoped
   // routes carrying the root ADMIN_API_KEY over every tenant's contacts,
-  // accounts and deals. Adding them is behaviour-neutral — it only makes the
+  // accounts and deals. Adding them is behaviour-neutral - it only makes the
   // suite see what was already mounted.
   AccountsController,
   ContactsController,
@@ -164,7 +164,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   CustomFieldValuesController,
   MergeController,
   RolesController,
-  // In-app notifications (migration 0048). AdminKeyGuard + TenantGuard only —
+  // In-app notifications (migration 0048). AdminKeyGuard + TenantGuard only -
   // a notification is addressed to one person and is theirs to read whatever
   // their CRM role is; the scoping that matters is `user_id = <caller>`, which
   // no guard can express and every query in that controller applies.
@@ -178,7 +178,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // is CrmPermissionsGuard'd on the new `conversation` object type;
   // MessagingChannelsController is org CONFIGURATION and sits with Automation
   // above; MessagingWebhookController is deliberately UNGUARDED and is listed
-  // in UNGUARDED below — a provider cannot present an admin key or an org
+  // in UNGUARDED below - a provider cannot present an admin key or an org
   // header, so its `:token` path segment is the credential.
   ConversationsController,
   MessagingChannelsController,
@@ -186,12 +186,12 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // The outbound half, added for Wasi (migration 0061). See
   // whatsapp-send.controller.ts's header for why it's a separate class
   // rather than a method here. MessagingChannelsController also gained one
-  // route in this change (GET .../templates, a Wasi proxy) — no new import
+  // route in this change (GET .../templates, a Wasi proxy) - no new import
   // needed for that, same class.
   WhatsAppSendController,
   // Tags and campaign attribution (migration 0057). TagsController carries
   // BOTH regimes: the tag vocabulary is org configuration, while attaching a
-  // tag to a record is gated on that record's `edit` grant — a viewer who
+  // tag to a record is gated on that record's `edit` grant - a viewer who
   // cannot edit a contact must not be able to relabel it either.
   TagsController,
   MarketingSourcesController,
@@ -208,7 +208,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // all of ProductsController/QuotationsController/InvoicesController/
   // PaymentsController sit with the rest of CrmPermissionsGuard's surface
   // below. RazorpayWebhookController is deliberately UNGUARDED, same class
-  // of exception as MessagingWebhookController above — Razorpay cannot
+  // of exception as MessagingWebhookController above - Razorpay cannot
   // present an admin key, and the payload's payment_link id (resolved on the
   // admin pool) is what names the org, verified against THAT org's own
   // webhook secret before anything is trusted.
@@ -218,13 +218,13 @@ const CONTROLLERS: Array<Type<unknown>> = [
   PaymentsController,
   RazorpayWebhookController,
   // Kailash gap Milestone 2: bulk CSV import (migration 0062). AdminKeyGuard+
-  // TenantGuard only — a bulk operation over a caller-chosen entity type,
+  // TenantGuard only - a bulk operation over a caller-chosen entity type,
   // the same administrative tier scripts/backfill-crm-objects.js already
   // operates at, not a per-record CrmPermissionsGuard surface.
   ImportController,
   // Kailash gap Milestone 4: Meta Lead Ads capture (migration 0063).
   // MetaOAuthController mixes both regimes in one class, like TagsController
-  // does — `start` needs a signed-in tenant, `callback` is Meta's own
+  // does - `start` needs a signed-in tenant, `callback` is Meta's own
   // browser redirect and verifies itself via a signed state token instead.
   // MetaWebhookController is entirely UNGUARDED, same class of exception as
   // messaging/webhook/:token and /webhooks/razorpay.
@@ -235,7 +235,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
 
 /**
- * §1.2 — the seven routes with no `@UseGuards` metadata at all.
+ * §1.2 - the seven routes with no `@UseGuards` metadata at all.
  *
  * The messaging webhook is the newest member and the only one that is
  * unguarded while still writing tenant data. It is admissible because the
@@ -256,7 +256,7 @@ const UNGUARDED = [
   // header for the resolve-org-then-verify-signature ordering that makes this
   // safe to leave unguarded.
   "POST /webhooks/razorpay",
-  // Meta's own OAuth redirect lands here with no Aura credentials — verifies
+  // Meta's own OAuth redirect lands here with no Aura credentials - verifies
   // itself via the signed `state` param instead (meta-client.ts).
   "GET /meta/oauth/callback",
   // Meta's leadgen webhook handshake + delivery (migration 0063). Same
@@ -265,7 +265,7 @@ const UNGUARDED = [
   "POST /meta/webhook",
 ];
 
-/** §1.1 rows 22, 23, 44, 48–50 — the handset fleet's entire surface. */
+/** §1.1 rows 22, 23, 44, 48-50 - the handset fleet's entire surface. */
 const DEVICE_AUTHED = [
   "POST /calls",
   "POST /calls/:id/complete",
@@ -275,7 +275,7 @@ const DEVICE_AUTHED = [
   "GET /devices/me/calls/:callId",
 ];
 
-/** §1.1 rows 3, 4, 9, 10, 18 — the operator surface, all on the RLS-bypassing pool. */
+/** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
 const CROSS_TENANT = [
   "GET /auth/context",
   "GET /auth/me",
@@ -285,7 +285,7 @@ const CROSS_TENANT = [
   "GET /admin/health",
   "GET /analytics/fleet",
   // The marketing funnel. Cross-tenant by nature rather than by exception: an
-  // enquiry has no org yet — that is what makes it an enquiry — so there is no
+  // enquiry has no org yet - that is what makes it an enquiry - so there is no
   // tenant for TenantGuard to scope these to. They still carry AdminKeyGuard,
   // which is the credential that actually gates them.
   "GET /admin/leads",
@@ -312,10 +312,10 @@ const CROSS_TENANT = [
   "PUT /admin/funnel-criteria",
 ];
 
-/** §2.3 — one route on the whole platform. */
+/** §2.3 - one route on the whole platform. */
 const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
 
-/** §2.4 — one controller, two routes. */
+/** §2.4 - one controller, two routes. */
 const OWNER_ROLE_ROUTES = [
   "GET /owner/overview",
   "GET /owner/crm-overview",
@@ -324,14 +324,14 @@ const OWNER_ROLE_ROUTES = [
 
 /**
  * Org-administration routes gated on `principal.role` directly via
- * `OrgRoleGuard`/`@RequireOrgRole` — not a `role_permissions` grant, since
+ * `OrgRoleGuard`/`@RequireOrgRole` - not a `role_permissions` grant, since
  * these are not CRM records (contact/account/deal/...), they are "who else
  * may act as this org". Added closing a real privilege-escalation gap: none
  * of these had ANY check beyond tenant membership, so a freshly-invited
  * `viewer` could `PATCH /members/:userId` its own role to `org_admin`. See
  * org-role.guard.ts's header for the fuller reasoning, including why
  * `pipelines`/`custom-field-definitions`/`automation`/`merge` are
- * deliberately NOT in this list — those stay member-accessible org
+ * deliberately NOT in this list - those stay member-accessible org
  * CONFIGURATION, a different tier from org ADMINISTRATION.
  */
 const ORG_ROLE_ROUTES = [
@@ -352,13 +352,13 @@ const ORG_ROLE_ROUTES = [
 ];
 
 /**
- * The CRM object model's enforced surface — every route that consults the
+ * The CRM object model's enforced surface - every route that consults the
  * `role_permissions` grid (migration 0039) via `CrmPermissionsGuard`.
  *
  * Pinned as an exhaustive list for the same reason PERMISSION_ROUTES is: a
  * route that quietly LOSES its guard is a silent authorization hole, and a
  * route that gains one unexpectedly is a silent lockout. `pipelines`,
- * `custom-field-definitions` and `merge` are deliberately absent —
+ * `custom-field-definitions` and `merge` are deliberately absent -
  * `PermissionObjectType` is contact|account|deal only, so there is no grant
  * for them to check yet; they remain AdminKeyGuard+TenantGuard as before.
  */
@@ -382,7 +382,7 @@ const CRM_PERMISSION_ROUTES = [
   "POST /deals",
   "PATCH /deals/:id",
   // Track A2's timeline. Declared on InteractionsController, which has an
-  // EMPTY @Controller() prefix and spells each parent out in the path — so
+  // EMPTY @Controller() prefix and spells each parent out in the path - so
   // these read as contacts/accounts/deals routes here even though they live
   // in a different file, the same way NotesController's routes appear under
   // `calls`. Each is gated on its parent object, which is the whole reason
@@ -394,7 +394,7 @@ const CRM_PERMISSION_ROUTES = [
   "GET /deals/:id/interactions",
   "POST /deals/:id/interactions",
   // Track A3. `task` joined PermissionObjectType with migration 0041, which
-  // also seeds every system role's task grants — so these are enforced from
+  // also seeds every system role's task grants - so these are enforced from
   // the moment they ship, rather than being a retrofit later.
   "GET /tasks",
   "GET /tasks/:id",
@@ -403,7 +403,7 @@ const CRM_PERMISSION_ROUTES = [
   // The inbox (migrations 0055/0056), on the `conversation` object type.
   // There is no POST here and that is the point: safety rule 3 survives only
   // while no general-purpose "post a message" route sits behind an ordinary
-  // permission. Reading, routing, claiming and closing — never sending.
+  // permission. Reading, routing, claiming and closing - never sending.
   "GET /conversations",
   "GET /conversations/:id",
   "PATCH /conversations/:id",
@@ -413,7 +413,7 @@ const CRM_PERMISSION_ROUTES = [
   "POST /deals/:id/tags",
   "DELETE /deals/:id/tags/:tagId",
   // PRD Layer 3. Viewing a report needs `deal:view`; the CSV export needs
-  // `deal:export` — the first route on the platform to use that action, and
+  // `deal:export` - the first route on the platform to use that action, and
   // the reason the export is its own route rather than a `?format=` param.
   "GET /reports/pipeline",
   "GET /reports/performance",
@@ -427,7 +427,7 @@ const CRM_PERMISSION_ROUTES = [
   "GET /targets/attainment",
   "POST /targets",
   "DELETE /targets/:id",
-  // Custom-field VALUES on a record — nested under their parent for the same
+  // Custom-field VALUES on a record - nested under their parent for the same
   // reason the timeline routes are, and gated on that parent's view/edit.
   // The DEFINITIONS surface (`/custom-field-definitions`) stays unenforced
   // and is asserted separately below; these two are deliberately different
@@ -446,7 +446,7 @@ const CRM_PERMISSION_ROUTES = [
   "POST /contacts/:id/email",
   // Kailash-gap Milestone 1 (migrations 0059/0060). `product`/`quotation`/
   // `invoice` joined PermissionObjectType together, seeded in the same
-  // migrations that widen the enum — see permissions.ts's comment.
+  // migrations that widen the enum - see permissions.ts's comment.
   "GET /products",
   "GET /products/:id",
   "POST /products",
@@ -460,27 +460,27 @@ const CRM_PERMISSION_ROUTES = [
   "POST /invoices",
   "POST /invoices/from-quotation/:quotationId",
   "PATCH /invoices/:id",
-  // "Collect Payment" — gated on invoice:edit, same reasoning as the email
+  // "Collect Payment" - gated on invoice:edit, same reasoning as the email
   // send route above: creating a link writes to the invoice's payment
   // history, even though only the (unguarded, separately verified) webhook
   // can ever mark it paid.
   "POST /invoices/:id/payment-link",
   // The outbound WhatsApp send path (migration 0061). Gated on `conversation:edit`
-  // rather than a new action — same reasoning as the email-send route above.
+  // rather than a new action - same reasoning as the email-send route above.
   "POST /conversations/:id/messages",
   // The call-vs-CRM integrity review queue (0070). Gated on `deal` like
-  // reports/targets — there is no dedicated object type for this either.
+  // reports/targets - there is no dedicated object type for this either.
   "GET /call-integrity-flags",
   "PATCH /call-integrity-flags/:id",
-  // The commission report (0071) — the fourth report alongside pipeline/
+  // The commission report (0071) - the fourth report alongside pipeline/
   // performance/conversion, same `deal:view` gate. commission_plans CRUD
-  // itself is NOT here — it's org configuration (AdminKeyGuard+TenantGuard
+  // itself is NOT here - it's org configuration (AdminKeyGuard+TenantGuard
   // only), the same tier as pipelines.
   "GET /reports/commission",
 ];
 
 interface Route {
-  /** `"GET /calls/:id"` — verb plus the declared path, no `v1` prefix. */
+  /** `"GET /calls/:id"` - verb plus the declared path, no `v1` prefix. */
   route: string;
   /** Class guards then handler guards, which is the order Nest runs them in. */
   guards: string[];
@@ -492,7 +492,7 @@ interface Route {
  * metadata (`ContextCreator.createContext`), so this ordering is Nest's, not a
  * convention chosen here. It matters: `@UseGuards(AdminKeyGuard, TenantGuard)`
  * on the class with `@UseGuards(PermissionsGuard)` on the handler yields
- * [AdminKey, Tenant, Permissions] — the dependency order tenant.guard.spec.ts
+ * [AdminKey, Tenant, Permissions] - the dependency order tenant.guard.spec.ts
  * pins behaviourally.
  */
 function guardNames(target: object): string[] {
@@ -534,7 +534,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   it("reflects over EVERY controller file in the tree", () => {
     // The one hand-maintained list in this file is CONTROLLERS, and a new
     // controller that nobody adds to it would be invisible to every assertion
-    // below — the exact failure this suite exists to prevent. So the list is
+    // below - the exact failure this suite exists to prevent. So the list is
     // checked against the filesystem: add `foo.controller.ts` without importing
     // it here and this fails, naming the file.
     const files: string[] = [];
@@ -557,7 +557,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   });
 
   it("has no @Controller() class hiding in a file that isn't named *.controller.ts", () => {
-    // The walk above only ever looks at `*.controller.ts` files — which is
+    // The walk above only ever looks at `*.controller.ts` files - which is
     // exactly the naming convention a new controller could ignore. A
     // `@Controller()` class dropped into some other file (a barrel, a
     // `*.routes.ts`, anything) would never be added to `files` above, never
@@ -577,7 +577,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         if (!entry.name.endsWith(".ts")) continue;
         // Spec files can reference `@Controller(` in a comment or a fixture
         // without declaring one, and `*.module.ts` never declares one at
-        // all — both are excluded to keep this a check on real source, not
+        // all - both are excluded to keep this a check on real source, not
         // noise. Everything else is fair game: the regex is what decides
         // whether a file is a "controller support file", not its name.
         if (entry.name.endsWith(".spec.ts") || entry.name.endsWith(".module.ts")) continue;
@@ -605,17 +605,17 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // GET /owner/overview), Kailash-gap Milestone 1's 15 (4 products + 4
     // quotations + 5 invoices + 1 payment-link, all tenant-scoped, plus the
     // one unguarded Razorpay webhook), the platform console's
-    // PATCH /devices/:id/telecaller (0067) — the operator-side counterpart of
+    // PATCH /devices/:id/telecaller (0067) - the operator-side counterpart of
     // PATCH /owner/telecallers/:deviceId below, tenant-scoped like the rest of
-    // the devices surface — and the call-vs-CRM integrity review queue (0070):
+    // the devices surface - and the call-vs-CRM integrity review queue (0070):
     // GET/PATCH /call-integrity-flags, CrmPermissionsGuard'd on `deal` like
     // reports/targets since there is no dedicated object type for it either
-    // — and Phase 4/5's seven, landed together: the fleet health dashboard's
+    // - and Phase 4/5's seven, landed together: the fleet health dashboard's
     // GET /devices/fleet-health (tenant-scoped, same tier as GET /devices),
     // and the commission export's GET /reports/commission (CrmPermissionsGuard
     // on deal:view, like the other three report routes) plus five plain
     // AdminKeyGuard+TenantGuard commission_plans CRUD routes (org
-    // configuration, same tier as pipelines) — and the project catalogue's
+    // configuration, same tier as pipelines) - and the project catalogue's
     // three (0073): GET/POST /projects and PATCH /projects/:id, plain
     // AdminKeyGuard+TenantGuard because a project catalogue is org
     // configuration in exactly the way marketing-sources and tags are.
@@ -625,7 +625,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // TenantGuard from a tenant route, say) fails even though the total is
     // unchanged.
     //
-    // — and the external integration surface's eight (0076): six
+    // - and the external integration surface's eight (0076): six
     // `/public/*` REST routes plus `POST /mcp` and `GET /mcp`, the inbound MCP
     // server. The GET exists only to answer 405 with an `Allow: POST` header:
     // Streamable HTTP's server->client SSE stream is optional, and a server
@@ -636,7 +636,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // so they are pinned separately and exhaustively in the API_KEYED test
     // below. They count as tenant-scoped because ApiKeyGuard writes
     // `req.principal` with the org taken FROM THE KEY, which TenantGuard then
-    // pins exactly as it does for a session — the tenant boundary is the same
+    // pins exactly as it does for a session - the tenant boundary is the same
     // one, reached with a different credential.
     expect(ROUTES).toHaveLength(247);
     expect(new Set(ROUTES.map((r) => r.route)).size).toBe(247);
@@ -650,7 +650,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
     // 191: the AI Agent Studio's POST /agents/generate (plain
-    // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController —
+    // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
     expect(tenantScoped).toHaveLength(206);
     // Exhaustive: every route is in exactly one class.
@@ -660,7 +660,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 215 principal routes", () => {
     // 191 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
-    // correctness requirement and not a style — tenant.guard.spec.ts's
+    // correctness requirement and not a style - tenant.guard.spec.ts's
     // chain-order block shows the reversed pair 401s a perfectly valid
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
@@ -683,8 +683,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // while AdminKeyGuard was the only thing that wrote `req.principal`.
     // `ApiKeyGuard` (0076) is the second, and TenantGuard reads
     // `principal.orgId` without caring which one filled it in. The invariant
-    // being asserted was never really about AdminKeyGuard — it is that
-    // TenantGuard is preceded by SOMETHING that authenticates — so it is
+    // being asserted was never really about AdminKeyGuard - it is that
+    // TenantGuard is preceded by SOMETHING that authenticates - so it is
     // widened by naming the closed set, not by dropping the check.
     //
     // The set is closed on purpose: a third principal-writing guard has to be
@@ -707,7 +707,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // `api_keys` is a credential a TENANT mints and may hand to a third party.
     // Before 0076 nothing authenticated with it, so the question "what can an
     // API key reach" had the answer "nothing". Now it has a real answer, and
-    // that answer must be a short list somebody has read — not a property that
+    // that answer must be a short list somebody has read - not a property that
     // emerges from 246 routes' worth of decorators.
     //
     // Two things are asserted, and the second is the load-bearing one:
@@ -717,7 +717,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     //      403s in production is a bug found late; this finds it in CI.
     //
     // Nothing here can send a message, read a recording or transcript, delete,
-    // merge, or move a card between stages — there is no route and no scope for
+    // merge, or move a card between stages - there is no route and no scope for
     // any of it. Adding one means editing this list.
     const API_KEYED = [
       "POST /public/leads",
@@ -742,7 +742,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
 
   it("keeps the device credential and the principal credential on disjoint routes", () => {
     // Inventory 13 §2.0: `DeviceAuthGuard` never coexists with the principal
-    // chain — `req.device` and `req.principal` are separate properties on
+    // chain - `req.device` and `req.principal` are separate properties on
     // separate route sets, and device-auth.guard.spec.ts pins that a device
     // token sets neither `principal` nor `tenantOrgId`. A route carrying both
     // would authenticate under one and scope under the other.
@@ -754,7 +754,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   });
 
   it("mounts PermissionsGuard and OwnerRoleGuard only where inventory 13 §2.3/§2.4 say", () => {
-    // Both read `req.principal`, so both must come after AdminKeyGuard — and
+    // Both read `req.principal`, so both must come after AdminKeyGuard - and
     // both are mounted on so few routes that an accidental extra mount (or a
     // lost one) is worth failing over. `GET /owner/overview` carrying
     // OwnerRoleGuard while declaring no `@RequireOwnerRole` is inventory 13 §7
@@ -792,7 +792,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   it("mounts CrmPermissionsGuard on exactly the contact/account/deal routes, after TenantGuard", () => {
     // The guard reads `req.principal` (AdminKeyGuard) and `req.tenantOrgId`
     // (TenantGuard), so like the other two metadata guards its position in the
-    // chain is a correctness requirement — it 401s if it runs first.
+    // chain is a correctness requirement - it 401s if it runs first.
     const withCrm = ROUTES.filter((r) => r.guards.includes("CrmPermissionsGuard"));
     expect(sorted(withCrm.map((r) => r.route))).toEqual(sorted(CRM_PERMISSION_ROUTES));
 
@@ -806,7 +806,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   it("leaves pipelines, custom-field-definitions and merge unenforced, as scoped", () => {
     // Asserted rather than assumed: these carry the root ADMIN_API_KEY like
     // every other tenant route, and the reason they are NOT permission-checked
-    // is that `PermissionObjectType` has no value for them yet — not that
+    // is that `PermissionObjectType` has no value for them yet - not that
     // somebody forgot. If that enum grows, this test is where the decision
     // gets revisited.
     const unenforced = ROUTES.filter(
@@ -835,7 +835,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   it("pins the eleven unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
-    // `POST /auth/logout` is a known finding — an anonymous DELETE on the
+    // `POST /auth/logout` is a known finding - an anonymous DELETE on the
     // RLS-bypassing pool. Razorpay, Meta's OAuth callback and Meta's leadgen
     // webhook are the newest: unauthenticated for the same class of reason as
     // the messaging webhook, resolve-then-verify rather than guard-then-trust.

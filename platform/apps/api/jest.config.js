@@ -3,7 +3,7 @@
 // The rest of the monorepo runs vitest; apps/api runs Jest because the guard
 // specs are written against Jest's API (`jest.fn()`) and @nestjs/testing's
 // `Test.createTestingModule`, which is the Nest-idiomatic pairing. Keeping the
-// two runners apart is fine — `pnpm -r test` calls each package's own `test`
+// two runners apart is fine - `pnpm -r test` calls each package's own `test`
 // script, so nothing has to agree on a single runner.
 //
 // ts-jest compiles with apps/api/tsconfig.json, so `emitDecoratorMetadata` and

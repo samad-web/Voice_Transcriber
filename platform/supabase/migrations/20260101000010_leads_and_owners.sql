@@ -1,29 +1,29 @@
--- 0010_leads_and_owners.sql — the owner console: a lead pipeline the customer
+-- 0010_leads_and_owners.sql - the owner console: a lead pipeline the customer
 -- works in, and per-telecaller attribution for the performance view.
 --
 -- Until now an extraction was a fire-and-forget push: call_facts were rendered
 -- into a CRM payload and posted out (0008/0009). Nothing in this platform held
--- "a prospect" — so there was no count to show an owner, no board to drag, and
+-- "a prospect" - so there was no count to show an owner, no board to drag, and
 -- a customer without a CRM had nowhere for the extraction to land.
 --
 -- Three additions:
 --
---   1. leads — one row per qualified prospect, deduped on the counterparty
+--   1. leads - one row per qualified prospect, deduped on the counterparty
 --      number so a second call updates the prospect instead of forking it.
 --      Fed by the worker (see apps/worker/src/pipeline/leads.ts); the CRM
 --      dispatch path is untouched and still fires independently.
 --
---   2. organizations.lead_stages — the board's columns are tenant data, not an
+--   2. organizations.lead_stages - the board's columns are tenant data, not an
 --      enum. A brick supplier and an insurance desk do not share a pipeline,
 --      and adding a column must not be a migration. `leads.stage` is therefore
 --      validated by the API against this list rather than by a CHECK.
 --
---   3. devices.telecaller_name — calls are attributed to a handset; this is the
+--   3. devices.telecaller_name - calls are attributed to a handset; this is the
 --      human name the owner puts against it, so the dashboard can rank people
 --      rather than device UUIDs.
 
 -- ── 1. Tenant-defined pipeline stages ─────────────────────────────────
--- Terminal stages carry "terminal": won|lost — that is what flips leads.status,
+-- Terminal stages carry "terminal": won|lost - that is what flips leads.status,
 -- so "closed" columns work no matter what the tenant renames them to.
 ALTER TABLE organizations
   ADD COLUMN IF NOT EXISTS lead_stages jsonb NOT NULL DEFAULT '[
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS leads (
   status     text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'won', 'lost')),
   -- The extraction's confidence heuristic (0..1) at the time of qualification.
   score      numeric,
-  -- The agent's valueField, when it named a numeric one — deal size.
+  -- The agent's valueField, when it named a numeric one - deal size.
   value_num  numeric,
   summary    text,
   next_action text,
@@ -106,14 +106,14 @@ CREATE TABLE IF NOT EXISTS leads (
 
 -- Dedup key. Scoped to the workspace, not the org, so two sales desks sharing a
 -- tenant each keep their own view of a prospect. Partial because a call with no
--- number (the phone lacked call-log permission) still deserves a lead — it just
+-- number (the phone lacked call-log permission) still deserves a lead - it just
 -- cannot be matched to a future one.
 CREATE UNIQUE INDEX IF NOT EXISTS leads_workspace_contact
   ON leads (workspace_id, contact_number_hash)
   WHERE contact_number_hash IS NOT NULL;
 
 -- A lead's call history is "every call from this number in this workspace",
--- which is also how call_count is recomputed on each upsert — deriving it
+-- which is also how call_count is recomputed on each upsert - deriving it
 -- rather than incrementing keeps a reprocessed call from inflating the total.
 CREATE INDEX IF NOT EXISTS calls_workspace_number_hash
   ON calls (workspace_id, remote_number_hash)

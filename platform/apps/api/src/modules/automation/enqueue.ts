@@ -5,7 +5,7 @@ import type { AutomationSubject, AutomationTrigger } from "@aura/shared";
  *
  * This is the API's ENTIRE involvement in Layer 2. One INSERT, then the
  * request returns; the worker decides whether any rule cares. That keeps a
- * tenant's own configuration off the critical path of every console action —
+ * tenant's own configuration off the critical path of every console action -
  * a rule with four actions must not make dragging a card slower, and a rule
  * that throws must not turn a successful stage change into a 500 the user has
  * to interpret.
@@ -39,7 +39,7 @@ export async function enqueueAutomationEvent(
  *
  * Every call site is a user-facing mutation that has already succeeded by the
  * time this runs. A queue insert failing is worth logging and worth nothing
- * else — the alternative is a rep whose stage change 500s because of a rule
+ * else - the alternative is a rep whose stage change 500s because of a rule
  * they have never heard of. Same contract as `projectLeadToCrm`'s try/catch
  * in the worker pipeline, for the same reason.
  */

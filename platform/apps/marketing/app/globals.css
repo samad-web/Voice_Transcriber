@@ -2,15 +2,15 @@
 
 /* The design-system v2 token contract (doc 16 §1), defined ONCE in @aura/ui and
    shared with the console. The temporary app/tokens.css mirror this used to
-   import has been deleted — two copies of the contract had already drifted on
+   import has been deleted - two copies of the contract had already drifted on
    eight values and two names. Do not reintroduce a local token file. */
 @import "@aura/ui/theme.css";
 
-/* @aura/ui's components live outside this app dir — include their classes in
+/* @aura/ui's components live outside this app dir - include their classes in
    the Tailwind scan so a primitive's utilities are not tree-shaken away. */
 @source "../../../packages/ui/src";
 
-/* The marketing-only brand register — gradient, display type, pill CTAs — built
+/* The marketing-only brand register - gradient, display type, pill CTAs - built
    on top of the shared tokens rather than replacing them. See brand.css for
    which reference contributed what. */
 @import "./brand.css";
@@ -21,7 +21,7 @@
    does not leave a ring behind. */
 /* NOTE: do NOT add `border-radius` here. This rule is unlayered, and an
    unlayered declaration beats everything in Tailwind's `@layer utilities`
-   regardless of source order — so a radius set here would override
+   regardless of source order - so a radius set here would override
    `rounded-md` / `rounded-lg` / `rounded-full` on every element while it is
    focused, collapsing the corners of every button and card the moment a
    keyboard user reaches it. The outline already follows the element's own

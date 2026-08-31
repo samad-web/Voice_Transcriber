@@ -5,7 +5,7 @@ import { ownerGet } from "@/lib/owner-context";
 import type { Project } from "../types";
 import { ProjectsClient } from "./projects-client";
 
-export const metadata: Metadata = { title: "Projects — Aura" };
+export const metadata: Metadata = { title: "Projects - Aura" };
 
 export default async function ProjectsPage() {
   const data = await ownerGet<{ projects: Project[] }>("/v1/projects");
@@ -30,7 +30,7 @@ export default async function ProjectsPage() {
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
         What you sell. Every recorded call is matched against this list, and the
         lead it produces is labelled with whichever project the conversation was
-        about — so a board filtered to one project shows only that pipeline. Add
+        about - so a board filtered to one project shows only that pipeline. Add
         the words people actually say on the phone as alternatives; that is what
         the matching runs on.
       </p>

@@ -1,9 +1,9 @@
--- 0070_call_crm_integrity.sql — a permanent triage queue comparing a call's
+-- 0070_call_crm_integrity.sql - a permanent triage queue comparing a call's
 -- own AI read (outcome, quality score) against the deal it produced, or
 -- failed to. See apps/worker/src/pipeline/call-crm-integrity.ts for the
 -- sweep that writes to this table and its three flag types.
 --
--- Deliberately NOT the same table crm-reconcile.ts (0054) writes to — that
+-- Deliberately NOT the same table crm-reconcile.ts (0054) writes to - that
 -- one is an opt-in burn-in log for the leads<->deals dual-write with no
 -- resolve workflow; this is a permanent product surface an owner works
 -- through (open -> dismissed/resolved), which needs its own lifecycle.
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS call_crm_integrity_flags (
   resolved_by uuid REFERENCES users(id) ON DELETE SET NULL
 );
 
--- "What's open right now" — the sweep's own-flag-exists check and the
+-- "What's open right now" - the sweep's own-flag-exists check and the
 -- console's review queue both filter on this.
 CREATE INDEX IF NOT EXISTS call_crm_integrity_flags_open
   ON call_crm_integrity_flags (org_id, created_at DESC) WHERE status = 'open';

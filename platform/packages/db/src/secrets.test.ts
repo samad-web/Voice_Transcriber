@@ -14,7 +14,7 @@ import {
  * These are long-lived API keys that can WRITE into a customer's system of
  * record, so the two properties that matter are: a sealed value round-trips
  * exactly, and a tampered or wrong-key value throws instead of yielding
- * plausible-looking garbage. The second is the one worth a test — a silent
+ * plausible-looking garbage. The second is the one worth a test - a silent
  * garbage decrypt surfaces days later as an unexplained 401 from the CRM.
  *
  * `key()` reads process.env on every call, so each test can set CRM_SECRET_KEY
@@ -22,7 +22,7 @@ import {
  * leaking into each other.
  */
 
-/** 32 bytes of hex — the form `openssl rand -hex 32` produces, per the doc comment. */
+/** 32 bytes of hex - the form `openssl rand -hex 32` produces, per the doc comment. */
 const HEX_KEY = "0".repeat(31) + "1" + "f".repeat(32);
 const OTHER_HEX_KEY = "a".repeat(64);
 
@@ -176,7 +176,7 @@ describe("the unset-key branch", () => {
   it("stores the credential as plaintext when no key is configured", () => {
     // Deliberate (secrets.ts:47-52): refusing to save would break local dev.
     // Pinned because it means production without CRM_SECRET_KEY silently holds
-    // customer CRM tokens in the clear — see warnIfSecretsUnencrypted below.
+    // customer CRM tokens in the clear - see warnIfSecretsUnencrypted below.
     vi.stubEnv("CRM_SECRET_KEY", undefined);
     expect(encryptSecret("pat-NPUxxxxxxxx")).toBe("pat-NPUxxxxxxxx");
     expect(isEncrypted(encryptSecret("pat-NPUxxxxxxxx"))).toBe(false);

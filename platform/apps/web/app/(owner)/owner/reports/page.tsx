@@ -6,7 +6,7 @@ import { formatValue } from "../types";
 import { CommissionPlansClient } from "./commission-plans-client";
 import type { CommissionPlan } from "./commission-actions";
 
-export const metadata: Metadata = { title: "Reports — Aura" };
+export const metadata: Metadata = { title: "Reports - Aura" };
 
 interface PipelineReport {
   pipeline: { id: string; name: string } | null;
@@ -87,7 +87,7 @@ interface AttainmentReport {
 }
 
 const pct = (value: number | null): string =>
-  value === null ? "—" : `${Math.round(value * 100)}%`;
+  value === null ? "-" : `${Math.round(value * 100)}%`;
 
 /**
  * Pipeline reporting (PRD Layer 3).
@@ -96,7 +96,7 @@ const pct = (value: number | null): string =>
  * computes, and a dashboard whose numbers arrive after the layout is the
  * classic way to make a reader trust the wrong figure for a second.
  *
- * The three reports are fetched in parallel and degrade independently — a
+ * The three reports are fetched in parallel and degrade independently - a
  * role that may not read one still gets the others rather than an empty page.
  */
 export default async function ReportsPage() {
@@ -139,7 +139,7 @@ export default async function ReportsPage() {
           <Stat label="Open deals" value={String(pipeline.totals.deals)} />
           <Stat
             label="Avg days to win"
-            value={pipeline.totals.avgDaysToWin === null ? "—" : String(pipeline.totals.avgDaysToWin)}
+            value={pipeline.totals.avgDaysToWin === null ? "-" : String(pipeline.totals.avgDaysToWin)}
             hint={`${pipeline.totals.wonDeals} won so far`}
           />
         </div>
@@ -149,7 +149,7 @@ export default async function ReportsPage() {
         <Card>
           <MonoLabel>Against target</MonoLabel>
           <p className="mt-1 text-xs text-text-muted">
-            Measured against PACE, not against the whole number — 40% of a quarter&rsquo;s target is
+            Measured against PACE, not against the whole number - 40% of a quarter&rsquo;s target is
             ahead in week two and behind in week eleven.
           </p>
           <ul className="mt-3 space-y-3">
@@ -182,7 +182,7 @@ export default async function ReportsPage() {
                 </div>
                 {/* Two marks on one bar: filled = actual, the tick = where a
                     steady seller would be today. The tick is the reason this
-                    is a bar rather than a percentage — it turns a number into
+                    is a bar rather than a percentage - it turns a number into
                     a comparison without needing a sentence. */}
                 <div className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-surface-hover">
                   <div
@@ -235,7 +235,7 @@ export default async function ReportsPage() {
                     <Td right>{formatValue(row.amount)}</Td>
                     <Td right>{pct(row.probability)}</Td>
                     <Td right>{formatValue(row.weightedAmount)}</Td>
-                    <Td right>{row.avgDaysInStage ?? "—"}</Td>
+                    <Td right>{row.avgDaysInStage ?? "-"}</Td>
                   </tr>
                 ))}
               </tbody>
@@ -289,7 +289,7 @@ export default async function ReportsPage() {
               })}
             </ul>
             <p className="mt-3 text-xs text-text-muted">
-              Inferred from each deal&apos;s current stage — there is no per-stage history yet, so a
+              Inferred from each deal&apos;s current stage - there is no per-stage history yet, so a
               deal that skipped a stage still counts as having passed it, and a lost deal counts
               only as having entered the pipeline.
             </p>
@@ -394,7 +394,7 @@ export default async function ReportsPage() {
           </div>
         )}
         <p className="mt-3 text-xs text-text-muted">
-          Rate × attainment for the window, recomputed on every load — not payroll: no accrual, no
+          Rate × attainment for the window, recomputed on every load - not payroll: no accrual, no
           claw-back, no approval trail. Calls-based plans are not narrowed by record scope, the same
           disconnect rep performance&apos;s task/interaction totals document: a rep is a telecaller,
           not a console user, and nothing maps between the two.

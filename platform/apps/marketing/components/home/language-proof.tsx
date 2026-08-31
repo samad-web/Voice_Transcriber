@@ -7,7 +7,7 @@ import { Placeholder } from "../ui/placeholder";
  * Doc 10 asks for real transcript excerpts side by side with their English
  * translation. There are none in this repository that are cleared for
  * publication, and writing a plausible-looking Tamil transcript to fill the gap
- * would be fabricating the exact evidence this section exists to provide — on
+ * would be fabricating the exact evidence this section exists to provide - on
  * the page selling transcription quality, which is about the worst place to do
  * it. So: the claim is stated plainly, and the proof is a marked placeholder.
  *

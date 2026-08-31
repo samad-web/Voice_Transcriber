@@ -1,27 +1,27 @@
 /**
  * A typed answer from the API, instead of `T | null`.
  *
- * `apiGetAs` collapses every failure — 401, 403, 500, a dead socket, an empty
- * list — into `null`, so a page cannot tell "you may not see this" from "there
+ * `apiGetAs` collapses every failure - 401, 403, 500, a dead socket, an empty
+ * list - into `null`, so a page cannot tell "you may not see this" from "there
  * is nothing to see" from "the API is down". That is the mechanism behind the
  * "renders only the loading skeleton, HTTP 200" bug class (road map §2.9).
  *
  * This type is the replacement. Nothing is migrated to it yet on purpose: the
  * ~35 existing call sites keep the `T | null` shape (`apiGetAs` is now a thin
  * wrapper over `apiTry`), and pages move over one at a time in Stage 2 as each
- * grows its four real states — signed-out, no access, empty, broken.
+ * grows its four real states - signed-out, no access, empty, broken.
  */
 
 /**
  * Why a request did not produce data.
  *
- *   auth      — no/expired credentials (401). The session needs renewing.
- *   forbidden — authenticated but not permitted (403). A persona/role gate.
- *   notfound  — the resource does not exist (404). Distinct from "empty list".
- *   server    — the API answered but not with data: 5xx, and any other non-2xx
+ *   auth      - no/expired credentials (401). The session needs renewing.
+ *   forbidden - authenticated but not permitted (403). A persona/role gate.
+ *   notfound  - the resource does not exist (404). Distinct from "empty list".
+ *   server    - the API answered but not with data: 5xx, and any other non-2xx
  *               (400/409/422…) plus an unparseable body. The transport worked;
  *               the response did not.
- *   network   — no HTTP response at all: API down, DNS, TLS, abort.
+ *   network   - no HTTP response at all: API down, DNS, TLS, abort.
  */
 export type ApiErrorKind = "auth" | "forbidden" | "notfound" | "server" | "network";
 

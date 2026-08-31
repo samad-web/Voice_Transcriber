@@ -28,7 +28,7 @@ const ListQuery = z.object({
  *
  * `CrmPermissionsGuard` answers "may this role touch contacts / deals /
  * tasks". None of those is the question here. A notification is addressed to
- * one person and it is theirs to read whatever their role is — a viewer who
+ * one person and it is theirs to read whatever their role is - a viewer who
  * gets told a deal moved is being told about a deal they can already see, and
  * a role change should not strand somebody's unread list.
  *
@@ -51,7 +51,7 @@ export class NotificationsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { unread, limit } = parsed.data;
 
-    // A caller with no user identity — the bare admin key — has no "mine".
+    // A caller with no user identity - the bare admin key - has no "mine".
     // An empty list is the honest answer; everyone's would be a leak.
     const userId = callerUserId(req);
     if (!userId) return { notifications: [], unread: 0 };

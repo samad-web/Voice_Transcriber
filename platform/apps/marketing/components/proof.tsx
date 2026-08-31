@@ -4,15 +4,15 @@
  * ══════════════════════════════════════════════════════════════════════════
  * ⚠️  BEFORE THIS GOES PUBLIC: GET THE CUSTOMER TO APPROVE THE WORDING.
  *
- * The substance below is real — both statements were relayed by the owner from
+ * The substance below is real - both statements were relayed by the owner from
  * actual conversations with these two customers. THE SENTENCES ARE NOT. They
  * are written from what was reported, not transcribed from what was said, and
  * publishing a quotation mark around words a person did not say is
  * misrepresentation even when the substance is true.
  *
  * Send each customer their card and get a yes in writing. That is normal
- * practice for testimonial collection — companies draft, the customer approves
- * — and it also gets you the two things missing here: the speaker's NAME and
+ * practice for testimonial collection - companies draft, the customer approves
+ * - and it also gets you the two things missing here: the speaker's NAME and
  * ROLE. "RD Interlock Bricks" is good; "Ramesh, owner, RD Interlock Bricks" is
  * markedly better, because a named human is harder to dismiss as invented.
  * ══════════════════════════════════════════════════════════════════════════
@@ -31,7 +31,7 @@
 
 export interface Testimonial {
   quote: string;
-  /** The speaker. Optional — company-only attribution is honest, but weaker. */
+  /** The speaker. Optional - company-only attribution is honest, but weaker. */
   name?: string;
   role?: string;
   company: string;
@@ -42,7 +42,7 @@ export const TESTIMONIALS: Testimonial[] = [
     // ⚠️ QUANTIFIED CLAIM. "5x" is a specific commercial result and it is the
     // one line here that could be challenged. Two things before publishing:
     //
-    //   1. Get it in writing from RD Interlock — an email saying it is fine to
+    //   1. Get it in writing from RD Interlock - an email saying it is fine to
     //      quote is enough. India's advertising rules expect a claim like this
     //      to be substantiable by whoever publishes it, and "he told me on the
     //      phone" is not a record.
@@ -60,7 +60,7 @@ export const TESTIMONIALS: Testimonial[] = [
   },
   {
     // No number in this one, and it needs none: it is the specific mechanism
-    // the page has just spent two sections claiming — insights you can train
+    // the page has just spent two sections claiming - insights you can train
     // on, and objection handling that spreads across the team. A testimonial
     // that independently repeats the product's own argument is worth more than
     // one that praises it in general terms.
@@ -89,7 +89,7 @@ export function Proof() {
               &ldquo;{t.quote}&rdquo;
             </blockquote>
             <figcaption className="mt-5 text-sm">
-              {/* Company-only until the names arrive. Rendering "— , RD
+              {/* Company-only until the names arrive. Rendering "- , RD
                   Interlock Bricks" with an empty name would look broken, so the
                   name and role are only printed when they exist. */}
               {t.name ? (

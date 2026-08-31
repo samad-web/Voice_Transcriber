@@ -16,7 +16,7 @@ export interface MetaConnectResult {
   authorizeUrl?: string;
   error?: string;
   /**
-   * True when the API answered 503 — META_APP_ID/META_APP_SECRET/
+   * True when the API answered 503 - META_APP_ID/META_APP_SECRET/
    * META_OAUTH_REDIRECT_URI are unset on this deployment. Reported as its own
    * flag rather than folded into `error` so the client can show a plain
    * "ask your platform admin" message instead of a raw API string.
@@ -45,7 +45,7 @@ export async function startMetaConnectAction(): Promise<MetaConnectResult> {
 }
 
 /**
- * The MCP route (migration 0074) — an alternative to the OAuth flow above.
+ * The MCP route (migration 0074) - an alternative to the OAuth flow above.
  *
  * Unlike OAuth, this needs no app review and no public callback URL, which is
  * why it is offered alongside rather than instead: an org that cannot get
@@ -117,7 +117,7 @@ export async function testMcpConnectionAction(
       capabilities: McpCapabilities;
     };
     revalidatePath("/owner/meta-ads");
-    // A reachable server that failed its handshake is not an action error —
+    // A reachable server that failed its handshake is not an action error -
     // the call succeeded and the answer is "no". Surfaced through `ok` so the
     // client can show the server's own reason.
     return { ok: data.ok, connection: data.connection, capabilities: data.capabilities, error: data.error ?? undefined };

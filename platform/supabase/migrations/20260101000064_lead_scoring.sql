@@ -1,13 +1,13 @@
--- 0064_lead_scoring.sql — Kailash gap Milestone 4, part 2: a rule-based point
+-- 0064_lead_scoring.sql - Kailash gap Milestone 4, part 2: a rule-based point
 -- ledger on contacts, computed by a worker sweep off events that already
 -- exist (inbound replies, meeting interactions) plus inactivity decay. Pure
--- computation, no sends — doesn't touch any of the three safety rules.
+-- computation, no sends - doesn't touch any of the three safety rules.
 
 ALTER TABLE contacts
   ADD COLUMN IF NOT EXISTS lead_score int NOT NULL DEFAULT 0;
 
 -- Tenant config as jsonb on organizations, same precedent as lead_stages
--- (0010) and lead_rules — a tenant overriding its own point values must not
+-- (0010) and lead_rules - a tenant overriding its own point values must not
 -- be a migration. {} means "use the worker's built-in defaults" (see
 -- lead-scoring.ts).
 ALTER TABLE organizations
@@ -18,7 +18,7 @@ ALTER TABLE organizations
 -- cursor, and ON CONFLICT DO NOTHING is what stops the same inbound message
 -- or meeting from scoring twice. NULL source_id (used for inactivity decay,
 -- which has no source row of its own) is deliberately excluded from the
--- constraint — decay's own idempotency key is `action` being unique per
+-- constraint - decay's own idempotency key is `action` being unique per
 -- contact per day, enforced in application code via a synthetic source_id
 -- (today's date), not by this index.
 CREATE TABLE IF NOT EXISTS lead_score_events (

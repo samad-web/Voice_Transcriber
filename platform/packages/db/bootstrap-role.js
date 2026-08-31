@@ -3,7 +3,7 @@
  *
  * 0001_init.sql creates `aura_app` with a well-known DEV password so a local
  * `pnpm setup` just works. That password must never survive into a real
- * deployment, and it cannot live in a migration file either — so production
+ * deployment, and it cannot live in a migration file either - so production
  * bootstrapping is this one idempotent step:
  *
  *   DATABASE_URL=<owner conn>  APP_DB_PASSWORD=<strong secret>  node bootstrap-role.js
@@ -28,13 +28,13 @@ async function main() {
   if (!url) throw new Error("DATABASE_URL (owner connection) is required");
   if (!password) throw new Error("APP_DB_PASSWORD is required");
   if (password === DEV_PASSWORD) {
-    throw new Error("APP_DB_PASSWORD is still the dev password — generate a real secret");
+    throw new Error("APP_DB_PASSWORD is still the dev password - generate a real secret");
   }
   if (password.length < 24) {
     throw new Error("APP_DB_PASSWORD must be at least 24 characters");
   }
   // CREATE/ALTER ROLE cannot take a bind parameter for the password, so it has
-  // to be inlined — restrict the alphabet instead of trying to escape it.
+  // to be inlined - restrict the alphabet instead of trying to escape it.
   if (!/^[A-Za-z0-9_\-.~!@#%^*+=]+$/.test(password)) {
     throw new Error(
       "APP_DB_PASSWORD may only contain letters, digits and _-.~!@#%^*+= " +
@@ -56,7 +56,7 @@ async function main() {
     console.log(`rotated password for ${ROLE}`);
   }
 
-  // NOBYPASSRLS is the whole point of this role — assert it rather than assume.
+  // NOBYPASSRLS is the whole point of this role - assert it rather than assume.
   const {
     rows: [role],
   } = await client.query(
@@ -64,7 +64,7 @@ async function main() {
     [ROLE],
   );
   if (role.rolsuper || role.rolbypassrls) {
-    throw new Error(`${ROLE} can bypass RLS — tenant isolation would be silently off`);
+    throw new Error(`${ROLE} can bypass RLS - tenant isolation would be silently off`);
   }
 
   console.log(`ok: ${ROLE} is a non-superuser, RLS-bound login role`);

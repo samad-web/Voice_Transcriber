@@ -34,7 +34,7 @@ const UpdatePipelineBody = z.object({
 const PIPELINE_COLUMNS = `id, name, object_type, stages, is_default, status, created_at, updated_at`;
 
 /**
- * Deal pipelines (CRM Phase 1, E0.1) — multiple stage lists per org, the
+ * Deal pipelines (CRM Phase 1, E0.1) - multiple stage lists per org, the
  * multi-pipeline generalisation of organizations.lead_stages (0010). `stages`
  * is validated against PipelineStages (packages/shared), never a DB CHECK,
  * for the same reason lead_stages isn't one: renaming a board column must
@@ -77,7 +77,7 @@ export class PipelinesController {
 
     return this.db.withOrg(orgId, async (client) => {
       // Exactly one default per org is an app-enforced invariant (0034's
-      // header) — clear any existing default before this one claims it.
+      // header) - clear any existing default before this one claims it.
       if (p.isDefault) {
         await client.query(`UPDATE deal_pipelines SET is_default = false WHERE is_default = true`);
       }

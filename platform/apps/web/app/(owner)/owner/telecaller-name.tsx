@@ -80,7 +80,7 @@ export function TelecallerName({
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </Button>
         </div>
-        {/* Only meaningful when renaming an existing person — naming an
+        {/* Only meaningful when renaming an existing person - naming an
             unassigned handset for the first time is already "reassign"-shaped
             with nothing to distinguish it from. */}
         {name ? (

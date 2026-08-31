@@ -2,14 +2,14 @@ import { z } from "zod";
 
 /**
  * The role -> object -> action(+scope/field) permission model
- * (packages/db/migrations/0039), layered ALONGSIDE — not replacing —
+ * (packages/db/migrations/0039), layered ALONGSIDE - not replacing -
  * memberships.role (operator RBAC) and memberships.owner_role (console
  * persona, see roles.ts). Schema only for now: nothing in the API enforces
  * these grants yet, and a membership cannot be assigned a genuinely custom
- * role yet — see the migration's header for why.
+ * role yet - see the migration's header for why.
  */
 
-/** The 5 system roles seeded for every org — mirrors memberships.role's CHECK. */
+/** The 5 system roles seeded for every org - mirrors memberships.role's CHECK. */
 export const SystemRoleKey = z.enum([
   "platform_admin",
   "org_admin",
@@ -21,7 +21,7 @@ export type SystemRoleKey = z.infer<typeof SystemRoleKey>;
 
 /**
  * What a grant can be about. `task` joined in with Track A3 (migration 0041),
- * which also seeds every system role's task grants to match its contact ones —
+ * which also seeds every system role's task grants to match its contact ones -
  * widening this enum without that seeding would lock every existing user out
  * of the new object, since CrmPermissionsGuard denies whatever it finds no
  * grant for.
@@ -32,7 +32,7 @@ export type SystemRoleKey = z.infer<typeof SystemRoleKey>;
  *
  * `product`/`quotation`/`invoice` joined in with the Kailash-gap Milestone 1
  * work (migrations 0059/0060), seeded the same way `task` and `conversation`
- * were — every system role gets a matching grant in the same migration that
+ * were - every system role gets a matching grant in the same migration that
  * widens this enum, so nobody is locked out the day it ships.
  */
 export const PermissionObjectType = z.enum([

@@ -3,7 +3,7 @@
  * CLI (`supabase db push`) and the dashboard's migration view can apply the
  * exact same SQL our own runner does.
  *
- * packages/db/migrations stays CANONICAL — this directory is generated, never
+ * packages/db/migrations stays CANONICAL - this directory is generated, never
  * hand-edited. Supabase orders by the numeric prefix, so 0001 becomes
  * 20260101000001, 0002 becomes 20260101000002, and so on: stable across runs,
  * and always in our order.
@@ -16,7 +16,7 @@ const path = require("node:path");
 
 const SRC = path.join(__dirname, "..", "packages", "db", "migrations");
 const OUT = path.join(__dirname, "..", "supabase", "migrations");
-/** Arbitrary fixed epoch — only the ordering matters to Supabase. */
+/** Arbitrary fixed epoch - only the ordering matters to Supabase. */
 const BASE = "2026010100";
 
 const check = process.argv.includes("--check");

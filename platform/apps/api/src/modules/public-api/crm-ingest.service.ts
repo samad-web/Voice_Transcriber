@@ -14,7 +14,7 @@ import { DbService } from "../../db/db.service";
  * The one implementation behind BOTH external front doors.
  *
  * `public-api.controller.ts` (REST) and `mcp-server.controller.ts` (MCP
- * JSON-RPC) are transports and nothing else — neither contains a SQL statement.
+ * JSON-RPC) are transports and nothing else - neither contains a SQL statement.
  * That is deliberate and is the main structural decision in this module: an MCP
  * tool and its REST twin that each built their own query would drift, and the
  * drift would be invisible until an integration and an agent disagreed about
@@ -22,7 +22,7 @@ import { DbService } from "../../db/db.service";
  *
  * ── WHERE AN EXTERNALLY-CREATED LEAD LANDS ────────────────────────────────
  *
- * On `leads`, `contacts` AND `deals`, in one transaction — not on one of them.
+ * On `leads`, `contacts` AND `deals`, in one transaction - not on one of them.
  *
  * The Meta webhook (0063) writes contacts/deals only, and the consequence is
  * that an ad lead never appears on the Lead Board, which is what the console
@@ -30,7 +30,7 @@ import { DbService } from "../../db/db.service";
  * integration that created records the tenant cannot see on the screen they
  * actually use would be a broken feature, however correct the rows were.
  *
- * The dedup key is `(workspace_id, contact_number_hash)` — deliberately the
+ * The dedup key is `(workspace_id, contact_number_hash)` - deliberately the
  * SAME key `upsertLead` uses in the call pipeline. So if a telecaller later
  * phones a number an integration already pushed, the call converges onto that
  * lead instead of forking a duplicate. Matching the existing key is the whole
@@ -68,7 +68,7 @@ export interface LeadRecord {
  *
  * The codebase has several divergent ones and only some carry a floor. Without
  * it, a caller sending `"n/a"` or `"-"` produces a short digit string that
- * becomes a real dedupe key — and every future junk submission then merges onto
+ * becomes a real dedupe key - and every future junk submission then merges onto
  * the same contact. A false MERGE is the worst CRM outcome there is, strictly
  * worse than a duplicate, because no one can tell it happened. Six digits is
  * below any real subscriber number and above every junk fragment seen so far.
@@ -218,7 +218,7 @@ export class CrmIngestService {
         ));
       } else {
         // No dedupe key at all (no usable phone). A fresh row is the only
-        // honest option — matching on name would merge two different people
+        // honest option - matching on name would merge two different people
         // who happen to share one.
         ({
           rows: [lead],
@@ -314,7 +314,7 @@ export class CrmIngestService {
    * Attach a project, either because the caller named one or because the
    * deterministic detector recognised it in the supplied text.
    *
-   * Reuses `detectProjects` from @aura/shared — the SAME matcher the call
+   * Reuses `detectProjects` from @aura/shared - the SAME matcher the call
    * pipeline runs on transcripts. A lead from an integration and a lead from a
    * call therefore land on the same project for the same words, which is the
    * only way the board's project filter means one thing.

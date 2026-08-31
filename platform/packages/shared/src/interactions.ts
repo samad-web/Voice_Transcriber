@@ -4,7 +4,7 @@ import { z } from "zod";
  * The unified interaction timeline (packages/db/migrations/0040).
  *
  * `type` is stored as a plain text column and validated here rather than by a
- * DB CHECK — same choice as CustomFieldObjectType, and for the same reason:
+ * DB CHECK - same choice as CustomFieldObjectType, and for the same reason:
  * Layer 1 adds real email/sms/whatsapp channels, and that should be a code
  * change rather than a migration.
  */
@@ -22,13 +22,13 @@ export type InteractionDirection = z.infer<typeof InteractionDirection>;
  */
 export const MACHINE_INTERACTION_TYPES: InteractionType[] = ["call"];
 
-/** What a user may log by hand — `call` deliberately excluded, see above. */
+/** What a user may log by hand - `call` deliberately excluded, see above. */
 export const ManualInteractionType = z.enum(["email", "sms", "whatsapp", "meeting", "note"]);
 export type ManualInteractionType = z.infer<typeof ManualInteractionType>;
 
 /**
  * A hand-logged interaction. At least one of contactId/accountId/dealId must
- * be present — an interaction attached to nothing would be invisible on every
+ * be present - an interaction attached to nothing would be invisible on every
  * timeline, which is a silent data-loss bug rather than a useful record.
  */
 export const InteractionInput = z

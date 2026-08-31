@@ -33,7 +33,7 @@ export function AgentStudio({
 }: {
   agents: AgentRow[];
   orgId?: string;
-  /** The tenant's own workspaces — an agent must be created in one of these,
+  /** The tenant's own workspaces - an agent must be created in one of these,
    *  never in the environment's DEV_WORKSPACE_ID. */
   workspaces: Array<{ id: string; name: string }>;
 }) {
@@ -50,7 +50,7 @@ export function AgentStudio({
   const [pending, startTransition] = useTransition();
 
   // "Start from" (clone) and "Describe with AI" (generate) both just
-  // prefill name/systemPrompt/fields above — the create flow below is
+  // prefill name/systemPrompt/fields above - the create flow below is
   // unchanged regardless of how the form got filled in.
   const [baseKey, setBaseKey] = useState("");
   const [description, setDescription] = useState("");
@@ -180,7 +180,7 @@ export function AgentStudio({
             </h4>
           </div>
           <p className="text-xs text-neutral-400 font-sans font-medium">
-            Say what the agent should do — it fills in the name, system prompt and fields below for
+            Say what the agent should do - it fills in the name, system prompt and fields below for
             you to review and adjust. Pick a &quot;Start from&quot; agent first to describe a
             <em> change</em> to it instead of a fresh one.
           </p>

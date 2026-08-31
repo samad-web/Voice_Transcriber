@@ -45,7 +45,7 @@ const BoardQuery = z.object({
   /**
    * Narrow the whole board to one project. The per-column counts and subtotals
    * are computed after this filter, so a filtered board's numbers describe the
-   * filtered board — a header total that silently ignored the active filter
+   * filtered board - a header total that silently ignored the active filter
    * would be read as the unfiltered one.
    */
   projectId: ProjectFilter.optional(),
@@ -63,7 +63,7 @@ const UpdateLeadBody = z.object({
   projectId: z.string().uuid().nullable().optional(),
 });
 
-/** Columns every lead view returns — one shape for the board and the list. */
+/** Columns every lead view returns - one shape for the board and the list. */
 const LEAD_COLUMNS = `
   l.id, l.title, l.stage, l.status, l.score, l.value_num, l.summary, l.next_action,
   l.notes, l.facts, l.contact_name, l.contact_number_prefix, l.contact_number_last3,
@@ -77,7 +77,7 @@ const LEAD_COLUMNS = `
  * The joins LEAD_COLUMNS depends on. Kept beside it rather than repeated at
  * each of the three call sites, because adding a column to the list above and
  * forgetting one of the joins below is a runtime error the typechecker cannot
- * see — generated SQL is invisible to it.
+ * see - generated SQL is invisible to it.
  */
 const LEAD_JOINS = `
   LEFT JOIN devices d      ON d.id = l.telecaller_device_id
@@ -87,7 +87,7 @@ const LEAD_JOINS = `
  * The lead pipeline (§4.2 owner console).
  *
  * Rows are written by the worker's lead projection; everything here is the
- * human side of it — reading the board, moving a card, taking a note. Stage
+ * human side of it - reading the board, moving a card, taking a note. Stage
  * values are validated against the tenant's own organizations.lead_stages
  * rather than a CHECK constraint, so a customer can rename or add a column
  * without a migration and the API still rejects a stage that doesn't exist.
@@ -97,7 +97,7 @@ const LEAD_JOINS = `
 export class LeadsController {
   constructor(private readonly db: DbService) {}
 
-  /** The tenant's stage list — the board's columns, in order. */
+  /** The tenant's stage list - the board's columns, in order. */
   private async stagesFor(client: {
     query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
   }) {
@@ -128,7 +128,7 @@ export class LeadsController {
       if (projectId === "none") where.push("l.project_id IS NULL");
       else if (projectId) add("l.project_id = $?", projectId);
       if (q) {
-        // One param, three columns — pushed once so the placeholder numbering
+        // One param, three columns - pushed once so the placeholder numbering
         // stays in step with `params`.
         params.push(`%${q}%`);
         const p = `$${params.length}`;
@@ -186,7 +186,7 @@ export class LeadsController {
         projectWhere = `WHERE l.project_id = $${params.length}`;
       }
 
-      // Rank inside each stage in one pass — a query per column would be N
+      // Rank inside each stage in one pass - a query per column would be N
       // round trips for a board that is read on every page load. The project
       // filter sits INSIDE the subquery so the window functions see only the
       // filtered rows and the column counts stay honest.
@@ -216,7 +216,7 @@ export class LeadsController {
       });
 
       // A lead sitting in a stage the tenant has since deleted would otherwise
-      // vanish from the board entirely — surface it rather than lose it.
+      // vanish from the board entirely - surface it rather than lose it.
       const known = new Set(stages.map((s) => s.key));
       const orphans = rows.filter((r) => !known.has(String(r.stage)));
 
@@ -244,7 +244,7 @@ export class LeadsController {
       if (!lead) throw new NotFoundException("lead not found");
 
       // Calls reached through the contact hash, so the history survives the
-      // lead being re-derived — plus the originating call when there is no
+      // lead being re-derived - plus the originating call when there is no
       // number to match on.
       const { rows: calls } = await client.query(
         `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
@@ -288,7 +288,7 @@ export class LeadsController {
       const stages = await this.stagesFor(client);
       if (p.stage && !stages.some((s) => s.key === p.stage)) {
         throw new BadRequestException(
-          `unknown stage "${p.stage}" — valid stages: ${stages.map((s) => s.key).join(", ")}`,
+          `unknown stage "${p.stage}" - valid stages: ${stages.map((s) => s.key).join(", ")}`,
         );
       }
       const status = p.stage ? statusForStage(stages, p.stage) : null;
@@ -311,7 +311,7 @@ export class LeadsController {
            project_id  = CASE WHEN $15::boolean THEN $16::uuid ELSE project_id END,
            -- HUMAN-OWNS-IT: this endpoint is only ever a person, so setting
            -- the project here permanently takes the column off the detector.
-           -- Clearing it to NULL counts too — "not any of these" is a
+           -- Clearing it to NULL counts too - "not any of these" is a
            -- judgement the next call must not silently overturn.
            project_source = CASE WHEN $15::boolean THEN 'human' ELSE project_source END,
            -- Working a lead IS activity: without this a card the owner is
@@ -326,7 +326,7 @@ export class LeadsController {
           p.stage ?? null,
           status,
           p.title ?? null,
-          // A nullable field needs "was it sent?" separate from "is it null?" —
+          // A nullable field needs "was it sent?" separate from "is it null?" -
           // COALESCE alone cannot express clearing one.
           p.contactName !== undefined,
           p.contactName ?? null,
@@ -345,7 +345,7 @@ export class LeadsController {
       if (!lead) throw new NotFoundException("lead not found");
 
       // Keep the dual-written deal in step, exactly as the stage move below
-      // does — and under the same human-owns-it rule, so this write is the
+      // does - and under the same human-owns-it rule, so this write is the
       // one thing that CAN overwrite the detector's guess on the deal.
       if (p.projectId !== undefined) {
         await client.query(
@@ -356,10 +356,10 @@ export class LeadsController {
       }
 
       // A6: the worker's dual-write (projectLeadToCrm) only sets a deal's
-      // stage/status ONCE, on creation — a follow-up call must never move a
+      // stage/status ONCE, on creation - a follow-up call must never move a
       // deal a human is already working. This IS that human moving it, so
       // propagating it onto the linked deal is this endpoint's job, not the
-      // worker's. Own non-blocking try/catch inside — a bug here must never
+      // worker's. Own non-blocking try/catch inside - a bug here must never
       // break the lead PATCH itself.
       if (p.stage) await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
 
@@ -375,7 +375,7 @@ export class LeadsController {
 
   /**
    * Carry a lead's stage move onto its dual-written deal (`deals.source_lead_id`),
-   * including the stage-history ledger — the same write `deals.controller.ts`'s
+   * including the stage-history ledger - the same write `deals.controller.ts`'s
    * own PATCH makes, so the two never disagree about what a transition row
    * means. The deal's OWN pipeline decides its status, not the lead's: the two
    * stage lists are independently configurable and only happen to start out
@@ -408,7 +408,7 @@ export class LeadsController {
       const stages = parsePipelineStages(pipeline?.stages);
       if (!stages.some((s) => s.key === newStage)) {
         console.error(
-          `lead ${leadId}: cannot propagate stage "${newStage}" — not a stage on deal ${deal.id}'s pipeline`,
+          `lead ${leadId}: cannot propagate stage "${newStage}" - not a stage on deal ${deal.id}'s pipeline`,
         );
         return;
       }

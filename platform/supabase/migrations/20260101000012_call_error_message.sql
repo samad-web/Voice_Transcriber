@@ -3,8 +3,8 @@
 -- The pipeline records failure as a terminal status (FAILED_ASR, FAILED_CRM, …)
 -- and console-logs the underlying error on the worker. That is enough to know a
 -- call broke and nothing at all about why: an operator looking at the Call
--- Explorer sees a red chip and has to go read worker logs — which on a single
--- VPS means SSH — to distinguish "the audio was silent" from "the ASR provider
+-- Explorer sees a red chip and has to go read worker logs - which on a single
+-- VPS means SSH - to distinguish "the audio was silent" from "the ASR provider
 -- rejected our key". Both look identical in the UI, and only one is actionable
 -- by the operator.
 --

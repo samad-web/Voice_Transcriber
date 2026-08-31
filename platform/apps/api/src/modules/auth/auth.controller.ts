@@ -20,7 +20,7 @@ const LoginBody = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   /**
-   * Optional hint for a user who belongs to more than one org — without it,
+   * Optional hint for a user who belongs to more than one org - without it,
    * `AuthService.login` falls back to the earliest-created membership, which
    * is unreachable-by-design for any OTHER org a multi-org user belongs to.
    * Ignored if the caller isn't actually a member of the named org.
@@ -86,7 +86,7 @@ export class AuthController {
     return this.auth.contextFor(parsed.data);
   }
 
-  /** Who am I — proves the session + surfaces role/permissions to the web app. */
+  /** Who am I - proves the session + surfaces role/permissions to the web app. */
   @Get("me")
   @UseGuards(AdminKeyGuard, TenantGuard)
   @CrossTenant()

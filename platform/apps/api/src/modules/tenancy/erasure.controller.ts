@@ -40,12 +40,12 @@ const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
  * logged (TODO with the HubSpot connector). Per-subject (phone-hash) fan-out
  * lands later.
  *
- * A call the caller's org cannot see is a 404 and mints nothing — see the note
+ * A call the caller's org cannot see is a 404 and mints nothing - see the note
  * on the lookup below for why that ordering is the whole contract.
  *
  * Known, disclosed residual gap: a contact/deal that survives because it has
  * another legitimate link (see eraseCrmObjects below) is NOT scrubbed of the
- * erased call's specific contribution to its free-text `facts`/`notes` — no
+ * erased call's specific contribution to its free-text `facts`/`notes` - no
  * per-field provenance exists for that blob (only custom-field VALUES have
  * `source`, since migration 0045). An honest "retained" entry on the receipt
  * beats a receipt that claims a scrub it cannot actually perform.
@@ -64,7 +64,7 @@ export class ErasureController {
     const { callId } = parsed.data;
 
     // Resolve the call under RLS, but don't hold that transaction/connection
-    // open across the S3 delete below — this is operator-triggered rather than
+    // open across the S3 delete below - this is operator-triggered rather than
     // a hot path, but the network call still has no business sitting inside a
     // BEGIN…COMMIT the same way the ingest endpoints' S3 calls didn't.
     const rec = await this.db.withOrg(orgId, async (client) => {
@@ -79,17 +79,17 @@ export class ErasureController {
 
       // Resolve the call BEFORE anything is erased and, more importantly, before
       // anything is signed. `withOrg` means RLS hides another tenant's call, so a
-      // miss here is "not yours or not there" — and every DELETE below is keyed on
+      // miss here is "not yours or not there" - and every DELETE below is keyed on
       // call_id alone, so without this the handler ran its whole cascade against
       // zero rows and still minted an HMAC-signed receipt saying COMPLETED. Report
       // 12 §3.6: a receipt that overstates what was deleted is worse than one that
       // admits a gap, and a signed artefact must never be issued on a path that
       // resolved nothing. LEFT JOIN, so a call with no recording still yields a
-      // row — `!row` means the CALL is absent, not the audio.
+      // row - `!row` means the CALL is absent, not the audio.
       //
       // Consequence worth knowing: erasure is no longer idempotent. Re-sending a
       // request for an already-erased call now 404s instead of returning a second
-      // empty receipt. That is the intended reading — the only truthful receipt
+      // empty receipt. That is the intended reading - the only truthful receipt
       // for that call is the one already in audit_log.
       if (!row) throw new NotFoundException("call not found in this org");
       return row;
@@ -107,13 +107,13 @@ export class ErasureController {
     return this.db.withOrg(orgId, async (client) => {
       // The lead carries the subject's name and everything the call said about
       // them, so erasing the call without it would leave the data behind under
-      // a different table name. Matched on the contact hash — one erasure
+      // a different table name. Matched on the contact hash - one erasure
       // request removes the prospect, not just this one conversation.
       //
       // Resolved (not yet deleted) BEFORE eraseCrmObjects runs: deals' and
       // contacts' `source_lead_id` are ON DELETE SET NULL (0035/0036), so
       // deleting these leads first would erase the very link eraseCrmObjects
-      // needs in order to find its own candidates — a real bug caught only by
+      // needs in order to find its own candidates - a real bug caught only by
       // running this live, not by anything a typecheck could see.
       const { rows: candidateLeads } = await client.query<{ id: string }>(
         `SELECT id FROM leads
@@ -124,7 +124,7 @@ export class ErasureController {
       const candidateLeadIds = candidateLeads.map((r) => r.id);
 
       // The lead's eventual erasure below does NOT cascade to contacts/deals
-      // — both FKs are ON DELETE SET NULL, by design, since a contact can
+      // - both FKs are ON DELETE SET NULL, by design, since a contact can
       // outlive any one lead once dedup is org-wide. Resolve and erase them
       // explicitly, the same "who else still points here" question the lead
       // DELETE below already answers for the phone-hash fan-out.
@@ -160,7 +160,7 @@ export class ErasureController {
         purged,
         // Never claim a scrub that didn't happen: a contact retained here
         // still has another legitimate link (a hand-created deal, a manual
-        // note, a task) — see the class docstring for the disclosed gap.
+        // note, a task) - see the class docstring for the disclosed gap.
         retainedContactIds,
         erasedAtUtc: new Date().toISOString(),
       };
@@ -191,8 +191,8 @@ export class ErasureController {
    * `status <> 'merged'` on the contact candidate query is deliberate, not an
    * oversight: 0038 tombstones a merge victim (status='merged',
    * merged_into_id set) rather than deleting it, because merge_log/revert
-   * need that row to still exist. Hard-deleting one here — even one with no
-   * other links — would corrupt that audit trail, so a merged contact is
+   * need that row to still exist. Hard-deleting one here - even one with no
+   * other links - would corrupt that audit trail, so a merged contact is
    * never a candidate at all.
    */
   private async eraseCrmObjects(
@@ -232,7 +232,7 @@ export class ErasureController {
       // One set-based query instead of one safe_to_delete round trip per
       // candidate contact: a LEFT JOIN against every blocking link, grouped
       // back down to one row per contact. bool_and(...) is true exactly when
-      // no blocking row joined for that contact — the same predicate the old
+      // no blocking row joined for that contact - the same predicate the old
       // per-row NOT EXISTS(...) computed, just batched.
       const { rows: safety } = await client.query<{ id: string; safe_to_delete: boolean }>(
         `SELECT ids.id,

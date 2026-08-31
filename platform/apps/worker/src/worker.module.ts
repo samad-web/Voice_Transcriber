@@ -3,7 +3,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 
 /**
- * Worker pool — one queue consumer per pipeline stage (design doc §6.2).
+ * Worker pool - one queue consumer per pipeline stage (design doc §6.2).
  * Each stage is idempotent on call_id and advances the Postgres state
  * machine under optimistic concurrency; the queue is only a wake-up signal.
  *

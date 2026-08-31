@@ -30,7 +30,7 @@ export type CustomFieldOption = z.infer<typeof CustomFieldOption>;
 
 /**
  * What an admin submits to define a field. Same key rule as
- * ExtractionField.key — both eventually address a value by a snake_case
+ * ExtractionField.key - both eventually address a value by a snake_case
  * identifier, one in an LLM's JSON output, the other in a form field name.
  */
 export const CustomFieldDefinitionInput = z
@@ -60,7 +60,7 @@ export const CustomFieldDefinitionInput = z
       ctx.addIssue({
         code: "custom",
         path: ["options"],
-        message: `"${field.label}" is a ${field.type} field with no options — it can never be filled in`,
+        message: `"${field.label}" is a ${field.type} field with no options - it can never be filled in`,
       });
     }
     if (field.type === "lookup" && !field.lookupObjectType) {
@@ -75,7 +75,7 @@ export type CustomFieldDefinitionInput = z.infer<typeof CustomFieldDefinitionInp
 
 export type CustomFieldValueColumn = "value_text" | "value_num" | "value_bool" | "value_date" | "value_json";
 
-/** Which typed column a value lands in — mirrors call_facts' projection rule. */
+/** Which typed column a value lands in - mirrors call_facts' projection rule. */
 export function valueColumnForType(type: CustomFieldType): CustomFieldValueColumn {
   switch (type) {
     case "number":

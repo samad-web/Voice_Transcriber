@@ -13,7 +13,7 @@ export interface WorkspaceOption {
 /**
  * Which tenant a switcher-backed page should read. Honours `?org=` only when it
  * names a real tenant, so a stale or hand-edited link cannot point the page at
- * an arbitrary uuid. Falls back to the environment's dev org — not simply the
+ * an arbitrary uuid. Falls back to the environment's dev org - not simply the
  * first row, which is the newest tenant and would move the default view every
  * time a customer is onboarded.
  */
@@ -39,8 +39,8 @@ export interface TenantScope {
  * Every page under `(platform)` reads one tenant at a time because RLS is
  * per-org. Left implicit, that produced the console's worst class of bug: the
  * page silently rendered whichever org `DEV_ORG_ID` named and looked like it
- * was showing the whole platform. Resolving the scope explicitly — and
- * rendering a `<TenantSwitcher>` from it — makes the answer to "whose data is
+ * was showing the whole platform. Resolving the scope explicitly - and
+ * rendering a `<TenantSwitcher>` from it - makes the answer to "whose data is
  * this?" visible on the page and changeable from the URL.
  */
 export async function resolveTenantScope(requested?: string): Promise<TenantScope> {

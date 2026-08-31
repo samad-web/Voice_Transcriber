@@ -16,14 +16,14 @@ import { getSessionUser } from "@/lib/supabase/server";
  *
  * Supabase Auth proves the identity; it knows nothing about orgs. The platform
  * holds the binding (users.sso_subject → memberships), so resolving a session
- * to a tenant is one server-to-server call — and because the admin key never
+ * to a tenant is one server-to-server call - and because the admin key never
  * reaches the browser, the org a page renders is decided on the server from a
  * verified session rather than from anything the client can set.
  *
  * Two kinds of principal come out of this:
  *
- *   owner    — has a membership. Locked to that org; sees /owner only.
- *   operator — signed in with no membership at all. A *candidate* for platform
+ *   owner    - has a membership. Locked to that org; sees /owner only.
+ *   operator - signed in with no membership at all. A *candidate* for platform
  *              staff, nothing more: `kind` is a classification, not a grant.
  *              Reaching the operator console (org from DEV_ORG_ID, full
  *              operator nav) additionally requires passing `isOperator()`,
@@ -37,13 +37,13 @@ export interface OwnerMembership {
   orgName: string;
   orgStatus: string;
   role: string;
-  /** Owner-console persona (design doc §9) — Owner/Manager/Telecaller. */
+  /** Owner-console persona (design doc §9) - Owner/Manager/Telecaller. */
   ownerRole: OwnerRole;
   recordingsListen: boolean;
   recordingsExport: boolean;
   workspaceId: string | null;
-  /** organizations.enabled_modules (migration 0072) — which product modules
-   *  this org has. 'crm' gates the CRM-object nav items — see nav.ts. */
+  /** organizations.enabled_modules (migration 0072) - which product modules
+   *  this org has. 'crm' gates the CRM-object nav items - see nav.ts. */
   enabledModules: string[];
 }
 
@@ -68,7 +68,7 @@ export interface Principal {
  *
  * It now fails CLOSED: empty list means NOBODY is an operator. The one
  * exception is the documented local-dev mode where auth is unconfigured
- * entirely — see `isOperator` below.
+ * entirely - see `isOperator` below.
  */
 const OPERATOR_EMAILS = (process.env.PLATFORM_OPERATOR_EMAILS ?? "")
   .split(",")
@@ -81,7 +81,7 @@ const OPERATOR_EMAILS = (process.env.PLATFORM_OPERATOR_EMAILS ?? "")
 // for a correct login) does not name its own cause.
 if (AUTH_ENABLED && OPERATOR_EMAILS.length === 0) {
   console.error(
-    "[auth] PLATFORM_OPERATOR_EMAILS is unset while Supabase auth is enabled — " +
+    "[auth] PLATFORM_OPERATOR_EMAILS is unset while Supabase auth is enabled - " +
       "the platform-operator console (/dashboard, /instances, /admin) is now closed to EVERY account. " +
       "Set PLATFORM_OPERATOR_EMAILS to a comma-separated list of operator emails in the web tier's " +
       "environment (platform/.env.production, consumed by the `web` service in docker-compose.prod.yml) " +
@@ -107,7 +107,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
 
   // Unconfigured auth is the documented local-dev mode (see supabase/config):
   // no gate, everything scoped to DEV_ORG_ID. Give the owner console the same
-  // treatment so it is usable without a Supabase project — as `operator`, so
+  // treatment so it is usable without a Supabase project - as `operator`, so
   // the platform console stays reachable too.
   if (!user) {
     if (AUTH_ENABLED) return null;
@@ -119,7 +119,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       // CRM-object page 403 and render "Data unavailable" in exactly the
       // local-dev mode this branch exists to support. Defaults to null, so
       // an unset DEV_USER_ID behaves as it always did. Unreachable when
-      // AUTH_ENABLED — a real session takes the path below.
+      // AUTH_ENABLED - a real session takes the path below.
       userId: DEV_USER_ID,
       kind: "operator",
       membership: {
@@ -131,7 +131,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
         recordingsListen: true,
         recordingsExport: true,
         workspaceId: DEV_WORKSPACE_ID,
-        // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally — 0072's backfill.
+        // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally - 0072's backfill.
         enabledModules: ["aura", "crm"],
       },
     };
@@ -152,7 +152,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       userId = body.user?.id ?? null;
     }
   } catch {
-    // API down. Fall through as an unbound session rather than a hard error —
+    // API down. Fall through as an unbound session rather than a hard error -
     // the pages themselves already render an "API offline" state.
   }
 
@@ -167,7 +167,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
   const membership = memberships.find((m) => m.orgStatus === "active") ?? memberships[0] ?? null;
 
   // An explicitly listed operator stays an operator even if they hold a
-  // membership — otherwise provisioning yourself an owner login on a test
+  // membership - otherwise provisioning yourself an owner login on a test
   // tenant would lock you out of the operator console. They keep access to
   // /owner too, since `membership` is what gates that.
   const listedOperator = OPERATOR_EMAILS.includes(user.email.toLowerCase());
@@ -182,20 +182,20 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
 });
 
 /**
- * True when this session may use the platform-operator console — every tenant's
+ * True when this session may use the platform-operator console - every tenant's
  * data, cross-tenant. Deny by default; this is the only gate in front of it.
  */
 export function isOperator(principal: Principal | null): boolean {
   if (!principal || principal.kind !== "operator") return false;
 
   // Auth unconfigured is the documented local-dev mode (see supabase/config):
-  // there is no session, so there is no email to check an allowlist against —
+  // there is no session, so there is no email to check an allowlist against -
   // getPrincipal() above synthesised this principal itself with an empty email.
   // Deliberate and narrow: it requires NEXT_PUBLIC_SUPABASE_URL/ANON_KEY to be
   // absent, which is never true of a deployed console.
   if (!AUTH_ENABLED) return true;
 
-  // Fail closed. An empty allowlist means nobody, not everybody — a missing env
+  // Fail closed. An empty allowlist means nobody, not everybody - a missing env
   // var must lock us out, not let strangers in. The console-wide symptom is
   // announced at module load above so the cause is never a mystery.
   if (OPERATOR_EMAILS.length === 0) return false;
@@ -205,7 +205,7 @@ export function isOperator(principal: Principal | null): boolean {
 
 /**
  * The owner principal, or null. Pages under /owner use this and redirect when
- * it comes back empty — never trusting an org id from the request.
+ * it comes back empty - never trusting an org id from the request.
  */
 export async function getOwner(): Promise<(Principal & { membership: OwnerMembership }) | null> {
   const principal = await getPrincipal();
@@ -215,7 +215,7 @@ export async function getOwner(): Promise<(Principal & { membership: OwnerMember
 
 /**
  * GET against the signed-in owner's own org. The counterpart to `apiGet`, which
- * is pinned to DEV_ORG_ID — pages under /owner must never use that one.
+ * is pinned to DEV_ORG_ID - pages under /owner must never use that one.
  */
 export async function ownerGet<T>(path: string): Promise<T | null> {
   const owner = await getOwner();

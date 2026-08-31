@@ -1,6 +1,6 @@
--- 0041_tasks.sql — Track A3: follow-up tasks.
+-- 0041_tasks.sql - Track A3: follow-up tasks.
 --
--- "Call Priya back on Thursday" — the thing a CRM is actually for, and the
+-- "Call Priya back on Thursday" - the thing a CRM is actually for, and the
 -- one piece of Layer 0 with no existing home: `deals.next_action` is a single
 -- free-text line with no owner, no due date and no way to ask "what is
 -- overdue across the team?".
@@ -8,7 +8,7 @@
 -- Same shape decisions as 0040: `status` and `priority` are DB CHECKs
 -- because they are closed sets that authorization and sorting depend on,
 -- while the object a task hangs off is three nullable FKs rather than a
--- polymorphic (object_type, record_id) pair — real referential integrity,
+-- polymorphic (object_type, record_id) pair - real referential integrity,
 -- the same reasoning 0037 used for custom-field values.
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- "My open work, soonest first" — the query the console opens with. NULLS
+-- "My open work, soonest first" - the query the console opens with. NULLS
 -- LAST so undated tasks sort after dated ones rather than pretending to be
 -- the most urgent thing on the list.
 CREATE INDEX IF NOT EXISTS tasks_assignee_due
@@ -84,13 +84,13 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- `PermissionObjectType` grows to contact|account|deal|task in this same
 -- change, and CrmPermissionsGuard DENIES anything a role has no grant for.
 -- Without this block every existing user would be locked out of tasks the
--- moment the routes shipped — the grid is only editable by an admin who
+-- moment the routes shipped - the grid is only editable by an admin who
 -- would first have to notice.
 --
 -- Byte-for-byte the same predicate 0039 used for its own seeding, so a
 -- system role's task grants match its contact grants exactly: admins get
 -- everything, workspace_member view/create/edit, viewer view only. Custom
--- roles are deliberately NOT touched — somebody defined those by hand, and
+-- roles are deliberately NOT touched - somebody defined those by hand, and
 -- silently widening them is not this migration's call.
 INSERT INTO role_permissions (org_id, role_id, object_type, action, scope)
 SELECT r.org_id, r.id, 'task', a.action, 'all'

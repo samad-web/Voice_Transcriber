@@ -1,4 +1,4 @@
--- 0017_telecallers.sql — a stable telecaller identity, independent of the
+-- 0017_telecallers.sql - a stable telecaller identity, independent of the
 -- handset (design doc §A.6, Build-Order Step 1).
 --
 -- Until now "telecaller" was nothing but devices.telecaller_name: free text,
@@ -9,7 +9,7 @@
 -- column on leads that survives a device being reassigned later.
 --
 -- devices.telecaller_name and telecaller_device_id are left exactly as they
--- are — the leaderboard/board still read them today. Rewiring those reads to
+-- are - the leaderboard/board still read them today. Rewiring those reads to
 -- go through `telecallers` is deferred to the coaching module; this migration
 -- only adds the table, keeps it accurate via two small write-path touches
 -- (see apps/worker/src/pipeline/leads.ts and owner.controller.ts's
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS telecallers (
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
--- A person can't be bound as two telecallers in one org — protects the future
+-- A person can't be bound as two telecallers in one org - protects the future
 -- self-scoping join (a Telecaller-persona session finding "their own" row).
 CREATE UNIQUE INDEX IF NOT EXISTS telecallers_org_user
   ON telecallers (org_id, user_id) WHERE user_id IS NOT NULL;
@@ -38,7 +38,7 @@ ALTER TABLE devices
 
 -- Written once, at lead creation, and never updated afterward (see the
 -- worker's ON CONFLICT ... DO UPDATE SET, which telecaller_device_id is
--- already deliberately absent from — this column follows the same rule). A
+-- already deliberately absent from - this column follows the same rule). A
 -- live join through the device would reproduce the reassignment bug one
 -- level deeper; a snapshot is what makes the identity durable.
 ALTER TABLE leads
@@ -94,7 +94,7 @@ UPDATE devices d
 
 -- Best-effort snapshot for leads that already exist. A lead whose device was
 -- already reassigned before this migration ran has no way to recover who
--- really qualified it — that data loss already happened. This just stops it
+-- really qualified it - that data loss already happened. This just stops it
 -- from getting worse going forward.
 UPDATE leads l
    SET telecaller_id = d.telecaller_id

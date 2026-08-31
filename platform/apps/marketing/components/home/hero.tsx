@@ -4,7 +4,7 @@ import { WhatsAppCta } from "../ui/whatsapp-cta";
 import { BRAND_LINE, WA_MESSAGES } from "@/lib/site";
 
 /**
- * Hero — copy from doc 10 §5.1, near-verbatim, because it was written against
+ * Hero - copy from doc 10 §5.1, near-verbatim, because it was written against
  * this buyer and is better than a rewrite.
  *
  * The LCP element is the `<h1>`: text, above the fold, in a self-hosted font

@@ -7,7 +7,7 @@
  * same way, for the reason its own header gives: the tenant boundary used to
  * live in ~70 hand-written calls, one per handler, "where forgetting one was
  * silent rather than a compile error". The operator boundary in this route
- * group is in exactly that shape today — one `await requireOperator()` per
+ * group is in exactly that shape today - one `await requireOperator()` per
  * exported action, enforced by nothing but review. A ninth action added next
  * month without the line is a cross-tenant hole that no unit test of any
  * individual module would notice, because the defect is an ABSENCE.
@@ -31,7 +31,7 @@ import { blankNonCode, bodyBraceAfter, matchDelimiter } from "@/lib/test-support
 /** This test file lives at the root of the route group it polices. */
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
 
-/** The eight that exist today. NOT the source of truth — a floor, so that a
+/** The eight that exist today. NOT the source of truth - a floor, so that a
  *  discovery walk which silently stops finding files fails loudly instead of
  *  passing vacuously. A ninth file must not fail here; it must fail on its
  *  missing guard. */
@@ -90,7 +90,7 @@ const sources = new Map(files.map((f) => [f, readFileSync(join(GROUP_DIR, f), "u
 const code = new Map([...sources].map(([f, s]) => [f, blankNonCode(s)]));
 const actions = files.flatMap((f) => exportedActions(f, code.get(f)!));
 
-describe("(platform) Server Actions — every one re-asserts operator identity", () => {
+describe("(platform) Server Actions - every one re-asserts operator identity", () => {
   it("discovers at least the action files known to exist", () => {
     // The whole suite is vacuous if the walk finds nothing, and finding nothing
     // is exactly what a moved directory or a renamed route group looks like.
@@ -100,7 +100,7 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
 
   it("parses at least one exported action out of every file", () => {
     // Guards the parser, not the source. A signature shape it failed to match
-    // would silently exempt a whole file from every assertion below — the same
+    // would silently exempt a whole file from every assertion below - the same
     // vacuous-pass failure mode this suite exists to prevent, one level up.
     for (const file of files) {
       const parsed = actions.filter((a) => a.file === file);
@@ -112,7 +112,7 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
   it("exports no async member in a form this parser cannot see", () => {
     // FAIL-CLOSED ON THE PARSER ITSELF, and the most important assertion in the
     // file. `"use server"` promotes EVERY exported async member to an endpoint,
-    // not only `export async function` — `export const fooAction = async () =>
+    // not only `export async function` - `export const fooAction = async () =>
     // {}` is equally addressable, and `exportedActions` above matches only the
     // declaration form. Without this, the way to defeat the whole suite is to
     // write the ninth action as an arrow function, and everything stays green.
@@ -126,7 +126,7 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
     // clause export of an async arrow declared earlier in the file, or a
     // barrel re-export of another module's actions, are BOTH live POST
     // endpoints on this file's action id namespace, and `exportedActions` sees
-    // neither. `export type { … }` is deliberately not matched — a type export
+    // neither. `export type { … }` is deliberately not matched - a type export
     // is erased and is not an endpoint.
     const UNPARSED = new RegExp(
       [
@@ -165,7 +165,7 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
     expect(
       GUARD_CALL.test(action.body),
       `${action.file} › ${action.name} is an unauthenticated POST endpoint: it never calls ` +
-        "requireOperator(). Add `await requireOperator()` as its FIRST statement — see " +
+        "requireOperator(). Add `await requireOperator()` as its FIRST statement - see " +
         "lib/operator-guard.ts for why the (platform) layout does not cover this.",
     ).toBe(true);
   });
@@ -191,8 +191,8 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
     (_label, action) => {
       // Stronger than the ordering case above, and the reason it is needed: the
       // ordering case looks for a literal `fetch(`, so for an action that
-      // delegates its request to a module-local helper — all eight of
-      // `crm/actions.ts` go through `call()` — there is no `fetch(` in the body
+      // delegates its request to a module-local helper - all eight of
+      // `crm/actions.ts` go through `call()` - there is no `fetch(` in the body
       // and the case returns without asserting anything. This one does not
       // depend on finding the network call at all.
       //
@@ -206,18 +206,18 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
       expect(
         FIRST_STATEMENT.test(action.body),
         `${action.file} › ${action.name} does not open with \`await requireOperator()\`. ` +
-          "Something runs before the identity check — see lib/operator-guard.ts.",
+          "Something runs before the identity check - see lib/operator-guard.ts.",
       ).toBe(true);
     },
   );
 
   it("guards every action that accepts a tenant from its caller", () => {
-    // Not a second hole — a clarification, and the one worth writing down. An
+    // Not a second hole - a clarification, and the one worth writing down. An
     // operator naming any `orgId` is the INTENDED behaviour of the platform
     // console; the whole instance section is built on it. So these actions
     // legitimately take an org from their caller, and `requireOperator()` is
     // the only thing standing between that parameter and every tenant on the
-    // platform. The defect was never that operators can cross tenants — it was
+    // platform. The defect was never that operators can cross tenants - it was
     // that anyone could.
     const orgTaking = actions.filter((a) => /\borgId\b/.test(a.body));
     expect(orgTaking.length).toBeGreaterThan(0);
@@ -227,6 +227,6 @@ describe("(platform) Server Actions — every one re-asserts operator identity",
   });
 });
 
-// The scanner's own self-tests live in lib/test-support/source-scan.test.ts —
+// The scanner's own self-tests live in lib/test-support/source-scan.test.ts -
 // shared by this suite and platform-pages.guard.test.ts, so they are proven
 // once rather than twice.

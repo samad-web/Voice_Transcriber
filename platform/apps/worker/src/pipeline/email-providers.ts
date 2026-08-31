@@ -3,7 +3,7 @@
  *
  * One interface, one implementation per provider, and nothing above this file
  * knows which provider a connection uses. Adding a provider means adding an
- * entry to ADAPTERS — the same "onboarding is data, not a branch in the
+ * entry to ADAPTERS - the same "onboarding is data, not a branch in the
  * dispatcher" contract the connection catalogue itself has.
  *
  * WHAT AN ADAPTER RETURNS. A normalised message, deliberately small: who it
@@ -15,7 +15,7 @@
  */
 
 export interface NormalisedMessage {
-  /** Provider's own id — the idempotency key (migration 0044). */
+  /** Provider's own id - the idempotency key (migration 0044). */
   externalId: string;
   from: string;
   to: string[];
@@ -155,8 +155,8 @@ const graph: EmailAdapter = {
  *
  * The same device the ASR and analysis stages already use (ASR_STUB /
  * ANALYZE_STUB): a real Gmail round trip needs a registered OAuth app and a
- * populated mailbox, and without a stub the entire sync path — matching,
- * de-duplication, timeline writes, cursor handling — could only ever be
+ * populated mailbox, and without a stub the entire sync path - matching,
+ * de-duplication, timeline writes, cursor handling - could only ever be
  * reasoned about rather than run.
  *
  * `EMAIL_STUB_ADDRESS` names the counterparty, so a test can point the fixture
@@ -203,7 +203,7 @@ const ADAPTERS: Record<string, EmailAdapter> = {
  * `imap` is a connection the console offers and this file cannot service:
  * IMAP needs a real client library, which is a dependency decision, and
  * nothing here can test one without a mail server. Returning null makes that
- * visible to the caller as "not supported" rather than as silence — a
+ * visible to the caller as "not supported" rather than as silence - a
  * connected mailbox that never syncs and never says why is the worse failure.
  */
 export function emailAdapter(provider: string): EmailAdapter | null {
@@ -225,7 +225,7 @@ export class ProviderHttpError extends Error {
     this.name = "ProviderHttpError";
   }
 
-  /** The token is dead — no amount of retrying revives it. */
+  /** The token is dead - no amount of retrying revives it. */
   get needsReconnect(): boolean {
     return this.status === 401 || this.status === 403;
   }

@@ -2,7 +2,7 @@
 --
 -- 0006 fixed a deliberate policy in the schema: the full counterparty number is
 -- never stored, only a 5-digit prefix, the last 3 and a hash. That is the right
--- default, but it makes a CRM hand-off useless — a sales team receiving
+-- default, but it makes a CRM hand-off useless - a sales team receiving
 -- "98765…321" cannot ring the prospect back.
 --
 -- Rather than reverse the decision for everyone, it becomes a per-organization
@@ -32,7 +32,7 @@ COMMENT ON COLUMN calls.remote_number_full IS
 --
 -- The dispatcher queues every completed call, which is right for a connector
 -- meant as a call log. A connector feeding a CRM's lead table wants only the
--- calls the AI agent actually qualified — otherwise no-answers and wrong
+-- calls the AI agent actually qualified - otherwise no-answers and wrong
 -- numbers arrive as leads. Per-integration rather than global so one tenant
 -- choosing lead-only does not change what another tenant already receives.
 

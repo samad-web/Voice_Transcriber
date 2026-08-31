@@ -1,9 +1,9 @@
--- 0061_messaging_channel_wasi.sql — Kailash gap Milestone 3: wiring Aura up
+-- 0061_messaging_channel_wasi.sql - Kailash gap Milestone 3: wiring Aura up
 -- to Wasi (the user's own WhatsApp Business Solution Provider platform,
 -- `C:\Users\mas20\Desktop\work\Wasi`) as a Hub API client, rather than
 -- integrating Meta's Cloud API directly. `messaging_channels.provider` (0056)
--- was already designed for exactly this — "a second provider is a row, not a
--- migration" — so a Wasi channel is `provider = 'wasi'` with its `client_id`
+-- was already designed for exactly this - "a second provider is a row, not a
+-- migration" - so a Wasi channel is `provider = 'wasi'` with its `client_id`
 -- in the existing `config` jsonb, `api_base_url` = Wasi's host, `api_key` =
 -- the Hub API key (already encrypted by the existing column). The ONE
 -- genuinely new thing is below.
@@ -14,13 +14,13 @@
 -- when a Sirah-team admin configures "CRM Inbound Forwarding" on that
 -- client's Wasi admin page (`POST /api/admin/clients/:id/hub-forward`). There
 -- is no self-serve retrieval or rotation of that secret on Wasi's side, so it
--- is entered here once, by hand, the same way `api_key` is — encrypted with
+-- is entered here once, by hand, the same way `api_key` is - encrypted with
 -- the same `encryptSecret()`.
 ALTER TABLE messaging_channels
   ADD COLUMN IF NOT EXISTS forward_secret text;
 
 -- `message_template_status_update` and `account_update` forward Meta's raw
--- payload verbatim (see wasi.ts) — there is no existing table shaped to hold
+-- payload verbatim (see wasi.ts) - there is no existing table shaped to hold
 -- "a WABA's template got paused" or "the account was restricted", and
 -- inventing a reaction for either before a real one has ever been seen would
 -- be guessing. Logged here, surfaced later; NOT acted on automatically, so

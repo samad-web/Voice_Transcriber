@@ -2,7 +2,7 @@ import { Section, SectionHeading } from "../ui/layout";
 import { StepFlow } from "../ui/content";
 
 /**
- * How it works — four steps (doc 10 §3 row 4), horizontal on desktop, stacked
+ * How it works - four steps (doc 10 §3 row 4), horizontal on desktop, stacked
  * on mobile.
  *
  * Each step describes what the deployed pipeline actually does:

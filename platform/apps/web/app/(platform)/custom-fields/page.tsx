@@ -8,10 +8,10 @@ import { apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope } from "@/lib/tenant-scope";
 import { CustomFieldsManager } from "./custom-fields-manager";
 
-export const metadata: Metadata = { title: "Custom Fields — Aura" };
+export const metadata: Metadata = { title: "Custom Fields - Aura" };
 
 /**
- * Org-definable fields on Contact/Account/Deal — CRM Phase 1, E0.2. Same
+ * Org-definable fields on Contact/Account/Deal - CRM Phase 1, E0.2. Same
  * tenant-scoping shape as (platform)/crm/page.tsx: one tenant at a time,
  * explicit and switchable via `?org=`, never the silent DEV_ORG_ID default.
  */
@@ -41,7 +41,7 @@ export default async function CustomFieldsPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (

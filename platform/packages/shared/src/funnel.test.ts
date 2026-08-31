@@ -72,7 +72,7 @@ function everyCombination() {
   return out;
 }
 
-describe("qualify — the three qualifying clauses (doc 16 §3.2)", () => {
+describe("qualify - the three qualifying clauses (doc 16 §3.2)", () => {
   it("qualifies on budget + ready intent", () => {
     const r = qualify({
       budget: "30k_40k",
@@ -135,7 +135,7 @@ describe("qualify — the three qualifying clauses (doc 16 §3.2)", () => {
   });
 });
 
-describe("qualify — what does NOT qualify", () => {
+describe("qualify - what does NOT qualify", () => {
   it("disqualifies a clearing budget with exploring intent", () => {
     const r = qualify({
       budget: "100k_plus",
@@ -154,9 +154,9 @@ describe("qualify — what does NOT qualify", () => {
     }
   });
 
-  it("treats the ₹10,000–₹30,000 band by its FLOOR, not its ceiling", () => {
+  it("treats the ₹10,000-₹30,000 band by its FLOOR, not its ceiling", () => {
     // The band contains respondents at ₹12,000. Comparing its ceiling to the
-    // threshold would qualify them on a number they never gave — the single
+    // threshold would qualify them on a number they never gave - the single
     // easiest way to get this function subtly wrong.
     const band = BUDGET_BANDS.find((b) => b.value === "10k_30k");
     expect(band?.floorInr).toBe(10_000);
@@ -183,10 +183,10 @@ describe("qualify — what does NOT qualify", () => {
   });
 });
 
-describe("qualify — tell_me_more flags a human but no longer vetoes a slot", () => {
+describe("qualify - tell_me_more flags a human but no longer vetoes a slot", () => {
   // CHANGED 2026-08-09, by the owner. `tell_me_more` used to force
   // `disqualified` unconditionally. It was found by the owner failing to get
-  // through his own funnel at ₹40,000–₹1,00,000/month, ready to start — the
+  // through his own funnel at ₹40,000-₹1,00,000/month, ready to start - the
   // strongest lead the form can produce, routed to a contact-us screen because
   // he also wanted to know more about the custom-CRM offer.
   //
@@ -207,7 +207,7 @@ describe("qualify — tell_me_more flags a human but no longer vetoes a slot", (
     expect(r.mayBookSlot).toBe(true);
   });
 
-  it("NO LONGER overrides a qualifying budget — the case that prompted the change", () => {
+  it("NO LONGER overrides a qualifying budget - the case that prompted the change", () => {
     const r = qualify({
       budget: "100k_plus",
       intent: "ready",
@@ -223,7 +223,7 @@ describe("qualify — tell_me_more flags a human but no longer vetoes a slot", (
     expect(r.reasons).toContain("route_to_human_tell_me_more");
   });
 
-  it("does not qualify on its own — curiosity is not a buying signal", () => {
+  it("does not qualify on its own - curiosity is not a buying signal", () => {
     // The other half of the change, and the reason it is safe. `tell_me_more`
     // was NOT promoted to a qualifying clause: an information request from
     // someone who is not ready and under the budget floor still books nothing,
@@ -240,7 +240,7 @@ describe("qualify — tell_me_more flags a human but no longer vetoes a slot", (
   });
 
   it("cannot fire the greenfield clause, which needs wants_custom_crm = yes", () => {
-    // Not an override any more — greenfield simply cannot match, because the
+    // Not an override any more - greenfield simply cannot match, because the
     // answer is `tell_me_more` rather than `yes`.
     const r = qualify({
       budget: "not_sure",
@@ -254,18 +254,18 @@ describe("qualify — tell_me_more flags a human but no longer vetoes a slot", (
   });
 });
 
-describe("qualify — exhaustive invariants over all 288 combinations", () => {
+describe("qualify - exhaustive invariants over all 288 combinations", () => {
   const all = everyCombination();
 
   it("covers the whole input space", () => {
     expect(all).toHaveLength(7 * 3 * 4 * 4);
   });
 
-  it("tell_me_more is IGNORED by qualification — same verdict as answering nothing", () => {
+  it("tell_me_more is IGNORED by qualification - same verdict as answering nothing", () => {
     // The sharpest statement of the 2026-08-09 change, and stronger than the
     // rule it replaced: for every combination, replacing `tell_me_more` with a
     // null custom-CRM answer must not change the verdict. That pins BOTH halves
-    // at once — it cannot veto a slot, and it cannot earn one — and it would
+    // at once - it cannot veto a slot, and it cannot earn one - and it would
     // fail if `tell_me_more` were ever quietly promoted to a qualifying clause.
     for (const c of all) {
       if (c.wantsCustomCrm !== "tell_me_more") continue;
@@ -311,7 +311,7 @@ describe("qualify — exhaustive invariants over all 288 combinations", () => {
     }
   });
 
-  it("a fired clause without tell_me_more ALWAYS qualifies — no silent drop", () => {
+  it("a fired clause without tell_me_more ALWAYS qualifies - no silent drop", () => {
     // The mirror of the assertion above. Together they pin the function to the
     // spec in both directions; either one alone would let a whole class of
     // enquiry be lost or admitted without a failing test.
@@ -326,7 +326,7 @@ describe("qualify — exhaustive invariants over all 288 combinations", () => {
     }
   });
 
-  it("is pure — same input, same output, and the input is not mutated", () => {
+  it("is pure - same input, same output, and the input is not mutated", () => {
     const input = {
       budget: "30k_40k" as BudgetBand,
       intent: "ready" as Intent,
@@ -339,7 +339,7 @@ describe("qualify — exhaustive invariants over all 288 combinations", () => {
   });
 });
 
-describe("classifyCrm (doc 16 §3.7) — computed at write time", () => {
+describe("classifyCrm (doc 16 §3.7) - computed at write time", () => {
   it("returns none when the respondent has no CRM", () => {
     expect(classifyCrm("no", null)).toBe("none");
     expect(classifyCrm("spreadsheets_whatsapp", null)).toBe("none");
@@ -390,11 +390,11 @@ describe("the CRM option list stays in step with the connector catalogue", () =>
   });
 });
 
-describe("validateName — doc 16 §0.2, the unicode correction", () => {
+describe("validateName - doc 16 §0.2, the unicode correction", () => {
   it("accepts Tamil", () => {
     // Real strings, not transliterations. Tamil builds syllables from combining
     // marks (the pulli on ழ், the vowel signs), which is why \p{M} is in the
-    // pattern — a \p{L}-only class fails these on characters that are invisible
+    // pattern - a \p{L}-only class fails these on characters that are invisible
     // in a diff.
     for (const name of ["தமிழரசன்", "முருகன்", "செல்வி ராணி", "க. மணிகண்டன்"]) {
       expect(validateName(name), name).toMatchObject({ ok: true });
@@ -435,7 +435,7 @@ describe("validateName — doc 16 §0.2, the unicode correction", () => {
   });
 
   it("rejects punctuation-only input that the raw pattern would admit", () => {
-    // NAME_PATTERN alone accepts these — the character class contains ".", "-"
+    // NAME_PATTERN alone accepts these - the character class contains ".", "-"
     // and "'" and the length bound is met. The extra \p{L} requirement is what
     // stops "..." becoming a stored name.
     expect(NAME_PATTERN.test("...")).toBe(true);
@@ -453,7 +453,7 @@ describe("validateName — doc 16 §0.2, the unicode correction", () => {
   });
 });
 
-describe("validateEmail and the disposable blocklist — doc 16 §3.4", () => {
+describe("validateEmail and the disposable blocklist - doc 16 §3.4", () => {
   it("normalises to lower(trim()), matching email_normalized", () => {
     expect(normalizeEmail("  Ravi@Example.COM ")).toBe("ravi@example.com");
     expect(validateEmail("  Ravi@Example.COM ")).toEqual({ ok: true, value: "ravi@example.com" });
@@ -508,7 +508,7 @@ describe("validateEmail and the disposable blocklist — doc 16 §3.4", () => {
   });
 });
 
-describe("validatePhone — E.164, per country", () => {
+describe("validatePhone - E.164, per country", () => {
   it("accepts a real Indian mobile and returns E.164", () => {
     expect(validatePhone("IN", "9876543210")).toEqual({ ok: true, value: "+919876543210" });
     expect(validatePhone("IN", "98765 43210")).toEqual({ ok: true, value: "+919876543210" });
@@ -520,7 +520,7 @@ describe("validatePhone — E.164, per country", () => {
     expect(normalizePhoneDigits("0 (0) 7911 123456")).toBe("7911123456");
   });
 
-  it("rejects an Indian landline-style prefix — mobiles start 6–9", () => {
+  it("rejects an Indian landline-style prefix - mobiles start 6-9", () => {
     expect(validatePhone("IN", "1234567890").ok).toBe(false);
     expect(validatePhone("IN", "5876543210").ok).toBe(false);
   });
@@ -562,7 +562,7 @@ describe("validatePhone — E.164, per country", () => {
   });
 });
 
-describe("coerceOption — untrusted input narrowing", () => {
+describe("coerceOption - untrusted input narrowing", () => {
   it("accepts a known value, trimming", () => {
     expect(coerceOption(BUDGET_BANDS, " 30k_40k ")).toBe("30k_40k");
     expect(coerceOption(BUSINESS_TYPES, "interiors")).toBe("interiors");
@@ -582,7 +582,7 @@ describe("coerceOption — untrusted input narrowing", () => {
 
 describe("option lists match migration 0020's CHECK constraints", () => {
   // The database is the authority on legal values. If these drift, the form
-  // renders a choice the INSERT then rejects — a 500 on a live lead form.
+  // renders a choice the INSERT then rejects - a 500 on a live lead form.
   it("has_crm", () => {
     expect(HAS_CRM_OPTIONS.map((o) => o.value)).toEqual(["yes", "spreadsheets_whatsapp", "no"]);
   });

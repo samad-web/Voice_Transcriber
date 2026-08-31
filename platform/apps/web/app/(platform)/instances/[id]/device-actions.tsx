@@ -46,7 +46,7 @@ export function DeviceActions({
       {msg ? (
         // aria-live: an operator watching a device list otherwise has no way
         // to learn a remote wipe failed short of staring at this exact spot.
-        // The failure also needs a *distinct* colour from success — both used
+        // The failure also needs a *distinct* colour from success - both used
         // to render in the same muted grey, which is ambiguous at a glance.
         <span
           role="status"

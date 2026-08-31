@@ -7,7 +7,7 @@ import { z } from "zod";
  * Pure by design (no db, no fetch, no node builtins) for the same reason
  * crm-template is: the worker qualifies a call with these functions, the API
  * validates a stage move with them, and the web console renders columns from
- * them. One definition, three consumers — a board column the API rejects can
+ * them. One definition, three consumers - a board column the API rejects can
  * never appear in the UI.
  */
 
@@ -47,7 +47,7 @@ export type LeadStatus = z.infer<typeof LeadStatus>;
 /**
  * Read a tenant's stage list, falling back to the defaults.
  *
- * A malformed column list must not take the board down — an owner would see an
+ * A malformed column list must not take the board down - an owner would see an
  * error page instead of their pipeline, which is a worse failure than showing
  * the standard columns.
  */
@@ -61,7 +61,7 @@ export function statusForStage(stages: LeadStages, stageKey: string): LeadStatus
   return stages.find((s) => s.key === stageKey)?.terminal ?? "open";
 }
 
-/** First non-terminal column — where a newly qualified lead enters the board. */
+/** First non-terminal column - where a newly qualified lead enters the board. */
 export function entryStage(stages: LeadStages): string {
   return (stages.find((s) => !s.terminal) ?? stages[0]).key;
 }
@@ -106,7 +106,7 @@ export function parseLeadRules(raw: unknown): LeadRules {
  *
  * The LLM returns `null` for "not mentioned", and the call_facts projection
  * stores empty strings and empty arrays for the same thing, so all three have
- * to count as absent — otherwise every wrong number qualifies as a lead.
+ * to count as absent - otherwise every wrong number qualifies as a lead.
  */
 export function isFilled(value: unknown): boolean {
   if (value === null || value === undefined) return false;
@@ -117,7 +117,7 @@ export function isFilled(value: unknown): boolean {
 
 export interface LeadQualification {
   qualified: boolean;
-  /** Why not — surfaced in worker logs, so a tenant can see why a call was skipped. */
+  /** Why not - surfaced in worker logs, so a tenant can see why a call was skipped. */
   reason: string;
   /** facts[titleField], when the rules named one and the call filled it. */
   title: string | null;

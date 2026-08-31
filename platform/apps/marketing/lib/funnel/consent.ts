@@ -1,11 +1,11 @@
 /**
- * The consent wording, versioned — doc 16 §0.3.
+ * The consent wording, versioned - doc 16 §0.3.
  *
  * The spec had one pre-ticked box labelled "WhatsApp same as phone?". That
  * conflates two different things, and under India's DPDP Act and the GDPR the
  * pre-ticked half of it is not consent at all. So there are two controls:
  *
- *   WHATSAPP_SAME_QUESTION  a DATA question. Pre-ticked is fine — all it
+ *   WHATSAPP_SAME_QUESTION  a DATA question. Pre-ticked is fine - all it
  *                           controls is whether a second field appears. Nothing
  *                           about it grants permission to contact anyone.
  *
@@ -47,7 +47,7 @@ export const CONSENT_SUPPORTING_TEXT =
 /** Where the privacy notice lives on this site. */
 export const PRIVACY_NOTICE_HREF = "/security";
 
-/** The pre-ticked DATA question. Not consent — see the header. */
+/** The pre-ticked DATA question. Not consent - see the header. */
 export const WHATSAPP_SAME_QUESTION = "Is your WhatsApp number the same as this one?";
 
 /**

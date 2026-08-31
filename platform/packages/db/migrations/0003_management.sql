@@ -1,4 +1,4 @@
--- 0003_management.sql — management + metering surfaces (checklist §2).
+-- 0003_management.sql - management + metering surfaces (checklist §2).
 -- API keys (hashed, prefix-displayed) + per-call notes. Runs as the admin/owner
 -- role; the app connects as `aura_app` so ENABLE + FORCE ROW LEVEL SECURITY
 -- actually bind it. Mirrors 0001's tenancy pattern exactly.
@@ -33,7 +33,7 @@ CREATE TABLE call_notes (
 CREATE INDEX call_notes_call ON call_notes (call_id, created_at DESC);
 
 ------------------------------------------------------------------------------
--- Row-Level Security — org isolation on the new tenant tables (§2), identical
+-- Row-Level Security - org isolation on the new tenant tables (§2), identical
 -- to 0001. current_setting('app.org_id', true) is NULL when unset → default deny.
 ------------------------------------------------------------------------------
 DO $$

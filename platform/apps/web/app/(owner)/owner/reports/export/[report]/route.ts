@@ -6,13 +6,13 @@ import { API_URL, orgHeaders } from "@/lib/server-api";
  * Download proxy for the Layer 3 CSV exports.
  *
  * A Route Handler rather than a Server Action, because this has to be a plain
- * `<a href>` a browser downloads — an action returns a value to JS, not a file
+ * `<a href>` a browser downloads - an action returns a value to JS, not a file
  * with a Content-Disposition. The proxy exists at all because the API is
  * reached with the root ADMIN_API_KEY, which must never leave the server; the
  * browser gets the bytes, never the credential.
  *
  * SECURITY: the tenant is re-derived from the session here, exactly as
- * `ownerHeaders()` does for every owner action — the URL carries only the
+ * `ownerHeaders()` does for every owner action - the URL carries only the
  * report name, so there is nothing tenant-scoped for a caller to forge. The
  * API's own `deal:export` permission check still runs behind this; a proxy
  * that authenticated but did not authorize would be a way around the grid.
@@ -36,7 +36,7 @@ export async function GET(
     return NextResponse.json({ error: "Not signed in as an instance owner" }, { status: 401 });
   }
 
-  // Only the window is forwarded — never the whole query string, which would
+  // Only the window is forwarded - never the whole query string, which would
   // let a caller append parameters this route has not vetted.
   const incoming = new URL(request.url).searchParams;
   const forwarded = new URLSearchParams();

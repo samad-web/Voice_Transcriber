@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
--- 0023 — bookable slots, owned by the application
+-- 0023 - bookable slots, owned by the application
 --
 -- Until now "availability" was three environment variables (SCHEDULER_DAY_START,
 -- _DAY_END, _WEEKDAYS) intersected with busy events from a Google Calendar. That
 -- has two problems the owner ran into immediately:
 --
 --   · there is nowhere in the product to open a day and say "these four times
---     are free" — changing availability means editing an env file and
+--     are free" - changing availability means editing an env file and
 --     redeploying;
 --   · it requires a Google Cloud project to exist before anyone can be booked
 --     at all.
@@ -19,7 +19,7 @@
 CREATE TABLE IF NOT EXISTS marketing.booking_slots (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
-  -- Stored as timestamptz — an absolute instant, not a wall-clock time. The
+  -- Stored as timestamptz - an absolute instant, not a wall-clock time. The
   -- console composes it from a date, a time and the team's zone; everything
   -- downstream compares instants and renders in whatever zone it displays.
   -- A naive `time` column would silently break the first time the team travels
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS marketing.booking_slots (
 );
 
 -- No two live slots may start at the same instant. Partial, so a cancelled slot
--- does not block re-creating that time — which is exactly what an operator does
+-- does not block re-creating that time - which is exactly what an operator does
 -- after cancelling one by mistake.
 CREATE UNIQUE INDEX IF NOT EXISTS booking_slots_starts_uniq
   ON marketing.booking_slots (starts_at)
@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS booking_slots_open_upcoming
   WHERE status = 'open';
 
 ------------------------------------------------------------------------------
--- Grants — narrower than the schema default, deliberately
+-- Grants - narrower than the schema default, deliberately
 --
 -- 0020 set ALTER DEFAULT PRIVILEGES granting SELECT, INSERT and UPDATE on every
 -- future table in this schema to aura_marketing, so this table arrives with all
@@ -69,8 +69,8 @@ CREATE INDEX IF NOT EXISTS booking_slots_open_upcoming
 --   availability. Slots are the sales team's diary; the website may read them
 --   and claim one, never invent one.
 --
---   Table-wide UPDATE would let it rewrite starts_at — moving an appointment
---   rather than booking it — or flip a booked slot back to open.
+--   Table-wide UPDATE would let it rewrite starts_at - moving an appointment
+--   rather than booking it - or flip a booked slot back to open.
 --
 -- So: SELECT, plus UPDATE on exactly the four columns that booking touches.
 ------------------------------------------------------------------------------
@@ -82,7 +82,7 @@ GRANT UPDATE (status, submission_id, booked_at, booked_name)
   ON marketing.booking_slots TO aura_marketing;
 
 -- Same treatment 0020 gives every other table here: Supabase's PostgREST roles
--- must never reach this schema. Belt and braces — 0020 already revoked schema
+-- must never reach this schema. Belt and braces - 0020 already revoked schema
 -- USAGE, which is sufficient on its own.
 DO $$
 DECLARE api_role text;

@@ -5,8 +5,8 @@ import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 
 /**
- * The activation gate's local state. A device that has never enrolled — or was
- * remotely logged out / wiped — has isActivated == false, and NOTHING records.
+ * The activation gate's local state. A device that has never enrolled - or was
+ * remotely logged out / wiped - has isActivated == false, and NOTHING records.
  *
  * TODO (checklist §3.5): move refreshToken into EncryptedSharedPreferences.
  */
@@ -27,13 +27,13 @@ object ActivationStore {
 
     fun refreshToken(context: Context): String? = prefs(context).getString("refresh_token", null)
 
-    /** Server-pushed flag from GET /v1/devices/me/config — defaults to false. */
+    /** Server-pushed flag from GET /v1/devices/me/config - defaults to false. */
     fun isRecordingEnabled(context: Context): Boolean =
         prefs(context).getBoolean("recording_enabled", false)
 
     /**
      * The instance's mobile app-lock hash (`pbkdf2$iterations$saltHex$hashHex`),
-     * synced from the same config document — null when the org hasn't set one,
+     * synced from the same config document - null when the org hasn't set one,
      * in which case [ui.LockActivity] lets the app open with no prompt.
      *
      * Anything that is not a well-formed PBKDF2 record reads as NO LOCK, rather
@@ -45,7 +45,7 @@ object ActivationStore {
      * This is the recovery path as much as a guard: a device that already synced
      * the literal string "null" (see PlatformApi.fetchConfig, now fixed at the
      * source) heals itself on next launch instead of needing a reinstall.
-     * Failing OPEN is deliberate and is the safer direction — the lock protects
+     * Failing OPEN is deliberate and is the safer direction - the lock protects
      * a recordings list on a company handset, and the cost of wrongly locking a
      * telecaller out of their own device is far higher than the cost of a
      * missing prompt on a malformed value that was never a real password.
@@ -62,7 +62,7 @@ object ActivationStore {
      * Debug builds bypass the enrollment gate so call recording can be tested on a device
      * with no reachable backend. Uninstalling wipes the [PREFS] enrollment, which otherwise
      * silently disables ALL recording (isActivated == false) until the device is re-enrolled
-     * against the platform. Release builds (FLAG_DEBUGGABLE == 0) are unaffected — still fully
+     * against the platform. Release builds (FLAG_DEBUGGABLE == 0) are unaffected - still fully
      * gated on real enrollment + the server recording flag.
      */
     private fun isDebugBuild(context: Context): Boolean =
@@ -84,7 +84,7 @@ object ActivationStore {
     }
 
     /**
-     * [appLockPasswordHash] must be passed explicitly (no default) — callers that only
+     * [appLockPasswordHash] must be passed explicitly (no default) - callers that only
      * mean to update recordingEnabled/configVersion (e.g. the 401 handler) should pass
      * [appLockPasswordHash] back through unchanged, never null, or a transient auth
      * failure would silently strip a fleet's app lock.
@@ -105,14 +105,14 @@ object ActivationStore {
     fun statusSummary(context: Context): String {
         val p = prefs(context)
         val base = if (!isActivated(context)) {
-            "NOT ACTIVATED — recording disabled"
+            "NOT ACTIVATED - recording disabled"
         } else {
             "Device ${p.getString("device_id", "?")?.take(8)}… · " +
                 "recording ${if (isRecordingEnabled(context)) "ENABLED" else "DISABLED"} · " +
                 "cfg v${p.getInt("config_version", 0)}"
         }
         return if (isDebugBuild(context)) {
-            "$base\n(debug build: activation gate bypassed — recording allowed)"
+            "$base\n(debug build: activation gate bypassed - recording allowed)"
         } else {
             base
         }

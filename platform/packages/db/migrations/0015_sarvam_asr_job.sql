@@ -5,7 +5,7 @@
 -- diarization and audio longer than 30s are only available on its batch API,
 -- which is submit → poll → download and can take minutes on a long call.
 --
--- Blocking the worker on that poll is not an option — processCall runs inside
+-- Blocking the worker on that poll is not an option - processCall runs inside
 -- withOrgContext, so it would hold a Postgres transaction and a pooled
 -- connection open for the duration, for every call in flight at once.
 --
@@ -24,7 +24,7 @@ COMMENT ON COLUMN calls.asr_job_id IS
   'once the transcript lands (or the job fails). NULL for providers that '
   'transcribe inline.';
 COMMENT ON COLUMN calls.asr_job_started_at IS
-  'When the batch job was submitted — drives the stall sweep, so a job the '
+  'When the batch job was submitted - drives the stall sweep, so a job the '
   'provider never finishes fails loudly instead of pinning the call forever.';
 
 -- The poller's working set: calls with a job outstanding, oldest first. Partial,

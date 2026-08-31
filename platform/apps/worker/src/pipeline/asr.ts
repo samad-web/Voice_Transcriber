@@ -18,7 +18,7 @@ export interface AsrResult {
 
 /**
  * ASR stage. Gemini transcribes and diarizes in a single call, so the segments
- * it returns carry both speaker labels and timestamps — the analyze stage
+ * it returns carry both speaker labels and timestamps - the analyze stage
  * labels those segments rather than re-splitting the text. `ASR_STUB=1`
  * short-circuits the whole thing for dev/e2e.
  */
@@ -27,7 +27,7 @@ export async function transcribe(audio: Buffer, mimeType: string): Promise<AsrRe
     return {
       engine: "stub",
       language: "und",
-      text: "[stub transcript — set GEMINI_API_KEY for real ASR]",
+      text: "[stub transcript - set GEMINI_API_KEY for real ASR]",
       segments: [{ speaker: "S1", text: "[stub transcript]", startMs: 0, endMs: 1000 }],
       diarized: false,
     };

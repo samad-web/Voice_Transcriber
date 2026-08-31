@@ -1,5 +1,5 @@
 /**
- * The call card — a live call becoming a CRM row, built in CSS.
+ * The call card - a live call becoming a CRM row, built in CSS.
  *
  * THE HOMEPAGE DOES NOT RENDER THIS. It ships the card as an animated image
  * (see components/landing.tsx), because the owner's machine has Windows

@@ -1,11 +1,11 @@
 ------------------------------------------------------------------------------
--- 0022 — let step 2 of the funnel finish
+-- 0022 - let step 2 of the funnel finish
 --
 -- THE BUG THIS FIXES
 --
 -- 0020 granted `aura_marketing` only SELECT and INSERT on funnel_contact_history,
 -- on the stated reasoning that history is append-only ("history APPENDs", 0020's
--- grants block). But the funnel does not append at step 2 — it UPDATEs the row
+-- grants block). But the funnel does not append at step 2 - it UPDATEs the row
 -- step 1 created, which is why the signed session cookie carries `hid` (the
 -- history row id) alongside `sid` at all.
 --
@@ -16,7 +16,7 @@
 --
 -- It was invisible until the funnel ran against a database with the real grants
 -- applied. Nothing in typecheck, lint or the unit tests can see a missing
--- GRANT — only executing it can.
+-- GRANT - only executing it can.
 --
 -- WHY THIS IS A COLUMN-SCOPED GRANT
 --

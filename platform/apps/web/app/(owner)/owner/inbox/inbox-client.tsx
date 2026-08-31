@@ -51,7 +51,7 @@ export function Inbox() {
   // same filter clicked twice) can let an older fetchThreadAction /
   // listConversationsAction response resolve after a newer one already did.
   // These refs hold what the *latest* request asked for, so a response can
-  // check — after its await — whether it is still the one that matters.
+  // check - after its await - whether it is still the one that matters.
   const selectedIdRef = useRef<string | null>(null);
   const filterRef = useRef<Filter>(filter);
 
@@ -106,7 +106,7 @@ export function Inbox() {
           ? { unmatchedOnly: true }
           : { status: requestFilter === "closed" ? "closed" : "open" },
       );
-      // The filter moved on again while this was in flight — a newer load()
+      // The filter moved on again while this was in flight - a newer load()
       // owns the list now, so this stale response is dropped rather than
       // clobbering it.
       if (filterRef.current !== requestFilter) return;
@@ -132,7 +132,7 @@ export function Inbox() {
     setSendOk(false);
     start(async () => {
       const res = await fetchThreadAction(id);
-      // A newer click already moved selection on — this response lost the
+      // A newer click already moved selection on - this response lost the
       // race and would otherwise show the wrong thread in the reading pane.
       if (selectedIdRef.current !== id) return;
       if (res.error || !res.conversation) {
@@ -140,7 +140,7 @@ export function Inbox() {
         return;
       }
       setThread({ conversation: res.conversation, messages: res.messages ?? [] });
-      // Zero the badge only if there was one — an unread_count already at 0
+      // Zero the badge only if there was one - an unread_count already at 0
       // does not need a round trip every time somebody clicks a thread.
       if (res.conversation.unread_count > 0) {
         await updateConversationAction(id, { markRead: true });
@@ -387,7 +387,7 @@ export function Inbox() {
                   <textarea
                     value={composerText}
                     onChange={(e) => setComposerText(e.target.value)}
-                    placeholder="Type a reply — only deliverable within 24h of their last message."
+                    placeholder="Type a reply - only deliverable within 24h of their last message."
                     rows={3}
                     className="mt-2 w-full resize-none rounded-md border border-border-strong bg-surface p-2.5 text-sm text-text placeholder:text-text-muted"
                   />
@@ -425,7 +425,7 @@ export function Inbox() {
                   {sendError ? <span className="text-xs text-danger-text">{sendError}</span> : null}
                 </div>
                 <p className="mt-2 text-xs text-text-muted">
-                  A person composes and sends every message here, one at a time — there is no
+                  A person composes and sends every message here, one at a time - there is no
                   automated sending path on this platform.
                 </p>
               </div>
@@ -433,7 +433,7 @@ export function Inbox() {
               <p className="mt-4 border-t border-border pt-3 text-xs text-text-muted">
                 {thread.conversation.channel === "whatsapp"
                   ? "This thread has no WhatsApp channel attached yet, so it can't be replied to from here."
-                  : "Replies are sent from the lead’s record, not from here — this platform has no automated sending path, by design."}
+                  : "Replies are sent from the lead’s record, not from here - this platform has no automated sending path, by design."}
               </p>
             )}
           </>
@@ -446,7 +446,7 @@ export function Inbox() {
 /**
  * Times are rendered from the ISO string the API returned, in the reader's own
  * locale. Not `date` columns, so the to_char convention that `tasks.due_on`
- * needs does not apply — these are genuine instants.
+ * needs does not apply - these are genuine instants.
  */
 function formatWhen(iso: string | null): string {
   if (!iso) return "";

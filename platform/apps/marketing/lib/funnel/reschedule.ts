@@ -10,7 +10,7 @@ import { query } from "./db";
  * anything.
  *
  * Deliberately the same shape as ./resume.ts, because it is the same kind of
- * object under the same rules — the differences between two near-identical
+ * object under the same rules - the differences between two near-identical
  * security paths are where the bugs live.
  *
  * ── THE WEBSITE CANNOT MINT ONE ────────────────────────────────────────────
@@ -25,7 +25,7 @@ import { query } from "./db";
  * Unknown, expired, the booking is no longer held, or the enquirer has been
  * erased. The third is the one that does real work: a token stays valid for
  * days, and in that window the call can be cancelled, rejected, or already
- * moved — and once moved, the OLD slot is `open` again, so the old link stops
+ * moved - and once moved, the OLD slot is `open` again, so the old link stops
  * resolving without anybody having to revoke it.
  *
  * Every refusal returns the same thing, for the reason ./resume.ts gives: a
@@ -42,7 +42,7 @@ export interface RescheduleTarget {
   bookingSlotId: string;
   submissionId: string;
   name: string;
-  /** e.g. "Tue, 12 Aug" — what they are moving away from. */
+  /** e.g. "Tue, 12 Aug" - what they are moving away from. */
   dayLabel: string;
   /** e.g. "18:30" */
   timeLabel: string;
@@ -91,7 +91,7 @@ export async function resolveRescheduleToken(
   if (!row) return null;
 
   // The booking is no longer held. Cancelled by an operator, released by a
-  // rejection, or already moved — in which case this slot is 'open' again and
+  // rejection, or already moved - in which case this slot is 'open' again and
   // somebody else may hold it now. Nothing here to reschedule.
   if (row.status !== "booked") return null;
 
@@ -113,7 +113,7 @@ export async function resolveRescheduleToken(
 /**
  * Record that a link was opened. Best-effort, telemetry only.
  *
- * NOT single-use enforcement — see ./resume.ts. Somebody who opens the link,
+ * NOT single-use enforcement - see ./resume.ts. Somebody who opens the link,
  * looks at the times and comes back an hour later must still be able to move
  * their call. COALESCE keeps the FIRST open, which is the interesting one.
  */

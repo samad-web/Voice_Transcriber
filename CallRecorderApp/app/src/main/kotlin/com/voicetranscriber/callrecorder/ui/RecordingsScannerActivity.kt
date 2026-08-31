@@ -33,7 +33,7 @@ import java.util.Locale
 
 /**
  * Finds where THIS handset's own dialer stores its call recordings, and proves we can read
- * them — the prerequisite for the OEM-ingestion path.
+ * them - the prerequisite for the OEM-ingestion path.
  *
  * Why this exists: Samsung ("Auto record calls"), MIUI, Realme etc. record BOTH ends via the
  * system dialer tapping the modem stream, which a normal app can never do. Rather than fight
@@ -41,9 +41,9 @@ import java.util.Locale
  * version, so we probe instead of hardcoding a guess.
  *
  * Three phases, since any one can come up empty on a given build:
- *  1. Known OEM folders        — needs All-files access (API 30+).
- *  2. Bounded storage sweep    — catches layouts we don't know about.
- *  3. MediaStore audio query   — needs READ_MEDIA_AUDIO; finds files wherever they live and
+ *  1. Known OEM folders        - needs All-files access (API 30+).
+ *  2. Bounded storage sweep    - catches layouts we don't know about.
+ *  3. MediaStore audio query   - needs READ_MEDIA_AUDIO; finds files wherever they live and
  *     reports their real path.
  *
  * The whole scan runs off the main thread and reports progress per phase: once All-files
@@ -181,8 +181,8 @@ class RecordingsScannerActivity : AppCompatActivity() {
             binding.heroStatus.setText(R.string.scanner_scanning)
             binding.heroPath.setText(R.string.scanner_scanning_hint)
             binding.statFilesValue.text = "0"
-            binding.statFormatValue.text = "—"
-            binding.statLatestValue.text = "—"
+            binding.statFormatValue.text = "-"
+            binding.statLatestValue.text = "-"
         }
     }
 
@@ -224,17 +224,17 @@ class RecordingsScannerActivity : AppCompatActivity() {
                 if (usesGoogleDialer()) R.string.scanner_none_hint_google else R.string.scanner_none_hint,
             )
             binding.statFilesValue.text = "0"
-            binding.statFormatValue.text = "—"
-            binding.statLatestValue.text = "—"
+            binding.statFormatValue.text = "-"
+            binding.statLatestValue.text = "-"
             return
         }
         binding.heroStatus.setText(R.string.scanner_found)
         // The folder holding the most recordings is the one worth ingesting from.
         binding.heroPath.text = files.groupingBy { it.parent }.eachCount()
-            .maxByOrNull { it.value }?.key ?: "—"
+            .maxByOrNull { it.value }?.key ?: "-"
         binding.statFilesValue.text = files.size.toString()
         binding.statFormatValue.text = files.groupingBy { ".${it.extension}" }.eachCount()
-            .maxByOrNull { it.value }?.key ?: "—"
+            .maxByOrNull { it.value }?.key ?: "-"
         binding.statLatestValue.text = shortStamp(files.first().modified)
     }
 
@@ -300,7 +300,7 @@ class RecordingsScannerActivity : AppCompatActivity() {
         val found = linkedMapOf<String, Found>() // keyed by absolute path → dedupes phases
         val locations = linkedMapOf<String, Int>()
 
-        // Phase 1 — known OEM folders (0–40%).
+        // Phase 1 - known OEM folders (0-40%).
         val known = CANDIDATE_DIRS.map { File(root, it) }
         known.forEachIndexed { i, dir ->
             onProgress(
@@ -314,7 +314,7 @@ class RecordingsScannerActivity : AppCompatActivity() {
             ingestDir(dir, found, locations)
         }
 
-        // Phase 2 — bounded sweep for layouts we don't know (40–80%).
+        // Phase 2 - bounded sweep for layouts we don't know (40-80%).
         val swept = sweepForCallDirs(root) { visited, current ->
             onProgress(
                 Progress(
@@ -328,7 +328,7 @@ class RecordingsScannerActivity : AppCompatActivity() {
         swept.filter { it.absolutePath !in locations }
             .forEach { ingestDir(it, found, locations) }
 
-        // Phase 3 — MediaStore sees indexed audio regardless of folder (80–100%).
+        // Phase 3 - MediaStore sees indexed audio regardless of folder (80-100%).
         onProgress(
             Progress(getString(R.string.scanner_phase_media), "", 85, found.size),
         )
@@ -379,8 +379,8 @@ class RecordingsScannerActivity : AppCompatActivity() {
     }
 
     /**
-     * Hunt for folders not in [CANDIDATE_DIRS]. Bounded three ways — depth, a visited-dir
-     * cap, and a wall-clock budget — because with All-files access this would otherwise walk
+     * Hunt for folders not in [CANDIDATE_DIRS]. Bounded three ways - depth, a visited-dir
+     * cap, and a wall-clock budget - because with All-files access this would otherwise walk
      * the entire external storage tree. Bulk media trees are skipped outright: they hold
      * thousands of directories and never contain call recordings.
      */
@@ -457,7 +457,7 @@ class RecordingsScannerActivity : AppCompatActivity() {
     /**
      * A call recording, not a voice memo. Samsung names them
      * "Call recording <callee>_<yyMMdd>_<HHmmss>.m4a"; other OEMs differ, so we also accept
-     * anything living in a call-ish folder — but never the Voice Recorder folder.
+     * anything living in a call-ish folder - but never the Voice Recorder folder.
      */
     private fun isCallRecording(path: String, name: String): Boolean {
         val p = path.lowercase(Locale.US)
@@ -530,7 +530,7 @@ class RecordingsScannerActivity : AppCompatActivity() {
         const val UNREADABLE = -1
         const val MEDIASTORE_ONLY = -2
 
-        /** Sweep bounds — keep the walk from touching the whole filesystem. */
+        /** Sweep bounds - keep the walk from touching the whole filesystem. */
         const val MAX_DIRS_VISITED = 400
         const val SWEEP_BUDGET_MS = 2_500L
 
@@ -547,11 +547,11 @@ class RecordingsScannerActivity : AppCompatActivity() {
          *
          * Google Phone (Pixel/Motorola/Nokia) is absent on purpose: it stores recordings in
          * `Android/data/com.google.android.dialer/`, which Android 11+ blocks for all other
-         * apps — All-files access and SAF both refuse it, and they aren't in MediaStore. A
+         * apps - All-files access and SAF both refuse it, and they aren't in MediaStore. A
          * scan on those handsets legitimately finds nothing.
          */
         val CANDIDATE_DIRS = listOf(
-            "Recordings/Call",                  // Samsung One UI (current) — confirmed on SM-M136B
+            "Recordings/Call",                  // Samsung One UI (current) - confirmed on SM-M136B
             "Call",                             // Samsung (legacy)
             "Sounds",                           // Samsung (older still)
             "Recordings",

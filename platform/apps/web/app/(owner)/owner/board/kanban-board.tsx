@@ -8,7 +8,7 @@ import { formatValue, num, relativeTime } from "../types";
 
 /**
  * Generic pipeline board shared by the lead board (./board.tsx) and the deal
- * board (../deals/deals-board.tsx) — the two used to be near-verbatim copies
+ * board (../deals/deals-board.tsx) - the two used to be near-verbatim copies
  * of the same optimistic drag-and-drop kanban, differing only in which record
  * type (Lead vs Deal) rode in the cards. This file owns the mechanics; each
  * caller supplies a small `KanbanBoardConfig<T>` of accessors plus its own
@@ -17,7 +17,7 @@ import { formatValue, num, relativeTime } from "../types";
  * Drag-and-drop is the browser's own HTML5 API rather than a library: a card
  * carries its record id, a column accepts the drop and the move is applied
  * optimistically, then confirmed by the server action. If the API rejects it
- * the card returns to where it was and the error is shown — a card that
+ * the card returns to where it was and the error is shown - a card that
  * silently snaps back with no explanation is the worst version of this.
  *
  * Every card is also a button that opens the drawer, where the same move can
@@ -40,14 +40,14 @@ export interface KanbanBoardConfig<T> {
   getTitle: (item: T) => string;
   /** The line identifying who/what the card is with (telecaller, account…). */
   getSubtitle: (item: T) => string;
-  /** Optional secondary line — next action, falling back to a summary. */
+  /** Optional secondary line - next action, falling back to a summary. */
   getSecondary: (item: T) => string | null;
   getCallCount: (item: T) => number;
   getLastActivityAt: (item: T) => string;
   /** The dataTransfer key used to carry the dragged card's id. */
   dragDataKey: string;
   /**
-   * An optional label under the card heading — the lead board uses it for the
+   * An optional label under the card heading - the lead board uses it for the
    * project chip. Kept generic rather than a `project` field because the deal
    * board shares this file and will want something of its own here.
    */
@@ -101,7 +101,7 @@ export function KanbanBoard<T extends { stage: string }>({
   /**
    * Move a card between columns in local state, returning the previous
    * stage. `source`, when given, is used as the record to relocate instead
-   * of the pre-render lookup from `findItem` — the caller passes the
+   * of the pre-render lookup from `findItem` - the caller passes the
    * just-merged record so a stage move from the drawer carries its
    * server-recalculated fields rather than a stale snapshot.
    */
@@ -182,7 +182,7 @@ export function KanbanBoard<T extends { stage: string }>({
   return (
     <>
       {/* role=alert: a rejected drop has already snapped the card back, so this
-          text is the only account of why — it has to be announced, not just
+          text is the only account of why - it has to be announced, not just
           shown. The danger border is a second channel on top of the words. */}
       {error ? (
         <p
@@ -217,7 +217,7 @@ export function KanbanBoard<T extends { stage: string }>({
             }}
             // The drop target is a "selected" state, which doc 16 §1.1 lists as
             // a sanctioned accent use. It is also the only feedback a dragging
-            // user gets, so it needs the accent border as well as the tint —
+            // user gets, so it needs the accent border as well as the tint -
             // a tint alone is nearly invisible in dark mode.
             className={`flex w-[17rem] shrink-0 flex-col rounded-md border transition-colors duration-150 ease-out ${
               over === column.key

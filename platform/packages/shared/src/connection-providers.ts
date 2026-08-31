@@ -10,8 +10,8 @@ import { z } from "zod";
  *
  * DELIBERATELY NOT ONE VENDOR. A rep connects the mailbox they already use;
  * the next desk connects a different one. Google and Microsoft cover most
- * people through OAuth, and generic IMAP/SMTP and CalDAV cover everyone else —
- * Fastmail, Zoho, a self-hosted server, anything that speaks the standards —
+ * people through OAuth, and generic IMAP/SMTP and CalDAV cover everyone else -
+ * Fastmail, Zoho, a self-hosted server, anything that speaks the standards -
  * so "any email and any calendar" does not depend on this list growing.
  */
 
@@ -44,7 +44,7 @@ export interface ConnectionProviderSpec {
   capabilities: ConnectionCapability[];
   auth: ConnectionAuthKind;
 
-  /** oauth2 only — the provider's endpoints and the scopes we ask for. */
+  /** oauth2 only - the provider's endpoints and the scopes we ask for. */
   oauth?: {
     authorizeUrl: string;
     tokenUrl: string;
@@ -56,7 +56,7 @@ export interface ConnectionProviderSpec {
     /**
      * Env vars holding the registered app's credentials. A provider whose
      * variables are unset is reported as `configured: false` and cannot be
-     * connected — the same degrade-don't-fail shape migration 0042 uses for
+     * connected - the same degrade-don't-fail shape migration 0042 uses for
      * pg_trgm. Nobody can register an OAuth app on the operator's behalf, so
      * the software has to be honest about not being set up rather than
      * throwing when somebody clicks Connect.
@@ -65,7 +65,7 @@ export interface ConnectionProviderSpec {
     clientSecretEnv: string;
   };
 
-  /** basic only — the fields the connect form collects. */
+  /** basic only - the fields the connect form collects. */
   fields?: ConnectionConfigField[];
 }
 
@@ -121,7 +121,7 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
   {
     id: "imap",
     label: "Any other mailbox (IMAP/SMTP)",
-    blurb: "Fastmail, Zoho, a company mail server — anything speaking IMAP and SMTP.",
+    blurb: "Fastmail, Zoho, a company mail server - anything speaking IMAP and SMTP.",
     capabilities: ["email"],
     auth: "basic",
     fields: [
@@ -141,7 +141,7 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
   {
     id: "caldav",
     label: "Any other calendar (CalDAV)",
-    blurb: "iCloud, Fastmail, Nextcloud — anything speaking CalDAV.",
+    blurb: "iCloud, Fastmail, Nextcloud - anything speaking CalDAV.",
     capabilities: ["calendar"],
     auth: "basic",
     fields: [

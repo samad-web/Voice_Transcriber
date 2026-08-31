@@ -50,7 +50,7 @@ describe("api scopes", () => {
 
   it("grants nothing for an empty or unrecognised scope list", () => {
     // 0076 defaults `scopes` to '{}', so this is the state of any key minted by
-    // code that predates it — it must be able to do nothing at all.
+    // code that predates it - it must be able to do nothing at all.
     expect(hasScope([], "leads:read")).toBe(false);
     expect(hasScope(["leads:*"], "leads:read")).toBe(false);
     expect(hasScope(["*"], "leads:read")).toBe(false);
@@ -58,7 +58,7 @@ describe("api scopes", () => {
   });
 
   it("does not invent a :read for a scope that has no object half", () => {
-    // `effectiveScopes` splits on ":" — a bare token must not produce
+    // `effectiveScopes` splits on ":" - a bare token must not produce
     // "undefined:read" or, worse, be treated as a wildcard.
     expect([...effectiveScopes(["mcp"])]).toEqual(["mcp"]);
   });

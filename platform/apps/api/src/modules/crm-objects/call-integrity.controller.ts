@@ -29,15 +29,15 @@ const ResolveBody = z.object({
 
 /**
  * The review queue apps/worker/src/pipeline/call-crm-integrity.ts writes to
- * (0070) — calls whose own AI read disagrees with the deal it produced, or
+ * (0070) - calls whose own AI read disagrees with the deal it produced, or
  * failed to produce.
  *
  * Gated on `deal` permissions rather than a dedicated object type, the same
  * convention reports/targets already use (there is no `PermissionObjectType`
- * value for this — see packages/shared/src/permissions.ts). Rows are NOT
+ * value for this - see packages/shared/src/permissions.ts). Rows are NOT
  * further filtered by CrmRecordScope: a `no_deal_from_positive_call` flag has
  * no deal to check ownership against by definition, and this queue is
- * inherently a manager-level "what did the floor miss" view — narrowing it to
+ * inherently a manager-level "what did the floor miss" view - narrowing it to
  * "only what I personally own" would hide exactly the flags most worth a
  * manager seeing.
  */

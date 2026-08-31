@@ -16,7 +16,7 @@ import { cx } from "./cx";
  * gives away.
  *
  * Two things callers must supply:
- * - `caption` — the table's accessible name. Rendered visually hidden by
+ * - `caption` - the table's accessible name. Rendered visually hidden by
  *   default because most console tables already have a heading above them, but
  *   NOT optional: an unnamed table in a page with three tables is unnavigable.
  * - `scope` on header cells. `TableHeaderCell` defaults it to `col`, which is

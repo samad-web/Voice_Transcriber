@@ -6,7 +6,7 @@ import { ownerGet } from "@/lib/owner-context";
 import type { BoardColumn, Project, Stage } from "../types";
 import { Board } from "./board";
 
-export const metadata: Metadata = { title: "Lead Board — Aura" };
+export const metadata: Metadata = { title: "Lead Board - Aura" };
 
 interface BoardResponse {
   columns: BoardColumn[];

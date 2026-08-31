@@ -6,7 +6,7 @@ import { createSign } from "node:crypto";
  * ── WHY THIS EXISTS HERE AND NOT IN THE MARKETING APP ──────────────────────
  *
  * The calendar CLIENT lives in apps/marketing, because that is where bookings
- * are made. Rejections happen in the console, which talks to this API — so
+ * are made. Rejections happen in the console, which talks to this API - so
  * until now the reject endpoint released the slot, handed back the orphaned
  * event id, and told the operator to go and delete it by hand. Nobody does
  * that. The event outlived the booking it belonged to, and the team kept an
@@ -14,12 +14,12 @@ import { createSign } from "node:crypto";
  *
  * This is deliberately the SMALLEST possible client: mint a token, issue one
  * DELETE. It does not read, list, or create anything, so it cannot drift into
- * being a second scheduler — the real one stays in apps/marketing/lib/scheduler.
+ * being a second scheduler - the real one stays in apps/marketing/lib/scheduler.
  *
  * ── IT RUNS AFTER THE COMMIT, ON PURPOSE ───────────────────────────────────
  *
  * Deleting inside the transaction would mean a later rollback leaves a
- * cancelled event against a slot that is still booked — a meeting that
+ * cancelled event against a slot that is still booked - a meeting that
  * silently vanished from the calendar while the database still expects it.
  * Committing first inverts the failure into the recoverable one: if the delete
  * fails, the event survives against a released slot, which is visible, is
@@ -81,7 +81,7 @@ async function accessToken(cfg: NonNullable<ReturnType<typeof config>>): Promise
 }
 
 export interface CalendarDeletion {
-  /** Event ids Google no longer holds — deleted now, or already gone. */
+  /** Event ids Google no longer holds - deleted now, or already gone. */
   deleted: string[];
   /** Still present, and the operator has to remove them by hand. */
   failed: { eventId: string; error: string }[];
@@ -92,7 +92,7 @@ export interface CalendarDeletion {
  *
  * 404 and 410 both count as success. An event that is already gone is the
  * outcome this function exists to produce, and reporting it as a failure would
- * send an operator hunting for something that does not exist — which is worse
+ * send an operator hunting for something that does not exist - which is worse
  * than silence, because they would stop trusting the message that matters.
  */
 export async function deleteCalendarEvents(eventIds: string[]): Promise<CalendarDeletion> {
@@ -124,8 +124,8 @@ export async function deleteCalendarEvents(eventIds: string[]): Promise<Calendar
    * possible one: rejecting a lead removed the meeting from OUR calendar and
    * left it sitting on THEIRS, with a working Meet link, and they turn up.
    *
-   * `all` is harmless where there are no attendees — an event nobody was
-   * invited to has nobody to notify — so this needs no condition on whether
+   * `all` is harmless where there are no attendees - an event nobody was
+   * invited to has nobody to notify - so this needs no condition on whether
    * impersonation is configured.
    */
   const params = new URLSearchParams({ sendUpdates: "all" });

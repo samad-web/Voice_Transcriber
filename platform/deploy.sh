@@ -13,7 +13,7 @@
 #
 # Deploy without that overlay on an nginx box and compose does not complain. It
 # recreates the containers without published ports, reports them healthy, and
-# every recreated service vanishes behind a 502 — `docker ps` looks perfect
+# every recreated service vanishes behind a 502 - `docker ps` looks perfect
 # while the site is down. That is exactly what happened on 2026-08-10, when a
 # deploy that only wanted to restart the marketing app took the console and the
 # API down with it.
@@ -59,7 +59,7 @@ compose() { docker compose --env-file "$ENV_FILE" "${FILES[@]}" "$@"; }
 # ── Migrations ───────────────────────────────────────────────────────────────
 #
 # The migrate container runs from the BUILT IMAGE, so a migration added since
-# the last build is not in it yet and `migrate` reports "nothing to apply" —
+# the last build is not in it yet and `migrate` reports "nothing to apply" -
 # convincingly, and wrongly. Build first, always.
 if [[ "${1:-}" == "--migrate" ]]; then
   shift
@@ -95,7 +95,7 @@ if ((${#REQUIRED_PORTS[@]})); then
   if ((failed)); then
     echo
     echo "FAILED: a port nginx proxies to is not bound. The site is returning 502 right now."
-    echo "Most likely the nginx overlay was skipped — re-run:"
+    echo "Most likely the nginx overlay was skipped - re-run:"
     echo "  docker compose --env-file $ENV_FILE -f docker-compose.prod.yml -f docker-compose.nginx.yml up -d"
     exit 1
   fi

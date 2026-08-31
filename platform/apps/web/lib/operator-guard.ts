@@ -9,19 +9,19 @@ import { getPrincipal, isOperator, type Principal } from "@/lib/owner-context";
  * A Server Action is not a function call. `"use server"` turns every exported
  * async function in the file into an independently-addressable POST endpoint
  * with a stable, guessable action id that ships in the client bundle. Anyone who
- * can reach the console can invoke one directly — with whatever arguments they
- * choose — without ever rendering the page it was written for.
+ * can reach the console can invoke one directly - with whatever arguments they
+ * choose - without ever rendering the page it was written for.
  *
  * That is why `isOperator()` in `(platform)/layout.tsx` is NOT a boundary. A
  * layout runs during a *render*; it does not run when an action is invoked. The
  * layout decides what a browser is shown, and nothing more. Every one of these
  * actions also takes an `orgId` straight from its caller and sends the root
  * `ADMIN_API_KEY`, so an unguarded action is an unauthenticated cross-tenant
- * read — or, for `triggerErasureAction` / `wipeDeviceAction` / `mintKeyAction`,
+ * read - or, for `triggerErasureAction` / `wipeDeviceAction` / `mintKeyAction`,
  * an unauthenticated cross-tenant *write*.
  *
  * The rule, therefore: `await requireOperator()` is the FIRST statement of every
- * exported async function under `app/(platform)/` in a file named `actions.ts` —
+ * exported async function under `app/(platform)/` in a file named `actions.ts` -
  * first statement, not first statement inside the existing try, so that
  * reshaping that try cannot silently drop it. `(owner)/owner/actions.ts` does
  * the equivalent with
@@ -29,7 +29,7 @@ import { getPrincipal, isOperator, type Principal } from "@/lib/owner-context";
  *
  * Note what this does NOT forbid: an operator naming any `orgId` they like. That
  * is precisely what a platform operator is for, and the instance console depends
- * on it. The defect was never that operators can cross tenants — it was that
+ * on it. The defect was never that operators can cross tenants - it was that
  * *anyone* could.
  *
  * `getPrincipal()` is wrapped in React `cache()`, so calling this at the top of
@@ -55,7 +55,7 @@ export class NotAuthorizedError extends Error {
 /**
  * Assert the caller may act as a platform operator, and hand back who they are.
  *
- * Throws `NotAuthorizedError` otherwise — deliberately not `redirect()`. A
+ * Throws `NotAuthorizedError` otherwise - deliberately not `redirect()`. A
  * Server Action invoked outside a navigation has nowhere to redirect *to*, and
  * Next's redirect works by throwing a control-flow signal that a surrounding
  * `catch` in the action would swallow into a nonsense error. Actions instead

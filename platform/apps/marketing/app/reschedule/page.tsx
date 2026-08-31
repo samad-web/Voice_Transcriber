@@ -17,7 +17,7 @@ export const metadata: Metadata = pageMetadata({
  * The self-serve reschedule picker.
  *
  * Reached from /reschedule/<token>, which has already verified the token and
- * set the signed cookie naming the booking. This page holds NO id of its own —
+ * set the signed cookie naming the booking. This page holds NO id of its own -
  * the picker posts only the new slot id, and the server pairs it with the
  * booking from the cookie.
  *
@@ -46,7 +46,7 @@ export default async function ReschedulePage() {
               style={{ color: "var(--mk-muted)" }}
             >
               {/* Said without blame and without detail. The commonest reasons
-                  are that the call was already moved or has since happened —
+                  are that the call was already moved or has since happened -
                   neither is a mistake they made, and naming which one would
                   tell anyone holding a guessed link whether they guessed a
                   real appointment. */}

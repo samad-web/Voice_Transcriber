@@ -2,7 +2,7 @@ import type { PoolClient } from "@aura/db";
 import type { QualityCriteria, RiskFlag } from "@aura/llm";
 
 /**
- * Talk-ratio / interruption coaching metrics — computed in plain TypeScript
+ * Talk-ratio / interruption coaching metrics - computed in plain TypeScript
  * over the diarized segments a call already has (see pipeline.ts's
  * conversation-intelligence step), not a second LLM call. Every field is
  * null when there is nothing usable to compute from, never a misleading 0.
@@ -32,7 +32,7 @@ const NO_METRICS: TalkMetrics = {
 
 /**
  * Requires role-labelled segments (`speaker: "Agent"|"Customer"`), which only
- * exist once the conversation-intelligence step has run — raw ASR segments
+ * exist once the conversation-intelligence step has run - raw ASR segments
  * carry acoustic tags (S1/S2), not roles. Malformed or missing timing on a
  * segment drops that segment rather than throwing.
  */
@@ -65,7 +65,7 @@ export function computeTalkMetrics(segments: RoleSegment[] | null | undefined): 
     else customerMs += durationMs;
 
     // A monologue is a RUN of consecutive turns from the same speaker, not a
-    // single segment — three quick turns from one side with no reply is one
+    // single segment - three quick turns from one side with no reply is one
     // monologue, not three.
     if (seg.speaker === runSpeaker) {
       runMs += durationMs;
@@ -76,7 +76,7 @@ export function computeTalkMetrics(segments: RoleSegment[] | null | undefined): 
     }
 
     // Genuine interruption: the next speaker's turn started before this one
-    // ended — overlapping speech, not just a fast back-and-forth. Diarized
+    // ended - overlapping speech, not just a fast back-and-forth. Diarized
     // ASR only reports this when it actually detected simultaneous speech,
     // so this degrades to 0 (not a false signal) on a system that never does.
     const next = sorted[i + 1];
@@ -106,7 +106,7 @@ export interface CallAnalyticsWrite {
 
 /**
  * One row per call, written independently of whether the LLM half or the
- * pure-computation half succeeded — COALESCE keeps whichever half a re-entry
+ * pure-computation half succeeded - COALESCE keeps whichever half a re-entry
  * (poller resume, manual reprocess) already wrote instead of overwriting it
  * with nulls, the same "enrich, never destroy" rule pipeline.ts's segment
  * merge already follows.

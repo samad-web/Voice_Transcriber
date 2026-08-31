@@ -6,7 +6,7 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Operator-only, asserted per action. Membership and workspace edits against a
- * tenant the caller names — the shape that must never be reachable without an
+ * tenant the caller names - the shape that must never be reachable without an
  * identity check. The `(platform)` layout cannot supply one: it gates rendering,
  * and a Server Action is invoked directly. See lib/operator-guard.ts.
  */
@@ -43,7 +43,7 @@ export async function addMemberAction(
     revalidatePath("/team");
     return {};
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 
@@ -51,7 +51,7 @@ export async function updateMemberAction(
   input: {
     userId: string;
     role?: string;
-    /** A `roles` row (migration 0039) — null clears the assignment. */
+    /** A `roles` row (migration 0039) - null clears the assignment. */
     roleId?: string | null;
     recordingsListen?: boolean;
     recordingsExport?: boolean;
@@ -128,6 +128,6 @@ export async function createWorkspaceAction(
     revalidatePath("/team");
     return {};
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }

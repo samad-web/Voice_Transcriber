@@ -1,8 +1,8 @@
--- 0057_tags_and_marketing_sources.sql — segmentation and attribution.
+-- 0057_tags_and_marketing_sources.sql - segmentation and attribution.
 --
 -- ── TAGS ────────────────────────────────────────────────────────────────
 --
--- Aura had none. Not a thin version — none: no column, no table, no way for a
+-- Aura had none. Not a thin version - none: no column, no table, no way for a
 -- person to mark "spoke at the expo", "price-sensitive", "call after 6pm".
 -- Custom fields exist and are the wrong tool for this: a custom field is a
 -- named slot with a declared type that every record has, and a tag is an
@@ -15,7 +15,7 @@
 -- (object_type, record_id) would be one table instead of two, and would also
 -- throw away referential integrity: nothing would stop a row pointing at a
 -- deleted contact, and no FK could cascade. 0037 made the same call for
--- custom-field values and 0041 for tasks, and this follows it — real FKs,
+-- custom-field values and 0041 for tasks, and this follows it - real FKs,
 -- real CASCADE, one small table per object that can carry tags.
 --
 -- Accounts are deliberately absent for now. Tagging a company is a coherent
@@ -29,7 +29,7 @@
 -- owns: `lead_source` answers "which channel", and every question worth
 -- asking afterwards ("which of the four ads", "what did the expo cost per
 -- deal") is a level beneath it. B2 Consultants' schema draws exactly this
--- distinction — a coarse channel on the lead, a MarketingSource beneath it —
+-- distinction - a coarse channel on the lead, a MarketingSource beneath it -
 -- and it is the half Aura does not have.
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS contact_tags (
   PRIMARY KEY (contact_id, tag_id)
 );
 
--- "Every contact carrying this tag" — the query a segment is built from.
+-- "Every contact carrying this tag" - the query a segment is built from.
 CREATE INDEX IF NOT EXISTS contact_tags_tag ON contact_tags (org_id, tag_id);
 
 ALTER TABLE contact_tags ENABLE ROW LEVEL SECURITY;

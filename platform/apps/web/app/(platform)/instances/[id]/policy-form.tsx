@@ -53,7 +53,7 @@ export function PolicyForm({
         </h4>
       </div>
       <p className="text-xs text-neutral-500 font-sans font-medium">
-        Applies to every handset enrolled in this instance — saving bumps their config version.
+        Applies to every handset enrolled in this instance - saving bumps their config version.
       </p>
 
       <div className="space-y-1.5">

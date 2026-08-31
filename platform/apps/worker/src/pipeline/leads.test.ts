@@ -56,7 +56,7 @@ describe("leadTitle", () => {
 });
 
 /**
- * upsertLead's SQL merge contract — this is what A6's shadow-read
+ * upsertLead's SQL merge contract - this is what A6's shadow-read
  * reconciliation and every future edit to this function is judged against.
  * No database is opened: a fake DbClient routes each query by a
  * distinguishing substring, the same approach crm-objects.test.ts uses for
@@ -79,7 +79,7 @@ const CALL_ROW = {
   lead_rules: {},
   lead_stages: null,
   summary: "Asked the rate for 5000 solid bricks.",
-  // notes/extra are what a model sends for "not mentioned" — isFilled()
+  // notes/extra are what a model sends for "not mentioned" - isFilled()
   // must drop both before they reach the merge.
   facts: { customer_name: "Rajesh", brick_quantity: 5000, notes: "   ", extra: "[]" },
   validation_status: "validated",
@@ -162,7 +162,7 @@ describe("upsertLead", () => {
     const inserts: Recorded[] = [];
     await upsertLead(fakeDb({ inserts }), ORG_ID, CALL_ID);
     const sql = inserts[0].sql;
-    // The DO UPDATE clause must never reset these — see the "owner's, never
+    // The DO UPDATE clause must never reset these - see the "owner's, never
     // the pipeline's" comment in leads.ts. Bare column names in the INSERT
     // list (e.g. "stage") don't match "=", so this only catches an actual
     // assignment in the conflict clause.
@@ -207,7 +207,7 @@ describe("upsertLead", () => {
       reason: "updated (no contact number)",
     });
     expect(noHashUpdates).toHaveLength(1);
-    // The no-hash update path returns early — the ON CONFLICT insert below
+    // The no-hash update path returns early - the ON CONFLICT insert below
     // must never also run, or a numberless replay would fork a second lead.
     expect(inserts).toHaveLength(0);
   });

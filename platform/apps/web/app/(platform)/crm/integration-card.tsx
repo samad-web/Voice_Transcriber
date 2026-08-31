@@ -91,7 +91,7 @@ export function IntegrationCard({
       else setTest(res.result ?? null);
     });
 
-  // Both reuse `testError`'s banner below — same "something failed silently
+  // Both reuse `testError`'s banner below - same "something failed silently
   // otherwise" reasoning as runTest: a disconnect or pause/resume that fails
   // (network error, stale id, 500) used to just stop spinning with no sign
   // anything went wrong.
@@ -387,12 +387,12 @@ function FieldMapEditor({
 
   return (
     <div id={panelId} className="space-y-3 rounded-md border border-border bg-bg-subtle p-4">
-      <MonoLabel>Field map — CRM field ← call data</MonoLabel>
+      <MonoLabel>Field map - CRM field ← call data</MonoLabel>
       {pairs.map((pair, i) => (
         <div key={i} className="flex items-center gap-2">
           {/* Both inputs are labelled by aria-label: a visible <label> per row
               would triple the height of a mapping table, and a placeholder is
-              not a label — it disappears as soon as anything is typed. */}
+              not a label - it disappears as soon as anything is typed. */}
           <Input
             className="min-w-0 font-mono"
             aria-label={`CRM field ${i + 1}`}
@@ -422,7 +422,7 @@ function FieldMapEditor({
         </div>
       ))}
 
-      {/* One datalist for every path input on the page — the browser dedupes it. */}
+      {/* One datalist for every path input on the page - the browser dedupes it. */}
       <datalist id="crm-source-paths">
         {sourcePaths.map((s) => (
           <option key={s.path} value={s.path}>
@@ -507,7 +507,7 @@ function SecretRotator({
       <MonoLabel>{provider?.auth.secretLabel ?? "Credential"}</MonoLabel>
       <p className="text-sm leading-snug text-text-muted">
         {integration.has_auth_secret
-          ? "A credential is stored and encrypted. It is never returned — paste a new one to rotate."
+          ? "A credential is stored and encrypted. It is never returned - paste a new one to rotate."
           : "No credential stored for this integration."}
       </p>
       <div className="flex items-center gap-2">

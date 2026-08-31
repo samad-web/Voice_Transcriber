@@ -8,7 +8,7 @@
 #   unit           pnpm -r test
 #   db             migrations + the RLS invariant check, against an EPHEMERAL Postgres
 #   integration    the cross-tenant isolation loop + guard suite, spawned API/worker
-#                  against docker-compose.test.yml — added 2026-08-16. Before this job
+#                  against docker-compose.test.yml - added 2026-08-16. Before this job
 #                  existed, 141+ isolation cases and the guard-mounting checks were real,
 #                  green, and blocked no merge: "544 tests someone has to remember"
 #                  (08_ROAD_TO_10.md, Stage 1 run log 4). This is that memory, automated.
@@ -62,7 +62,7 @@ jobs:
 
       # @aura/* resolve through `main`/`types` to dist, not src, so both tsc and
       # the type-aware lint rules need the shared packages compiled first. The
-      # apps are deliberately not built here — the `build` job proves those, in
+      # apps are deliberately not built here - the `build` job proves those, in
       # the images that actually ship.
       - name: Build workspace packages
         run: pnpm --filter "./packages/*" build
@@ -88,7 +88,7 @@ jobs:
       # nobody since 2026-07-29: it greps the API surface for the pre-TenantGuard
       # shape (a handler reading x-org-id itself, AdminKeyGuard without
       # TenantGuard, the removed orgIdFromHeader helper). It is pure filesystem
-      # work — no database, no network.
+      # work - no database, no network.
       - name: Tenancy invariants
         run: pnpm tenancy:check
 
@@ -150,8 +150,8 @@ jobs:
     # ========================================================================
     # THE ONLY DATABASE THIS JOB CAN REACH IS THE SERVICE CONTAINER ABOVE.
     #
-    # Both URLs are literals pointing at 127.0.0.1:5432 — the port mapping of
-    # that container — and are set here at job scope, so no step can inherit a
+    # Both URLs are literals pointing at 127.0.0.1:5432 - the port mapping of
+    # that container - and are set here at job scope, so no step can inherit a
     # different one. Production Supabase credentials are not referenced, and
     # must never be added: nothing in this job needs a secret, so there is no
     # legitimate reason for `secrets.*` to appear anywhere below.
@@ -163,7 +163,7 @@ jobs:
     # incident; against this container it is the point of the test. verify-rls.js
     # carries its own host allowlist as a second, independent guard.
     #
-    # aura_app does not need creating here — migration 0001 creates the role
+    # aura_app does not need creating here - migration 0001 creates the role
     # itself, with the dev password, which is why APP_DATABASE_URL can be a
     # literal too.
     # ========================================================================
@@ -184,12 +184,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # The supabase/migrations tree must stay byte-identical to
-      # packages/db/migrations — production runs the Supabase copy, so a drift
+      # packages/db/migrations - production runs the Supabase copy, so a drift
       # between them means CI verifies a schema that production does not have.
       - name: Supabase migration copies are in sync
         run: pnpm db:supabase:check
 
-      # migrate.js and verify-rls.js are plain CJS — no build step required.
+      # migrate.js and verify-rls.js are plain CJS - no build step required.
       - name: Run migrations
         run: pnpm --filter @aura/db migrate
 
@@ -207,7 +207,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   integration:
-    name: Integration — isolation loop + guards
+    name: Integration - isolation loop + guards
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -225,12 +225,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # docker-compose.test.yml is INFRASTRUCTURE ONLY (postgres/rabbitmq/minio
-      # on 55432/55672/59000-1, never the dev stack's ports) — the harness
+      # on 55432/55672/59000-1, never the dev stack's ports) - the harness
       # spawns the API and worker itself, from a build this step does not do.
       # `test:integration:up` is two docker compose calls, not one: `--wait`
       # blocks on postgres/rabbitmq/minio's healthchecks, then a separate,
       # un-waited `up minio-init` creates the bucket and is checked by its own
-      # exit code — see docker-compose.test.yml's comment on minio-init for why
+      # exit code - see docker-compose.test.yml's comment on minio-init for why
       # `--wait` cannot include a one-shot container without misreporting success
       # as failure. Either step failing fails this one.
       - name: Start the ephemeral test stack
@@ -238,7 +238,7 @@ jobs:
 
       # `pnpm test:integration` = `pnpm -r build && vitest run --config
       # vitest.integration.config.ts`. The build is not redundant with the
-      # `static`/`unit` jobs' builds — those compile packages/*, and
+      # `static`/`unit` jobs' builds - those compile packages/*, and
       # tests/setup/processes.ts specifically requires apps/api and
       # apps/worker built to dist/, which nothing else in this workflow does.
       - name: Run the integration suite
@@ -263,13 +263,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # Both images build from the platform/ context. This proves they compile;
-      # it does not push anything anywhere — there is no registry login here on
+      # it does not push anything anywhere - there is no registry login here on
       # purpose.
       - name: Build node image (api + worker + migrate)
         run: docker build -f docker/node.Dockerfile -t aura-node:ci .
 
       # NEXT_PUBLIC_* are inlined at build time. CI passes placeholders because
-      # the point here is that the Next build succeeds — a CI image is never
+      # the point here is that the Next build succeeds - a CI image is never
       # deployed, and baking a real domain in would only invite someone to try.
       - name: Build web image (console)
         run: |

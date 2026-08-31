@@ -30,7 +30,7 @@ describe("oauthClient", () => {
     expect(oauthClient(google, env as NodeJS.ProcessEnv)).toBeNull();
   });
 
-  it("needs BOTH halves — an id without a secret is not configured", () => {
+  it("needs BOTH halves - an id without a secret is not configured", () => {
     const env = { GOOGLE_OAUTH_CLIENT_ID: "id" };
     expect(oauthClient(google, env as NodeJS.ProcessEnv)).toBeNull();
   });
@@ -63,7 +63,7 @@ describe("pkcePair", () => {
 });
 
 describe("newState", () => {
-  it("never repeats — a predictable state is the CSRF hole this defends", () => {
+  it("never repeats - a predictable state is the CSRF hole this defends", () => {
     const seen = new Set(Array.from({ length: 200 }, newState));
     expect(seen.size).toBe(200);
   });
@@ -119,7 +119,7 @@ describe("safeRedirectPath", () => {
     "//evil.example.com",
     "http://evil.example.com/x",
     "javascript:alert(1)",
-  ])("refuses %s — an open redirect wearing a callback as a disguise", (hostile) => {
+  ])("refuses %s - an open redirect wearing a callback as a disguise", (hostile) => {
     expect(safeRedirectPath(hostile)).toBe("/owner/connections");
   });
 

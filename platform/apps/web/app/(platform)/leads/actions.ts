@@ -10,8 +10,8 @@ import { API_URL, crossTenantHeaders } from "@/lib/server-api";
  * Converting a marketing lead into a client.
  *
  * EVERY exported function here calls requireOperator() FIRST. A Server Action is
- * an independently-addressable POST endpoint — the `(platform)` layout's operator
- * check gates rendering, not invocation — and these actions send the root
+ * an independently-addressable POST endpoint - the `(platform)` layout's operator
+ * check gates rendering, not invocation - and these actions send the root
  * ADMIN_API_KEY. Unguarded, any signed-in account could provision tenants and
  * read every enquirer's phone number and email.
  */
@@ -44,7 +44,7 @@ export interface Lead {
   converted_org_name: string | null;
   /**
    * The call this person booked, if they booked one. Null for everyone else,
-   * which is most of them — booking is offered only on the qualified path.
+   * which is most of them - booking is offered only on the qualified path.
    */
   booked_starts_at: string | null;
   booked_ends_at: string | null;
@@ -83,7 +83,7 @@ export async function listLeadsAction(
     const data = await res.json();
     return { leads: data.leads ?? [] };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -125,13 +125,13 @@ export async function convertLeadAction(input: {
     return { error: "Not authorized" };
   }
   // Bare `await requireOperator()` first, with the principal fetched separately
-  // afterwards, because the guard must be the FIRST statement — not the first
+  // afterwards, because the guard must be the FIRST statement - not the first
   // statement that also assigns something. `let actor = "console"` sitting above
   // it was enough to fail platform-actions.guard.test.ts, and that test is
   // right: the rule has to be mechanically checkable to survive future edits.
   // `||` not `??`. getPrincipal() can return a principal whose email is an
   // empty string (no session in development), and `?? "console"` only replaces
-  // null or undefined — so "" sailed through and the API rejected the request
+  // null or undefined - so "" sailed through and the API rejected the request
   // with `actor: too_small`. Found by clicking the button, not by typechecking.
   const actor = (await getPrincipal())?.email || "console";
 
@@ -159,7 +159,7 @@ export async function convertLeadAction(input: {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      return { error: `Could not create the client — API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
+      return { error: `Could not create the client - API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
     const data = await res.json();
     provisioned = {
@@ -171,7 +171,7 @@ export async function convertLeadAction(input: {
       name: data.tenant.name,
     };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 
   // Link. A failure here is reported WITH the enrollment key, because the key is
@@ -190,7 +190,7 @@ export async function convertLeadAction(input: {
         orgName: provisioned.name,
         error:
           `The client was created, but the lead could not be marked converted (API ${res.status}). ` +
-          `Save the enrollment key below — it is shown only once.`,
+          `Save the enrollment key below - it is shown only once.`,
       };
     }
   } catch {
@@ -199,7 +199,7 @@ export async function convertLeadAction(input: {
       orgName: provisioned.name,
       error:
         "The client was created, but marking the lead converted failed. " +
-        "Save the enrollment key below — it is shown only once.",
+        "Save the enrollment key below - it is shown only once.",
     };
   }
 
@@ -211,7 +211,7 @@ export async function convertLeadAction(input: {
 export interface DeleteLeadsResult {
   deleted?: number;
   slotsReleased?: number;
-  /** Events Google no longer holds — cancelled now, or already gone. */
+  /** Events Google no longer holds - cancelled now, or already gone. */
   cancelledCalendarEvents?: string[];
   /** Still present in Google, and a human has to remove them. */
   orphanedCalendarEvents?: { eventId: string; error: string }[];
@@ -260,7 +260,7 @@ export async function deleteLeadsAction(input: {
       orphanedCalendarEvents: data.orphanedCalendarEvents ?? [],
     };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -270,8 +270,8 @@ export interface RejectResult {
   queuedWhatsapp?: boolean;
   /** Booked calls handed back to the diary. Usually none. */
   releasedSlots?: Array<{ id: string; startsAt: string }>;
-  /** Google Calendar events the API could not delete — see the reject panel. */
-  /** Events Google no longer holds — cancelled now, or already gone. */
+  /** Google Calendar events the API could not delete - see the reject panel. */
+  /** Events Google no longer holds - cancelled now, or already gone. */
   cancelledCalendarEvents?: string[];
   /** Still present in Google, and a human has to remove them. */
   orphanedCalendarEvents?: { eventId: string; error: string }[];
@@ -314,7 +314,7 @@ export async function rejectLeadAction(input: {
     }
     const data = await res.json();
     revalidatePath("/leads");
-    // The diary changed too, so its cached page has to go — otherwise the
+    // The diary changed too, so its cached page has to go - otherwise the
     // released hour still shows as booked on /slots until something else
     // happens to revalidate it.
     revalidatePath("/slots");
@@ -327,20 +327,20 @@ export async function rejectLeadAction(input: {
       orphanedCalendarEvents: data.orphanedCalendarEvents ?? [],
     };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
 export interface SendConfirmationResult {
   ok?: true;
-  /** False when the booking has no Meet link — the message goes without one. */
+  /** False when the booking has no Meet link - the message goes without one. */
   hasMeetLink?: boolean;
   meetingUrl?: string | null;
   error?: string;
 }
 
 /**
- * Send a booked lead their confirmation — and their Meet link — on WhatsApp.
+ * Send a booked lead their confirmation - and their Meet link - on WhatsApp.
  *
  * The worker does this automatically for every new booking. This is the manual
  * path, for a resend and for the bookings that predate the feature (migration
@@ -378,7 +378,7 @@ export async function sendBookingConfirmationAction(input: {
       meetingUrl: data.meetingUrl ?? null,
     };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -398,7 +398,7 @@ export async function sendBookingConfirmationAction(input: {
 /** One channel's editable copy for a stage. */
 export interface TemplateVariant {
   channel: "whatsapp" | "email";
-  /** Email only — null on WhatsApp, which has no subject line. */
+  /** Email only - null on WhatsApp, which has no subject line. */
   subject: string | null;
   body: string;
   enabled: boolean;
@@ -451,7 +451,7 @@ export async function listMessageTemplatesAction(): Promise<TemplatesResult> {
     const data = await res.json();
     return { templates: data.templates ?? [] };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -473,7 +473,7 @@ export async function saveMessageTemplateAction(input: {
   } catch {
     return { error: "Not authorized" };
   }
-  // `||` not `??` — getPrincipal() can return an empty-string email in
+  // `||` not `??` - getPrincipal() can return an empty-string email in
   // development, and the API rejects it as `actor: too_small`.
   const actor = (await getPrincipal())?.email || "console";
   try {
@@ -503,7 +503,7 @@ export async function saveMessageTemplateAction(input: {
     revalidatePath("/leads");
     return { ok: true };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -534,7 +534,7 @@ export async function resetMessageTemplateAction(input: {
     revalidatePath("/leads");
     return { ok: true };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -547,7 +547,7 @@ export async function resetMessageTemplateAction(input: {
    rejection or a confirmation is queued against it and quietly fails. This
    answers that before it happens.
 
-   A check sends NOTHING — it is a presence lookup, and the person sees nothing.
+   A check sends NOTHING - it is a presence lookup, and the person sees nothing.
    ──────────────────────────────────────────────────────────────────────────── */
 
 export interface NumberCheck {
@@ -572,8 +572,8 @@ export async function checkWhatsAppNumbersAction(
     return { error: "Not authorized" };
   }
 
-  // Deduped before it leaves the console. Two leads can share a number — the
-  // same person enquiring twice is the common case — and checking it twice is
+  // Deduped before it leaves the console. Two leads can share a number - the
+  // same person enquiring twice is the common case - and checking it twice is
   // avoidable traffic on an unofficial client we would rather not get banned.
   const unique = [...new Set(numbers.map((n) => n.trim()).filter(Boolean))].slice(0, 50);
   if (unique.length === 0) return { configured: true, results: [] };
@@ -595,7 +595,7 @@ export async function checkWhatsAppNumbersAction(
     const data = await res.json();
     return { configured: data.configured, results: data.results ?? [] };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -635,7 +635,7 @@ export async function getFunnelCriteriaAction(): Promise<CriteriaResult> {
     const data = await res.json();
     return { criteria: data.criteria, updatedAt: data.updatedAt, updatedBy: data.updatedBy };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -648,7 +648,7 @@ export async function saveFunnelCriteriaAction(criteria: FunnelCriteria): Promis
   const actor = (await getPrincipal())?.email || "console";
 
   // Checked here as well as in the API. Same function, so the two cannot
-  // disagree — this one just gets the operator a red line without a round trip.
+  // disagree - this one just gets the operator a red line without a round trip.
   const check = validateCriteria(criteria);
   if (!check.ok) return { error: check.error };
 
@@ -667,6 +667,6 @@ export async function saveFunnelCriteriaAction(criteria: FunnelCriteria): Promis
     revalidatePath("/leads");
     return { criteria: data.criteria };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }

@@ -22,8 +22,8 @@ import java.time.Instant
  *
  * Per run: acquire a short-lived device JWT (challenge → Keystore-sign →
  * authenticate), then for each PENDING/FAILED recording compute its SHA-256,
- * POST /v1/calls, PUT each part, POST /complete, and — matching the existing
- * local-retention behaviour — delete the local file only after the server
+ * POST /v1/calls, PUT each part, POST /complete, and - matching the existing
+ * local-retention behaviour - delete the local file only after the server
  * confirms UPLOADED. Failures are recorded per-recording and don't abort the batch.
  */
 class UploadWorker(
@@ -36,7 +36,7 @@ class UploadWorker(
 
         // The single gate every capture/upload path asks first.
         if (!ActivationStore.isRecordingAllowed(context)) {
-            Log.i(TAG, "skip — device not activated or recording disabled")
+            Log.i(TAG, "skip - device not activated or recording disabled")
             return@withContext Result.success()
         }
 
@@ -72,7 +72,7 @@ class UploadWorker(
             }
         }
 
-        // Uploaded calls now have a remoteCallId — fetch their transcripts so the
+        // Uploaded calls now have a remoteCallId - fetch their transcripts so the
         // app's recordings list can show them.
         UploadScheduler.enqueueTranscriptFetch(context)
 
@@ -87,7 +87,7 @@ class UploadWorker(
     ) {
         val file = File(recording.filePath)
         if (!file.exists() || file.length() == 0L) {
-            // Nothing on disk to send — retain the row but take it out of the queue.
+            // Nothing on disk to send - retain the row but take it out of the queue.
             dao.setUploadResult(
                 id = recording.id,
                 uploadState = STATE_DISCARDED,
@@ -115,7 +115,7 @@ class UploadWorker(
             val durationS = ((recording.endedAt ?: recording.startedAt) - recording.startedAt)
                 .coerceAtLeast(0) / 1000
 
-            // callee holds the resolved contact name OR the raw number — and on Xiaomi both,
+            // callee holds the resolved contact name OR the raw number - and on Xiaomi both,
             // as `Ravi Kumar(8754258581)`. Split that so the label is the name alone and the
             // number still reaches the server (which keeps only the digits it's allowed to).
             // Otherwise send the raw string as remoteNumber and, when it's clearly a name
@@ -220,7 +220,7 @@ class UploadWorker(
         private const val TAG = "UploadWorker"
         private const val MAX_RUN_ATTEMPTS = 5
 
-        /** Xiaomi's `<display>(<number>)` callee — see OemRecordingIngestor. */
+        /** Xiaomi's `<display>(<number>)` callee - see OemRecordingIngestor. */
         private val NAME_WITH_NUMBER = Regex("""^(.*)\((\+?[\d\s-]{3,20})\)$""")
 
         private const val STATE_UPLOADING = "UPLOADING"

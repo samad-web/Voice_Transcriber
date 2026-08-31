@@ -29,9 +29,9 @@ import { DbService } from "../../db/db.service";
  *
  * Reading, routing, claiming and closing are all this controller does.
  * WhatsApp sending (Kailash gap Milestone 3, `whatsapp-send.controller.ts`)
- * is a deliberately SEPARATE, narrow controller — one recipient read from the
+ * is a deliberately SEPARATE, narrow controller - one recipient read from the
  * conversation itself, a signed-in human required, off by default behind
- * `WHATSAPP_SENDING_ENABLED`, capped per day — so this file's claim stays
+ * `WHATSAPP_SENDING_ENABLED`, capped per day - so this file's claim stays
  * literally true rather than becoming a stale comment the day sending
  * shipped. Safety rule 3 is a property of that other controller's shape, not
  * of this file pretending sending doesn't exist.
@@ -165,7 +165,7 @@ export class ConversationsController {
     if (patch.assignedUserId !== undefined) set("assigned_user_id = $?", patch.assignedUserId);
     if (patch.contactId !== undefined) set("contact_id = $?", patch.contactId);
     // Reading is not closing: markRead only zeroes the badge. A thread stays
-    // open — and therefore still in the default inbox filter — until somebody
+    // open - and therefore still in the default inbox filter - until somebody
     // says it is finished.
     if (patch.markRead) sets.push("unread_count = 0");
 

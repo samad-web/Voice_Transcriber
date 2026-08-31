@@ -5,13 +5,13 @@ import { ownerGet } from "@/lib/owner-context";
 import { TaskList } from "../task-list";
 import type { Task } from "../types";
 
-export const metadata: Metadata = { title: "Tasks — Aura" };
+export const metadata: Metadata = { title: "Tasks - Aura" };
 
 /**
  * The workspace's open follow-ups (Track A3).
  *
  * The overdue count is server-rendered from its own query so the number is
- * right in the first paint — it is the one thing on this page somebody scans
+ * right in the first paint - it is the one thing on this page somebody scans
  * for, and a count that arrives late reads as "nothing is overdue".
  */
 export default async function TasksPage() {

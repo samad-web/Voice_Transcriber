@@ -14,7 +14,7 @@
 #                 ONLY through its database sweeps (retry, CRM outbox, reaper).
 #   REDIS_URL     unused on the hot path.
 #
-# S3_ENDPOINT is overridden to the PUBLIC storage domain — production sets it to
+# S3_ENDPOINT is overridden to the PUBLIC storage domain - production sets it to
 # http://minio:9000, which resolves only inside the compose network. Without
 # this override every recording read fails with NoSuchKey and the retry sweeper
 # burns real calls' attempt budgets on a purely local misconfiguration.
@@ -28,7 +28,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if [[ ! -f .env.production ]]; then
-  echo "missing .env.production — nothing to point at" >&2
+  echo "missing .env.production - nothing to point at" >&2
   exit 1
 fi
 

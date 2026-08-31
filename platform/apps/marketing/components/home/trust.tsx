@@ -2,7 +2,7 @@ import { Section, SectionHeading, Card } from "../ui/layout";
 import { ButtonLink } from "../ui/button";
 
 /**
- * Trust block — doc 10 §3 row 7 and §5.4. This answers the single largest
+ * Trust block - doc 10 §3 row 7 and §5.4. This answers the single largest
  * conversion blocker ("you're recording my customers' calls and sending them to
  * an AI") on the homepage rather than in a footer link.
  *
@@ -15,18 +15,18 @@ import { ButtonLink } from "../ui/button";
  *                              and uploaded as plaintext over the TLS channel
  *
  * So on-device encryption is an optional at-rest setting, not a default, and it
- * is not what protects the upload — TLS is. The wording below says what is
+ * is not what protects the upload - TLS is. The wording below says what is
  * true. Flagged in the run report; doc 10 §5.4's own instruction is "Do not add
  * one that isn't [true]", which is precisely why it was checked.
  *
  * Every other claim here was verified against the source:
- *   RLS isolation      0001_init.sql:11-12, :338, :348 — `aura_app` is
+ *   RLS isolation      0001_init.sql:11-12, :338, :348 - `aura_app` is
  *                      NOBYPASSRLS and every tenant table is FORCE RLS
  *   retention          organizations.retention_days, default 90 (0001_init.sql:27)
  *                      reaped by worker/pipeline/reaper.ts
- *   signed receipt     apps/api/.../tenancy/erasure.controller.ts — cascading
+ *   signed receipt     apps/api/.../tenancy/erasure.controller.ts - cascading
  *                      delete then an HMAC receipt written to the audit log
- *   audit log          audit_log (0001_init.sql:287) — org-scoped, actor,
+ *   audit log          audit_log (0001_init.sql:287) - org-scoped, actor,
  *                      action, target, ip. An ACTION log, so it is described
  *                      as one and not as "every access".
  */

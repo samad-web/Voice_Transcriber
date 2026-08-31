@@ -4,14 +4,14 @@ import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { ConnectionsManager, type ConnectionView, type ProviderView } from "./connections-manager";
 
-export const metadata: Metadata = { title: "Connections — Aura" };
+export const metadata: Metadata = { title: "Connections - Aura" };
 
 /**
  * Connect your own email and calendar (PRD Layer 1).
  *
  * Under the owner console rather than the platform console on purpose: these
  * are one person's accounts, not a tenant-wide setting an operator
- * administers. Every persona sees this page — a telecaller's own mailbox is
+ * administers. Every persona sees this page - a telecaller's own mailbox is
  * exactly the thing they would connect.
  */
 export default async function ConnectionsPage({

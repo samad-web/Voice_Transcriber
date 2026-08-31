@@ -18,7 +18,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
 import type { Invoice, InvoiceStatus } from "./actions";
 
-export const metadata: Metadata = { title: "Invoices — Aura" };
+export const metadata: Metadata = { title: "Invoices - Aura" };
 
 const PAGE_SIZE = 50;
 
@@ -46,7 +46,7 @@ interface ListResponse {
 }
 
 /**
- * Invoices are listed and viewed here, but not created from scratch — the
+ * Invoices are listed and viewed here, but not created from scratch - the
  * primary path is the "Create invoice" button on a quotation's detail page
  * (`POST /invoices/from-quotation/:id`). That's why there's no dialog here,
  * unlike products and quotations.
@@ -112,7 +112,7 @@ export default async function InvoicesPage({
       {data.invoices.length === 0 ? (
         <EmptyState
           title="No invoices yet"
-          description="Invoices are created from an accepted quotation — open one and use Create invoice."
+          description="Invoices are created from an accepted quotation - open one and use Create invoice."
         />
       ) : (
         <>
@@ -147,7 +147,7 @@ export default async function InvoicesPage({
                     {formatMoney(invoice.amount_paid, invoice.currency)}
                   </TableCell>
                   <TableCell className="text-text-muted">
-                    {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "—"}
+                    {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "-"}
                   </TableCell>
                 </TableRow>
               ))}

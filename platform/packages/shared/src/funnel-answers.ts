@@ -3,8 +3,8 @@
  *
  * ── WHY THIS EXISTS ────────────────────────────────────────────────────────
  *
- * The database stores answers as enum VALUES — `below_10k`, `2_5`,
- * `spreadsheets_whatsapp`, `tell_me_more` — because that is what a stable
+ * The database stores answers as enum VALUES - `below_10k`, `2_5`,
+ * `spreadsheets_whatsapp`, `tell_me_more` - because that is what a stable
  * column should hold. The console was rendering those values raw, so an
  * operator about to ring somebody read "budget_inr: below_10k" and had to
  * translate it in their head, and had no way at all to see WHICH QUESTION the
@@ -15,7 +15,7 @@
  *
  * These strings are the questions the visitor actually saw. If the form owned
  * its wording and the console kept a second copy, the two would drift on the
- * first edit — and the failure is silent and nasty: the console would attribute
+ * first edit - and the failure is silent and nasty: the console would attribute
  * an answer to a question nobody was asked. `apps/marketing`'s form imports
  * these same constants, so there is one wording and changing it changes both.
  *
@@ -42,7 +42,7 @@ import {
 
 /**
  * The exact wording shown on /start. Imported by the form, so this is not a
- * description of the questions — it IS the questions.
+ * description of the questions - it IS the questions.
  */
 export const FUNNEL_QUESTIONS = {
   salutation: "Salutation",
@@ -77,7 +77,7 @@ export interface AnsweredQuestion {
   /** Stable key, for React and for tests. */
   key: keyof typeof FUNNEL_QUESTIONS;
   question: string;
-  /** The human-readable answer. Never an enum value — see `labelFor`. */
+  /** The human-readable answer. Never an enum value - see `labelFor`. */
   answer: string;
 }
 
@@ -85,8 +85,8 @@ export interface AnsweredQuestion {
  * Turn a stored value into the label the visitor clicked.
  *
  * Falls back to the raw value rather than to a placeholder. An unknown value
- * means the catalogue changed after the row was written — a real thing that
- * happens when an option is renamed — and showing `some_old_value` tells an
+ * means the catalogue changed after the row was written - a real thing that
+ * happens when an option is renamed - and showing `some_old_value` tells an
  * operator something true and slightly ugly, where "Unknown" would discard the
  * only information there is.
  */
@@ -112,7 +112,7 @@ export function describeAnswers(row: FunnelAnswerSource): AnsweredQuestion[] {
 
   push("salutation", row.salutation && labelFor(SALUTATIONS, row.salutation));
   push("businessType", row.business_type && labelFor(BUSINESS_TYPES, row.business_type));
-  // Only meaningful once businessType is 'other' — same reasoning as crmName's
+  // Only meaningful once businessType is 'other' - same reasoning as crmName's
   // "other" not being looked up when hasCrm isn't 'yes'.
   if (row.business_type === "other") {
     push(

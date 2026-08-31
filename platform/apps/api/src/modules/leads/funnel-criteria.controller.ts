@@ -16,7 +16,7 @@ import { DbService } from "../../db/db.service";
  *
  * A PUT of the entire criteria set is the only shape that can be validated as
  * a unit. Patching one rule at a time invites the state nobody wants: an edit
- * that succeeds field by field and leaves the set as a whole nonsensical —
+ * that succeeds field by field and leaves the set as a whole nonsensical -
  * duplicate ids, or a threshold pointing at a band that another part of the
  * same edit removed. It also makes the console's job simple, which is where
  * mistakes would otherwise show up.

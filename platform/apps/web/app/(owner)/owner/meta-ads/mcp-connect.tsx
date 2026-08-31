@@ -107,7 +107,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
 
       <p className="text-sm leading-relaxed text-text-muted">
         Point Aura at a Meta MCP server and it will pull your Lead Ads leads onto the
-        same board your phone leads land on — each one matched against your{" "}
+        same board your phone leads land on - each one matched against your{" "}
         <a href="/owner/projects" className="text-accent-text underline underline-offset-2">
           project list
         </a>{" "}
@@ -156,7 +156,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
       </div>
 
       {/* The most likely disappointment with this integration is a server that
-          handshakes cleanly and advertises no lead tool — it looks connected
+          handshakes cleanly and advertises no lead tool - it looks connected
           and then never produces a lead. Saying so here is the difference
           between a five-second fix and a week of wondering. */}
       {capabilities ? (
@@ -175,7 +175,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
           <span>
             {capabilities.canFetchLeads ? (
               <>
-                This server can fetch leads — using its{" "}
+                This server can fetch leads - using its{" "}
                 <code className="font-mono">{capabilities.leadTool}</code> tool
                 {capabilities.toolCount > 1 ? ` (of ${capabilities.toolCount} it offers)` : ""}.
               </>
@@ -203,7 +203,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
           <div>
             <dt className="text-text-muted">Server</dt>
             <dd className="mt-0.5 font-medium break-words text-text">
-              {connection.server_info?.name ?? "—"}
+              {connection.server_info?.name ?? "-"}
               {connection.server_info?.version ? ` v${connection.server_info.version}` : ""}
             </dd>
           </div>

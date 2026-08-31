@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Bulk CSV import (Kailash gap Milestone 2) — pure header-mapping logic.
+ * Bulk CSV import (Kailash gap Milestone 2) - pure header-mapping logic.
  * The CSV itself is parsed client-side (Papa Parse); this only decides which
  * source header probably means which target field, so the same suggestion
  * logic can be unit-tested and reused by both the API and a future web wizard
@@ -51,7 +51,7 @@ function normalize(header: string): string {
 /**
  * For each target field, pick the best-matching source header (exact
  * normalized match first, then a substring match), or null if nothing looks
- * right — a wrong guess silently mis-mapping a column is worse than an admin
+ * right - a wrong guess silently mis-mapping a column is worse than an admin
  * having to fill one blank in manually.
  */
 export function suggestMapping(entity: ImportEntity, headers: string[]): Record<string, string | null> {

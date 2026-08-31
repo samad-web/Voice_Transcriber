@@ -14,7 +14,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * /dpa — Aura's processor obligations. Forms part of the terms.
+ * /dpa - Aura's processor obligations. Forms part of the terms.
  *
  * 404s until `DPA_READY`. See lib/legal.ts.
  *
@@ -24,7 +24,7 @@ export const metadata: Metadata = pageMetadata({
  *    recording audio. It holds none: object storage is MinIO running on the
  *    same Hostinger server as the application. A DPA annex is a contractual
  *    statement of who touches the data, and naming a company that touches none
- *    of it is not a harmless copy-paste — it is the term a customer's auditor
+ *    of it is not a harmless copy-paste - it is the term a customer's auditor
  *    checks first. `/security` carried the same error and has been corrected.
  *
  * 2. **Annex C (GDPR) is omitted, not stubbed.** The cover note's own

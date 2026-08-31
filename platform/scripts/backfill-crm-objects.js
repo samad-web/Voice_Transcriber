@@ -8,7 +8,7 @@
  * this migration did. Neither writes to the other's source table.
  *
  * Calls the SAME projectLeadToCrm() the live worker dual-write will call once
- * that lands (a later, separate milestone) — backfill and live projection
+ * that lands (a later, separate milestone) - backfill and live projection
  * read from one definition and can never drift from each other.
  *
  * Safe to re-run: projectLeadToCrm dedupes contacts on (org_id, phone_hash)
@@ -80,7 +80,7 @@ async function main() {
       // Deliberately keyed on the contact rather than walking `calls` blind:
       // a call from a number that never qualified as a lead has no CRM object
       // to attach to, and inventing one here would quietly widen what counts
-      // as a contact — which is the cutover's decision to make, not the
+      // as a contact - which is the cutover's decision to make, not the
       // backfill's.
       const { rows: contacts } = await client.query(
         `SELECT id, phone_hash FROM contacts
@@ -92,7 +92,7 @@ async function main() {
       for (const contact of contacts) {
         // The deal to attach these to: the one this contact already owns.
         // LIMIT 1 because a contact can own several (one per source lead) and
-        // a historical call cannot be attributed to a particular one — the
+        // a historical call cannot be attributed to a particular one - the
         // contact timeline is the honest home for it either way.
         const {
           rows: [deal],

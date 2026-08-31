@@ -4,8 +4,8 @@ import type { DbClient } from "./crm-dispatch";
 import { projectFactsToCustomFields } from "./custom-fields";
 
 /**
- * The coercion rules are the whole substance of Track A4 — an LLM's output
- * meeting an admin's declared type — so they are tested directly rather than
+ * The coercion rules are the whole substance of Track A4 - an LLM's output
+ * meeting an admin's declared type - so they are tested directly rather than
  * through the pipeline. Same fake-DbClient approach as crm-objects.test.ts.
  */
 
@@ -160,7 +160,7 @@ describe("projectFactsToCustomFields", () => {
   it("matches a picklist on value or label, case-insensitively", async () => {
     expect((await project(PICKLIST, "premium")).write?.value).toBe("premium");
     expect((await project(PICKLIST, "Premium")).write?.value).toBe("premium");
-    // Matched on the LABEL, stored as the VALUE — the model says what a human
+    // Matched on the LABEL, stored as the VALUE - the model says what a human
     // would say, the column holds what the option list defines.
     expect((await project(PICKLIST, "Standard")).write?.value).toBe("standard");
   });
@@ -180,7 +180,7 @@ describe("projectFactsToCustomFields", () => {
     expect(await project(MULTI, "cement, sand")).toMatchObject({ written: 0, skipped: 1 });
   });
 
-  it("never writes a lookup — resolving prose to an id is not coercion", async () => {
+  it("never writes a lookup - resolving prose to an id is not coercion", async () => {
     const lookup = { id: "f-look", key: "parent", type: "lookup" };
     expect(await project(lookup, "the Acme account")).toMatchObject({ written: 0, skipped: 1 });
   });
@@ -208,7 +208,7 @@ describe("projectFactsToCustomFields", () => {
 describe("human-owned values (migration 0045)", () => {
   it("reports a declined overwrite as skipped, not written", async () => {
     // The rep corrected the budget by hand; the next call re-extracts it. The
-    // conflict clause declines, and the count has to say so — "written: 1"
+    // conflict clause declines, and the count has to say so - "written: 1"
     // when nothing changed would make the logs lie about the one case this
     // rule exists for.
     const writes: Write[] = [];

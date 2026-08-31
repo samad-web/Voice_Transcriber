@@ -1,11 +1,11 @@
 ------------------------------------------------------------------------------
--- 0026 — editable message copy
+-- 0026 - editable message copy
 --
 -- WHY THIS TABLE EXISTS
 --
 -- Until now every word sent to an enquirer lived in a TypeScript string literal
 -- in apps/worker/src/pipeline/whatsapp.ts. Changing a sentence meant an edit, a
--- typecheck, a build and a deploy — so in practice the copy was whatever the
+-- typecheck, a build and a deploy - so in practice the copy was whatever the
 -- developer wrote once, and the person who actually owns the tone of voice
 -- could not touch it. This moves the copy into a row an operator can edit from
 -- the console, while the code keeps its own copy as the fallback.
@@ -17,7 +17,7 @@
 -- apps/worker/src/pipeline/funnel-followup.ts, and duplicating those five-
 -- paragraph templates into a table nobody is editing would create two sources
 -- of truth for text that currently cannot even be delivered (no mail provider
--- is configured — see that file's header). When email goes live, seed it here
+-- is configured - see that file's header). When email goes live, seed it here
 -- and delete the literals there, in that order.
 --
 -- ── THE CODE COPY IS STILL THE FALLBACK, AND THAT IS NOT BELT-AND-BRACES ───
@@ -25,14 +25,14 @@
 -- The worker reads this table on a short cache and falls back to its own
 -- literals when a row is missing, disabled, or the query fails. Without that, a
 -- database hiccup or a row someone deleted would turn into a dead-lettered
--- rejection — i.e. a person who is never told. Copy that is slightly out of
+-- rejection - i.e. a person who is never told. Copy that is slightly out of
 -- date beats no message at all.
 ------------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS marketing.message_templates (
   key         text NOT NULL,
   channel     text NOT NULL CHECK (channel IN ('whatsapp', 'email')),
-  -- Email only. NULL for whatsapp, which has no subject line — a subject
+  -- Email only. NULL for whatsapp, which has no subject line - a subject
   -- pasted into a chat message is the tell that a human did not write it.
   subject     text,
   body        text NOT NULL CHECK (length(btrim(body)) > 0),
@@ -68,7 +68,7 @@ ALTER TABLE marketing.funnel_followups
   ));
 
 ------------------------------------------------------------------------------
--- Seed — the copy that is live today, VERBATIM.
+-- Seed - the copy that is live today, VERBATIM.
 --
 -- `rejected`, `custom_crm_info` and `disqualified_neutral` are transcribed from
 -- renderWhatsApp() in apps/worker/src/pipeline/whatsapp.ts with one change: the
@@ -78,7 +78,7 @@ ALTER TABLE marketing.funnel_followups
 -- can produce. It cannot produce "Hi , thanks".
 --
 -- ON CONFLICT DO NOTHING so re-running this never overwrites edited copy. That
--- is the whole point of the table — a migration that reset an operator's
+-- is the whole point of the table - a migration that reset an operator's
 -- wording on every deploy would be worse than no table.
 ------------------------------------------------------------------------------
 
@@ -106,7 +106,7 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
  'connector to the one you have.',
  true),
 
--- NOT SENT YET, and no code copy behind it either — this stage has never had a
+-- NOT SENT YET, and no code copy behind it either - this stage has never had a
 -- message. {{slot}} is the booked time, rendered in Asia/Kolkata.
 ('booking_confirmed', 'whatsapp',
  'Hi {{first_name}}, your call with Aura is confirmed for {{slot}}. ' ||
@@ -114,8 +114,8 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
  true),
 
 -- NOT SENT YET at the time this ran: there was no reminder job.
--- UPDATE (2026-08-09, same day): the job now exists —
--- apps/worker/src/pipeline/funnel-reminders.ts — but ships switched off behind
+-- UPDATE (2026-08-09, same day): the job now exists -
+-- apps/worker/src/pipeline/funnel-reminders.ts - but ships switched off behind
 -- FUNNEL_REMINDERS_ENABLED. Noted here rather than rewritten because this file
 -- has already been applied and records what was true when it ran.
 ('reminder_followup', 'whatsapp',
@@ -131,7 +131,7 @@ ON CONFLICT (key, channel) DO NOTHING;
 -- apps/api and apps/worker reach this through the admin pool, which connects as
 -- the schema owner, so neither needs a grant.
 --
--- `aura_marketing` — the public, unauthenticated website — gets NOTHING, for
+-- `aura_marketing` - the public, unauthenticated website - gets NOTHING, for
 -- the same reason 0024 gave it nothing on funnel_followups. 0020 set ALTER
 -- DEFAULT PRIVILEGES granting SELECT/INSERT/UPDATE on future tables in this
 -- schema, so without this REVOKE it would inherit UPDATE on the exact text the

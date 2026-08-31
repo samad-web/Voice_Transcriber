@@ -1,21 +1,21 @@
 /**
- * `DeviceAuthGuard` — the handset fleet's only credential (inventory 13 §2.5, D1–D10).
+ * `DeviceAuthGuard` - the handset fleet's only credential (inventory 13 §2.5, D1-D10).
  *
  * This guard authenticates EVERY device route: `POST /v1/calls` (ingest),
  * `POST /v1/calls/:id/complete`, `GET /v1/devices/me/config` and the three
- * telemetry routes (inventory 13 §1.1 rows 22, 23, 44, 48–50). It is also the
+ * telemetry routes (inventory 13 §1.1 rows 22, 23, 44, 48-50). It is also the
  * one guard on the platform that trusts a bearer token's CONTENTS: `org_id`,
  * `instance_id` and the device id are copied verbatim off the JWT
  * (`device-auth.guard.ts:38-43`) and nothing is re-read from the database. So a
  * token forged against the signing secret does not merely impersonate one
- * handset — it names its own tenant. The signature IS the tenant boundary here,
+ * handset - it names its own tenant. The signature IS the tenant boundary here,
  * which is why D4 and the `alg`/algorithm cases below are pinned as hard as the
  * happy path.
  *
  * `JWT_SECRET` IS SET EXPLICITLY in `beforeEach` (inventory 13 §5.5). The guard
  * reads `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"` at call time, so
  * a runner or CI shell exporting a real value would otherwise fail every case
- * in this file with no defect present — the `pipeline.test.ts:74` failure mode
+ * in this file with no defect present - the `pipeline.test.ts:74` failure mode
  * report 12 §5.6 records. Two cases deliberately override it; both restore.
  *
  * Nothing here opens a socket or a database connection: the guard has no
@@ -38,16 +38,16 @@ import {
   makeExecutionContext,
 } from "./guard-harness.spec";
 
-/** `:28` — the header is absent or is not a `Bearer ` credential. */
+/** `:28` - the header is absent or is not a `Bearer ` credential. */
 const NO_TOKEN = "device access token required";
-/** `:46` — everything else, from a bad signature to the wrong scope. */
+/** `:46` - everything else, from a bad signature to the wrong scope. */
 const BAD_TOKEN = "invalid or expired device token";
 
 const bearer = (token: string): string => `Bearer ${token}`;
 
 /**
  * Exactly the claim set `devices.controller.ts:186-195` signs. `sub` is NOT in
- * here — it is set by the `subject` sign option (inventory 13 §5.5), and a test
+ * here - it is set by the `subject` sign option (inventory 13 §5.5), and a test
  * that put it in the literal instead would be testing a token this platform
  * never mints.
  */
@@ -57,7 +57,7 @@ function devicePayload(overrides: Record<string, unknown> = {}): Record<string, 
 
 interface SignOpts {
   secret?: string;
-  /** Omitted entirely when undefined — that is how the D7 "no sub" case is built. */
+  /** Omitted entirely when undefined - that is how the D7 "no sub" case is built. */
   subject?: string;
   expiresIn?: string;
   algorithm?: jwt.Algorithm;
@@ -87,7 +87,7 @@ function validDeviceToken(overrides: Record<string, unknown> = {}, opts: SignOpt
 
 /**
  * An `alg: "none"` token: real header, real payload, EMPTY signature. Hand-built
- * because `jwt.sign` refuses to produce one — which is the point. The attack is
+ * because `jwt.sign` refuses to produce one - which is the point. The attack is
  * "strip the signature and tell the verifier there never was one".
  */
 function algNoneToken(payload: Record<string, unknown>): string {
@@ -108,7 +108,7 @@ describe("DeviceAuthGuard", () => {
     process.env = ORIGINAL_ENV;
   });
 
-  it("has no injected dependencies — it can never consult the database", async () => {
+  it("has no injected dependencies - it can never consult the database", async () => {
     // Not a triviality: it is the structural reason the device's `status` and
     // its org's `status` are unknown to this guard, which is what the
     // "stale token" group below asserts behaviourally. If a dependency is ever
@@ -134,7 +134,7 @@ describe("DeviceAuthGuard", () => {
     it("D2 · 401s a non-Bearer scheme, and the LOWER-CASE `bearer` too", async () => {
       // `startsWith("Bearer ")` (`:27`) is case-sensitive and includes the
       // trailing space. RFC 7235 says the scheme is case-insensitive, so a
-      // client sending `bearer` is refused by this platform specifically — pin
+      // client sending `bearer` is refused by this platform specifically - pin
       // it, because "it works in curl but not from the handset" is otherwise a
       // day of debugging.
       for (const header of [
@@ -159,7 +159,7 @@ describe("DeviceAuthGuard", () => {
     it("D2/D3 · `Bearer ` with an EMPTY token takes the other branch and other message", async () => {
       // The prefix check passes, so this is a 401 `invalid or expired device
       // token`, not `device access token required`. Same status, different
-      // message — and the message is what an on-call engineer greps for.
+      // message - and the message is what an on-call engineer greps for.
       const { context } = makeExecutionContext({ headers: { authorization: "Bearer " } });
 
       await expectHttpError(() => guard.canActivate(context), {
@@ -188,8 +188,8 @@ describe("DeviceAuthGuard", () => {
   // ── the signature: this is the whole tenant boundary ───────────────────────
   describe("signature and algorithm", () => {
     it("D4 · 401s a well-formed token signed with a DIFFERENT secret", async () => {
-      // THE case. Every claim in this token is correct — right scope, right
-      // device, unexpired, ORG_A — and it is refused solely because the HMAC
+      // THE case. Every claim in this token is correct - right scope, right
+      // device, unexpired, ORG_A - and it is refused solely because the HMAC
       // does not verify. Since `org_id` is read verbatim (`:40`), the signature
       // is the only thing standing between an attacker and ingest into any
       // tenant they name.
@@ -225,7 +225,7 @@ describe("DeviceAuthGuard", () => {
 
     it("401s an `alg: none` token", async () => {
       // The signature-stripping attack, stated as its own case because the
-      // guard passes NO `algorithms` option to `jwt.verify` (`:31-34`) — the
+      // guard passes NO `algorithms` option to `jwt.verify` (`:31-34`) - the
       // rejection comes from jsonwebtoken's own default, not from this code.
       // If that library default ever changed, or the call gained an
       // `algorithms: [...]` list that included "none", this is the test that
@@ -242,7 +242,7 @@ describe("DeviceAuthGuard", () => {
       expect(req.device).toBeUndefined();
     });
 
-    it("401s an RS256 token — the classic algorithm-confusion attempt", async () => {
+    it("401s an RS256 token - the classic algorithm-confusion attempt", async () => {
       // jsonwebtoken v9 defaults `algorithms` to the HMAC family when the key is
       // a string secret, so an asymmetrically signed token cannot be presented
       // and verified against the shared secret as though it were public key
@@ -267,7 +267,7 @@ describe("DeviceAuthGuard", () => {
       });
     });
 
-    it("401s HS384/HS512 over the same secret — only HS256 is accepted", async () => {
+    it("401s HS384/HS512 over the same secret - only HS256 is accepted", async () => {
       // The guard now passes `algorithms: ["HS256"]` to `jwt.verify` (`:31-35`),
       // defense in depth against algorithm confusion even though the platform
       // only ever mints HS256 (`devices.controller.ts:193` passes a string key
@@ -291,13 +291,13 @@ describe("DeviceAuthGuard", () => {
 
   // ── the secret itself (report 12 §2.3) ─────────────────────────────────────
   describe("the JWT_SECRET fallback (report 12 §2.3)", () => {
-    it("accepts the PUBLISHED dev literal when JWT_SECRET is unset — today's behaviour", async () => {
+    it("accepts the PUBLISHED dev literal when JWT_SECRET is unset - today's behaviour", async () => {
       // PINNED DELIBERATELY, and it is the highest-severity thing in this file.
       // `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"` (`:33`) is one of
       // four live sites (report 12 §2.3), and that literal is published in this
       // repository's `.env.example`. A deployment that forgets JWT_SECRET
       // therefore accepts device tokens minted by anyone who has read the repo
-      // — for any org_id they care to name (see D10). Unlike ADMIN_API_KEY,
+      // - for any org_id they care to name (see D10). Unlike ADMIN_API_KEY,
       // there is no Stage 0.2-style production fail-closed here yet.
       delete process.env.JWT_SECRET;
       const token = validDeviceToken({}, { secret: "dev-jwt-secret-change-me" });
@@ -308,11 +308,11 @@ describe("DeviceAuthGuard", () => {
     });
 
     it.skip("(correct) · refuses the dev literal when JWT_SECRET is unset in production", async () => {
-      // DEFECT — inventory 13 §2.5 / report 12 §2.3, finding still open. Un-skip
+      // DEFECT - inventory 13 §2.5 / report 12 §2.3, finding still open. Un-skip
       // when `device-auth.guard.ts:33` is given the `resolveAdminKey()` treatment
       // from Stage 0.2: no fallback literal under NODE_ENV=production, so an
       // unset secret can match nothing rather than matching a public string.
-      // Fixing this ONE site is not enough — `device-nonce.ts:5`,
+      // Fixing this ONE site is not enough - `device-nonce.ts:5`,
       // `devices.controller.ts:193` and `erasure.controller.ts:97` share the
       // fallback and must move together or handsets stop authenticating.
       process.env.NODE_ENV = "production";
@@ -346,7 +346,7 @@ describe("DeviceAuthGuard", () => {
     it("reads JWT_SECRET per request, not once at module load", async () => {
       // A rotated secret must take effect on the next request. If the guard ever
       // hoists the secret into a module-level const, the old secret keeps
-      // working until the process restarts — silently, and for as long as the
+      // working until the process restarts - silently, and for as long as the
       // container lives.
       process.env.JWT_SECRET = "rotated-secret";
       const rotated = makeExecutionContext({
@@ -371,7 +371,7 @@ describe("DeviceAuthGuard", () => {
       // The 15-minute window (`devices.controller.ts:194`) is the only thing
       // bounding a leaked token's usefulness. Note the guard's `catch` (`:45`)
       // swallows jsonwebtoken's `TokenExpiredError` and emits the same message
-      // as a bad signature — deliberate (it tells an attacker nothing) and worth
+      // as a bad signature - deliberate (it tells an attacker nothing) and worth
       // pinning, because a handset seeing this message must re-authenticate
       // rather than retry.
       const token = validDeviceToken({}, { expiresIn: "-1s" });
@@ -393,12 +393,12 @@ describe("DeviceAuthGuard", () => {
       expect(guard.canActivate(context)).toBe(true);
     });
 
-    it("allows a token with NO exp claim at all — nothing forces expiry here", async () => {
+    it("allows a token with NO exp claim at all - nothing forces expiry here", async () => {
       // Pinned as today's behaviour. `expiresIn` is supplied by the SIGNING side
       // (`devices.controller.ts:194`), and `jwt.verify` is called with no
       // `maxAge` and no required-claims option (`:31-34`), so a token minted
       // without `exp` never expires. Only `devices.controller.ts` mints these
-      // today, so this is reachable only with the signing secret — but it means
+      // today, so this is reachable only with the signing secret - but it means
       // the 15-minute bound is a property of the issuer, not of the guard.
       const token = signToken(devicePayload(), { subject: DEVICE_A });
       const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
@@ -427,7 +427,7 @@ describe("DeviceAuthGuard", () => {
     });
 
     it("D6 · 401s a valid signature carrying the WRONG scope", async () => {
-      // A session token, an erasure token — anything the platform signs with the
+      // A session token, an erasure token - anything the platform signs with the
       // same secret for another purpose must not open the device routes. The
       // throw at `:36` is caught by the guard's own `catch` at `:45` and
       // remapped, so this is indistinguishable from a bad signature to the
@@ -454,7 +454,7 @@ describe("DeviceAuthGuard", () => {
       // `deviceId` is `payload.sub` (`:39`) and flows straight into
       // `WHERE d.id = $1` (`devices.controller.ts:228`,
       // `calls.controller.ts:136`). A numeric or absent `sub` reaching the
-      // handler would be a parameterised query against a non-uuid — the
+      // handler would be a parameterised query against a non-uuid - the
       // `typeof === "string"` check at `:35` is what stops it.
       const cases: Array<Record<string, unknown>> = [
         devicePayload({ sub: 12345 }),
@@ -480,7 +480,7 @@ describe("DeviceAuthGuard", () => {
     it("401s a token whose payload is a bare string, not an object", async () => {
       // `jwt.verify` returns a string for a non-JSON payload; the guard casts to
       // `JwtPayload` (`:34`) and reads `.scope` off it, which is `undefined`.
-      // The scope check catches it — this asserts the cast is not load-bearing.
+      // The scope check catches it - this asserts the cast is not load-bearing.
       const token = signToken("device");
       const { context } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
@@ -518,7 +518,7 @@ describe("DeviceAuthGuard", () => {
   // ── the tenant claims: finding 4, inventory 13 §7 ──────────────────────────
   describe("org_id / instance_id are taken on trust (inventory 13 §7 finding 4)", () => {
     it("D9 · ALLOWS a token with no org_id and no instance_id, leaving both undefined", () => {
-      // PINNED DELIBERATELY. Neither claim is validated (`:40-41`) — no presence
+      // PINNED DELIBERATELY. Neither claim is validated (`:40-41`) - no presence
       // check, no uuid parse. `req.device.orgId` therefore reaches
       // `withOrg(undefined, …)` in every device handler, which sets
       // `app.org_id` to undefined and hands RLS a null tenant. A guard that
@@ -542,7 +542,7 @@ describe("DeviceAuthGuard", () => {
     it("D9 · ALLOWS org_id / instance_id that are not uuids at all", () => {
       // The fixture `INSTANCE_A` is deliberately NOT a valid uuid (`i` is not a
       // hex digit, guard-harness.spec.ts:47) and it still lands on the request
-      // — which is the whole point. Compare `TenantGuard:77`, which parses the
+      // - which is the whole point. Compare `TenantGuard:77`, which parses the
       // org with zod before pinning it. The device path has no equivalent.
       const token = validDeviceToken({ org_id: "'; DROP TABLE calls; --", instance_id: 42 });
       const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
@@ -553,7 +553,7 @@ describe("DeviceAuthGuard", () => {
     });
 
     it.skip("D9 (correct) · rejects a token that names no tenant", async () => {
-      // DEFECT — inventory 13 §7 finding 4 (`device-auth.guard.ts:40-41`),
+      // DEFECT - inventory 13 §7 finding 4 (`device-auth.guard.ts:40-41`),
       // severity medium. The guard should refuse a token with no `org_id`
       // rather than pass `undefined` into `withOrg`. Un-skip when the guard
       // validates the claim; a uuid parse alone closes this without needing a
@@ -571,12 +571,12 @@ describe("DeviceAuthGuard", () => {
       });
     });
 
-    it("D10 · WRONG TENANT — a token naming another org is scoped to that org", () => {
+    it("D10 · WRONG TENANT - a token naming another org is scoped to that org", () => {
       // PINNED DELIBERATELY, and this is the concrete mechanism behind report
       // 12 §2.3. DEVICE_A belongs to ORG_A (inventory 13 §5.6). A token whose
       // `org_id` says ORG_B is accepted and every subsequent query runs under
       // ORG_B, because the guard never asks the database which org this device
-      // actually belongs to. Forging the signature is the ONLY barrier — which
+      // actually belongs to. Forging the signature is the ONLY barrier - which
       // is why the D4 and JWT_SECRET cases above matter as much as they do.
       const token = validDeviceToken({ org_id: ORG_B });
       const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
@@ -587,7 +587,7 @@ describe("DeviceAuthGuard", () => {
     });
 
     it.skip("D10 (correct) · rejects a token whose org_id is not the device's own org", async () => {
-      // DEFECT — inventory 13 §2.5 D10. The correct guard resolves the device's
+      // DEFECT - inventory 13 §2.5 D10. The correct guard resolves the device's
       // org from `devices.org_id` and ignores (or verifies) the claim. That
       // needs a database read this guard cannot currently do (see the
       // no-dependencies test at the top of this file), so closing it is a
@@ -612,12 +612,12 @@ describe("DeviceAuthGuard", () => {
     it("allows a token for a device that is logged out, wiped, deleted, or in a suspended org", () => {
       // Inventory 13 §2.5: nothing in `req.device` is re-read from the database,
       // so `POST /v1/devices/:id/logout` and `/wipe` do NOT invalidate an
-      // already-issued token — it stays cryptographically valid for its full 15
+      // already-issued token - it stays cryptographically valid for its full 15
       // minutes. What actually refuses it is the handler:
-      //   · `calls.controller.ts:131-142` — SELECTs `d.status` and `o.status`
-      //     and throws **409** `device or org is not active — recording is
+      //   · `calls.controller.ts:131-142` - SELECTs `d.status` and `o.status`
+      //     and throws **409** `device or org is not active - recording is
       //     disabled`;
-      //   · `devices.controller.ts:225-235` — 401 `device not found` for a
+      //   · `devices.controller.ts:225-235` - 401 `device not found` for a
       //     deleted row, and `recordingEnabled:false` for a non-active device or
       //     a suspended org.
       // That split is the contract, and asserting it here is what stops someone
@@ -650,7 +650,7 @@ describe("DeviceAuthGuard", () => {
   describe("separation from the principal-based guards", () => {
     it("never sets req.principal, so a device token cannot reach a tenant-scoped route", async () => {
       // Inventory 13 §2.0: `DeviceAuthGuard` is independent of the
-      // AdminKey/Tenant chain and never coexists with it — `req.device` and
+      // AdminKey/Tenant chain and never coexists with it - `req.device` and
       // `req.principal` are separate properties on separate route sets. This
       // pins the consequence that matters: replay a device token against a
       // console route and `TenantGuard` 401s, because the device guard populated

@@ -9,7 +9,7 @@ export const PAGE_SIZE = 100;
  *
  * The explorers used to take a bare `LIMIT` with no total and no way forward,
  * so a tenant past the cap simply stopped having older calls as far as the
- * console was concerned — silently, which is the worst way for data to go
+ * console was concerned - silently, which is the worst way for data to go
  * missing. Showing the range against the true total makes truncation visible
  * even on the first page.
  */
@@ -64,7 +64,7 @@ export function Pager({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-xs text-text-muted tabular-nums">
-        {first}–{last} of {total} · page {current}/{pages}
+        {first}-{last} of {total} · page {current}/{pages}
       </p>
       <div className="flex items-center gap-2">
         {step("← Newer", current - 1, current > 1)}

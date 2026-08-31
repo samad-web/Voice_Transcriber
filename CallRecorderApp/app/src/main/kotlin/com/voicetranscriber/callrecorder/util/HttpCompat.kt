@@ -9,7 +9,7 @@ import java.net.HttpURLConnection
  *
  * It used to be sent on every request. That leaked a development detail into
  * production traffic, so it is now scoped to hosts that are actually ngrok
- * tunnels — a no-op once the app points at the real domain.
+ * tunnels - a no-op once the app points at the real domain.
  */
 fun HttpURLConnection.applyNgrokBypass() {
     val host = url.host

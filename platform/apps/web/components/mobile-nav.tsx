@@ -44,7 +44,7 @@ export function MobileNav({
 
   // Focus management for the drawer-as-dialog: the trigger opens it, the close
   // button receives focus on open, Tab is trapped inside while it's open, and
-  // focus returns to the trigger on close — otherwise a keyboard user tabbing
+  // focus returns to the trigger on close - otherwise a keyboard user tabbing
   // "through" the drawer lands on the (visually hidden, scrim-covered) page
   // behind it.
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -52,7 +52,7 @@ export function MobileNav({
   const drawerRef = useRef<HTMLElement>(null);
   // Tracks whether the *previous* render had the drawer open, so the
   // open-vs-close focus effect below can tell "just closed" apart from
-  // "never opened" — without it, mount would try to focus a trigger that
+  // "never opened" - without it, mount would try to focus a trigger that
   // was never blurred.
   const wasOpenRef = useRef(false);
 
@@ -108,7 +108,7 @@ export function MobileNav({
   }, [open]);
 
   // The trigger and the drawer's close button. Both are icon-only, so both must
-  // carry an accessible name, and neither may lose its focus ring — with the
+  // carry an accessible name, and neither may lose its focus ring - with the
   // 2px black outline retired there is nothing else marking them as controls.
   const iconButton =
     "inline-flex shrink-0 items-center justify-center rounded-md border border-border-strong " +
@@ -183,7 +183,7 @@ export function MobileNav({
                   const Icon = item.icon;
                   // Reuse the same longest-prefix match `current` already
                   // holds (used above for the header title) instead of
-                  // testing each item's own prefix independently — otherwise
+                  // testing each item's own prefix independently - otherwise
                   // Dashboard ("/owner") matches every owner route's prefix
                   // test too, and renders active alongside the real page.
                   const isActive = item === current;
@@ -216,7 +216,7 @@ export function MobileNav({
                   </div>
                   <div className="min-w-0">
                     <span className="block truncate text-xs font-medium text-text">
-                      {/* `||` not `??` — an account with no email arrives as "". */}
+                      {/* `||` not `??` - an account with no email arrives as "". */}
                       {email || "Not signed in"}
                     </span>
                     <span className="block text-xs text-text-muted">
@@ -225,7 +225,7 @@ export function MobileNav({
                   </div>
                 </div>
 
-                {/* Always rendered — see the note in sidebar.tsx. On a phone this
+                {/* Always rendered - see the note in sidebar.tsx. On a phone this
                     is the ONLY sign-out that exists, since the desktop sidebar
                     is hidden below md. */}
                 <SignOutButton />

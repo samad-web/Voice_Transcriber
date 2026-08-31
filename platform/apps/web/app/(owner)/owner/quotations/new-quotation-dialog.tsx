@@ -7,13 +7,13 @@ import { createQuotationAction } from "./actions";
 import { createLineItemRow, useLineItemRows } from "../use-line-item-rows";
 
 /**
- * Start a quotation from a blank slate. No account/contact/deal picker —
+ * Start a quotation from a blank slate. No account/contact/deal picker -
  * that stays for a later pass; this dialog is deliberately just currency,
  * discount, and a repeatable line-item list, because that is everything the
  * create endpoint strictly needs.
  *
  * On success the browser is sent straight to the new quotation's detail page
- * — there's nothing useful left to do from the list.
+ * - there's nothing useful left to do from the list.
  */
 export function NewQuotationDialog() {
   const router = useRouter();

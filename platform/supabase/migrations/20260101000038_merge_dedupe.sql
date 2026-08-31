@@ -1,8 +1,8 @@
--- 0038_merge_dedupe.sql — CRM Phase 1 foundation, part 5: Contact/Account
+-- 0038_merge_dedupe.sql - CRM Phase 1 foundation, part 5: Contact/Account
 -- merge with a revert window, and a duplicate-candidate queue.
 --
 -- Victims are tombstoned (status='merged', merged_into_id set on the row
--- itself — see 0035), never hard-deleted: a merge is a workflow action a
+-- itself - see 0035), never hard-deleted: a merge is a workflow action a
 -- human can get wrong, and losing data on a mis-click is worse than a little
 -- permanent bookkeeping. Revert restores the survivor's overwritten fields
 -- from the snapshot taken at merge time and un-tombstones the victim.
@@ -12,14 +12,14 @@ CREATE TABLE IF NOT EXISTS merge_log (
   org_id      uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   -- App-validated: contact | account. Polymorphic survivor_id/victim_id are
   -- acceptable here (unlike the custom-field values in 0037) because this
-  -- table is an audit trail, not a live-integrity surface — nothing joins
+  -- table is an audit trail, not a live-integrity surface - nothing joins
   -- through it.
   object_type text NOT NULL,
   survivor_id uuid NOT NULL,
   victim_id   uuid NOT NULL,
   -- {fieldKey: 'survivor'|'victim'} per contested field.
   field_decisions   jsonb NOT NULL DEFAULT '{}'::jsonb,
-  -- Survivor's mutable columns BEFORE the merge overwrote them — what a
+  -- Survivor's mutable columns BEFORE the merge overwrote them - what a
   -- revert restores.
   survivor_snapshot jsonb NOT NULL,
   -- The victim's full row, for display and for restoring on revert.
@@ -60,7 +60,7 @@ END $$;
 REVOKE ALL ON merge_log FROM PUBLIC;
 
 -- ── Duplicate candidate queue ──────────────────────────────────────────
--- Populated by an offline scan (fuzzy name+company matching needs pg_trgm —
+-- Populated by an offline scan (fuzzy name+company matching needs pg_trgm -
 -- confirm it is enabled on the target Postgres before that scan job ships,
 -- since no migration in this codebase has enabled an extension before), not
 -- computed live on page load.

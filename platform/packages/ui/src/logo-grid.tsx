@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cx } from "./cx";
 
 export interface LogoGridItem {
-  /** Provider name. Always rendered as text — see the note below. */
+  /** Provider name. Always rendered as text - see the note below. */
   name: string;
   /** Optional mark. Rendered aria-hidden, because `name` is already there. */
   logo?: ReactNode;
@@ -10,7 +10,7 @@ export interface LogoGridItem {
    * Honest status flag. Doc 16 §3.7: Zoho, Salesforce, monday.com and
    * Dynamics 365 authenticate with pasted tokens that expire in hours and the
    * OAuth refresh flow is unbuilt. Zoho is the market leader in India, so it
-   * will be a common answer — a grid that implies turnkey integration for it
+   * will be a common answer - a grid that implies turnkey integration for it
    * sets up a sales call that starts with a correction. Pass a `StatusChip`.
    */
   badge?: ReactNode;
@@ -21,7 +21,7 @@ export interface LogoGridItem {
  *
  * **The name is always visible text, not just an image.** Two reasons, and the
  * second is the real one: an SVG logo needs an `alt`/title to be announced at
- * all, and — more practically — this repo does not have licensed logo assets for
+ * all, and - more practically - this repo does not have licensed logo assets for
  * fifteen CRM vendors, so a grid that depends on them ships empty. Text-first
  * degrades to something honest and legible; add marks later without touching
  * consumers.

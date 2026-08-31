@@ -18,7 +18,7 @@ import { AuthService } from "../modules/auth/auth.service";
  * The dev literal is a convenience for `pnpm dev` and nothing else, so it only
  * exists outside production (checklist 08 §0.2). In production an unset or empty
  * ADMIN_API_KEY yields null and every admin-key request is rejected, instead of
- * silently falling back to a string published in this repository — which would
+ * silently falling back to a string published in this repository - which would
  * be a root credential for every tenant on the open internet. `config/assert-env`
  * already refuses to boot in that state; this is the second line, so the hole
  * cannot reappear via a code path that skips bootstrap.
@@ -64,7 +64,7 @@ export class AdminKeyGuard implements CanActivate {
       // tenant and is trusted. Trusted is not the same as unchecked: an id that
       // names no org would otherwise pass into withOrg and come back as an
       // empty-but-successful read, which reads as "no data" rather than "wrong
-      // id". Only validated when present — the cross-tenant admin endpoints
+      // id". Only validated when present - the cross-tenant admin endpoints
       // legitimately send no org header at all.
       if (orgId !== undefined && z.string().uuid().safeParse(orgId).success) {
         if (!(await this.orgs.exists(orgId))) {
@@ -73,7 +73,7 @@ export class AdminKeyGuard implements CanActivate {
       }
 
       // The web server is the only holder of the admin key, so these two
-      // caller-asserted headers don't cross a trust boundary — they carry
+      // caller-asserted headers don't cross a trust boundary - they carry
       // forward a fact (the signed-in owner's own identity/persona) it
       // already resolved server-side moments earlier, via /v1/auth/context.
       // Absent (any caller that hasn't been updated: seed scripts, ops
@@ -81,18 +81,18 @@ export class AdminKeyGuard implements CanActivate {
       //
       // `x-caller-user-id` stays in that "trusted fact" category: it names
       // WHO the caller is claiming to be, the same kind of caller-asserted
-      // identity `x-org-id` already is for WHICH tenant — a real uuid, and
+      // identity `x-org-id` already is for WHICH tenant - a real uuid, and
       // one that only has any effect if it happens to match a real row.
       //
       // `x-caller-owner-role` used to be different: a caller-asserted
       // PRIVILEGE, not just an identity, which is what made it exploitable
-      // in a way the identity headers aren't — the string "owner" always
+      // in a way the identity headers aren't - the string "owner" always
       // parses whether or not the caller actually holds that role, while a
-      // random uuid usually names no one. STAGE 2.5 (08 §2.5) — CLOSED:
+      // random uuid usually names no one. STAGE 2.5 (08 §2.5) - CLOSED:
       // OwnerRoleGuard no longer trusts this value. For an admin-key
       // principal it now looks up the real persona itself from `memberships`
       // via `x-caller-user-id`, so this header is parsed and carried on
-      // `principal.ownerRole` below purely for introspection — nothing
+      // `principal.ownerRole` below purely for introspection - nothing
       // authorizes against it anymore (see owner-role.guard.ts).
       const callerUserId = z.string().uuid().safeParse(firstHeader(req.headers["x-caller-user-id"]));
       const callerOwnerRole = OwnerRole.safeParse(firstHeader(req.headers["x-caller-owner-role"]));
@@ -113,7 +113,7 @@ export class AdminKeyGuard implements CanActivate {
     if (header?.startsWith("Bearer aus_")) {
       const principal = await this.auth.principalFromToken(header.slice("Bearer ".length));
       if (principal) {
-        // Pin the request to the session's org — ignore any client-supplied header.
+        // Pin the request to the session's org - ignore any client-supplied header.
         req.headers["x-org-id"] = principal.orgId;
         req.principal = principal as Principal;
         return true;

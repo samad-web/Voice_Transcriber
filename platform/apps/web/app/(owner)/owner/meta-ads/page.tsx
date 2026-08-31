@@ -5,7 +5,7 @@ import type { McpConnection } from "./actions";
 import { MetaAdsConnect } from "./meta-ads-client";
 import { McpConnect } from "./mcp-connect";
 
-export const metadata: Metadata = { title: "Meta Lead Ads — Aura" };
+export const metadata: Metadata = { title: "Meta Lead Ads - Aura" };
 
 /**
  * Connect Meta (Facebook) Lead Ads so leads submitted through a Page's
@@ -31,7 +31,7 @@ export default async function MetaAdsPage() {
       <p className="max-w-2xl text-sm text-text-muted">
         There is no page picker yet: the <strong>first</strong> Facebook Page this account
         manages is the one that gets connected. If the account you sign in with manages more than
-        one Page, this will not let you choose which — ask your platform admin if you need a
+        one Page, this will not let you choose which - ask your platform admin if you need a
         different Page connected.
       </p>
       <MetaAdsConnect />

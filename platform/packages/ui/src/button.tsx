@@ -9,32 +9,32 @@ import { cx } from "./cx";
  * its `onClick` works normally. Marking it "use client" would force every page
  * that merely renders a static link-styled button into the client bundle for
  * nothing. (Checked: only one non-client file in apps/web renders BrutalButton
- * — instances/page.tsx — and it passes no handler.)
+ * - instances/page.tsx - and it passes no handler.)
  */
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
 // `primary`'s fill is applied via inline style (see PRIMARY_GRADIENT below), not
-// a class — a linear-gradient background isn't expressible as a Tailwind colour
+// a class - a linear-gradient background isn't expressible as a Tailwind colour
 // utility. Its class string here only carries the label colour, border removal,
 // and the lift-on-hover motion; the gradient itself, and disabled/loading's
 // override of it, are handled in the component body.
 // Every variant now also defines an `active:` (press/tap) state, matching the
 // precedent already set elsewhere in the kit (mobile-nav.tsx's iconButton,
-// e.g. `active:bg-surface-hover`) — without it the button gave no feedback on
+// e.g. `active:bg-surface-hover`) - without it the button gave no feedback on
 // a touch tap at all, since touch never fires `:hover`.
 const VARIANTS: Record<ButtonVariant, string> = {
   // White label: the same gradient the marketing CTA already ships white text
   // on in production (mk-cta), so this pairing is already proven, not re-derived.
   // The gradient is an inline `background-image`, so an `active:bg-*` class
-  // token would be painted underneath it and never show — hence `brightness`
+  // token would be painted underneath it and never show - hence `brightness`
   // (a filter, not a background) for the press state here, plus resetting the
   // hover lift so a press reads as "pushed back down."
   primary:
     "border-transparent text-white hover:-translate-y-px hover:shadow-md active:translate-y-0 active:shadow-none active:brightness-95",
   // Border shifts to the brand gradient's midpoint on hover, mirroring
-  // mk-cta-ghost — no lift, unlike primary: this variant appears many times
+  // mk-cta-ghost - no lift, unlike primary: this variant appears many times
   // per dense screen (toolbar/dialog buttons), where a translateY on every
   // hover would read as fidgety rather than branded.
   secondary:
@@ -73,7 +73,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * - `type` is NOT defaulted. HTML's default is `submit`, and several console
  *   forms depend on that; defaulting to `button` here would silently stop them
  *   submitting. Set `type="button"` at the call site for non-submit buttons.
- * - An icon-only button MUST be given `aria-label` — there is no text node for
+ * - An icon-only button MUST be given `aria-label` - there is no text node for
  *   a screen reader to announce.
  * - Disabled styling uses explicit tokens, not `opacity-50`. Halving the
  *   opacity of already-muted text produces an unpredictable ratio; a fixed pair
@@ -90,7 +90,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   // Disabled/loading primary buttons fall back to the same muted disabled
-  // classes every other variant uses — an inline gradient would otherwise beat
+  // classes every other variant uses - an inline gradient would otherwise beat
   // `disabled:bg-surface-hover` outright, since inline style always wins over a
   // class for the same CSS property.
   const isDisabled = disabled || loading;
@@ -101,7 +101,7 @@ export function Button({
       // `disabled` rather than aria-disabled: these are real buttons, and a
       // disabled button correctly drops out of the tab order here because the
       // console never uses one as the only explanation of why an action is
-      // unavailable — that always sits in adjacent text.
+      // unavailable - that always sits in adjacent text.
       disabled={isDisabled}
       aria-busy={loading || undefined}
       style={style}

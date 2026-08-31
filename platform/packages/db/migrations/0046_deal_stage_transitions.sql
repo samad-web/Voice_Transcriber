@@ -1,4 +1,4 @@
--- 0046_deal_stage_transitions.sql — what actually happened to a deal.
+-- 0046_deal_stage_transitions.sql - what actually happened to a deal.
 --
 -- Layer 3 shipped a conversion funnel that had to GUESS. CRM_STATUS.md says
 -- so plainly: "the funnel is inferred from each deal's *current* stage because
@@ -9,7 +9,7 @@
 --
 -- The lost-deal case is the one that stings. A deal that reached Negotiation
 -- and then died has its `stage` overwritten with the terminal 'lost', erasing
--- every trace of how far it got — so the funnel could only floor it at the
+-- every trace of how far it got - so the funnel could only floor it at the
 -- entry stage and pretend it never progressed. That is not a rounding error:
 -- losses late in the pipeline and losses on first contact are completely
 -- different businesses, and the report could not tell them apart.
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS deal_stage_transitions (
   actor_label  text,
 
   -- console | pipeline | automation | backfill. `backfill` is load-bearing
-  -- rather than decorative — those rows are RECONSTRUCTED, not observed, and
+  -- rather than decorative - those rows are RECONSTRUCTED, not observed, and
   -- any report that treats them as ground truth is overstating what it knows.
   source       text NOT NULL DEFAULT 'console',
 
@@ -46,11 +46,11 @@ CREATE TABLE IF NOT EXISTS deal_stage_transitions (
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 
--- "Everything that happened to this deal, in order" — the drawer's query and
+-- "Everything that happened to this deal, in order" - the drawer's query and
 -- the funnel's.
 CREATE INDEX IF NOT EXISTS deal_stage_transitions_deal
   ON deal_stage_transitions (deal_id, occurred_at);
--- "Everything that happened in this window" — the conversion report's.
+-- "Everything that happened in this window" - the conversion report's.
 CREATE INDEX IF NOT EXISTS deal_stage_transitions_org_time
   ON deal_stage_transitions (org_id, occurred_at DESC);
 
@@ -65,7 +65,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 GRANT SELECT, INSERT ON deal_stage_transitions TO aura_app;
 -- No UPDATE, no DELETE, deliberately. A ledger that can be edited is not a
 -- ledger, and nothing in the application has any reason to rewrite history.
--- (ON DELETE CASCADE from `deals` still works — that is the FK's privilege,
+-- (ON DELETE CASCADE from `deals` still works - that is the FK's privilege,
 -- not the role's.)
 DO $$
 DECLARE api_role text;
@@ -93,8 +93,8 @@ REVOKE ALL ON deal_stage_transitions FROM PUBLIC;
 -- fabricated row is indistinguishable from an observed one once written. The
 -- funnel handles the gap by counting the FURTHEST stage a deal reached rather
 -- than summing individual entries, so a backfilled deal contributes correctly
--- to every stage up to where it got — which is genuinely what its history
--- implies — without this migration having to assert timestamps nobody
+-- to every stage up to where it got - which is genuinely what its history
+-- implies - without this migration having to assert timestamps nobody
 -- recorded.
 --
 -- Row 2 is skipped where the deal has not moved (stage_changed_at is the
@@ -107,7 +107,7 @@ SELECT d.org_id, d.id, NULL, entry.key, NULL, 'open', 'backfill', d.created_at
   FROM deals d
   JOIN deal_pipelines p ON p.id = d.pipeline_id
   CROSS JOIN LATERAL (
-    -- The pipeline's first non-terminal stage — the same definition
+    -- The pipeline's first non-terminal stage - the same definition
     -- `entryStage()` uses in packages/shared/src/pipelines.ts.
     SELECT s->>'key' AS key
       FROM jsonb_array_elements(p.stages) WITH ORDINALITY AS t(s, n)

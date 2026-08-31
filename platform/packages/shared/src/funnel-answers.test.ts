@@ -86,7 +86,7 @@ describe("describeAnswers", () => {
   });
 
   it("passes free-typed CRM names through unchanged", () => {
-    // `crm_name` is half catalogue, half free text — the form's "other" box
+    // `crm_name` is half catalogue, half free text - the form's "other" box
     // writes to the same column, so a lookup miss is normal here.
     const [answered] = describeAnswers({ crm_name: "Our own Excel thing" });
     expect(answered).toEqual({

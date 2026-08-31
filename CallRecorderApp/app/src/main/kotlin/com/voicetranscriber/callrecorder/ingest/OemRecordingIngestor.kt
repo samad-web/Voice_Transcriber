@@ -19,10 +19,10 @@ import java.util.Locale
  * Adopts the OEM dialer's own call recordings instead of capturing audio ourselves.
  *
  * Samsung's "Auto record calls" (and the MIUI/Realme equivalents) records BOTH ends, because
- * the system dialer taps the telephony stream directly — something a normal app can never do
+ * the system dialer taps the telephony stream directly - something a normal app can never do
  * (that path needs CAPTURE_AUDIO_OUTPUT, a signature|privileged permission). So rather than
  * fight the audio stack, we read the files it produces, parse their metadata, and insert a
- * normal [RecordingEntity]. Everything downstream — upload, ASR, LLM — is unchanged.
+ * normal [RecordingEntity]. Everything downstream - upload, ASR, LLM - is unchanged.
  *
  * Verified on Samsung SM-M136B / Android 14:
  *   /storage/emulated/0/Recordings/Call/Call recording <callee>_<yyMMdd>_<HHmmss>.m4a
@@ -32,7 +32,7 @@ import java.util.Locale
  *
  * Verified on Xiaomi 24048RN6CI / Android 16 (HyperOS):
  *   /storage/emulated/0/Recordings/sound_recorder/call_rec/<display>(<number>)_yyyyMMddHHmmss.mp3
- * — a different folder, a fused 14-digit stamp, and the number alongside the display name.
+ * - a different folder, a fused 14-digit stamp, and the number alongside the display name.
  */
 object OemRecordingIngestor {
 
@@ -41,15 +41,15 @@ object OemRecordingIngestor {
     /** Matches a trailing `_yyMMdd_HHmmss`. Greedy head so a callee may contain `_`. */
     private val STAMPED_NAME = Regex("""^(.*)_(\d{6})_(\d{6})$""")
 
-    /** Transsion (Infinix / Tecno / itel): `yyyyMMdd_HHmmss` with no callee in the name — the
+    /** Transsion (Infinix / Tecno / itel): `yyyyMMdd_HHmmss` with no callee in the name - the
      *  counterparty number is the parent folder (Music/PhoneRecord/<number>/) instead. */
     private val PLAIN_STAMP = Regex("""^(\d{8})_(\d{6})$""")
 
-    /** Xiaomi HyperOS: `<display>_yyyyMMddHHmmss` — one unseparated 14-digit stamp. */
+    /** Xiaomi HyperOS: `<display>_yyyyMMddHHmmss` - one unseparated 14-digit stamp. */
     private val FUSED_STAMP = Regex("""^(.*)_(\d{14})$""")
 
     /**
-     * Xiaomi writes the callee as `<display>(<number>)` — `Ravi Kumar(8754258581)` for a saved
+     * Xiaomi writes the callee as `<display>(<number>)` - `Ravi Kumar(8754258581)` for a saved
      * contact, `8754258581(8754258581)` for an unknown one.
      */
     private val NAME_WITH_NUMBER = Regex("""^(.*)\((\+?[\d\s-]{3,20})\)$""")
@@ -75,12 +75,12 @@ object OemRecordingIngestor {
     suspend fun ingest(context: Context): Int {
         val settings = CaptureSettings(context)
         if (!settings.oemIngestEnabled) {
-            Log.i(TAG, "skip — OEM ingestion disabled")
+            Log.i(TAG, "skip - OEM ingestion disabled")
             return 0
         }
         // Same gate as capture: an un-enrolled or remotely-disabled device stores nothing.
         if (!ActivationStore.isRecordingAllowed(context)) {
-            Log.i(TAG, "skip — device not activated or recording disabled")
+            Log.i(TAG, "skip - device not activated or recording disabled")
             return 0
         }
 
@@ -92,7 +92,7 @@ object OemRecordingIngestor {
         // Backlog floor. On the very first ingest, anchor it a few days back so a call made
         // just before this build installed still imports, while a handset that already holds
         // years of history (a Transsion phone can have tens of thousands of files under
-        // Music/PhoneRecord) does not dump the entire archive as leads. Never advanced after —
+        // Music/PhoneRecord) does not dump the entire archive as leads. Never advanced after -
         // the recording DB (`known`) is what stops re-processing what was already sent.
         if (settings.oemIngestSince == 0L) {
             settings.oemIngestSince = now - CaptureSettings.BACKLOG_GRACE_MS
@@ -113,14 +113,14 @@ object OemRecordingIngestor {
             if (file.length() <= 0) continue
 
             val parsed = parseName(file)
-            // Historical backlog on a phone that recorded calls long before enrollment — skip.
+            // Historical backlog on a phone that recorded calls long before enrollment - skip.
             if (parsed.startedAt < since) continue
             // The filename has no direction, so enrich from the call log by timestamp. Using
             // the nearest entry (not simply the latest) keeps a backlog import accurate.
             val info = CallLogReader.nearest(context, parsed.startedAt)
 
             // Name and number are two different facts, and the old precedence
-            // — filename, then log name, then log number — collapsed them into
+            // - filename, then log name, then log number - collapsed them into
             // one slot where the first hit won. A contact saved on the handset
             // put its NAME in the filename, so `info.number` was never reached
             // and the call reached the server with no digits at all: the CRM
@@ -159,7 +159,7 @@ object OemRecordingIngestor {
                 .onFailure { Log.w(TAG, "insert failed for ${file.name}", it) }
         }
 
-        // Always sweep — NOT only when something new was ingested. The duplicate we need to
+        // Always sweep - NOT only when something new was ingested. The duplicate we need to
         // clear may sit beside an OEM recording that was imported on an earlier run.
         purgeDuplicateAppCaptures(dao)
 
@@ -169,8 +169,8 @@ object OemRecordingIngestor {
 
     /**
      * Remove our own near-end-only captures of calls the OEM also recorded. Even with the
-     * sticky flag there's one unavoidable window — the very first call on a fresh handset,
-     * before any OEM file exists — so duplicates are cleaned up after the fact rather than
+     * sticky flag there's one unavoidable window - the very first call on a fresh handset,
+     * before any OEM file exists - so duplicates are cleaned up after the fact rather than
      * left for the user to sort out. Only ever deletes OUR capture, never the OEM file, and
      * never one that has already been uploaded (that send can't be recalled).
      */
@@ -182,17 +182,17 @@ object OemRecordingIngestor {
             .forEach { dup ->
                 runCatching { File(dup.filePath).delete() }
                 runCatching { dao.deleteById(dup.id) }
-                Log.i(TAG, "dropped duplicate app capture #${dup.id} — OEM recording covers this call")
+                Log.i(TAG, "dropped duplicate app capture #${dup.id} - OEM recording covers this call")
             }
     }
 
     /**
-     * True when this handset records calls itself — used to decide whether our own
+     * True when this handset records calls itself - used to decide whether our own
      * (near-end-only) capture should stand down. Deliberately cheap (existence + a name
      * listing, no file stats) because it runs inside a broadcast receiver.
      *
      * Deliberately CONSERVATIVE: standing down when the OEM won't actually record would lose
-     * the call entirely, which is worse than a duplicate. So we require proof — either a
+     * the call entirely, which is worse than a duplicate. So we require proof - either a
      * recording is already present, or we've ingested one before ([CaptureSettings
      * .oemRecordingSeen]). The sticky flag is what stops the fresh-phone case where the
      * folder is still empty during the first call.
@@ -213,7 +213,7 @@ object OemRecordingIngestor {
 
     /**
      * Files directly in [dir] plus files one level down. Transsion (Infinix/Tecno/itel) nests
-     * each call under a per-number folder — Music/PhoneRecord/<number>/<file> — while Samsung
+     * each call under a per-number folder - Music/PhoneRecord/<number>/<file> - while Samsung
      * and the rest are flat, where the extra level simply finds nothing. Deliberately one
      * level only: a full walk of external storage would be slow and could pull in unrelated
      * media.
@@ -282,7 +282,7 @@ object OemRecordingIngestor {
             return Parsed(callee ?: numberFromParent(file), startedAt)
         }
 
-        // Transsion (Infinix/Tecno/itel): `yyyyMMdd_HHmmss`, no callee in the name — the number
+        // Transsion (Infinix/Tecno/itel): `yyyyMMdd_HHmmss`, no callee in the name - the number
         // is the parent folder (Music/PhoneRecord/<number>/).
         PLAIN_STAMP.find(base)?.let { m ->
             val startedAt = runCatching {
@@ -298,7 +298,7 @@ object OemRecordingIngestor {
     }
 
     /**
-     * The counterparty number when recordings are nested as `<root>/…/<number>/<file>` — the
+     * The counterparty number when recordings are nested as `<root>/…/<number>/<file>` - the
      * immediate parent folder name, accepted only when it reads as a phone number so a flat
      * OEM layout (parent = "Call", "PhoneRecord", …) is never mistaken for one.
      */

@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 
 /**
  * Refuses to let a tenant-configured URL (a CRM connector endpoint, a
- * webhook) point the server at itself or at internal infrastructure —
+ * webhook) point the server at itself or at internal infrastructure -
  * loopback, private ranges, link-local (which includes every cloud
  * provider's 169.254.169.254 metadata endpoint), and carrier-grade NAT.
  *
@@ -14,7 +14,7 @@ import { lookup } from "node:dns/promises";
  * This resolves the hostname and checks the actual address, not just the
  * literal string, so `attacker.example.com` pointed at `10.0.0.5` is caught
  * too. It does not defend against DNS being repointed between this check and
- * the real request (rebinding) — closing that fully would mean pinning the
+ * the real request (rebinding) - closing that fully would mean pinning the
  * checked IP for the fetch itself, which is a larger change than this pass
  * warrants; this closes the case that matters today, a directly-configured
  * internal address.
@@ -30,7 +30,7 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<void> {
     throw new Error(`unsupported URL scheme: ${url.protocol}`);
   }
 
-  // `URL#hostname` keeps the brackets around an IPv6 literal ("[::1]") — and
+  // `URL#hostname` keeps the brackets around an IPv6 literal ("[::1]") - and
   // `net.isIP` does not recognise the bracketed form, returning 0 as if it
   // were a hostname. Stripped here once so every check below sees the same
   // bare address `net.isIP`/`dns.lookup` expect; a real hostname never has
@@ -54,7 +54,7 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<void> {
     return;
   }
 
-  // A hostname, not a literal — resolve every address it maps to and check
+  // A hostname, not a literal - resolve every address it maps to and check
   // each one, since a DNS record can list several.
   let addresses: { address: string; family: number }[];
   try {
@@ -77,7 +77,7 @@ const IPV4_BLOCKED_RANGES: Array<{ base: [number, number, number, number]; bits:
   { base: [10, 0, 0, 0], bits: 8 }, // private
   { base: [100, 64, 0, 0], bits: 10 }, // carrier-grade NAT
   { base: [127, 0, 0, 0], bits: 8 }, // loopback
-  { base: [169, 254, 0, 0], bits: 16 }, // link-local — includes the cloud metadata IP
+  { base: [169, 254, 0, 0], bits: 16 }, // link-local - includes the cloud metadata IP
   { base: [172, 16, 0, 0], bits: 12 }, // private
   { base: [192, 168, 0, 0], bits: 16 }, // private
   { base: [224, 0, 0, 0], bits: 4 }, // multicast
@@ -91,7 +91,7 @@ function ipv4ToInt(octets: readonly number[]): number {
 function isBlockedIpv4(address: string): boolean {
   const octets = address.split(".").map(Number);
   if (octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
-    return true; // couldn't parse it — refuse rather than guess
+    return true; // couldn't parse it - refuse rather than guess
   }
   const asInt = ipv4ToInt(octets);
   return IPV4_BLOCKED_RANGES.some(({ base, bits }) => {
@@ -108,7 +108,7 @@ function isBlockedIpv6(address: string): boolean {
   }
   if (a.startsWith("fc") || a.startsWith("fd")) return true; // unique local fc00::/7
   if (a.startsWith("::ffff:")) {
-    // IPv4-mapped address — judge it by the embedded v4 address.
+    // IPv4-mapped address - judge it by the embedded v4 address.
     const embedded = a.slice("::ffff:".length);
     return isIP(embedded) === 4 ? isBlockedIpv4(embedded) : true;
   }

@@ -1,4 +1,4 @@
--- 0040_interactions.sql — Track A2: the unified interaction timeline.
+-- 0040_interactions.sql - Track A2: the unified interaction timeline.
 --
 -- One row per thing that happened with a contact/account/deal: a call the
 -- pipeline processed, a note somebody typed, and (once Layer 1 lands) an
@@ -10,7 +10,7 @@
 -- the worker dual-write (apps/worker/src/pipeline/crm-objects.ts) and the
 -- backfill script, which share one function so they cannot drift.
 --
--- `type` is an app-validated string, not a DB CHECK — the same choice
+-- `type` is an app-validated string, not a DB CHECK - the same choice
 -- 0037 made for custom_field_definitions.object_type, and for the same
 -- reason: Layer 1 adds email/sms/whatsapp channels, and that should be a
 -- code change, not a migration. See packages/shared/src/interactions.ts for
@@ -19,7 +19,7 @@
 CREATE TABLE IF NOT EXISTS interactions (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id         uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  -- Attribution only, like accounts/contacts — which desk this happened on.
+  -- Attribution only, like accounts/contacts - which desk this happened on.
   workspace_id   uuid REFERENCES workspaces(id) ON DELETE SET NULL,
   -- call | email | sms | whatsapp | meeting | note (app-validated, see above).
   type           text NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS interactions (
   -- All three nullable and all three independent: a call is usually attached
   -- to a contact AND the deal it advanced, a note might be on the account
   -- only. CASCADE because an interaction has no meaning once the object it
-  -- describes is gone — unlike merge_log, this is not an audit trail.
+  -- describes is gone - unlike merge_log, this is not an audit trail.
   contact_id     uuid REFERENCES contacts(id) ON DELETE CASCADE,
   account_id     uuid REFERENCES accounts(id) ON DELETE CASCADE,
   deal_id        uuid REFERENCES deals(id) ON DELETE CASCADE,
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS interactions (
 
   subject        text,
   body           text,
-  -- When it HAPPENED, which is not when the row was written — a backfilled
+  -- When it HAPPENED, which is not when the row was written - a backfilled
   -- call from March is created_at today but occurred_at in March. Every
   -- timeline orders by this.
   occurred_at    timestamptz NOT NULL DEFAULT now(),

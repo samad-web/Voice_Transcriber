@@ -49,7 +49,7 @@ const PRODUCT_COLUMNS = `id, name, sku, description, unit_price, currency, tax_r
   created_at, updated_at`;
 
 /**
- * Products — a price list to quote and invoice against (Kailash gap
+ * Products - a price list to quote and invoice against (Kailash gap
  * Milestone 1). Same shape as accounts.controller.ts: no owner/workspace
  * scoping (a product is a shared catalogue entry, not a person's record), no
  * `owned` record scope.

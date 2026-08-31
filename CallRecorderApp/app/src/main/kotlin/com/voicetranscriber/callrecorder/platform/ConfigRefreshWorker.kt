@@ -12,8 +12,8 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 
 /**
- * Periodic remote-config refresh (~1h) so server-side policy changes — remote
- * logout / wipe / recordingEnabled toggles — reach the device without a manual
+ * Periodic remote-config refresh (~1h) so server-side policy changes - remote
+ * logout / wipe / recordingEnabled toggles - reach the device without a manual
  * refresh. Delegates to [ActivationManager.refreshConfig], which closes the local
  * gate on a 401 (revoked device). No-ops when the device isn't activated.
  */
@@ -25,7 +25,7 @@ class ConfigRefreshWorker(
     override suspend fun doWork(): Result {
         val context = applicationContext
         if (!ActivationStore.isActivated(context)) {
-            Log.i(TAG, "skip — device not activated")
+            Log.i(TAG, "skip - device not activated")
             return Result.success()
         }
         return try {

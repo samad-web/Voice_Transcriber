@@ -15,7 +15,7 @@ import {
 } from "./leads";
 
 /**
- * The lead domain rules — the highest-consequence pure code in the platform.
+ * The lead domain rules - the highest-consequence pure code in the platform.
  *
  * These functions decide whether a five-minute sales call becomes a card on a
  * customer's board or is thrown away, and nothing downstream reports the
@@ -28,7 +28,7 @@ import {
  *   COALESCE(to_jsonb(value_num), to_jsonb(value_bool), to_jsonb(value_text))
  * over call_facts. So numbers arrive as JSON numbers, booleans as JSON booleans,
  * and a `string[]` field arrives as the JSON.stringify'd *string* the analyze
- * stage wrote (pipeline.ts:404-410) — not as an array. Tests below depend on
+ * stage wrote (pipeline.ts:404-410) - not as an array. Tests below depend on
  * that, because a fixture that used a real array would test a shape this code
  * never sees in production.
  */
@@ -74,7 +74,7 @@ describe("isFilled", () => {
   });
 
   it("treats the number zero as an answer", () => {
-    // "how many bricks?" — "none, I only wanted a price" is a real answer, and a
+    // "how many bricks?" - "none, I only wanted a price" is a real answer, and a
     // quantity of 0 must not silently disqualify the call.
     expect(isFilled(0)).toBe(true);
   });
@@ -105,7 +105,7 @@ describe("parseLeadRules", () => {
 
   it("leaves titleField and valueField absent rather than null when unset", () => {
     // They are `.optional()`, not `.nullable()`. qualifyLead branches on
-    // truthiness, so an accidental null would still work — but callers that
+    // truthiness, so an accidental null would still work - but callers that
     // spread these rules into a JSON payload would start emitting nulls.
     expect("titleField" in DEFAULT_LEAD_RULES).toBe(false);
     expect("valueField" in DEFAULT_LEAD_RULES).toBe(false);
@@ -257,7 +257,7 @@ describe("qualifyLead and extraction validation status", () => {
     expect(verdict.reason).toBe("extraction failed validation");
   });
 
-  it("qualifies a repaired extraction — only \"failed\" blocks", () => {
+  it("qualifies a repaired extraction - only \"failed\" blocks", () => {
     // ai_outputs.validation_status is valid|repaired|failed (0001). "repaired"
     // means the second LLM attempt validated cleanly, so it is trustworthy.
     expect(qualifyLead(RD_FACTS, "repaired", DEFAULT_LEAD_RULES).qualified).toBe(true);
@@ -302,7 +302,7 @@ describe("qualifyLead with requiredFields", () => {
   it("fails closed on a required field name that no agent schema defines", () => {
     // A typo in the agent config (or a field renamed out from under the rules)
     // means the key is never in `facts`, so nothing can ever satisfy it. Failing
-    // closed is right — silently ignoring an unknown key would turn a stricter
+    // closed is right - silently ignoring an unknown key would turn a stricter
     // board into a looser one without telling anybody.
     const rules = LeadRules.parse({ requiredFields: ["custmer_name"] });
     const verdict = qualifyLead(RD_FACTS, "valid", rules);
@@ -382,7 +382,7 @@ describe("qualifyLead card title and deal value", () => {
 
   it("returns a null title when the named title field was not extracted", () => {
     // The card then falls back to the number's digits (worker leadTitle), so a
-    // null here is load-bearing rather than cosmetic — an empty string would
+    // null here is load-bearing rather than cosmetic - an empty string would
     // win that `||` chain and render a blank heading.
     const rules = LeadRules.parse({ titleField: "customer_name" });
     const verdict = qualifyLead({ brick_quantity: 5000 }, "valid", rules);
@@ -404,7 +404,7 @@ describe("qualifyLead card title and deal value", () => {
     expect(qualifyLead({ total_budget: "160000" }, "valid", rules).valueNum).toBe(160000);
   });
 
-  it("returns a null deal value — never NaN — when the named field is not numeric", () => {
+  it("returns a null deal value - never NaN - when the named field is not numeric", () => {
     // Without the Number.isFinite guard this would be NaN, which serialises to
     // null in JSON but breaks any arithmetic on the board's pipeline total.
     const rules = LeadRules.parse({ valueField: "customer_name" });
@@ -422,7 +422,7 @@ describe("qualifyLead card title and deal value", () => {
     // The worker logs the verdict; the title is what makes a skipped call
     // identifiable to a tenant asking why it never reached their board.
     // 64 is the schema's ceiling on minFilled, so this is the strictest legal
-    // rule — no real call can satisfy it.
+    // rule - no real call can satisfy it.
     const rules = LeadRules.parse({ titleField: "customer_name", minFilled: 64 });
     const verdict = qualifyLead(RD_FACTS, "valid", rules);
     expect(verdict.qualified).toBe(false);

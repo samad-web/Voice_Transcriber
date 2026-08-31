@@ -14,7 +14,7 @@ import { DbService } from "../../db/db.service";
 import { ConversationsService, type ResolvedChannel } from "./conversations.service";
 
 /**
- * Inbound provider webhooks — the receive half of messaging (0055/0056).
+ * Inbound provider webhooks - the receive half of messaging (0055/0056).
  *
  * ── WHY THIS ROUTE CARRIES NO GUARD ─────────────────────────────────────
  *
@@ -22,7 +22,7 @@ import { ConversationsService, type ResolvedChannel } from "./conversations.serv
  * and TenantGuard cannot apply. The `:token` path segment IS the credential:
  * it is a CSPRNG value stored in `messaging_channels.webhook_token`, UNIQUE
  * platform-wide, and resolving it both authenticates the caller and names the
- * tenant. An unknown or disabled token gets a 404 and nothing else — no hint
+ * tenant. An unknown or disabled token gets a 404 and nothing else - no hint
  * that a token exists, no tenant name, no echo of the payload.
  *
  * It is registered in guard-mounting.spec.ts's UNGUARDED list for exactly the
@@ -32,7 +32,7 @@ import { ConversationsService, type ResolvedChannel } from "./conversations.serv
  * ── IT ALWAYS ANSWERS 2xx ONCE THE TOKEN IS GOOD ────────────────────────
  *
  * Providers retry on any non-2xx, and WATI-class providers retry aggressively.
- * A message we cannot parse is therefore NOT a 500 — that would have the
+ * A message we cannot parse is therefore NOT a 500 - that would have the
  * provider replay the same unparseable payload for hours. It is a 202 with
  * `stored: false`, which ends the retry and leaves the failure visible in the
  * response rather than in a retry loop.
@@ -59,7 +59,7 @@ export class MessagingWebhookController {
     const channel = await this.conversations.resolveChannel(token);
     if (!channel) throw new NotFoundException("unknown webhook");
 
-    // Wasi (the user's own WhatsApp BSP, see wasi.ts) signs every delivery —
+    // Wasi (the user's own WhatsApp BSP, see wasi.ts) signs every delivery -
     // verified against the RAW bytes (main.ts's `rawBody: true`), same
     // reasoning as the Razorpay webhook: re-serialising the parsed body can
     // byte-differ.
@@ -68,14 +68,14 @@ export class MessagingWebhookController {
     }
 
     // Evolution (or any other relay) has no fixed signature contract Aura can
-    // rely on by default — the `:token` in the URL is the only credential,
+    // rely on by default - the `:token` in the URL is the only credential,
     // and the header comment above documents that a leaked token (proxy/CDN/
     // error-tracker log) then forges messages with nothing else to stop it.
     // `forward_secret` is the same per-channel column Wasi uses, generic
     // across providers (messaging-channels.controller.ts's UpdateChannelBody
     // never restricts it to `provider = 'wasi'`), so a tenant who configures
-    // one here — and points their relay's own webhook-signing setting at it,
-    // where the relay supports that — gets the same HMAC verification Wasi
+    // one here - and points their relay's own webhook-signing setting at it,
+    // where the relay supports that - gets the same HMAC verification Wasi
     // gets, closing the token-only gap. A channel with none configured keeps
     // today's behaviour: nothing in Aura's control can force an arbitrary
     // relay to start signing deliveries it was never told to sign.
@@ -90,7 +90,7 @@ export class MessagingWebhookController {
 
     const adapted = adaptInbound(channel.channel, body);
     if (!adapted) {
-      // Parsed nothing usable. Accepted-but-not-stored, deliberately — see
+      // Parsed nothing usable. Accepted-but-not-stored, deliberately - see
       // the header. The shape is echoed back so a misconfigured provider is
       // diagnosable from a single curl instead of a log dig.
       return {
@@ -146,7 +146,7 @@ export class MessagingWebhookController {
     }
 
     // message_template_status_update / account_update, or a payload that
-    // didn't parse as either typed shape above — logged for later, not acted
+    // didn't parse as either typed shape above - logged for later, not acted
     // on. See 0061's header for why this stays a passthrough for now.
     if (typeof envelope.event === "string") {
       await this.db.withOrg(channel.orgId, (client) =>
@@ -164,7 +164,7 @@ export class MessagingWebhookController {
 }
 
 /**
- * `<header>: sha256=<hex>` — HMAC-SHA256 over the raw JSON body, keyed by a
+ * `<header>: sha256=<hex>` - HMAC-SHA256 over the raw JSON body, keyed by a
  * channel's forward secret. Constant-time compare, same technique as every
  * other HMAC check in this codebase. Used for Wasi's own
  * `x-wasi-signature-256` header and, when a tenant has configured a secret
@@ -187,7 +187,7 @@ export function verifyWasiSignature(rawBody: Buffer, header: string | undefined,
  *
  * whatsapp-check.controller.ts documents Evolution's `/user/check` response
  * because it was checked against the real thing. The INBOUND webhook payload
- * was not — there was no instance to point at while this was written. So
+ * was not - there was no instance to point at while this was written. So
  * rather than commit to one guessed field path, this reads several plausible
  * ones and returns null when none of them yield a body and a sender.
  *
@@ -222,7 +222,7 @@ export function adaptInbound(channel: ConversationChannel, body: unknown): Inbou
       channel === "email" ? data.fromAddress : undefined,
     ]) ?? null;
   if (!rawPeer) return null;
-  if (rawPeer.includes("@g.us")) return null; // group chat — not a 1:1 thread
+  if (rawPeer.includes("@g.us")) return null; // group chat - not a 1:1 thread
   const peerRaw = channel === "email" ? rawPeer : rawPeer.split("@")[0];
   const peerAddress = normalizePeerAddress(channel, peerRaw);
   if (!peerAddress) return null;
@@ -253,7 +253,7 @@ export function adaptInbound(channel: ConversationChannel, body: unknown): Inbou
 
   // ── identity of the message itself ────────────────────────────────────
   const externalId = firstString([key.id, data.id, data.messageId, root.id]);
-  if (!externalId) return null; // no idempotency key — see InboundMessage.externalId
+  if (!externalId) return null; // no idempotency key - see InboundMessage.externalId
 
   const tsRaw = firstNumberOrString([data.messageTimestamp, data.timestamp, root.timestamp]);
 
@@ -292,7 +292,7 @@ function firstNumberOrString(candidates: unknown[]): number | string | undefined
 /**
  * WhatsApp timestamps arrive in SECONDS. Passing those to `new Date()`
  * unmultiplied dates every message to January 1970, which sorts the whole
- * inbox backwards — so a plausible-looking 10-digit number is treated as
+ * inbox backwards - so a plausible-looking 10-digit number is treated as
  * seconds and anything larger as milliseconds.
  */
 function coerceTimestamp(raw: number | string | undefined): Date | undefined {

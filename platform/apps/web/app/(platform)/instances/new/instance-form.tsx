@@ -68,7 +68,7 @@ export function InstanceForm() {
 
         <div className="space-y-1.5">
           <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-            Device Server URL <span className="text-neutral-400">(optional — put in the QR)</span>
+            Device Server URL <span className="text-neutral-400">(optional - put in the QR)</span>
           </label>
           <input
             className={inputClass}
@@ -151,7 +151,7 @@ export function InstanceForm() {
               Enable CRM
             </span>
             <span className="block text-[11px] text-neutral-500 font-sans mt-0.5">
-              Contacts, Accounts, Deals, pipelines and roles for this client. Off by default — every
+              Contacts, Accounts, Deals, pipelines and roles for this client. Off by default - every
               instance gets call recording and transcription regardless; this adds the CRM on top.
               Can be turned on or off later from the instance page.
             </span>
@@ -192,7 +192,7 @@ export function InstanceForm() {
         </div>
       ) : (
         <Card className="flex flex-col items-center justify-center min-h-48 gap-2">
-          <MonoLabel>Provisioned credentials appear here — once</MonoLabel>
+          <MonoLabel>Provisioned credentials appear here - once</MonoLabel>
           <p className="text-[11px] text-neutral-500 font-sans max-w-xs text-center">
             The company gets its own org, workspace and instance. Nothing is shared with your other
             customers.

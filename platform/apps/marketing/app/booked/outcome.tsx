@@ -5,14 +5,14 @@ import { WA_MESSAGES } from "@/lib/site";
 import { getScheduler, schedulerTimeZone, type Slot } from "@/lib/scheduler";
 
 /* ════════════════════════════════════════════════════════════════════════════
-   The funnel's outcome screens — `lead-funnel-spec.md` Step 3, doc 16 §0.4.
+   The funnel's outcome screens - `lead-funnel-spec.md` Step 3, doc 16 §0.4.
 
    Three screens, and which one a visitor sees is decided entirely on the
    server:
 
      ReachOutScreen      the disqualified path, AND the qualified path whenever
                          there is no real slot to offer.
-     QualifiedOutcome    the booking UI — but only when real slots exist.
+     QualifiedOutcome    the booking UI - but only when real slots exist.
      BookingConfirmed    after a real event was written to a real calendar.
 
    These are exported for the funnel to compose (Dev C owns `/start` and
@@ -24,7 +24,7 @@ import { getScheduler, schedulerTimeZone, type Slot } from "@/lib/scheduler";
    ── The one rule ────────────────────────────────────────────────────────────
 
    No calendar, no slot picker and no booking confirmation of any kind reaches
-   the disqualified path — the spec is explicit — and no *fake* slot reaches
+   the disqualified path - the spec is explicit - and no *fake* slot reaches
    anybody. Note what that means for the qualified path when the scheduler is
    unconfigured or the calendar is full: it renders `ReachOutScreen`, the same
    component, with the same words. Not a variant of it. Making it literally the
@@ -47,7 +47,7 @@ import { getScheduler, schedulerTimeZone, type Slot } from "@/lib/scheduler";
  *  2. **Confirm the submission is `qualified`** before touching the calendar.
  *     The form being rendered is not authorisation; the row's status is.
  *
- * It returns `void` because the success path is a `redirect("/booked")` — which
+ * It returns `void` because the success path is a `redirect("/booked")` - which
  * also means a refresh cannot re-post the booking.
  */
 export type BookSlotAction = (formData: FormData) => Promise<void>;
@@ -60,7 +60,7 @@ export type BookSlotAction = (formData: FormData) => Promise<void>;
  * The disqualified screen from the spec, word for word, and deliberately not
  * apologetic: it makes no reference to budget, to a rule, or to anything having
  * been declined. Doc 16 §3.2's business note is that at a ₹30,000/month
- * threshold this is likely to be the MAIN path, not the exception — so it is
+ * threshold this is likely to be the MAIN path, not the exception - so it is
  * written as a real destination, with something to do next, rather than as a
  * dead end.
  */
@@ -112,13 +112,13 @@ export function ReachOutScreen({
 /* ── The qualified path ──────────────────────────────────────────────────── */
 
 /**
- * Booking UI, or the contact screen — decided by whether real slots exist.
+ * Booking UI, or the contact screen - decided by whether real slots exist.
  *
  * An async server component: it does the free/busy call during the render the
  * visitor is already waiting on, which is one round trip and no client JS.
  *
- * `slots.length === 0` covers three distinct situations — unconfigured, fully
- * booked, and Google unreachable — and all three get the same screen on
+ * `slots.length === 0` covers three distinct situations - unconfigured, fully
+ * booked, and Google unreachable - and all three get the same screen on
  * purpose. The visitor does not need to know which, and the alternative in the
  * third case is an error page shown to a lead who just qualified.
  */
@@ -154,7 +154,7 @@ export async function QualifiedOutcome({
 }
 
 /**
- * The picker. A plain `<form>` with radio inputs and a server action — no
+ * The picker. A plain `<form>` with radio inputs and a server action - no
  * client component, no `onClick`, no JavaScript at all, which keeps this app's
  * 170 B-per-route footprint (doc 18 §5) and means the form still works on a
  * cheap phone with a broken bundle.
@@ -210,7 +210,7 @@ function SlotPicker({
                             "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 " +
                             "has-[:focus-visible]:outline-accent " +
                             // Selection is a border + fill change, not colour
-                            // alone — checked state has to survive a greyscale
+                            // alone - checked state has to survive a greyscale
                             // print and a colour-blind reader.
                             "has-[:checked]:border-accent has-[:checked]:bg-accent-subtle " +
                             "has-[:checked]:font-medium has-[:checked]:text-accent-text"
@@ -263,7 +263,7 @@ function SlotPicker({
  *
  * It states no time. That is not an oversight: this component is reached by a
  * redirect, so it has no submission in scope, and the honest options were "no
- * time" or "a time taken from the URL" — the second is a confirmation a visitor
+ * time" or "a time taken from the URL" - the second is a confirmation a visitor
  * could write themselves, which is the exact class of thing the no-fake-booking
  * rule exists to forbid. When Dev C's submission store lands, pass the stored
  * `booking_slot` in and print it. Tracked in followUps.

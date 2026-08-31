@@ -44,7 +44,7 @@ const ACCOUNT_COLUMNS = `id, workspace_id, name, domain, phone_prefix, phone_las
   owner_user_id, facts, status, merged_into_id, last_activity_at, created_at, updated_at`;
 
 /**
- * Accounts (companies) — CRM Phase 1, E0.1. Strangler-fig: nothing here
+ * Accounts (companies) - CRM Phase 1, E0.1. Strangler-fig: nothing here
  * reads from or writes to `leads`/`call_facts`, and this module is not linked
  * into web nav yet. See the Phase 1 plan.
  */
@@ -74,7 +74,7 @@ export class AccountsController {
         where.push(`(name ILIKE ${p} OR domain ILIKE ${p})`);
       }
 
-      // The `owned` half of the permission grid — see common/crm-scope.ts.
+      // The `owned` half of the permission grid - see common/crm-scope.ts.
       if (recordScope.scope === "owned") {
         params.push(recordScope.userId);
         where.push(`owner_user_id = $${params.length}`);
@@ -117,7 +117,7 @@ export class AccountsController {
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      // 404 rather than 403 outside the caller's scope — a 403 would confirm
+      // 404 rather than 403 outside the caller's scope - a 403 would confirm
       // the record exists, which is the fact being withheld.
       const scoped = scopeClause("account", recordScope, 2);
       const {
@@ -196,7 +196,7 @@ export class AccountsController {
         `UPDATE accounts SET
            name          = COALESCE($2, name),
            -- A nullable field needs "was it sent?" separate from "is it null?"
-           -- — COALESCE alone cannot express clearing one (same pattern as
+           -- - COALESCE alone cannot express clearing one (same pattern as
            -- owner/leads.controller.ts's update handler).
            domain        = CASE WHEN $3::boolean THEN $4 ELSE domain END,
            owner_user_id = CASE WHEN $5::boolean THEN $6 ELSE owner_user_id END,

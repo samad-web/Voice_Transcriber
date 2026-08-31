@@ -9,12 +9,12 @@ import { MicrosoftClarity } from "@/components/microsoft-clarity";
 import { BRAND, SITE_URL } from "@/lib/site";
 
 /**
- * Type — Inter, one family for everything (doc 16 §1.2).
+ * Type - Inter, one family for everything (doc 16 §1.2).
  *
  * `next/font/google` is NOT a CDN link. It downloads the woff2 at build time,
  * fingerprints it, emits it into the app's own static output and serves it from
  * this origin with `font-display: swap` and a preload. The browser makes zero
- * requests to any Google host, sets no Google cookie and leaks no visitor IP —
+ * requests to any Google host, sets no Google cookie and leaks no visitor IP -
  * which is the property doc 10 §9 and the site's privacy posture actually
  * require. `subsets: ["latin"]` is the subsetting.
  *
@@ -54,7 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     // No `data-theme` is written here. This app has no theme toggle and no
     // cookie, so it follows prefers-color-scheme and the server render can
-    // never disagree with the client — there is nothing to flash. The console
+    // never disagree with the client - there is nothing to flash. The console
     // owns the explicit override (doc 16 §1.6); the tokens support it already.
     <html lang="en" className={inter.variable}>
       <body className="min-h-dvh bg-bg font-sans text-lg text-text antialiased">

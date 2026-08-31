@@ -54,7 +54,7 @@ export interface CallRow {
   remote_name?: string | null;
   /**
    * Contact history, computed per call by the API. All null when the number was
-   * withheld — there is no history to count, and showing "1st call" for every
+   * withheld - there is no history to count, and showing "1st call" for every
    * anonymous caller would be a lie repeated once per row.
    */
   calls_in?: number | null;
@@ -69,7 +69,7 @@ function contactHistory(c: CallRow): string | null {
   return `${c.calls_in ?? 0} in / ${c.calls_out ?? 0} out`;
 }
 
-/** "2nd call", "3rd call"… — the ordinal reads faster than "sequence: 3". */
+/** "2nd call", "3rd call"… - the ordinal reads faster than "sequence: 3". */
 function ordinalCall(n: number): string {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th";
   return `${n}${suffix} call`;
@@ -96,12 +96,12 @@ function humanize(s: string): string {
 function statusTone(status: string): "solid" | "muted" | "outline" | "danger" {
   if (status === "COMPLETE") return "solid";
   if (status.startsWith("FAILED")) return "danger";
-  // Deliberately not transcribed — not a success, not a fault.
+  // Deliberately not transcribed - not a success, not a fault.
   if (status === "TRANSCRIPTION_OFF") return "outline";
   return "muted";
 }
 
-/** Pipeline end states — anything else means the worker still has the call.
+/** Pipeline end states - anything else means the worker still has the call.
  *  TRANSCRIPTION_OFF counts: nothing is coming, so the drawer must stop
  *  polling for a transcript that was never going to be produced. */
 function isTerminal(status: string): boolean {
@@ -119,7 +119,7 @@ const POLL_LIMIT = 30;
 
 /**
  * Chrome for the note textarea. `@aura/ui` has no `Textarea` primitive yet
- * (doc 18 §2 defers it), so this mirrors the kit's `CONTROL_BASE` by hand —
+ * (doc 18 §2 defers it), so this mirrors the kit's `CONTROL_BASE` by hand -
  * notably `border-border-strong`, which is the token tuned to clear WCAG
  * 1.4.11's 3:1 for a control boundary. `--color-border` is a decorative
  * hairline and must never be the edge of something you can type into.
@@ -138,7 +138,7 @@ function factValue(f: CallFact): string {
   if (f.value_text != null) return f.value_text;
   if (f.value_num != null) return String(f.value_num);
   if (f.value_bool != null) return f.value_bool ? "Yes" : "No";
-  return "—";
+  return "-";
 }
 
 /** Assigns each diarized speaker to a chat side; first distinct speaker = Agent. */
@@ -162,10 +162,10 @@ export function CallsExplorer({
    *  still reads the environment's dev org; required everywhere the operator is
    *  looking at a specific customer, or the drawer reads the wrong tenant. */
   orgId,
-  /** Show which instance each call came from — off when the table is already
+  /** Show which instance each call came from - off when the table is already
    *  scoped to one instance and the column would repeat a single value. */
   showInstance = false,
-  /** Open this call's drawer on arrival — how a search hit or any deep link
+  /** Open this call's drawer on arrival - how a search hit or any deep link
    *  lands on the conversation itself. The drawer fetches by id, so the call
    *  need not be on the current page of the table. */
   initialCallId,
@@ -179,7 +179,7 @@ export function CallsExplorer({
   const pollsRef = useRef(0);
   // Mirrors `openId` synchronously so an in-flight poll can tell, after its
   // await resolves, whether the drawer still shows the call it was polling
-  // for — `openId` itself can't be read that way from inside the closure,
+  // for - `openId` itself can't be read that way from inside the closure,
   // since state only updates on the next render.
   const openIdRef = useRef<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -212,7 +212,7 @@ export function CallsExplorer({
           getCallNotesAction(callId, orgId),
         ]);
         // Switched to (or away from) another call while this fetch was in
-        // flight — its result belongs to a drawer that is no longer open.
+        // flight - its result belongs to a drawer that is no longer open.
         if (openIdRef.current !== callId) return;
         setLoading(false);
         if (res.error) setError(res.error);
@@ -241,7 +241,7 @@ export function CallsExplorer({
    */
   useEffect(() => {
     const status = detail?.call.status;
-    // A failed call with a retry pending is not settled — the sweeper will move
+    // A failed call with a retry pending is not settled - the sweeper will move
     // it without anyone touching the page, so keep watching until it lands.
     const retryPending = Boolean(detail?.call.next_attempt_at);
     if (!openId || !status || (isTerminal(status) && !retryPending)) return;
@@ -251,7 +251,7 @@ export function CallsExplorer({
       const target = openId;
       const res = await getCallDetailAction(target, orgId);
       // The drawer may have switched to a different call (or closed) while
-      // this request was in flight — a stale response for the PREVIOUS call
+      // this request was in flight - a stale response for the PREVIOUS call
       // must not land on top of whatever is open now.
       if (openIdRef.current !== target) return;
       if (res.detail) {
@@ -265,8 +265,8 @@ export function CallsExplorer({
       }
     };
     // setTimeout wants a void callback. Handing it an `async` one gives it a
-    // promise it drops on the floor, so a poll that rejects — the server action
-    // throwing, a dropped connection — becomes an unhandled rejection and
+    // promise it drops on the floor, so a poll that rejects - the server action
+    // throwing, a dropped connection - becomes an unhandled rejection and
     // nothing else. Swallow it deliberately instead: the drawer keeps showing
     // its last-known detail, `pollsRef` was already incremented so POLL_LIMIT
     // still bounds the loop, and the user can close and reopen to retry.
@@ -331,7 +331,7 @@ export function CallsExplorer({
     <>
       {/* The kit's <Table> owns its own border and cannot carry a min-width on
           the <table> element, and both callers already wrap this in a Card. So
-          the wrapper is hand-rolled — but it keeps the primitive's two
+          the wrapper is hand-rolled - but it keeps the primitive's two
           accessibility affordances verbatim: tabIndex + role="region" so the
           horizontal scroll of a wide log is reachable without a mouse
           (WCAG 2.1.1), and a caption naming the table. Cells and rows are the
@@ -413,7 +413,7 @@ export function CallsExplorer({
                 </TableCell>
                 {/* Date over time, both tabular so the column scans down the
                     page. Previously this was a 10px caption under the caller
-                    name — present, but not something you could read a log by. */}
+                    name - present, but not something you could read a log by. */}
                 <TableCell className="whitespace-nowrap">
                   <LocalTime
                     iso={c.started_at}
@@ -427,14 +427,14 @@ export function CallsExplorer({
                   />
                 </TableCell>
                 {showInstance ? (
-                  <TableCell className="text-xs">{c.instance_name ?? "—"}</TableCell>
+                  <TableCell className="text-xs">{c.instance_name ?? "-"}</TableCell>
                 ) : null}
-                <TableCell className="text-xs">{c.device_label ?? "—"}</TableCell>
+                <TableCell className="text-xs">{c.device_label ?? "-"}</TableCell>
                 <TableCell className="text-xs tabular-nums">
                   {formatDuration(c.duration_s)}
                 </TableCell>
                 <TableCell className="text-xs text-text-muted">
-                  {c.audio_source_used ?? "—"}
+                  {c.audio_source_used ?? "-"}
                 </TableCell>
                 <TableCell className="text-xs text-text-muted">
                   {humanize(c.consent_status)}
@@ -530,9 +530,9 @@ export function CallsExplorer({
                       </div>
                       <p className="text-xs text-text-muted">
                         {call.device_label ?? "Unknown device"} · Source{" "}
-                        {call.audio_source_used ?? "—"} · <LocalTime iso={call.started_at} />
+                        {call.audio_source_used ?? "-"} · <LocalTime iso={call.started_at} />
                       </p>
-                      {/* Why it broke, next to the fact that it broke — otherwise
+                      {/* Why it broke, next to the fact that it broke - otherwise
                           triage means SSH-ing to read worker logs. */}
                       {call.error_message ? (
                         <div className="space-y-1 rounded-md border border-danger bg-danger-subtle p-3">
@@ -550,7 +550,7 @@ export function CallsExplorer({
                           <p className="pt-1 text-xs font-medium text-danger-text tabular-nums">
                             {call.next_attempt_at
                               ? `Retrying automatically · attempt ${(call.pipeline_attempts ?? 0) + 1} · next ${new Date(call.next_attempt_at).toLocaleTimeString()}`
-                              : `Gave up after ${call.pipeline_attempts ?? 0} attempt${(call.pipeline_attempts ?? 0) === 1 ? "" : "s"} — reprocess to try again`}
+                              : `Gave up after ${call.pipeline_attempts ?? 0} attempt${(call.pipeline_attempts ?? 0) === 1 ? "" : "s"} - reprocess to try again`}
                           </p>
                         </div>
                       ) : null}
@@ -761,7 +761,7 @@ export function CallsExplorer({
                                       speaker label above, so the tint is a third
                                       redundant channel rather than the only one.
                                       accent-text on accent-subtle is 8:1 in both
-                                      modes — a filled accent bubble would not be. */}
+                                      modes - a filled accent bubble would not be. */}
                                   <div
                                     className={`rounded-md border p-2.5 text-sm leading-relaxed ${
                                       isAgent
@@ -889,7 +889,7 @@ export function CallsExplorer({
                       )}
 
                       <div className="space-y-2">
-                        {/* A placeholder is not a label (WCAG 3.3.2) — it
+                        {/* A placeholder is not a label (WCAG 3.3.2) - it
                             disappears the moment anything is typed. The visible
                             "Notes" MonoLabel above is a <p>, not a <label>, so
                             the control gets its own visually-hidden one. */}
@@ -950,7 +950,7 @@ export function CallsExplorer({
                           <MonoLabel>Recording playback</MonoLabel>
                           {/* No <track> caption: this is a raw call recording
                               streamed from a signed URL, and there is no
-                              caption track to point at — the transcript above
+                              caption track to point at - the transcript above
                               is the accessible text alternative. */}
                           <audio
                             key={audioUrl}

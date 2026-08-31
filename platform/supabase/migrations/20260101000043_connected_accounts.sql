@@ -1,4 +1,4 @@
--- 0043_connected_accounts.sql — PRD Layer 1, part 1: a user's own email and
+-- 0043_connected_accounts.sql - PRD Layer 1, part 1: a user's own email and
 -- calendar accounts.
 --
 -- ── WHY PER-USER, AND WHY NOT ONE PROVIDER ────────────────────────────────
@@ -6,14 +6,14 @@
 -- The calendar integration that exists today (apps/worker/src/pipeline/
 -- calendar-busy-sync.ts) is one Google service account, configured through
 -- GOOGLE_CALENDAR_ID environment variables, shared by the whole deployment.
--- That works for the marketing funnel's booking slots — there is genuinely one
--- booking calendar — and it is the wrong shape for a CRM, where the mail and
+-- That works for the marketing funnel's booking slots - there is genuinely one
+-- booking calendar - and it is the wrong shape for a CRM, where the mail and
 -- the meetings belong to individual reps and to whichever provider each of
 -- them already uses.
 --
 -- So: one row per (user, provider, account). A rep connects their own Gmail;
 -- the rep at the next desk connects Outlook; a tenant on neither connects
--- plain IMAP. Nothing here is org-wide and nothing is vendor-specific — the
+-- plain IMAP. Nothing here is org-wide and nothing is vendor-specific - the
 -- provider is a string resolved against a catalogue in
 -- packages/shared/src/connection-providers.ts, the same "onboarding is data,
 -- not code" shape crm-providers.ts already uses for outbound CRM connectors.
@@ -25,7 +25,7 @@
 -- ── CREDENTIALS ───────────────────────────────────────────────────────────
 --
 -- access_token/refresh_token/secret hold values sealed by encryptSecret()
--- (packages/db/src/secrets.ts, AES-256-GCM under CRM_SECRET_KEY) — the same
+-- (packages/db/src/secrets.ts, AES-256-GCM under CRM_SECRET_KEY) - the same
 -- envelope the CRM connectors' API keys already use. RLS does not protect
 -- these: the app role can legitimately read the row, and the threat is a
 -- database dump. They are stored sealed for that reason.
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id          uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   -- Whose account this is. CASCADE because a connection is meaningless
-  -- without the person whose mailbox it is — and leaving their tokens behind
+  -- without the person whose mailbox it is - and leaving their tokens behind
   -- after they are removed would be exactly the wrong thing to keep.
   user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
   -- reasoning as custom_field_definitions.object_type (0037).
   provider        text NOT NULL,
   -- What this connection is good for: email, calendar, or both. Also
-  -- app-validated — a provider that later grows a capability should not need
+  -- app-validated - a provider that later grows a capability should not need
   -- a constraint dropped.
   capabilities    text[] NOT NULL DEFAULT '{}',
 
@@ -121,7 +121,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- makes an unused handshake visibly expire instead of a signed blob staying
 -- valid until its clock runs out.
 --
--- Rows are deleted the moment they are redeemed — single use, so a replayed
+-- Rows are deleted the moment they are redeemed - single use, so a replayed
 -- callback finds nothing.
 CREATE TABLE IF NOT EXISTS oauth_authorizations (
   state           text PRIMARY KEY,

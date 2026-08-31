@@ -64,8 +64,8 @@ const STATE_TTL_MINUTES = 10;
  * their own mailbox needs no grant, and no grant should let one rep touch
  * another's tokens. `assertSelf` enforces that both ways.
  *
- * A caller with no resolvable user — the bare admin key used by seed scripts
- * and ops tooling — can LIST providers but cannot create a connection, since
+ * A caller with no resolvable user - the bare admin key used by seed scripts
+ * and ops tooling - can LIST providers but cannot create a connection, since
  * there is no "own mailbox" for it to be. That is a deliberate exception to
  * the carve-out CrmPermissionsGuard makes elsewhere: everywhere else the
  * admin key acts on the org's behalf, but a mailbox belongs to a person.
@@ -83,7 +83,7 @@ export class ConnectionsController {
    *
    * An OAuth provider needs a registered app, and only the operator can
    * create one. Reporting `configured: false` lets the console explain that
-   * instead of offering a Connect button that dead-ends — the same
+   * instead of offering a Connect button that dead-ends - the same
    * degrade-and-say-so shape 0042 uses for pg_trgm.
    */
   @Get("providers")
@@ -110,7 +110,7 @@ export class ConnectionsController {
   async list(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
     const userId = callerUserId(req);
     return this.db.withOrg(orgId, async (client) => {
-      // A caller with no identity has no connections — returning the org's
+      // A caller with no identity has no connections - returning the org's
       // would hand one rep every other rep's mailbox list.
       if (!userId) return { connections: [] };
       const { rows } = await client.query(
@@ -131,7 +131,7 @@ export class ConnectionsController {
 
     const spec = requireProvider(parsed.data.provider);
     if (spec.auth !== "oauth2") {
-      throw new BadRequestException(`${spec.label} does not use OAuth — use POST /connections`);
+      throw new BadRequestException(`${spec.label} does not use OAuth - use POST /connections`);
     }
     const client = oauthClient(spec);
     if (!client) {
@@ -199,7 +199,7 @@ export class ConnectionsController {
     // three are the same answer on purpose: distinguishing them would tell a
     // caller which of their guesses was closest.
     if (!pending || pending.expired || pending.user_id !== userId) {
-      throw new BadRequestException("this sign-in link is no longer valid — start again");
+      throw new BadRequestException("this sign-in link is no longer valid - start again");
     }
 
     const spec = requireProvider(pending.provider);
@@ -250,7 +250,7 @@ export class ConnectionsController {
     });
   }
 
-  /** Connect a provider that has no OAuth — IMAP/SMTP, CalDAV. */
+  /** Connect a provider that has no OAuth - IMAP/SMTP, CalDAV. */
   @Post()
   async connectBasic(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = BasicConnectionInput.safeParse(body);
@@ -259,7 +259,7 @@ export class ConnectionsController {
 
     const spec = requireProvider(parsed.data.provider);
     if (spec.auth !== "basic") {
-      throw new BadRequestException(`${spec.label} connects through OAuth — use /oauth/start`);
+      throw new BadRequestException(`${spec.label} connects through OAuth - use /oauth/start`);
     }
 
     // Validated against the SPEC, so a caller cannot invent config keys or
@@ -344,7 +344,7 @@ function callerUserId(req: PrincipalRequest): string | null {
 }
 
 /**
- * A connection belongs to a person, so acting without one is refused —
+ * A connection belongs to a person, so acting without one is refused -
  * including for the admin key, which everywhere else acts for the org. There
  * is no org-level mailbox for it to connect.
  */
@@ -352,7 +352,7 @@ function requireCallerUserId(req: PrincipalRequest): string {
   const userId = callerUserId(req);
   if (!userId) {
     throw new ForbiddenException(
-      "a connection belongs to a signed-in user — this caller has no identity to attach one to",
+      "a connection belongs to a signed-in user - this caller has no identity to attach one to",
     );
   }
   return userId;

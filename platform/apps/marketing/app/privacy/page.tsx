@@ -15,7 +15,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * /privacy — the document India's DPDP Act 2023 §5 actually requires.
+ * /privacy - the document India's DPDP Act 2023 §5 actually requires.
  *
  * ── IT 404s UNTIL THE FACTS ARE REAL ───────────────────────────────────────
  *
@@ -42,7 +42,7 @@ export const metadata: Metadata = pageMetadata({
  *   no analytics, self-hosted fonts       app/layout.tsx (next/font), next.config.ts
  *
  * Anything that could not be verified is a value in lib/legal.ts, not a
- * sentence written here — which is why this page cannot be published with a
+ * sentence written here - which is why this page cannot be published with a
  * plausible-sounding guess in it.
  */
 export default function PrivacyPage() {
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
         The Meta pixel and Google Tag Manager tell Meta and Google that a browser visited a page
         here, and separately when someone books a call. They receive your IP address and a cookie
         identifier, and Meta may link those to a Facebook or Instagram account it already holds.
-        Microsoft Clarity records how visitors use this site — page views, clicks and scrolling —
+        Microsoft Clarity records how visitors use this site - page views, clicks and scrolling -
         as session recordings and heatmaps, and receives your IP address, browser and device
         details. Clarity masks form input by default; we do not configure it to record what you
         type into the enquiry form. We do not send any of the three your name, email address or

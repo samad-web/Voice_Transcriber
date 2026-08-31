@@ -6,7 +6,7 @@ import java.util.Calendar
 /**
  * The telecaller using this handset. Stored locally so the app can greet them by
  * name ("Good morning, Priya") and label their recordings/uploads with who made
- * the call. Backed by SharedPreferences — set once from the profile dialog.
+ * the call. Backed by SharedPreferences - set once from the profile dialog.
  */
 class TelecallerProfile(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -2,13 +2,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
  * Meta Graph API client for Lead Ads capture (Kailash gap Milestone 4).
- * Inbound only — Aura never sends anything to Meta here, it only reads a
+ * Inbound only - Aura never sends anything to Meta here, it only reads a
  * Page's leadgen submissions once a human has connected that Page.
  */
 
 const GRAPH_VERSION = "v21.0";
 // Overridable so a local test can point this at a stub instead of the real
-// Graph API — same reasoning as ASR_STUB/ANALYZE_STUB elsewhere in this
+// Graph API - same reasoning as ASR_STUB/ANALYZE_STUB elsewhere in this
 // codebase: an external provider should never be the only way to test the
 // code that calls it.
 const GRAPH_BASE = process.env.META_GRAPH_BASE_URL ?? `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -67,7 +67,7 @@ export async function listManagedPages(userAccessToken: string, fetchImpl: typeo
   return body.data ?? [];
 }
 
-/** Subscribes a Page to leadgen webhook events — required before any lead arrives. */
+/** Subscribes a Page to leadgen webhook events - required before any lead arrives. */
 export async function subscribePageToLeadgen(pageId: string, pageAccessToken: string, fetchImpl: typeof fetch = fetch): Promise<void> {
   const res = await fetchImpl(
     `${GRAPH_BASE}/${encodeURIComponent(pageId)}/subscribed_apps?subscribed_fields=leadgen&access_token=${encodeURIComponent(pageAccessToken)}`,
@@ -91,7 +91,7 @@ export interface MetaLead {
   field_data: MetaLeadFieldData[];
 }
 
-/** The full submitted answers for one leadgen event — the webhook only ever carries the id. */
+/** The full submitted answers for one leadgen event - the webhook only ever carries the id. */
 export async function fetchLead(leadgenId: string, pageAccessToken: string, fetchImpl: typeof fetch = fetch): Promise<MetaLead> {
   const res = await fetchImpl(`${GRAPH_BASE}/${encodeURIComponent(leadgenId)}?access_token=${encodeURIComponent(pageAccessToken)}`);
   if (!res.ok) {
@@ -116,7 +116,7 @@ export function mapLeadFields(fields: MetaLeadFieldData[]): { fullName: string |
   };
 }
 
-/** `x-hub-signature-256: sha256=<hex>` — the same scheme every Meta webhook (WhatsApp, leadgen) uses. */
+/** `x-hub-signature-256: sha256=<hex>` - the same scheme every Meta webhook (WhatsApp, leadgen) uses. */
 export function verifyMetaSignature(rawBody: Buffer, header: string | undefined, appSecret: string): boolean {
   if (!header) return false;
   const provided = header.startsWith("sha256=") ? header.slice("sha256=".length) : header;
@@ -129,7 +129,7 @@ export function verifyMetaSignature(rawBody: Buffer, header: string | undefined,
 
 /**
  * Signed, stateless OAuth CSRF token: `base64url(orgId.expiry).hmac`. No new
- * table needed — the state round-trips through Meta's redirect and verifies
+ * table needed - the state round-trips through Meta's redirect and verifies
  * itself, the same shape a JWT would use for something this narrow.
  */
 export function signOAuthState(orgId: string, secret: string, ttlMs = 10 * 60 * 1000): string {

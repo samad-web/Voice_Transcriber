@@ -14,7 +14,7 @@ describe("stepDueAt", () => {
     expect(stepDueAt(START, 2).toISOString()).toBe("2026-08-20T11:00:00.000Z");
   });
 
-  it("handles fractional hours — 0.25 is fifteen minutes", () => {
+  it("handles fractional hours - 0.25 is fifteen minutes", () => {
     // A "message within five minutes" rung is 0.0833 hours, so whole-hour
     // arithmetic would round the whole speed-to-lead idea away.
     expect(stepDueAt(START, 0.25).toISOString()).toBe("2026-08-20T09:15:00.000Z");
@@ -42,7 +42,7 @@ describe("materialiseSteps", () => {
     ]);
   });
 
-  it("is stable — the same inputs give the same schedule", () => {
+  it("is stable - the same inputs give the same schedule", () => {
     expect(materialiseSteps(steps, START)).toEqual(materialiseSteps(steps, START));
   });
 });
@@ -53,7 +53,7 @@ describe("CadenceInput", () => {
     expect(res.success).toBe(false);
   });
 
-  it("defaults stopOn to 'booked' — a ladder that never stops is the bug", () => {
+  it("defaults stopOn to 'booked' - a ladder that never stops is the bug", () => {
     const res = CadenceInput.safeParse({ name: "Chase", steps: [{ label: "Call" }] });
     expect(res.success).toBe(true);
     if (res.success) {

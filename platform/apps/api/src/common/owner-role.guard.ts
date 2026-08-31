@@ -20,13 +20,13 @@ export const RequireOwnerRole = (...roles: OwnerRole[]) => SetMetadata(OWNER_ROL
  * Enforces `@RequireOwnerRole(...)`. Runs AFTER AdminKeyGuard, so `req.principal`
  * is set.
  *
- * STAGE 2.5 (checklist 08 §2.5) — CLOSED. This used to trust the caller's OWN
+ * STAGE 2.5 (checklist 08 §2.5) - CLOSED. This used to trust the caller's OWN
  * claim about its persona (`x-caller-owner-role`, read verbatim by
  * admin-key.guard.ts into `principal.ownerRole`): any admin-key holder could
  * assert `owner` and be believed, or omit the header entirely and be waved
  * through unchecked. It now derives the persona itself from `memberships`
  * (the same table a Bearer session's `ownerRole` already came from, via
- * `principalFromToken` — that path was never the bypass and is unchanged) —
+ * `principalFromToken` - that path was never the bypass and is unchanged) -
  * see `AuthService.ownerRoleFor`. `admin-key.guard.ts` still parses
  * `x-caller-owner-role` into `principal.ownerRole` for an admin-key caller,
  * but nothing here reads that value anymore; it is only informational.
@@ -53,7 +53,7 @@ export class OwnerRoleGuard implements CanActivate {
     if (principal.viaAdminKey) {
       // Derived from `memberships`, not from anything the request claims.
       // The bare admin key itself (no `x-caller-user-id`, `userId` is the
-      // literal string "admin-key") has no row to look up — and correctly
+      // literal string "admin-key") has no row to look up - and correctly
       // so: a credential with no user behind it has no persona to grant.
       const userId = z.string().uuid().safeParse(principal.userId);
       const resolved = userId.success
@@ -65,7 +65,7 @@ export class OwnerRoleGuard implements CanActivate {
       ownerRole = resolved;
     } else {
       // A session's ownerRole was already read from `memberships` when the
-      // token was resolved — authoritative already.
+      // token was resolved - authoritative already.
       ownerRole = principal.ownerRole;
     }
 

@@ -65,7 +65,7 @@ export interface Attainment {
    * ahead in week two, and a bare percentage cannot tell those apart.
    */
   periodElapsed: number;
-  /** target × periodElapsed — where a steady seller would be right now. */
+  /** target × periodElapsed - where a steady seller would be right now. */
   pace: number;
 }
 
@@ -79,7 +79,7 @@ export interface Attainment {
  */
 export function periodElapsed(start: string, end: string, now: Date): number {
   const from = Date.parse(`${start}T00:00:00Z`);
-  // End of the last day, not its start — a period ending today is not over
+  // End of the last day, not its start - a period ending today is not over
   // until today is.
   const to = Date.parse(`${end}T00:00:00Z`) + 86_400_000;
   if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return 1;
@@ -91,7 +91,7 @@ export function periodElapsed(start: string, end: string, now: Date): number {
 /**
  * Is this person ahead or behind?
  *
- * Deliberately compares against PACE rather than against the whole target —
+ * Deliberately compares against PACE rather than against the whole target -
  * "62% of the way to a number with three weeks left" is not a verdict, and a
  * dashboard that colours it red teaches people to ignore the colour.
  */

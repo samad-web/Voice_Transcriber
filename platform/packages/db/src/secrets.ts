@@ -13,7 +13,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  *
  *     v1.gcm:<iv-b64>:<tag-b64>:<ciphertext-b64>
  *
- * The prefix is what makes this deployable without a data migration —
+ * The prefix is what makes this deployable without a data migration -
  * decryptSecret() returns anything unprefixed unchanged, so rows written
  * before this landed keep working and get encrypted the next time they are
  * saved. Once every row carries the prefix, the fallback can go.
@@ -35,7 +35,7 @@ function key(): Buffer | null {
   return createHash("sha256").update(raw, "utf8").digest();
 }
 
-/** True when a key is configured — used to warn loudly at boot instead of quietly storing plaintext. */
+/** True when a key is configured - used to warn loudly at boot instead of quietly storing plaintext. */
 export function secretsEncryptionEnabled(): boolean {
   return key() !== null;
 }
@@ -52,7 +52,7 @@ export function isEncrypted(value: string | null | undefined): boolean {
  */
 export function encryptSecret(plaintext: string | null): string | null {
   if (plaintext === null || plaintext === "") return plaintext;
-  if (isEncrypted(plaintext)) return plaintext; // already sealed — don't double-wrap
+  if (isEncrypted(plaintext)) return plaintext; // already sealed - don't double-wrap
   const k = key();
   if (!k) return plaintext;
 
@@ -66,7 +66,7 @@ export function encryptSecret(plaintext: string | null): string | null {
 }
 
 /**
- * Decrypt a stored credential. Throws on a corrupt or wrong-key ciphertext —
+ * Decrypt a stored credential. Throws on a corrupt or wrong-key ciphertext -
  * silently returning garbage would surface as an unexplained 401 from the CRM
  * days later, which is far harder to diagnose than a failed delivery that says
  * the key is wrong.
@@ -78,7 +78,7 @@ export function decryptSecret(stored: string | null): string | null {
   const k = key();
   if (!k) {
     throw new Error(
-      "CRM_SECRET_KEY is not set but an encrypted credential was read — " +
+      "CRM_SECRET_KEY is not set but an encrypted credential was read - " +
         "the key that sealed this row must be restored before the integration can send.",
     );
   }
@@ -102,7 +102,7 @@ export function warnIfSecretsUnencrypted(service: string): void {
   if (secretsEncryptionEnabled()) return;
   const production = process.env.NODE_ENV === "production";
   const message =
-    `${service}: CRM_SECRET_KEY is not set — CRM credentials will be stored in plaintext. ` +
+    `${service}: CRM_SECRET_KEY is not set - CRM credentials will be stored in plaintext. ` +
     "Generate one with: openssl rand -hex 32";
   if (production) console.error(`FATAL-ADJACENT ${message}`);
   else console.warn(message);

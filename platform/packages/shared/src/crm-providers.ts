@@ -4,20 +4,20 @@ import type { CrmAuthScheme, CrmMethod } from "./crm-template";
  * The connector catalogue.
  *
  * Every entry here is pure data. Onboarding a CRM means adding an object to
- * this array — no branch in the dispatcher, no deploy of new transport code.
+ * this array - no branch in the dispatcher, no deploy of new transport code.
  * The worker reads the same spec the console renders the form from, so what an
  * operator configures and what gets POSTed cannot drift apart.
  *
  * What a spec pins down:
- *   auth     — how the credential rides along (see CrmAuthScheme)
- *   config   — the per-tenant values that complete the URL (data centre,
+ *   auth     - how the credential rides along (see CrmAuthScheme)
+ *   config   - the per-tenant values that complete the URL (data centre,
  *              instance host, location id). Non-secret: stored in the clear
  *              and shown in the console. Secrets go in auth_secret, encrypted.
- *   targets  — the object being written (lead, contact, activity, …) with its
+ *   targets  - the object being written (lead, contact, activity, …) with its
  *              endpoint, body shape, response id path and a starting field map
  *
  * Field maps use dotted paths into the source document (see CRM_SOURCE_PATHS).
- * The presets below are a sane first send, not a final answer — every CRM has
+ * The presets below are a sane first send, not a final answer - every CRM has
  * required fields and custom properties that only the tenant knows.
  */
 
@@ -27,7 +27,7 @@ export interface CrmConfigField {
   placeholder?: string;
   help?: string;
   required: boolean;
-  /** Fixed choices — data centres, API versions. Renders as a <select>. */
+  /** Fixed choices - data centres, API versions. Renders as a <select>. */
   options?: Array<{ value: string; label: string }>;
   defaultValue?: string;
 }
@@ -41,7 +41,7 @@ export interface CrmTargetSpec {
   endpoint: string;
   /** Static headers this target always needs (API version pins, OData, …). */
   headers?: Record<string, string>;
-  /** Body template — see renderBody(). null means "send the mapped object". */
+  /** Body template - see renderBody(). null means "send the mapped object". */
   body?: unknown;
   /** Where the created record's id lives in the response. */
   idPath?: string;
@@ -70,7 +70,7 @@ export interface CrmProviderSpec {
   };
   config: CrmConfigField[];
   targets: CrmTargetSpec[];
-  /** Default drain ceiling — set below each vendor's published limit. */
+  /** Default drain ceiling - set below each vendor's published limit. */
   rateLimitPerMin: number;
   /** Shown in the console. Say the awkward parts out loud. */
   notes?: string;
@@ -94,7 +94,7 @@ export const CRM_SOURCE_PATHS: Array<{ path: string; label: string }> = [
   { path: "call.remoteNumber", label: "Full number (opt-in orgs only)" },
   { path: "transcript.text", label: "Full transcript" },
   { path: "transcript.language", label: "Detected language" },
-  { path: "intelligence.summary", label: "2–3 sentence summary" },
+  { path: "intelligence.summary", label: "2-3 sentence summary" },
   { path: "intelligence.overall_intent", label: "Overall call intent" },
   { path: "intelligence.customer_intent", label: "What the customer wants" },
   { path: "intelligence.agent_intent", label: "What the agent wanted" },
@@ -103,7 +103,7 @@ export const CRM_SOURCE_PATHS: Array<{ path: string; label: string }> = [
   { path: "intelligence.key_points", label: "Key points (array)" },
   { path: "intelligence.action_items", label: "Action items (array)" },
   { path: "meta.recordingUrl", label: "Signed recording link" },
-  { path: "meta.confidenceScore", label: "Extraction confidence 0–1" },
+  { path: "meta.confidenceScore", label: "Extraction confidence 0-1" },
   { path: "meta.agentId", label: "Extraction agent id" },
   { path: "meta.timestamp", label: "Dispatch time (ISO)" },
   { path: "facts.<key>", label: "Any field your AI agent extracts" },
@@ -165,7 +165,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       },
     ],
     notes:
-      "hs_call_duration is in milliseconds — map a facts.* field if your durations need scaling. " +
+      "hs_call_duration is in milliseconds - map a facts.* field if your durations need scaling. " +
       "Associating a call to a contact is a second request HubSpot does not accept inline.",
   },
 
@@ -181,7 +181,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       scheme: "bearer",
       secretLabel: "Access Token",
       secretHelp:
-        "A session id or OAuth access token. Salesforce access tokens expire — until the OAuth " +
+        "A session id or OAuth access token. Salesforce access tokens expire - until the OAuth " +
         "flow lands, use a Connected App with a long session timeout and rotate here when it lapses.",
     },
     config: [
@@ -241,7 +241,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       },
     ],
     notes:
-      "Salesforce rejects a Lead without LastName and Company — map both to something " +
+      "Salesforce rejects a Lead without LastName and Company - map both to something " +
       "always present, or the delivery dies on a terminal 400.",
   },
 
@@ -260,7 +260,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       secretLabel: "Access Token",
       secretHelp:
         "Generate a Self Client token in the Zoho API console with ZohoCRM.modules.ALL. " +
-        "Zoho access tokens last an hour — rotate here, or wait for the OAuth flow.",
+        "Zoho access tokens last an hour - rotate here, or wait for the OAuth flow.",
     },
     config: [
       {
@@ -424,7 +424,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
         },
       },
     ],
-    notes: "The Version header is mandatory on the v2 API — it is pinned on the target.",
+    notes: "The Version header is mandatory on the v2 API - it is pinned on the target.",
   },
 
   // ── Freshsales ──────────────────────────────────────────────────────
@@ -594,7 +594,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       },
     ],
     notes:
-      "GraphQL answers 200 even when the mutation fails — check the delivery body, not just " +
+      "GraphQL answers 200 even when the mutation fails - check the delivery body, not just " +
       "the status, when an item doesn't appear. Column keys must be board column ids.",
   },
 
@@ -610,7 +610,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       scheme: "bearer",
       secretLabel: "Access Token",
       secretHelp:
-        "An Entra ID access token for your Dataverse environment. These are short-lived — " +
+        "An Entra ID access token for your Dataverse environment. These are short-lived - " +
         "rotate here until the OAuth flow lands.",
     },
     config: [
@@ -767,7 +767,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       },
     ],
     notes:
-      "The webhook URL is itself the credential — it is stored in config, which is not " +
+      "The webhook URL is itself the credential - it is stored in config, which is not " +
       "encrypted. Treat the URL as a secret and rotate it in Bitrix24 if it leaks.",
   },
 
@@ -775,7 +775,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
   {
     id: "leadsquared",
     label: "LeadSquared",
-    blurb: "Lead capture — widely used by Indian sales teams.",
+    blurb: "Lead capture - widely used by Indian sales teams.",
     category: "crm",
     markets: ["india"],
     docsUrl: "https://apidocs.leadsquared.com/create-a-lead/",
@@ -801,7 +801,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
         key: "accessKey",
         label: "Access Key",
         placeholder: "u$r...",
-        help: "The public half of the key pair. Stored in the clear — the secret half is encrypted.",
+        help: "The public half of the key pair. Stored in the clear - the secret half is encrypted.",
         required: true,
       },
     ],
@@ -810,7 +810,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       {
         id: "lead",
         label: "Lead capture",
-        blurb: "Lead.Capture — LeadSquared takes an array of Attribute/Value pairs.",
+        blurb: "Lead.Capture - LeadSquared takes an array of Attribute/Value pairs.",
         method: "POST",
         endpoint:
           "https://api-{{region}}.leadsquared.com/v2/LeadManagement.svc/Lead.Capture" +
@@ -872,7 +872,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
   {
     id: "zapier",
     label: "Zapier",
-    blurb: "Catch Hook — reach any of Zapier's app integrations.",
+    blurb: "Catch Hook - reach any of Zapier's app integrations.",
     category: "automation",
     markets: ["global"],
     docsUrl: "https://zapier.com/apps/webhook/integrations",
@@ -894,7 +894,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       {
         id: "hook",
         label: "Catch Hook",
-        blurb: "Flat JSON — Zapier turns each key into a usable field.",
+        blurb: "Flat JSON - Zapier turns each key into a usable field.",
         method: "POST",
         endpoint: "{{hookUrl}}",
         body: null,
@@ -956,7 +956,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
   {
     id: "n8n",
     label: "n8n",
-    blurb: "Webhook node — self-hosted or cloud.",
+    blurb: "Webhook node - self-hosted or cloud.",
     category: "automation",
     markets: ["global"],
     docsUrl: "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/",
@@ -964,7 +964,7 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
       scheme: "header",
       header: "X-API-Key",
       secretLabel: "Header credential",
-      secretHelp: "Optional — matches the n8n Webhook node's header auth.",
+      secretHelp: "Optional - matches the n8n Webhook node's header auth.",
     },
     config: [
       {

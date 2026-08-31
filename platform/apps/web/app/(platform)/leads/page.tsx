@@ -4,7 +4,7 @@ import { getFunnelCriteriaAction, listLeadsAction, listMessageTemplatesAction } 
 import { LeadsTabs } from "./leads-tabs";
 
 /**
- * Funnel leads — enquiries from the marketing site, the door from an enquiry to
+ * Funnel leads - enquiries from the marketing site, the door from an enquiry to
  * a provisioned client, and the WhatsApp copy sent along the way.
  *
  * Reads through the operator API rather than the database directly, like every

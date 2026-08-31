@@ -29,12 +29,12 @@ const CreateOwnerBody = z.object({
 const OWNER_ROLE = "org_admin";
 
 /**
- * Owner logins — one sign-in per customer instance (§3.4).
+ * Owner logins - one sign-in per customer instance (§3.4).
  *
  * An owner is two linked records: a Supabase Auth user (what the console signs
  * in against) and a platform membership in exactly one org (what scopes every
  * query they make). `users.sso_subject` is the join between them, which is the
- * column the identity model always intended to carry an external subject — the
+ * column the identity model always intended to carry an external subject - the
  * OIDC swap later replaces who mints the subject, not this wiring.
  *
  * Tenant-scoped by `TenantGuard` like every other tenant endpoint, so the
@@ -70,7 +70,7 @@ export class OwnersController {
   /**
    * Provision an owner login for this instance.
    *
-   * The generated password is returned EXACTLY ONCE — the same contract as the
+   * The generated password is returned EXACTLY ONCE - the same contract as the
    * enrollment key, and for the same reason: nothing here can retrieve it later.
    *
    * Order matters. The Supabase user is created first so a failure there leaves
@@ -104,7 +104,7 @@ export class OwnersController {
     }
 
     // An account that already exists (they own another instance, or were added
-    // as a member) is linked, not recreated — one human, one login.
+    // as a member) is linked, not recreated - one human, one login.
     let password: string | null = null;
     let subject: string | undefined = existing.user?.sso_subject ?? undefined;
     let createdSubject: string | null = null;
@@ -121,11 +121,11 @@ export class OwnersController {
         createdSubject = created.id;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        // The auth user exists but nothing on this side points at it — the
+        // The auth user exists but nothing on this side points at it - the
         // operator needs a different remedy than "try again".
         if (/already been registered|already registered|already exists/i.test(message)) {
           throw new ConflictException(
-            `${email} already has a Supabase login not linked to any instance — remove it in the Supabase dashboard, or use a different address`,
+            `${email} already has a Supabase login not linked to any instance - remove it in the Supabase dashboard, or use a different address`,
           );
         }
         throw err;
@@ -172,7 +172,7 @@ export class OwnersController {
 
         return {
           owner: { userId: user.id, email: user.email, name: user.name, ...membership },
-          // Null when an existing login was linked — they keep their password.
+          // Null when an existing login was linked - they keep their password.
           password,
           linkedExisting: !createdSubject,
         };
@@ -231,7 +231,7 @@ export class OwnersController {
    * Revoke access to THIS instance.
    *
    * The Supabase login is deleted only when the membership removed was their
-   * last one — someone who owns two instances must not lose their sign-in
+   * last one - someone who owns two instances must not lose their sign-in
    * because one of them was closed.
    */
   @Delete(":userId")
@@ -264,7 +264,7 @@ export class OwnersController {
 
       // Any session already issued to them is bound to this org; drop it so
       // revocation is immediate rather than "at token expiry". Scoped to this
-      // org on purpose — a person who owns two instances keeps their session on
+      // org on purpose - a person who owns two instances keeps their session on
       // the other one, matching the login-deletion rule below.
       await client.query("DELETE FROM sessions WHERE user_id = $1 AND org_id = $2", [
         userId,

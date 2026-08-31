@@ -21,7 +21,7 @@ export interface Quotation {
   quotation_number: string;
   status: QuotationStatus;
   currency: string;
-  /** Postgres numeric — these all come back as strings. Number() before formatting. */
+  /** Postgres numeric - these all come back as strings. Number() before formatting. */
   subtotal: string;
   discount_type: "percent" | "amount" | null;
   discount_value: string | null;
@@ -77,7 +77,7 @@ export interface QuotationPatch {
   discount?: QuotationDiscount;
   validUntil?: string | null;
   notes?: string | null;
-  /** A full replacement of the line items — never a partial patch of one row. */
+  /** A full replacement of the line items - never a partial patch of one row. */
   items?: QuotationItemInput[];
 }
 
@@ -115,7 +115,7 @@ export async function createQuotationAction(
 }
 
 /**
- * Every field is optional — the caller sends only what changed, except
+ * Every field is optional - the caller sends only what changed, except
  * `items`, which is always a full replacement (see QuotationPatch above).
  */
 export async function updateQuotationAction(

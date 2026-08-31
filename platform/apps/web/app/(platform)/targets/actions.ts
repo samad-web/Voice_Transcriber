@@ -6,7 +6,7 @@ import { API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Sales targets (PRD Layer 5). Operator console, beside /custom-fields,
- * /roles and /automations — the other org-configuration surfaces.
+ * /roles and /automations - the other org-configuration surfaces.
  *
  * `requireOperator()` is the first statement of every export rather than
  * relying on the layout: a server action is its own entry point.
@@ -48,7 +48,7 @@ async function call<T>(
     }
     return { data: payload as T };
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 

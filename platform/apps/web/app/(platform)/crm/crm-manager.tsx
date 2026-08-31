@@ -37,7 +37,7 @@ function matchesQuery(integration: Integration, query: string): boolean {
  *
  * Left: the catalogue and the manual escape hatch. Right: what is connected,
  * with the mapping, credential, test and delivery log for each. Everything the
- * dispatcher reads is editable here — nothing about a connector requires a
+ * dispatcher reads is editable here - nothing about a connector requires a
  * deploy.
  */
 export function CrmManager({
@@ -56,7 +56,7 @@ export function CrmManager({
    * routed leads to whichever instance happened to sort first.
    */
   workspaces: Array<{ id: string; name: string }>;
-  /** The tenant being configured — supplied by every caller. */
+  /** The tenant being configured - supplied by every caller. */
   orgId?: string;
 }) {
   const router = useRouter();
@@ -146,7 +146,7 @@ export function CrmManager({
           <EmptyState
             icon={<Link2 className="h-8 w-8" />}
             title="Nothing connected yet"
-            description="Pick a CRM from the catalogue to start pushing call facts — or point Aura at your own HTTPS endpoint."
+            description="Pick a CRM from the catalogue to start pushing call facts - or point Aura at your own HTTPS endpoint."
           />
         ) : (
           <>
@@ -185,7 +185,7 @@ export function CrmManager({
                 {filtered.length > INTEGRATIONS_PAGE_SIZE ? (
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs text-text-muted tabular-nums">
-                      {pageStart + 1}–{Math.min(pageStart + INTEGRATIONS_PAGE_SIZE, filtered.length)} of{" "}
+                      {pageStart + 1}-{Math.min(pageStart + INTEGRATIONS_PAGE_SIZE, filtered.length)} of{" "}
                       {filtered.length} · page {currentPage}/{totalPages}
                     </p>
                     <div className="flex items-center gap-2">
@@ -303,7 +303,7 @@ function CustomWebhookForm({
 
       {/* These three appear and disappear with the auth scheme, so each needs
           its own label rather than the shared placeholder-as-label the v1 form
-          relied on — a field that materialises unlabelled mid-form is the
+          relied on - a field that materialises unlabelled mid-form is the
           worst case for WCAG 3.3.2. */}
       {needsHeaderName ? (
         <FormField

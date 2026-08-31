@@ -1,4 +1,4 @@
--- 0044_email_sync.sql — PRD Layer 1, part 2: what inbound mail sync needs.
+-- 0044_email_sync.sql - PRD Layer 1, part 2: what inbound mail sync needs.
 --
 -- Two additive columns, no new table. The timeline that emails land on
 -- already exists (0040); this gives it an idempotency key, and gives each
@@ -7,9 +7,9 @@
 -- ── The idempotency key for anything synced from a provider ───────────────
 --
 -- Calls already have one: `interactions(call_id)`. An email has no call, so
--- without this a sync that overlaps its own window — which every date-based
+-- without this a sync that overlaps its own window - which every date-based
 -- cursor does, deliberately, to avoid dropping messages that arrive during a
--- poll — would post the same message to the timeline repeatedly.
+-- poll - would post the same message to the timeline repeatedly.
 --
 -- Scoped by (org, type, external_id) rather than external_id alone: message
 -- ids are only unique within a provider's own namespace, and a Gmail id and a
@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS interactions_connection
 -- exactly as `external_ids` on contacts does not care whose id it holds.
 --
 -- `last_synced_at` (0043) stays the human-facing "when did this last run";
--- this is the machine's place, and the two are not interchangeable — a sync
+-- this is the machine's place, and the two are not interchangeable - a sync
 -- that ran and found nothing advances the first but not necessarily this.
 ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS sync_cursor text;
 

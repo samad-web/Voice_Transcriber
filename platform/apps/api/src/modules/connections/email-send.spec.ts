@@ -8,7 +8,7 @@ import { buildMime, canSend, dailySendLimit, sendingEnabled } from "./email-send
  * explicitly rather than left to be inferred from the happy path.
  */
 
-describe("sendingEnabled — the master switch", () => {
+describe("sendingEnabled - the master switch", () => {
   it("is OFF when nothing is set", () => {
     expect(sendingEnabled({})).toBe(false);
   });
@@ -58,7 +58,7 @@ describe("canSend", () => {
   });
 });
 
-describe("buildMime — header injection", () => {
+describe("buildMime - header injection", () => {
   const base = {
     to: "priya@customer.com",
     subject: "Your quote",
@@ -74,7 +74,7 @@ describe("buildMime — header injection", () => {
     expect(mime).toContain("Attached.");
   });
 
-  it("strips newlines from the subject — otherwise it is a Bcc field", () => {
+  it("strips newlines from the subject - otherwise it is a Bcc field", () => {
     const attack = buildMime({
       ...base,
       subject: "Your quote\r\nBcc: everyone@competitor.example",
@@ -97,7 +97,7 @@ describe("buildMime — header injection", () => {
     expect(mime).not.toMatch(/^X-Spoof:/m);
   });
 
-  it("leaves newlines in the BODY alone — only headers are the injection surface", () => {
+  it("leaves newlines in the BODY alone - only headers are the injection surface", () => {
     const mime = buildMime({ ...base, body: "Line one\nLine two\n\nRegards" });
     expect(mime).toContain("Line one\nLine two\n\nRegards");
   });

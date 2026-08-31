@@ -10,7 +10,7 @@ import {
   FUNNEL_CRM_OPTIONS,
   // The question wording, shared with the console's lead panel. Held in one
   // place so the console cannot end up attributing an answer to a question
-  // nobody was asked — the failure is silent, and reading a lead's answers
+  // nobody was asked - the failure is silent, and reading a lead's answers
   // under the wrong question is worse than not showing them.
   FUNNEL_QUESTIONS,
   HAS_CRM_OPTIONS,
@@ -19,7 +19,7 @@ import {
   TEAM_SIZES,
   WANTS_CUSTOM_CRM_OPTIONS,
   // The SAME validators the server runs. Sharing them is the point: a client
-  // check that disagrees with the server produces the worst possible outcome —
+  // check that disagrees with the server produces the worst possible outcome -
   // a form that accepts an answer and then rejects it a second later.
   validateEmail,
   validateName,
@@ -44,7 +44,7 @@ import type { OpenSlot } from "@/lib/funnel/slots";
  * conditional "which CRM?" field cannot be done server-only without a round
  * trip per keystroke.
  *
- * Errors render as text under the field, never as colour alone — a red border
+ * Errors render as text under the field, never as colour alone - a red border
  * tells a colour-blind visitor nothing, and tells a screen reader less.
  */
 
@@ -57,7 +57,7 @@ type Outcome = "qualified" | "triage" | "disqualified";
  * ── WHY THE FIELDS ARE CONTROLLED, AND IT IS NOT A STYLE CHOICE ────────────
  *
  * They used to be uncontrolled, read out of `FormData` on submit. React 19
- * RESETS a `<form action={fn}>` once the action resolves — including when it
+ * RESETS a `<form action={fn}>` once the action resolves - including when it
  * resolves with an error. So a visitor who mistyped their email got the error
  * message and an empty form: name, phone, country and consent all wiped, on the
  * one screen where re-typing everything is exactly what makes someone leave.
@@ -129,8 +129,8 @@ const SALUTATION_CHOICES: ReadonlyArray<{ value: string; label: string }> = [
 ];
 
 /* ── Phone entry ────────────────────────────────────────────────────────────
-   The digit rules already existed and were already enforced — India is 10
-   digits starting 6-9 — but only by `validatePhone`, which runs on SUBMIT. The
+   The digit rules already existed and were already enforced - India is 10
+   digits starting 6-9 - but only by `validatePhone`, which runs on SUBMIT. The
    input itself accepted anything, so you could type fifteen digits and only
    find out when you pressed Continue. These cap it while typing, per country,
    because the country is what decides the answer: India and Bangladesh take 10,
@@ -204,7 +204,7 @@ function failure(r: { ok: boolean; error?: string }, fallback: string): string |
   return r.ok ? null : (r.error ?? fallback);
 }
 
-/** Step 1, client-side. The server re-checks all of it — this is for speed. */
+/** Step 1, client-side. The server re-checks all of it - this is for speed. */
 function checkContact(v: Values): Record<string, string> {
   const e: Record<string, string> = {};
   const name = failure(validateName(v.name), "Please enter your name.");
@@ -213,7 +213,7 @@ function checkContact(v: Values): Record<string, string> {
   if (phone) e.phone = phone;
   const email = failure(validateEmail(v.email), "Please enter a valid email address.");
   if (email) e.email = email;
-  // Only when they said it differs — an empty box they were never shown must
+  // Only when they said it differs - an empty box they were never shown must
   // not block the form.
   if (!v.whatsappSame) {
     const wa = failure(
@@ -230,7 +230,7 @@ function checkContact(v: Values): Record<string, string> {
  * Step 2, client-side. There was NO check here at all.
  *
  * Every question was optional as far as the form was concerned, and an
- * unanswered one arrived at the server as null — where `qualify()` read it as
+ * unanswered one arrived at the server as null - where `qualify()` read it as
  * "no budget, no timeframe" and returned DISQUALIFIED. So skipping a question
  * did not produce "please answer this"; it produced a polite rejection, and the
  * visitor was never told which answer caused it or that they had missed one.
@@ -238,7 +238,7 @@ function checkContact(v: Values): Record<string, string> {
 function checkQualify(v: Values): Record<string, string> {
   const e: Record<string, string> = {};
   if (!v.businessType) e.businessType = "Please pick the closest one.";
-  // Only when they picked "Something else" — the same conditional shape the CRM
+  // Only when they picked "Something else" - the same conditional shape the CRM
   // questions use, and for the same reason: a field they were never shown must
   // not block the form.
   if (v.businessType === "other") {
@@ -295,7 +295,7 @@ export function FunnelForm({
    *
    * The App Router scrolls to top on navigation, but it is not the only way in:
    * a back-navigation restores the previous scroll position, and a reload keeps
-   * it. Both drop someone into the middle of the form — typically at step 2's
+   * it. Both drop someone into the middle of the form - typically at step 2's
    * pills, with the heading and any error message above the fold.
    *
    * `behavior: "auto"` on purpose, not "smooth". `html { scroll-behavior:
@@ -310,8 +310,8 @@ export function FunnelForm({
    * Bring the card back into view when the step changes.
    *
    * Step 2 is taller than step 1 and its submit button sits lower, so
-   * advancing left the top of the form — the heading, the progress indicator,
-   * and anything that went wrong — scrolled off above. The visitor saw a
+   * advancing left the top of the form - the heading, the progress indicator,
+   * and anything that went wrong - scrolled off above. The visitor saw a
    * different set of questions appear beneath them with no explanation.
    */
   useEffect(() => {
@@ -321,7 +321,7 @@ export function FunnelForm({
 
   /**
    * And when a form-level error appears. It renders at the TOP of the card,
-   * while the button that triggered it is at the bottom — on a phone that is
+   * while the button that triggered it is at the bottom - on a phone that is
    * reliably off-screen, so the form would simply appear not to respond.
    */
   useEffect(() => {
@@ -329,7 +329,7 @@ export function FunnelForm({
     cardRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [errors.form]);
 
-  /** Update one answer and clear its error — an error that outlives the fix
+  /** Update one answer and clear its error - an error that outlives the fix
    *  trains people to ignore the messages. */
   function set<K extends keyof Values>(key: K, value: Values[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -359,7 +359,7 @@ export function FunnelForm({
         setErrors({});
         setStep("qualify");
       } else {
-        // Server-side rejection — a duplicate, a rate limit, or a rule the
+        // Server-side rejection - a duplicate, a rate limit, or a rule the
         // client does not know about. Values stay exactly as typed.
         setErrors(res.errors ?? {});
       }
@@ -378,7 +378,7 @@ export function FunnelForm({
         setOutcome(res.outcome ?? "disqualified");
         setStep("done");
         // WhatsApp is no longer opened here. The slot picker lives on the
-        // screen this used to navigate away from — the handoff now happens
+        // screen this used to navigate away from - the handoff now happens
         // once a visitor actually books a time, in SlotPicker below.
       } else {
         setErrors({ form: res.error ?? "Something went wrong. Please try again." });
@@ -395,13 +395,13 @@ export function FunnelForm({
       <Progress step={step} />
 
       {/* Their resume link did not open anything. Said plainly and without
-          blame — the commonest reason by far is that they already finished,
+          blame - the commonest reason by far is that they already finished,
           and the second is that it simply aged out. Neither is a mistake they
           made, and "invalid link" would read as an accusation. */}
       {linkExpired ? (
         <p role="status" className="mb-5 rounded-xl px-4 py-3 text-sm" style={alertStyle}>
           That link has expired, or the enquiry it belonged to is already complete. You can start
-          again below — it only takes a minute.
+          again below - it only takes a minute.
         </p>
       ) : null}
 
@@ -423,16 +423,16 @@ export function FunnelForm({
                 and took more vertical space than the field it belongs to.
 
                 OPTIONAL, and the unselected "Title" is a real answer rather
-                than a prompt — a form that makes you declare a title before it
+                than a prompt - a form that makes you declare a title before it
                 will take your enquiry is a form some people close. Nothing is
                 stored when it is left alone and the messages greet them by
                 first name. That is why there is no "prefer not to say" option:
                 not choosing one already says it.
 
                 This is the application's own listbox, NOT a native <select>.
-                A `<select>` renders its options with the operating system — a
+                A `<select>` renders its options with the operating system - a
                 flat grey Windows menu next to a form of rounded brand-tinted
-                controls — which is the whole reason `Dropdown` exists here. The
+                controls - which is the whole reason `Dropdown` exists here. The
                 country picker below is still native and is the odd one out;
                 this one should not copy that. */}
             <div className="flex gap-2">
@@ -460,8 +460,8 @@ export function FunnelForm({
           <Field label="Phone number" error={errors.phone} name="phone">
             <div className="flex gap-2">
               {/* Sized to its content, not padded out to a default width. The
-                  widest option in FUNNEL_COUNTRIES is "+971 AE" — seven
-                  characters — so 7.5rem holds it with room, and the chevron
+                  widest option in FUNNEL_COUNTRIES is "+971 AE" - seven
+                  characters - so 7.5rem holds it with room, and the chevron
                   padding comes down to match. The country picker is the least
                   important control in this row; the number field should get the
                   space. */}
@@ -585,7 +585,7 @@ export function FunnelForm({
             {errors.consent ? <FieldError id="consent-error">{errors.consent}</FieldError> : null}
           </div>
 
-          {/* Honeypot — off-screen, not display:none, so a bot filling every
+          {/* Honeypot - off-screen, not display:none, so a bot filling every
               field still trips it. Never announced to assistive tech. */}
           <div aria-hidden="true" className="absolute left-[-9999px]">
             <label>
@@ -604,7 +604,7 @@ export function FunnelForm({
 
           {/* Nine options, and labels as long as "Building materials /
               construction". As pills that is a nine-row wall on a phone with a
-              ragged right edge — see the control rule above Dropdown. */}
+              ragged right edge - see the control rule above Dropdown. */}
           <Dropdown
             label={FUNNEL_QUESTIONS.businessType}
             name="businessType"
@@ -640,7 +640,7 @@ export function FunnelForm({
               option that stored the literal string "other" and lost the one
               piece of information it exists to collect. A curated list first,
               because most of what lands in "something else" is a handful of
-              recognisable industries and picking one is faster than typing —
+              recognisable industries and picking one is faster than typing -
               and free text behind its last option, because no list is
               complete. */}
           {values.businessType === "other" ? (
@@ -677,7 +677,7 @@ export function FunnelForm({
           ) : null}
 
           {/* Five short ordinal options. Pills, because the useful thing is
-              seeing the whole ladder at once — "Just me" through "More than
+              seeing the whole ladder at once - "Just me" through "More than
               50" is a scale, and a dropdown hides scale behind a click. */}
           <Choice
             label={FUNNEL_QUESTIONS.teamSize}
@@ -739,7 +739,7 @@ export function FunnelForm({
           {hasCrm === "yes" ? (
             <>
               {/* Sixteen named products. Nobody scans sixteen pills for the one
-                  they already know the name of — this is a lookup, not a
+                  they already know the name of - this is a lookup, not a
                   comparison, which is exactly what a dropdown is for. */}
               <Dropdown
                 label={FUNNEL_QUESTIONS.crmName}
@@ -752,7 +752,7 @@ export function FunnelForm({
               />
 
               {/* The option is labelled "Other (please specify)" and until now
-                  there was nowhere to specify it — picking it stored the literal
+                  there was nowhere to specify it - picking it stored the literal
                   string "other" and the CRM they actually use was lost.
 
                   What is typed here becomes crm_name, and classifyCrm matches it
@@ -807,7 +807,7 @@ export function FunnelForm({
 
               Optional because a required field on a lead form is paid for in
               leads, and plenty of real businesses in this market genuinely have
-              no web presence — which is itself worth knowing, and is what a
+              no web presence - which is itself worth knowing, and is what a
               blank records. It is also the only free-text question here, and
               free text is the slowest thing to answer on a phone.
 
@@ -831,7 +831,7 @@ export function FunnelForm({
               autoComplete="url"
               maxLength={300}
               style={inputStyle}
-              placeholder="Website, Instagram, Google listing — whatever you have"
+              placeholder="Website, Instagram, Google listing - whatever you have"
             />
             <p className="mt-1.5 text-xs" style={{ color: "var(--mk-muted)" }}>
               Optional. It just helps us understand your business before we talk.
@@ -848,7 +848,7 @@ export function FunnelForm({
 }
 
 /* ── Outcome screens ──────────────────────────────────────────────────────
-   Three, not two — the wording still differs by outcome even though all three
+   Three, not two - the wording still differs by outcome even though all three
    are now offered a slot. And no decoy calendar: when the scheduler is
    unconfigured the visitor sees the contact screen, never a slot that is not
    real (doc 16 §0.4). That rule is absolute. */
@@ -883,7 +883,7 @@ function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
 
       {/* EVERY outcome is offered the diary, since 2026-08-10 (owner's
           instruction). It used to be qualified-only, on the reasoning that
-          "tell me more" belonged with a human rather than on a sales call —
+          "tell me more" belonged with a human rather than on a sales call -
           but nothing was ever queued for the other two paths, so in practice
           a disqualified enquirer was told "we'll be in touch" and then heard
           nothing at all. A slot they can choose themselves is a better answer
@@ -898,7 +898,7 @@ function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
 }
 
 /**
- * The slot picker — where availability actually gets chosen.
+ * The slot picker - where availability actually gets chosen.
  *
  * Renders NOTHING until it knows there are real slots. The list is fetched after
  * the outcome screen paints, and while it is loading, and if it comes back
@@ -906,7 +906,7 @@ function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
  * not genuinely bookable must never appear, so the honest fallback is the
  * default state and the calendar is what has to prove itself.
  *
- * Booking a slot is also what now sends someone to WhatsApp — see the
+ * Booking a slot is also what now sends someone to WhatsApp - see the
  * `bookSlotAction` success handler below. The message carries their name and
  * the time they just claimed, so the reply on WhatsApp already has enough
  * context.
@@ -964,8 +964,8 @@ function SlotPicker({ name }: { name: string }) {
         ) : null}
 
         {/* The automatic redirect below usually gets here first. This is the
-            fallback for when it does not — WhatsApp not installed, an in-app
-            browser refusing the scheme, a desktop visitor needing a QR scan —
+            fallback for when it does not - WhatsApp not installed, an in-app
+            browser refusing the scheme, a desktop visitor needing a QR scan -
             so the visitor is never left with nothing to click. Absent
             entirely when WhatsApp itself is unconfigured. */}
         {booked.waHref ? (
@@ -996,7 +996,7 @@ function SlotPicker({ name }: { name: string }) {
 
       {/* A dead end otherwise: the visitor is told their session expired and
           left staring at buttons that will each fail identically. Their answers
-          are already saved — step 1 and step 2 both landed — so starting again
+          are already saved - step 1 and step 2 both landed - so starting again
           costs them the form, not the enquiry, and somebody will still see it.*/}
       {expired ? (
         <div className="mt-4 rounded-xl border p-4 text-sm" style={{ borderColor: "var(--mk-line)" }}>
@@ -1043,7 +1043,7 @@ function SlotPicker({ name }: { name: string }) {
                         // qualified, and the second is reachable by typing the
                         // URL. Counting either would teach the ad account to
                         // buy near-misses. Safe to call when the pixel is
-                        // unconfigured — it is a no-op.
+                        // unconfigured - it is a no-op.
                         trackLead();
                         // Same tab, not window.open: a popup that did not come
                         // from a click is blocked by every mobile browser, and
@@ -1155,7 +1155,7 @@ function FieldError({ id, children }: { id: string; children: React.ReactNode })
  *             (16 named products) are both lookups.
  *
  *   Pills     few short options, especially an ordinal scale. Team size, budget
- *             and intent are COMPARISONS — the respondent reads the ladder and
+ *             and intent are COMPARISONS - the respondent reads the ladder and
  *             places themselves on it, and a dropdown hides the ladder behind a
  *             click. Has-CRM and wants-custom-CRM are 3 and 2 options and one of
  *             them reveals a follow-up field, so it has to be a single tap.
@@ -1171,7 +1171,7 @@ function FieldError({ id, children }: { id: string; children: React.ReactNode })
  *
  * A `<select>` renders its option list with the OPERATING SYSTEM, not the page.
  * `<option>` accepts almost no CSS in any browser, so the list can never be made
- * to match the rest of the form — it arrives as a flat grey Windows menu next to
+ * to match the rest of the form - it arrives as a flat grey Windows menu next to
  * a set of rounded brand-tinted pills. And because the list is an OS surface,
  * the page cannot govern its height or its scrolling either; on a long list
  * (sixteen CRMs) that showed up as a menu with no usable way to scroll it.
@@ -1187,7 +1187,7 @@ function FieldError({ id, children }: { id: string; children: React.ReactNode })
  *   · `role="listbox"` / `role="option"` with `aria-selected`, `aria-expanded`
  *     and `aria-activedescendant`, so a screen reader announces the same thing
  *     the native control would.
- *   · Full keyboard operation — ArrowUp/Down to move, Enter or Space to choose,
+ *   · Full keyboard operation - ArrowUp/Down to move, Enter or Space to choose,
  *     Escape to dismiss, Home/End to jump. A dropdown that only works with a
  *     mouse is a dropdown a keyboard user cannot fill in.
  *   · Focus returns to the trigger on close, so tabbing continues from the
@@ -1212,7 +1212,7 @@ function Dropdown({
   placeholder: string;
   /**
    * CONTROLLED. This used to hold its own `useState`, which meant the parent
-   * could not restore the selection after a failed submit — the form reset, the
+   * could not restore the selection after a failed submit - the form reset, the
    * pills came back, and this quietly showed "Select your industry…" again over
    * an answer the visitor had already given.
    */
@@ -1240,8 +1240,8 @@ function Dropdown({
  *
  * Split out of `Dropdown` so the salutation can sit INLINE in front of the name
  * field and still be this application's control rather than the operating
- * system's. Everything below — the roles, the keyboard map, the hidden input,
- * the scroll-into-view — is the original code unchanged; only the `<Field>`
+ * system's. Everything below - the roles, the keyboard map, the hidden input,
+ * the scroll-into-view - is the original code unchanged; only the `<Field>`
  * wrapper moved up into `Dropdown`.
  *
  * `widthStyle` is how a caller makes it compact. Nothing else about it varies:
@@ -1281,7 +1281,7 @@ function DropdownControl({
    *
    * The salutation list carries a `{ value: "", label: "No title" }` entry so a
    * mis-tap can be undone. Without the `value ?` guard the trigger matched that
-   * entry and sat there reading "No title" before anyone had touched it —
+   * entry and sat there reading "No title" before anyone had touched it -
    * an assertion about the person where the placeholder should have been an
    * invitation. "No title" now appears only in the open list, as the way out.
    */
@@ -1345,7 +1345,7 @@ function DropdownControl({
     <div ref={rootRef} className="relative" style={widthStyle} onKeyDown={onKeyDown}>
         {/* The value the form actually submits. `readOnly` is implicit on a
             hidden input, but React warns without onChange on a valued input in
-            some versions — hidden inputs are exempt, and this one is driven
+            some versions - hidden inputs are exempt, and this one is driven
             entirely by the parent's state. */}
         <input type="hidden" name={name} value={value} />
 
@@ -1388,7 +1388,7 @@ function DropdownControl({
             className="absolute left-0 z-30 mt-1 w-max min-w-full overflow-y-auto py-1"
             style={{
               // The scrolling this component exists to provide. 16rem shows
-              // about six options — enough to see there are more without the
+              // about six options - enough to see there are more without the
               // panel covering the whole form.
               maxHeight: "16rem",
               background: "var(--mk-surface)",
@@ -1437,7 +1437,7 @@ function Choice({
   label: string;
   name: string;
   options: ReadonlyArray<{ value: string; label: string }>;
-  /** Controlled. See the `Values` note — an uncontrolled pill loses its
+  /** Controlled. See the `Values` note - an uncontrolled pill loses its
    *  selection when React 19 resets the form after a failed submit. */
   value?: string;
   error?: string;
@@ -1451,7 +1451,7 @@ function Choice({
           row read "Just me | 2-5 people | 6-20 people" with three different
           widths and a ragged right edge, and the eye had to re-find the left
           edge on every line. Equal columns give one alignment to scan down.
-          Two per row on a phone, three from `sm` — options here are short
+          Two per row on a phone, three from `sm` - options here are short
           enough that three fit without truncating. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {options.map((o) => (
@@ -1467,7 +1467,7 @@ function Choice({
             <span
               className="flex min-h-11 w-full items-center justify-center rounded-xl border px-3 py-2 text-center text-sm leading-tight transition-colors duration-150 peer-checked:border-transparent peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2"
               // The red edge is a SECOND channel on top of the message below,
-              // never the only one — a colour-blind visitor gets nothing from a
+              // never the only one - a colour-blind visitor gets nothing from a
               // border alone.
               style={{ borderColor: error ? "var(--mk-danger, #dc2626)" : "var(--mk-line)" }}
               data-pill
@@ -1497,7 +1497,7 @@ const inputStyle: React.CSSProperties = {
   color: "var(--mk-ink)",
   // 16px EXACTLY, and it must not go below it. iOS Safari zooms the whole page
   // in when a focused input's font-size is under 16px, and it does not zoom
-  // back out on blur — so on an iPhone this form was shunting the layout
+  // back out on blur - so on an iPhone this form was shunting the layout
   // sideways the moment someone tapped the name field, and leaving it there
   // for the rest of the form. This was 15px.
   fontSize: "1rem",
@@ -1507,15 +1507,15 @@ const inputStyle: React.CSSProperties = {
  * A select that belongs to the same UI as everything else on this form.
  *
  * `appearance: none` is the whole point. A native select renders the operating
- * system's own control — on Windows a flat grey box with a small black
- * triangle, on macOS a rounded blue-tinted button — so a form that carefully
+ * system's own control - on Windows a flat grey box with a small black
+ * triangle, on macOS a rounded blue-tinted button - so a form that carefully
  * matches every other field to the brand ends up with one control that looks
  * borrowed from another application. Stripping the native appearance and
  * drawing the chevron ourselves is what makes it match the option pills beside
  * it: same 12px radius, same 44px height, same hairline border, same tokens.
  *
  * The chevron is an inline SVG data URI rather than an icon component, because
- * `background-image` is the only way to put a mark inside a `<select>` — its
+ * `background-image` is the only way to put a mark inside a `<select>` - its
  * children may only be `<option>`, so there is nowhere to hang an element.
  * `currentColor` cannot be used inside a data URI, so the stroke is the literal
  * muted ink; it reads correctly on both the light and dark surfaces.

@@ -12,12 +12,12 @@ const IST: QuietHours = { startHour: 21, endHour: 9, timeZone: "Asia/Kolkata" };
 
 /**
  * An instant, given as an IST wall-clock time. Built from an ISO offset string
- * rather than by arithmetic on UTC parts — the offset is the thing under test,
+ * rather than by arithmetic on UTC parts - the offset is the thing under test,
  * so computing it in the test too would let both sides be wrong together.
  */
 const at = (istClock: string): Date => new Date(`2026-08-20T${istClock}:00+05:30`);
 
-describe("inQuietWindow — wrapping window (21:00 → 09:00)", () => {
+describe("inQuietWindow - wrapping window (21:00 → 09:00)", () => {
   it("is quiet at 23:00 and at 03:00", () => {
     expect(inQuietWindow(at("23:00"), IST)).toBe(true);
     expect(inQuietWindow(at("03:00"), IST)).toBe(true);
@@ -29,7 +29,7 @@ describe("inQuietWindow — wrapping window (21:00 → 09:00)", () => {
   });
 
   it("treats the boundaries as [start, end)", () => {
-    // 21:00 exactly is quiet; 09:00 exactly is not — otherwise a message
+    // 21:00 exactly is quiet; 09:00 exactly is not - otherwise a message
     // queued for 09:00 sharp waits a further day.
     expect(inQuietWindow(at("21:00"), IST)).toBe(true);
     expect(inQuietWindow(at("09:00"), IST)).toBe(false);
@@ -37,7 +37,7 @@ describe("inQuietWindow — wrapping window (21:00 → 09:00)", () => {
   });
 });
 
-describe("inQuietWindow — non-wrapping window (01:00 → 06:00)", () => {
+describe("inQuietWindow - non-wrapping window (01:00 → 06:00)", () => {
   const night: QuietHours = { startHour: 1, endHour: 6, timeZone: "Asia/Kolkata" };
 
   it("is quiet only inside the span", () => {
@@ -47,7 +47,7 @@ describe("inQuietWindow — non-wrapping window (01:00 → 06:00)", () => {
   });
 });
 
-describe("inQuietWindow — zero-width window", () => {
+describe("inQuietWindow - zero-width window", () => {
   it("means NOTHING is quiet, not everything", () => {
     // The safe reading: the alternative freezes every send the moment
     // somebody types the same hour twice.
@@ -81,7 +81,7 @@ describe("shouldHoldForQuietHours", () => {
     expect(shouldHoldForQuietHours("reminder_call_5m", at("03:00"), IST)).toBe(false);
   });
 
-  it("holds the courtesy messages — a thank-you keeps until morning", () => {
+  it("holds the courtesy messages - a thank-you keeps until morning", () => {
     expect(shouldHoldForQuietHours("call_attended", at("03:00"), IST)).toBe(true);
     expect(shouldHoldForQuietHours("call_no_show", at("03:00"), IST)).toBe(true);
   });
@@ -96,12 +96,12 @@ describe("shouldHoldForQuietHours", () => {
 });
 
 describe("quietHoursFromEnv", () => {
-  it("is null when unset — it never invents a window", () => {
+  it("is null when unset - it never invents a window", () => {
     expect(quietHoursFromEnv({})).toBeNull();
   });
 
   it("is null for the EMPTY STRING compose passes for an unset var", () => {
-    // `${VAR:-}` arrives as "", not undefined. `??` would keep it — the exact
+    // `${VAR:-}` arrives as "", not undefined. `??` would keep it - the exact
     // mistake that silently disabled Google Calendar on 2026-08-10.
     expect(quietHoursFromEnv({ QUIET_HOURS_START: "", QUIET_HOURS_END: "" })).toBeNull();
     expect(quietHoursFromEnv({ QUIET_HOURS_START: "21", QUIET_HOURS_END: "  " })).toBeNull();

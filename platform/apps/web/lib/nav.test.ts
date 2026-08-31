@@ -11,7 +11,7 @@ const hrefs = (
 /**
  * A6, Milestone 4: `crmPrimary` (CRM_SHADOW_READ_ENABLED) reorders the CRM
  * object pages above the legacy Board/All Leads pair, without hiding either
- * — the whole point of shadow-read-first is that the fallback stays one
+ * - the whole point of shadow-read-first is that the fallback stays one
  * click away. Off by default so an unset flag renders exactly what it did
  * before this milestone.
  */
@@ -33,7 +33,7 @@ describe("ownerNavItemsFor", () => {
       "/owner/tasks",
       "/owner/inbox",
       "/owner/outreach",
-      // Kailash gap Milestones 1/2/4 — not part of the CRM_PRIMARY_HREFS
+      // Kailash gap Milestones 1/2/4 - not part of the CRM_PRIMARY_HREFS
       // group, so they stay in their declared OWNER_NAV_ITEMS order rather
       // than moving with Deals/Contacts/Accounts/Reports.
       "/owner/products",
@@ -49,17 +49,17 @@ describe("ownerNavItemsFor", () => {
     ]);
   });
 
-  it("never removes the legacy Board/All Leads pair — they stay present, just lower", () => {
+  it("never removes the legacy Board/All Leads pair - they stay present, just lower", () => {
     const withCrm = hrefs("owner", true);
     expect(withCrm).toContain("/owner/board");
     expect(withCrm).toContain("/owner/leads");
   });
 
-  it("only reorders items the role can actually see — a telecaller's hidden Deals/Reports don't appear", () => {
+  it("only reorders items the role can actually see - a telecaller's hidden Deals/Reports don't appear", () => {
     const telecallerItems = hrefs("telecaller", true);
     expect(telecallerItems).not.toContain("/owner/deals");
     expect(telecallerItems).not.toContain("/owner/reports");
-    // Of the CRM group, only Contacts/Accounts are visible to a telecaller —
+    // Of the CRM group, only Contacts/Accounts are visible to a telecaller -
     // they still move up, right after Dashboard.
     expect(telecallerItems).toEqual([
       "/owner",
@@ -81,8 +81,8 @@ describe("ownerNavItemsFor", () => {
  * actually removes items, not just reorders them, for a tenant that never
  * turned CRM on.
  */
-describe("ownerNavItemsFor — crmEnabled", () => {
-  it("defaults to true — an unset caller sees exactly what it did before this flag existed", () => {
+describe("ownerNavItemsFor - crmEnabled", () => {
+  it("defaults to true - an unset caller sees exactly what it did before this flag existed", () => {
     expect(hrefs("owner")).toEqual(hrefs("owner", false, true));
   });
 

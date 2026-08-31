@@ -27,7 +27,7 @@ import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
- * The copy Aura sends to funnel enquirers — read and write.
+ * The copy Aura sends to funnel enquirers - read and write.
  *
  * Cross-tenant like the rest of this module: a funnel enquirer has no org, so
  * the messages sent to them are not tenant-scoped either. There is exactly one
@@ -58,7 +58,7 @@ import { DbService } from "../../db/db.service";
  * variants and either can be edited.
  *
  * A stage with no email copy in the catalogue is WhatsApp-only by decision
- * (`reminder_call_5m` — five minutes is not enough notice for mail), and its
+ * (`reminder_call_5m` - five minutes is not enough notice for mail), and its
  * email variant comes back as null rather than as an empty editable box.
  */
 
@@ -123,7 +123,7 @@ export class MessageTemplatesController {
     // purpose and not defensively: a Server Action is an addressable POST
     // endpoint, so client-side validation is a convenience and this is the
     // check that actually holds. Sharing the functions means the two can never
-    // disagree about what a valid placeholder is — and this is also what
+    // disagree about what a valid placeholder is - and this is also what
     // refuses email copy for a WhatsApp-only stage.
     const check = validateTemplateBody(spec.key, parsed.data.body, channel);
     if (!check.ok) throw new BadRequestException(check.error);
@@ -208,7 +208,7 @@ export class MessageTemplatesController {
       subject: row?.subject ?? fallback.subject ?? null,
       body: row?.body ?? fallback.body,
       enabled: row?.enabled ?? true,
-      /** False means the built-in copy is showing — nobody has edited it. */
+      /** False means the built-in copy is showing - nobody has edited it. */
       customised: Boolean(row) && row?.body !== fallback.body,
       defaultSubject: fallback.subject ?? null,
       defaultBody: fallback.body,
@@ -235,8 +235,8 @@ export class MessageTemplatesController {
    *
    * Reading tolerates the missing table (the built-in copy is what would be
    * sent, so that is what the editor shows) but writing cannot, and the raw
-   * Postgres error — `relation "marketing.message_templates" does not exist`,
-   * surfaced as a 500 — tells an operator nothing they can act on. This says
+   * Postgres error - `relation "marketing.message_templates" does not exist`,
+   * surfaced as a 500 - tells an operator nothing they can act on. This says
    * which migration is missing.
    */
   private async requireTable(): Promise<void> {
@@ -247,7 +247,7 @@ export class MessageTemplatesController {
       );
     if (!rows[0]?.reg) {
       throw new ServiceUnavailableException(
-        "Messages cannot be edited yet — migration 0026_message_templates.sql has not been " +
+        "Messages cannot be edited yet - migration 0026_message_templates.sql has not been " +
           "applied to this database. The built-in wording is being sent in the meantime.",
       );
     }

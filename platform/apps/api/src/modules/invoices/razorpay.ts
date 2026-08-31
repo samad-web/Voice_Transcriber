@@ -2,12 +2,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { decryptSecret } from "@aura/db";
 
 /**
- * Razorpay Payment Links — collection only, never a charge this platform
+ * Razorpay Payment Links - collection only, never a charge this platform
  * initiates on its own. A human clicks "Collect Payment" on an invoice; the
  * link is created with notify:{sms:false,email:false} so THEY share it, the
  * same shape proven in the Kailash reference build. An invoice can only ever
  * be marked paid by razorpay-webhook.controller.ts verifying a real signed
- * delivery — creating a link here never touches `invoices.status`.
+ * delivery - creating a link here never touches `invoices.status`.
  */
 
 export interface RazorpayCredentials {
@@ -68,7 +68,7 @@ export async function createPaymentLink(
     method: "POST",
     headers: { authorization: `Basic ${auth}`, "content-type": "application/json" },
     body: JSON.stringify({
-      // Amount is in the smallest currency unit (paise for INR) — Razorpay's
+      // Amount is in the smallest currency unit (paise for INR) - Razorpay's
       // own convention, not this app's; the API layer converts before calling in.
       amount: Math.round(req.amount * 100),
       currency: req.currency,
@@ -93,7 +93,7 @@ export async function createPaymentLink(
 
 /**
  * Verifies Razorpay's `x-razorpay-signature` header against the RAW request
- * body bytes (not the re-serialised parsed object — see main.ts's `rawBody`
+ * body bytes (not the re-serialised parsed object - see main.ts's `rawBody`
  * comment for why that distinction matters). Constant-time compare, same
  * technique used everywhere else in this codebase that checks an HMAC.
  */

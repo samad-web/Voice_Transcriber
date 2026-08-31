@@ -23,29 +23,29 @@ data class CaptureProfile(
     companion object {
         /**
          * Phone calls, probed in priority order:
-         *  1. VOICE_CALL (4) — the true both-ends source. Modern Android restricts it to
+         *  1. VOICE_CALL (4) - the true both-ends source. Modern Android restricts it to
          *     system apps so it's often unavailable, BUT it also needs the in-call audio
          *     path to be UP first: [RecordingService] delays the probe
          *     ([CaptureSettings.phoneStartDelaySeconds]) so VOICE_CALL gets its best chance
          *     to initialize and capture both sides (this is what worked on the dev device).
-         *  2. VOICE_RECOGNITION (6) / 3. MIC (1) — near-end fallback that at least always
+         *  2. VOICE_RECOGNITION (6) / 3. MIC (1) - near-end fallback that at least always
          *     yields a saved recording of the local side when VOICE_CALL is blocked.
          *
          * NOTE: VOICE_COMMUNICATION (7) is deliberately NOT in the auto-probe for cellular.
          * It opens readily (so it would WIN the probe) but on many devices delivers digital
-         * SILENCE on a cellular call — which RecordingService discards as an empty file,
+         * SILENCE on a cellular call - which RecordingService discards as an empty file,
          * i.e. "nothing recorded". It stays available as a manual source override for
          * devices where it genuinely carries both ends.
          */
         val PHONE = CaptureProfile(
             sources = listOf(
-                MediaRecorder.AudioSource.VOICE_CALL,          // 4 — uplink+downlink where allowed
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,   // 6 — reliable near-end capture
-                MediaRecorder.AudioSource.MIC,                 // 1 — raw near-end fallback
+                MediaRecorder.AudioSource.VOICE_CALL,          // 4 - uplink+downlink where allowed
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,   // 6 - reliable near-end capture
+                MediaRecorder.AudioSource.MIC,                 // 1 - raw near-end fallback
             ),
             // Off by default: on this device, forcing the loudspeaker (which changes the
             // audio mode) DISRUPTS in-call capture and the recording goes silent. Keep it
-            // opt-in — the rep taps Speaker manually to get the far end into the mic.
+            // opt-in - the rep taps Speaker manually to get the far end into the mic.
             forceSpeakerForMicSources = false,
         )
 

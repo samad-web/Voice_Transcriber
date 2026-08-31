@@ -20,13 +20,13 @@ import { saveFunnelCriteriaAction } from "./actions";
  *
  * A rule is conditions AND'd together; a lead qualifies if ANY rule matches.
  * That sentence is printed above the rules, because an editor that does not
- * state its own logic is one an operator has to guess at — and a wrong guess
+ * state its own logic is one an operator has to guess at - and a wrong guess
  * here silently re-sorts every lead that arrives afterwards.
  *
  * ── NOTHING SAVES UNTIL SAVE IS PRESSED ────────────────────────────────────
  *
  * Every edit is local until then. Auto-saving a rule builder means a half-built
- * rule — one condition typed, the second not yet — is briefly the live
+ * rule - one condition typed, the second not yet - is briefly the live
  * definition of a qualified lead, and any enquiry arriving in that window is
  * judged by it.
  */
@@ -59,7 +59,7 @@ export function CriteriaEditor({
    * Reported upwards so the tab strip can mark this panel as unsaved.
    *
    * Without it the only evidence of a pending change is on a screen the
-   * operator has navigated away from — they toggle qualification off, switch to
+   * operator has navigated away from - they toggle qualification off, switch to
    * Leads, and every visible signal says the funnel is still filtering.
    */
   onDirtyChange?: (dirty: boolean) => void;
@@ -100,7 +100,7 @@ export function CriteriaEditor({
         <p className="font-semibold">Could not load the qualification rules</p>
         <p className="mt-1">{loadError}</p>
         <p className="mt-2 text-xs text-text-muted">
-          The funnel keeps working meanwhile — it falls back to the rules built into the release,
+          The funnel keeps working meanwhile - it falls back to the rules built into the release,
           which are the same three it has always applied.
         </p>
       </div>
@@ -117,7 +117,7 @@ export function CriteriaEditor({
             <p className="mt-1 max-w-xl text-xs text-text-muted">
               {criteria.enabled
                 ? "Every enquiry is measured against the rules below. Anyone who matches none of them is marked “Didn’t qualify”."
-                : "Turned off. EVERY enquiry is marked qualified, whatever they answered — the rules below are kept but not applied. Booking is open to everyone either way."}
+                : "Turned off. EVERY enquiry is marked qualified, whatever they answered - the rules below are kept but not applied. Booking is open to everyone either way."}
             </p>
           </div>
           <button
@@ -258,7 +258,7 @@ export function CriteriaEditor({
             walk away thinking the funnel is filtering. */}
         {criteria.enabled &&
         criteria.rules.filter((r) => r.enabled && r.conditions.length > 0).length === 0 ? (
-          <StatusChip tone="danger">No rule can match — everyone will be disqualified</StatusChip>
+          <StatusChip tone="danger">No rule can match - everyone will be disqualified</StatusChip>
         ) : null}
       </div>
 
@@ -303,7 +303,7 @@ function ConditionRow({
           const next = CRITERIA_FIELD_OPTIONS[field];
           // Values and operator BOTH reset with the question. Keeping either
           // would leave a condition referring to answers the new question does
-          // not have — which the validator rejects on save, after the operator
+          // not have - which the validator rejects on save, after the operator
           // has forgotten what they changed.
           onChange({
             field,

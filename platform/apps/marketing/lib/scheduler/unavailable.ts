@@ -1,7 +1,7 @@
 import type { Scheduler, Slot } from "./types";
 
 /**
- * The scheduler you get when Google Calendar is not configured — doc 16 §0.4.
+ * The scheduler you get when Google Calendar is not configured - doc 16 §0.4.
  *
  * It offers nothing and can book nothing. That is the whole design: the "no
  * fake slot" rule is enforced by making a fake slot unrepresentable rather than
@@ -10,7 +10,7 @@ import type { Scheduler, Slot } from "./types";
  * `availableSlots` resolving to `[]` (not rejecting) is deliberate. The
  * qualified path's own logic is "render the picker if there are slots, else
  * render the contact screen", which is the correct behaviour for a full
- * calendar too — so the unconfigured case travels the exact same code path a
+ * calendar too - so the unconfigured case travels the exact same code path a
  * configured-but-busy calendar does, and that path is therefore exercised in
  * every build rather than only after credentials land.
  *
@@ -37,12 +37,12 @@ export class UnavailableScheduler implements Scheduler {
   }
 
   /**
-   * A no-op, and NOT a throw — unlike `book` above.
+   * A no-op, and NOT a throw - unlike `book` above.
    *
    * The asymmetry is deliberate. Booking through an unconfigured scheduler
    * means a caller invented a slot, which is a bug worth failing loudly on.
    * Cancelling through one means a slot that was booked while a calendar was
-   * configured is being released after it stopped being — a deployment change,
+   * configured is being released after it stopped being - a deployment change,
    * not a caller error. The desired end state (no event) already holds, so
    * there is nothing to do and nothing to complain about; throwing would break
    * a legitimate reschedule for a reason the person rescheduling cannot fix.

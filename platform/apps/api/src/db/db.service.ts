@@ -3,7 +3,7 @@ import { closeAllPools, getAdminPool, withOrgContext } from "@aura/db";
 
 @Injectable()
 export class DbService implements OnModuleDestroy {
-  /** Tenant-scoped transaction — RLS enforced via app.org_id. */
+  /** Tenant-scoped transaction - RLS enforced via app.org_id. */
   readonly withOrg = withOrgContext;
 
   /**

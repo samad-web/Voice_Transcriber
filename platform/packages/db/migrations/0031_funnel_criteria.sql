@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0031 — editable qualification criteria
+-- 0031 - editable qualification criteria
 --
 -- Who counts as a lead used to be three clauses hard-coded in
 -- packages/shared/src/funnel.ts. Changing them meant a code change, a review, a
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS marketing.funnel_criteria (
   -- lead qualified" with nothing to say which wins.
   id         int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
 
-  -- Master switch. FALSE means everyone qualifies — see the note in
+  -- Master switch. FALSE means everyone qualifies - see the note in
   -- packages/shared/src/funnel-criteria.ts for why that rather than a third
   -- status.
   enabled    boolean NOT NULL DEFAULT true,
@@ -88,7 +88,7 @@ ON CONFLICT (id) DO NOTHING;
 -- make every future lead qualify, quietly, with no audit trail.
 --
 -- Table-scoped, not column-scoped, so columns added by a later migration are
--- covered — the mistake 0027 and 0029 both had to correct.
+-- covered - the mistake 0027 and 0029 both had to correct.
 ------------------------------------------------------------------------------
 
 GRANT SELECT ON marketing.funnel_criteria TO aura_marketing;

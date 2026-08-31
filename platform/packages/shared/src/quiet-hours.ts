@@ -6,14 +6,14 @@
  * Nothing in this platform has ever checked the time of day before sending.
  * `booking_notifications` drains whatever is due whenever the worker wakes, so
  * a nurture message queued 72 hours earlier fires at whatever hour its timer
- * happens to expire — including 03:00, to a stranger's personal WhatsApp,
+ * happens to expire - including 03:00, to a stranger's personal WhatsApp,
  * from a business they enquired at once. That is the kind of thing a person
  * blocks the number over, and it is invisible in testing because a test never
  * runs at 3am.
  *
  * ── WHY IT IS NOT A BLANKET GATE ────────────────────────────────────────
  *
- * The obvious implementation — "hold everything until 09:00" — is wrong for
+ * The obvious implementation - "hold everything until 09:00" - is wrong for
  * this outbox, because not every template is a marketing nudge. A
  * `reminder_call_1h` deferred past the quiet window arrives AFTER the call it
  * was reminding someone about, which is worse than arriving late at night: it
@@ -49,7 +49,7 @@ export interface QuietHours {
   startHour: number;
   /** Local hour sending may resume, 0-23. */
   endHour: number;
-  /** IANA zone the hours are expressed in — the business's, not the reader's. */
+  /** IANA zone the hours are expressed in - the business's, not the reader's. */
   timeZone: string;
 }
 
@@ -58,7 +58,7 @@ export interface QuietHours {
  *
  * Uses Intl rather than a fixed offset. B2 Consultants' version of this file
  * hard-codes +05:30 and says so ("IST is a fixed +05:30 with no DST, so this
- * is exact arithmetic") — true for that business, but this platform ships to
+ * is exact arithmetic") - true for that business, but this platform ships to
  * whoever sets SCHEDULER_TIMEZONE, and a fixed offset would be silently an
  * hour wrong for half the year in any zone that observes DST.
  */
@@ -100,7 +100,7 @@ export function inQuietWindow(instant: Date, quiet: QuietHours): boolean {
  * The next instant at which the window ends and sending may resume.
  *
  * Returned as an absolute instant so the caller can write it straight into
- * `next_attempt_at` — the outbox already drains on that column, so deferring
+ * `next_attempt_at` - the outbox already drains on that column, so deferring
  * is a timestamp update and needs no new state anywhere.
  */
 export function quietWindowEndsAt(instant: Date, quiet: QuietHours): Date {
@@ -129,7 +129,7 @@ export function shouldHoldForQuietHours(
 /**
  * Read the window from the environment, or null when it is not configured.
  *
- * Returns null — not a default window — when the vars are absent. Inventing a
+ * Returns null - not a default window - when the vars are absent. Inventing a
  * quiet window for an existing deployment would silently change when its
  * messages go out, which is a policy decision belonging to whoever runs it.
  *

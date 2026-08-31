@@ -5,8 +5,8 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
  *
  * Originally lived only in `crm/actions.ts`. `calls/actions.ts` and
  * `instances/[id]/actions.ts` each hand-rolled their own version of this same
- * try/catch — with drifting error formats between them (`API 500` in one file,
- * `API 500: {"message":"..."}` in another) — which is exactly the kind of
+ * try/catch - with drifting error formats between them (`API 500` in one file,
+ * `API 500: {"message":"..."}` in another) - which is exactly the kind of
  * inconsistency that makes an operator's bug report useless. Hoisted here so
  * all three files fail the same way.
  *
@@ -46,6 +46,6 @@ export async function call<T>(
     }
     return { data: payload as T, status: res.status };
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }

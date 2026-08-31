@@ -19,7 +19,7 @@ import { NewQuotationDialog } from "./new-quotation-dialog";
 import { formatMoney } from "../lib/format-money";
 import type { Quotation, QuotationStatus } from "./actions";
 
-export const metadata: Metadata = { title: "Quotations — Aura" };
+export const metadata: Metadata = { title: "Quotations - Aura" };
 
 const PAGE_SIZE = 50;
 
@@ -143,7 +143,7 @@ export default async function QuotationsPage({
                   <TableCell className="text-text-muted">
                     {quotation.valid_until
                       ? new Date(quotation.valid_until).toLocaleDateString()
-                      : "—"}
+                      : "-"}
                   </TableCell>
                 </TableRow>
               ))}

@@ -11,7 +11,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const PART_SIZE_BYTES = 5 * 1024 * 1024;
 
-/** Direct-to-S3 uploads — audio never flows through the API process (§6.1). */
+/** Direct-to-S3 uploads - audio never flows through the API process (§6.1). */
 @Injectable()
 export class S3Service {
   private static readonly creds = {
@@ -20,7 +20,7 @@ export class S3Service {
   };
   private static readonly region = process.env.S3_REGION ?? "ap-south-1";
 
-  /** Internal endpoint (localhost/MinIO) — all server-side reads/writes go here. */
+  /** Internal endpoint (localhost/MinIO) - all server-side reads/writes go here. */
   private readonly client = new S3Client({
     endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
     region: S3Service.region,
@@ -29,7 +29,7 @@ export class S3Service {
   });
 
   /**
-   * Public endpoint (`S3_PUBLIC_ENDPOINT`, e.g. https://storage.<APP_DOMAIN>) —
+   * Public endpoint (`S3_PUBLIC_ENDPOINT`, e.g. https://storage.<APP_DOMAIN>) -
    * used to presign every URL that leaves the server: the device's multipart
    * upload parts and the console's playback GET. Falls back to the internal
    * endpoint when unset, which is what makes local dev work unconfigured.
@@ -102,13 +102,13 @@ export class S3Service {
   }
 
   /**
-   * Short-lived presigned GET — lets the web player stream audio without the
+   * Short-lived presigned GET - lets the web player stream audio without the
    * bytes touching the API.
    *
    * Signed with the PUBLIC client: this URL is handed to a browser, so it must
    * address storage the way the browser can reach it. In production the internal
    * endpoint is `http://minio:9000`, a Docker-network name that resolves nowhere
-   * outside the compose network — signing with it produced a URL the player
+   * outside the compose network - signing with it produced a URL the player
    * could never load. (It only appeared to work in dev, where the internal
    * endpoint happens to be localhost and the browser is on the same host.)
    *

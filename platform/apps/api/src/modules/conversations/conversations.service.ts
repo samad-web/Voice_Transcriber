@@ -16,7 +16,7 @@ export interface ResolvedChannel {
   workspaceId: string | null;
   channel: "whatsapp" | "sms" | "email";
   provider: string;
-  /** Still encrypted — decrypt at the point of use, same discipline as api_key elsewhere. */
+  /** Still encrypted - decrypt at the point of use, same discipline as api_key elsewhere. */
   forwardSecret: string | null;
 }
 
@@ -32,7 +32,7 @@ export interface IngestResult {
 /**
  * Hash a peer address the way `contacts.phone_hash` is hashed.
  *
- * The canonical input is DIGITS ONLY — no leading "+" — because that is what
+ * The canonical input is DIGITS ONLY - no leading "+" - because that is what
  * calls.controller.ts hashes when it projects a call, and crm-objects.ts
  * dedupes contacts on `(org_id, phone_hash)` using the same value. Hashing
  * "+919…" here would produce a different digest for the same person and every
@@ -60,7 +60,7 @@ export class ConversationsService {
   /**
    * Turn an anonymous webhook token into a tenant.
    *
-   * Runs on the admin pool because this is the step that DECIDES the org — it
+   * Runs on the admin pool because this is the step that DECIDES the org - it
    * cannot run inside the org context it is trying to establish. Same
    * bootstrap exception DbService.adminPool() documents for enrollment tokens.
    * Everything after this point runs under withOrg().
@@ -94,7 +94,7 @@ export class ConversationsService {
   /**
    * A `message.status` delivery-lifecycle update for a message we already
    * sent (matched by the provider's own id, stored as `external_id` when we
-   * sent it). Silently a no-op for an id we don't recognise — a status update
+   * sent it). Silently a no-op for an id we don't recognise - a status update
    * for a message this org never sent is not an error worth 500ing over.
    */
   async updateMessageStatus(
@@ -186,7 +186,7 @@ export class ConversationsService {
       const messageId = inserted[0]?.id ?? null;
 
       if (messageId === null) {
-        // A replay. Undo the unread bump the upsert above already applied —
+        // A replay. Undo the unread bump the upsert above already applied -
         // otherwise a provider retrying five times leaves a thread claiming
         // five unread messages that do not exist.
         await client.query(
@@ -205,7 +205,7 @@ export class ConversationsService {
 
       // ── contact matching ──────────────────────────────────────────────
       // Only ever fills a NULL. A human who claimed this thread onto a
-      // contact outranks the matcher — safety rule 2, the same line 0045 drew
+      // contact outranks the matcher - safety rule 2, the same line 0045 drew
       // for custom-field values.
       let matched = conversation.contact_id !== null;
       if (!matched && msg.channel !== "email") {
@@ -239,7 +239,7 @@ export class ConversationsService {
         matched = (rowCount ?? 0) > 0;
       }
 
-      // Observability for the channel — "has anything ever arrived here?".
+      // Observability for the channel - "has anything ever arrived here?".
       await client.query(
         `UPDATE messaging_channels SET last_inbound_at = now() WHERE id = $1`,
         [channel.id],

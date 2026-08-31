@@ -9,7 +9,7 @@ import { cn } from "@/lib/cn";
    ──────────────────────────────────────────────────────────────────────────── */
 
 /** The one horizontal measure the whole site uses. 1152px content, 24px gutter
- *  that tightens to 16px on a phone — the buyer is on a phone (doc 10 §9). */
+ *  that tightens to 16px on a phone - the buyer is on a phone (doc 10 §9). */
 export function Container({
   children,
   className,
@@ -60,7 +60,7 @@ export function Section({
 }
 
 /**
- * Section heading — eyebrow, title, optional lead paragraph.
+ * Section heading - eyebrow, title, optional lead paragraph.
  *
  * Sentence case, always (doc 16 §1.2). `as` exists because a page may need an
  * h2 in one place and an h3 in another; the default is h2 because there is

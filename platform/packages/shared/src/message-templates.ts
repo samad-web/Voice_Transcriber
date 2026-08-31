@@ -10,7 +10,7 @@
  *                 to when the database has no row
  *
  * The stored copy lives in `marketing.message_templates` (migration 0026). The
- * bodies below are the FALLBACK, not the source of truth — but they are a real
+ * bodies below are the FALLBACK, not the source of truth - but they are a real
  * fallback, not a formality. If the table is unreachable or a row is missing, a
  * rejection still goes out in slightly older words rather than dead-lettering,
  * which would leave a person who enquired never hearing back at all.
@@ -20,8 +20,8 @@
  * Until migration 0053 the email copy lived in
  * `apps/worker/src/pipeline/funnel-followup.ts` as three TypeScript functions,
  * editable only by a developer with a deploy, while WhatsApp copy was editable
- * from the console. 0026's own header set out the fix — "when email goes live,
- * seed it here and delete the literals there, in that order" — and this is it:
+ * from the console. 0026's own header set out the fix - "when email goes live,
+ * seed it here and delete the literals there, in that order" - and this is it:
  * every stage carries an optional `email` variant alongside its `whatsapp`
  * body, both stored per (key, channel) in the same table, both editable in the
  * same console screen.
@@ -56,7 +56,7 @@ export const MESSAGE_CHANNELS: readonly MessageChannel[] = ["whatsapp", "email"]
 /**
  * Every placeholder the renderer understands, and where its value comes from.
  *
- * `{{first_name}}`, `{{name}}` and `{{title_name}}` always resolve — see
+ * `{{first_name}}`, `{{name}}` and `{{title_name}}` always resolve - see
  * `fillTemplate`, which falls back to "there" rather than leaving a hole.
  *
  * Every stage's default copy greets with `{{title_name}}`, so a lead who chose
@@ -81,7 +81,7 @@ export const PLACEHOLDER_HELP: Record<string, string> = {
     "open slot. The sentence is dropped when there is no link to give.",
   resume_link:
     "A private link back into this person’s own half-finished form. " +
-    "Required — a nudge without it has nothing to click.",
+    "Required - a nudge without it has nothing to click.",
 };
 
 /**
@@ -99,7 +99,7 @@ export const PLACEHOLDER_HELP: Record<string, string> = {
  *
  * `reschedule_link` is deliberately NOT here even though it looks similar. A
  * reminder whose link could not be minted still says the one thing it exists to
- * say — your call is tomorrow at 6:30 — so dropping the offer to move it is far
+ * say - your call is tomorrow at 6:30 - so dropping the offer to move it is far
  * better than dead-lettering the reminder entirely and letting someone miss the
  * call. A resume nudge has no such residue: without its link it is only an
  * accusation that you did not finish something.
@@ -119,7 +119,7 @@ export function missingRequiredPlaceholders(
 /** The email variant of a stage. Absent means the stage is WhatsApp-only. */
 export interface EmailCopy {
   subject: string;
-  /** Plain text. No HTML — it renders everywhere and cannot carry a tracker. */
+  /** Plain text. No HTML - it renders everywhere and cannot carry a tracker. */
   body: string;
 }
 
@@ -140,7 +140,7 @@ export interface MessageTemplateSpec {
   live: boolean;
   /** Why it does not fire yet. Only meaningful when `live` is false. */
   blockedBy?: string;
-  /** Fallback copy — see the module header. */
+  /** Fallback copy - see the module header. */
   whatsapp: string;
   /** Fallback copy for the email variant. Absent = WhatsApp-only stage. */
   email?: EmailCopy;
@@ -213,7 +213,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
         "call recording rollout.",
         "",
         "If your requirements change, or you would like to talk sooner, just reply",
-        "to this email — it reaches a person.",
+        "to this email - it reaches a person.",
         SIGN_OFF,
       ].join("\n"),
     },
@@ -224,7 +224,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     when: "For someone who chose “tell me more” about a CRM built around their business.",
     allowedPlaceholders: ["first_name", "name", "title_name"],
     live: false,
-    blockedBy: "Nothing queues this yet — same reason as “Didn’t qualify”.",
+    blockedBy: "Nothing queues this yet - same reason as “Didn’t qualify”.",
     whatsapp:
       "Hi {{title_name}}, thanks for asking about a CRM built around your business. Reply here and tell us " +
       "how you sell today, and we'll say honestly whether you need a new system or just a " +
@@ -238,12 +238,12 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
       body: [
         "Hi {{title_name}},",
         "",
-        "Thanks for asking about a CRM built around your business — here is the",
+        "Thanks for asking about a CRM built around your business - here is the",
         "short version, since you asked to hear more rather than to book a call.",
         "",
         "Most CRMs make you describe your business in someone else's words: deals,",
         "opportunities, sales cycles. We build yours around what you actually",
-        "track — brick type and quantity, site location, quotation status,",
+        "track - brick type and quantity, site location, quotation status,",
         "follow-up date. Whatever your calls are already about.",
         "",
         "Aura then feeds it automatically. Every qualified call becomes a record",
@@ -263,7 +263,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     // for. "Booked a call" is accurate and was unfindable: somebody hunting for
     // the message that carries the join link scanned five headings, saw nothing
     // with "Meet" in it, and concluded the template did not exist.
-    label: "Booked a call — sends the Google Meet link",
+    label: "Booked a call - sends the Google Meet link",
     when:
       "Sent on WhatsApp within a minute of someone picking a slot on the website. " +
       "Carries the time and the Google Meet link. Google also emails them a calendar invite.",
@@ -281,7 +281,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     // old promise is messaged retrospectively.
     live: true,
     // Must stay character-identical to the body migration 0029 wrote into
-    // `marketing.message_templates`, which is what production actually sends —
+    // `marketing.message_templates`, which is what production actually sends -
     // the stored row wins over this fallback. message-templates.test.ts holds
     // the two together; rewording here alone would change nothing that is sent
     // and quietly break "Restore original".
@@ -316,7 +316,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     live: false,
     blockedBy:
       "The reminder job is built but switched off. It only runs where the worker has " +
-      "FUNNEL_REMINDERS_ENABLED=true — this is the one message nobody asked us to send, so " +
+      "FUNNEL_REMINDERS_ENABLED=true - this is the one message nobody asked us to send, so " +
       "turning it on is a deliberate decision rather than a default.",
     whatsapp:
       "Hi {{title_name}}, following up on your enquiry about Aura. " +
@@ -326,7 +326,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
       body: [
         "Hi {{title_name}},",
         "",
-        "Following up on your enquiry about Aura — we never heard back, which is",
+        "Following up on your enquiry about Aura - we never heard back, which is",
         "completely fine, but we did not want to let it go unanswered either.",
         "",
         "If you would still like to see what your own calls are saying, reply to",
@@ -337,7 +337,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "resume_form",
-    label: "Didn’t finish the form — first nudge",
+    label: "Didn’t finish the form - first nudge",
     when:
       "Sent about 2 hours after someone gives their details and never answers the " +
       "qualifying questions. Carries a private link back into their own half-finished form.",
@@ -348,7 +348,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     // funnel messages, so brevity is a deliverability decision.
     whatsapp:
       "Hi {{title_name}}, you started telling us about your business on Aura but didn't finish. " +
-      "It takes under a minute — pick up where you left off: {{resume_link}}",
+      "It takes under a minute - pick up where you left off: {{resume_link}}",
     email: {
       subject: "You didn’t quite finish",
       body: [
@@ -364,7 +364,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "resume_form_2",
-    label: "Didn’t finish the form — final nudge",
+    label: "Didn’t finish the form - final nudge",
     when:
       "Sent about 2 days after the first nudge, and only if they still haven’t finished. " +
       "Nobody gets more than these two.",
@@ -396,7 +396,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
 
   {
     key: "reminder_call_24h",
-    label: "Call reminder — the day before",
+    label: "Call reminder - the day before",
     when: "Sent 24 hours before a booked call. Carries the time and a link to move it.",
     allowedPlaceholders: [
       "first_name",
@@ -409,7 +409,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     live: false,
     blockedBy:
       "Seeded switched off. The reminder sweep is new and these go to people with a real " +
-      "appointment days away — read the wording and turn it on when you are happy with it.",
+      "appointment days away - read the wording and turn it on when you are happy with it.",
     whatsapp:
       "Hi {{title_name}}, a reminder that your call with Aura is tomorrow at {{slot}}. " +
       "Need a different time? Reschedule here: {{reschedule_link}}",
@@ -429,7 +429,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "reminder_call_1h",
-    label: "Call reminder — an hour before",
+    label: "Call reminder - an hour before",
     when: "Sent about an hour before a booked call.",
     allowedPlaceholders: [
       "first_name",
@@ -440,7 +440,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
       "reschedule_link",
     ],
     live: false,
-    blockedBy: "Seeded switched off — same reason as the day-before reminder.",
+    blockedBy: "Seeded switched off - same reason as the day-before reminder.",
     whatsapp:
       "Hi {{title_name}}, your call with Aura is in about an hour, at {{slot}}. " +
       "Can't make it? Reschedule here: {{reschedule_link}}",
@@ -460,7 +460,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "reminder_call_5m",
-    label: "Call reminder — five minutes before",
+    label: "Call reminder - five minutes before",
     when: "Sent five minutes before a booked call. The last nudge before it starts.",
     allowedPlaceholders: [
       "first_name",
@@ -471,7 +471,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
       "reschedule_link",
     ],
     live: false,
-    blockedBy: "Seeded switched off — same reason as the day-before reminder.",
+    blockedBy: "Seeded switched off - same reason as the day-before reminder.",
     // No email variant, deliberately: five minutes is not enough notice for
     // mail to be read, and a message that arrives after the thing it announces
     // is worse than none. WhatsApp only.
@@ -487,13 +487,13 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     live: true,
     whatsapp:
       "Hi {{title_name}}, thanks for the call today. It was good to talk through what you're " +
-      "looking for — we'll follow up with next steps shortly.",
+      "looking for - we'll follow up with next steps shortly.",
     email: {
       subject: "Thanks for your time today",
       body: [
         "Hi {{title_name}},",
         "",
-        "Thanks for the call today — it was good to talk through what you are",
+        "Thanks for the call today - it was good to talk through what you are",
         "looking for.",
         "",
         "We will follow up shortly with the next steps. In the meantime, if",
@@ -513,13 +513,13 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     // complaint is how a recoverable lead becomes a lost one.
     whatsapp:
       "Hi {{title_name}}, we had a call scheduled today and didn't manage to connect. " +
-      "No trouble at all — pick a new time whenever suits: {{reschedule_link}}",
+      "No trouble at all - pick a new time whenever suits: {{reschedule_link}}",
     email: {
       subject: "Sorry we missed you",
       body: [
         "Hi {{title_name}},",
         "",
-        "We had a call scheduled today and did not manage to connect — no trouble",
+        "We had a call scheduled today and did not manage to connect - no trouble",
         "at all, these things happen.",
         "",
         "Pick a new time whenever it suits you: {{reschedule_link}}",
@@ -539,14 +539,14 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
 
   {
     key: "nurture_1",
-    label: "After a no-show — first note",
+    label: "After a no-show - first note",
     when: "Sent 24 hours after a call is marked not attended, if they haven’t converted.",
     allowedPlaceholders: ["first_name", "name", "title_name", "reschedule_link"],
     live: false,
     blockedBy:
       "Switched off, and it must stay off until the quote in it is approved. This message " +
       "attributes a specific claim (“five times”) to RD Interlock Bricks in a one-to-one " +
-      "message — see the warning in apps/marketing/components/proof.tsx. Get it in writing " +
+      "message - see the warning in apps/marketing/components/proof.tsx. Get it in writing " +
       "from the customer, or reword it, before enabling.",
     whatsapp:
       "Hi {{title_name}}, following up after the call we missed. One of our customers, " +
@@ -558,7 +558,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
       body: [
         "Hi {{title_name}},",
         "",
-        "Following up after the call we missed — no rush on your side.",
+        "Following up after the call we missed - no rush on your side.",
         "",
         "One of our customers, RD Interlock Bricks, put it this way:",
         "",
@@ -573,12 +573,12 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "nurture_2",
-    label: "After a no-show — second note",
+    label: "After a no-show - second note",
     when: "Sent 48 hours after a call is marked not attended, if they haven’t converted.",
     allowedPlaceholders: ["first_name", "name", "title_name", "reschedule_link"],
     live: false,
     blockedBy:
-      "Switched off for the same reason as the first note — the quote attributed to Fortune " +
+      "Switched off for the same reason as the first note - the quote attributed to Fortune " +
       "Innovatives has not been approved by them in writing.",
     whatsapp:
       "Hi {{title_name}}, another quick note. Fortune Innovatives told us: \"The insights are " +
@@ -605,7 +605,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
   },
   {
     key: "nurture_3",
-    label: "After a no-show — last note",
+    label: "After a no-show - last note",
     when: "Sent 72 hours after a call is marked not attended, if they haven’t converted.",
     allowedPlaceholders: ["first_name", "name", "title_name", "reschedule_link"],
     live: false,
@@ -617,7 +617,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplateSpec[] = [
     // has ended is how a prospect starts ignoring the sender rather than the
     // message.
     whatsapp:
-      "Hi {{title_name}}, last note from us on this — the offer to talk stands whenever " +
+      "Hi {{title_name}}, last note from us on this - the offer to talk stands whenever " +
       "you're ready, no pressure. Pick a time here if that changes: {{reschedule_link}}",
     email: {
       subject: "Leaving this with you",
@@ -668,7 +668,7 @@ export function placeholdersIn(body: string): string[] {
  *
  * `{{meet_link}}` is the original case. A Meet URL exists only when Google
  * Calendar is configured and returned one, and the neutral-word fallback below
- * would otherwise produce "Join here: there ." on a real customer's phone —
+ * would otherwise produce "Join here: there ." on a real customer's phone -
  * which is worse than saying nothing about joining at all.
  *
  * `{{reschedule_link}}` behaves the same way and for the same reason: a
@@ -682,7 +682,7 @@ const OPTIONAL_PLACEHOLDERS = new Set(["meet_link", "reschedule_link"]);
  * `first_name`, `name` and `title_name` fall back to "there" rather than to an
  * empty string, because "Hi , thanks for your interest" is the exact kind of
  * message that tells the reader they are talking to a script. Anything
- * unresolved — which `validateTemplateBody` should have caught at save time —
+ * unresolved - which `validateTemplateBody` should have caught at save time -
  * is replaced with the same neutral word rather than left as literal braces on
  * someone's phone.
  *
@@ -713,15 +713,15 @@ export function fillTemplate(body: string, vars: Record<string, string | undefin
 /**
  * Capitalise the first letter of each word, and change nothing else.
  *
- * People type their name into a web form in whatever case is convenient —
- * "aakash kummar" is extremely common on a phone keyboard — and "Hi aakash,"
+ * People type their name into a web form in whatever case is convenient -
+ * "aakash kummar" is extremely common on a phone keyboard - and "Hi aakash,"
  * reads as sloppy in a message from a company they are considering paying.
  *
  * ── WHY ONLY THE FIRST LETTER ──────────────────────────────────────────────
  *
  * The tempting version lowercases the rest, turning "AAKASH" into "Aakash".
  * It also turns "McDonald" into "Mcdonald", "D'Souza" into "D'souza" and
- * "MD Imran" into "Md Imran" — mangling names that were typed correctly in
+ * "MD Imran" into "Md Imran" - mangling names that were typed correctly in
  * order to fix ones that were not. Getting somebody's name wrong in the first
  * word of a sales message is worse than leaving it shouty, so the rest of each
  * word is left exactly as the person typed it.
@@ -733,14 +733,14 @@ export function fillTemplate(body: string, vars: Record<string, string | undefin
 export function capitalizeName(name: string): string {
   // \p{L} rather than [a-z]: Tamil, Devanagari and accented Latin all appear in
   // this funnel, and a plain ASCII test would silently skip them. Scripts
-  // without letter case are unaffected — toUpperCase() is a no-op there.
+  // without letter case are unaffected - toUpperCase() is a no-op there.
   return name.replace(/(^|\s)(\p{L})/gu, (_m, lead: string, letter: string) => lead + letter.toUpperCase());
 }
 
 /**
  * First word of a name, capitalised, if it is usable as a greeting.
  *
- * A single letter is not — "Hi R," reads as a mail merge that went wrong — so
+ * A single letter is not - "Hi R," reads as a mail merge that went wrong - so
  * it falls through to the neutral form.
  */
 export function firstNameOf(name: string): string | undefined {
@@ -757,17 +757,17 @@ const SALUTATION_PREFIX: Record<string, string> = {
 };
 
 /**
- * "Mr. Ramesh Kumar" — the salutation the person chose, in front of their name.
+ * "Mr. Ramesh Kumar" - the salutation the person chose, in front of their name.
  *
  * The WHOLE name, not a surname. Picking one out means guessing which word it
- * is, and in Tamil Nadu — this funnel's actual market — the last word is
+ * is, and in Tamil Nadu - this funnel's actual market - the last word is
  * frequently a father's name or an initial rather than a family name, so
  * "Mr. Kumar" is a coin flip where "Mr. Ramesh Kumar" is always correct and is
  * ordinary Indian business register besides.
  *
  * Returns undefined when they chose no salutation, or chose "prefer not to
  * say". The caller then falls back to `firstNameOf`, which falls back to the
- * neutral word — so a template using `{{title_name}}` degrades to "Hi Ramesh,"
+ * neutral word - so a template using `{{title_name}}` degrades to "Hi Ramesh,"
  * and then to "Hi there," rather than to "Hi ,".
  */
 export function titleNameOf(salutation: string | null | undefined, name: string): string | undefined {
@@ -782,7 +782,7 @@ export const MESSAGE_BODY_MAX = 1200;
 /**
  * Email gets a bigger ceiling than WhatsApp, and the difference is the point.
  *
- * 1200 characters is a WhatsApp DELIVERABILITY limit — Evolution drives an
+ * 1200 characters is a WhatsApp DELIVERABILITY limit - Evolution drives an
  * ordinary account over the unofficial web protocol, and long, uniform,
  * business-shaped chat messages are what gets one flagged. Email has no such
  * exposure and its templates are legitimately five paragraphs with a signature.
@@ -814,7 +814,7 @@ export function validateTemplateBody(
   if (!spec) return { ok: false, error: `Unknown template "${key}"` };
 
   if (channel === "email" && !spec.email) {
-    // Not a validation quibble — it means somebody is about to store email copy
+    // Not a validation quibble - it means somebody is about to store email copy
     // for a stage nothing will ever read on that channel.
     return {
       ok: false,

@@ -13,7 +13,7 @@ export type TimeMode = "datetime" | "date" | "time";
 /** Locale/ICU-independent timestamp for SSR + first client paint (no mismatch). */
 function isoStable(iso: string, mode: TimeMode): string {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
   const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
   if (mode === "date") return date;
@@ -22,7 +22,7 @@ function isoStable(iso: string, mode: TimeMode): string {
 }
 
 /**
- * Absolute timestamp rendered in the viewer's local time — without a hydration
+ * Absolute timestamp rendered in the viewer's local time - without a hydration
  * mismatch. The server (and the very first client render) emit a deterministic
  * UTC string; after mount we swap to the browser's locale/timezone. A bare
  * `new Date(iso).toLocaleString()` in a Client Component mismatches whenever the

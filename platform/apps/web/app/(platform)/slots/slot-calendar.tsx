@@ -13,7 +13,7 @@ import { Generator } from "./generator";
  *
  * Every date this component handles is a `YYYY-MM-DD` string plus a `HH:MM`
  * string. It never converts either to a JS Date and back, because
- * `new Date("2026-08-11")` parses as UTC MIDNIGHT — so anywhere west of
+ * `new Date("2026-08-11")` parses as UTC MIDNIGHT - so anywhere west of
  * Greenwich that renders as the 10th, and the operator creates slots on the
  * wrong day. The conversion to an absolute instant happens exactly once, in
  * Postgres, where the zone database lives (see slots.controller.ts).
@@ -35,7 +35,7 @@ function iso(y: number, m: number, d: number): string {
 
 function daysInMonth(y: number, m: number): number {
   // Day 0 of the NEXT month is the last day of this one. This is local-time
-  // Date arithmetic on a numeric triple, which is safe — no string parsing.
+  // Date arithmetic on a numeric triple, which is safe - no string parsing.
   return new Date(y, m + 1, 0).getDate();
 }
 
@@ -232,7 +232,7 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
                   </p>
                   {s.status === "booked" ? (
                     <p className="truncate text-xs text-text-muted">
-                      Booked{s.booked_name ? ` — ${s.booked_name}` : ""}
+                      Booked{s.booked_name ? ` - ${s.booked_name}` : ""}
                     </p>
                   ) : null}
                 </div>

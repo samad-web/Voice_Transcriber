@@ -5,21 +5,21 @@ import { DbService } from "../../db/db.service";
 import { resolveRazorpayCredentials, verifyRazorpaySignature } from "./razorpay";
 
 /**
- * One shared endpoint for every org's Razorpay account — most orgs collect
+ * One shared endpoint for every org's Razorpay account - most orgs collect
  * through the platform's own account (env-var credentials), so a single URL
  * has to receive all of them and figure out which org a delivery belongs to
  * from the payload itself, the same way Stripe Connect webhooks resolve an
  * `account` field before verifying. The order is deliberate and matters:
  * resolve the candidate org from the (untrusted) payment_link id, THEN verify
- * the signature with THAT org's own secret — verifying first is impossible
+ * the signature with THAT org's own secret - verifying first is impossible
  * here because which secret to use is exactly what's unknown until the org is
  * known.
  *
- * Unauthenticated by necessity (Razorpay cannot present an admin key) — see
+ * Unauthenticated by necessity (Razorpay cannot present an admin key) - see
  * guard-mounting.spec.ts's UNGUARDED list, same class of exception as
  * messaging/webhook/:token. Always answers 200 so Razorpay's retry logic
  * doesn't hammer a delivery this app has already decided to ignore (unknown
- * link, bad signature, or an event type it doesn't act on) — those cases are
+ * link, bad signature, or an event type it doesn't act on) - those cases are
  * silently accepted, never surfaced as an error to the sender.
  *
  * The ONLY way `invoices.status` becomes 'paid' is through this controller.
@@ -56,7 +56,7 @@ export class RazorpayWebhookController {
         WHERE p.razorpay_payment_link_id = $1`,
       [linkId],
     );
-    if (!row) return { ok: true }; // unknown link — never disclose that distinction to the caller
+    if (!row) return { ok: true }; // unknown link - never disclose that distinction to the caller
 
     const {
       rows: [config],
@@ -71,13 +71,13 @@ export class RazorpayWebhookController {
     if (event !== "payment_link.paid" && event !== "payment.captured") return { ok: true };
 
     // Idempotency: Razorpay retries a delivery until it gets a 200, and this
-    // controller always returns 200 — so the ledger, not the HTTP response,
+    // controller always returns 200 - so the ledger, not the HTTP response,
     // is what prevents a replay from double-crediting the invoice.
     //
     // The claim and the payment/invoice writes happen in one transaction: if
     // they were separate statements (as before) and the process died between
     // the claim committing and the writes running, Razorpay's retry would see
-    // "already processed" and the writes would never happen — a payment
+    // "already processed" and the writes would never happen - a payment
     // captured by Razorpay but stuck at status 'created' here forever.
     const eventKey = `${event}:${paymentId ?? linkId}`;
     await this.db.withOrg(row.org_id, async (client) => {

@@ -1,19 +1,19 @@
--- 0054_crm_reconciliation.sql — A6, Milestone 3: does the dual-write agree
+-- 0054_crm_reconciliation.sql - A6, Milestone 3: does the dual-write agree
 -- with itself?
 --
 -- The worker's dual-write (apps/worker/src/pipeline/crm-objects.ts) has run
--- since M3 of CRM Phase 1, alongside `leads` — but nothing has ever checked
+-- since M3 of CRM Phase 1, alongside `leads` - but nothing has ever checked
 -- that the two sides still agree once a human starts editing either one.
 -- This is that check: a sweep (crm-reconcile.ts) compares each lead against
 -- its dual-written deal/contact and logs what differs, so the burn-in period
 -- before A6's read/write cutover (CRM_STATUS.md) has real evidence behind it
 -- instead of a hope.
 --
--- A log, not a live-integrity table — nothing joins through it, same
+-- A log, not a live-integrity table - nothing joins through it, same
 -- reasoning 0038 gives for merge_log's polymorphic ids. `lead_id`/`deal_id`/
 -- `contact_id` are ON DELETE SET NULL rather than CASCADE: a row that
 -- explains a divergence is still worth keeping after the record it was about
--- is gone (erased, reaped, merged) — the finding outlives the object.
+-- is gone (erased, reaped, merged) - the finding outlives the object.
 
 CREATE TABLE IF NOT EXISTS crm_reconciliation_log (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,11 +31,11 @@ CREATE TABLE IF NOT EXISTS crm_reconciliation_log (
 );
 
 -- The sweep's own dedup check: "is this the same mismatch as last time, for
--- this lead and this field" — ORDER BY detected_at DESC LIMIT 1 on exactly
+-- this lead and this field" - ORDER BY detected_at DESC LIMIT 1 on exactly
 -- this shape.
 CREATE INDEX IF NOT EXISTS crm_reconciliation_log_lead_field
   ON crm_reconciliation_log (lead_id, field, detected_at DESC);
--- "What's outstanding in this org" — the operator-facing read.
+-- "What's outstanding in this org" - the operator-facing read.
 CREATE INDEX IF NOT EXISTS crm_reconciliation_log_org_detected
   ON crm_reconciliation_log (org_id, detected_at DESC);
 

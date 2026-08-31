@@ -43,7 +43,7 @@ object DeviceIdentity {
         return "-----BEGIN PUBLIC KEY-----\n$body\n-----END PUBLIC KEY-----\n"
     }
 
-    /** ECDSA-SHA256 over the raw nonce string, base64url — matches the server verifier. */
+    /** ECDSA-SHA256 over the raw nonce string, base64url - matches the server verifier. */
     fun signNonce(nonce: String): String {
         val entry = keyStore().getEntry(ALIAS, null) as KeyStore.PrivateKeyEntry
         val signature = Signature.getInstance("SHA256withECDSA").apply {

@@ -1,4 +1,4 @@
--- 0058_outreach_cadences.sql — the follow-up ladder.
+-- 0058_outreach_cadences.sql - the follow-up ladder.
 --
 -- ── WHAT THIS IS FOR ────────────────────────────────────────────────────
 --
@@ -14,8 +14,8 @@
 -- a phase, a per-step ledger, a unique key stopping a step firing twice. Two
 -- things are deliberately NOT copied.
 --
--- 1. THEIR STEPS ARE AN ENUM. `OutreachStep` there names 23 specific steps —
---    INTRO_WHATSAPP, DISCO_CONFIRM_1, SSS_CANCEL — because that schema serves
+-- 1. THEIR STEPS ARE AN ENUM. `OutreachStep` there names 23 specific steps -
+--    INTRO_WHATSAPP, DISCO_CONFIRM_1, SSS_CANCEL - because that schema serves
 --    one business running one SOP. Aura is multi-tenant, and baking one
 --    tenant's process into a CHECK constraint would make every other tenant's
 --    cadence a migration. So the steps are ROWS a tenant defines.
@@ -30,7 +30,7 @@
 -- ── WHY A SEPARATE LEDGER RATHER THAN JUST CREATING TASKS ───────────────
 --
 -- Because the ladder has to be able to STOP. The whole value of a cadence is
--- "chase until they book, then stop chasing" — and a fistful of independent
+-- "chase until they book, then stop chasing" - and a fistful of independent
 -- task rows cannot be stopped as a unit, cannot tell you which attempt this
 -- is, and cannot answer "how far down the ladder do people usually get".
 
@@ -42,12 +42,12 @@ CREATE TABLE IF NOT EXISTS outreach_cadences (
   description text,
 
   -- What ends a journey early, checked by the sweep before it advances.
-  -- 'booked'    — the contact has a held booking slot
-  -- 'replied'   — an inbound message arrived (migration 0055)
-  -- 'won'       — a deal for this contact reached a won status
-  -- 'none'      — runs to the end regardless
+  -- 'booked'    - the contact has a held booking slot
+  -- 'replied'   - an inbound message arrived (migration 0055)
+  -- 'won'       - a deal for this contact reached a won status
+  -- 'none'      - runs to the end regardless
   -- App-validated against a shared zod enum rather than a CHECK, so adding a
-  -- condition is a release rather than a migration — the same call 0049 made
+  -- condition is a release rather than a migration - the same call 0049 made
   -- for automation triggers.
   stop_on     text NOT NULL DEFAULT 'booked',
 
@@ -99,12 +99,12 @@ CREATE TABLE IF NOT EXISTS outreach_cadence_steps (
 
   -- Hours after the JOURNEY STARTED, not after the previous step. Anchoring
   -- to the start is what makes the schedule stable: if somebody acts on step
-  -- 2 three days late, steps 3 and 4 do not slide three days with it — they
+  -- 2 three days late, steps 3 and 4 do not slide three days with it - they
   -- were due relative to the enquiry, and being late does not move the
   -- enquiry.
   delay_hours numeric(8, 2) NOT NULL DEFAULT 0 CHECK (delay_hours >= 0),
 
-  -- Guidance shown next to the due item. Not a template to send — see header.
+  -- Guidance shown next to the due item. Not a template to send - see header.
   guidance    text,
 
   created_at  timestamptz NOT NULL DEFAULT now(),
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS outreach_journeys (
   status       text NOT NULL DEFAULT 'active'
                CHECK (status IN ('active', 'completed', 'stopped')),
   -- Why it ended. Free text from a small set the app writes ('booked',
-  -- 'replied', 'won', 'finished', 'stopped by <user>') — kept readable
+  -- 'replied', 'won', 'finished', 'stopped by <user>') - kept readable
   -- because the answer to "why did we stop chasing them" is usually being
   -- read by a person, not a query.
   stop_reason  text,
@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS outreach_journeys (
 
 -- One ACTIVE journey per contact per cadence. A partial unique index rather
 -- than a plain one, so the same person can be run through the same cadence
--- again next quarter — but cannot be enrolled twice at once and receive every
+-- again next quarter - but cannot be enrolled twice at once and receive every
 -- step in duplicate.
 CREATE UNIQUE INDEX IF NOT EXISTS outreach_journeys_one_active
   ON outreach_journeys (contact_id, cadence_id) WHERE status = 'active';
@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS outreach_journey_steps (
   CONSTRAINT outreach_journey_steps_once UNIQUE (journey_id, step_index)
 );
 
--- "What is due right now, oldest first" — the sweep's query and the console's.
+-- "What is due right now, oldest first" - the sweep's query and the console's.
 CREATE INDEX IF NOT EXISTS outreach_journey_steps_due
   ON outreach_journey_steps (org_id, due_at) WHERE status IN ('waiting', 'due');
 CREATE INDEX IF NOT EXISTS outreach_journey_steps_journey

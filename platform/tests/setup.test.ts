@@ -6,14 +6,14 @@
  * ASR → extraction → lead → CRM dispatch, tenant isolation, retry/retirement).
  * That suite does not exist. What exists is `tests/setup/env.ts` and
  * `tests/setup/migrate.ts`, and until this file was added neither had ever been
- * executed — including `env.ts`, the module whose entire job is to refuse to
+ * executed - including `env.ts`, the module whose entire job is to refuse to
  * point the destructive suite at production or at the developer's dev stack.
  * An unexercised safety check is a comment.
  *
  * So: this file exercises the safety guards (they must REJECT, which is the
  * failure mode that matters) and runs the migrations end to end. Everything the
- * eventual pipeline suite needs — a schema, a validated connection, `childEnv()`
- * — is what is verified here.
+ * eventual pipeline suite needs - a schema, a validated connection, `childEnv()`
+ * - is what is verified here.
  *
  * Requires `pnpm test:integration:up` first.
  */
@@ -36,7 +36,7 @@ import {
 } from "./setup/env.js";
 import { resetSchema, runMigrations } from "./setup/migrate.js";
 
-describe("env.ts — the safety file", () => {
+describe("env.ts - the safety file", () => {
   it("refuses a non-loopback host", () => {
     expect(() =>
       assertDisposable(
@@ -87,7 +87,7 @@ describe("env.ts — the safety file", () => {
   });
 });
 
-describe("childEnv() — what a spawned api/worker would inherit", () => {
+describe("childEnv() - what a spawned api/worker would inherit", () => {
   const env = childEnv();
 
   it("does not leak the parent's DATABASE_URL", () => {
@@ -111,8 +111,8 @@ describe("childEnv() — what a spawned api/worker would inherit", () => {
   });
 });
 
-describe("migrate.ts — against the ephemeral stack", () => {
-  // The schema is deliberately left behind after the run — a follow-up suite,
+describe("migrate.ts - against the ephemeral stack", () => {
+  // The schema is deliberately left behind after the run - a follow-up suite,
   // or a human debugging a red run, wants it. The stack is tmpfs-only, so
   // `pnpm test:integration:down` is the reset.
   it("applies every migration to a clean schema", async () => {
@@ -124,7 +124,7 @@ describe("migrate.ts — against the ephemeral stack", () => {
     expect(applied).toBe(onDisk.length);
   });
 
-  it("is idempotent — a second run applies nothing", async () => {
+  it("is idempotent - a second run applies nothing", async () => {
     expect(await runMigrations()).toBe(0);
   });
 
@@ -164,12 +164,12 @@ describe("migrate.ts — against the ephemeral stack", () => {
    * drifted from two live CHECK constraints, so a fixture built from the zod
    * enum produced a test that passed while the code wrote a value the database
    * rejected. Reading the constraint out of a real schema is the only check
-   * that cannot drift — a unit test comparing the enum to a hand-written list
+   * that cannot drift - a unit test comparing the enum to a hand-written list
    * is just the same assumption written twice.
    */
   it.each([
     ["calls", "status", CallStatus],
-    // The outbox is still the table named crm_sync_log — 0008 repurposed it in
+    // The outbox is still the table named crm_sync_log - 0008 repurposed it in
     // place rather than renaming it (0008_crm_outbox.sql:50). Naming it
     // `crm_dispatch_outbox` here silently matches nothing.
     ["crm_sync_log", "status", CrmSyncStatus],
@@ -204,7 +204,7 @@ describe("migrate.ts — against the ephemeral stack", () => {
    *
    * Written separately from the `it.each` above because that block matches
    * `column = ANY(...)` constraints and this one is an array-containment
-   * (`scopes <@ ARRAY[...]`) — a different constraint shape, same failure mode.
+   * (`scopes <@ ARRAY[...]`) - a different constraint shape, same failure mode.
    */
   it("api_keys.scopes CHECK matches API_SCOPES exactly", async () => {
     const client = new Client({ connectionString: DATABASE_URL });
@@ -224,7 +224,7 @@ describe("migrate.ts — against the ephemeral stack", () => {
 });
 
 /**
- * seed_default_board (migration 0075) — the ONE implementation of "this org has
+ * seed_default_board (migration 0075) - the ONE implementation of "this org has
  * a board", called by three places that must not be allowed to diverge:
  * 0075's own backfill, `seedBoardDefaults` in the admin dashboard's tenant
  * provisioning (apps/api/src/modules/admin/admin.controller.ts), and the dev
@@ -236,7 +236,7 @@ describe("migrate.ts — against the ephemeral stack", () => {
  * Each test runs inside a transaction it rolls back, so the ephemeral stack's
  * schema is left exactly as the migration tests above left it.
  */
-describe("seed_default_board — every provisioned tenant gets the same board", () => {
+describe("seed_default_board - every provisioned tenant gets the same board", () => {
   const ORG = "0000dead-0000-4000-8000-00000000b0a5";
 
   async function withRollback<T>(fn: (c: Client) => Promise<T>): Promise<T> {
@@ -293,13 +293,13 @@ describe("seed_default_board — every provisioned tenant gets the same board", 
       expect(shape.mappings).toBe(12);
       expect(shape.template).toBe(7);
       // A board needs a pipeline (NOT NULL), so the function creates one when
-      // the org has none — and binds to it rather than to a second one.
+      // the org has none - and binds to it rather than to a second one.
       expect(shape.pipelines).toBe(1);
       expect(shape.binds_default_pipeline).toBe(true);
     });
   });
 
-  it("is idempotent — a second call returns the same board and writes nothing", async () => {
+  it("is idempotent - a second call returns the same board and writes nothing", async () => {
     await withRollback(async (client) => {
       const first = await client.query<{ seed_default_board: string }>(
         `SELECT seed_default_board($1)`,
@@ -328,7 +328,7 @@ describe("seed_default_board — every provisioned tenant gets the same board", 
    * The regression this pins: seedCrmDefaults used to INSERT a 'Sales Pipeline'
    * with is_default = true unconditionally. Once seed_default_board also
    * find-or-creates one, enabling the CRM module on an org would leave TWO
-   * default pipelines — and "exactly one default per org" is app-enforced only
+   * default pipelines - and "exactly one default per org" is app-enforced only
    * (0034 says so), so nothing in the database would have caught it.
    */
   it("enabling CRM after provisioning does not create a second default pipeline", async () => {

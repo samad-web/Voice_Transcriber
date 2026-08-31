@@ -8,7 +8,7 @@ import type { Stage } from "./types";
 /**
  * How this deal got where it is (migration 0046).
  *
- * Shows time-in-stage, which is the number a manager actually asks for —
+ * Shows time-in-stage, which is the number a manager actually asks for -
  * "this has been sitting in Negotiation for eleven days" is the reason to
  * open a deal at all. Before the ledger existed, `stage_changed_at` could
  * only answer that for the CURRENT stage; everything earlier was gone.
@@ -79,7 +79,7 @@ export function StageHistory({ dealId, stages }: { dealId: string; stages: Stage
             </span>
             <span className="shrink-0 text-xs text-text-muted tabular-nums">
               {row.days_in_stage === null
-                ? "—"
+                ? "-"
                 : `${row.days_in_stage < 1 ? "<1" : Math.round(row.days_in_stage)}d${
                     index === rows.length - 1 ? " (now)" : ""
                   }`}

@@ -5,7 +5,7 @@ import android.content.Context
 /**
  * User-tunable capture knobs, backed by SharedPreferences. Mirrors Cube ACR, which
  * exposes a selectable audio source precisely because the working method differs per
- * device — the user finds it empirically.
+ * device - the user finds it empirically.
  */
 class CaptureSettings(context: Context) {
     private val prefs = context.getSharedPreferences("capture", Context.MODE_PRIVATE)
@@ -14,7 +14,7 @@ class CaptureSettings(context: Context) {
      * Force speakerphone on phone calls so the far end is captured acoustically. OFF by
      * default: on this device, changing the audio mode to route the loudspeaker DISRUPTS
      * in-call mic capture (recording fails / goes silent). The reliable way to capture both
-     * sides is for the rep to tap Speaker manually — the mic then hears the far end. Enable
+     * sides is for the rep to tap Speaker manually - the mic then hears the far end. Enable
      * this only if your device tolerates programmatic speaker routing.
      */
     var forceSpeakerForPhone: Boolean
@@ -64,8 +64,8 @@ class CaptureSettings(context: Context) {
 
     /**
      * Import the OEM dialer's own call recordings (Samsung "Auto record calls", MIUI, …).
-     * Those files contain BOTH sides — the system dialer taps the telephony stream, which we
-     * can't — so on a supported handset this is strictly better than our own capture.
+     * Those files contain BOTH sides - the system dialer taps the telephony stream, which we
+     * can't - so on a supported handset this is strictly better than our own capture.
      */
     var oemIngestEnabled: Boolean
         get() = prefs.getBoolean(KEY_OEM_INGEST, true)
@@ -73,7 +73,7 @@ class CaptureSettings(context: Context) {
 
     /**
      * When the handset provides its own (both-ends) recordings, don't ALSO run our own
-     * near-end-only capture — that would save two files per call, the worse one of which
+     * near-end-only capture - that would save two files per call, the worse one of which
      * only has the local side. Guarded at the call site by
      * [com.voicetranscriber.callrecorder.ingest.OemRecordingIngestor.isAvailable], so devices
      * without OEM recording keep capturing normally.
@@ -83,7 +83,7 @@ class CaptureSettings(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_PREFER_OEM, value).apply()
 
     /**
-     * Set once this handset has been seen to produce its own call recording — and then never
+     * Set once this handset has been seen to produce its own call recording - and then never
      * unset. The folder is empty until the first call completes, so without this sticky flag
      * the availability check says "no OEM recording here", we capture as well, and the very
      * first call on a fresh phone ends up recorded TWICE.
@@ -94,7 +94,7 @@ class CaptureSettings(context: Context) {
 
     /**
      * Comma-separated folders (relative to external storage) to import from. Configurable
-     * because the location differs by OEM and OS version — the defaults are the two Samsung
+     * because the location differs by OEM and OS version - the defaults are the two Samsung
      * One UI locations confirmed on device; add e.g. `MIUI/sound_recorder/call_rec` for Xiaomi.
      */
     var oemFolders: String
@@ -103,8 +103,8 @@ class CaptureSettings(context: Context) {
 
     /**
      * Epoch-ms floor on a recording's START time: OEM files older than this are ignored.
-     * Enrolling a handset that already holds years of history — a Transsion phone can have
-     * tens of thousands of files under Music/PhoneRecord — must import calls from setup
+     * Enrolling a handset that already holds years of history - a Transsion phone can have
+     * tens of thousands of files under Music/PhoneRecord - must import calls from setup
      * onward, not dump the whole archive as leads. Seeded once on the first ingest to a few
      * days before now (see BACKLOG_GRACE_MS) so a test call made just before install still
      * comes through, while last year's calls do not.
@@ -118,7 +118,7 @@ class CaptureSettings(context: Context) {
             // Base tries VOICE_CALL first (clean both-ends where the OEM allows it), then
             // mic sources. When it lands on a mic source, forceSpeakerForMicSources makes
             // the AudioCapturer engage the loudspeaker so the far end is captured
-            // acoustically — the only method that works once VOICE_CALL is blocked.
+            // acoustically - the only method that works once VOICE_CALL is blocked.
             val base =
                 if (phoneSourceOverride != AUTO) {
                     // Explicit pin wins; keep the rest as fallback so it never fails outright.
@@ -139,7 +139,7 @@ class CaptureSettings(context: Context) {
          * Candidate OEM call-recording folders, most likely first. Non-existent entries are
          * skipped, so listing every known brand is free.
          *
-         * NOTE: there is deliberately no Google Phone (Pixel/Motorola/Nokia) entry — it keeps
+         * NOTE: there is deliberately no Google Phone (Pixel/Motorola/Nokia) entry - it keeps
          * recordings in `Android/data/com.google.android.dialer/`, which Android 11+ blocks
          * for every other app (All-files access and SAF both refuse it, and the files aren't
          * in MediaStore). Those handsets cannot be ingested from without root.

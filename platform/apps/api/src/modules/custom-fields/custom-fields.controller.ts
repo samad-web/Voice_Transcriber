@@ -24,7 +24,7 @@ const ListQuery = z.object({
   objectType: CustomFieldObjectType.optional(),
 });
 
-/** Every field optional — a partial update. type/objectType are immutable
+/** Every field optional - a partial update. type/objectType are immutable
  * after creation (0037's header), so they simply never appear here. */
 const UpdateFieldBody = z.object({
   label: z.string().min(1).max(120).optional(),
@@ -39,7 +39,7 @@ const FIELD_COLUMNS = `id, object_type, key, label, type, description, required,
   lookup_object_type, validation, sort_order, status, created_at, updated_at`;
 
 /**
- * Org-definable fields on Contact/Account/Deal — CRM Phase 1, E0.2.
+ * Org-definable fields on Contact/Account/Deal - CRM Phase 1, E0.2.
  * Generalises the ExtractionField pattern (packages/shared/src/
  * extraction.ts) that already drives agent field schemas. `type` and
  * `objectType` are immutable after creation: a field whose storage type
@@ -158,7 +158,7 @@ export class CustomFieldsController {
     });
   }
 
-  /** Archives rather than deletes — values already recorded on live records must survive. */
+  /** Archives rather than deletes - values already recorded on live records must survive. */
   @Delete(":id")
   async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {

@@ -14,11 +14,11 @@
  * same strings. `coerceOption()` does the untrusted-input narrowing that zod
  * would have done, against the same array the `<select>` was built from.
  *
- * NO libphonenumber-js EITHER, deliberately — see the phone section.
+ * NO libphonenumber-js EITHER, deliberately - see the phone section.
  */
 
 /* ────────────────────────────────────────────────────────────────────────────
-   Option lists — the form renders from these, the validator narrows to these,
+   Option lists - the form renders from these, the validator narrows to these,
    and the database CHECK constraints in migration 0020 mirror them.
    ──────────────────────────────────────────────────────────────────────────── */
 
@@ -43,7 +43,7 @@ export type BusinessType =
   | "other";
 
 /**
- * Ordered for the market this product actually sells to today — RD Interlock
+ * Ordered for the market this product actually sells to today - RD Interlock
  * Brick and Fortune Innovatives are building-materials and interiors businesses
  * in Tamil Nadu, and the spec's SaaS-first ordering buries them under "Other".
  */
@@ -63,9 +63,9 @@ export type TeamSize = "solo" | "2_5" | "6_20" | "21_50" | "50_plus";
 
 export const TEAM_SIZES: ReadonlyArray<FunnelOption<TeamSize>> = [
   { value: "solo", label: "Just me" },
-  { value: "2_5", label: "2–5 people" },
-  { value: "6_20", label: "6–20 people" },
-  { value: "21_50", label: "21–50 people" },
+  { value: "2_5", label: "2-5 people" },
+  { value: "6_20", label: "6-20 people" },
+  { value: "21_50", label: "21-50 people" },
   { value: "50_plus", label: "More than 50" },
 ];
 
@@ -83,10 +83,10 @@ export interface BudgetOption extends FunnelOption<BudgetBand> {
    * band carries no figure at all.
    *
    * The floor, not the midpoint and not the ceiling, because §3.2's rule is
-   * `budget >= ₹30,000` and a band is a range: "₹10,000–₹30,000" contains
+   * `budget >= ₹30,000` and a band is a range: "₹10,000-₹30,000" contains
    * respondents at ₹12,000, so treating it as 30,000 would qualify people who
    * said they would spend a third of the threshold. Comparing floors means a
-   * band qualifies only when EVERY respondent inside it clears the bar — the
+   * band qualifies only when EVERY respondent inside it clears the bar - the
    * conservative direction, and the one that protects the calendar time §3.2
    * exists to protect.
    */
@@ -95,9 +95,9 @@ export interface BudgetOption extends FunnelOption<BudgetBand> {
 
 export const BUDGET_BANDS: ReadonlyArray<BudgetOption> = [
   { value: "below_10k", label: "Below ₹10,000", floorInr: 0 },
-  { value: "10k_30k", label: "₹10,000 – ₹30,000", floorInr: 10_000 },
-  { value: "30k_40k", label: "₹30,000 – ₹40,000", floorInr: 30_000 },
-  { value: "40k_100k", label: "₹40,000 – ₹1,00,000", floorInr: 40_000 },
+  { value: "10k_30k", label: "₹10,000 - ₹30,000", floorInr: 10_000 },
+  { value: "30k_40k", label: "₹30,000 - ₹40,000", floorInr: 30_000 },
+  { value: "40k_100k", label: "₹40,000 - ₹1,00,000", floorInr: 40_000 },
   { value: "100k_plus", label: "₹1,00,000+", floorInr: 100_000 },
   { value: "not_sure", label: "Not sure yet", floorInr: null },
 ];
@@ -130,7 +130,7 @@ export type HasCrm = "yes" | "spreadsheets_whatsapp" | "no";
  * §3.7: the middle option is the point. "Spreadsheets / WhatsApp" is the honest
  * answer for most of this market, and hiding it under "Other" would lose the
  * single most useful segmentation this form can produce. It is worded without
- * judgement on purpose — nobody ticks a box that calls their business primitive.
+ * judgement on purpose - nobody ticks a box that calls their business primitive.
  */
 export const HAS_CRM_OPTIONS: ReadonlyArray<FunnelOption<HasCrm>> = [
   { value: "yes", label: "Yes, we use one" },
@@ -148,7 +148,7 @@ export type CrmSatisfaction = "happy" | "mixed" | "unhappy";
  * whether to pitch a connector; it does not tell them whether the customer
  * WANTS one. Someone happy with LeadSquared wants Aura to feed it. Someone
  * unhappy with it is a candidate for the custom build, which is the larger
- * transaction — and until now the only route to that signal was the
+ * transaction - and until now the only route to that signal was the
  * "would you like us to build one" question, which asks the respondent to
  * volunteer a switch before anyone has acknowledged the problem.
  *
@@ -158,7 +158,7 @@ export type CrmSatisfaction = "happy" | "mixed" | "unhappy";
  * somewhere to go, or it lands in "happy" and the signal is lost.
  *
  * Deliberately NOT part of `qualify()`. It shapes the conversation, not the
- * verdict — dissatisfaction is not a budget and not a timeframe, and letting it
+ * verdict - dissatisfaction is not a budget and not a timeframe, and letting it
  * qualify someone would put unhappy tyre-kickers in the calendar.
  */
 export const CRM_SATISFACTION_OPTIONS: ReadonlyArray<FunnelOption<CrmSatisfaction>> = [
@@ -189,7 +189,7 @@ export const WANTS_CUSTOM_CRM_OPTIONS: ReadonlyArray<FunnelOption<WantsCustomCrm
  *
  * `oauthPending` marks the four that authenticate today with pasted access
  * tokens expiring in hours, with the refresh flow unbuilt (DEPLOYMENT.md §7.8).
- * §3.7 is explicit that the funnel must not imply a turnkey integration there —
+ * §3.7 is explicit that the funnel must not imply a turnkey integration there -
  * Zoho is the market leader in India, so this will be a COMMON answer, and a
  * sale made on that implication becomes a refund.
  */
@@ -224,7 +224,7 @@ export const FUNNEL_CRM_OPTIONS: ReadonlyArray<FunnelCrmOption> = [
  *
  * Returns null rather than throwing or defaulting: every CRM question is
  * optional-but-prompted (§3.7), so "absent" and "nonsense" are the same outcome
- * — the field is simply not answered — and a default would invent an answer the
+ * - the field is simply not answered - and a default would invent an answer the
  * respondent never gave, on a form whose output decides who gets a sales call.
  */
 export function coerceOption<T extends string>(
@@ -237,7 +237,7 @@ export function coerceOption<T extends string>(
 }
 
 /**
- * Salutation. Descriptive, like `digitalPresence` — it shapes how a message
+ * Salutation. Descriptive, like `digitalPresence` - it shapes how a message
  * greets someone, it does not feed `qualify()`.
  *
  * ── THERE IS NO "PREFER NOT TO SAY" OPTION, AND THAT IS THE POINT ──────────
@@ -249,7 +249,7 @@ export function coerceOption<T extends string>(
  * same place: `titleNameOf` returns undefined and the message greets them by
  * first name.
  *
- * The database CHECK (migration 0053) still admits 'other' deliberately — it is
+ * The database CHECK (migration 0053) still admits 'other' deliberately - it is
  * a harmless superset, and a stored value the form no longer offers must not
  * start failing validation. `coerceOption` narrows a submitted 'other' to null,
  * which means exactly what it used to.
@@ -267,11 +267,11 @@ export const SALUTATIONS: ReadonlyArray<FunnelOption<Salutation>> = [
  * The Business-Type "Other" gap.
  *
  * `BUSINESS_TYPES` above has always had an `other` value ("Something else")
- * with nowhere to say what it actually is — unlike `crm_name`, which already
+ * with nowhere to say what it actually is - unlike `crm_name`, which already
  * pairs its own "Other" option with a free-text box (`crmNameOther` in
  * `funnel-form.tsx`). This is that same fix, applied here: a curated
  * second-level list first (a dropdown is still a dropdown, not a typing
- * field), with a final "Other — type it in" option that reveals the free-text
+ * field), with a final "Other - type it in" option that reveals the free-text
  * box only when nothing on this list fits either.
  *
  * Only reachable when `businessType === 'other'`, so it does not compete with
@@ -295,7 +295,7 @@ export const BUSINESS_TYPE_OTHER_OPTIONS: ReadonlyArray<FunnelOption<BusinessTyp
   { value: "automotive", label: "Automotive" },
   { value: "beauty_wellness", label: "Beauty / wellness" },
   { value: "nonprofit", label: "NGO / nonprofit" },
-  { value: "typed", label: "Other — type it in" },
+  { value: "typed", label: "Other - type it in" },
 ];
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ export const BUSINESS_TYPE_OTHER_OPTIONS: ReadonlyArray<FunnelOption<BusinessTyp
  * Doc 16 §3.2's business note is worth re-reading before touching this number:
  * ₹30,000/month against a per-handset SMB price point disqualifies most of the
  * market this product is currently built for, which may be exactly the intent
- * (protect calendar time, sell upmarket) — but if so, the DISQUALIFIED path is
+ * (protect calendar time, sell upmarket) - but if so, the DISQUALIFIED path is
  * the main path and its follow-up deserves as much care as the booking flow.
  * §4.1's note adds the other half: set this to match how many custom-CRM builds
  * can actually be delivered per quarter, not to maximise enquiries.
@@ -349,7 +349,7 @@ export interface QualificationResult {
    */
   mayBookSlot: boolean;
   /**
-   * Which clause fired. FOR OPERATORS ONLY — §3.2 forbids telling the
+   * Which clause fired. FOR OPERATORS ONLY - §3.2 forbids telling the
    * respondent which answer decided it, so this must never be rendered into a
    * response body or a client component.
    */
@@ -374,7 +374,7 @@ export interface QualificationResult {
  * Judging them on the monthly number sends the highest-value enquiries this form
  * can produce to the "we'll reach out" screen.
  *
- * ── 'tell_me_more' NO LONGER DISQUALIFIES — changed 2026-08-09, by the owner ─
+ * ── 'tell_me_more' NO LONGER DISQUALIFIES - changed 2026-08-09, by the owner ─
  *
  * It used to, unconditionally, outranking a ₹1,00,000 budget and a ready-to-buy
  * intent. The original argument was an invariant about protecting the calendar:
@@ -382,10 +382,10 @@ export interface QualificationResult {
  * devalues the qualified path.
  *
  * That argument holds for a low-budget, exploring respondent. It does not hold
- * for the case that actually turned up in testing: ready to start, ₹40,000–
+ * for the case that actually turned up in testing: ready to start, ₹40,000-
  * ₹1,00,000 a month, and interested enough in the custom-CRM offer to want
  * detail. That is the strongest lead this form can produce, and it was being
- * routed to a contact-us screen — twice, by the owner, who could not get past
+ * routed to a contact-us screen - twice, by the owner, who could not get past
  * his own funnel.
  *
  * The rule now: `tell_me_more` is orthogonal to qualification. It still sets
@@ -395,7 +395,7 @@ export interface QualificationResult {
  *
  * The protection the old rule was reaching for is still there, and is now doing
  * the work on its own: an information request from someone who is NOT ready, or
- * who is under the budget floor, still books nothing — because no qualifying
+ * who is under the budget floor, still books nothing - because no qualifying
  * clause fires for them either. What changed is only that curiosity stopped
  * cancelling out a genuine buying signal.
  *
@@ -422,7 +422,7 @@ export function qualify(answers: QualificationAnswers): QualificationResult {
   if (routeToHuman) reasons.push("route_to_human_tell_me_more");
 
   // `reasons` now carries `route_to_human_tell_me_more` for a flagged
-  // respondent, and that entry must not by itself make someone qualified — it
+  // respondent, and that entry must not by itself make someone qualified - it
   // is a note about what they asked for, not a clause that fired. So the test
   // is against the QUALIFYING clauses specifically, not `reasons.length`.
   const qualifyingClauses = reasons.filter((r) => r !== "route_to_human_tell_me_more");
@@ -439,13 +439,13 @@ export function qualify(answers: QualificationAnswers): QualificationResult {
      * The qualifier no longer decides who gets a conversation, only how the
      * conversation is described in the console. Someone below the budget floor
      * may still be worth thirty minutes, and the previous rule sent them away
-     * with a "we'll be in touch" that nothing ever acted on — the follow-up
+     * with a "we'll be in touch" that nothing ever acted on - the follow-up
      * templates for that path have never been live, so a disqualified enquirer
      * heard from us exactly never.
      *
      * `status` is untouched and still drives the chips and filters in the
      * console, so an operator can see at a glance that a booked call came from
-     * someone who did not qualify — and reject it, which now releases the slot
+     * someone who did not qualify - and reject it, which now releases the slot
      * AND deletes the calendar event.
      */
     mayBookSlot: true,
@@ -460,7 +460,7 @@ export function qualify(answers: QualificationAnswers): QualificationResult {
  * `crm_name` is a free-text field behind a select, so it can hold a catalogue
  * value, the literal "other", or whatever the respondent typed. Anything that
  * does not resolve to a catalogue provider is a CUSTOM CONNECTOR BUILD and a
- * different quote — which is exactly the fact a salesperson needs before the
+ * different quote - which is exactly the fact a salesperson needs before the
  * call, not during it.
  */
 export function classifyCrm(hasCrm: HasCrm | null, crmName: string | null): CrmConnectorStatus {
@@ -480,27 +480,27 @@ export function classifyCrm(hasCrm: HasCrm | null, crmName: string | null): CrmC
 
 /**
  * The spec's `^[a-zA-Z\s\-']+$` rejects தமிழ், देवनागरी, తెలుగు and every
- * accented Latin name — on a product whose headline claim is native Tamil,
+ * accented Latin name - on a product whose headline claim is native Tamil,
  * Hindi and Telugu support. A form that will not accept the customer's own name
  * in their own script is an own goal on the first field they touch.
  *
  * `\p{L}` is any letter in any script; `\p{M}` is the combining marks that
- * Indic scripts build syllables from — without it, "தமிழ்" fails on the pulli
+ * Indic scripts build syllables from - without it, "தமிழ்" fails on the pulli
  * and "श्री" fails on the virama, which is the subtlest possible way to be
  * wrong here. The `u` flag is what makes both classes mean anything at all.
  *
- * Kept from the spec: the 2–60 bound and the rejection of digits and symbols.
+ * Kept from the spec: the 2-60 bound and the rejection of digits and symbols.
  */
 export const NAME_PATTERN = /^[\p{L}\p{M}\s\-'.]{2,60}$/u;
 
-/** At least one actual letter — see validateName(). */
+/** At least one actual letter - see validateName(). */
 const NAME_HAS_LETTER = /\p{L}/u;
 
 /**
  * Collapse whitespace and trim.
  *
  * Runs BEFORE NAME_PATTERN on purpose: `\s` matches newlines and tabs, so
- * "A\n\n\n\n\nB" would otherwise satisfy the pattern and be stored — and a
+ * "A\n\n\n\n\nB" would otherwise satisfy the pattern and be stored - and a
  * stored newline is what turns a name into a header-injection attempt the first
  * time someone interpolates it into an email subject. Collapsing to single
  * ASCII spaces removes the class rather than blocklisting characters.
@@ -526,8 +526,8 @@ export function validateName(raw: unknown): ValidationResult<string> {
   if (!NAME_PATTERN.test(value)) {
     // Deliberately does not name the offending character. It would be a digit or
     // a symbol nine times out of ten, and the tenth is someone whose name we
-    // just told them is invalid — say what is accepted, not what is wrong.
-    return { ok: false, error: "Please use letters only — any script is fine." };
+    // just told them is invalid - say what is accepted, not what is wrong.
+    return { ok: false, error: "Please use letters only - any script is fine." };
   }
   // A strengthening the spec's regex implies but does not enforce: "..", "--",
   // "'" all satisfy the character class and the length bound while containing
@@ -545,7 +545,7 @@ export function validateName(raw: unknown): ValidationResult<string> {
 /**
  * `lower(trim(email))`, matching `funnel_submissions.email_normalized` and the
  * unique index over it. One definition, used by the form, the dedupe lookup and
- * the column — if these three ever disagree, dedupe silently stops working and
+ * the column - if these three ever disagree, dedupe silently stops working and
  * the unique index starts throwing instead.
  *
  * Note what is NOT done: gmail dot-stripping and `+tag` removal. Both would
@@ -561,7 +561,7 @@ export function normalizeEmail(raw: string): string {
  * Pragmatic, not RFC 5322. The full grammar admits quoted local parts and
  * bracketed IP domains that no lead form should accept, and every attempt to
  * express it as one regex has historically rejected valid addresses instead.
- * Structure only — the address is proven by mail actually arriving.
+ * Structure only - the address is proven by mail actually arriving.
  */
 const EMAIL_PATTERN = /^[^\s@,;:<>"'\\]+@[^\s@.,;:<>"'\\]+(\.[^\s@.,;:<>"'\\]+)+$/u;
 
@@ -570,8 +570,8 @@ const EMAIL_PATTERN = /^[^\s@,;:<>"'\\]+@[^\s@.,;:<>"'\\]+(\.[^\s@.,;:<>"'\\]+)+
  * unrecognised domain; never reject a legitimate corporate domain you have not
  * seen."
  *
- * That direction is the entire design. This list will always be out of date —
- * new throwaway providers appear weekly — so the only safe failure mode is to
+ * That direction is the entire design. This list will always be out of date -
+ * new throwaway providers appear weekly - so the only safe failure mode is to
  * let an unknown domain through. A blocklist that guessed (heuristics on domain
  * age, on TLD, on the word "temp") would reject the one-person building-supplies
  * company on its own vanity domain, which is precisely the customer.
@@ -649,8 +649,8 @@ const DISPOSABLE_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
  *
  * Matches the domain itself and any subdomain of it, because several of these
  * providers hand out `<anything>.mailinator.com`. It walks label suffixes rather
- * than using `endsWith`, so `notmailinator.com` — a domain someone might
- * legitimately own — does not match `mailinator.com`.
+ * than using `endsWith`, so `notmailinator.com` - a domain someone might
+ * legitimately own - does not match `mailinator.com`.
  */
 export function isDisposableEmailDomain(domain: string): boolean {
   const d = domain.trim().toLowerCase().replace(/\.$/, "");
@@ -699,7 +699,7 @@ export interface FunnelCountry {
 /**
  * ── Why there is no libphonenumber-js here ──────────────────────────────────
  * Doc 16 §4 sets the budget: the full metadata bundle is ~145 KB, and the buyer
- * is on a mid-range Android over 4G. The doc offers two ways out — the min
+ * is on a mid-range Android over 4G. The doc offers two ways out - the min
  * metadata build, or server-side-only validation with a cheap client check.
  *
  * This takes a third that satisfies both: a length-and-prefix table for the
@@ -710,14 +710,14 @@ export interface FunnelCountry {
  * What it does not do is what libphonenumber does well: number-type detection,
  * carrier prefix ranges, and the long tail of numbering-plan exceptions. If the
  * funnel ever needs those, the upgrade is to import `libphonenumber-js/min`
- * INSIDE THE SERVER ACTION ONLY and leave this as the client-side check — the
+ * INSIDE THE SERVER ACTION ONLY and leave this as the client-side check - the
  * shape of this module is chosen so that is a drop-in.
  *
  * India first, then the markets and diaspora corridors that plausibly reach this
  * form. Adding a country is one row.
  */
 export const FUNNEL_COUNTRIES: ReadonlyArray<FunnelCountry> = [
-  // Indian mobile numbers are 10 digits starting 6–9. That one rule rejects the
+  // Indian mobile numbers are 10 digits starting 6-9. That one rule rejects the
   // overwhelming majority of real mistakes on this form (a landline, a copied
   // number with the 0 trunk prefix still attached, a nine-digit typo) and it is
   // the single highest-value line in this table.
@@ -776,7 +776,7 @@ export function validatePhone(iso: unknown, raw: unknown): ValidationResult<stri
   if (!country) {
     // The country comes from a <select> built from FUNNEL_COUNTRIES, so this
     // only fires on a tampered or stale submission. §3.3: server-side
-    // revalidation of everything — client validation is UX, not a control.
+    // revalidation of everything - client validation is UX, not a control.
     return { ok: false, error: "Please choose your country." };
   }
   const digits = normalizePhoneDigits(raw);
@@ -792,7 +792,7 @@ export function validatePhone(iso: unknown, raw: unknown): ValidationResult<stri
 }
 
 /**
- * Last-line shape check for a value that claims to already be E.164 — used on
+ * Last-line shape check for a value that claims to already be E.164 - used on
  * the dedupe path, where a stored number is compared against a new one.
  * ITU-T E.164 caps the whole number at 15 digits including the country code.
  */

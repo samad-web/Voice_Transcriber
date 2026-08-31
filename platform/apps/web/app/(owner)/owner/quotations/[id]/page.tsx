@@ -6,7 +6,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { QuotationDetail } from "./quotation-detail-client";
 import type { Quotation, QuotationItem } from "../actions";
 
-export const metadata: Metadata = { title: "Quotation — Aura" };
+export const metadata: Metadata = { title: "Quotation - Aura" };
 
 export default async function QuotationDetailPage({
   params,

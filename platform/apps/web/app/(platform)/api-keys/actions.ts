@@ -6,7 +6,7 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Operator-only, asserted per action. These mint and revoke a tenant's API
- * credentials under an org id supplied by the caller — and a Server Action is
+ * credentials under an org id supplied by the caller - and a Server Action is
  * its own POST endpoint, so the `(platform)` layout's `isOperator()` (a
  * render-time gate) never runs for one. See lib/operator-guard.ts.
  */
@@ -25,9 +25,9 @@ export interface CreatedKey {
 /**
  * `scopes` is required, with no default, mirroring the API (migration 0076).
  *
- * A key minted with no scopes can do nothing at all — the column defaults to
+ * A key minted with no scopes can do nothing at all - the column defaults to
  * the empty set precisely so a credential can never acquire authority by
- * omission — so defaulting here would hand the operator a key that 403s on
+ * omission - so defaulting here would hand the operator a key that 403s on
  * first use. Making the caller state it is the point.
  */
 export async function createApiKeyAction(
@@ -55,7 +55,7 @@ export async function createApiKeyAction(
     revalidatePath("/api-keys");
     return data;
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 

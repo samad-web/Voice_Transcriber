@@ -7,7 +7,7 @@ import { OwnerRole, resolveOwnerRole } from "./roles";
  *
  * This is about to become an authorization input (OwnerRoleGuard, migration
  * 0018), so its behaviour on unexpected input is a security property, not a
- * detail. Everything below pins what the code does TODAY — including the
+ * detail. Everything below pins what the code does TODAY - including the
  * fail-open default, which roles.ts:12-19 documents as deliberate. It is pinned
  * rather than "fixed" here because changing it is a product decision about who
  * loses access, not a test's call to make.
@@ -24,14 +24,14 @@ describe("resolveOwnerRole", () => {
 
   it("covers every value the OwnerRole enum declares", () => {
     // Guards against a persona being added to the enum without anyone deciding
-    // how resolveOwnerRole should treat it — a new value must at minimum
+    // how resolveOwnerRole should treat it - a new value must at minimum
     // round-trip through this function.
     for (const role of OwnerRole.options) {
       expect(resolveOwnerRole(role)).toBe(role);
     }
   });
 
-  it("resolves NULL to owner — the fail-OPEN default, deliberate per roles.ts:12-19", () => {
+  it("resolves NULL to owner - the fail-OPEN default, deliberate per roles.ts:12-19", () => {
     // NULL owner_role means "a membership that predates personas", and 0018
     // backfilled those to owner. Documented as deliberate: adding a persona must
     // only ever narrow access, never silently remove it from an existing login.
@@ -60,7 +60,7 @@ describe("resolveOwnerRole", () => {
 
   /**
    * The fallback is the most permissive persona, so a case variant of a
-   * RESTRICTED persona must degrade to the persona meant — never escalate.
+   * RESTRICTED persona must degrade to the persona meant - never escalate.
    * Fixed by normalising (trim + lower-case) before the parse; the null default
    * above is unchanged, because owner IS the safe answer for "no persona".
    */
@@ -74,7 +74,7 @@ describe("resolveOwnerRole", () => {
   });
 
   it("still resolves a whitespace-only value the fail-open way, not by throwing", () => {
-    // Normalising made "   " indistinguishable from "" — both are absent, and
+    // Normalising made "   " indistinguishable from "" - both are absent, and
     // absent has always meant owner.
     expect(resolveOwnerRole("   ")).toBe("owner");
   });

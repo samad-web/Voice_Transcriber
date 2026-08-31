@@ -14,7 +14,7 @@ import type {
 } from "./types";
 
 /**
- * CRM Phase 1 foundation (E0.1) — mutations for the new Deal/Contact/Account
+ * CRM Phase 1 foundation (E0.1) - mutations for the new Deal/Contact/Account
  * objects. Same shape as actions.ts's lead actions deliberately: every action
  * re-resolves the owner from the session via `ownerHeaders()` rather than
  * trusting an org id from the client, since a server action is a public
@@ -38,7 +38,7 @@ export interface DealUpdate {
 }
 
 /**
- * Move a card, or edit what's on it — the deal-board counterpart to
+ * Move a card, or edit what's on it - the deal-board counterpart to
  * updateLeadAction. The board applies the move optimistically and calls
  * this; on failure it rolls the card back.
  */
@@ -55,7 +55,7 @@ export async function updateDealAction(
 }
 
 /**
- * Duplicate detection & merge (E0.3) — exact-match only (external_id
+ * Duplicate detection & merge (E0.3) - exact-match only (external_id
  * collisions), see merge.controller.ts's header for why phone/email/domain
  * aren't scanned. Same ownerHeaders()-first shape as the actions above.
  */
@@ -66,7 +66,7 @@ export async function scanDuplicatesAction(
   ActionResult & {
     scanned?: number;
     newCandidates?: number;
-    /** Whether the trigram pass actually ran — see merge.controller.ts. */
+    /** Whether the trigram pass actually ran - see merge.controller.ts. */
     fuzzy?: "ran" | "unavailable" | "skipped";
     threshold?: number;
   }
@@ -112,7 +112,7 @@ export async function dismissDuplicateAction(id: string): Promise<ActionResult> 
   }
 }
 
-/** Keeps `survivorId`'s own fields (no field-by-field picker in this UI — see
+/** Keeps `survivorId`'s own fields (no field-by-field picker in this UI - see
  *  duplicates-manager.tsx), additively merging facts/external_ids from the
  *  side being absorbed. */
 export async function mergeRecordsAction(
@@ -144,7 +144,7 @@ export async function mergeRecordsAction(
 
 // ── Track A2: the interaction timeline ──────────────────────────────────────
 
-/** Which object's timeline — mirrors the API's nested route shape exactly. */
+/** Which object's timeline - mirrors the API's nested route shape exactly. */
 export type TimelineParent = "contacts" | "accounts" | "deals";
 
 export async function fetchInteractionsAction(
@@ -175,7 +175,7 @@ export interface LogInteractionInput {
 }
 
 /**
- * Log something that happened by hand. `call` is deliberately not an option —
+ * Log something that happened by hand. `call` is deliberately not an option -
  * calls reach the timeline through the worker, and letting a human type one in
  * would put a row on the timeline that no recording backs.
  */
@@ -380,7 +380,7 @@ export async function searchRecordsAction(
  * The label for ONE record, so a picker holding a stored id can show a name
  * instead of a uuid.
  *
- * Returns null rather than erroring when the record is gone or invisible —
+ * Returns null rather than erroring when the record is gone or invisible -
  * a lookup pointing at a deleted record should read as "unknown record",
  * not break the whole form it sits in.
  */
@@ -416,7 +416,7 @@ export async function resolveRecordAction(
  * One message, to the contact named by `contactId`, from the signed-in user's
  * own connected mailbox.
  *
- * There is no recipient parameter, and that is the design — the API reads the
+ * There is no recipient parameter, and that is the design - the API reads the
  * address from the contact row, so neither this action nor anything calling it
  * can point a send at an arbitrary inbox. See outbound-mail.controller.ts.
  */
@@ -482,7 +482,7 @@ export async function fetchStageHistoryAction(
 // ── Custom field values on a record ─────────────────────────────────────────
 
 /**
- * The definitions and their values in one response — see
+ * The definitions and their values in one response - see
  * custom-field-values.controller.ts for why the API joins them rather than
  * making every caller do it.
  */

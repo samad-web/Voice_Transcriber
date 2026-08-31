@@ -11,7 +11,7 @@ import {
 } from "./crm-actions";
 import { relativeTime, type Interaction } from "./types";
 
-/** Same hand-copied textarea chrome as lead-drawer.tsx — see that file's note. */
+/** Same hand-copied textarea chrome as lead-drawer.tsx - see that file's note. */
 const TEXTAREA_CLASS =
   "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
   "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
@@ -25,7 +25,7 @@ const ICONS = {
   note: StickyNote,
 } as const;
 
-/** "2m 14s" — call durations are read at a glance, so no bare second counts. */
+/** "2m 14s" - call durations are read at a glance, so no bare second counts. */
 function duration(seconds: number | null): string | null {
   if (seconds === null || seconds <= 0) return null;
   const m = Math.floor(seconds / 60);
@@ -41,7 +41,7 @@ function duration(seconds: number | null): string | null {
  * unbounded, so it is not something the list query should be paying for on
  * every row.
  *
- * `call` rows are read-only here by construction — the composer only offers
+ * `call` rows are read-only here by construction - the composer only offers
  * the hand-loggable types, matching what the API accepts (a POST with
  * type=call is a 400). A call appears because the worker projected it.
  */
@@ -169,7 +169,7 @@ export function InteractionTimeline({
           {rows.map((row) => {
             const Icon = ICONS[row.type] ?? StickyNote;
             const length = duration(row.duration_s);
-            // Calendar sync brings in meetings that have not happened yet — a
+            // Calendar sync brings in meetings that have not happened yet - a
             // meeting next Thursday being the single most useful thing on a
             // deal. Nothing marks them in the database; "in the future" is
             // simply true or not at the moment of rendering, which needs no

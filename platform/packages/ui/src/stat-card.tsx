@@ -21,7 +21,7 @@ export function StatCard({
         <div className="min-w-0">
           <MonoLabel>{label}</MonoLabel>
           {/* tabular-nums so a dashboard of counters does not reflow by a pixel
-              on every poll. font-semibold is the heaviest weight in the system —
+              on every poll. font-semibold is the heaviest weight in the system -
               the old font-black is gone with the display face. */}
           <p className="mt-2 text-3xl font-semibold break-words text-text tabular-nums">{value}</p>
         </div>

@@ -13,9 +13,9 @@ import com.voicetranscriber.callrecorder.platform.EventLog
 import com.voicetranscriber.callrecorder.recordings.SourceRegistry
 
 /**
- * Native cellular call detection — analogue of Cube ACR's `OnPhoneState`.
+ * Native cellular call detection - analogue of Cube ACR's `OnPhoneState`.
  *
- * Recording starts on OFFHOOK (call *active/attended*), never on RINGING — so an
+ * Recording starts on OFFHOOK (call *active/attended*), never on RINGING - so an
  * unanswered incoming call is not recorded. Direction is inferred: if we saw a RINGING
  * state first it's incoming, otherwise it's an outgoing call we dialed.
  */
@@ -30,7 +30,7 @@ class PhoneStateReceiver : BroadcastReceiver() {
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                 // Activation gate: an un-enrolled or remotely-disabled device never records.
                 if (!ActivationStore.isRecordingAllowed(context)) {
-                    Log.i("PhoneStateReceiver", "recording blocked — device not activated/enabled")
+                    Log.i("PhoneStateReceiver", "recording blocked - device not activated/enabled")
                     return
                 }
                 val direction = if (sawRinging) DIR_INCOMING else DIR_OUTGOING
@@ -39,13 +39,13 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 // Direction only (no number) to keep the telemetry event free of PII.
                 EventLog.record(context, "call_offhook", mapOf("direction" to direction))
 
-                // If this handset records calls itself, its file has BOTH sides — ours would
+                // If this handset records calls itself, its file has BOTH sides - ours would
                 // only have the near end. Recording anyway would just save a worse duplicate,
                 // so stand down and import the OEM file after the call instead.
                 if (CaptureSettings(context).preferOemRecordings &&
                     OemRecordingIngestor.isAvailable(context)
                 ) {
-                    Log.i("PhoneStateReceiver", "own capture skipped — device records calls itself")
+                    Log.i("PhoneStateReceiver", "own capture skipped - device records calls itself")
                     return
                 }
                 RecordingService.start(context, SourceRegistry.telephony().id, number, direction)

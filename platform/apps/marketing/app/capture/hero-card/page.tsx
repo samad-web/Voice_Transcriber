@@ -7,7 +7,7 @@ import { CallCard } from "@/components/call-card";
  * scripts/capture-hero-gif.mjs points Playwright here, records the card and
  * converts it to the animated WebP + GIF pair that the homepage ships. Having
  * a dedicated route rather than scraping the homepage means the capture cannot
- * grab the wrong element — `.mk-card` is also the class on the six outcome
+ * grab the wrong element - `.mk-card` is also the class on the six outcome
  * cards, and when the homepage stopped rendering the call card the script
  * silently captured one of those instead and produced a 498×270 image of a
  * paragraph.
@@ -31,7 +31,7 @@ export default function CaptureHeroCard() {
         padding: 0,
         // The card's own surface, so the handful of pixels outside its rounded
         // corners blend rather than showing as bright notches. The page applies
-        // the radius and the shadow in CSS — baking either into the raster put
+        // the radius and the shadow in CSS - baking either into the raster put
         // a hard-edged rectangle on top of the hero's gradient wash.
         background: "var(--mk-surface)",
         display: "inline-block",

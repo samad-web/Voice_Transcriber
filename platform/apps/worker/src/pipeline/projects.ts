@@ -2,7 +2,7 @@ import { detectProjects, type DetectableProject, type ProjectHit } from "@aura/s
 import type { DbClient } from "./crm-dispatch";
 
 /**
- * Project detection: label a call — and the lead it produced — with which of
+ * Project detection: label a call - and the lead it produced - with which of
  * the tenant's own offerings it was actually about (migration 0073).
  *
  * Runs after upsertLead in pipeline.ts, in its own non-blocking try/catch, for
@@ -40,7 +40,7 @@ export interface ProjectDetectionResult {
  * Detect and persist the projects a call covered.
  *
  * Idempotent: reprocessing a call replaces its machine-made hits and leaves
- * every human-made one alone. `leadId` may be null — a call that did not
+ * every human-made one alone. `leadId` may be null - a call that did not
  * qualify as a lead still gets its `call_projects` rows, so the project view
  * counts every conversation rather than only the ones that became pipeline.
  */
@@ -89,8 +89,8 @@ export async function detectCallProjects(
   const hits = detectProjects(source.haystack, catalogue);
 
   // Clear this call's previous machine guesses before writing the new ones, so
-  // a project removed from the catalogue — or one that only matched because of
-  // an alias since deleted — actually disappears on reprocess instead of
+  // a project removed from the catalogue - or one that only matched because of
+  // an alias since deleted - actually disappears on reprocess instead of
   // accumulating. A human's row on this call is never touched.
   await client.query(
     `DELETE FROM call_projects WHERE call_id = $1 AND source = 'extraction'`,
@@ -128,7 +128,7 @@ export async function detectCallProjects(
 
   // Carry it onto the dual-written deal under the same rule. This runs after
   // projectLeadToCrm rather than before it precisely so the deal already
-  // exists — a lead and its deal disagreeing about which project they are for
+  // exists - a lead and its deal disagreeing about which project they are for
   // is the kind of split-brain that makes people stop trusting both numbers.
   await client.query(
     `UPDATE deals SET project_id = $2, project_source = 'extraction'
@@ -139,7 +139,7 @@ export async function detectCallProjects(
   return {
     hits,
     primaryProjectId: primary,
-    reason: rowCount === 0 ? "detected (lead project set by a human — left alone)" : "detected",
+    reason: rowCount === 0 ? "detected (lead project set by a human - left alone)" : "detected",
   };
 }
 
@@ -148,11 +148,11 @@ export async function detectCallProjects(
  *
  * The Meta lead-ads path (meta-mcp-sync.ts) needs this: an ad lead has a form
  * name, a campaign name and the answers the person typed, but no transcript
- * and no `calls` row — so there is nothing to write to `call_projects`, only
+ * and no `calls` row - so there is nothing to write to `call_projects`, only
  * a lead to label.
  *
  * Deliberately the SAME detector and the same human-owns-it rule as the call
- * path. A lead from the "3D Website — Showroom" ad form and a call where
+ * path. A lead from the "3D Website - Showroom" ad form and a call where
  * someone said "3d site" must land on the same project, or the board's
  * project filter quietly means two different things depending on where the
  * lead came from.
@@ -187,7 +187,7 @@ export async function detectProjectsForText(
     [leadId, primary],
   );
 
-  // And onto the deal this lead was projected onto, under the same rule —
+  // And onto the deal this lead was projected onto, under the same rule -
   // mirroring detectCallProjects exactly. A lead and its deal disagreeing
   // about which project they are for is the split-brain that makes people
   // stop trusting both numbers. No-op when no deal exists yet.
@@ -200,6 +200,6 @@ export async function detectProjectsForText(
   return {
     hits,
     primaryProjectId: primary,
-    reason: rowCount === 0 ? "detected (lead project set by a human — left alone)" : "detected",
+    reason: rowCount === 0 ? "detected (lead project set by a human - left alone)" : "detected",
   };
 }

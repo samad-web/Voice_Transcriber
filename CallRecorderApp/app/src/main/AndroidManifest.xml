@@ -17,7 +17,7 @@
 
     <!-- Reading the OEM dialer's own call recordings (Samsung "Auto record calls", MIUI, …).
          Those files are BOTH-ends audio the system dialer captured from the modem, which a
-         normal app can't do itself — so we ingest them instead. MANAGE_EXTERNAL_STORAGE is
+         normal app can't do itself - so we ingest them instead. MANAGE_EXTERNAL_STORAGE is
          needed to read arbitrary OEM folders on API 30+; READ_MEDIA_AUDIO/READ_EXTERNAL_STORAGE
          covers the MediaStore route. (All-files access is Play-restricted; fine when sideloaded.) -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />

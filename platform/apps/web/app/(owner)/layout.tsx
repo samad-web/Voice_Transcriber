@@ -21,9 +21,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
 
   const company = owner.membership.orgName || "Owner Console";
   // A6: which page group the sidebar leads with. Neither group is hidden by
-  // this — see lib/crm-cutover.ts.
+  // this - see lib/crm-cutover.ts.
   const crmPrimary = crmShadowReadEnabled();
-  // Whether this ORG has the CRM module at all (migration 0072) — unlike
+  // Whether this ORG has the CRM module at all (migration 0072) - unlike
   // crmPrimary, this does hide nav items. See nav.ts's CRM_GATED_HREFS.
   const crmEnabled = owner.membership.enabledModules.includes("crm");
 

@@ -6,7 +6,7 @@ import { ownerGet } from "@/lib/owner-context";
 import type { Lead, Project, Stage } from "../types";
 import { LeadsTable } from "./leads-table";
 
-export const metadata: Metadata = { title: "All Leads — Aura" };
+export const metadata: Metadata = { title: "All Leads - Aura" };
 
 const PAGE_SIZE = 50;
 
@@ -44,7 +44,7 @@ export default async function LeadsPage({
 
   // Concurrent: the catalogue only supplies the filter chips, so a projects
   // outage should cost the filter row, not the whole leads page. `?? []`
-  // rather than a failure branch — the table renders fine without it.
+  // rather than a failure branch - the table renders fine without it.
   const [data, projects] = await Promise.all([
     ownerGet<ListResponse>(`/v1/leads?${query}`),
     ownerGet<{ projects: Project[] }>("/v1/projects"),

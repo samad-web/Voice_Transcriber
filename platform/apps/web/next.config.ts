@@ -9,8 +9,8 @@ const nextConfig: NextConfig = {
    * different server, and this is the domain we control).
    *
    * `basePath`, NOT an nginx rewrite. Next bakes the prefix into every
-   * generated link, every Server Action endpoint and — the part a rewrite
-   * cannot fix — the `/_next/static/...` asset URLs. Stripping /admin at the
+   * generated link, every Server Action endpoint and - the part a rewrite
+   * cannot fix - the `/_next/static/...` asset URLs. Stripping /admin at the
    * proxy would serve HTML that then asks for its JavaScript at the root, where
    * the marketing site answers with its own 404 page, and the console would
    * render unstyled and inert with no error anywhere.
@@ -25,7 +25,7 @@ const nextConfig: NextConfig = {
    */
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || undefined,
   outputFileTracingRoot: path.join(__dirname, "../.."),
-  // Ships a self-contained server bundle with only the traced dependencies —
+  // Ships a self-contained server bundle with only the traced dependencies -
   // what docker/web.Dockerfile copies into the runtime image.
   //
   // Tracing symlinks pnpm's store, which needs a privilege Windows only grants
@@ -42,16 +42,16 @@ const nextConfig: NextConfig = {
   //
   // Promoting one rule must never be able to do that again, so the two concerns
   // are separated here: `next build` compiles, `pnpm lint` lints. The lint gate
-  // lives in CI's `static` job — see .github/workflows/ci.yml. THAT job is where
+  // lives in CI's `static` job - see .github/workflows/ci.yml. THAT job is where
   // a new error has to be caught; if you are turning a rule on, run
   // `pnpm --filter @aura/web lint` before you push, because this file guarantees
   // the build will not do it for you.
   //
   // (Typecheck is deliberately still a build gate. `tsc` disagreeing with the
   // code is a compile failure by definition, not a style opinion, and there is
-  // no equivalent backlog — `pnpm -r typecheck` is at 8/8 clean.)
+  // no equivalent backlog - `pnpm -r typecheck` is at 8/8 clean.)
   eslint: { ignoreDuringBuilds: true },
-  // Fleet & MDM became Instances — devices are now viewed inside their customer,
+  // Fleet & MDM became Instances - devices are now viewed inside their customer,
   // and compliance (policy / erasure / audit) moved onto the instance detail page.
   async redirects() {
     return [

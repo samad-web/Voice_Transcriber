@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Workflow automation (PRD Layer 2) — "when X happens, do Y".
+ * Workflow automation (PRD Layer 2) - "when X happens, do Y".
  *
  * ── WHAT THIS FILE IS, AND IS NOT ─────────────────────────────────────────
  *
@@ -23,7 +23,7 @@ import { z } from "zod";
  */
 
 export const AutomationTrigger = z.enum([
-  /** A deal was created — by hand, or projected from a call. */
+  /** A deal was created - by hand, or projected from a call. */
   "deal.created",
   /** A deal moved between stages. */
   "deal.stage_changed",
@@ -31,7 +31,7 @@ export const AutomationTrigger = z.enum([
   "deal.idle",
   /** A task passed its due date without being completed. Worker sweep. */
   "task.overdue",
-  /** Something landed on a timeline — a call, an email, a note. */
+  /** Something landed on a timeline - a call, an email, a note. */
   "interaction.logged",
   /** A contact was created. */
   "contact.created",
@@ -45,7 +45,7 @@ export const AutomationTrigger = z.enum([
 ]);
 export type AutomationTrigger = z.infer<typeof AutomationTrigger>;
 
-/** Triggers a person cannot cause directly — the sweep produces them. */
+/** Triggers a person cannot cause directly - the sweep produces them. */
 export const SWEEP_TRIGGERS: AutomationTrigger[] = [
   "deal.idle",
   "task.overdue",
@@ -63,20 +63,20 @@ export const SWEEP_TRIGGERS: AutomationTrigger[] = [
 export const AutomationConditions = z.object({
   /** Deal is in one of these stages. */
   stage: z.array(z.string().max(40)).max(20).optional(),
-  /** Deal moved INTO one of these stages — stage_changed only. */
+  /** Deal moved INTO one of these stages - stage_changed only. */
   toStage: z.array(z.string().max(40)).max(20).optional(),
-  /** Deal moved OUT OF one of these stages — stage_changed only. */
+  /** Deal moved OUT OF one of these stages - stage_changed only. */
   fromStage: z.array(z.string().max(40)).max(20).optional(),
   status: z.array(z.enum(["open", "won", "lost"])).max(3).optional(),
   amountGte: z.number().optional(),
   amountLte: z.number().optional(),
-  /** interaction.logged only — call | email | note | meeting … */
+  /** interaction.logged only - call | email | note | meeting … */
   interactionType: z.array(z.string().max(40)).max(10).optional(),
-  /** deal.idle / task.overdue — how stale before it counts. */
+  /** deal.idle / task.overdue - how stale before it counts. */
   idleDays: z.number().int().min(1).max(365).optional(),
-  /** call.risk_flagged only — only match flags at or above this severity. */
+  /** call.risk_flagged only - only match flags at or above this severity. */
   riskSeverity: z.array(z.enum(["low", "medium", "high"])).max(3).optional(),
-  /** outreach_step.overdue only — hour-scale grace period, distinct from
+  /** outreach_step.overdue only - hour-scale grace period, distinct from
    *  idleDays' day-scale (a promised callback is missed in hours, not days). */
   graceHours: z.number().int().min(1).max(168).optional(),
 });
@@ -87,7 +87,7 @@ export const ActionTarget = z.union([
   z.literal("deal_owner"),
   z.literal("contact_owner"),
   z.literal("task_assignee"),
-  /** outreach_step.overdue only — the outreach journey's own owner, a
+  /** outreach_step.overdue only - the outreach journey's own owner, a
    *  different person than a deal's or contact's owner. */
   z.literal("journey_owner"),
   z.string().uuid(),
@@ -123,7 +123,7 @@ export const AutomationAction = z.discriminatedUnion("type", [
   /**
    * Moving a deal is included because "when it goes quiet for 30 days, drop
    * it back to Nurture" is a real rule people write. It cannot cause a loop:
-   * the executor never enqueues events for its own writes — see the module
+   * the executor never enqueues events for its own writes - see the module
    * header in the worker's automation.ts.
    */
   z.object({
@@ -144,7 +144,7 @@ export const AutomationRuleInput = z
   })
   .superRefine((rule, ctx) => {
     // A stage condition that can never be true is a rule that silently does
-    // nothing, which is the worst failure mode an automation can have — it
+    // nothing, which is the worst failure mode an automation can have - it
     // looks configured and it is not.
     if (rule.trigger !== "deal.stage_changed" && (rule.conditions.toStage || rule.conditions.fromStage)) {
       ctx.addIssue({
@@ -208,18 +208,18 @@ export interface AutomationSubject {
   dealOwnerUserId?: string | null;
   contactOwnerUserId?: string | null;
   taskAssigneeUserId?: string | null;
-  /** call.risk_flagged only — the highest severity among the call's flags. */
+  /** call.risk_flagged only - the highest severity among the call's flags. */
   riskSeverity?: string | null;
-  /** outreach_step.overdue only — how many hours past due_at. */
+  /** outreach_step.overdue only - how many hours past due_at. */
   overdueHours?: number | null;
-  /** outreach_step.overdue only — the outreach journey's own owner. */
+  /** outreach_step.overdue only - the outreach journey's own owner. */
   journeyOwnerUserId?: string | null;
 }
 
 /**
  * Does this rule apply?
  *
- * Every condition is ANDed, and an ABSENT condition matches everything —
+ * Every condition is ANDed, and an ABSENT condition matches everything -
  * which is the behaviour people expect from a form where they filled in two
  * of six boxes. A present condition the subject has no value for does NOT
  * match: "amount at least 10,000" should not fire on a deal with no amount,
@@ -280,7 +280,7 @@ export function resolveTarget(target: ActionTarget, subject: AutomationSubject):
  * `dueInDays` as a `YYYY-MM-DD` date.
  *
  * Built from an explicit `now` rather than reading the clock, so it is
- * testable — and computed in UTC deliberately: `tasks.due_on` is a date
+ * testable - and computed in UTC deliberately: `tasks.due_on` is a date
  * column, and deriving it from a server's local midnight is exactly the bug
  * that made every due date read a day early on this platform once already.
  */

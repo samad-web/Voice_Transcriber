@@ -9,7 +9,7 @@ export { SlotTakenError } from "./google-calendar";
 export { UnavailableScheduler } from "./unavailable";
 
 /* ────────────────────────────────────────────────────────────────────────────
-   Env selection — doc 16 §0.4.
+   Env selection - doc 16 §0.4.
 
    SERVER ONLY. None of these are NEXT_PUBLIC_, and they must never become so:
    GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY in a client bundle is a full compromise of
@@ -17,7 +17,7 @@ export { UnavailableScheduler } from "./unavailable";
    actions; importing it into a client component is a build error waiting to
    happen and should stay that way.
 
-   Required for the real scheduler — ALL of them, or you get UnavailableScheduler:
+   Required for the real scheduler - ALL of them, or you get UnavailableScheduler:
      GOOGLE_CALENDAR_ID                      calendar to read and write, e.g.
                                              sales@sirahdigital.in
      GOOGLE_SERVICE_ACCOUNT_EMAIL            ...@...iam.gserviceaccount.com
@@ -29,7 +29,7 @@ export { UnavailableScheduler } from "./unavailable";
    Optional:
      GOOGLE_CALENDAR_IMPERSONATE_SUBJECT     Workspace mailbox to act as. Without
                                              it the lead gets NO calendar invite
-                                             AND NO MEET LINK is requested — a
+                                             AND NO MEET LINK is requested - a
                                              bare service account has no Meet
                                              entitlement and Google rejects the
                                              whole insert if one is asked for
@@ -41,21 +41,21 @@ export { UnavailableScheduler } from "./unavailable";
                                 without it the picker knows only about its own
                                 empty calendar and offers times the team is
                                 already busy. READ ACCESS IS ENOUGH, which is
-                                the point — a domain that refuses to share a
+                                the point - a domain that refuses to share a
                                 calendar for writing will usually still share
                                 it for reading.
-     SCHEDULER_TIMEZONE      default Asia/Kolkata — the sales team's zone, and
+     SCHEDULER_TIMEZONE      default Asia/Kolkata - the sales team's zone, and
                              the only one the business hours below mean anything
                              in. Not the visitor's and not the server's.
      SCHEDULER_SLOT_MINUTES  default 30
      SCHEDULER_DAY_START     default 10:00   (local to SCHEDULER_TIMEZONE)
      SCHEDULER_DAY_END       default 18:00
      SCHEDULER_WEEKDAYS      default 1,2,3,4,5   (0 = Sunday)
-     SCHEDULER_MIN_NOTICE_MINUTES  default 120 — nobody takes a sales call in
+     SCHEDULER_MIN_NOTICE_MINUTES  default 120 - nobody takes a sales call in
                              ten minutes, and offering one is how the picker
                              produces a slot that is technically free and
                              practically fake.
-     SCHEDULER_MAX_SLOTS     default 12 — a picker with sixty buttons is not a
+     SCHEDULER_MAX_SLOTS     default 12 - a picker with sixty buttons is not a
                              picker.
    ──────────────────────────────────────────────────────────────────────────── */
 
@@ -65,7 +65,7 @@ export { UnavailableScheduler } from "./unavailable";
  * ── THE BUG THIS EXISTS TO KILL ────────────────────────────────────────────
  *
  * docker-compose.prod.yml passes the optional scheduler settings as
- * `${SCHEDULER_DAY_START:-}`, which does not leave the variable unset — it sets
+ * `${SCHEDULER_DAY_START:-}`, which does not leave the variable unset - it sets
  * it to the EMPTY STRING. `process.env.X ?? "10:00"` then keeps the empty
  * string, because `??` only falls back on null and undefined, and
  * `parseClock("")` throws.
@@ -73,8 +73,8 @@ export { UnavailableScheduler } from "./unavailable";
  * getScheduler() catches that throw and returns UnavailableScheduler, so a
  * perfectly good Google configuration was discarded because an unrelated
  * OPTIONAL setting was blank. Every booking then recorded
- * calendar_event_id NULL with calendar_error NULL — the fingerprint of "no
- * calendar configured" — while the credentials were sitting right there and
+ * calendar_event_id NULL with calendar_error NULL - the fingerprint of "no
+ * calendar configured" - while the credentials were sitting right there and
  * working. Found on 2026-08-10 after three bookings failed to reach Google.
  *
  * `||` would have been enough for the strings, but this is explicit so nobody
@@ -145,13 +145,13 @@ let cached: Scheduler | null = null;
  * The scheduler this deployment actually has.
  *
  * Fails CLOSED in every direction: a missing credential, an unparseable
- * business-hours value, anything at all — you get `UnavailableScheduler`, the
+ * business-hours value, anything at all - you get `UnavailableScheduler`, the
  * qualified path shows the same "our team will reach out" screen the
  * disqualified path shows, and no fake slot ever reaches a page. Doc 16 §0.4
  * says that rule "holds absolutely", so a misconfiguration must degrade to the
  * honest screen rather than throw a 500 into a live lead form.
  *
- * In production this returns `GoogleCalendarScheduler` — the credentials are
+ * In production this returns `GoogleCalendarScheduler` - the credentials are
  * set and verified (see the header of google-calendar.ts). It still returns
  * `UnavailableScheduler` anywhere the GOOGLE_* vars are absent, which is every
  * local and preview environment, and that remains the correct default.
@@ -181,7 +181,7 @@ export function getScheduler(): Scheduler {
   return cached;
 }
 
-/** Tests and long-lived dev servers only — module state outlives an env change. */
+/** Tests and long-lived dev servers only - module state outlives an env change. */
 export function resetSchedulerForTests(): void {
   cached = null;
 }

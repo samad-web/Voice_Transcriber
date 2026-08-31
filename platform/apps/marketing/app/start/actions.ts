@@ -30,7 +30,7 @@ import { DEFAULT_NOTICE_MINUTES, bookSlot, listOpenSlots, type OpenSlot } from "
  * The funnel's two server actions.
  *
  * Everything decisive happens here. The client form validates inline for the
- * person filling it in — that is UX, never a control. A request that skips the
+ * person filling it in - that is UX, never a control. A request that skips the
  * browser entirely is validated identically, by these same functions.
  *
  * Neither action tells the caller WHY they were disqualified. The rule is never
@@ -64,7 +64,7 @@ export async function submitContactAction(form: FormData): Promise<StepOneResult
   if (!whatsappCheck.ok) errors.whatsapp = whatsappCheck.error!;
 
   // Unticked and required (doc 16 §0.3). A pre-ticked box is not consent under
-  // the DPDP Act or the GDPR, and this product is sold on data protection — its
+  // the DPDP Act or the GDPR, and this product is sold on data protection - its
   // own lead form must not be its weakest artefact.
   if (form.get("consent") === null) {
     errors.consent = "Please confirm how we may contact you.";
@@ -83,7 +83,7 @@ export async function submitContactAction(form: FormData): Promise<StepOneResult
 
   const email = emailCheck.value!;
 
-  // The database can be configured and still be unreachable — down, failed
+  // The database can be configured and still be unreachable - down, failed
   // over, out of connections, or (in development) simply not created yet.
   // Without this the pg error propagates out of the Server Action as an
   // unhandled exception: the visitor gets a blank error boundary instead of a
@@ -95,7 +95,7 @@ export async function submitContactAction(form: FormData): Promise<StepOneResult
   let captured;
   try {
     captured = await captureContact({
-      // Optional, and narrowed against the fixed list rather than trusted —
+      // Optional, and narrowed against the fixed list rather than trusted -
       // `coerceOption` returns null for anything unrecognised, which is the
       // same outcome as leaving it blank. It shapes how a message greets
       // somebody and nothing else, so an absent one costs nothing.
@@ -133,7 +133,7 @@ export interface StepTwoResult {
    * UPDATED 2026-08-09 alongside the rule change in @aura/shared: "tell me more"
    * no longer blocks a slot. `status` is tested FIRST below, so someone who
    * qualifies on budget and intent now gets the picker even though they also
-   * asked for information — which is the whole point of the change. `triage`
+   * asked for information - which is the whole point of the change. `triage`
    * now means what it should have meant all along: they asked a question AND
    * did not otherwise qualify.
    */
@@ -158,7 +158,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
    *
    * Forced to null unless businessType is actually 'other'. The field is
    * conditionally rendered, but a POST is a POST and anyone can send
-   * `businessTypeOther` alongside `businessType=real_estate` — recording a
+   * `businessTypeOther` alongside `businessType=real_estate` - recording a
    * second, contradicting industry against a row that already names one is a
    * mess no later query could untangle.
    */
@@ -177,7 +177,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
   const hasCrm = coerceOption(HAS_CRM_OPTIONS, form.get("hasCrm"));
   const wantsCustomCrm = coerceOption(WANTS_CUSTOM_CRM_OPTIONS, form.get("wantsCustomCrm"));
   // "Other (please specify)" now has somewhere to specify. When it is chosen,
-  // the free-text box is the answer — storing the literal "other" threw away the
+  // the free-text box is the answer - storing the literal "other" threw away the
   // one piece of information that question exists to collect.
   //
   // Trusting the text is deliberate: classifyCrm() lowercases it and matches
@@ -201,7 +201,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
     hasCrm === "yes" ? coerceOption(CRM_SATISFACTION_OPTIONS, form.get("crmSatisfied")) : null;
 
   // Free text from a public form, so it is bounded here and not only by the
-  // input's maxLength — a POST is a POST, and the browser attribute is a
+  // input's maxLength - a POST is a POST, and the browser attribute is a
   // convenience rather than a limit. 300 characters holds a site and two
   // handles; empty becomes NULL rather than "", so "skipped" and "typed
   // nothing" are the same thing in the column, which is what they mean.
@@ -213,7 +213,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
   // There was no check here, and its absence was not neutral. An unanswered
   // question arrived as null, `qualify()` read that as "no budget, no
   // timeframe", and returned DISQUALIFIED. So a visitor who missed one pill was
-  // not asked to complete the form — they were quietly rejected, shown the
+  // not asked to complete the form - they were quietly rejected, shown the
   // "we'll be in touch" screen, and written to the database as a lost lead.
   //
   // The client checks this too and will normally catch it first. This is the
@@ -235,8 +235,8 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
   // WHERE the rules come from: an operator-editable set in
   // marketing.funnel_criteria rather than three clauses compiled into the
   // release. `loadFunnelCriteria()` falls back to the compiled defaults on any
-  // failure, and those defaults are the same three clauses — proven equal over
-  // every answer combination in funnel-criteria.test.ts — so a database blip
+  // failure, and those defaults are the same three clauses - proven equal over
+  // every answer combination in funnel-criteria.test.ts - so a database blip
   // changes nothing about who qualifies.
   //
   // `qualify()` is still called, for `routeToHuman` only. That flag is not a
@@ -261,7 +261,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
     status: evaluation.status,
   };
 
-  // Same reasoning as step 1 — but the session is deliberately NOT cleared on
+  // Same reasoning as step 1 - but the session is deliberately NOT cleared on
   // failure, so a retry still attaches to the row step 1 created rather than
   // orphaning it and starting a second submission for the same person.
   try {
@@ -304,7 +304,7 @@ export async function submitQualificationAction(form: FormData): Promise<StepTwo
 }
 
 // NOTE: nothing else may be exported from this file. A "use server" module is
-// allowed to export async functions and nothing else — a re-exported string
+// allowed to export async functions and nothing else - a re-exported string
 // constant here threw `A "use server" file can only export async functions`
 // at call time and 500'd every submission, while the page itself still
 // rendered 200. Import shared constants from lib/funnel/consent directly.
@@ -336,7 +336,7 @@ export interface SlotsResult {
  *
  * Doc 16 §0.4: a slot that is not real must never reach a page. So an
  * unconfigured database, a query error, or simply no availability all produce
- * the same answer — nothing — and the form falls back to "we will be in touch".
+ * the same answer - nothing - and the form falls back to "we will be in touch".
  * An empty calendar is disappointing; a calendar showing times nobody will
  * honour is a broken promise.
  */
@@ -366,7 +366,7 @@ export interface BookResultPayload {
    * Distinguished from "that time was taken" because the two need opposite
    * responses. A taken slot means try another one, and the picker refreshes.
    * An expired session means every button will fail identically, and refreshing
-   * the list only invites the visitor to fail again on a different time — so
+   * the list only invites the visitor to fail again on a different time - so
    * the form offers them a way back to the start instead of a dead end.
    */
   sessionExpired?: boolean;

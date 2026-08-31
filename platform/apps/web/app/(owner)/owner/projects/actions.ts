@@ -16,7 +16,7 @@ export interface ProjectDraft {
 
 /**
  * Every page that shows a project label reads the catalogue, so all of them
- * are revalidated on a write — a renamed project that still reads by its old
+ * are revalidated on a write - a renamed project that still reads by its old
  * name on the board is the kind of inconsistency people report as data loss.
  */
 const TOUCHED = ["/owner/projects", "/owner/leads", "/owner/board", "/owner/deals"];

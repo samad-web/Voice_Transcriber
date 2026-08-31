@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0025 — the follow-up outbox carries a channel
+-- 0025 - the follow-up outbox carries a channel
 --
 -- 0024 created an outbox that could only send email. WhatsApp is the channel
 -- this market actually replies on, so the outbox becomes channel-aware rather
@@ -23,7 +23,7 @@ ALTER TABLE marketing.funnel_followups
 ------------------------------------------------------------------------------
 -- The "once per person" rule now includes the channel.
 --
--- 0024's index was (submission_id, template) — one follow-up of each kind per
+-- 0024's index was (submission_id, template) - one follow-up of each kind per
 -- person, ever. That was right when email was the only channel and is wrong
 -- now: rejecting someone should be able to send BOTH an email and a WhatsApp
 -- message, and the old index would have silently swallowed the second one as a
@@ -51,5 +51,5 @@ CREATE INDEX IF NOT EXISTS funnel_followups_due
 -- Grants unchanged: aura_marketing still has nothing on this table. A public
 -- unauthenticated web server that can insert into an outbox is a public web
 -- server that can make the platform send WhatsApp messages to a number of its
--- choosing — which is spam sent from the owner's own account.
+-- choosing - which is spam sent from the owner's own account.
 ------------------------------------------------------------------------------

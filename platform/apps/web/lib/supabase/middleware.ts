@@ -40,7 +40,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Must run before any redirect below — this is what refreshes an expired
+  // Must run before any redirect below - this is what refreshes an expired
   // access token and writes the new cookies onto `response`.
   const {
     data: { user },

@@ -2,7 +2,7 @@ import Image from "next/image";
 
 /**
  * The Aura mark. Every consuming app serves the same artwork from its own
- * `/public/logo.png` — the component is shared so replacing the file is the
+ * `/public/logo.png` - the component is shared so replacing the file is the
  * only step needed to change the mark everywhere, in both the console and
  * marketing.
  *

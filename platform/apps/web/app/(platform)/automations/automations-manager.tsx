@@ -16,7 +16,7 @@ import {
  * ── THE FORM IS DELIBERATELY NOT A RULE BUILDER ───────────────────────────
  *
  * One trigger, a couple of optional conditions and one action per rule. A
- * full visual builder — nested AND/OR groups, branches, a canvas — is what
+ * full visual builder - nested AND/OR groups, branches, a canvas - is what
  * this grows into if it earns it, and building that before anybody has
  * written a single rule would be guessing at which shapes people need. Two
  * rules chained by hand are easier to read than one rule with a tree in it,
@@ -195,7 +195,7 @@ export function AutomationsManager({
               min={0}
               value={draft.amountGte}
               onChange={(e) => setDraft({ ...draft, amountGte: e.target.value })}
-              placeholder="—"
+              placeholder="-"
             />
           </FormField>
 
@@ -298,7 +298,7 @@ export function AutomationsManager({
       <Card>
         <MonoLabel>Recent activity</MonoLabel>
         <p className="mt-1 text-xs text-text-muted">
-          Includes rules that were considered and did <em>not</em> match — which is what makes
+          Includes rules that were considered and did <em>not</em> match - which is what makes
           &ldquo;why didn&rsquo;t my rule fire?&rdquo; answerable.
         </p>
         {runs.length === 0 ? (

@@ -20,7 +20,7 @@ import { withTransaction } from "./db";
  *
  * Two tables, three operations: capture a contact (with dedupe), record the
  * qualification answers, and append to the contact history. Nothing here deletes
- * a row — migration 0020 does not grant the funnel role DELETE at all.
+ * a row - migration 0020 does not grant the funnel role DELETE at all.
  */
 
 if (typeof window !== "undefined") {
@@ -61,7 +61,7 @@ export interface CaptureResult {
  * Together those imply a case the spec never resolves: a submission whose EMAIL
  * matches row A and whose PHONE matches row B. Two rows, one submitter, and no
  * INSERT and no UPDATE can satisfy both indexes at once. Left unhandled it is a
- * 23505 unique violation surfacing as a 500 on a live lead form — and it is not
+ * 23505 unique violation surfacing as a 500 on a live lead form - and it is not
  * exotic: it happens the first time a person who enquired from their personal
  * number re-enquires from the same number with their new work address, while
  * that work address is already on a colleague's row.
@@ -70,8 +70,8 @@ export interface CaptureResult {
  * number is the stronger identity here (it is the WhatsApp identity, it is what
  * the sales team actually dials, and it is far harder to share by accident than
  * a shared sales@ inbox). So the submission attaches to the PHONE row, the row's
- * email is left ALONE — overwriting it would violate `funnel_email_uniq` against
- * row A anyway — and the conflicting email is written to the history row's
+ * email is left ALONE - overwriting it would violate `funnel_email_uniq` against
+ * row A anyway - and the conflicting email is written to the history row's
  * `submitted_email`, where a human can see the collision instead of it being
  * silently discarded.
  *
@@ -79,7 +79,7 @@ export interface CaptureResult {
  * The candidate rows are selected in ONE statement `ORDER BY id ... FOR UPDATE`.
  * Two concurrent submissions that touch the same pair of rows therefore take
  * their locks in the same order and queue instead of deadlocking. Two separate
- * SELECT ... FOR UPDATE statements — the obvious way to write this — would take
+ * SELECT ... FOR UPDATE statements - the obvious way to write this - would take
  * them in whichever order each request happened to resolve, which deadlocks
  * under exactly the traffic a launch produces.
  *
@@ -88,7 +88,7 @@ export interface CaptureResult {
  * to lock, so two first-time submissions from the same person racing each other
  * both see "no match" and both INSERT; the loser gets 23505. That is a lost
  * race, not a bug, and the correct response is to run the whole resolution again
- * — by which time the winner's row exists and the second pass dedupes onto it.
+ * - by which time the winner's row exists and the second pass dedupes onto it.
  */
 export async function captureContact(input: ContactCapture): Promise<CaptureResult> {
   try {
@@ -210,7 +210,7 @@ async function captureOnce(input: ContactCapture): Promise<CaptureResult> {
 
     // One history row per FILL, written now and completed by step 2. It carries
     // this visit's variant and utm even when the submission kept its first-touch
-    // values, and — on the conflict case — the email that could not be stored.
+    // values, and - on the conflict case - the email that could not be stored.
     const { rows: hist } = await client.query<{ id: string }>(
       `INSERT INTO marketing.funnel_contact_history
          (submission_id, variant, utm, submitted_email, submitted_phone, match_reason, salutation)
@@ -259,8 +259,8 @@ export interface QualificationWrite {
  * says nothing about why is a lead an operator cannot triage, and the reverse is
  * a submission that never leaves `contact_captured` while the answers exist.
  *
- * The UPDATE is guarded on `id = $1` only — the id came from a signed httpOnly
- * cookie (./session.ts), never from the form — so there is no scenario in which
+ * The UPDATE is guarded on `id = $1` only - the id came from a signed httpOnly
+ * cookie (./session.ts), never from the form - so there is no scenario in which
  * a respondent nominates which row to write.
  */
 export async function recordQualification(input: QualificationWrite): Promise<void> {

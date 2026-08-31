@@ -8,14 +8,14 @@ import { getAdminPool } from "@aura/db";
  *
  * The sync used to run one way: a booking taken on the website was mirrored
  * INTO Google. Nothing came back. An hour blocked out in the team's own
- * calendar — an existing client call, anything not created by this funnel —
+ * calendar - an existing client call, anything not created by this funnel -
  * stayed on offer to visitors, and the first anyone knew was two people
  * expecting the same half hour.
  *
  * ── WHICH CALENDARS COUNT AS "BUSY" ────────────────────────────────────────
  *
  *   GOOGLE_CALENDAR_ID          the booking calendar itself
- *   GOOGLE_BUSY_CALENDAR_IDS    comma-separated, optional — the humans' own
+ *   GOOGLE_BUSY_CALENDAR_IDS    comma-separated, optional - the humans' own
  *                               calendars, which is where the conflicts
  *                               actually live
  *
@@ -28,14 +28,14 @@ import { getAdminPool } from "@aura/db";
  * Every sweep recomputes the whole window from scratch and clears the flag on
  * anything no longer busy. A one-way ratchet would lose availability
  * permanently every time somebody moved a meeting, and the failure would be
- * invisible — slots quietly disappearing with nothing to point at.
+ * invisible - slots quietly disappearing with nothing to point at.
  *
  * ── IT NEVER TOUCHES A BOOKED SLOT ─────────────────────────────────────────
  *
  * Only `status = 'open'` rows are considered. A slot someone has already booked
  * through the funnel is a commitment to a real person; the fact that it now
  * collides with something in Google is a conflict for a human to resolve, not
- * something to paper over by hiding the row. It will also always look busy —
+ * something to paper over by hiding the row. It will also always look busy -
  * the funnel put its own event there.
  */
 
@@ -117,7 +117,7 @@ async function accessToken(cfg: NonNullable<ReturnType<typeof readConfig>>): Pro
  * Returns counts rather than throwing on a Google failure: this runs on a timer
  * inside a worker that has other jobs, and an unreachable calendar must not
  * take the process down. A failure leaves the previous flags exactly as they
- * were — stale, but stale in the safe direction, since a slot wrongly blocked
+ * were - stale, but stale in the safe direction, since a slot wrongly blocked
  * costs one booking and a slot wrongly open costs a double-booked human.
  */
 export async function syncExternalBusy(): Promise<BusySyncResult> {
@@ -153,10 +153,10 @@ export async function syncExternalBusy(): Promise<BusySyncResult> {
       if (!cal || cal.errors) {
         // FAIL THE WHOLE SWEEP, not just this calendar. A partial answer would
         // silently reopen every slot that only the unreadable calendar knew was
-        // busy — the exact double-booking this job exists to prevent, arrived at
+        // busy - the exact double-booking this job exists to prevent, arrived at
         // by a route that looks like success.
         throw new Error(
-          `no readable free/busy for ${id} — check it is shared with the service account`,
+          `no readable free/busy for ${id} - check it is shared with the service account`,
         );
       }
       for (const b of cal.busy ?? []) {
@@ -225,7 +225,7 @@ const INTERVAL_MS = 10 * 60_000;
 export function startCalendarBusySync(): NodeJS.Timeout | null {
   if (!readConfig()) {
     console.log(
-      "calendar busy sync: OFF (no GOOGLE_CALENDAR_ID / service account) — " +
+      "calendar busy sync: OFF (no GOOGLE_CALENDAR_ID / service account) - " +
         "slots are offered from the database alone",
     );
     return null;
@@ -247,7 +247,7 @@ export function startCalendarBusySync(): NodeJS.Timeout | null {
     }
   };
 
-  console.log("calendar busy sync: ON — Google busy times close matching slots every 10 minutes");
+  console.log("calendar busy sync: ON - Google busy times close matching slots every 10 minutes");
   void run();
   const timer = setInterval(run, INTERVAL_MS);
   timer.unref?.();

@@ -40,7 +40,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 /**
- * The product list, plus the create/edit dialog — one client component, the
+ * The product list, plus the create/edit dialog - one client component, the
  * way ConnectionsManager and Inbox own their own list + form. The list itself
  * needs no interactivity beyond opening the dialog, so it lives here rather
  * than in the server page for that one reason: a row's name opens the same
@@ -134,7 +134,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
       {products.length === 0 ? (
         <EmptyState
           title="No products yet"
-          description="Add the things you sell — quotations and invoices pick their line items from this list."
+          description="Add the things you sell - quotations and invoices pick their line items from this list."
           action={
             <Button type="button" size="sm" onClick={openCreate}>
               New Product
@@ -164,7 +164,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
                     {product.name}
                   </button>
                 </TableCell>
-                <TableCell className="text-text-muted">{product.sku ?? "—"}</TableCell>
+                <TableCell className="text-text-muted">{product.sku ?? "-"}</TableCell>
                 <TableCell className="tabular-nums text-text-muted">
                   {formatMoney(product.unit_price, product.currency)}
                 </TableCell>

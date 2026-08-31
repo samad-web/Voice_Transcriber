@@ -10,7 +10,7 @@ import { apiErrorMessage } from "../lib/api-error";
  *
  * Same shape as the other owner actions: the tenant AND the acting user are
  * re-resolved from the session inside `ownerHeaders()` rather than accepted as
- * arguments, which matters more here than anywhere else — the user id is what
+ * arguments, which matters more here than anywhere else - the user id is what
  * decides whose mailbox a token gets attached to.
  */
 

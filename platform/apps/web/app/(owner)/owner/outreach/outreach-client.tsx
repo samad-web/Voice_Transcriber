@@ -20,7 +20,7 @@ type Tab = "due" | "active" | "finished";
  *
  * A cadence's whole promise is about timing, so the most overdue rung is the
  * one costing the most. The API orders by due_at ascending and this renders
- * that order unchanged — sorting it by contact or by cadence here would quietly
+ * that order unchanged - sorting it by contact or by cadence here would quietly
  * undo the only ranking that matters.
  */
 export function Outreach() {
@@ -239,7 +239,7 @@ export function Outreach() {
       )}
 
       <p className="mt-4 border-t border-border pt-3 text-xs text-text-muted">
-        A due step is a reminder for a person — this platform never sends on its own. Marking one
+        A due step is a reminder for a person - this platform never sends on its own. Marking one
         done records that you did it.
       </p>
     </div>

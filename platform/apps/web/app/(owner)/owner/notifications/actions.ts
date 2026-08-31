@@ -8,7 +8,7 @@ import { ownerHeaders } from "../actions";
  * The signed-in user's own notifications (migration 0048).
  *
  * Every one of these re-resolves the caller from the session via
- * `ownerHeaders()` — a server action is a public endpoint, so an id passed in
+ * `ownerHeaders()` - a server action is a public endpoint, so an id passed in
  * from the client would be an id anybody could pass in. The API then scopes
  * every query to that user; there is no route that reads somebody else's.
  */

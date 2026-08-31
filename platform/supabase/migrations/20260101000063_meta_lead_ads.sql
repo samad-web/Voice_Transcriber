@@ -1,6 +1,6 @@
--- 0063_meta_lead_ads.sql — Kailash gap Milestone 4, part 1: inbound Facebook/
+-- 0063_meta_lead_ads.sql - Kailash gap Milestone 4, part 1: inbound Facebook/
 -- Instagram Lead Ads capture. Targets contacts/deals directly, NOT the legacy
--- `leads` table — `leads` is structurally call-centric (FKs to calls/devices/
+-- `leads` table - `leads` is structurally call-centric (FKs to calls/devices/
 -- agents, telecaller attribution), and a Meta lead has none of that.
 -- contacts/deals already support a NULL source_lead_id/first_call_id for
 -- exactly this "created by an inbound integration, not a call" case.
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS meta_connections (
   updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
--- A Page can only ever belong to one org's connection at a time — the same
+-- A Page can only ever belong to one org's connection at a time - the same
 -- Page reconnected by a different org would otherwise silently steal its leads.
 CREATE UNIQUE INDEX IF NOT EXISTS meta_connections_page ON meta_connections (page_id) WHERE status = 'connected';
 CREATE INDEX IF NOT EXISTS meta_connections_org ON meta_connections (org_id);
@@ -51,7 +51,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- org-scoped and RLS'd: the webhook only uses the admin pool for the single
 -- lookup that RESOLVES org_id from page_id (untrusted, in the payload,
 -- exactly like messaging-webhook.controller.ts resolves a channel's org
--- before anything else runs) — the actual claim-and-insert then happens
+-- before anything else runs) - the actual claim-and-insert then happens
 -- inside that org's own RLS context, same as every other CRM write.
 CREATE TABLE IF NOT EXISTS meta_leadgen_events (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),

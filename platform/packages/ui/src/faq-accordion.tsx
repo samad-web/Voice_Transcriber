@@ -28,7 +28,7 @@ export interface FaqItem {
  * appears in the document outline.
  *
  * SEO note for whoever assembles the page: the FAQPage schema.org JSON-LD
- * (doc 10 §3, row 12) belongs on the page, not here — it needs the plain-text
+ * (doc 10 §3, row 12) belongs on the page, not here - it needs the plain-text
  * answers, and `answer` here is arbitrary JSX.
  */
 export function FAQAccordion({

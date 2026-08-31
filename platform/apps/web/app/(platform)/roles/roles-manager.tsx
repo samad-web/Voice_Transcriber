@@ -16,12 +16,12 @@ import {
   type Role,
 } from "./types";
 
-/** "objectType:action" — the grid's addressing scheme, and the shape of the Set below. */
+/** "objectType:action" - the grid's addressing scheme, and the shape of the Set below. */
 type GrantKey = `${PermissionObjectType}:${PermissionAction}`;
 const grantKey = (o: PermissionObjectType, a: PermissionAction): GrantKey => `${o}:${a}`;
 
 /**
- * Define custom roles and edit ANY role's permission grid — including a
+ * Define custom roles and edit ANY role's permission grid - including a
  * system role's, which is the point: an operator adjusting what "Viewer"
  * can see is normal, renaming or archiving the row itself is not (roles.
  * controller.ts rejects that).
@@ -29,7 +29,7 @@ const grantKey = (o: PermissionObjectType, a: PermissionAction): GrantKey => `${
  * Both halves are now live. The checkboxes are enforced by
  * `CrmPermissionsGuard`; the "Which records" column is enforced by a predicate
  * on every query (apps/api/src/common/crm-scope.ts). Until that landed, this
- * screen could only ever save `scope: "all"` — the column existed, the API
+ * screen could only ever save `scope: "all"` - the column existed, the API
  * accepted it, and nothing read it.
  */
 export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string }) {
@@ -40,7 +40,7 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
    *
    * The database stores it per (object, action) and the API accepts that, but
    * "may view every deal and edit only their own" is not a policy anybody
-   * actually writes — it is a way to end up with a role whose behaviour nobody
+   * actually writes - it is a way to end up with a role whose behaviour nobody
    * can predict from looking at it. One control per row says what it means.
    */
   const [scopes, setScopes] = useState<Record<string, PermissionScope>>({});
@@ -183,7 +183,7 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
                 <MonoLabel>{selected.name}</MonoLabel>
                 {selected.is_system ? (
                   <p className="mt-1 text-xs text-text-muted">
-                    A system role — its permissions can be edited, but not its name or key.
+                    A system role - its permissions can be edited, but not its name or key.
                   </p>
                 ) : null}
               </div>

@@ -40,7 +40,7 @@ export interface ConnectionView {
  * Connect your own mailbox and calendar (PRD Layer 1).
  *
  * The provider list is rendered from the API's catalogue, not hard-coded
- * here — adding a provider server-side makes it appear with no change to this
+ * here - adding a provider server-side makes it appear with no change to this
  * file, which is the same contract provider-picker.tsx has for CRM
  * connectors.
  *
@@ -57,9 +57,9 @@ export function ConnectionsManager({
 }: {
   providers: ProviderView[];
   connections: ConnectionView[];
-  /** From the OAuth callback's `?connected=<email>` — shown once, on arrival. */
+  /** From the OAuth callback's `?connected=<email>` - shown once, on arrival. */
   initialConnected?: string | null;
-  /** From the OAuth callback's `?error=<message>` — shown once, on arrival. */
+  /** From the OAuth callback's `?error=<message>` - shown once, on arrival. */
   initialError?: string | null;
 }) {
   const [openForm, setOpenForm] = useState<string | null>(null);
@@ -137,7 +137,7 @@ export function ConnectionsManager({
         <MonoLabel>Your connected accounts</MonoLabel>
         {connections.length === 0 ? (
           <p className="mt-2 text-sm text-text-muted">
-            Nothing connected yet. Pick a provider below — these are yours alone; nobody else on the
+            Nothing connected yet. Pick a provider below - these are yours alone; nobody else on the
             team can see or use them.
           </p>
         ) : (

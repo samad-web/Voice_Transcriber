@@ -5,7 +5,7 @@ import { Button, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { createTaskAction, fetchTasksAction, updateTaskAction } from "./crm-actions";
 import type { Task } from "./types";
 
-/** Today in the VIEWER's timezone, as `YYYY-MM-DD` — the same shape the API
+/** Today in the VIEWER's timezone, as `YYYY-MM-DD` - the same shape the API
  *  speaks, so "overdue" compares two plain dates and never a timestamp. */
 function today(): string {
   const now = new Date();
@@ -25,8 +25,8 @@ function dueLabel(due: string | null): { text: string; overdue: boolean } {
  * Follow-up tasks (Track A3) for one object, or for the whole workspace when
  * no filter is given.
  *
- * Completion is optimistic — a checkbox that waits for a round-trip feels
- * broken — and rolls back on failure, the same contract deals-board.tsx uses
+ * Completion is optimistic - a checkbox that waits for a round-trip feels
+ * broken - and rolls back on failure, the same contract deals-board.tsx uses
  * for a drag between columns.
  */
 export function TaskList({

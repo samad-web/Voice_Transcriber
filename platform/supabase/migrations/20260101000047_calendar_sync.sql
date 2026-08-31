@@ -1,4 +1,4 @@
--- 0047_calendar_sync.sql — PRD Layer 1, part 3: meetings on the timeline.
+-- 0047_calendar_sync.sql - PRD Layer 1, part 3: meetings on the timeline.
 --
 -- Calendar gets its OWN cursor and failure counter rather than sharing the
 -- mail ones from 0044. A single connection can carry both capabilities (a
@@ -13,13 +13,13 @@ ALTER TABLE connected_accounts ADD COLUMN IF NOT EXISTS calendar_failures int NO
 
 -- Which calendar events map to which timeline rows. `interactions.external_id`
 -- (0044) is already scoped by (org_id, type, external_id), and a meeting's
--- type is 'meeting' where an email's is 'email' — so the two namespaces
+-- type is 'meeting' where an email's is 'email' - so the two namespaces
 -- cannot collide even if a provider reused an id across its APIs.
 --
 -- Nothing else is needed here: `interactions` already has `connection_id`,
 -- `occurred_at`, `duration_s` and `metadata`, which is the whole shape a
 -- meeting requires. A meeting is not a new kind of thing, it is a thing that
--- happened with a contact — which is what that table has always been for.
+-- happened with a contact - which is what that table has always been for.
 
 -- One index for the sweep's own "did I already write this" question. The
 -- unique index from 0044 covers the write; this covers the cancellation path,

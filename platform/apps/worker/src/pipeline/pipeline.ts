@@ -24,7 +24,7 @@ const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
 
 /**
  * Below this many seconds a recording is a ring-out, a misdial or an instant
- * hangup — there is no speech in it, but it still costs a full audio-in ASR
+ * hangup - there is no speech in it, but it still costs a full audio-in ASR
  * round trip plus the analyze calls to conclude exactly that. On a telecalling
  * floor these are a large share of call volume, so gating them is the cheapest
  * saving available. Set to 0 to transcribe everything.
@@ -40,7 +40,7 @@ const MIN_TRANSCRIBE_SECONDS = Number(process.env.MIN_TRANSCRIBE_SECONDS ?? 5);
 export const MAX_PIPELINE_ATTEMPTS = Number(process.env.PIPELINE_MAX_ATTEMPTS ?? 5);
 
 /**
- * 30s, 2m, 8m, 32m… capped at an hour — the same shape the CRM outbox uses.
+ * 30s, 2m, 8m, 32m… capped at an hour - the same shape the CRM outbox uses.
  * The first retry is deliberately quick: the common case is a transient
  * provider error that has already cleared by the time we ask again.
  */
@@ -52,7 +52,7 @@ export function retryBackoffSeconds(attempt: number): number {
  * Values that mean "the transcript did not say" but arrive as strings.
  *
  * Asked for a field the call never mentions, models write the *word* rather
- * than JSON null — `"null"`, `"not_discussed"`, `"N/A"`. Left alone these are
+ * than JSON null - `"null"`, `"not_discussed"`, `"N/A"`. Left alone these are
  * projected into call_facts as ordinary text, and call_facts is what the CRM
  * payload is built from, so a customer's system ends up holding a contact
  * literally named "null". Absent must look absent by the time it leaves here.
@@ -118,8 +118,8 @@ export async function priorAttempts(client: PoolClient, callId: string): Promise
  *
  * Extracted to module scope because the pipeline is no longer driven from a
  * single place: a run that submits audio to a batch ASR provider stops at
- * TRANSCRIBING, and the poller that picks the call up later — possibly in a
- * different process — has to advance and fail it by exactly the same rules.
+ * TRANSCRIBING, and the poller that picks the call up later - possibly in a
+ * different process - has to advance and fail it by exactly the same rules.
  */
 export function stageHelpers(
   client: PoolClient,
@@ -136,7 +136,7 @@ export function stageHelpers(
 
   /**
    * Record the failure AND schedule the next attempt, unless the call has
-   * used up its budget. The status stays FAILED_* either way — the call
+   * used up its budget. The status stays FAILED_* either way - the call
    * really is failed right now; `next_attempt_at` is what distinguishes
    * "we'll try again shortly" from "this needs a person".
    *
@@ -167,7 +167,7 @@ export function stageHelpers(
         reasonOf(err),
         MAX_PIPELINE_ATTEMPTS,
         // Computed from the attempt this failure becomes, read before the
-        // update inside the same statement — hence the +1 mirrored here.
+        // update inside the same statement - hence the +1 mirrored here.
         retryBackoffSeconds(attempts + 1),
       ],
     );
@@ -226,7 +226,7 @@ export async function persistTranscript(
 /**
  * Everything after the transcript exists: analyze → crm-dispatch → COMPLETE.
  *
- * Entered from two places — the inline run, and the batch-ASR poller once the
+ * Entered from two places - the inline run, and the batch-ASR poller once the
  * provider hands back a transcript. Both arrive with the call in TRANSCRIBING,
  * so the first transition is the same either way.
  */
@@ -250,7 +250,7 @@ export async function runPostAsrStages(
   const vocabulary = vocabRow?.vocabulary ?? [];
 
   // Who dialled. The recording comes off the telecaller's own handset, so this
-  // is a genuine prior on which voice is the Agent — and the analyser's role
+  // is a genuine prior on which voice is the Agent - and the analyser's role
   // decision is the one thing a reader notices immediately when it is wrong.
   const {
     rows: [dirRow],
@@ -261,7 +261,7 @@ export async function runPostAsrStages(
   const direction = dirRow?.direction ?? null;
 
   // Carried forward to the SYNCING section below, where dealId/contactId
-  // (and their owners) are actually known — the automation event for a
+  // (and their owners) are actually known - the automation event for a
   // risk-flagged call is enqueued there, not here, so `notify`'s target
   // resolution has something to resolve against. See call-analytics.ts and
   // packages/shared/src/automation.ts's 'call.risk_flagged' trigger.
@@ -269,7 +269,7 @@ export async function runPostAsrStages(
 
   try {
     // Conversation intelligence: diarize (Agent/Customer) + per-turn intent +
-    // call-level intent/sentiment/outcome. Always on, non-blocking — a failure
+    // call-level intent/sentiment/outcome. Always on, non-blocking - a failure
     // here must never fail the whole call (the tenant extraction still runs).
     try {
       const {
@@ -342,7 +342,7 @@ export async function runPostAsrStages(
         }
 
         // Call analytics: quality score + risk flags from the same LLM read
-        // above, talk-ratio/interruptions computed purely from `segments` —
+        // above, talk-ratio/interruptions computed purely from `segments` -
         // independent of each other so a degenerate LLM read still leaves
         // the talk metrics intact (call-analytics.ts).
         try {
@@ -376,7 +376,7 @@ export async function runPostAsrStages(
     } = await client.query("SELECT text FROM transcripts WHERE call_id = $1", [callId]);
     // No transcript means the call was gated as too short, or ASR genuinely
     // heard nothing. Running the agent over that can only invent field
-    // values, and it is billed either way — so skip it.
+    // values, and it is billed either way - so skip it.
     if (agent && transcript?.text) {
       const schema = ExtractionSchema.parse(agent.field_schema);
       const result = await analyzeTranscript(
@@ -409,7 +409,7 @@ export async function runPostAsrStages(
         [callId, agent.id, agent.version],
       );
 
-      // call_facts projection — consumer (c) of the single field definition
+      // call_facts projection - consumer (c) of the single field definition
       if (result.validationStatus !== "failed") {
         for (const field of schema.fields) {
           const value = result.output[field.key];
@@ -453,18 +453,18 @@ export async function runPostAsrStages(
 
   // ── crm-dispatch ─────────────────────────────────────────────────────
   //
-  // FAILED_CRM stays deliberately unreachable, and that is not an oversight —
+  // FAILED_CRM stays deliberately unreachable, and that is not an oversight -
   // read this before "finishing" it the way FAILED_TRANSCODE was finished.
   //
   // A delivery failure is not this call's outcome: the transcript, the facts
   // and the lead all exist and are correct, so the call is genuinely COMPLETE.
-  // Dispatch already has its own durable retry — crm_sync_log holds the pending
+  // Dispatch already has its own durable retry - crm_sync_log holds the pending
   // send with its own attempts, backoff and terminal 'dead' state, drained by
   // drainOutbox and re-drivable from the console. Failing the call would put a
   // SECOND retry machine over the same work, and the two do not compose:
   // retryDueCalls rewinds a FAILED_% call all the way to UPLOADED, so every
   // CRM retry would re-run ASR and analyze (paying both providers again) and
-  // re-enqueue dispatch — turning one undelivered lead into duplicate rows in
+  // re-enqueue dispatch - turning one undelivered lead into duplicate rows in
   // the customer's CRM, which is not retractable.
   //
   // So what the status is FOR is the stage failing to RUN, not the delivery
@@ -475,7 +475,7 @@ export async function runPostAsrStages(
 
   // Lead projection first: it is a local write, so the owner's board is
   // populated even if the tenant has no CRM connected at all. Non-blocking
-  // for the same reason as dispatch — a qualification bug must not strand
+  // for the same reason as dispatch - a qualification bug must not strand
   // calls in SYNCING.
   // Drives the only_qualified filter below. A projection that throws leaves
   // this false, so a lead-only connector stays silent rather than sending a
@@ -489,18 +489,18 @@ export async function runPostAsrStages(
     console.log(
       lead.leadId
         ? `call ${callId}: lead ${lead.leadId} ${lead.reason}`
-        : `call ${callId}: no lead — ${lead.reason}`,
+        : `call ${callId}: no lead - ${lead.reason}`,
     );
   } catch (err) {
     console.error(`call ${callId}: lead projection error (non-blocking):`, err);
   }
 
   // CRM Phase 1 foundation (E0.1): project the same lead onto the new
-  // Contact/Deal object model, alongside `leads` — not instead of it. Its own
+  // Contact/Deal object model, alongside `leads` - not instead of it. Its own
   // try/catch, strictly AFTER upsertLead and reading back what it wrote, so a
   // bug here can never affect whether the call reaches COMPLETE or whether
   // `leads`/crm-dispatch below run. The owner console's board/leads pages
-  // still read `leads`, not contacts/deals, as their primary source (A6) —
+  // still read `leads`, not contacts/deals, as their primary source (A6) -
   // this write is additive until that cutover happens.
   let dealId: string | null = null;
   let contactId: string | null = null;
@@ -511,11 +511,11 @@ export async function runPostAsrStages(
       contactId = projection.contactId;
       if (projection.reason === "no default pipeline for org") {
         // This org gets ZERO CRM projection until someone seeds a default
-        // pipeline — worth an operator's attention, not a scrolled-past log
+        // pipeline - worth an operator's attention, not a scrolled-past log
         // line. Spam-guarded to one row per org per day, since every future
         // call on this org hits the same no-op otherwise.
         console.error(
-          `call ${callId}: crm-object projection skipped — org ${orgId} has no default pipeline`,
+          `call ${callId}: crm-object projection skipped - org ${orgId} has no default pipeline`,
         );
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
@@ -540,7 +540,7 @@ export async function runPostAsrStages(
   // Which of the tenant's own projects this call was about (migration 0073).
   // AFTER the crm-object projection, not before, so the deal already exists
   // and lead and deal are labelled in one place rather than disagreeing.
-  // Runs even for a call that produced no lead — the project view counts
+  // Runs even for a call that produced no lead - the project view counts
   // every conversation, not only the ones that became pipeline. Own
   // non-blocking try/catch, same as every projection above it.
   try {
@@ -558,11 +558,11 @@ export async function runPostAsrStages(
 
   // Escalation alert (call.risk_flagged, packages/shared/src/automation.ts).
   // Enqueued HERE, not where the flags were computed above, because that ran
-  // during ANALYZING — before dealId/contactId existed. A tenant's `notify`
+  // during ANALYZING - before dealId/contactId existed. A tenant's `notify`
   // rule resolves its target off the deal/contact owner, so the event has to
   // wait for those to resolve, same as every other CRM-object write in this
   // section. A risk-flagged call with no qualifying lead still gets an event
-  // (dealId/contactId null) — the engine already reports "no user to notify"
+  // (dealId/contactId null) - the engine already reports "no user to notify"
   // for an ownerless subject rather than silently dropping it.
   if (riskFlags.length > 0) {
     try {
@@ -637,14 +637,14 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
      * Transcription switched off for this instance (0014).
      *
      * Checked before the transcode advance so the call settles immediately
-     * rather than walking the stages. Everything the console needs — the call
-     * row, the number, the duration, the uploaded audio — already landed at
+     * rather than walking the stages. Everything the console needs - the call
+     * row, the number, the duration, the uploaded audio - already landed at
      * admission, so the customer's call log stays complete; only the paid
      * stages are skipped.
      *
      * Lead projection and CRM dispatch are skipped too. Both derive from the
      * analysis that did not run, so they would at best deliver an empty record
-     * to the customer's real CRM — an outbound side effect nobody asked for and
+     * to the customer's real CRM - an outbound side effect nobody asked for and
      * which cannot be recalled.
      */
     const {
@@ -663,7 +663,7 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
           "UPDATE calls SET error_message = NULL, next_attempt_at = NULL, pipeline_attempts = 0 WHERE id = $1",
           [callId],
         );
-        console.log(`call ${callId}: transcription disabled for this instance — stored, not transcribed`);
+        console.log(`call ${callId}: transcription disabled for this instance - stored, not transcribed`);
       }
       return;
     }
@@ -680,11 +680,11 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
      * worker is holding would fail its work, not ours.
      *
      * Everything the stage actually does goes inside. It is a pass-through
-     * today so nothing in it throws — but ffmpeg and envelope-decrypt (§2.3)
+     * today so nothing in it throws - but ffmpeg and envelope-decrypt (§2.3)
      * are precisely the kind of code that does, and without this catch a throw
      * escapes processCall entirely: no error_message, no attempt increment, no
      * next_attempt_at. The call then strands in TRANSCODING, where neither
-     * sweeper in retry.ts looks (`FAILED_%` due, and `UPLOADED`) — silent,
+     * sweeper in retry.ts looks (`FAILED_%` due, and `UPLOADED`) - silent,
      * permanent loss of a recording the customer already paid to store.
      * Routing through the same fail() every other stage uses makes a transcode
      * failure behave identically to an ASR one, and is what makes the
@@ -697,7 +697,7 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
 
       // A retry starts clean: leaving the previous reason attached would make a
       // call that later completes still read as broken in the drawer. The pending
-      // retry is cleared too — this run IS that retry, and leaving the timestamp
+      // retry is cleared too - this run IS that retry, and leaving the timestamp
       // set would let the sweeper claim the call again while it is mid-flight.
       // Any ASR job from a previous run goes with it: this run submits its own,
       // and a stale id would have the poller waiting on the wrong job.
@@ -722,7 +722,7 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
     // no sweeper claimed. It is an ASR-stage failure like any other.
     try {
       // A duration of 0 means the device never reported one, not that the call
-      // was empty — those still go through ASR rather than being dropped on a
+      // was empty - those still go through ASR rather than being dropped on a
       // missing field.
       const {
         rows: [durRow],
@@ -732,7 +732,7 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
 
       if (tooShort) {
         console.log(
-          `call ${callId}: ${durationS}s is under MIN_TRANSCRIBE_SECONDS=${MIN_TRANSCRIBE_SECONDS} — skipping ASR + analyze`,
+          `call ${callId}: ${durationS}s is under MIN_TRANSCRIBE_SECONDS=${MIN_TRANSCRIBE_SECONDS} - skipping ASR + analyze`,
         );
       } else {
         const {
@@ -743,7 +743,7 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
 
         if (sarvamAsrConfigured()) {
           // Batch provider: hand over the audio, record the job, and stop.
-          // The call stays in TRANSCRIBING — which is exactly true — and the
+          // The call stays in TRANSCRIBING - which is exactly true - and the
           // poller drives it from here. Committing the job id before returning
           // is what makes this survive a worker restart: the provider is
           // already transcribing (and billing) this audio, so losing the id

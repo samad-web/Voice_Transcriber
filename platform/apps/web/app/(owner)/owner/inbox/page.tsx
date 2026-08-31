@@ -5,7 +5,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { Inbox } from "./inbox-client";
 import type { Conversation } from "./actions";
 
-export const metadata: Metadata = { title: "Inbox — Aura" };
+export const metadata: Metadata = { title: "Inbox - Aura" };
 
 /**
  * Inbound messaging (migrations 0055/0056).
@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Inbox — Aura" };
  * The unmatched count is server-rendered from its own query for the same
  * reason the tasks page renders its overdue count that way: it is the number
  * somebody scans for, and one that arrives a beat late reads as "nothing is
- * waiting" — which here means an enquiry nobody has claimed.
+ * waiting" - which here means an enquiry nobody has claimed.
  */
 export default async function InboxPage() {
   const unmatched = await ownerGet<{ conversations: Conversation[]; total: number }>(

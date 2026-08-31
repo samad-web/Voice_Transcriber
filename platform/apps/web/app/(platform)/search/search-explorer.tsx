@@ -32,7 +32,7 @@ function Highlight({ snippet }: { snippet: string }) {
 }
 
 export function SearchExplorer({
-  /** Tenant whose transcripts are searched — RLS scopes results to it. */
+  /** Tenant whose transcripts are searched - RLS scopes results to it. */
   orgId,
   tenantName,
 }: {

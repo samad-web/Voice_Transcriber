@@ -1,5 +1,5 @@
 /**
- * Split-test assignment — doc 16 §3.5, slice 5.
+ * Split-test assignment - doc 16 §3.5, slice 5.
  *
  * ┌───────────────────────────────────────────────────────────────────────────┐
  * │ THE STOPPING RULE, WRITTEN DOWN BEFORE THE FIRST VISITOR ARRIVES.         │
@@ -12,8 +12,8 @@
  * │                GROUP BY variant                                           │
  * │   denominator: unique visitors assigned to that variant                   │
  * │                                                                           │
- * │ NOT raw submissions. Form-first will win on volume — it asks for a phone  │
- * │ number before it has earned one — and will probably lose on quality.      │
+ * │ NOT raw submissions. Form-first will win on volume - it asks for a phone  │
+ * │ number before it has earned one - and will probably lose on quality.      │
  * │ Measuring the top of the funnel would therefore pick the variant that     │
  * │ produces more work and less revenue, and the dashboard would look great   │
  * │ while it happened.                                                        │
@@ -31,7 +31,7 @@
  * be counted in both arms and the comparison would measure nothing.
  *
  * Signed because a client-writable variant is a client-writable experiment.
- * httpOnly because nothing on the page has any business reading it — and because
+ * httpOnly because nothing on the page has any business reading it - and because
  * the analytics story here is Plausible, which is cookieless: a consent banner on
  * a site selling data protection is a bad look (§3.5).
  *
@@ -39,7 +39,7 @@
  * This module is imported by `middleware.ts`, which runs on the Edge runtime
  * where `node:crypto` does not exist. `crypto.subtle` is present in BOTH the
  * Edge runtime and Node 22, so one implementation covers both. It produces
- * exactly the same HMAC-SHA256 as ./signing.ts — same secret, same base64url —
+ * exactly the same HMAC-SHA256 as ./signing.ts - same secret, same base64url -
  * so the two are interchangeable on the wire; they differ only in being async.
  */
 
@@ -65,7 +65,7 @@ export const VARIANT_ROUTE: Record<FunnelVariant, string> = {
 
 export interface VariantPayload {
   v: FunnelVariant;
-  /** issued-at, epoch ms — only for debugging cohort boundaries. */
+  /** issued-at, epoch ms - only for debugging cohort boundaries. */
   iat: number;
 }
 
@@ -78,7 +78,7 @@ export function isFunnelVariant(value: unknown): value is FunnelVariant {
  *
  * `Math.random()` and not a hash of the IP: hashing an identifier makes
  * assignment deterministic, which sounds tidier and quietly correlates the arms
- * with whatever the identifier correlates with — carrier NAT ranges, in this
+ * with whatever the identifier correlates with - carrier NAT ranges, in this
  * market, which is to say geography. A coin has no such structure.
  */
 export function pickVariant(random: number = Math.random()): FunnelVariant {
@@ -111,7 +111,7 @@ async function hmac(secret: string, data: string): Promise<string> {
   return b64url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data)));
 }
 
-/** Same fail-closed rule as ./signing.ts — no secret, no cookie, no experiment. */
+/** Same fail-closed rule as ./signing.ts - no secret, no cookie, no experiment. */
 function secret(): string | null {
   const s = process.env.FUNNEL_COOKIE_SECRET;
   return s && s.length >= 32 ? s : null;

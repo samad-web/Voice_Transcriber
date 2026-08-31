@@ -2,7 +2,7 @@ import { Card, Skeleton } from "@aura/ui";
 
 /**
  * Same markup as `PageHeader`, for the handful of routes whose title is only
- * known after the fetch (an account/contact's name, a dashboard's org name) —
+ * known after the fetch (an account/contact's name, a dashboard's org name) -
  * a real `<PageHeader>` can't be used since there's no text to give it yet.
  * Keeping the wash/eyebrow classes identical means the swap-in is a text
  * change, not a layout jump.
@@ -34,12 +34,12 @@ export function PageHeaderSkeleton({ context }: { context: string }) {
  * Before this, every route under (owner) fell through to one generic
  * stat-cards-plus-list skeleton (app/(owner)/loading.tsx) regardless of
  * whether the real page was a table, a kanban board, a two-pane inbox or a
- * detail view — so the loading state never matched what actually rendered a
+ * detail view - so the loading state never matched what actually rendered a
  * moment later. Each piece here mirrors one real page shape (see the
  * `page.tsx` it's paired with); route-level `loading.tsx` files compose them.
  */
 
-/** A row of N stat cards — the dashboard's top row, and reports' summary row. */
+/** A row of N stat cards - the dashboard's top row, and reports' summary row. */
 export function StatGridSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
@@ -111,7 +111,7 @@ export function FilterTableSkeleton({
   );
 }
 
-/** The lead/deal pipeline boards — N columns of stacked drag-cards. */
+/** The lead/deal pipeline boards - N columns of stacked drag-cards. */
 export function KanbanSkeleton({ columns = 5 }: { columns?: number }) {
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
@@ -153,7 +153,7 @@ export function DetailListCardSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** A generic content card — a label plus a few lines, for timelines/tasklists/composers. */
+/** A generic content card - a label plus a few lines, for timelines/tasklists/composers. */
 export function ContentCardSkeleton({ lines = 3 }: { lines?: number }) {
   return (
     <Card className="space-y-3">
@@ -233,7 +233,7 @@ export function FormCardSkeleton({ fields = 3 }: { fields?: number }) {
 }
 
 /**
- * A stat card plus a list card — outreach (stacked, stat card on top) and
+ * A stat card plus a list card - outreach (stacked, stat card on top) and
  * tasks (side-by-side grid, list on the left) order these differently, so
  * `statFirst` picks the DOM order to match whichever page is rendering.
  */

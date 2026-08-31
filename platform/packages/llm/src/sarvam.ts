@@ -1,7 +1,7 @@
 import { RetryableError, withProviderRetry } from "./retry";
 
 /**
- * Sarvam chat completions — the analyze-stage provider for Indic call audio.
+ * Sarvam chat completions - the analyze-stage provider for Indic call audio.
  *
  * Sarvam's endpoint is OpenAI-shaped (`Authorization: Bearer`, `messages`,
  * `response_format`, `usage`), so this is a thin fetch rather than another SDK.
@@ -11,7 +11,7 @@ import { RetryableError, withProviderRetry } from "./retry";
  *   sarvam-30b     64K context   ₹2.5 in / ₹10 out
  *
  * At our measured volume (~37k in / ~28k out per hour of audio) that is ₹0.60
- * and ₹0.38 an hour respectively — the difference is far below the noise floor
+ * and ₹0.38 an hour respectively - the difference is far below the noise floor
  * of the ASR bill, so SARVAM_CHAT_MODEL defaults to the larger model and the
  * smaller one is there for anyone who wants it.
  */
@@ -28,14 +28,14 @@ export function sarvamKey(): string | undefined {
  * Deliberately NOT just "is there a key". ASR and analyze are separate
  * decisions: Saaras v3 is the best Indic transcriber we measured, while
  * sarvam-105b's usefulness for analyze depends on the plan. On the starter
- * tier max_tokens is capped at 4096 and the model's own reasoning — which
- * cannot be disabled, only turned down — spends 2,700-4,000 of those before
+ * tier max_tokens is capped at 4096 and the model's own reasoning - which
+ * cannot be disabled, only turned down - spends 2,700-4,000 of those before
  * writing a character, so a long call's answer does not fit at all.
  *
  * ANALYZE_PROVIDER lets the ASR win be taken without the analyze risk:
- *   auto (default) — Sarvam when a key is present
- *   gemini         — force Gemini, whatever Sarvam keys exist
- *   sarvam         — force Sarvam (raise SARVAM_MAX_TOKENS with the plan)
+ *   auto (default) - Sarvam when a key is present
+ *   gemini         - force Gemini, whatever Sarvam keys exist
+ *   sarvam         - force Sarvam (raise SARVAM_MAX_TOKENS with the plan)
  */
 export function sarvamChatConfigured(): boolean {
   const pref = (process.env.ANALYZE_PROVIDER ?? "auto").trim().toLowerCase();
@@ -44,7 +44,7 @@ export function sarvamChatConfigured(): boolean {
   return !!sarvamKey();
 }
 
-/** Only sarvam-105b remains — the API reports sarvam-30b as deprecated. */
+/** Only sarvam-105b remains - the API reports sarvam-30b as deprecated. */
 export function sarvamChatModel(): string {
   return process.env.SARVAM_CHAT_MODEL ?? "sarvam-105b";
 }
@@ -61,12 +61,12 @@ export interface SarvamChatResult {
  *
  * `maxTokens` matters more here than it looks, and it is squeezed from both
  * sides. Sarvam's own default is 2048, and a six-minute call's turn-labelling
- * response measures ~2,650 output tokens — so the default truncates mid-JSON on
+ * response measures ~2,650 output tokens - so the default truncates mid-JSON on
  * exactly the long, valuable calls, surfacing as a parse error rather than a
  * length error. Asking for more is capped by the plan: the starter tier rejects
  * anything above 4096 outright with a 400.
  *
- * So we sit at the tier ceiling and make truncation loud —
+ * So we sit at the tier ceiling and make truncation loud -
  * `finish_reason: "length"` becomes a hard failure naming the real cause,
  * rather than a JSON parse error three frames away. Raise SARVAM_MAX_TOKENS
  * alongside a plan upgrade; a very long call is the case that needs it.
@@ -79,7 +79,7 @@ export async function sarvamChat(opts: {
    * Strict is not cosmetic here. Without it the model kept reasoning until it
    * hit the token ceiling and returned `finish_reason: "length"` with the JSON
    * cut off mid-string; with it the same request finishes cleanly in ~2.5k
-   * output tokens. Plain `json_object` is worse still — the model invents its
+   * output tokens. Plain `json_object` is worse still - the model invents its
    * own field names instead of the tenant's schema keys.
    */
   jsonSchema?: Record<string, unknown>;
@@ -115,12 +115,12 @@ export async function sarvamChat(opts: {
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: opts.prompt }],
-        // Extraction and labelling are deterministic jobs — there is nothing to
+        // Extraction and labelling are deterministic jobs - there is nothing to
         // be gained from sampling a different answer each run.
         temperature: 0,
         max_tokens: maxTokens,
         // Sarvam's chat models reason before answering, and reasoning tokens
-        // are billed as output AND counted against max_tokens — the same trap
+        // are billed as output AND counted against max_tokens - the same trap
         // geminiThinking() sidesteps for Gemini. It cannot be switched off
         // (the API accepts only low/medium/high), so we ask for the least:
         // extraction and turn-labelling are lookup, not deduction. Left
@@ -156,7 +156,7 @@ export async function sarvamChat(opts: {
     // Both checks below MUST live inside the retried closure. A model that
     // reasons past its ceiling still answers HTTP 200, so validating after
     // withProviderRetry has returned throws a "retryable" error that nothing
-    // is left to retry — which is exactly how three consecutive pipeline runs
+    // is left to retry - which is exactly how three consecutive pipeline runs
     // failed while the identical request succeeded first time in isolation.
     //
     // Both are retryable rather than fatal for the same reason: how long this
@@ -174,8 +174,8 @@ export async function sarvamChat(opts: {
     // An empty answer is a failure, not an empty result. A reasoning model that
     // spends its whole budget thinking returns content: "" with finish_reason
     // "stop". Passed on, `JSON.parse("" || "{}")` yields {}, which then
-    // VALIDATES — every tenant field is optional, so the validator has nothing
-    // to object to — and the call completes green with a blank AI Analysis
+    // VALIDATES - every tenant field is optional, so the validator has nothing
+    // to object to - and the call completes green with a blank AI Analysis
     // panel and no facts.
     if (!choice?.message?.content?.trim()) {
       throw new RetryableError(

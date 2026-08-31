@@ -20,12 +20,12 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
- * Merge & duplicate detection (CRM Phase 1, E0.3) — Contact/Account only,
+ * Merge & duplicate detection (CRM Phase 1, E0.3) - Contact/Account only,
  * matching the epic's own wording. Schema: packages/db/migrations/0038.
  *
  * SCOPE: Phase 1 shipped exact-match only. Track A5 added the fuzzy
  * name+company half (`match_reason = 'fuzzy_name_company'`), which needs
- * `pg_trgm` — the first Postgres extension this codebase has required.
+ * `pg_trgm` - the first Postgres extension this codebase has required.
  * Migration 0042 installs it if the deploying role may, and NEITHER half
  * hard-depends on it: `fuzzyAvailable()` asks Postgres at request time, and a
  * scan on an environment without the extension reports it as unavailable
@@ -35,7 +35,7 @@ import { DbService } from "../../db/db.service";
  * produce a candidate: `contacts`/`accounts` already carry partial UNIQUE
  * indexes on `(org_id, phone_hash)` / `(org_id, lower(email))` /
  * `(org_id, lower(domain))` for active rows (0035), so two ACTIVE rows can
- * never share a phone/email/domain in the first place — the database has
+ * never share a phone/email/domain in the first place - the database has
  * already deduped those at write time. `external_ids` has no such
  * constraint (a jsonb map, not a single column), so it is the one field
  * where a genuine duplicate can exist for this scan to find.
@@ -56,7 +56,7 @@ const ScanQuery = z.object({
    * 0.45 rather than pg_trgm's own 0.3 default: names are short strings, and
    * at 0.3 "Priya Sharma"/"Rahul Sharma" scores as a candidate. This is the
    * threshold for what a human is asked to LOOK at, not for what gets merged
-   * — merging stays a deliberate two-click action either way — so it is tuned
+   * - merging stays a deliberate two-click action either way - so it is tuned
    * to keep the review queue worth opening.
    */
   threshold: z.coerce.number().min(0.1).max(1).default(0.45),
@@ -74,13 +74,13 @@ const PerformMergeBody = z.object({
   survivorId: z.string().uuid(),
   victimId: z.string().uuid(),
   /** Per contested field, which side's value the merge keeps. Fields not
-   *  listed keep the survivor's existing value — the merge only overwrites
+   *  listed keep the survivor's existing value - the merge only overwrites
    *  what an operator explicitly decided. */
   fieldDecisions: z.record(z.string(), z.enum(["survivor", "victim"])).default({}),
 });
 
 /** Mutable columns eligible for a field decision, per object type. Deliberately
- *  excludes id/org_id/workspace_id/status/merged_into_id/timestamps — those
+ *  excludes id/org_id/workspace_id/status/merged_into_id/timestamps - those
  *  are structural, not "which side's data is right". */
 const MERGE_FIELDS: Record<ObjectType, string[]> = {
   contact: ["first_name", "last_name", "display_name", "email", "title", "account_id", "owner_user_id"],
@@ -93,7 +93,7 @@ const REVERT_WINDOW_DAYS = 30;
  * `performed_by`/`reverted_by` are real uuid FKs into `users`, unlike
  * audit_log.actor_id (text). The admin-key auth path's principal.userId
  * defaults to the literal string "admin-key" when no `x-caller-user-id`
- * header is sent (admin-key.guard.ts) — never a uuid — so it must be
+ * header is sent (admin-key.guard.ts) - never a uuid - so it must be
  * validated before landing in a uuid column rather than passed through.
  */
 function actorUserId(req: PrincipalRequest): string | null {
@@ -108,13 +108,13 @@ export class MergeController {
 
   /**
    * Scan for duplicate candidates and upsert them into the review queue. Not
-   * computed live on every page load — see 0038's header on
+   * computed live on every page load - see 0038's header on
    * `duplicate_matches`.
    *
    * Two passes: exact `external_id` collisions, then (where `pg_trgm` is
    * installed) trigram name similarity. Both write the same queue with a
    * different `match_reason`, and a pair found by both keeps the exact-match
-   * row — `ON CONFLICT DO NOTHING` and the exact pass running first.
+   * row - `ON CONFLICT DO NOTHING` and the exact pass running first.
    */
   @Post("scan")
   async scan(@OrgId() orgId: string, @Query() query: unknown) {
@@ -184,7 +184,7 @@ export class MergeController {
               AND lower(btrim(b.${nameColumn})) <> ALL($3::text[])
               ${
                 // Two people with similar names at DIFFERENT companies are
-                // more likely two different people than one duplicate — the
+                // more likely two different people than one duplicate - the
                 // "name+company" half of the match reason. Only applied when
                 // both sides actually name a company; an unassigned contact
                 // is not evidence either way.
@@ -239,7 +239,7 @@ export class MergeController {
 
   /**
    * Candidates plus a label/detail for each side (contact.display_name/email,
-   * or account.name/domain) — duplicate_matches itself only holds ids, and a
+   * or account.name/domain) - duplicate_matches itself only holds ids, and a
    * review screen showing two bare uuids is useless for deciding which side
    * to keep.
    */
@@ -304,7 +304,7 @@ export class MergeController {
 
   /**
    * Perform a merge: survivor absorbs victim's fields per `fieldDecisions`,
-   * additively merges facts/external_ids (never blanks — same rule as
+   * additively merges facts/external_ids (never blanks - same rule as
    * upsertLead's fact merge), repoints the victim's deals onto the survivor,
    * and tombstones the victim rather than deleting it.
    */
@@ -338,7 +338,7 @@ export class MergeController {
         }
       }
 
-      // Snapshot BEFORE mutating — this is what a revert restores.
+      // Snapshot BEFORE mutating - this is what a revert restores.
       const survivorSnapshot = { ...survivor };
 
       const setClauses: string[] = [];
@@ -411,7 +411,7 @@ export class MergeController {
   /**
    * Undo a merge inside its window: restores the survivor's overwritten
    * fields from the pre-merge snapshot, un-tombstones the victim, and
-   * repoints its deals back. Rejected once `revert_deadline_at` has passed —
+   * repoints its deals back. Rejected once `revert_deadline_at` has passed -
    * the snapshot is not deleted, but honouring it indefinitely would let a
    * revert silently undo work done on the survivor since the merge.
    */

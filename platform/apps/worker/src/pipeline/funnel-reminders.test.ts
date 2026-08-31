@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *
  * This is the only job in the platform that messages someone who did not ask to
  * be messaged, from an unofficial WhatsApp account. A wrong predicate here does
- * not produce a stack trace — it produces real messages to real people, and the
+ * not produce a stack trace - it produces real messages to real people, and the
  * account carries a ban risk for exactly that. So the query is asserted as
  * text: every guard clause has a test that fails if it is deleted.
  */
@@ -90,7 +90,7 @@ describe("who it selects", () => {
 
   it("bounds the window at BOTH ends", async () => {
     // The lower bound alone would sweep up every enquiry ever received on the
-    // first run — months-old contacts, dozens at once, from an account that
+    // first run - months-old contacts, dozens at once, from an account that
     // gets banned for precisely that pattern.
     const q = await sql();
     expect(q).toContain("s.created_at < now() - make_interval(days => $1)");
@@ -142,7 +142,7 @@ describe("what it queues", () => {
     expect(enqueueFollowUp).toHaveBeenCalledTimes(2);
     for (const call of enqueueFollowUp.mock.calls) {
       // Channel is explicit. The column defaults to 'email' in the database, so
-      // an omitted argument here would quietly queue mail — the channel that is
+      // an omitted argument here would quietly queue mail - the channel that is
       // on hold and cannot be delivered.
       expect(call.slice(2)).toEqual(["reminder_followup", "whatsapp"]);
     }
@@ -165,7 +165,7 @@ describe("startFunnelReminderSweep", () => {
 
   it("refuses to run a window that can never match", async () => {
     // after=10, max=5 selects "older than 10 days AND younger than 5", which is
-    // empty. Running it would look enabled and do nothing forever — the failure
+    // empty. Running it would look enabled and do nothing forever - the failure
     // nobody investigates because there is no error.
     process.env.FUNNEL_REMINDERS_ENABLED = "true";
     process.env.FUNNEL_REMINDER_AFTER_DAYS = "10";

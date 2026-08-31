@@ -11,9 +11,9 @@ import { CriteriaEditor } from "./criteria-editor";
  * Three views of the same funnel: the people, what we say to them, and who
  * counts as a lead.
  *
- * A tab rather than a separate page in the sidebar. They belong together — an
+ * A tab rather than a separate page in the sidebar. They belong together - an
  * operator about to press Reject is exactly the person who should be able to
- * check the wording of a rejection first — and a nav item nobody looks for is a
+ * check the wording of a rejection first - and a nav item nobody looks for is a
  * feature nobody finds.
  *
  * Client-side switching over payloads all fetched on the server. The templates
@@ -26,7 +26,7 @@ import { CriteriaEditor } from "./criteria-editor";
  * `tab === "criteria" ? <CriteriaEditor/> : …`, which UNMOUNTS the editor the
  * moment you leave the tab and takes its unsaved state with it.
  *
- * CriteriaEditor deliberately holds edits locally until Save is pressed — a
+ * CriteriaEditor deliberately holds edits locally until Save is pressed - a
  * half-built rule must never briefly become the live definition of a qualified
  * lead. Combined with an unmount, that meant switching tabs silently discarded
  * the change, and coming back showed the server's value again. Reported on
@@ -100,7 +100,7 @@ export function LeadsTabs({
       <div role="tabpanel" hidden={tab !== "whatsapp"}>
         {templatesError ? (
           <ErrorCard title="Could not load the messages" message={templatesError}>
-            The messages still send — the worker falls back to the wording built into the release
+            The messages still send - the worker falls back to the wording built into the release
             when this table is unreachable. Only editing is unavailable.
           </ErrorCard>
         ) : (

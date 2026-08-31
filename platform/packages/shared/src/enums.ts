@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Pipeline state machine — the database is the source of truth (design doc §6.2).
+ * Pipeline state machine - the database is the source of truth (design doc §6.2).
  *
  * Order and membership mirror `calls_status_check` as migration 0014 redefines
  * it, value for value, so the two read side by side in a diff. enums.test.ts
@@ -18,7 +18,7 @@ export const CallStatus = z.enum([
   "SYNCING",
   "COMPLETE",
   // Transcription switched off for the instance (0014): terminal, but not a
-  // failure — the call row and its audio are complete, only the paid stages
+  // failure - the call row and its audio are complete, only the paid stages
   // were skipped. Written at worker pipeline.ts.
   "TRANSCRIPTION_OFF",
   "FAILED_TRANSCODE",
@@ -43,7 +43,7 @@ export type OnConsentFailure = z.infer<typeof OnConsentFailure>;
 export const DeviceStatus = z.enum(["active", "logged_out", "wiped", "lost"]);
 export type DeviceStatus = z.infer<typeof DeviceStatus>;
 
-/** Result of the enrollment capture probe — feeds the certified-device matrix. */
+/** Result of the enrollment capture probe - feeds the certified-device matrix. */
 export const CaptureCapability = z.enum([
   "FULL_DUPLEX",
   "NEAR_END_ONLY",
@@ -62,7 +62,7 @@ export const UploadState = z.enum([
 export type UploadState = z.infer<typeof UploadState>;
 
 /**
- * Outbox delivery state — `crm_sync_log_status_check` as 0008 redefines it.
+ * Outbox delivery state - `crm_sync_log_status_check` as 0008 redefines it.
  *
  * 'dead' is the NORMAL terminal state, not an edge case: the outbox writes it
  * for a terminal 4xx and for an exhausted attempt budget (worker outbox.ts), and

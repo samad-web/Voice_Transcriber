@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0051 — where to find this business online
+-- 0051 - where to find this business online
 --
 -- The funnel asks six multiple-choice questions and collects a name, a number
 -- and an email. All of it is self-reported, and none of it answers the question
@@ -11,7 +11,7 @@
 -- The number is a gap on purpose. The branch this ships from carries the CRM
 -- Phase 1 work at 0034-0050, none of which is in production yet, while the
 -- deployed branch stops at 0033. Taking 0034 here would collide with a
--- DIFFERENT 0034 the moment the two branches meet — and `schema_migrations`
+-- DIFFERENT 0034 the moment the two branches meet - and `schema_migrations`
 -- keys on the filename, so the loser would be recorded as applied without ever
 -- having run. A number free on both branches costs nothing: the runner applies
 -- whatever it has not seen, in name order, and this touches only the marketing
@@ -24,12 +24,12 @@
 -- "instagram.com/ourshop", "@ourshop", "we only have a Facebook page", or three
 -- links at once. A `text` column takes all of those. A url type, or a CHECK
 -- that insisted on a scheme, would reject the honest answers and teach people
--- to type something fake to get past it — which is worse than a blank, because
+-- to type something fake to get past it - which is worse than a blank, because
 -- a blank is at least true.
 --
 -- Nullable, and it stays nullable: this is optional on the form. A required
 -- field on a lead form is paid for in leads, and plenty of real businesses in
--- this market have no web presence at all — which is itself worth knowing, and
+-- this market have no web presence at all - which is itself worth knowing, and
 -- is exactly what NULL records.
 ALTER TABLE marketing.funnel_submissions
   ADD COLUMN IF NOT EXISTS digital_presence text;
@@ -37,7 +37,7 @@ ALTER TABLE marketing.funnel_submissions
 -- The same answer on the fill that produced it.
 --
 -- `funnel_contact_history` is one row per FILL, while the submission is one row
--- per person — a returning enquirer overwrites their submission but adds a
+-- per person - a returning enquirer overwrites their submission but adds a
 -- history row. Without this column, somebody who fills the form twice loses the
 -- first answer entirely, and the history stops being a faithful record of what
 -- was said each time.

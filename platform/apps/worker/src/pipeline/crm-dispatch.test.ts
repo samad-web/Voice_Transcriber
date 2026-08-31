@@ -11,7 +11,7 @@ import {
  * The outgoing CRM payload.
  *
  * Everything here is what a customer's system of record actually receives, so a
- * wrong value is not a display bug — it is a wrong row in someone else's
+ * wrong value is not a display bug - it is a wrong row in someone else's
  * database that we cannot retract.
  *
  * `buildSourceDocument` takes the `DbClient` interface rather than a pg Pool
@@ -61,7 +61,7 @@ const CALL_ROW: Record<string, unknown> = {
 
 describe("confidenceScore", () => {
   it("returns null when the call was never validated at all", () => {
-    // No ai_outputs row — a TRANSCRIPTION_OFF call, say. Sending 0 would be a
+    // No ai_outputs row - a TRANSCRIPTION_OFF call, say. Sending 0 would be a
     // claim of low confidence; null is the honest "we did not judge this".
     expect(confidenceScore(null, 3, 5)).toBeNull();
     expect(confidenceScore("", 3, 5)).toBeNull();
@@ -114,7 +114,7 @@ describe("mapFields", () => {
 
   it("preserves the original envelope when no field map is configured", () => {
     // Integrations created before the connector work receive exactly what they
-    // always did — changing this silently breaks every existing webhook.
+    // always did - changing this silently breaks every existing webhook.
     const expected = {
       event: "call.completed",
       call: { id: "c1", direction: "incoming", facts: { customer_name: "Rajesh" } },
@@ -188,7 +188,7 @@ describe("buildSourceDocument", () => {
     expect(doc.contact.isFollowUp).toBe(false);
   });
 
-  it("sends NULL history — never zero — when the caller withheld their number", async () => {
+  it("sends NULL history - never zero - when the caller withheld their number", async () => {
     // Zero is a claim ("this caller has never rung us"); absent is the truth.
     // pruneBody drops nulls so the CRM field stays empty instead of showing 0.
     const doc = (await buildSourceDocument(
@@ -253,8 +253,8 @@ describe("buildSourceDocument", () => {
   });
 
   /**
-   * `filled` uses `isFilled` from @aura/shared — the same definition qualifyLead
-   * scores a lead with — rather than a local `v !== null && v !== ""`. The two
+   * `filled` uses `isFilled` from @aura/shared - the same definition qualifyLead
+   * scores a lead with - rather than a local `v !== null && v !== ""`. The two
    * disagreed on exactly the values a model emits for "not mentioned", so a call
    * qualifyLead counted as ZERO filled fields was delivered to the customer's
    * CRM at confidenceScore 1.0, the maximum. Sales teams triage on that number.
@@ -269,7 +269,7 @@ describe("buildSourceDocument", () => {
   });
 
   it("still counts the values isFilled treats as real answers", async () => {
-    // 0 and false are answers — a quantity of zero and "no, don't ring back"
+    // 0 and false are answers - a quantity of zero and "no, don't ring back"
     // are both things the call said. A `!value` style filledness test would
     // score this 0.5 and understate a fully-answered call.
     const doc = (await buildSourceDocument(

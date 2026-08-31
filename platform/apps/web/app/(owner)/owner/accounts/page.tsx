@@ -16,7 +16,7 @@ import { Pager } from "@/components/pager";
 import { ownerGet } from "@/lib/owner-context";
 import { relativeTime, type Account } from "../types";
 
-export const metadata: Metadata = { title: "Accounts — Aura" };
+export const metadata: Metadata = { title: "Accounts - Aura" };
 
 const PAGE_SIZE = 50;
 
@@ -28,7 +28,7 @@ interface ListResponse {
 }
 
 /**
- * CRM Phase 1 foundation (E0.1) — the Account (company) list. Nothing
+ * CRM Phase 1 foundation (E0.1) - the Account (company) list. Nothing
  * populates this automatically yet: unlike Contact/Deal, no call carries a
  * company name today, so this starts empty except for accounts created by
  * hand until that mapping exists.
@@ -80,7 +80,7 @@ export default async function AccountsPage({
       {data.accounts.length === 0 ? (
         <EmptyState
           title="No accounts yet"
-          description="Accounts are companies, added by hand for now — nothing extracted from a call names one automatically yet."
+          description="Accounts are companies, added by hand for now - nothing extracted from a call names one automatically yet."
         />
       ) : (
         <>
@@ -104,13 +104,13 @@ export default async function AccountsPage({
                       {account.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-text-muted">{account.domain ?? "—"}</TableCell>
+                  <TableCell className="text-text-muted">{account.domain ?? "-"}</TableCell>
                   <TableCell className="text-text-muted">
                     {account.phone_prefix
                       ? `${account.phone_prefix}…`
                       : account.phone_last3
                         ? `…${account.phone_last3}`
-                        : "—"}
+                        : "-"}
                   </TableCell>
                   <TableCell className="text-text-muted tabular-nums">
                     {relativeTime(account.last_activity_at)}

@@ -47,7 +47,7 @@ const ChannelPatch = z
     config: z.record(z.string(), z.unknown()).optional(),
     status: z.enum(["active", "disabled"]).optional(),
     /**
-     * Wasi's per-WABA hub-forward secret (0061) — entered here once, by hand,
+     * Wasi's per-WABA hub-forward secret (0061) - entered here once, by hand,
      * after an admin configures "CRM Inbound Forwarding" on that client's
      * Wasi page and it's shown to them. No self-serve retrieval on Wasi's
      * side, so there is no "fetch it for me" path here either.
@@ -61,7 +61,7 @@ const ChannelPatch = z
 /**
  * Columns safe to return.
  *
- * `api_key` is absent by construction rather than deleted afterwards — a
+ * `api_key` is absent by construction rather than deleted afterwards - a
  * SELECT * with a delete-the-secret step downstream is one refactor away from
  * leaking it. The webhook token IS returned: it is the setup value an admin
  * has to paste into the provider, and it is already scoped to their own org.
@@ -121,7 +121,7 @@ export class MessagingChannelsController {
         return withWebhookPath(created);
       } catch (err) {
         // 23505 = unique_violation. The address is UNIQUE platform-wide, so
-        // this fires when ANOTHER tenant already claimed the number — which is
+        // this fires when ANOTHER tenant already claimed the number - which is
         // why the message says nothing about who. Confirming that a number is
         // registered elsewhere is itself a disclosure.
         if (isUniqueViolation(err)) {
@@ -174,7 +174,7 @@ export class MessagingChannelsController {
 
   /**
    * Thin proxy to Wasi's `GET /api/v1/templates`, for the composer's template
-   * picker — not gated on CrmPermissionsGuard because reading which templates
+   * picker - not gated on CrmPermissionsGuard because reading which templates
    * exist is org configuration, the same tier the rest of this controller is
    * on. Only meaningful for a `provider = 'wasi'` channel.
    */

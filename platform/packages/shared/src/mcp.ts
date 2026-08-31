@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 /**
- * A minimal Model Context Protocol client — Streamable HTTP transport only.
+ * A minimal Model Context Protocol client - Streamable HTTP transport only.
  *
  * ── WHY HAND-ROLLED RATHER THAN @modelcontextprotocol/sdk ───────────────
  *
  * The official SDK carries a stdio transport, an in-process server, an OAuth
  * client and a session manager. Aura needs exactly three calls against a
- * remote HTTP endpoint — `initialize`, `tools/list`, `tools/call` — and needs
+ * remote HTTP endpoint - `initialize`, `tools/list`, `tools/call` - and needs
  * them to be callable from the API tier, the worker, and a unit test with a
  * stub fetch. That is about a hundred lines of JSON-RPC, and writing it here
  * keeps the wire shape visible and testable rather than behind a dependency
@@ -39,7 +39,7 @@ export const McpServerInfo = z.object({
 export type McpServerInfo = z.infer<typeof McpServerInfo>;
 
 /**
- * One content block from a tool result. Only `text` is read — an MCP server
+ * One content block from a tool result. Only `text` is read - an MCP server
  * returning an image or an audio blob for a lead list is not something to
  * guess at, so those pass through unparsed rather than being coerced.
  */
@@ -140,7 +140,7 @@ export class McpClient {
   private headers(): Record<string, string> {
     const headers: Record<string, string> = {
       "content-type": "application/json",
-      // Both, because the server picks — see parseSseForResponse.
+      // Both, because the server picks - see parseSseForResponse.
       accept: "application/json, text/event-stream",
       "mcp-protocol-version": MCP_PROTOCOL_VERSION,
     };
@@ -207,7 +207,7 @@ export class McpClient {
 
   /**
    * The handshake. Two messages, in order, and the notification is not
-   * optional — a spec-following server rejects `tools/list` before it.
+   * optional - a spec-following server rejects `tools/list` before it.
    */
   async initialize(): Promise<{ serverInfo: McpServerInfo | null; protocolVersion: string | null }> {
     const result = (await this.request("initialize", {
@@ -269,7 +269,7 @@ export function toolText(result: McpToolResult): string {
  * `structuredContent` is preferred and taken as-is. Otherwise the text blocks
  * are JSON-parsed, because in practice most servers answer a "list things"
  * tool with a JSON document in a text block. A text block that is not JSON
- * returns null rather than throwing — the caller decides whether prose is a
+ * returns null rather than throwing - the caller decides whether prose is a
  * failure, and for some tools it legitimately is not.
  */
 export function toolJson(result: McpToolResult): unknown {
@@ -291,7 +291,7 @@ export function toolJson(result: McpToolResult): unknown {
  * There is no registry of canonical MCP tool names, so a Meta MCP server may
  * call the same operation `list_leads`, `get_leads` or `fetch_lead_ads`.
  * Matching a candidate list against what the server actually advertises is
- * how this stays working across servers without a per-vendor code branch —
+ * how this stays working across servers without a per-vendor code branch -
  * and returning null (rather than guessing at the first tool) is what makes
  * "this server cannot do that" a clear message instead of a confusing failure
  * deep in an argument mismatch.

@@ -4,7 +4,7 @@ import { cx } from "./cx";
 export interface CTABannerProps {
   title: ReactNode;
   description?: ReactNode;
-  /** Primary action — usually the WhatsApp link. */
+  /** Primary action - usually the WhatsApp link. */
   action: ReactNode;
   /** Secondary action, rendered next to it. Deep-links to /start in doc 16 §4.1. */
   secondaryAction?: ReactNode;
@@ -18,7 +18,7 @@ export interface CTABannerProps {
  *
  * Uses `--color-accent-subtle` rather than a filled accent block. Doc 16 §1.1 is
  * explicit that the accent is for the primary CTA, active nav, focus ring and
- * selection — a page with three saturated blue slabs spends the accent on
+ * selection - a page with three saturated blue slabs spends the accent on
  * decoration, and the actual button inside the banner then has nothing left to
  * stand out against. The tint keeps the emphasis on the button.
  *

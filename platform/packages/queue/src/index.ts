@@ -1,7 +1,7 @@
 import * as amqp from "amqplib";
 
 /**
- * Thin RabbitMQ helper. The queue is only a wake-up signal — the Postgres
+ * Thin RabbitMQ helper. The queue is only a wake-up signal - the Postgres
  * state machine is the source of truth for pipeline progress (design doc §6.2).
  */
 
@@ -59,7 +59,7 @@ export async function consumePipeline(
  * Messages waiting in the pipeline queue, for the health panel. Uses a passive
  * assert so a broker that is up but has never seen the queue reports 0 rather
  * than creating it as a side effect of a health check. Returns null when the
- * broker is unreachable — the caller renders that as "unknown", which is a
+ * broker is unreachable - the caller renders that as "unknown", which is a
  * different and more useful signal than a fake 0.
  */
 export async function queueDepth(): Promise<number | null> {

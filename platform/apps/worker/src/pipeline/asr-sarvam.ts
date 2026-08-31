@@ -10,8 +10,8 @@ import type { AsrResult, AsrSegment } from "./asr";
  *
  * Sarvam splits its speech API in two, and the split decides this file's shape:
  * the synchronous REST endpoint takes audio under 30 seconds and cannot
- * diarize, while everything we actually want — real acoustic speaker
- * separation, and calls that run for minutes — is batch only. Batch is
+ * diarize, while everything we actually want - real acoustic speaker
+ * separation, and calls that run for minutes - is batch only. Batch is
  * submit → poll → download, so ASR stops being something a single pipeline run
  * can finish. `startJob` is called by the pipeline; `collectJob` is called
  * later by the poller, possibly in a different worker process after a restart.
@@ -20,7 +20,7 @@ import type { AsrResult, AsrSegment } from "./asr";
  * them together.
  */
 
-/** Speaker labels stay S1/S2 — the console and the analyze stage both read that
+/** Speaker labels stay S1/S2 - the console and the analyze stage both read that
  *  convention, and Sarvam's 0-based speaker_id is otherwise identical. */
 const speakerLabel = (speakerId: unknown): string => {
   const n = Number(speakerId);
@@ -51,7 +51,7 @@ function client(): SarvamAIClient {
  * Submit one call's audio and return the provider job id.
  *
  * The SDK uploads from disk, so the audio makes a brief detour through a temp
- * file — deleted in `finally`, including when the upload throws, so a failing
+ * file - deleted in `finally`, including when the upload throws, so a failing
  * provider cannot slowly fill the worker's disk.
  */
 export interface SarvamAsrOptions {
@@ -81,7 +81,7 @@ export async function startSarvamAsrJob(
             process.env.SARVAM_STT_MODE ??
             "transcribe") as SarvamAI.Mode,
           // "unknown" lets Saaras detect the language, which is right only when
-          // we genuinely don't know — auto-detect has mislabelled a Tamil call
+          // we genuinely don't know - auto-detect has mislabelled a Tamil call
           // as Spanish before now. An instance that knows what its agents speak
           // should say so.
           languageCode: (opts.language ??
@@ -89,7 +89,7 @@ export async function startSarvamAsrJob(
             "unknown") as SarvamAI.SpeechToTextLanguage,
           withDiarization: true,
           withTimestamps: true,
-          // A phone call is two parties. Saying so is a hint, not a cap — it
+          // A phone call is two parties. Saying so is a hint, not a cap - it
           // stops the diarizer inventing a third speaker out of line noise.
           numSpeakers: Number(process.env.SARVAM_STT_SPEAKERS ?? 2),
         }),
@@ -130,7 +130,7 @@ export type CollectResult =
 /**
  * Check a submitted job and, when it has finished, fetch and map its output.
  *
- * Never throws for a job that merely failed upstream — a `failed` result lets
+ * Never throws for a job that merely failed upstream - a `failed` result lets
  * the caller record the reason on the call and hand it to the normal retry
  * budget, exactly like an inline ASR error. Only genuinely unexpected problems
  * (network, auth) propagate.
@@ -175,7 +175,7 @@ export async function collectSarvamAsrJob(jobId: string): Promise<CollectResult>
  * Diarized entries are the good path: they carry per-turn text, timing and a
  * speaker, so the analyze stage only has to decide which speaker is the agent.
  * Chunk timestamps are the fallback when diarization returned nothing, and a
- * single whole-transcript segment is the last resort — degrading, never empty,
+ * single whole-transcript segment is the last resort - degrading, never empty,
  * because an empty segment list silently turns the console's transcript view
  * into a blank panel.
  */

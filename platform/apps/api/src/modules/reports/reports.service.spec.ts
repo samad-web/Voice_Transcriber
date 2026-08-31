@@ -4,7 +4,7 @@ import { furthestOpenStage } from "../crm-objects/stage-history";
 import type { DbService } from "../../db/db.service";
 
 /**
- * The arithmetic in these reports is the product — a wrong conversion rate is
+ * The arithmetic in these reports is the product - a wrong conversion rate is
  * worse than no conversion rate, because somebody acts on it. A fake DbService
  * routes each query by a distinguishing substring, the same approach the
  * worker's crm-objects.test.ts uses.
@@ -24,7 +24,7 @@ const STAGES = [
 
 interface FakeRows {
   /**
-   * One row per deal for the conversion query — `visited` being every stage
+   * One row per deal for the conversion query - `visited` being every stage
    * the transition ledger (migration 0046) records it having entered, which
    * is what replaced the old "infer it from the current stage" guess.
    */
@@ -90,7 +90,7 @@ describe("ReportsService.pipeline", () => {
     const result = await service.pipeline(ORG);
 
     // Driven by the pipeline's stage list, not by what the deals table
-    // happens to contain — an empty column must read as a real zero.
+    // happens to contain - an empty column must read as a real zero.
     expect(result.rows.map((r) => r.stage)).toEqual(["new", "contacted", "qualified", "negotiation"]);
     expect(result.rows[1]).toMatchObject({ deals: 0, amount: 0, avgDaysInStage: null });
   });
@@ -122,7 +122,7 @@ describe("ReportsService.conversion", () => {
   const run = (deals: FakeRows["deals"]) =>
     new ReportsService(fakeDb({ deals })).conversion(ORG, "2026-01-01", "2026-12-31");
 
-  /** n identical deals — the ledger shape, one row each. */
+  /** n identical deals - the ledger shape, one row each. */
   const many = (n: number, status: string, visited: string[] | null) =>
     Array.from({ length: n }, () => ({ status, visited }));
 
@@ -138,7 +138,7 @@ describe("ReportsService.conversion", () => {
     expect(result.rows.map((r) => r.reached)).toEqual([2, 2, 2, 2]);
   });
 
-  it("credits a LOST deal with how far it actually got — the point of 0046", async () => {
+  it("credits a LOST deal with how far it actually got - the point of 0046", async () => {
     // The old report could only floor this at the entry stage, because
     // `deals.stage` had been overwritten with 'lost'. The ledger remembers
     // that it reached Negotiation, so a late loss and an early one stop
@@ -157,7 +157,7 @@ describe("ReportsService.conversion", () => {
   });
 
   it("counts a deal that was moved BACKWARDS once, at its high-water mark", async () => {
-    // Furthest-reached, not current — otherwise a deal pulled back from
+    // Furthest-reached, not current - otherwise a deal pulled back from
     // Negotiation to Contacted would silently reduce the Negotiation count of
     // a period that already happened.
     const result = await run(many(1, "open", ["new", "contacted", "negotiation"]));
@@ -181,7 +181,7 @@ describe("ReportsService.conversion", () => {
     expect(result.summary?.winRate).toBeNull();
   });
 
-  it("gives the first stage no conversion rate — there is nothing before it", async () => {
+  it("gives the first stage no conversion rate - there is nothing before it", async () => {
     const result = await run(many(10, "open", ["new"]));
     expect(result.rows[0].conversionFromPrevious).toBeNull();
   });
@@ -211,7 +211,7 @@ describe("furthestOpenStage", () => {
     expect(furthestOpenStage(order, ["new"], "won", 4)).toBe(3);
   });
 
-  it("is order-independent — it takes the maximum, not the last entry", () => {
+  it("is order-independent - it takes the maximum, not the last entry", () => {
     expect(furthestOpenStage(order, ["negotiation", "contacted"], "open", 4)).toBe(3);
   });
 });

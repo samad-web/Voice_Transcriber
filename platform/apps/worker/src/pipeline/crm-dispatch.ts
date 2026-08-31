@@ -29,7 +29,7 @@ export interface DbClient {
  *
  * The request is configuration, not code. `crm_integrations` holds the endpoint
  * template, the per-tenant config that completes it, the auth scheme, the body
- * shape and the field map — so onboarding a CRM is an INSERT plus an entry in
+ * shape and the field map - so onboarding a CRM is an INSERT plus an entry in
  * the shared catalogue, never a new branch here. This file knows how to render
  * and send a request; it knows nothing about HubSpot or Zoho specifically.
  *
@@ -39,7 +39,7 @@ export interface DbClient {
  */
 
 // Presigning must use the PUBLIC endpoint. The internal one (http://minio:9000)
-// is container DNS — a URL signed against it is unreachable by the CRM, and the
+// is container DNS - a URL signed against it is unreachable by the CRM, and the
 // failure would look like a broken link rather than a config mistake.
 const publicS3 = new S3Client({
   endpoint: process.env.S3_PUBLIC_ENDPOINT ?? process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -73,7 +73,7 @@ export interface CrmIntegration {
   max_attempts: number;
   rate_limit_per_min: number;
   auth: { url?: string } | null;
-  /** Send only calls that qualified as a lead — see enqueueDispatch (0011). */
+  /** Send only calls that qualified as a lead - see enqueueDispatch (0011). */
   only_qualified: boolean;
 }
 
@@ -81,7 +81,7 @@ export interface CrmIntegration {
 const pluck = pluckPath;
 
 /**
- * Confidence heuristic — NOT a model-reported probability, and documented as
+ * Confidence heuristic - NOT a model-reported probability, and documented as
  * such to the receiver. Half the score is how well the extraction validated
  * against the tenant's schema, half is how much of that schema the call
  * actually filled in. A clean extraction of a call that only mentioned two
@@ -182,7 +182,7 @@ export async function buildSourceDocument(
   // `isFilled`, not a local test, because this number is half of the confidence
   // the receiver is told. A local `v !== null && v !== ""` counted a
   // whitespace-only string and the literal "[]" (how call_facts stores an empty
-  // string[]) as answers — exactly what a model emits for "not mentioned" — so a
+  // string[]) as answers - exactly what a model emits for "not mentioned" - so a
   // call qualifyLead scores as ZERO filled fields arrived in the customer's CRM
   // at confidence 1.0, overstating precisely the leads that deserve least trust.
   // One definition of "the call said something", shared with qualifyLead.
@@ -213,7 +213,7 @@ export async function buildSourceDocument(
       remoteName: row.remote_name,
       remoteNumberPrefix: row.remote_number_prefix,
       remoteNumberLast3: row.remote_number_last3,
-      // NULL unless the org opted in (0011) — a field map that references it on
+      // NULL unless the org opted in (0011) - a field map that references it on
       // a non-opted-in tenant simply sends nothing, rather than a partial number.
       remoteNumber: row.remote_number_full,
       workspaceId: row.workspace_id,
@@ -224,7 +224,7 @@ export async function buildSourceDocument(
      * Until this existed the payload carried nothing that identified WHO rang:
      * `callId` is unique per call and `customerName` is LLM-extracted and often
      * absent, so a receiving CRM had no way to tell two deliveries apart from
-     * two different customers. `key` is the number hash — stable, already
+     * two different customers. `key` is the number hash - stable, already
      * indexed, and not reversible into a dialable number, so it can be sent to
      * a third party without widening what we disclose about callers.
      *
@@ -240,7 +240,7 @@ export async function buildSourceDocument(
        * stored even when the full number is not.
        *
        * This is the only phone-ish value that exists for calls ingested before
-       * an org opted in to `store_full_number` — that flag is not retroactive,
+       * an org opted in to `store_full_number` - that flag is not retroactive,
        * because the digits were never written. Sending it means a CRM row for a
        * historical call still shows something a person can recognise, instead
        * of an empty field next to `call.remoteNumber`.
@@ -305,7 +305,7 @@ export function mapFields(
 /**
  * Field map, then the provider's body shape. Kept as one exported step so the
  * console's payload preview and the worker's real send go through the same
- * call — a preview that lies is worse than no preview.
+ * call - a preview that lies is worse than no preview.
  */
 export function mapPayload(
   source: Record<string, unknown>,
@@ -329,7 +329,7 @@ const b64 = (input: string) => Buffer.from(input, "utf8").toString("base64");
  * and headers from config, attach the credential, decrypt the secret.
  *
  * Returns the unresolved placeholders instead of sending a request built from
- * blanks — a Salesforce integration missing its instance URL should fail
+ * blanks - a Salesforce integration missing its instance URL should fail
  * saying so, not POST to a nonsense host.
  */
 export function resolveRequest(integration: CrmIntegration): ResolvedCrmRequest & {
@@ -377,7 +377,7 @@ export function resolveRequest(integration: CrmIntegration): ResolvedCrmRequest 
 
 export interface DeliveryOutcome {
   ok: boolean;
-  /** Terminal outcomes are never retried — a 4xx will not start succeeding. */
+  /** Terminal outcomes are never retried - a 4xx will not start succeeding. */
   terminal: boolean;
   status: number | null;
   body: string;
@@ -419,7 +419,7 @@ export async function deliver(
   }
 
   try {
-    // Same SSRF guard as the console's "test connection" — the endpoint is
+    // Same SSRF guard as the console's "test connection" - the endpoint is
     // tenant-configured, not ours to trust. See ssrf-guard.ts. Terminal: a
     // blocked address will still be blocked on retry.
     await assertPublicHttpUrl(request.url);
@@ -452,7 +452,7 @@ export async function deliver(
         const found = pluck(JSON.parse(raw), integration.id_path);
         if (found !== null && found !== undefined) externalId = String(found);
       } catch {
-        // Non-JSON success body — the delivery worked, we just can't link it.
+        // Non-JSON success body - the delivery worked, we just can't link it.
       }
     }
 
@@ -469,7 +469,7 @@ export async function deliver(
       url: request.url,
     };
   } catch (err) {
-    // Timeout / DNS / connection refused — all worth retrying.
+    // Timeout / DNS / connection refused - all worth retrying.
     return {
       ok: false,
       terminal: false,

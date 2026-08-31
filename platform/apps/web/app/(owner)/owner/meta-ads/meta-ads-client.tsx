@@ -6,13 +6,13 @@ import { startOAuthRedirect } from "../lib/oauth-redirect";
 import { startMetaConnectAction } from "./actions";
 
 /**
- * Connect Meta (Facebook) Lead Ads — one button, one full-page redirect.
+ * Connect Meta (Facebook) Lead Ads - one button, one full-page redirect.
  *
  * There is no GET /meta/connections list endpoint yet, so this page can't
  * render a connection-status list the way connections-manager.tsx does. It
  * only offers the button; the OAuth callback (GET /meta/oauth/callback) is
- * handled entirely server-side by the API — Meta redirects the browser
- * straight there, not back into this Next.js app — so there is no return leg
+ * handled entirely server-side by the API - Meta redirects the browser
+ * straight there, not back into this Next.js app - so there is no return leg
  * to build here.
  */
 export function MetaAdsConnect() {
@@ -36,7 +36,7 @@ export function MetaAdsConnect() {
   if (notConfigured) {
     return (
       <p className="rounded-md border border-border bg-surface-hover p-3 text-sm text-text-muted">
-        Meta Lead Ads isn&rsquo;t configured yet — ask your platform admin to set it up.
+        Meta Lead Ads isn&rsquo;t configured yet - ask your platform admin to set it up.
       </p>
     );
   }

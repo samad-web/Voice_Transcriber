@@ -22,7 +22,7 @@ interface Overview {
   calls: { total: number; complete: number; failed: number; total_seconds: number };
 }
 
-/** Status buckets an operator actually triages by — not the raw pipeline enum.
+/** Status buckets an operator actually triages by - not the raw pipeline enum.
  *  `in_pipeline` and `failed` are resolved server-side and each span several
  *  states, so nothing stuck is hidden behind a single-state match. */
 const STATUS_FILTERS = [
@@ -88,10 +88,10 @@ export default async function InstanceCallsPage({
   const stats = overview?.calls;
   const minutes = stats ? Math.round(stats.total_seconds / 60) : 0;
   const successRate =
-    stats && stats.total > 0 ? `${((stats.complete / stats.total) * 100).toFixed(0)}%` : "—";
+    stats && stats.total > 0 ? `${((stats.complete / stats.total) * 100).toFixed(0)}%` : "-";
 
   /** Rebuilds the URL keeping whatever the caller does not override. Filters
-   *  reset to page 1 — staying on page 7 of a narrower result set would land
+   *  reset to page 1 - staying on page 7 of a narrower result set would land
    *  the operator on an empty table. */
   const href = (next: { instance?: string; status?: string; page?: number }) => {
     const q = new URLSearchParams();
@@ -114,7 +114,7 @@ export default async function InstanceCallsPage({
 
   return (
     <>
-      <PageHeader title={`${org.name} — Calls`} context="Instance" />
+      <PageHeader title={`${org.name} - Calls`} context="Instance" />
 
       <Link
         href={`/instances/${orgId}`}
@@ -195,7 +195,7 @@ export default async function InstanceCallsPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with{" "}
+            Could not reach the API - start it with{" "}
             <code className="font-mono">pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
@@ -209,7 +209,7 @@ export default async function InstanceCallsPage({
           }
           description={
             status || instanceId
-              ? "Widen the filter above — or clear it to see every call on this tenant."
+              ? "Widen the filter above - or clear it to see every call on this tenant."
               : "Enroll a device on this tenant and record a call; it appears here once the pipeline finishes."
           }
         />

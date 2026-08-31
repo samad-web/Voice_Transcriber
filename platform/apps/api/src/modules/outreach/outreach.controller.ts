@@ -48,8 +48,8 @@ const JourneyPatch = z.object({ stopReason: z.string().max(200).optional() }).st
  * ── GUARDS: AdminKeyGuard + TenantGuard, NOT CrmPermissionsGuard ────────
  *
  * A cadence is org configuration, in the same class as pipelines, roles and
- * automation rules. A JOURNEY is more arguable — enrolling somebody is a
- * decision about a contact — but the line drawn here is the same one
+ * automation rules. A JOURNEY is more arguable - enrolling somebody is a
+ * decision about a contact - but the line drawn here is the same one
  * automation rules already sit on, and it is drawn on what the surface can
  * MUTATE: an automation rule can move a deal between stages and write custom
  * fields on it, while everything in this controller writes only to its own
@@ -59,7 +59,7 @@ const JourneyPatch = z.object({ stopReason: z.string().max(200).optional() }).st
  * ── NOTHING HERE SENDS ──────────────────────────────────────────────────
  *
  * Acting on a step records that a person did something. It does not do it.
- * There is no dispatcher in this module and no message body anywhere in it —
+ * There is no dispatcher in this module and no message body anywhere in it -
  * safety rule 3, kept structurally rather than by convention.
  */
 @Controller("outreach")
@@ -97,7 +97,7 @@ export class OutreachController {
    * Create a cadence and its rungs in ONE transaction.
    *
    * A cadence with no steps would enrol people and never ask anybody for
-   * anything — the zod schema refuses it, and doing both writes in one
+   * anything - the zod schema refuses it, and doing both writes in one
    * transaction means a failure halfway cannot leave one behind either.
    */
   @Post("cadences")
@@ -148,7 +148,7 @@ export class OutreachController {
    * The STEPS are deliberately not editable here. A journey copies its rungs
    * at enrolment (0058 denormalises label/channel/guidance onto the ledger),
    * so editing a live cadence's steps would leave running journeys on the old
-   * wording while the definition said something else — two truths, no way to
+   * wording while the definition said something else - two truths, no way to
    * tell which somebody was actually asked to do. Changing a process means a
    * new cadence, and retiring the old one.
    */
@@ -286,7 +286,7 @@ export class OutreachController {
         journeyId = journey.id;
       } catch (err) {
         // The partial unique index allows re-running somebody next quarter but
-        // not enrolling them twice at once — which would deliver every rung in
+        // not enrolling them twice at once - which would deliver every rung in
         // duplicate.
         if (isUniqueViolation(err)) {
           throw new ConflictException("this contact is already active on that cadence");
@@ -352,7 +352,7 @@ export class OutreachController {
       );
       if (!journey) throw new NotFoundException("journey not found or already finished");
 
-      // Cancel, not skip — the rep did not decline these, the ladder ended.
+      // Cancel, not skip - the rep did not decline these, the ladder ended.
       await client.query(
         `UPDATE outreach_journey_steps SET status = 'cancelled'
           WHERE journey_id = $1 AND status IN ('waiting', 'due')`,
@@ -425,7 +425,7 @@ export class OutreachController {
         [id, parsed.data.status, parsed.data.note ?? null, actorUserId(req)],
       );
       // Already acted on, or cancelled underneath them. Not an error worth a
-      // 500 — two reps clicking the same due item is ordinary.
+      // 500 - two reps clicking the same due item is ordinary.
       if (!step) throw new NotFoundException("step not found or already actioned");
       return { step };
     });

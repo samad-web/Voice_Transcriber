@@ -22,7 +22,7 @@ export interface ProvisionResult {
  * Operator-only, asserted here rather than relying on the `(platform)` layout:
  * this is an independently-addressable POST endpoint and the layout runs only on
  * a render (see lib/operator-guard.ts). Unguarded, any signed-in account could
- * create tenants at will — and it sends the cross-tenant root key to do it.
+ * create tenants at will - and it sends the cross-tenant root key to do it.
  */
 export async function createTenantAction(input: {
   name: string;
@@ -67,6 +67,6 @@ export async function createTenantAction(input: {
       enabledModules: data.tenant.enabled_modules,
     };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }

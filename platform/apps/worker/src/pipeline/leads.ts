@@ -15,7 +15,7 @@ import { confidenceScore, type DbClient } from "./crm-dispatch";
  * This is deliberately separate from crm-dispatch. That path pushes the call
  * OUT to a system the tenant already owns; this one keeps a prospect IN the
  * platform, so a customer with no CRM still has a pipeline. Both read the same
- * call_facts and neither blocks the other — a CRM outage must not cost the
+ * call_facts and neither blocks the other - a CRM outage must not cost the
  * owner their board, and a board write must not delay a CRM delivery.
  *
  * Not every call is a lead. The agent's lead_rules decide (see @aura/shared
@@ -77,7 +77,7 @@ export function leadTitle(
  *    reprocess cannot inflate it.
  *
  * Never resets stage or status. Once an owner drags a card to Negotiation, a
- * follow-up call enriches the lead — it does not send it back to New.
+ * follow-up call enriches the lead - it does not send it back to New.
  */
 export async function upsertLead(
   client: DbClient,
@@ -159,7 +159,7 @@ export async function upsertLead(
   ];
 
   // A numberless call (the handset had no call-log permission) has no dedup
-  // key, so the unique index can't catch a replay — match on the call itself.
+  // key, so the unique index can't catch a replay - match on the call itself.
   if (!hash) {
     const {
       rows: [existing],

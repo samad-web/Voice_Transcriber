@@ -51,7 +51,7 @@ export class WorkspacesController {
          RETURNING id, name, created_at`,
         [orgId, name],
       );
-      // orgId flows to a text target_id column as a SEPARATE param ($3) — never
+      // orgId flows to a text target_id column as a SEPARATE param ($3) - never
       // reuse the uuid $1 for a text column (Postgres 42P08 inconsistent types).
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)

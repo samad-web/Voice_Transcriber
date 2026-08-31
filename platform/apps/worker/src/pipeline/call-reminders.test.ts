@@ -109,8 +109,8 @@ describe("when each reminder is scheduled", () => {
 
   it("SKIPS the stages whose moment has already passed", async () => {
     // Booked 30 minutes out: the 24-hour and 1-hour reminders are both in the
-    // past. Queueing them would either fire "your call is tomorrow" instantly —
-    // for a call in half an hour — or land as overdue and be expired. Both are
+    // past. Queueing them would either fire "your call is tomorrow" instantly -
+    // for a call in half an hour - or land as overdue and be expired. Both are
     // noise, and the first is actively wrong.
     query.mockResolvedValueOnce({ rows: [bookingIn(30)] });
 
@@ -139,7 +139,7 @@ describe("the email half", () => {
     expect(scheduled().every(([, channel]) => channel === "whatsapp")).toBe(true);
   });
 
-  it("adds the email copies once a provider exists — except the 5-minute one", async () => {
+  it("adds the email copies once a provider exists - except the 5-minute one", async () => {
     emailConfigured.mockReturnValue(true);
     query.mockResolvedValueOnce({ rows: [bookingIn(60 * 24 * 3)] });
     const { sweepCallReminders } = await load();

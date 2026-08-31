@@ -15,9 +15,9 @@ import java.util.concurrent.TimeUnit
  * Imports new OEM dialer recordings into the app's database.
  *
  * Two triggers, because neither alone is sufficient:
- *  - [enqueueAfterCall] right after a call ends — responsive, catches the file the dialer
+ *  - [enqueueAfterCall] right after a call ends - responsive, catches the file the dialer
  *    just wrote (with a short delay so it's finished writing).
- *  - [schedule] every 15 min — the safety net that picks up anything missed while the app
+ *  - [schedule] every 15 min - the safety net that picks up anything missed while the app
  *    was killed, plus the existing backlog on first run.
  *
  * No network needed: this only reads local files and writes rows. The upload it triggers is

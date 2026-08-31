@@ -37,7 +37,7 @@ import { DbService } from "../../db/db.service";
  * there was no route and no screen anywhere that could show it. The field was
  * real, the data was real, and it was invisible. This is the other half.
  *
- * ROUTES ARE NESTED under the record — `/v1/contacts/:id/custom-fields` —
+ * ROUTES ARE NESTED under the record - `/v1/contacts/:id/custom-fields` -
  * for the same reason InteractionsController's are: `CrmPermissionsGuard`
  * reads STATIC decorator metadata, so one flat endpoint keyed on a query
  * parameter could not decide whether to demand `contact:view` or `deal:view`.
@@ -282,7 +282,7 @@ export class CustomFieldValuesController {
 }
 
 /**
- * Confirm the record is visible in THIS org before touching its values —
+ * Confirm the record is visible in THIS org before touching its values -
  * an FK violation bypasses RLS and would surface as a 500, the same trap
  * InteractionsController and TasksController each guard against.
  */
@@ -294,7 +294,7 @@ async function assertExists(
 ): Promise<void> {
   const table = `${objectType}s`;
   // Scoped on the record these values hang off. Without it a scoped rep could
-  // read — and WRITE — the custom fields of a colleague's contact by knowing
+  // read - and WRITE - the custom fields of a colleague's contact by knowing
   // its id, while the contact itself correctly 404s.
   const scoped = scopeClause(objectType, recordScope, 2);
   const found = await client.query(
@@ -310,7 +310,7 @@ async function assertLookupTarget(
   lookupObjectType: string | null,
   id: string,
 ): Promise<void> {
-  // The definition is invalid rather than the value — CustomFieldDefinitionInput
+  // The definition is invalid rather than the value - CustomFieldDefinitionInput
   // refuses to create a lookup without a target, so this can only be an older
   // row, and blaming the person filling in the form would be wrong.
   if (!lookupObjectType || !["contact", "account", "deal"].includes(lookupObjectType)) {
@@ -320,7 +320,7 @@ async function assertLookupTarget(
   if (!found.rowCount) throw new BadRequestException(`referenced ${lookupObjectType} not found`);
 }
 
-/** Same validate-or-null the other CRM controllers need — see interactions.controller.ts. */
+/** Same validate-or-null the other CRM controllers need - see interactions.controller.ts. */
 function actorUserId(req: PrincipalRequest): string | null {
   const parsed = z.string().uuid().safeParse(req.principal?.userId);
   return parsed.success ? parsed.data : null;

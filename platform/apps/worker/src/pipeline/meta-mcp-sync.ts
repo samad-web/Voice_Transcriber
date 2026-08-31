@@ -23,8 +23,8 @@ import { detectProjectsForText } from "./projects";
  *
  * The webhook path (0063, meta-webhook.controller.ts) creates a `contact` and
  * a `deal` for every Meta lead and NO `leads` row. The owner console's board
- * and All Leads pages read `leads` — the A6 cutover to deals has not
- * happened — so every Meta lead ever captured has been invisible on the two
+ * and All Leads pages read `leads` - the A6 cutover to deals has not
+ * happened - so every Meta lead ever captured has been invisible on the two
  * pages an owner actually works in. Phone leads from the handset appear
  * there; ad leads did not. This sweep writes the `leads` row, which is what
  * makes an ad lead and a call lead sit on the same board.
@@ -35,14 +35,14 @@ import { detectProjectsForText } from "./projects";
  * reach and an app review; a pull works from anywhere, backfills leads that
  * arrived before Aura was connected, and recovers the ones a webhook outage
  * dropped. Both write through the same `meta_leadgen_events` unique index on
- * `leadgen_id`, so running both cannot double-create a lead — whichever
+ * `leadgen_id`, so running both cannot double-create a lead - whichever
  * arrives first claims the row and the other skips it.
  *
  * Same shape as every other sweep here: cross-tenant off the admin pool to
  * find work, then re-enter each org's RLS context to write it.
  */
 
-/** How far back each sweep asks for. Overlap is free — the claim is idempotent. */
+/** How far back each sweep asks for. Overlap is free - the claim is idempotent. */
 const LOOKBACK_HOURS = Number(process.env.META_MCP_LOOKBACK_HOURS ?? 48);
 /** A cap so a first sync against a large ad account cannot run unbounded. */
 const MAX_LEADS_PER_SWEEP = Number(process.env.META_MCP_MAX_LEADS ?? 200);
@@ -161,7 +161,7 @@ async function syncOne(
 /**
  * Off by default. This sweep makes outbound requests to a URL a tenant typed
  * in, so it stays behind an explicit flag rather than starting itself the
- * moment the code ships — the same off-unless-asked posture
+ * moment the code ships - the same off-unless-asked posture
  * EMAIL_SENDING_ENABLED and WHATSAPP_SENDING_ENABLED already have. With no
  * `meta` connection configured it is a no-op anyway; the flag is about the
  * operator having said yes, not about the query cost.
@@ -179,7 +179,7 @@ export function startMetaMcpSweep(): NodeJS.Timeout | null {
  *
  * The claim comes FIRST and decides everything: `meta_leadgen_events` has a
  * unique index on `leadgen_id`, so `ON CONFLICT DO NOTHING` returning no row
- * means some other path — an earlier sweep, or the webhook — already has this
+ * means some other path - an earlier sweep, or the webhook - already has this
  * lead. Nothing else runs in that case. This is what makes the sweep safe to
  * run on an overlapping window forever.
  */
@@ -210,7 +210,7 @@ export async function ingestLead(
     rows: [org],
   } = await client.query<{ lead_stages: unknown; workspace_id: string | null }>(
     // `leads.workspace_id` is NOT NULL, and an ad lead belongs to no handset,
-    // so it is filed against the org's first workspace — the same one the
+    // so it is filed against the org's first workspace - the same one the
     // instance's devices report into.
     `SELECT o.lead_stages,
             (SELECT w.id FROM workspaces w WHERE w.org_id = o.id ORDER BY w.created_at LIMIT 1)
@@ -221,7 +221,7 @@ export async function ingestLead(
   if (!org?.workspace_id) {
     // Nothing to attach the lead to. The claim row stays, carrying `raw`, so
     // the lead is not lost and a backfill can replay it once a workspace
-    // exists — but it must not be counted as created.
+    // exists - but it must not be counted as created.
     console.error(`meta-mcp: org ${connection.org_id} has no workspace; lead parked`);
     return "skipped";
   }
@@ -283,7 +283,7 @@ export async function ingestLead(
   // Project the ad lead onto Contact + Deal, through the SAME function the
   // call pipeline uses (pipeline.ts). Without this an ad lead reaches the
   // Lead Board and is invisible on Deals, Contacts and every report built on
-  // them — which is precisely the split the webhook path (0063) has in the
+  // them - which is precisely the split the webhook path (0063) has in the
   // other direction, creating a deal and no lead. Both doors now put a person
   // in the same four places.
   //
@@ -293,7 +293,7 @@ export async function ingestLead(
     const projection = await projectLeadToCrm(client, connection.org_id, row.id);
     if (projection.reason === "no default pipeline for org") {
       console.error(
-        `meta-mcp: org ${connection.org_id} has no default pipeline — lead ${row.id} is on the board but has no deal`,
+        `meta-mcp: org ${connection.org_id} has no default pipeline - lead ${row.id} is on the board but has no deal`,
       );
     }
     await client.query(`UPDATE meta_leadgen_events SET contact_id = $2, deal_id = $3 WHERE id = $1`, [
@@ -306,7 +306,7 @@ export async function ingestLead(
   }
 
   // The same project catalogue the call pipeline matches against, run over
-  // the form/campaign/ad names and the lead's own answers — so an ad lead
+  // the form/campaign/ad names and the lead's own answers - so an ad lead
   // lands on the right project board without anyone mapping forms by hand.
   // AFTER the projection, so the deal exists and gets labelled too.
   await detectProjectsForText(client, connection.org_id, lead.text, row.id);

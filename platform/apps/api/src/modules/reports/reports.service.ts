@@ -6,7 +6,7 @@ import { UNSCOPED, scopeClause, type CrmRecordScope } from "../../common/crm-sco
 
 /**
  * The three Layer 3 reports, as data. Split out of the controller because
- * each one is rendered twice — as JSON and as CSV — and the two must never
+ * each one is rendered twice - as JSON and as CSV - and the two must never
  * be allowed to disagree about what the numbers are.
  */
 
@@ -28,7 +28,7 @@ export interface PipelineRow {
  * console). Nothing maps between the two today. Columns joining them would
  * have to be either invented or always zero, and an always-zero "Tasks
  * completed" column against a real person's name reads as "this rep did
- * nothing" — worse than not answering. Those totals are reported at workspace
+ * nothing" - worse than not answering. Those totals are reported at workspace
  * level, where they are true.
  */
 export interface PerformanceRow {
@@ -50,13 +50,13 @@ export interface ConversionRow {
 }
 
 /**
- * One (plan, rep) pair — a plan applies org-wide, so a rep with activity
+ * One (plan, rep) pair - a plan applies org-wide, so a rep with activity
  * under more than one active plan gets one row per plan rather than a single
  * blended number nobody could audit back to a rate.
  *
  * `metricTotal` is read off the SAME identity axis `performance()` uses:
  * `deals.telecaller_id` for `won_value`/`won_count`, `calls.telecaller_id`
- * for `calls` — never `devices.telecaller_id` (today's holder, wrong for a
+ * for `calls` - never `devices.telecaller_id` (today's holder, wrong for a
  * commission a person earned while they held the phone) or `owner_user_id`
  * (a different axis entirely, belonging to `sales_targets`).
  */
@@ -82,7 +82,7 @@ export type CommissionRateType = "percent" | "flat_per_unit";
  * `stages` jsonb (shared with organizations.lead_stages) has no probability
  * field today, and adding one is a schema change to a structure the legacy
  * lead board also reads. Positional weighting is the standard default anyway
- * — a deal one step from the close is worth more than one that just arrived —
+ * - a deal one step from the close is worth more than one that just arrived -
  * and a `probability` key can be honoured here later without a migration,
  * because the column is jsonb.
  *
@@ -107,7 +107,7 @@ export class ReportsService {
    * Current pipeline snapshot: what is open, what it is worth, and what it is
    * worth once discounted by how likely each stage is to close.
    *
-   * A snapshot of NOW, deliberately un-windowed — "my pipeline over the last
+   * A snapshot of NOW, deliberately un-windowed - "my pipeline over the last
    * 30 days" is not a thing anyone means. The time-bounded questions are
    * `conversion` and `performance`.
    */
@@ -188,8 +188,8 @@ export class ReportsService {
   /**
    * Per-rep activity and outcomes over a window.
    *
-   * Attributed on `deals.telecaller_id` — the write-once field the pipeline
-   * already stamps — rather than `owner_user_id`, which is nullable and which
+   * Attributed on `deals.telecaller_id` - the write-once field the pipeline
+   * already stamps - rather than `owner_user_id`, which is nullable and which
    * nothing currently sets. Tasks and interactions attribute to the platform
    * user instead, because those are console actions rather than call activity;
    * the two are reported side by side rather than being forced into one
@@ -226,7 +226,7 @@ export class ReportsService {
 
       // Console activity, keyed on the platform user. Kept as separate
       // queries rather than joined in: a rep is a telecaller id, a console
-      // user is a user id, and there is no mapping between them today —
+      // user is a user id, and there is no mapping between them today -
       // pretending otherwise would silently mis-attribute.
       const {
         rows: [taskStats],
@@ -260,7 +260,7 @@ export class ReportsService {
           lostDeals: lost,
           openValue: Number(r.open_value ?? 0),
           wonValue: Number(r.won_value ?? 0),
-          // Undefined rather than 0 when nothing has been decided — a rep with
+          // Undefined rather than 0 when nothing has been decided - a rep with
           // no closed deals has no win rate, and showing 0% would read as
           // "loses everything".
           winRate: decided === 0 ? null : Number((won / decided).toFixed(4)),
@@ -281,11 +281,11 @@ export class ReportsService {
   }
 
   /**
-   * Rate × attainment for a window — a calculator, not payroll. See 0071's
+   * Rate × attainment for a window - a calculator, not payroll. See 0071's
    * header for the boundary this deliberately stays behind: no accrual, no
    * claw-back, no approval trail. Every active `commission_plans` row is
    * recomputed fresh against the window on every call; nothing here is
-   * stored per-run, so there is nothing to reconcile when a deal unwinds —
+   * stored per-run, so there is nothing to reconcile when a deal unwinds -
    * the next export simply reflects the deal's current state.
    *
    * One row per (plan, rep): a plan applies org-wide, so a rep active under
@@ -296,7 +296,7 @@ export class ReportsService {
    *
    * `won_value`/`won_count` come off `deals.telecaller_id`, scoped by
    * `ownedDeals()` on `deals.owner_user_id` exactly as `performance()`'s
-   * `deal_stats` CTE does — the permission column and the attribution
+   * `deal_stats` CTE does - the permission column and the attribution
    * column are different columns on the same table, and both matter: get
    * either one wrong and this either leaks another rep's commission or pays
    * it to whoever currently holds their phone.
@@ -308,13 +308,13 @@ export class ReportsService {
    * console user is a user id, and there is no mapping between them
    * today"). Inventing a filter here would either fabricate a join or hide
    * every call-based plan from a scoped viewer; reporting it plainly, as
-   * `performance()` does for its workspace totals, is the honest reading —
+   * `performance()` does for its workspace totals, is the honest reading -
    * for a workspace-wide TOTAL, which carries no individual's number.
    *
    * This method's output is per-rep rows, not a total, and that changes the
    * calculus: with no telecaller_id-to-userId mapping there is no way to pick
    * out "the scoped viewer's own" row from a `calls`-metric plan, only
-   * "every rep's" or "none" — so a scoped (`owned`) viewer gets none for that
+   * "every rep's" or "none" - so a scoped (`owned`) viewer gets none for that
    * metric rather than every colleague's commission amount. `won_value`/
    * `won_count` need no such carve-out; `ownedDeals()` already narrows those
    * to the viewer's own deals.
@@ -340,9 +340,9 @@ export class ReportsService {
       );
       if (plans.length === 0) return { from, to, rows: [] };
 
-      // Same shape as performance()'s deal_stats CTE — same ownedDeals()
+      // Same shape as performance()'s deal_stats CTE - same ownedDeals()
       // scoping on the same owner_user_id column, same telecaller_id
-      // attribution — but windowed on stage_changed_at rather than
+      // attribution - but windowed on stage_changed_at rather than
       // created_at: performance() asks "what was created in this window",
       // while a commission window asks "what closed in it", the same
       // question targets.controller.ts's attainment query answers the same
@@ -364,7 +364,7 @@ export class ReportsService {
         scopedParams([from, to], recordScope),
       );
 
-      // Deliberately unscoped — see the doc comment above.
+      // Deliberately unscoped - see the doc comment above.
       const { rows: callStats } = await client.query<{ rep_id: string | null; calls: string }>(
         `SELECT c.telecaller_id AS rep_id, count(*) AS calls
            FROM calls c
@@ -397,13 +397,13 @@ export class ReportsService {
       const rows: CommissionRow[] = [];
       for (const plan of plans) {
         // See the class doc comment: a `calls`-metric plan has no per-rep
-        // filter to apply for a scoped viewer, only "everyone" or "no one" —
+        // filter to apply for a scoped viewer, only "everyone" or "no one" -
         // an empty result beats handing a rep their colleagues' compensation.
         if (plan.metric === "calls" && recordScope.scope === "owned") continue;
 
         const rate = Number(plan.rate);
         // A rep only appears under a plan if they have SOME activity on that
-        // plan's metric — the deal-based and call-based rep sets rarely
+        // plan's metric - the deal-based and call-based rep sets rarely
         // coincide, and a plan should not manufacture a zero row for every
         // rep in the org regardless of which metric it pays on.
         const candidates = plan.metric === "calls" ? callById.keys() : dealById.keys();
@@ -434,14 +434,14 @@ export class ReportsService {
    * How far deals get, and where they stop.
    *
    * "Reached" counts a deal as having reached every stage AT OR BEFORE its
-   * current one, in pipeline order — a deal sitting in Negotiation obviously
+   * current one, in pipeline order - a deal sitting in Negotiation obviously
    * passed Contacted, and counting only the current stage would draw a funnel
    * with holes in it. Won deals count as having reached everything.
    *
    * This is an inference from current position, not history: no per-stage
    * transition log exists yet, so a deal that skipped a stage still counts as
-   * having passed it, and a LOST deal — whose stage was overwritten with the
-   * terminal value — can only be credited with having entered the pipeline.
+   * having passed it, and a LOST deal - whose stage was overwritten with the
+   * terminal value - can only be credited with having entered the pipeline.
    * Both are stated on the report itself rather than left for a reader to
    * discover. A `deal_stage_transitions` table would remove the guesswork
    * entirely and is the natural next step if these numbers start driving
@@ -469,13 +469,13 @@ export class ReportsService {
       const order = new Map(open.map((s, i) => [s.key, i]));
 
       /**
-       * One row per deal, carrying every stage it was EVER in — read from the
+       * One row per deal, carrying every stage it was EVER in - read from the
        * transition ledger (migration 0046), not from the `stage` column.
        *
        * This is the whole reason that table exists. A lost deal's `stage` has
        * been overwritten with the terminal 'lost', erasing how far it got, so
        * the previous version of this report had to floor every loss at the
-       * entry stage — making a deal that died in Negotiation
+       * entry stage - making a deal that died in Negotiation
        * indistinguishable from one that died on first contact. The ledger
        * still knows, and `visited` is that knowledge.
        *
@@ -510,7 +510,7 @@ export class ReportsService {
 
         // The FURTHEST open stage this deal reached. Counting furthest-reached
         // rather than summing individual entries is what keeps the funnel
-        // monotonic — a deal that was moved backwards, or one whose history
+        // monotonic - a deal that was moved backwards, or one whose history
         // was reconstructed by 0046's backfill and so has gaps, still counts
         // once at every stage up to its high-water mark.
         const furthest = furthestOpenStage(order, row.visited ?? [], row.status, open.length);
@@ -521,8 +521,8 @@ export class ReportsService {
         // created, shrinking every denominator below it and flattering every
         // conversion rate.
         //
-        // The invariant this preserves — rows[0].reached === summary.created
-        // — is asserted in reports.service.test.ts.
+        // The invariant this preserves - rows[0].reached === summary.created
+        // - is asserted in reports.service.test.ts.
         for (let i = 0; i <= Math.max(furthest, 0); i++) reached[i] += 1;
       }
 

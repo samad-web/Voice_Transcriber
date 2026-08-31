@@ -2,8 +2,8 @@
  * The connector catalogue, as the marketing site shows it.
  *
  * SOURCE OF TRUTH: `packages/shared/src/crm-providers.ts`. That file holds 15
- * entries with `category: "crm"` (plus four automation targets — Zapier, Make,
- * n8n and a generic webhook — which are deliberately not shown here, because
+ * entries with `category: "crm"` (plus four automation targets - Zapier, Make,
+ * n8n and a generic webhook - which are deliberately not shown here, because
  * "15 CRM connectors" is the claim and padding the grid with webhooks would
  * inflate it).
  *

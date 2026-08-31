@@ -13,7 +13,7 @@ export class BillingController {
   @Get("usage")
   async usage(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
-      // `end` is a reserved word — alias to period_end and reshape in JS.
+      // `end` is a reserved word - alias to period_end and reshape in JS.
       const {
         rows: [period],
       } = await client.query(

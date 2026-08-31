@@ -18,7 +18,7 @@ import { query } from "./db";
  *
  * ── FOUR WAYS A TOKEN IS REFUSED ───────────────────────────────────────────
  *
- * Unknown, expired, and — the two that matter — already finished or erased.
+ * Unknown, expired, and - the two that matter - already finished or erased.
  * A token stays technically valid for 14 days, but the enquiry it points at can
  * be completed or deleted in that window, and neither should leave a live
  * handle on the record.
@@ -34,7 +34,7 @@ if (typeof window !== "undefined") {
 
 export interface ResumeTarget {
   submissionId: string;
-  /** The latest fill for this submission — step 2 updates THAT history row. */
+  /** The latest fill for this submission - step 2 updates THAT history row. */
   historyId: string;
   name: string;
 }
@@ -82,14 +82,14 @@ export async function resolveResumeToken(raw: string): Promise<ResumeTarget | nu
   const row = rows[0];
   if (!row) return null;
 
-  // Already finished. The link is spent — not because it was used, but because
+  // Already finished. The link is spent - not because it was used, but because
   // there is nothing left to fill in. Someone who completed the form and later
   // taps the old WhatsApp message should be told it is done, not handed a blank
   // step 2 that would overwrite their answers.
   if (row.status !== "contact_captured") return null;
 
-  // No history row should be impossible — step 1 writes one in the same
-  // transaction as the submission — but step 2 needs it, and inventing one here
+  // No history row should be impossible - step 1 writes one in the same
+  // transaction as the submission - but step 2 needs it, and inventing one here
   // would attach their answers to a fill that never happened.
   if (!row.history_id) return null;
 
@@ -103,7 +103,7 @@ export async function resolveResumeToken(raw: string): Promise<ResumeTarget | nu
  * comes back an hour later must still be able to finish. It is there so the
  * operator can see how many nudges were acted on.
  *
- * COALESCE keeps the FIRST open, which is the interesting one — the last would
+ * COALESCE keeps the FIRST open, which is the interesting one - the last would
  * just track how often they reloaded.
  *
  * Failure is swallowed. This is telemetry, and a write error here must not stop

@@ -36,7 +36,7 @@ export async function listChannelsAction(): Promise<{ channels?: MessagingChanne
 /**
  * Creates the org's WhatsApp-via-Wasi channel (Kailash gap Milestone 3).
  * Aura is a Hub API CLIENT of Wasi (the user's own WhatsApp Business
- * Solution Provider) — never Meta directly. `apiKey` is the Hub API key
+ * Solution Provider) - never Meta directly. `apiKey` is the Hub API key
  * issued for this org's client on Wasi's admin panel; `wasiClientId` is that
  * same client's id.
  */
@@ -74,7 +74,7 @@ export async function createWasiChannelAction(input: {
 
 /**
  * Pastes in the forward_secret Wasi's admin panel shows once its
- * "CRM Inbound Forwarding" section is saved for this client — there is no
+ * "CRM Inbound Forwarding" section is saved for this client - there is no
  * self-serve retrieval on Wasi's side, so this is a one-time manual entry.
  */
 export async function setForwardSecretAction(

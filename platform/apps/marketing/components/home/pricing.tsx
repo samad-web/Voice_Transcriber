@@ -3,7 +3,7 @@ import { WhatsAppCta } from "../ui/whatsapp-cta";
 import { WA_MESSAGES } from "@/lib/site";
 
 /**
- * Pricing — structure only, no numbers.
+ * Pricing - structure only, no numbers.
  *
  * Doc 10 §6 is emphatic that hiding pricing is fatal for an SMB buyer, AND that
  * tier numbers must not be published until §4.1 billing can enforce them. Those
@@ -12,8 +12,8 @@ import { WA_MESSAGES } from "@/lib/site";
  * A published ₹ figure the platform cannot meter, cap or invoice against is a
  * claim, and a load-bearing one.
  *
- * So this section publishes the *unit* and the *shape* — which is the part the
- * buyer actually needs to reason about, and which is true today — and says
+ * So this section publishes the *unit* and the *shape* - which is the part the
+ * buyer actually needs to reason about, and which is true today - and says
  * plainly that the numbers are not up yet. That is a materially better page
  * than "Contact us", and it is honest.
  *
@@ -31,38 +31,38 @@ import { WA_MESSAGES } from "@/lib/site";
  * sells the direction; deleting loses real signal about where the product goes
  * next, which for an SMB buyer choosing a vendor for three years is information
  * they actually want. The treatment is a labelled block plus muted body text,
- * not a parenthetical — a skimmer has to be able to tell the two lists apart
+ * not a parenthetical - a skimmer has to be able to tell the two lists apart
  * without reading a word of either.
  *
  * `included` was checked against source, one bullet at a time, not against the
  * docs:
  *
- *  · Transcription, lead extraction, CRM connectors — the whole shipped
+ *  · Transcription, lead extraction, CRM connectors - the whole shipped
  *    pipeline (`apps/worker/src/pipeline/*`, 15 `category: "crm"` specs in
  *    `packages/shared/src/crm-providers.ts`).
- *  · Telecaller performance — SHIPPED, and doc 18 §5 is wrong to list it as
+ *  · Telecaller performance - SHIPPED, and doc 18 §5 is wrong to list it as
  *    roadmap. `owner.controller.ts` computes calls, talk seconds, leads, won
  *    and pipeline value per handset over a rolling window, migration 0017 gives
  *    the telecaller a durable identity that survives handset reassignment, and
  *    `apps/web/app/(owner)/owner/page.tsx` renders it under a heading that
  *    literally reads "Telecaller performance". Trust the code.
- *  · API access — `apps/api/src/modules/auth/apikeys.controller.ts` plus the
+ *  · API access - `apps/api/src/modules/auth/apikeys.controller.ts` plus the
  *    `(platform)/api-keys` console route.
- *  · Custom retention — `organizations.retention_days` (migration 0001) is
+ *  · Custom retention - `organizations.retention_days` (migration 0001) is
  *    enforced by `apps/worker/src/pipeline/reaper.ts`.
  *
  * And what moved to `roadmap`, with the reason it could not stay:
  *
- *  · Objection and price intelligence — the diarizer tags a *per-turn* intent
+ *  · Objection and price intelligence - the diarizer tags a *per-turn* intent
  *    and a tenant can define an `objections` extraction field, but nothing
  *    aggregates either across calls. There is no such surface in the console,
  *    so "intelligence" is not a thing you can buy today.
- *  · WhatsApp digests — zero WhatsApp send path anywhere in `apps/api`,
+ *  · WhatsApp digests - zero WhatsApp send path anywhere in `apps/api`,
  *    `apps/worker` or `packages/*`. The site's own WhatsApp CTA is a `wa.me`
  *    deep link, which is not a delivery channel we operate.
- *  · Multi-branch — no branch/site concept in any migration; the tenancy model
+ *  · Multi-branch - no branch/site concept in any migration; the tenancy model
  *    is org → instance → device and stops there.
- *  · Your own AI provider keys — no migration carries a per-org provider key;
+ *  · Your own AI provider keys - no migration carries a per-org provider key;
  *    `packages/db/src/secrets.ts` holds platform credentials, not tenant ones.
  *
  * Single sign-on was removed from the closing paragraph for the same reason:
@@ -133,7 +133,7 @@ export function Pricing() {
               <ul className="mt-5 space-y-2">
                 {t.included.map((item) => (
                   <li key={item} className="flex gap-2 text-base text-text">
-                    {/* Glyph, not colour alone — doc 16 §2.1. -text tier
+                    {/* Glyph, not colour alone - doc 16 §2.1. -text tier
                         because --color-success is the graphic tier and fails AA
                         the moment it sits next to words. */}
                     <span aria-hidden="true" className="text-success-text">

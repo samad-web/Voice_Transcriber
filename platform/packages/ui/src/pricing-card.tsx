@@ -3,7 +3,7 @@ import { cx } from "./cx";
 
 export interface PricingCardProps {
   name: string;
-  /** e.g. "₹1,200" — or "Talk to us" for the enterprise tier. */
+  /** e.g. "₹1,200" - or "Talk to us" for the enterprise tier. */
   price: ReactNode;
   /** e.g. "per handset, per month". Omit when `price` is not a number. */
   period?: ReactNode;
@@ -30,7 +30,7 @@ export interface PricingCardProps {
  *   items" and the visitor can skip it. The tick marks are `aria-hidden`; the
  *   list semantics already say "included", and announcing "tick" six times is
  *   noise. If a tier ever needs to show an *excluded* feature, that must be a
- *   different component — a greyed row with a cross reads as "included" to
+ *   different component - a greyed row with a cross reads as "included" to
  *   anyone not looking at the icon.
  */
 export function PricingCard({

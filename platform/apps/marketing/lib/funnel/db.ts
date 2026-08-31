@@ -11,14 +11,14 @@ import { Pool, type PoolClient } from "pg";
  * bundle the app breaks immediately and loudly, rather than shipping a
  * connection string to a browser. Adding `server-only` to package.json and
  * importing it here is a one-line follow-up that turns this into a BUILD error,
- * which is strictly better — do it.
+ * which is strictly better - do it.
  *
  * ── Why its own connection string ────────────────────────────────────────────
  * `FUNNEL_DATABASE_URL` connects as `aura_marketing` (migration 0020): USAGE on
  * the `marketing` schema and nothing else in the database. It must NEVER fall
  * back to DATABASE_URL (the migration owner) or APP_DATABASE_URL (`aura_app`,
  * which reaches every tenant table in `public` and whose isolation depends on
- * the caller setting `app.org_id` on every transaction — a discipline that
+ * the caller setting `app.org_id` on every transaction - a discipline that
  * belongs to apps/api and apps/worker and has no business existing in a
  * marketing site).
  *
@@ -60,7 +60,7 @@ function sslFor(connectionString: string) {
  * Is the funnel wired up?
  *
  * Read at request time, never at module scope, so an unset variable does not
- * break `next build` — every content page on this site is statically rendered
+ * break `next build` - every content page on this site is statically rendered
  * and none of them touch this module.
  *
  * When this is false the form renders a visible "not configured yet" notice
@@ -96,7 +96,7 @@ function getPool(): Pool {
     // page load. A hung statement here would otherwise pin one of four slots.
     statement_timeout: 5_000,
   });
-  // A pool that emits 'error' with no listener takes the process down — and this
+  // A pool that emits 'error' with no listener takes the process down - and this
   // process serves the whole marketing site, including nine static pages that
   // have nothing to do with the funnel.
   pool.on("error", (err) => {

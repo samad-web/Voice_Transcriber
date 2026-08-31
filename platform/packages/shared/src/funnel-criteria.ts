@@ -4,7 +4,7 @@
  * ── WHAT THIS REPLACES ─────────────────────────────────────────────────────
  *
  * `qualify()` in ./funnel.ts hard-coded three clauses OR'd together. Changing
- * who counts as a lead meant a code change, a review, a build and a deploy —
+ * who counts as a lead meant a code change, a review, a build and a deploy -
  * for a decision that belongs to whoever is selling, not to whoever is
  * shipping. These are the same three clauses expressed as data, so the default
  * behaviour is identical and the shape is one an operator can edit.
@@ -19,7 +19,7 @@
  * "ready to start" only mean something together, and scoring them separately
  * qualifies someone with a big budget and no timeline. A full boolean
  * expression tree can express more, and can also express things nobody can
- * read back six months later — the failure mode there is silent mis-sorting of
+ * read back six months later - the failure mode there is silent mis-sorting of
  * every lead, which is worse than a rule you cannot quite write.
  *
  * ── WHEN IT IS SWITCHED OFF ────────────────────────────────────────────────
@@ -59,7 +59,7 @@ export type CriteriaField = (typeof CRITERIA_FIELDS)[number];
  *
  * Budget bands are ordered and open-ended at the top. Written as `is_one_of`
  * it would need every band above the threshold listed out, and adding a new
- * higher band later would silently stop qualifying the richest leads — nobody
+ * higher band later would silently stop qualifying the richest leads - nobody
  * would notice, because the rule would still look right.
  */
 export type CriteriaOperator = "is_one_of" | "at_least";
@@ -113,7 +113,7 @@ export const CRITERIA_FIELD_OPTIONS: Record<
  *
  * Seeded by migration 0031 so a fresh environment behaves identically to one
  * that predates the editor, and used as the fallback when the table is
- * unreachable — a funnel that qualified nobody because a query failed would
+ * unreachable - a funnel that qualified nobody because a query failed would
  * turn a database blip into a day of lost leads.
  */
 export const DEFAULT_FUNNEL_CRITERIA: FunnelCriteria = {
@@ -192,7 +192,7 @@ export interface CriteriaEvaluation {
  *
  * A rule with no conditions NEVER fires. Vacuous truth would qualify every
  * single lead the moment somebody deleted the last condition off a rule while
- * editing it — an empty rule is an unfinished one, not a universal one.
+ * editing it - an empty rule is an unfinished one, not a universal one.
  */
 export function evaluateCriteria(
   criteria: FunnelCriteria,
@@ -287,7 +287,7 @@ export function validateCriteria(input: unknown): CriteriaValidation {
 
 /** Human-readable, for the console and for explaining a lead's outcome. */
 export function describeRule(rule: CriteriaRule): string {
-  if (rule.conditions.length === 0) return "No conditions yet — this rule never matches.";
+  if (rule.conditions.length === 0) return "No conditions yet - this rule never matches.";
   return rule.conditions
     .map((c) => {
       const spec = CRITERIA_FIELD_OPTIONS[c.field];

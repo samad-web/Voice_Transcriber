@@ -18,7 +18,7 @@ export const CONTROL_BASE =
 
 /**
  * Invalid state. The red border is a *second* channel on top of the error text
- * FormField renders — never the only one, because a colour-blind or greyscale
+ * FormField renders - never the only one, because a colour-blind or greyscale
  * user gets nothing from a red edge.
  */
 export const CONTROL_INVALID = "border-danger hover:border-danger";

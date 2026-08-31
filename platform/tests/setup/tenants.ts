@@ -6,7 +6,7 @@
  *
  * The suite this feeds is the one that decides whether tenant A can reach tenant
  * B. If tenant B's rows were created by calling the API, then the API's own
- * scoping would be deciding what "tenant B's data" is — and a scoping bug would
+ * scoping would be deciding what "tenant B's data" is - and a scoping bug would
  * produce a fixture that agrees with the bug. Seeding underneath the application,
  * as the superuser (which bypasses RLS), is the only way the fixture is an
  * independent statement of what each tenant owns.
@@ -15,13 +15,13 @@
  *
  * Every id is version-4-shaped (`…-4xxx-8xxx-…`) because zod 4's `.uuid()`
  * validates the RFC version nibble and `ParseUUIDPipe` sits in front of nearly
- * every `:id` route — a nil-style id is rejected at the boundary as a 400 and
+ * every `:id` route - a nil-style id is rejected at the boundary as a 400 and
  * would silently turn a cross-tenant test into a validation test. The first
  * three are `packages/db/seed.js:11-13` verbatim; ORG_B/WORKSPACE_B/USER_B are
  * doc 13 §5.0's second-tenant convention verbatim.
  *
  * ⚠️ DISCREPANCY WITH DOC 13, recorded rather than silently worked around.
- * §5.2–§5.6 write the remaining fixture ids as `…-00000000c001` (call),
+ * §5.2-§5.6 write the remaining fixture ids as `…-00000000c001` (call),
  * `…-00000000d001` (device), `…-00000000i001` (instance), `…-00000000t001`
  * (token). `i` and `t` are not hexadecimal, so those four are not parseable
  * UUIDs and `ParseUUIDPipe` rejects them with a 400 before any handler runs.
@@ -41,7 +41,7 @@ import { Client } from "pg";
 import { DATABASE_URL } from "./env.js";
 
 // ---------------------------------------------------------------------------
-// Contacts — one number per tenant, everything else derived from it
+// Contacts - one number per tenant, everything else derived from it
 // ---------------------------------------------------------------------------
 
 /** Exactly `calls.controller.ts:155-158`, on a number with no separators. */
@@ -79,7 +79,7 @@ export interface Tenant {
   orgId: string;
   orgName: string;
   workspaceId: string;
-  /** The org_admin membership — `owners.controller.ts:29` OWNER_ROLE. */
+  /** The org_admin membership - `owners.controller.ts:29` OWNER_ROLE. */
   userId: string;
   userEmail: string;
   instanceId: string;
@@ -144,7 +144,7 @@ export const TENANT_B: Tenant = {
 };
 
 /**
- * One human, a member of BOTH tenants — doc 13 §1.4's "single highest-value
+ * One human, a member of BOTH tenants - doc 13 §1.4's "single highest-value
  * cross-tenant test in the suite".
  *
  * `users` has no `org_id` and therefore no RLS at all (`0001_init.sql:37-46`),
@@ -175,7 +175,7 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
  * `devices.public_key` is NOT NULL and doc 13 §5.6 warns that a placeholder
  * string makes `createVerify(...).verify()` throw at
  * `devices.controller.ts:181`, which is caught and reported as "signature
- * failed" — a 401 that looks like a crypto bug rather than a bad fixture.
+ * failed" - a 401 that looks like a crypto bug rather than a bad fixture.
  * Nothing in the isolation loop authenticates a device, but the value is real so
  * that a later suite reusing this fixture does not inherit that trap.
  */
@@ -205,14 +205,14 @@ async function seedOne(client: Client, t: Tenant): Promise<void> {
 
   // sso_subject stays NULL on purpose. `DELETE /v1/owners/:userId` only reaches
   // Supabase when the revoked owner HAS a subject (owners.controller.ts:286),
-  // and SUPABASE_URL is blank in childEnv() — a fixture with a subject would
+  // and SUPABASE_URL is blank in childEnv() - a fixture with a subject would
   // turn that route's positive case into a provider call that cannot succeed.
   await client.query(
     `INSERT INTO users (id, email, name, status) VALUES ($1, $2, $3, 'active')`,
     [t.userId, t.userEmail, `${t.orgName} Owner`],
   );
   // role 'org_admin' IS the owner role (owners.controller.ts:29), and
-  // owner_role is set EXPLICITLY: doc 13 §5.7 trap 5 — 0018's backfill is a
+  // owner_role is set EXPLICITLY: doc 13 §5.7 trap 5 - 0018's backfill is a
   // one-shot at migration time, so a row inserted afterwards has NULL.
   await client.query(
     `INSERT INTO memberships
@@ -220,7 +220,7 @@ async function seedOne(client: Client, t: Tenant): Promise<void> {
      VALUES ($1, $2, 'org', $1, 'org_admin', 'owner', true, true)`,
     [t.orgId, t.userId],
   );
-  // The same human in both tenants — see SHARED_USER.
+  // The same human in both tenants - see SHARED_USER.
   await client.query(
     `INSERT INTO memberships
        (org_id, user_id, scope_type, scope_id, role, recordings_listen, recordings_export)
@@ -232,7 +232,7 @@ async function seedOne(client: Client, t: Tenant): Promise<void> {
     `INSERT INTO sessions (org_id, user_id, token_hash, expires_at)
      VALUES ($1, $2, $3, now() + interval '1 day')`,
     // AuthService.tokenHash hashes the WHOLE token including the `aus_` prefix
-    // (auth.service.ts:40) — doc 13 §5.6.
+    // (auth.service.ts:40) - doc 13 §5.6.
     [t.orgId, t.userId, sha256(t.sessionToken)],
   );
 
@@ -328,7 +328,7 @@ async function seedOne(client: Client, t: Tenant): Promise<void> {
     [t.noteId, t.orgId, t.callId, `Note belonging to tenant ${t.key}`],
   );
 
-  // contact_number_hash EQUALS the call's remote_number_hash — doc 13 §5.7
+  // contact_number_hash EQUALS the call's remote_number_hash - doc 13 §5.7
   // trap 4: otherwise the leads_workspace_contact unique index never fires.
   await client.query(
     `INSERT INTO leads
@@ -366,7 +366,7 @@ async function seedOne(client: Client, t: Tenant): Promise<void> {
       t.workspaceId,
       `Webhook ${t.key}`,
       // 127.0.0.1:1 is unroutable on purpose. Every route the suite touches is
-      // either a dryRun or a queue write, so nothing should dial this — and if
+      // either a dryRun or a queue write, so nothing should dial this - and if
       // something regresses into dialling it, the connection refusal is instant
       // and names the port rather than hanging for the 20s CRM timeout.
       `http://127.0.0.1:1/hook-${t.key}`,

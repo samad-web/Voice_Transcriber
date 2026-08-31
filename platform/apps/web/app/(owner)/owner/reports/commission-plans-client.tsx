@@ -48,12 +48,12 @@ const METRIC_LABEL: Record<CommissionPlan["metric"], string> = {
 
 function formatRate(plan: CommissionPlan): string {
   const n = Number(plan.rate);
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "-";
   return plan.rate_type === "percent" ? `${n}%` : `${n} / ${plan.metric === "calls" ? "call" : "deal"}`;
 }
 
 /**
- * The rate calculator's config — name, metric, rate type, rate, active — for
+ * The rate calculator's config - name, metric, rate type, rate, active - for
  * the commission report on this same page to multiply against a window's
  * attainment. This panel only maintains the rate; see 0071's header and
  * ReportsService.commission() for why nothing here computes a payout.
@@ -139,7 +139,7 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-text-muted">
-          A rate per org — commission is computed fresh on every report, never accrued or approved.
+          A rate per org - commission is computed fresh on every report, never accrued or approved.
         </p>
         <Button type="button" size="sm" onClick={openCreate}>
           New plan

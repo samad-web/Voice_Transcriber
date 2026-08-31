@@ -35,8 +35,8 @@ const ListQuery = z.object({
  *
  * Every existing CRM route is mounted `AdminKeyGuard, TenantGuard` and reaches
  * a console with a signed-in human behind it. Bolting a second credential onto
- * those 200+ routes would mean every one of them — including recording
- * playback and erasure — becomes reachable by a headless key the moment
+ * those 200+ routes would mean every one of them - including recording
+ * playback and erasure - becomes reachable by a headless key the moment
  * someone forgets a scope annotation. The blast radius of a mistake would be
  * the whole product.
  *
@@ -51,7 +51,7 @@ const ListQuery = z.object({
  * written rationale is that dropping it means losing recordings. Nothing here
  * has that property: an integration that is rate-limited retries, and an agent
  * that is rate-limited waits. 120/min is generous for a CRM integration and
- * still bounds a runaway loop — which, on the MCP door, is a real failure mode
+ * still bounds a runaway loop - which, on the MCP door, is a real failure mode
  * rather than a theoretical one.
  */
 @Controller("public")
@@ -65,7 +65,7 @@ export class PublicApiController {
    *
    * Not idempotent by a caller-supplied key, but convergent by identity: two
    * pushes of the same phone number update one lead rather than making two,
-   * because the dedup key is the counterparty number — the same key the call
+   * because the dedup key is the counterparty number - the same key the call
    * pipeline uses. `created` in the response says which happened, so a caller
    * can tell "new business" from "we already knew them".
    */

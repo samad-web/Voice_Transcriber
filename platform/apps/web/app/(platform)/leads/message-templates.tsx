@@ -63,7 +63,7 @@ export function MessageTemplates({ initial }: { initial: MessageTemplate[] }) {
           flagged, and a rejection that reads like a form letter is worse than a blunt one.
         </p>
         <p className="mt-2 text-xs text-text-muted">
-          Email copy is edited here too, and can be as long as it needs to be — but nothing is
+          Email copy is edited here too, and can be as long as it needs to be - but nothing is
           delivered until a mail provider is configured (<code>FUNNEL_FOLLOWUP_ENDPOINT</code>).
           Until then the worker writes each email to the log instead of sending it.
         </p>
@@ -169,8 +169,8 @@ function VariantEditor({
    * Held in state rather than read from the prop because a successful save
    * moves it: without this the Save button stays lit on text the server already
    * has, and "Restore original" keeps offering to undo an edit that is gone.
-   * Mutating the prop object would work by accident — it is a plain object from
-   * a server component — and would break the moment anything memoised it.
+   * Mutating the prop object would work by accident - it is a plain object from
+   * a server component - and would break the moment anything memoised it.
    */
   const [stored, setStored] = useState({
     subject: variant.subject ?? "",
@@ -311,7 +311,7 @@ function VariantEditor({
       {/* Rendered as the recipient sees it, on a chat-like ground so the eye
           reads it as a message rather than as configuration. */}
       <div className="mt-3">
-        <p className="text-xs font-medium text-text-muted">Preview — to {SAMPLE_NAME}</p>
+        <p className="text-xs font-medium text-text-muted">Preview - to {SAMPLE_NAME}</p>
         {previewSubject ? (
           <p className="mt-1 text-sm font-semibold text-text">{previewSubject}</p>
         ) : null}
@@ -348,7 +348,7 @@ function VariantEditor({
                 // templates for 60 seconds, so a message queued in the next few
                 // moments may still go out in the old wording. Saying so is
                 // cheaper than explaining it after the fact.
-                setSaved("Saved — live within a minute.");
+                setSaved("Saved - live within a minute.");
                 setStored({
                   subject,
                   body,

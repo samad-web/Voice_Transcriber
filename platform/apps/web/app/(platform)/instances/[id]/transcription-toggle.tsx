@@ -14,7 +14,7 @@ import { reprocessBacklogAction, setTranscriptionEnabledAction } from "./actions
  * invoice.
  */
 const BACKLOG_CHOICES: Array<{ days: number | null; label: string; blurb: string }> = [
-  { days: 0, label: "Nothing", blurb: "New calls only. The backlog stays untranscribed — you can come back to it later." },
+  { days: 0, label: "Nothing", blurb: "New calls only. The backlog stays untranscribed - you can come back to it later." },
   { days: 7, label: "Last 7 days", blurb: "Transcribe calls from the past week." },
   { days: 30, label: "Last 30 days", blurb: "Transcribe calls from the past month." },
   { days: null, label: "Everything", blurb: "Transcribe every stored call that was skipped, however old. Costs the most." },
@@ -25,7 +25,7 @@ const BACKLOG_CHOICES: Array<{ days: number | null; label: string; blurb: string
  *
  * Deliberately separate from suspending the org: suspending refuses the upload,
  * so the customer's handsets stop recording and the calls are gone. This keeps
- * the call log filling up — numbers, durations, recordings, all still playable —
+ * the call log filling up - numbers, durations, recordings, all still playable -
  * and only stops the paid ASR + analysis stages.
  */
 export function TranscriptionToggle({
@@ -48,7 +48,7 @@ export function TranscriptionToggle({
     const ok = await confirm({
       title: `Stop transcribing calls for ${instanceName}?`,
       body:
-        "Calls keep arriving and stay listed with their recordings — they just won't be " +
+        "Calls keep arriving and stay listed with their recordings - they just won't be " +
         "transcribed or analysed until you switch this back on.",
       confirmLabel: "Stop transcribing",
       tone: "danger",
@@ -69,7 +69,7 @@ export function TranscriptionToggle({
   /**
    * Enabling is two steps, in this order: turn it on, then pick up the backlog.
    * If the reprocess half fails the instance is still transcribing new calls,
-   * which is the more important half — and the backlog can be retried.
+   * which is the more important half - and the backlog can be retried.
    */
   const enable = (days: number | null) => {
     setError(null);
@@ -98,7 +98,7 @@ export function TranscriptionToggle({
       setNote(
         res.requeued === 0
           ? "Transcription on. No untranscribed calls in that window."
-          : `Transcription on. ${res.requeued} call${res.requeued === 1 ? "" : "s"} queued — they'll appear as they finish.`,
+          : `Transcription on. ${res.requeued} call${res.requeued === 1 ? "" : "s"} queued - they'll appear as they finish.`,
       );
       router.refresh();
     });

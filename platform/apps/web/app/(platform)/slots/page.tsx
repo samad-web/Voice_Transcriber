@@ -4,7 +4,7 @@ import { BookedCalls } from "./booked-calls";
 import { SlotCalendar } from "./slot-calendar";
 
 /**
- * Booking slots — the sales team's diary, and the calls it has produced.
+ * Booking slots - the sales team's diary, and the calls it has produced.
  *
  * This is the answer to "where is the calendar in the application". Before it,
  * availability was three environment variables intersected with a Google
@@ -15,7 +15,7 @@ import { SlotCalendar } from "./slot-calendar";
  * ── BOOKED CALLS COME FIRST, AND THAT ORDER IS THE POINT ──────────────────
  *
  * The page used to be the calendar alone, which answers "when am I free" and
- * silently fails to answer "who am I speaking to today" — a dot on the grid
+ * silently fails to answer "who am I speaking to today" - a dot on the grid
  * means slots EXIST on that day, so an empty Tuesday and a fully-booked Tuesday
  * are indistinguishable and the only way to find out was a click per day.
  *
@@ -23,7 +23,7 @@ import { SlotCalendar } from "./slot-calendar";
  * is something you do every morning. So the list leads and the grid follows.
  *
  * The zone is read from SCHEDULER_TIMEZONE, defaulting to Asia/Kolkata, and is
- * the SALES TEAM's zone rather than the visitor's — the operator is choosing
+ * the SALES TEAM's zone rather than the visitor's - the operator is choosing
  * when they personally are free, so the grid has to be in their local time.
  */
 /**
@@ -31,7 +31,7 @@ import { SlotCalendar } from "./slot-calendar";
  * made a minute ago has to be on it, and a cached render would show an empty
  * diary to someone who has just been told a call is booked. `requireOperator()`
  * reads cookies and would opt this out of static rendering anyway, but that is
- * an implementation detail of the guard rather than a property of this page —
+ * an implementation detail of the guard rather than a property of this page -
  * stating it here means a future refactor of the guard cannot silently start
  * serving stale bookings.
  */
@@ -42,7 +42,7 @@ export default async function SlotsPage() {
 
   // Fetched server-side so the list is present in the first paint. A failure
   // here degrades to an empty list with the reason shown, rather than taking
-  // the calendar down with it — the two halves of this page are independent
+  // the calendar down with it - the two halves of this page are independent
   // and an operator can still set availability while the join is misbehaving.
   const { bookings, error } = await listBookingsAction(14);
 
@@ -63,7 +63,7 @@ export default async function SlotsPage() {
           <p className="font-semibold">Could not load booked calls</p>
           <p className="mt-1">{error}</p>
           <p className="mt-2 text-xs text-text-muted">
-            The calendar below still works. Bookings are stored either way — this is a read
+            The calendar below still works. Bookings are stored either way - this is a read
             failure, not a lost booking.
           </p>
         </div>

@@ -3,7 +3,7 @@ import { LogoGrid } from "../ui/content";
 import { CONNECTORS, CONNECTOR_COUNT } from "@/lib/content/connectors";
 
 /**
- * Integrations (doc 10 §3 row 10). Reads as maturity — and it is real: every
+ * Integrations (doc 10 §3 row 10). Reads as maturity - and it is real: every
  * name below is a spec in packages/shared/src/crm-providers.ts that the worker
  * dispatches against, not a logo scraped off a competitor's page.
  *

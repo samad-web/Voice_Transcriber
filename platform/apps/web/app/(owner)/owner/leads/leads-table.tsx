@@ -30,11 +30,11 @@ const SORTS = [
   { key: "activity", label: "Recent" },
   { key: "created", label: "Newest" },
   { key: "value", label: "Value" },
-  { key: "title", label: "A–Z" },
+  { key: "title", label: "A-Z" },
 ] as const;
 
 /**
- * The list view: the same leads as the board, but filterable and sortable —
+ * The list view: the same leads as the board, but filterable and sortable -
  * what you use to answer "which leads has nobody touched in a fortnight?".
  *
  * Filters live in the URL, so a filtered view is a link an owner can bookmark
@@ -92,7 +92,7 @@ export function LeadsTable({
     setOpen((current) => (current && current.id === leadId ? { ...current, ...update } : current));
   };
 
-  // Strip `focus` from the URL on close — otherwise the deep-link effect
+  // Strip `focus` from the URL on close - otherwise the deep-link effect
   // above reopens the same lead the next time `leads` revalidates for any
   // other reason (a stage move elsewhere, a poll, etc).
   const closeDrawer = () => {
@@ -178,7 +178,7 @@ export function LeadsTable({
       </div>
 
       {/* Only the active projects are offered. An archived one can still be
-          reached by URL — a bookmarked filter must not break — but putting it
+          reached by URL - a bookmarked filter must not break - but putting it
           in the chip row would grow the list forever. */}
       {projects.length > 0 ? (
         <div>
@@ -267,7 +267,7 @@ export function LeadsTable({
                     onClick={() => setOpen(lead)}
                     // Rows open the drawer the same way board.tsx's cards do
                     // (Enter/Space), but a <tr> has no built-in interactive
-                    // semantics — role/tabIndex/onKeyDown supply what a real
+                    // semantics - role/tabIndex/onKeyDown supply what a real
                     // <button> would otherwise give for free.
                     role="button"
                     tabIndex={0}
@@ -292,7 +292,7 @@ export function LeadsTable({
                           source={lead.project_source}
                         />
                       ) : (
-                        <span className="text-xs text-text-subtle">—</span>
+                        <span className="text-xs text-text-subtle">-</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -309,12 +309,12 @@ export function LeadsTable({
                       </StatusChip>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {num(lead.value_num) === null ? "—" : formatValue(lead.value_num)}
+                      {num(lead.value_num) === null ? "-" : formatValue(lead.value_num)}
                     </TableCell>
-                    <TableCell className="text-text-muted">{lead.telecaller ?? "—"}</TableCell>
+                    <TableCell className="text-text-muted">{lead.telecaller ?? "-"}</TableCell>
                     <TableCell className="text-right tabular-nums">{lead.call_count}</TableCell>
                     <TableCell className="max-w-[16rem] truncate text-text-muted">
-                      {lead.next_action ?? "—"}
+                      {lead.next_action ?? "-"}
                     </TableCell>
                     <TableCell className="text-text-muted tabular-nums">
                       {relativeTime(lead.last_activity_at)}

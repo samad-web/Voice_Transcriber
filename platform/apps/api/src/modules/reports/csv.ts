@@ -2,17 +2,17 @@
  * Minimal RFC-4180 CSV rendering for report exports.
  *
  * Hand-rolled rather than pulled in: the whole surface is "quote a cell, join
- * with commas", and the one part that actually needs care — formula injection
- * — is not something a generic CSV library handles for you anyway.
+ * with commas", and the one part that actually needs care - formula injection
+ * - is not something a generic CSV library handles for you anyway.
  */
 
 /**
  * Neutralise a cell that a spreadsheet would execute rather than display.
  *
  * Excel, LibreOffice and Sheets all treat a leading `=`, `+`, `-`, `@`, tab or
- * CR as the start of a FORMULA. A contact called `=cmd|'/c calc'!A0` — which a
+ * CR as the start of a FORMULA. A contact called `=cmd|'/c calc'!A0` - which a
  * tenant can create, since display names come from call transcripts and from
- * the contacts API — becomes code the moment somebody opens the export. The
+ * the contacts API - becomes code the moment somebody opens the export. The
  * standard mitigation is a leading apostrophe, which spreadsheets strip on
  * display and which keeps the value readable.
  *

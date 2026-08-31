@@ -1,8 +1,8 @@
--- 0035_accounts_and_contacts.sql — CRM Phase 1 foundation, part 2: Account
+-- 0035_accounts_and_contacts.sql - CRM Phase 1 foundation, part 2: Account
 -- and Contact, the identity objects that inherit leads' "who called" role.
 --
 -- See 0034's header for the strangler-fig framing. Nothing here reads from or
--- writes to `leads` at migration time — population happens via the worker
+-- writes to `leads` at migration time - population happens via the worker
 -- dual-write (a later, separate change) and the one-time backfill script
 -- (scripts/backfill-crm-objects.js), neither of which is part of this
 -- schema-only migration.
@@ -10,7 +10,7 @@
 CREATE TABLE IF NOT EXISTS accounts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id        uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  -- Attribution only — which desk first created this account — NOT an
+  -- Attribution only - which desk first created this account - NOT an
   -- isolation boundary the way workspace_id is on leads/calls. An account is
   -- a company, and a company is shared across a tenant's desks.
   workspace_id  uuid REFERENCES workspaces(id) ON DELETE SET NULL,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   phone_hash    text,
   phone_prefix  text,
   phone_last3   text,
-  -- {system: external_id}, e.g. {"hubspot": "1234"} — dedup input for
+  -- {system: external_id}, e.g. {"hubspot": "1234"} - dedup input for
   -- merge/dedupe (0038) and the future bi-directional-sync epic.
   external_ids  jsonb NOT NULL DEFAULT '{}'::jsonb,
   owner_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -67,11 +67,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── Contact ─────────────────────────────────────────────────────────────
--- The person-level identity that inherits leads' dedup role — but ORG-WIDE
+-- The person-level identity that inherits leads' dedup role - but ORG-WIDE
 -- (org_id, phone_hash), not workspace-scoped like leads is today. A person is
 -- the same person regardless of which desk called them; that is correct CRM
 -- behaviour and what "replacing leads' role" implies. Nothing reads from
--- `contacts` until a later milestone, so this is safe to land now — but
+-- `contacts` until a later milestone, so this is safe to land now - but
 -- confirm before that milestone that neither live tenant actually relies on
 -- per-workspace contact silos (see the Phase 1 plan).
 CREATE TABLE IF NOT EXISTS contacts (
@@ -92,11 +92,11 @@ CREATE TABLE IF NOT EXISTS contacts (
   title         text,
   external_ids  jsonb NOT NULL DEFAULT '{}'::jsonb,
   owner_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
-  -- Provenance only — which lead this contact was first backfilled/derived
+  -- Provenance only - which lead this contact was first backfilled/derived
   -- from. Deliberately NOT unique: many leads (e.g. two workspaces that used
   -- to silo the same number) can collapse into one org-wide contact.
   source_lead_id uuid REFERENCES leads(id) ON DELETE SET NULL,
-  -- Same additive-merge contract as leads.facts — a follow-up call must never
+  -- Same additive-merge contract as leads.facts - a follow-up call must never
   -- blank a fact an earlier one established.
   facts         jsonb NOT NULL DEFAULT '{}'::jsonb,
   status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'merged')),

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* The Aura UI kit lives outside the app dir — include its classes. */
+/* The Aura UI kit lives outside the app dir - include its classes. */
 @source "../../../packages/ui/src";
 
 /* The design-system v2 token contract (doc 16 §1), defined once in @aura/ui.
@@ -18,7 +18,7 @@
    §1.2): `font-display` now resolves to the kit's Inter shim in every route
    group, migrated or not, so nothing falls back to a serif mid-migration.
 
-   --font-sans and --font-mono are not restated either — theme.css already
+   --font-sans and --font-mono are not restated either - theme.css already
    declares them as var(--font-inter, "Inter") / var(--font-jetbrains-mono,
    "JetBrains Mono"), which are exactly the CSS variables app/layout.tsx's
    next/font calls set. The values were identical; the duplicate was noise.

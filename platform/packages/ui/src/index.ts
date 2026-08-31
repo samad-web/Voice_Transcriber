@@ -1,11 +1,11 @@
 /*
- * @aura/ui — design system v2.
+ * @aura/ui - design system v2.
  *
  * Tokens live in ./theme.css and are imported by the consuming app's
  * globals.css (`@import "@aura/ui/theme.css";`). Nothing here defines a colour.
  *
  * Every export that existed in v1 is still exported, with the same name and the
- * same props — the console runs on these in production and slice 2 has not
+ * same props - the console runs on these in production and slice 2 has not
  * migrated it yet.
  */
 

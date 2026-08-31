@@ -29,7 +29,7 @@ export interface DialogProps {
  *   querySelectorAll of focusable elements that goes stale the moment the
  *   content is dynamic.
  * - **Escape to close** (fires `cancel`), which WCAG 2.1.2 requires.
- * - **The rest of the page becomes inert** — background content is not
+ * - **The rest of the page becomes inert** - background content is not
  *   reachable by tab, by screen-reader virtual cursor, or by click.
  * - **Focus returns** to whatever opened it on close.
  * - Top-layer rendering, so no z-index war with a sticky sidebar.
@@ -70,7 +70,7 @@ export function Dialog({
       aria-labelledby={titleId}
       aria-describedby={description ? descId : undefined}
       // Escape fires `cancel` first. preventDefault stops the browser closing
-      // the element behind React's back — otherwise the DOM is closed while
+      // the element behind React's back - otherwise the DOM is closed while
       // `open` is still true, and the next open() is a no-op.
       onCancel={(e: SyntheticEvent<HTMLDialogElement>) => {
         e.preventDefault();

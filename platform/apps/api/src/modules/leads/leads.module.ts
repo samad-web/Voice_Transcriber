@@ -5,7 +5,7 @@ import { MessageTemplatesController } from "./message-templates.controller";
 import { SlotsController } from "./slots.controller";
 import { WhatsAppCheckController } from "./whatsapp-check.controller";
 
-/** Marketing funnel leads — platform-operator, cross-tenant. */
+/** Marketing funnel leads - platform-operator, cross-tenant. */
 @Module({
   controllers: [
     LeadsController,

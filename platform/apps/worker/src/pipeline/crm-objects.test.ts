@@ -9,7 +9,7 @@ import { leadTitle } from "./leads";
 /**
  * projectLeadToCrm reads a lead upsertLead() already wrote and projects it
  * onto the new Contact/Deal model (CRM Phase 1, E0.1). No database is opened
- * below — a fake DbClient routes each query by a distinguishing substring,
+ * below - a fake DbClient routes each query by a distinguishing substring,
  * the same approach crm-dispatch.test.ts uses for buildSourceDocument.
  */
 
@@ -97,7 +97,7 @@ function fakeDb(opts: FakeDbOptions = {}): DbClient {
         return { rows: [] as R[], rowCount: 0 };
       }
       // The stage ledger (migration 0046). Recorded here only when the deal
-      // is CREATED — this projection never moves a deal, so an update has no
+      // is CREATED - this projection never moves a deal, so an update has no
       // transition to write. `stageTransitions` lets a case assert that.
       if (sql.includes("INSERT INTO deal_stage_transitions")) {
         opts.stageTransitions?.push(params ?? []);
@@ -130,11 +130,11 @@ describe("projectLeadToCrm", () => {
     const transitions: unknown[][] = [];
     await projectLeadToCrm(fakeDb({ stageTransitions: transitions }), ORG_ID, "lead-1");
     expect(transitions).toHaveLength(1);
-    // (org, deal, to_stage) — entering the pipeline at its entry stage.
+    // (org, deal, to_stage) - entering the pipeline at its entry stage.
     expect(transitions[0]).toEqual([ORG_ID, DEAL_ID, "new"]);
   });
 
-  it("writes NO transition when it only updates — this projection never moves a deal", async () => {
+  it("writes NO transition when it only updates - this projection never moves a deal", async () => {
     // Stage belongs to the owner, as the ON CONFLICT in crm-objects.ts says.
     // A transition row here would put a move in the ledger that never
     // happened, which is exactly what a ledger must not contain.
@@ -168,7 +168,7 @@ describe("projectLeadToCrm", () => {
     const inserts: unknown[][] = [];
     await projectLeadToCrm(fakeDb({ interactionInserts: inserts }), ORG_ID, "lead-1");
 
-    // LEAD_ROW's first and last call are the same id, so exactly one row —
+    // LEAD_ROW's first and last call are the same id, so exactly one row -
     // the de-duplication in projectLeadToCrm, not an accident of the fake.
     expect(inserts).toHaveLength(1);
     const [orgId, , , contactId, dealId, callId] = inserts[0];
@@ -196,7 +196,7 @@ describe("the placeholder name the duplicate matcher must ignore", () => {
   /**
    * Track A5's fuzzy scan excludes `UNMATCHABLE_DISPLAY_NAMES` because two
    * "Unknown caller" contacts score 1.0 against each other while being two
-   * people nobody could identify — merging them would fuse unrelated
+   * people nobody could identify - merging them would fuse unrelated
    * histories. That exclusion is only correct while it still matches what
    * this pipeline actually writes, and leadTitle() lives in a file the
    * strangler-fig plan keeps untouched. So the coupling is pinned here
@@ -246,7 +246,7 @@ describe("projectCallToInteraction", () => {
     expect(inserts).toHaveLength(0);
   });
 
-  it("accepts a null contact and deal — an unattributed call still happened", async () => {
+  it("accepts a null contact and deal - an unattributed call still happened", async () => {
     const inserts: unknown[][] = [];
     await projectCallToInteraction(fakeDb({ interactionInserts: inserts }), ORG_ID, "c", null, null);
     expect([inserts[0][3], inserts[0][4]]).toEqual([null, null]);

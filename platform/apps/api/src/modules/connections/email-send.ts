@@ -10,8 +10,8 @@ import { oauthClient } from "./oauth";
  * different risk class from everything else in this CRM, and the mistakes are
  * not recoverable: a message that goes out cannot be recalled, and the person
  * who receives it does not care that a rule misfired. So this module can only
- * do one thing — send one message, composed by a person, to a contact that
- * already exists, from that person's own mailbox — and every part of that
+ * do one thing - send one message, composed by a person, to a contact that
+ * already exists, from that person's own mailbox - and every part of that
  * sentence is enforced somewhere in the path:
  *
  *   - composed by a person   → the route requires a resolvable user identity;
@@ -58,7 +58,7 @@ export function sendingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 /**
  * How many messages one connection may send per day.
  *
- * Not a performance guard — a correctness one. Whatever bug or misuse ends up
+ * Not a performance guard - a correctness one. Whatever bug or misuse ends up
  * pointing a loop at this module, the blast radius is one day's cap on one
  * mailbox rather than every contact in the tenant.
  */
@@ -77,7 +77,7 @@ export function canSend(provider: string): boolean {
  *
  * Headers are stripped of CR and LF before they go anywhere near the
  * envelope. Without that, a subject containing a newline lets the caller
- * inject arbitrary headers — a Bcc to somewhere else being the obvious one —
+ * inject arbitrary headers - a Bcc to somewhere else being the obvious one -
  * which is header injection, one of the oldest holes in mail handling.
  */
 export function buildMime(message: OutgoingMessage): string {
@@ -130,7 +130,7 @@ export async function sendMessage(
   }
 
   // Microsoft Graph. `saveToSentItems` so the message appears in the user's
-  // own Sent folder — a CRM that sends on someone's behalf and leaves no
+  // own Sent folder - a CRM that sends on someone's behalf and leaves no
   // trace in their own mailbox is not a tool they can audit.
   const res = await fetchImpl("https://graph.microsoft.com/v1.0/me/sendMail", {
     method: "POST",
@@ -145,7 +145,7 @@ export async function sendMessage(
     }),
   });
   if (!res.ok) throw await sendError(res);
-  // Graph's sendMail returns 202 with an empty body — no id to record. The
+  // Graph's sendMail returns 202 with an empty body - no id to record. The
   // mail sync will pick the message up from the Sent folder on its next pass
   // and dedupe against the interaction row written here by subject and time.
   return { externalId: null };
@@ -158,7 +158,7 @@ export async function sendMessage(
  * email-sync.ts) and it lives here rather than being shared, because the two
  * apps cannot import each other and neither belongs in @aura/shared, which is
  * deliberately network-free. It sits next to `exchangeCode` in this module
- * instead — the other half of the same handshake, against the same endpoint,
+ * instead - the other half of the same handshake, against the same endpoint,
  * with the same client credentials.
  */
 export async function refreshAccessToken(

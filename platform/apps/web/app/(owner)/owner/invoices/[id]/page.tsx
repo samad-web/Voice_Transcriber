@@ -6,7 +6,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { InvoiceDetail } from "./invoice-detail-client";
 import type { Invoice, InvoiceItem, Payment } from "../actions";
 
-export const metadata: Metadata = { title: "Invoice — Aura" };
+export const metadata: Metadata = { title: "Invoice - Aura" };
 
 export default async function InvoiceDetailPage({
   params,

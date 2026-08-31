@@ -5,7 +5,7 @@
  *   node scripts/reprocess-backlog.js --org <uuid> --status FAILED_ASR --dry-run
  *
  * Talks to /v1/calls and /v1/calls/:id/reprocess with the platform admin key, so
- * it goes through the same tenant guard and audit trail as the console does —
+ * it goes through the same tenant guard and audit trail as the console does -
  * nothing here touches the database directly.
  *
  * WHY THIS IS NOT A ONE-LINER
@@ -77,19 +77,19 @@ async function main() {
   }
   console.log(`  ${"TOTAL".padEnd(20)} ${String(all.length).padStart(4)} calls  ${hours.toFixed(2)}h`);
   // Rates measured 2026-07-30: Sarvam ASR+diarization ₹45/h, Sarvam analyze ~₹4/h,
-  // Gemini ASR ~₹50/h + analyze ~₹22/h. Rough by design — it exists to stop a
+  // Gemini ASR ~₹50/h + analyze ~₹22/h. Rough by design - it exists to stop a
   // run that is an order of magnitude larger than intended, not to bill anyone.
   console.log(
     `  estimated provider cost: ~₹${Math.round(hours * 49)} on Sarvam, ` +
       `~₹${Math.round(hours * 72)} on Gemini`,
   );
   console.log(
-    `  each call also fires CRM dispatch — with only_qualified=false that is ` +
+    `  each call also fires CRM dispatch - with only_qualified=false that is ` +
       `${all.length} outbound deliveries\n`,
   );
 
   if (DRY) {
-    console.log("DRY RUN — nothing submitted. Re-run with --yes to execute.\n");
+    console.log("DRY RUN - nothing submitted. Re-run with --yes to execute.\n");
     return;
   }
 
@@ -119,7 +119,7 @@ async function main() {
   // /v1/admin/health a few minutes from now.
   console.log(
     "\nThese are submissions, not completions. Watch /v1/admin/health or the\n" +
-      "instance's call list — batch ASR parks calls in TRANSCRIBING until the\n" +
+      "instance's call list - batch ASR parks calls in TRANSCRIBING until the\n" +
       "poller collects them.\n",
   );
 }

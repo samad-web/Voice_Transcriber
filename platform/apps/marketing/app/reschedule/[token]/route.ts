@@ -15,7 +15,7 @@ import { schedulerTimeZone } from "@/lib/scheduler";
  *
  * It has to SET a cookie, and a Server Component cannot. A page would have to
  * render something that then posted the token back, which puts the credential
- * in the DOM — the exact thing lib/funnel/reschedule-session.ts exists to
+ * in the DOM - the exact thing lib/funnel/reschedule-session.ts exists to
  * avoid.
  *
  * ── WHY OPENING IT TWICE IS FINE ───────────────────────────────────────────
@@ -24,7 +24,7 @@ import { schedulerTimeZone } from "@/lib/scheduler";
  * previews, so the first GET is quite often a bot rather than the person; a
  * single-use token would be burnt before they ever tapped it. What actually
  * ends the link's usefulness is the booking no longer being held, which
- * `resolveRescheduleToken` checks on every call — and which becomes true by
+ * `resolveRescheduleToken` checks on every call - and which becomes true by
  * itself the moment the call is moved, because the old slot goes back to
  * 'open'.
  */
@@ -37,7 +37,7 @@ export async function GET(
   const target = await resolveRescheduleToken(token, schedulerTimeZone());
 
   if (!target) {
-    // Unknown, expired, already moved, cancelled, or erased — one destination
+    // Unknown, expired, already moved, cancelled, or erased - one destination
     // for all five. Telling a holder of a guessed token which one it was tells
     // them whether they guessed a real appointment.
     redirect("/reschedule?link=expired");

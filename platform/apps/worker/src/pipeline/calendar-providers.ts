@@ -6,8 +6,8 @@ import { parseAddress, ProviderHttpError } from "./email-providers";
  * Same contract as email-providers.ts, deliberately: one interface, one
  * implementation per provider, and nothing above this file knows which
  * provider a connection uses. The two files are siblings rather than one
- * because the shapes genuinely differ — an event has attendees and a
- * duration, a message has a direction and a snippet — and merging them would
+ * because the shapes genuinely differ - an event has attendees and a
+ * duration, a message has a direction and a snippet - and merging them would
  * produce an interface where half the fields are always null.
  *
  * WHAT AN ADAPTER RETURNS: who was there, when, how long, and what it was
@@ -28,7 +28,7 @@ export interface NormalisedEvent {
   /**
    * The provider says this event is gone. Carried rather than filtered out by
    * the adapter, because a meeting that was synced and then cancelled has to
-   * be REMOVED from the timeline — leaving it there states that a meeting
+   * be REMOVED from the timeline - leaving it there states that a meeting
    * happened when it did not.
    */
   cancelled: boolean;
@@ -57,7 +57,7 @@ const googleCalendar: CalendarAdapter = {
   async fetchSince(accessToken, _cursor, from, to, fetchImpl = fetch) {
     // `singleEvents=true` expands a recurring series into its instances. A
     // weekly check-in with a customer is twelve meetings that happened, not
-    // one rule — and without expansion the recurrence would land on the
+    // one rule - and without expansion the recurrence would land on the
     // timeline once, dated to whenever the series was created.
     const params = new URLSearchParams({
       timeMin: from.toISOString(),
@@ -161,7 +161,7 @@ const graphCalendar: CalendarAdapter = {
 // ── Stub, for local verification ────────────────────────────────────────────
 
 /**
- * Fixture events instead of a provider call, under CALENDAR_STUB=1 — the same
+ * Fixture events instead of a provider call, under CALENDAR_STUB=1 - the same
  * device email-providers.ts uses, and for the same reason: a real Google
  * Calendar round trip needs a registered OAuth app and a populated calendar,
  * and without a stub the whole path (matching, dedupe, cancellation, cursor
@@ -207,7 +207,7 @@ const ADAPTERS: Record<string, CalendarAdapter> = {
  * `caldav` is offered by the console and not serviced here, exactly as `imap`
  * is on the mail side: CalDAV needs a real client library and a mail/calendar
  * server to test against. Returning null surfaces that to the caller as "not
- * supported" rather than as silence — a connected calendar that never syncs
+ * supported" rather than as silence - a connected calendar that never syncs
  * and never says why is the worse failure.
  */
 export function calendarAdapter(provider: string): CalendarAdapter | null {

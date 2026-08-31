@@ -94,7 +94,7 @@ class MainActivity : AppCompatActivity() {
         binding.playerPanel.visibility = View.GONE
         binding.swipeRefresh.setOnRefreshListener { refreshRecordings() }
 
-        // Telecaller greeting — tap the header to set/change the name.
+        // Telecaller greeting - tap the header to set/change the name.
         binding.greetingHeader.setOnClickListener { showProfileDialog() }
         renderGreeting()
         if (!profile.hasName) showProfileDialog() // first run: ask who this handset belongs to
@@ -129,7 +129,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * Import any OEM recordings that haven't been picked up yet. The automatic ingest only
      * runs ~15s after a call ends and on a 15-minute cycle, so a call made moments ago won't
-     * be listed until then — this makes it immediate. The list itself is a Room Flow, so new
+     * be listed until then - this makes it immediate. The list itself is a Room Flow, so new
      * rows render on their own once inserted; we only report the count.
      */
     private fun refreshRecordings() {
@@ -278,7 +278,7 @@ class MainActivity : AppCompatActivity() {
         sheet.btnAccessibility.visibility = if (on) View.GONE else View.VISIBLE
         sheet.btnAccessibility.setOnClickListener { openAccessibilitySettings() }
 
-        // Advanced (VoIP-via-accessibility internals) is off normal navigation — long-press
+        // Advanced (VoIP-via-accessibility internals) is off normal navigation - long-press
         // the "Settings" title to reveal it. Capture itself never depends on this being open.
         sheet.settingsTitle.setOnLongClickListener {
             sheet.advancedGroup.visibility =
@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Phone audio-source dropdown — test each source to find both-ends capture. */
+    /** Phone audio-source dropdown - test each source to find both-ends capture. */
     private fun setupSourcePicker(spinner: Spinner) {
         val labels = resources.getStringArray(R.array.source_option_labels)
         val values = resources.getIntArray(R.array.source_option_values)
@@ -493,7 +493,7 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.READ_CALL_LOG)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
-                // "Music and audio" — same permission RecordingsScannerActivity asks for
+                // "Music and audio" - same permission RecordingsScannerActivity asks for
                 // later on the MediaStore path; asking here too means OEM-recording
                 // ingest already has it by the time it's needed, no second prompt.
                 add(Manifest.permission.READ_MEDIA_AUDIO)

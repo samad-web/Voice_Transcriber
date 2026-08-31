@@ -4,7 +4,7 @@
  * WHY THIS IS NOT `pnpm --filter @aura/db migrate`. `packages/db/migrate.js:14`
  * resolves its connection string as `process.env.DATABASE_URL ?? <dev default>`.
  * Running it means the test stack's schema is created wherever the ambient
- * environment happens to point — which on this project is a shell that may well
+ * environment happens to point - which on this project is a shell that may well
  * have production Supabase credentials exported, because deploying the platform
  * requires exactly that. The suite therefore never executes it. The 18 lines of
  * logic it contains are re-implemented here instead, against the connection
@@ -32,8 +32,8 @@ const MIGRATIONS_DIR = join(PLATFORM_ROOT, "packages", "db", "migrations");
 /**
  * Drop everything and start clean.
  *
- * `DROP SCHEMA public CASCADE` does not remove the `aura_app` ROLE — roles are
- * cluster-wide, not schema-scoped — and 0001_init.sql:9-13 only creates it
+ * `DROP SCHEMA public CASCADE` does not remove the `aura_app` ROLE - roles are
+ * cluster-wide, not schema-scoped - and 0001_init.sql:9-13 only creates it
  * `IF NOT EXISTS`, so a re-run is fine. What a stale role WOULD keep is its
  * grants on objects that no longer exist, which is harmless, plus its
  * membership in nothing. Left alone deliberately: dropping and recreating the
@@ -68,7 +68,7 @@ export async function runMigrations(): Promise<number> {
       .sort();
     if (files.length === 0) {
       throw new Error(
-        `no migrations found in ${MIGRATIONS_DIR} — the suite would silently test an empty schema`,
+        `no migrations found in ${MIGRATIONS_DIR} - the suite would silently test an empty schema`,
       );
     }
 

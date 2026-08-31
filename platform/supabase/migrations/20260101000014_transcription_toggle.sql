@@ -3,7 +3,7 @@
 -- `organizations.status` already has an off switch, but it is the wrong one for
 -- this: a suspended org is refused at upload admission, so its handsets stop
 -- recording and the calls never arrive at all. What an operator often wants is
--- narrower — keep collecting the customer's call log, just stop spending money
+-- narrower - keep collecting the customer's call log, just stop spending money
 -- on ASR and the LLM for it. Reasons range from the mundane (the customer is
 -- mid-trial, or hasn't paid) to the urgent (the ASR provider is down or out of
 -- credit and every attempt is failing anyway).
@@ -14,7 +14,7 @@ ALTER TABLE organizations
   ADD COLUMN IF NOT EXISTS transcription_enabled boolean NOT NULL DEFAULT true;
 
 COMMENT ON COLUMN organizations.transcription_enabled IS
-  'When false, calls are still ingested, stored and listed — the pipeline skips '
+  'When false, calls are still ingested, stored and listed - the pipeline skips '
   'ASR and analysis and lands them on TRANSCRIPTION_OFF instead. Unrelated to '
   'organizations.status, which refuses the upload outright.';
 

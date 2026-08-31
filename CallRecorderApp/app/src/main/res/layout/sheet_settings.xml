@@ -96,7 +96,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp" />
 
-    <!-- Advanced: the VoIP-via-accessibility capture internals. Not in normal navigation —
+    <!-- Advanced: the VoIP-via-accessibility capture internals. Not in normal navigation -
          long-press the "Settings" title above to reveal it. Capture keeps running either way;
          this only exposes the on-device controls for it. -->
     <LinearLayout

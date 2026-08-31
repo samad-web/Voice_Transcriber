@@ -1,4 +1,4 @@
--- 0004_auth.sql — real session auth + RBAC groundwork (checklist §2.2).
+-- 0004_auth.sql - real session auth + RBAC groundwork (checklist §2.2).
 -- Dev credential login (password_hash) stands in for the OIDC identity source;
 -- swapping to OIDC later only changes how a user is identified at /auth/login,
 -- not the session/role/permission model below.

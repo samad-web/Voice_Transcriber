@@ -7,8 +7,8 @@ import java.time.Instant
 
 /**
  * A tiny, durable, best-effort queue of device events (e.g. "a call went off-hook").
- * Writes are cheap SharedPreferences appends so callers — including a
- * BroadcastReceiver on the main thread — never block. The [HealthWorker] drains it
+ * Writes are cheap SharedPreferences appends so callers - including a
+ * BroadcastReceiver on the main thread - never block. The [HealthWorker] drains it
  * on its periodic run and batch-POSTs to /v1/devices/me/events.
  */
 object EventLog {

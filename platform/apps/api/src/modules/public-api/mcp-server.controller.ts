@@ -14,7 +14,7 @@ import { CrmIngestService } from "./crm-ingest.service";
  *
  * The existing `mcp/connections` surface is the opposite direction: it makes
  * Aura a CLIENT of somebody else's MCP server (Meta's, today). This is the
- * inbound half — a model-driven agent connects here and works the tenant's
+ * inbound half - a model-driven agent connects here and works the tenant's
  * pipeline.
  *
  * ── EVERY TOOL IS A THIN CALL INTO CrmIngestService ──────────────────────
@@ -37,7 +37,7 @@ import { CrmIngestService } from "./crm-ingest.service";
  *   * Read call recordings or transcripts. `ApiKeyGuard` writes a principal
  *     with both recording permissions false, and no scope for them exists.
  *   * Delete or merge anything.
- *   * Move a card between stages. Stage is the owner's — the same rule
+ *   * Move a card between stages. Stage is the owner's - the same rule
  *     upsertLead and projectLeadToCrm already honour by omitting stage from
  *     their ON CONFLICT updates. An agent that could advance deals would be
  *     writing the tenant's forecast.
@@ -46,7 +46,7 @@ import { CrmIngestService } from "./crm-ingest.service";
  *
  * Reaching this endpoint at all needs the `mcp` scope; each tool then needs its
  * own data scope. So "this key may be driven by a model" is a separate,
- * separately-revocable decision from "this key may write leads" — an ordinary
+ * separately-revocable decision from "this key may write leads" - an ordinary
  * backend integration key cannot be repointed at an agent.
  *
  * `tools/list` returns only the tools the presented key can actually call.
@@ -150,7 +150,7 @@ const TOOLS: ToolDef[] = [
     name: "list_contacts",
     scope: "contacts:read",
     description:
-      "List contacts, newest activity first. `search` matches name or email. Phone numbers are never returned in full — only a prefix and last three digits.",
+      "List contacts, newest activity first. `search` matches name or email. Phone numbers are never returned in full - only a prefix and last three digits.",
     inputSchema: {
       type: "object",
       properties: {
@@ -178,14 +178,14 @@ const TOOLS: ToolDef[] = [
     name: "list_projects",
     scope: "projects:read",
     description:
-      "The tenant's project catalogue — what they sell. Call this before create_lead to pass an exact projectKey.",
+      "The tenant's project catalogue - what they sell. Call this before create_lead to pass an exact projectKey.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     run: (svc, orgId) => svc.listProjects(orgId),
   },
 ];
 
 /**
- * RESOURCES — context a USER attaches, rather than a tool a model calls.
+ * RESOURCES - context a USER attaches, rather than a tool a model calls.
  *
  * The distinction matters and is why these exist alongside the tools: a tool is
  * invoked by the model when it decides to, a resource is picked by the person
@@ -193,7 +193,7 @@ const TOOLS: ToolDef[] = [
  * talk" is a resource; "go and create this lead" is a tool.
  *
  * Every one is scope-gated exactly as a tool is, and `resources/list` returns
- * only what the presented key may actually read — the same reasoning as
+ * only what the presented key may actually read - the same reasoning as
  * `tools/list`: advertising something that will be refused teaches an agent to
  * retry what cannot work.
  */
@@ -277,7 +277,7 @@ const TEMPLATES: TemplateDef[] = [
     name: "Contact",
     scope: "contacts:read",
     description:
-      "One contact, their deals, and their timeline as subject/snippet only — never message bodies or transcripts.",
+      "One contact, their deals, and their timeline as subject/snippet only - never message bodies or transcripts.",
     pattern: /^aura:\/\/contact\/([0-9a-fA-F-]{36})$/u,
     read: (ctx, orgId, id) => ctx.contact(orgId, id),
   },
@@ -292,12 +292,12 @@ const TEMPLATES: TemplateDef[] = [
 ];
 
 /**
- * PROMPTS — the tenant's own operating procedure, encoded once.
+ * PROMPTS - the tenant's own operating procedure, encoded once.
  *
  * These surface in a client as user-invoked commands (a slash-command, in most
  * of them). Each one fetches its data server-side and returns it inside the
  * message, so the agent starts with the numbers rather than making six tool
- * calls to assemble them — and so the prompt works for a key that holds only
+ * calls to assemble them - and so the prompt works for a key that holds only
  * the scopes that prompt needs.
  */
 interface PromptDef {
@@ -344,7 +344,7 @@ const PROMPTS: PromptDef[] = [
     title: "Stalled deals",
     scope: "deals:read",
     description:
-      "Open deals that have not changed stage in a while, oldest first — the ones quietly dying.",
+      "Open deals that have not changed stage in a while, oldest first - the ones quietly dying.",
     arguments: [
       { name: "days", description: "How long without a stage change counts as stalled (default 21)", required: false },
     ],
@@ -357,7 +357,7 @@ const PROMPTS: PromptDef[] = [
           `These open deals have not moved stage in ${days}+ days, oldest first.\n\n` +
           `${JSON.stringify(rows, null, 2)}\n\n` +
           "For each one, say what you would do next and why. Group them if that " +
-          "makes the answer shorter. Do not draft or send any message — just tell " +
+          "makes the answer shorter. Do not draft or send any message - just tell " +
           "me the call I should make.",
       };
     },
@@ -400,7 +400,7 @@ export class McpServerController {
    *
    * We do not offer one: this server is stateless, holds no session, and has
    * nothing to push. The spec says a server that does not support the stream
-   * MUST return 405 — so it is answered explicitly rather than left unmounted,
+   * MUST return 405 - so it is answered explicitly rather than left unmounted,
    * where Nest's 404 would read to a client as "wrong URL" and send it looking
    * for an endpoint that does not exist.
    */
@@ -465,7 +465,7 @@ export class McpServerController {
                 "aura://lead|deal|contact|project/{id}) are read-only context. Prompts " +
                 "package common reviews. " +
                 "This server cannot send messages, move deals between stages, delete or " +
-                "merge records, or read call recordings or transcripts — no such tool exists.",
+                "merge records, or read call recordings or transcripts - no such tool exists.",
             }),
           );
           return;
@@ -584,8 +584,8 @@ export class McpServerController {
         }
 
         /**
-         * Argument autocomplete. Both of the things worth completing here —
-         * project keys and board column keys — are closed sets the tenant
+         * Argument autocomplete. Both of the things worth completing here -
+         * project keys and board column keys - are closed sets the tenant
          * already owns, which is exactly when completion earns its keep: it
          * stops an agent guessing "3d website" when the key is "3d-website".
          */
@@ -700,7 +700,7 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-/** One resource body. JSON in a text block — the shape every MCP client reads. */
+/** One resource body. JSON in a text block - the shape every MCP client reads. */
 function jsonContent(uri: string, body: unknown) {
   return { uri, mimeType: "application/json", text: JSON.stringify(body, null, 2) };
 }

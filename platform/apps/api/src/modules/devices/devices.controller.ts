@@ -28,9 +28,9 @@ import { DbService } from "../../db/db.service";
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
 const SetTelecallerBody = z.object({
   name: z.string().trim().min(1).max(120),
-  // Employee/agent code. Optional — most telecallers may never be given one.
+  // Employee/agent code. Optional - most telecallers may never be given one.
   externalId: z.string().trim().max(64).nullable().optional(),
-  // True when this handset now belongs to a genuinely different person —
+  // True when this handset now belongs to a genuinely different person -
   // mints a new telecaller identity instead of renaming the existing one.
   // False (the default) is for correcting a typo in the current holder's
   // own name.
@@ -66,8 +66,8 @@ const STALE_UNDER_7D_HOURS = 24 * 7;
 
 /**
  * An ACTIVE device silent longer than this needs attention. `logged_out` and
- * `wiped` devices are deliberately excluded — going quiet is their whole
- * point, not a fault — so this only ever fires against `status = 'active'`.
+ * `wiped` devices are deliberately excluded - going quiet is their whole
+ * point, not a fault - so this only ever fires against `status = 'active'`.
  * Same 24h band as the STALE_UNDER_24H_HOURS display bucket: a device an
  * admin already sees as "1-24h" is not yet a problem, one day+ is.
  */
@@ -76,7 +76,7 @@ const NEEDS_ATTENTION_STALE_HOURS = 24;
 /**
  * Free on-device storage below this is close to blocking new recordings from
  * ever landing (the handset stops accepting capture before it stops beaconing
- * health). Picked well above zero so an admin has a runway to act — a
+ * health). Picked well above zero so an admin has a runway to act - a
  * lock-screen-only device can eat storage fast between two health beacons.
  */
 const LOW_STORAGE_MB = 500;
@@ -106,7 +106,7 @@ interface LatestHealth {
   ts: string;
 }
 
-/** Why a device tripped `needsAttention` — rendered as the web chip's tooltip. */
+/** Why a device tripped `needsAttention` - rendered as the web chip's tooltip. */
 function attentionReasons(
   status: string,
   lastSeenAt: string | Date | null,
@@ -131,8 +131,8 @@ function attentionReasons(
 
 /**
  * Latest device_health row per device. Same LATERAL shape as
- * CONTACT_HISTORY_JOIN (calls.controller.ts) — ordered by the time column
- * DESC LIMIT 1 — using the (device_id, ts DESC) index device_health already
+ * CONTACT_HISTORY_JOIN (calls.controller.ts) - ordered by the time column
+ * DESC LIMIT 1 - using the (device_id, ts DESC) index device_health already
  * has, rather than a stored "current health" column that would drift the
  * moment a newer beacon lands anywhere but here.
  */
@@ -150,7 +150,7 @@ export class DevicesController {
   constructor(private readonly db: DbService) {}
 
   /**
-   * Device enrollment — the activation gate (design doc §3.2). Called by the
+   * Device enrollment - the activation gate (design doc §3.2). Called by the
    * Android admin screen with the instance ID + one-time admin key. A device
    * that has not completed this flow can never record.
    */
@@ -169,7 +169,7 @@ export class DevicesController {
     // TODO (checklist §2.2): verify req.playIntegrityToken with the Play
     // Integrity API and reject rooted/emulated devices per tenant policy.
 
-    // Enrollment runs before any org context exists — narrowly-scoped admin
+    // Enrollment runs before any org context exists - narrowly-scoped admin
     // lookup to resolve the org from the token, then everything tenant-scoped.
     const admin = this.db.adminPool();
     const {
@@ -241,7 +241,7 @@ export class DevicesController {
   @Post("challenge")
   // Not throttled (checklist 08 §0.7). Device access tokens live 15 minutes
   // (DEVICE_JWT_TTL_SECONDS), so a tenant's whole fleet re-runs challenge +
-  // authenticate on a loop, and a fleet shares one office/NAT source IP — a
+  // authenticate on a loop, and a fleet shares one office/NAT source IP - a
   // per-IP limit would stop the biggest customers recording first. The real
   // gate is the ECDSA signature over the nonce in `authenticate`, which no
   // volume of requests helps an attacker forge. `challenge` itself is an HMAC
@@ -256,11 +256,11 @@ export class DevicesController {
   /**
    * Step 2 (design doc §3.2): device signs the nonce with its Keystore P-256
    * key; a valid signature proves possession of hardware-backed key material
-   * and earns a 15-minute access JWT. Only ACTIVE devices get tokens — this
+   * and earns a 15-minute access JWT. Only ACTIVE devices get tokens - this
    * is the server half of the activation gate.
    */
   @Post("authenticate")
-  // Not throttled — same reasoning as `challenge` above: whole fleets re-auth
+  // Not throttled - same reasoning as `challenge` above: whole fleets re-auth
   // every 15 minutes from a shared source IP, and possession of the Keystore
   // private key is the gate.
   @SkipThrottle()
@@ -284,7 +284,7 @@ export class DevicesController {
     );
     if (!device) throw new UnauthorizedException("unknown device");
     if (device.status !== "active") {
-      throw new UnauthorizedException(`device is ${device.status} — re-enrollment required`);
+      throw new UnauthorizedException(`device is ${device.status} - re-enrollment required`);
     }
 
     const verifier = createVerify("SHA256");
@@ -325,7 +325,7 @@ export class DevicesController {
   @Get("me/config")
   @UseGuards(DeviceAuthGuard)
   // Not throttled: polled by every handset in the fleet, from a shared source
-  // IP, and it is the gate the client checks before capture — rate-limiting it
+  // IP, and it is the gate the client checks before capture - rate-limiting it
   // stops recording. Already authenticated by a signed device token.
   @SkipThrottle()
   async config(@Req() req: DeviceRequest) {
@@ -373,7 +373,7 @@ export class DevicesController {
     });
   }
 
-  /** Remote logout — device keeps its data but can no longer record or auth. */
+  /** Remote logout - device keeps its data but can no longer record or auth. */
   @Post(":id/logout")
   @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
   @RequireOrgRole("org_admin")
@@ -385,7 +385,7 @@ export class DevicesController {
     return this.setDeviceStatus(orgId, id, "logged_out", req);
   }
 
-  /** Remote wipe — device must delete local recordings + keys on next contact. */
+  /** Remote wipe - device must delete local recordings + keys on next contact. */
   @Post(":id/wipe")
   @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
   @RequireOrgRole("org_admin")
@@ -402,18 +402,18 @@ export class DevicesController {
   /**
    * Set the telecaller (name + optional employee/agent code) holding this
    * handset. Captured here, at connection time in the platform console, so a
-   * recorded call can be traced to who actually spoke it — not just which
-   * device recorded it — the moment a device is enrolled, rather than only
+   * recorded call can be traced to who actually spoke it - not just which
+   * device recorded it - the moment a device is enrolled, rather than only
    * after the fact from the org's own owner dashboard.
    *
    * Writes the same `telecallers` identity table (0017) and `devices`
-   * columns that owner.controller's setTelecaller does — this is the same
+   * columns that owner.controller's setTelecaller does - this is the same
    * feature reachable from the operator side, plus the external_id (0067)
    * that route does not collect. Re-running with the same device links back
    * to the existing telecaller row instead of creating a duplicate, so this
    * doubles as "modify": call it again to correct a name or code.
    *
-   * `reassign: true` is the other case — a genuinely different person now
+   * `reassign: true` is the other case - a genuinely different person now
    * holds this handset. Without it, calling this with a new name RENAMES the
    * existing telecaller row, which would silently relabel their whole call
    * history as the new person's (0068). `reassign` always mints a fresh
@@ -482,7 +482,7 @@ export class DevicesController {
         };
       });
     } catch (err) {
-      // Unique violation on telecallers_org_external_id (0067) — two
+      // Unique violation on telecallers_org_external_id (0067) - two
       // telecallers under this org can't share one employee/agent code.
       if ((err as { code?: string }).code === "23505") {
         throw new ConflictException(
@@ -527,8 +527,8 @@ export class DevicesController {
   /**
    * Fleet health (Phase 5): staleness + latest telemetry per device, plus a
    * computed `needsAttention` the web devices table (instance detail page)
-   * renders as a chip. A sibling to `list()` above — same table, same guard
-   * tier, richer computed fields drawn from device_health — not a
+   * renders as a chip. A sibling to `list()` above - same table, same guard
+   * tier, richer computed fields drawn from device_health - not a
    * replacement. Org-wide (not filtered to one instance) so the console can
    * fetch it once per page load and key the result by device id, instead of
    * one extra round trip per instance.

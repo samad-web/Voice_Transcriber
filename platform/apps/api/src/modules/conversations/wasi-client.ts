@@ -1,7 +1,7 @@
 import { WasiErrorResponse } from "@aura/shared";
 
 /**
- * `WasiSendRequest` minus `client_id` — hand-written rather than
+ * `WasiSendRequest` minus `client_id` - hand-written rather than
  * `Omit<WasiSendRequest, "client_id">` because `Omit` does not distribute
  * over a union, and collapses the two send shapes into one that's missing
  * both variants' own fields. `sendWasiMessage` supplies `client_id` itself
@@ -12,7 +12,7 @@ type WasiSendInput =
   | { type: "text"; to: string; body: string };
 
 /**
- * Aura as a Hub API CLIENT of Wasi (`C:\Users\mas20\Desktop\work\Wasi`) — the
+ * Aura as a Hub API CLIENT of Wasi (`C:\Users\mas20\Desktop\work\Wasi`) - the
  * user's own WhatsApp Business Solution Provider platform. This is the
  * outbound half; the inbound half (signature verification, event routing)
  * lives in messaging-webhook.controller.ts.
@@ -20,7 +20,7 @@ type WasiSendInput =
 
 export interface WasiChannel {
   apiBaseUrl: string;
-  /** Decrypted already — callers read this off `decryptSecret(channel.api_key)`. */
+  /** Decrypted already - callers read this off `decryptSecret(channel.api_key)`. */
   apiKey: string;
   wasiClientId: string;
 }
@@ -37,7 +37,7 @@ export class WasiSendError extends Error {
 }
 
 export interface WasiSendResult {
-  /** Wasi's `messages` row, `returning *` — the fields this codebase reads are typed below. */
+  /** Wasi's `messages` row, `returning *` - the fields this codebase reads are typed below. */
   metaMessageId: string | null;
   status: string;
   raw: unknown;
@@ -46,7 +46,7 @@ export interface WasiSendResult {
 /**
  * `POST /api/v1/messages`. Wasi enforces the real business rules (WABA
  * connected, consent, plan volume cap, 24h session window, template
- * approval) server-side — this is a thin, faithful client, not a
+ * approval) server-side - this is a thin, faithful client, not a
  * reimplementation of that logic. A rejection is surfaced with Wasi's own
  * `code` intact so the caller (whatsapp-send.controller.ts) can react to
  * `session_window_closed` differently from `waba_not_connected`.
@@ -87,7 +87,7 @@ export interface WasiTemplate {
 }
 
 /**
- * `GET /api/v1/templates` — for the composer's template picker. No client_id
+ * `GET /api/v1/templates` - for the composer's template picker. No client_id
  * on this one (unlike send): the Bearer key alone resolves to exactly one
  * client on Wasi's side, and a template has no separate "who is this for."
  */

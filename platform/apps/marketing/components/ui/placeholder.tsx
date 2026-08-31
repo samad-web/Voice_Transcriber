@@ -5,8 +5,8 @@ import { cn } from "@/lib/cn";
  *
  * Doc 10 §15 forbids inventing proof: no stock testimonials, no fabricated case
  * study numbers, no logo wall of companies that are not customers. Where this
- * build needs an asset it does not have — an anonymised call fixture, a signed
- * case study, a console screenshot — it renders one of these instead.
+ * build needs an asset it does not have - an anonymised call fixture, a signed
+ * case study, a console screenshot - it renders one of these instead.
  *
  * It reserves the real dimensions, so the page's vertical rhythm and CLS budget
  * are honest, and it names the asset and its blocker so the gap is a task

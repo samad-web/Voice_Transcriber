@@ -27,7 +27,7 @@ function message(overrides: Partial<NormalisedMessage> = {}): NormalisedMessage 
   };
 }
 
-describe("classify — what may enter the CRM", () => {
+describe("classify - what may enter the CRM", () => {
   it("records a message FROM a known contact as incoming", () => {
     expect(classify(message(), SELF, known)).toEqual({
       contactId: CONTACT_ID,
@@ -40,12 +40,12 @@ describe("classify — what may enter the CRM", () => {
     expect(classify(sent, SELF, known)).toEqual({ contactId: CONTACT_ID, direction: "outgoing" });
   });
 
-  it("DROPS a message with no known contact on it — the rule that keeps a private mailbox private", () => {
+  it("DROPS a message with no known contact on it - the rule that keeps a private mailbox private", () => {
     const personal = message({ from: "doctor@clinic.example", to: [SELF] });
     expect(classify(personal, SELF, known)).toBeNull();
   });
 
-  it("drops a payslip, a recruiter and a bank — none of them are contacts", () => {
+  it("drops a payslip, a recruiter and a bank - none of them are contacts", () => {
     for (const stranger of ["payroll@employer.example", "jobs@recruiter.example", "bank@bank.example"]) {
       expect(classify(message({ from: stranger, to: [SELF] }), SELF, known)).toBeNull();
     }

@@ -11,7 +11,7 @@ export interface Principal {
   /** True when authenticated via the dev x-admin-key rather than a user session. */
   viaAdminKey: boolean;
   /**
-   * Owner-console persona (design doc §9) — independent of `role` above,
+   * Owner-console persona (design doc §9) - independent of `role` above,
    * which is the operator-side tenant role. Null when the caller never
    * asserted one: a bare admin-key script/test, or a session whose
    * membership predates personas.
@@ -41,7 +41,7 @@ export interface PrincipalRequest extends Request {
    * and absent on every other route.
    *
    * Separate from `principal` on purpose. A principal answers "who is acting";
-   * an API key has no who — there is no person, no membership and no role to
+   * an API key has no who - there is no person, no membership and no role to
    * resolve, which is exactly why its permissions come from `scopes` here
    * rather than from the CRM permission grid. Keeping it in its own field means
    * no existing guard or handler can mistake a headless credential for a user.

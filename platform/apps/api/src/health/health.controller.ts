@@ -13,7 +13,7 @@ export class HealthController {
 
   @Get()
   async health() {
-    // A DB outage is the failure this probe exists to catch — an API process
+    // A DB outage is the failure this probe exists to catch - an API process
     // that is still running but can't reach Postgres answers every real
     // request with a 500, so "the process is up" alone is not "healthy".
     try {

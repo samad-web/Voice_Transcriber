@@ -32,7 +32,7 @@ export interface RescheduleSlotsResult {
 
 /**
  * The times to offer. Empty on ANY failure, exactly like the funnel's own
- * picker — doc 16 §0.4: a slot that is not real must never reach a page.
+ * picker - doc 16 §0.4: a slot that is not real must never reach a page.
  *
  * The slot the person currently holds is NOT in this list, because it is
  * `booked` and `listOpenSlots` only returns `open` rows. That is the right
@@ -90,7 +90,7 @@ export async function rescheduleToSlotAction(
 
   // Moving to the slot you are already in is a no-op the swap would report as
   // "gone" (the release succeeds, then the claim finds a row that is no longer
-  // open — itself). Caught here so the message matches what happened.
+  // open - itself). Caught here so the message matches what happened.
   if (newSlotId === session.bid) {
     return { ok: false, error: "That is the time you are already booked for." };
   }
@@ -128,20 +128,20 @@ export async function rescheduleToSlotAction(
           ok: false,
           sessionExpired: true,
           error:
-            "That booking is no longer held — it may already have been moved or cancelled. " +
+            "That booking is no longer held - it may already have been moved or cancelled. " +
             "Please get in touch and we'll sort out a new time.",
         };
   }
 
   /**
    * Google is told AFTER the swap has committed, and its failure cannot undo
-   * it — the same rule `syncBookingToCalendar` follows for a first booking. The
+   * it - the same rule `syncBookingToCalendar` follows for a first booking. The
    * database is the source of truth for who is booked when; the calendar is a
    * mirror, and a mirror that is briefly wrong is repairable by hand where a
    * lost reservation is not.
    *
    * The cancel comes first so that a failure there does not leave the person
-   * without a NEW invite as well — worst case they hold two, which is visible
+   * without a NEW invite as well - worst case they hold two, which is visible
    * and fixable, rather than none.
    */
   const meetingUrl = await syncMove(
@@ -167,7 +167,7 @@ export async function rescheduleToSlotAction(
  * Cancel the old calendar event and create a new one.
  *
  * Every failure is recorded on the row and swallowed. Both halves are
- * bookkeeping about a reservation that has already moved — see the caller.
+ * bookkeeping about a reservation that has already moved - see the caller.
  */
 async function syncMove(
   oldSlotId: string,
@@ -186,7 +186,7 @@ async function syncMove(
     } catch (err) {
       // The old slot is already released and re-bookable, so there is no row
       // left to hang this on that anybody would read. The log is the record,
-      // and the symptom — a stale event on the team's calendar — is visible in
+      // and the symptom - a stale event on the team's calendar - is visible in
       // the calendar itself.
       console.error(
         `[reschedule] could not cancel event ${oldEventId} for released slot ${oldSlotId}:`,

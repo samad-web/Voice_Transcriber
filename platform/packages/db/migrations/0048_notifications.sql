@@ -1,15 +1,15 @@
--- 0048_notifications.sql — telling a person something happened.
+-- 0048_notifications.sql - telling a person something happened.
 --
 -- The CRM has been able to assign work since A3 and has had no way to say so.
 -- A manager assigns a follow-up to a rep, the row is written correctly, and
 -- the rep finds out when they next happen to open the tasks page. That is a
--- to-do list, not a system of record — and Layer 2's rule engine makes it
+-- to-do list, not a system of record - and Layer 2's rule engine makes it
 -- worse, because a rule that fires silently is indistinguishable from a rule
 -- that never fired.
 --
 -- IN-APP ONLY, deliberately. No email, no SMS, no push. Everything in this
 -- table is visible only to somebody who has already signed in to the console,
--- so nothing here can reach a person who is not looking — which keeps
+-- so nothing here can reach a person who is not looking - which keeps
 -- notifications out of the risk class that outbound mail lives in, and out of
 -- the "an automated sender put something in front of a real customer"
 -- failure mode entirely. If a digest email is wanted later, it is a separate
@@ -53,11 +53,11 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- One notification per (user, dedupe_key). Partial, so un-keyed rows are
--- unconstrained — the same shape as interactions_call and deals(source_lead_id).
+-- unconstrained - the same shape as interactions_call and deals(source_lead_id).
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe
   ON notifications (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
 
--- "My unread ones, newest first" — the bell's only query.
+-- "My unread ones, newest first" - the bell's only query.
 CREATE INDEX IF NOT EXISTS notifications_user_unread
   ON notifications (user_id, created_at DESC) WHERE read_at IS NULL;
 CREATE INDEX IF NOT EXISTS notifications_user_all
@@ -86,7 +86,7 @@ REVOKE ALL ON notifications FROM PUBLIC;
 -- NOTE ON RLS AND PER-USER SCOPING. The policy above is the ORG boundary,
 -- which is all RLS has ever enforced in this schema. "Only my own
 -- notifications" is a second, narrower question, and it is answered in the
--- controller by a `user_id = <caller>` predicate on every query — the same
+-- controller by a `user_id = <caller>` predicate on every query - the same
 -- place `tasks?mine=1` answers it. Putting a user predicate in the policy
 -- would break every legitimate cross-user write (a manager assigning work
 -- notifies someone else) and would be the first policy in this database to

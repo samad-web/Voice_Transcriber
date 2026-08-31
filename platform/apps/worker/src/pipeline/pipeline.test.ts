@@ -38,7 +38,7 @@ describe("retryBackoffSeconds", () => {
   it("waits 30s before the first retry", () => {
     // Deliberately quick: the common case is a transient provider error that
     // has already cleared. `fail()` is called with the attempt number BEFORE it
-    // increments, so attempt 0 and attempt 1 must both yield the first delay —
+    // increments, so attempt 0 and attempt 1 must both yield the first delay -
     // this is the exact spot an off-by-one would hide.
     expect(retryBackoffSeconds(0)).toBe(30);
     expect(retryBackoffSeconds(1)).toBe(30);
@@ -51,7 +51,7 @@ describe("retryBackoffSeconds", () => {
   });
 
   it("caps at one hour rather than continuing to quadruple", () => {
-    // Unclamped, attempt 5 would be 7,680s (2h08m) — past the point where a
+    // Unclamped, attempt 5 would be 7,680s (2h08m) - past the point where a
     // retry is still the same incident.
     expect(retryBackoffSeconds(5)).toBe(3600);
     expect(retryBackoffSeconds(6)).toBe(3600);
@@ -78,7 +78,7 @@ describe("retryBackoffSeconds", () => {
   it("spans roughly half an hour of trying across the whole attempt budget", async () => {
     // The property the doc comment claims, asserted rather than asserted-in-prose:
     // 30 + 30 + 120 + 480 + 1920 = 2,580s ≈ 43 minutes before a call retires.
-    // Against the DEFAULT budget — an operator who raises PIPELINE_MAX_ATTEMPTS
+    // Against the DEFAULT budget - an operator who raises PIPELINE_MAX_ATTEMPTS
     // is choosing a longer span, not breaking this claim.
     const { MAX_PIPELINE_ATTEMPTS } = await loadWithDefaultBudget();
     const total = Array.from({ length: MAX_PIPELINE_ATTEMPTS }, (_, i) =>
@@ -99,7 +99,7 @@ describe("MAX_PIPELINE_ATTEMPTS", () => {
 
   it("is a positive integer, so the retire check can never be vacuous", async () => {
     // `Number(process.env.…)` yields NaN for a malformed value, and every
-    // `attempts >= MAX_PIPELINE_ATTEMPTS` comparison against NaN is false —
+    // `attempts >= MAX_PIPELINE_ATTEMPTS` comparison against NaN is false -
     // a call would then retry forever.
     const { MAX_PIPELINE_ATTEMPTS } = await loadWithDefaultBudget();
     expect(Number.isInteger(MAX_PIPELINE_ATTEMPTS)).toBe(true);

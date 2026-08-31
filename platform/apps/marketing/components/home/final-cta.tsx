@@ -2,7 +2,7 @@ import { Section } from "../ui/layout";
 import { CTABanner } from "../ui/cta-banner";
 import { WA_MESSAGES, startHref } from "@/lib/site";
 
-/** Final CTA (doc 10 §3 row 13). WhatsApp again — it is the one CTA this
+/** Final CTA (doc 10 §3 row 13). WhatsApp again - it is the one CTA this
  *  segment actually uses, and repeating it is the point. */
 export function FinalCta() {
   return (

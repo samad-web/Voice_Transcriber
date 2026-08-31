@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * The abandoned-form nudge, tested where it can hurt: WHO it decides to message.
  *
- * These go to people who did not finish a form — the least engaged audience the
- * funnel contacts — over an ordinary WhatsApp account on Evolution's unofficial
+ * These go to people who did not finish a form - the least engaged audience the
+ * funnel contacts - over an ordinary WhatsApp account on Evolution's unofficial
  * protocol, where volume to non-contacts is what gets a number banned. A wrong
  * predicate does not throw; it messages strangers. So every guard clause is
  * asserted as query text and fails if it is deleted.
@@ -106,7 +106,7 @@ describe("the two stages", () => {
   });
 
   it("ignores a nonsense delay rather than sending immediately", async () => {
-    // "" is what docker-compose `${VAR:-}` produces, and Number("") is 0 —
+    // "" is what docker-compose `${VAR:-}` produces, and Number("") is 0 -
     // which as an interval means "nudge everyone the instant they arrive".
     // The same empty-string class of bug silently disabled the calendar on
     // 2026-08-10.

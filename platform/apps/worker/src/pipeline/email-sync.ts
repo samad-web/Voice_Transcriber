@@ -33,7 +33,7 @@ import {
  * correctness requirement.
  *
  * Runs on the ADMIN pool to enumerate connections across orgs, then does all
- * per-tenant work inside withOrgContext — the same shape backfill-crm-objects
+ * per-tenant work inside withOrgContext - the same shape backfill-crm-objects
  * and the CRM outbox use.
  */
 
@@ -77,7 +77,7 @@ export async function refreshAccessToken(
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ accessToken: string; expiresIn: number | null; refreshToken: string | null }> {
   const spec = connectionProvider(provider);
-  if (!spec?.oauth) throw new Error(`${provider} cannot refresh — not an oauth provider`);
+  if (!spec?.oauth) throw new Error(`${provider} cannot refresh - not an oauth provider`);
 
   const clientId = process.env[spec.oauth.clientIdEnv];
   const clientSecret = process.env[spec.oauth.clientSecretEnv];
@@ -115,7 +115,7 @@ export async function refreshAccessToken(
  *
  * Direction is judged from the connected account's own address: a message it
  * sent is outgoing, anything else incoming. Returns null when neither side is
- * a known contact — the drop that keeps a private mailbox private.
+ * a known contact - the drop that keeps a private mailbox private.
  */
 export function classify(
   message: NormalisedMessage,
@@ -173,7 +173,7 @@ export async function syncConnection(
   }
   // The stub needs no credential; every real adapter does.
   if (!accessToken && process.env.EMAIL_STUB !== "1") {
-    return { ...base, reason: "no usable access token — reconnect required" };
+    return { ...base, reason: "no usable access token - reconnect required" };
   }
 
   // ── fetch ───────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ export async function syncAllMailboxes(fetchImpl: typeof fetch = fetch): Promise
         );
       }
     } catch (err) {
-      // A dead token is parked immediately rather than after five tries —
+      // A dead token is parked immediately rather than after five tries -
       // retrying a revoked grant never succeeds and only burns rate limit.
       const dead = err instanceof ProviderHttpError && err.needsReconnect;
       await getAdminPool().query(

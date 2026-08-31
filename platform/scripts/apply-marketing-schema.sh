@@ -21,7 +21,7 @@
 #   GRANT         column-scoped UPDATE on funnel_contact_history            (0022)
 #
 # Every statement is additive and confined to the new `marketing` schema. It does
-# not read, alter, or drop anything in `public` — no tenant table, no call, no
+# not read, alter, or drop anything in `public` - no tenant table, no call, no
 # recording, no user. The only statements touching pre-existing objects are the
 # REVOKEs, and those revoke access TO THE NEW SCHEMA from roles that should never
 # have had it.
@@ -30,7 +30,7 @@
 # WHY THE PASSWORD ROTATION IS NOT OPTIONAL
 #
 # Migration 0020 creates the role with the literal password
-# 'aura_marketing_password' — a development default that is committed to this
+# 'aura_marketing_password' - a development default that is committed to this
 # repository and present in its git history. On a production database that is a
 # working login for anyone who can read the repo.
 #
@@ -42,8 +42,8 @@
 # ONE THING TO UNDERSTAND BEFORE RUNNING IT AGAINST PRODUCTION
 #
 # After this, a public and unauthenticated web server holds a credential to the
-# database that stores real customer call recordings. The role is walled off —
-# no USAGE on `public`, NOBYPASSRLS, no DELETE anywhere — so a compromise of the
+# database that stores real customer call recordings. The role is walled off -
+# no USAGE on `public`, NOBYPASSRLS, no DELETE anywhere - so a compromise of the
 # marketing server yields the funnel tables and nothing else. That is a real and
 # deliberate reduction of blast radius, not an argument that the risk is zero:
 # the marketing host gains a network path and a valid login where it previously
@@ -99,7 +99,7 @@ echo "── rotating aura_marketing off the repo default ───────�
 # psql does NOT perform variable interpolation on a -c command string, so
 # `-v pw=… -c "ALTER ROLE … PASSWORD :'pw'"` sends the literal `:'pw'` to the
 # server and fails with a syntax error. That happened on the first production
-# run: both migrations applied, then this step died — leaving the role live with
+# run: both migrations applied, then this step died - leaving the role live with
 # the repo's committed default password until it was rotated by hand.
 #
 # Interpolation works for input read from a file or stdin, hence `-f -`. The
@@ -110,7 +110,7 @@ printf "ALTER ROLE aura_marketing PASSWORD '%s';\n" "$PW" \
 
 # Write the password BEFORE the verification block. Previously it was written
 # after, so a failure anywhere between generating it and the end of the script
-# lost the only copy — which is exactly what happened.
+# lost the only copy - which is exactly what happened.
 umask 077
 printf '%s\n' "$PW" > "$PW_OUT"
 echo "new password written to: $PW_OUT   (chmod 600, not printed)"
@@ -121,7 +121,7 @@ if "$PSQL" "$DEFAULT_URL" -At -c "SELECT 1;" >/dev/null 2>&1; then
   echo "!! FATAL: the default password STILL WORKS. Rotate it by hand now." >&2
   exit 70
 fi
-echo "ok — default password rejected"
+echo "ok - default password rejected"
 
 
 echo

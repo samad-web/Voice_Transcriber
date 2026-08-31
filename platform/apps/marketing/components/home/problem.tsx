@@ -2,7 +2,7 @@ import { Section } from "../ui/layout";
 
 /**
  * The problem, in the owner's words. Doc 10 §3 row 2: typography only, no
- * illustration — the point is recognition, and a stock graphic gets in the way
+ * illustration - the point is recognition, and a stock graphic gets in the way
  * of it.
  *
  * The 400-calls figure is illustrative and reads as such in context ("your

@@ -12,7 +12,7 @@ import { enqueueFollowUp } from "./funnel-followup-outbox";
  * The outbox's unique key is (submission_id, template, channel), and that is
  * what makes "never message the same person twice for the same thing" a
  * database guarantee rather than a promise in application code. A second nudge
- * is therefore a second template rather than a counter — which also lets the
+ * is therefore a second template rather than a counter - which also lets the
  * operator word the follow-up differently and switch either one off alone.
  *
  * Nobody ever gets a third. There is no template for one.
@@ -21,7 +21,7 @@ import { enqueueFollowUp } from "./funnel-followup-outbox";
  *
  * Both delays are measured from `created_at`. Timing the second from when the
  * first was actually SENT would couple it to outbox latency and to however long
- * the worker happened to be down — a two-day gap could silently become five.
+ * the worker happened to be down - a two-day gap could silently become five.
  * From the enquiry, the schedule is what it says it is.
  */
 
@@ -31,7 +31,7 @@ const SECOND_AFTER_MINUTES = positiveInt(process.env.FUNNEL_NUDGE_SECOND_MINUTES
 /**
  * Past this, stop. Somebody who half-filled a form five weeks ago and never
  * came back is not going to be recovered by a message that opens "you started
- * telling us about your business" — they will read it as a company that
+ * telling us about your business" - they will read it as a company that
  * harvested their number. The outbox has its own 14-day expiry for messages
  * that sat undelivered; this is about not QUEUING an ancient one in the first
  * place, which is a different question with a different answer.

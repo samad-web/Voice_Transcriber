@@ -18,7 +18,7 @@ import { emailConfigured } from "./funnel-followup";
  * So this sweep does not decide WHEN to send. It notices a booking once, works
  * out the three instants from `starts_at`, and inserts three rows already
  * stamped with those instants. The drain's ordinary `next_attempt_at <= now()`
- * check then fires each one at its hour — no window, no tolerance constant, and
+ * check then fires each one at its hour - no window, no tolerance constant, and
  * a worker that was down for six hours sends what it owes on the next tick
  * (subject to the drain's own overdue expiry, which is what stops it sending a
  * reminder for a call that has already happened).
@@ -30,7 +30,7 @@ import { emailConfigured } from "./funnel-followup";
  *
  * Somebody can book a slot ninety minutes out. Queueing the 24-hour reminder
  * for them means queueing a row whose send time is yesterday, which the drain
- * would either fire immediately ("your call is tomorrow" — it is not) or expire
+ * would either fire immediately ("your call is tomorrow" - it is not) or expire
  * as overdue. Both are noise. A booking gets only the reminders that are still
  * in its future, so a same-day booking gets one or two rather than three.
  *
@@ -38,8 +38,8 @@ import { emailConfigured } from "./funnel-followup";
  *
  * `getFollowUpDispatcher()` falls back to a log-only dispatcher when no
  * provider is configured, and log-only marks a row `sent` with a `log-only:`
- * id. That convention is right for a rejection — the row is the record that the
- * message existed, and the prefix makes the never-delivered ones findable — but
+ * id. That convention is right for a rejection - the row is the record that the
+ * message existed, and the prefix makes the never-delivered ones findable - but
  * queueing a second, undeliverable copy of every reminder would double this
  * table for no gain and make "what did we send this person" harder to read. So
  * the email half turns itself on the day a provider is configured, and stays
@@ -58,7 +58,7 @@ const STAGES: ReadonlyArray<{ template: MessageTemplateKey; minutesBefore: numbe
  *
  * Bounded rather than "all future bookings" so the first tick after a deploy
  * does not walk the whole diary. Anything further out is picked up on a later
- * tick, long before its 24-hour reminder is due — the sweep runs every five
+ * tick, long before its 24-hour reminder is due - the sweep runs every five
  * minutes and the window is measured in days.
  */
 const HORIZON_DAYS = positiveInt(process.env.CALL_REMINDER_HORIZON_DAYS, 30);
@@ -112,7 +112,7 @@ export async function sweepCallReminders(): Promise<number> {
       try {
         await enqueueBookingNotification(pool, row.id, stage.template, "whatsapp", sendAt);
         queued++;
-        // reminder_call_5m has no email copy on purpose — five minutes is not
+        // reminder_call_5m has no email copy on purpose - five minutes is not
         // enough notice for mail to be read, and renderMessage would refuse it.
         if (withEmail && stage.template !== "reminder_call_5m") {
           await enqueueBookingNotification(pool, row.id, stage.template, "email", sendAt);
@@ -135,7 +135,7 @@ export async function sweepCallReminders(): Promise<number> {
 /**
  * Every 5 minutes.
  *
- * Nothing here is time-critical, because this sweep only SCHEDULES — the drain
+ * Nothing here is time-critical, because this sweep only SCHEDULES - the drain
  * is what sends, and it reads the instant off the row. A booking made three
  * minutes ago being noticed two minutes from now changes nothing about when its
  * reminders arrive. The only case that cares is a booking made less than five

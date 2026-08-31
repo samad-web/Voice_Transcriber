@@ -3,19 +3,19 @@
  *
  * Two halves, and both matter:
  *
- *   STRUCTURAL — every table in the public schema that carries an `org_id` is
+ *   STRUCTURAL - every table in the public schema that carries an `org_id` is
  *   ENUMERATED from the catalog and must have RLS enabled, FORCED, and a real
  *   org_isolation policy with both USING and WITH CHECK. This half used to not
  *   exist. The old version asserted six behaviours across FOUR tables from a
  *   hand-written list (workspaces, organizations, telecallers, audit_log) while
- *   21 tables carry org_id — so a migration that added a tenant table and
+ *   21 tables carry org_id - so a migration that added a tenant table and
  *   forgot its policy reported ALL PASS. Worse, 0007's FORCE-RLS loop derives
  *   its table list from pg_policies, so a policy-less table is skipped rather
  *   than broken: it ends up with relrowsecurity=false AND relforcerowsecurity
  *   =false and looks exactly like a legitimate non-tenant table. Nothing else
  *   in the system catches that. This does.
  *
- *   BEHAVIOURAL — the original six assertions, unchanged in substance: seed two
+ *   BEHAVIOURAL - the original six assertions, unchanged in substance: seed two
  *   orgs as the owner, then prove as `aura_app` that cross-tenant reads return
  *   nothing and cross-tenant writes are rejected. Structure can be right on
  *   paper and still not bind (that is precisely what FORCE ROW LEVEL SECURITY
@@ -23,17 +23,17 @@
  *   proof is worth keeping alongside the enumeration.
  *
  * Run the full check after every migration in CI, against the ephemeral
- * Postgres — so a bad migration fails the deploy instead of leaking silently.
+ * Postgres - so a bad migration fails the deploy instead of leaking silently.
  *
  *   node verify-rls.js
  *
  * SAFETY: the full run SEEDS AND DELETES (behaviouralChecks). See
- * assertDisposable() below — it refuses to run against anything but a
+ * assertDisposable() below - it refuses to run against anything but a
  * local/disposable host unless RLS_TEST_ALLOW_REMOTE=1 is set explicitly.
  *
  *   node verify-rls.js --structural-only
  *
- * The read-only half alone — safe against, and meant for, the production
+ * The read-only half alone - safe against, and meant for, the production
  * migrate container (docker-compose.prod.yml's `migrate` service), which
  * `assertDisposable()` would otherwise refuse outright since Supabase is
  * never a local host. See the STRUCTURAL_ONLY branch in main() below.
@@ -58,14 +58,14 @@ const APP_URL =
  *                     sso_subject for EVERY tenant and has no RLS at all, so
  *                     its tenant boundary is 100% application code (AuthService
  *                     runs on the RLS-bypassing owner pool). That is a known,
- *                     unfixed exposure — it is listed here so the allowlist
+ *                     unfixed exposure - it is listed here so the allowlist
  *                     states it out loud rather than hiding it.
  *   schema_migrations this runner's own bookkeeping; 0001 revokes it from
  *                     aura_app entirely.
  *   payment_webhook_events (0060) Razorpay webhook idempotency ledger. Read
  *                     and written entirely on the admin pool by
  *                     razorpay-webhook.controller.ts, which resolves the org
- *                     from the payment_link id in the (untrusted) payload —
+ *                     from the payment_link id in the (untrusted) payload -
  *                     it cannot run inside the org context it is trying to
  *                     establish, the same bootstrap exception
  *                     messaging_channels.webhook_token resolution documents.
@@ -80,7 +80,7 @@ const NON_TENANT_TABLES = new Set(["users", "schema_migrations", "payment_webhoo
  * on the reviewed allowlist (doc 16 §3.1), and it is a separate list rather than
  * a third entry in NON_TENANT_TABLES for an accurate reason:
  *
- *   EVERY query in structuralChecks() is scoped to `public` — the
+ *   EVERY query in structuralChecks() is scoped to `public` - the
  *   information_schema sweep filters `table_schema = 'public'`, the pg_class
  *   sweep filters `relnamespace = 'public'::regnamespace`, and the pg_policies
  *   sweep filters `schemaname = 'public'`. A table in another schema is
@@ -89,13 +89,13 @@ const NON_TENANT_TABLES = new Set(["users", "schema_migrations", "payment_webhoo
  *   like an exemption that is doing work, and would do nothing.
  *
  *   marketing  0020_funnel_submissions.sql. Inbound marketing enquiries from
- *              strangers: no org, no workspace, no call, no tenant — the exact
+ *              strangers: no org, no workspace, no call, no tenant - the exact
  *              opposite of public.leads, which is a per-tenant product object
  *              (doc 16 §0.1 on why the names had to differ). Forcing it into
  *              `public` would have meant either a fake org_id or a genuine
  *              widening of this allowlist. Its boundary is the schema plus a
  *              dedicated login role, `aura_marketing`, which holds no privilege
- *              on `public` at all — see 0020's grant block.
+ *              on `public` at all - see 0020's grant block.
  *
  * The check below is the part that keeps this honest: it asserts these schemas
  * stay tenant-free, so a later migration that quietly adds an org_id to one of
@@ -105,7 +105,7 @@ const REVIEWED_NON_TENANT_SCHEMAS = ["marketing"];
 
 /**
  * The org_id tables as of migration 0018. This is a FLOOR, never the source of
- * truth — the checks below run over whatever the catalog reports, so a table
+ * truth - the checks below run over whatever the catalog reports, so a table
  * added by migration 0019 is covered without touching this file. What the list
  * catches is the opposite failure: an enumeration query that silently stops
  * returning rows (a schema rename, a permissions change, a typo) would
@@ -137,7 +137,7 @@ const KNOWN_TENANT_TABLES = [
 
 let failures = 0;
 function assert(name, cond, detail = "") {
-  console.log(`${cond ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`${cond ? "PASS" : "FAIL"}  ${name}${detail ? ` - ${detail}` : ""}`);
   if (!cond) failures++;
 }
 
@@ -147,7 +147,7 @@ function assert(name, cond, detail = "") {
 
 /**
  * Same host set as ssl.js: loopback plus the compose/CI service names. A host
- * in here is a throwaway database — docker-compose locally, a `services:`
+ * in here is a throwaway database - docker-compose locally, a `services:`
  * container in GitHub Actions.
  */
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
@@ -157,8 +157,8 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"])
  * `DELETE FROM organizations WHERE name LIKE 'rls-test-%'`, and organizations
  * cascades to every tenant table. DATABASE_URL/APP_DATABASE_URL default to
  * localhost, but a developer who has exported production credentials in that
- * shell — which is exactly what deploying and debugging this platform requires
- * — runs those DELETEs, plus two org INSERTs, against live customer data. One
+ * shell - which is exactly what deploying and debugging this platform requires
+ * - runs those DELETEs, plus two org INSERTs, against live customer data. One
  * exported variable stands between this script and a production incident.
  *
  * So: refuse, by host, and make the override explicit and deliberate.
@@ -169,7 +169,7 @@ function assertDisposable(label, url) {
     // IPv6 hostnames come back bracketed from the URL parser.
     host = new URL(url).hostname.replace(/^\[|\]$/g, "");
   } catch {
-    console.error(`${label} is not a parseable connection URL — refusing to run.`);
+    console.error(`${label} is not a parseable connection URL - refusing to run.`);
     process.exit(1);
   }
   if (LOCAL_HOSTS.has(host)) return;
@@ -184,7 +184,7 @@ function assertDisposable(label, url) {
     [
       `REFUSING TO RUN: ${label} points at "${host}".`,
       "",
-      "verify-rls.js is destructive — it INSERTs two organizations and runs",
+      "verify-rls.js is destructive - it INSERTs two organizations and runs",
       "DELETE FROM organizations WHERE name LIKE 'rls-test-%', which cascades",
       "to every tenant table. It is only ever meant to run against a disposable",
       "database (docker-compose, or the ephemeral Postgres service in CI).",
@@ -268,7 +268,7 @@ async function structuralChecks(admin) {
 
   // 2. The policy has to be the real one. A policy that exists but reads
   //    `USING (true)`, or one with a USING and no WITH CHECK, passes check 1
-  //    while permitting exactly what RLS is here to stop — a USING-only policy
+  //    while permitting exactly what RLS is here to stop - a USING-only policy
   //    blocks cross-tenant READS and silently allows cross-tenant WRITES.
   const weak = [];
   for (const t of tenantTables) {
@@ -313,7 +313,7 @@ async function structuralChecks(admin) {
   );
 
   // 4. Closure over the allowlist. A new table with no org_id is not
-  //    self-evidently fine — `device_health` and `sessions` both look like
+  //    self-evidently fine - `device_health` and `sessions` both look like
   //    infrastructure and both carry tenant data. Force the question to be
   //    answered by an edit to NON_TENANT_TABLES.
   const unaccounted = [...rls.keys()].filter(
@@ -327,7 +327,7 @@ async function structuralChecks(admin) {
 
   // 4b. The reviewed non-tenant schemas stay tenant-free. Every check above is
   //     scoped to `public`, so a table in `marketing` is invisible to all of
-  //     them — including the closure check that would otherwise catch a new
+  //     them - including the closure check that would otherwise catch a new
   //     org_id table with no policy. This is the one assertion that covers it:
   //     if a later migration adds an org_id column anywhere in one of those
   //     schemas, that table is tenant data sitting outside the RLS model, and
@@ -347,7 +347,7 @@ async function structuralChecks(admin) {
     `reviewed non-tenant schemas (${REVIEWED_NON_TENANT_SCHEMAS.join(", ")}) carry no org_id table`,
     offSchemaTenantRows.length === 0,
     offSchemaTenantRows.length
-      ? `org_id found in: ${offSchemaTenantRows.map((r) => r.name).join(", ")} — ` +
+      ? `org_id found in: ${offSchemaTenantRows.map((r) => r.name).join(", ")} - ` +
           "either move it into public with an org_isolation policy, or remove the column"
       : "",
   );
@@ -356,7 +356,7 @@ async function structuralChecks(admin) {
   //    ALREADY behind these two constraints (CallStatus has no
   //    TRANSCRIPTION_OFF, added by 0014 and written by pipeline.ts; CrmSyncStatus
   //    has no 'dead', added by 0008 and written by outbox.ts). The database is
-  //    the authority on legal values, so assert the values here — a fixture
+  //    the authority on legal values, so assert the values here - a fixture
   //    built from the stale TypeScript union produces tests that pass while the
   //    code is wrong.
   const { rows: constraints } = await admin.query(`
@@ -432,7 +432,7 @@ async function behaviouralChecks(admin, app) {
   assert("org B sees exactly one organizations row (its own)", orgVis.rows[0].n === 1);
   await app.query("ROLLBACK");
 
-  // 5. telecallers (0017) — same org-isolation shape as workspaces
+  // 5. telecallers (0017) - same org-isolation shape as workspaces
   await app.query("BEGIN");
   await app.query("SELECT set_config('app.org_id', $1, true)", [orgA.id]);
   await app.query("INSERT INTO telecallers (org_id, display_name) VALUES ($1, 'Test Telecaller A')", [
@@ -474,13 +474,13 @@ async function behaviouralChecks(admin, app) {
 
   // 7. usage_events is the other append-only surface (0001 and 0007 both REVOKE
   //    UPDATE, DELETE on it, exactly as they do for audit_log) and was the only
-  //    one of the two never asserted. It is the metering ledger — a tenant-facing
+  //    one of the two never asserted. It is the metering ledger - a tenant-facing
   //    write path that could edit it is a billing integrity problem, not just a
   //    tidiness one.
   //    ONE FAILING STATEMENT PER TRANSACTION. Postgres aborts the whole
   //    transaction block on the first error, so a second probe in the same
   //    BEGIN comes back with "current transaction is aborted, commands ignored
-  //    until end of transaction block" — never "permission denied" — and the
+  //    until end of transaction block" - never "permission denied" - and the
   //    assertion fails no matter how the grants are set. Each probe therefore
   //    gets its own BEGIN/ROLLBACK.
   await app.query("BEGIN");
@@ -498,7 +498,7 @@ async function behaviouralChecks(admin, app) {
   await app.query("SELECT set_config('app.org_id', $1, true)", [orgA.id]);
   let usageUpdateBlocked = false;
   try {
-    // `quantity`, not `qty` — 0001_init.sql:277. A wrong column name raises
+    // `quantity`, not `qty` - 0001_init.sql:277. A wrong column name raises
     // "column ... does not exist" during parse analysis, before the executor's
     // ACL check ever runs, so the probe would assert nothing at all.
     await app.query("UPDATE usage_events SET quantity = 0 WHERE org_id = $1", [orgA.id]);
@@ -514,18 +514,18 @@ async function behaviouralChecks(admin, app) {
 
 /**
  * `--structural-only`: the read-only half, deliberately runnable against
- * production (08 §1.5 — "the run it in the migrate container half is
+ * production (08 §1.5 - "the run it in the migrate container half is
  * structurally blocked: production is Supabase, so the guard refuses, and
  * the only override re-enables the destructive path against live data").
  *
- * `structuralChecks` never writes — it enumerates `information_schema`,
+ * `structuralChecks` never writes - it enumerates `information_schema`,
  * `pg_class`, `pg_policies` and `pg_constraint`. `assertDisposable()` exists
  * to stop `behaviouralChecks`' seed-and-DELETE from reaching a real tenant,
  * so it has nothing to guard here and would only ever do the wrong thing:
  * refuse the one place this half is most needed, which is exactly the
  * migrate container on a production deploy, where the point is to fail a bad
  * migration before it ships rather than to seed test data into Supabase.
- * No APP_DATABASE_URL / `app` client either — the behavioural half is the
+ * No APP_DATABASE_URL / `app` client either - the behavioural half is the
  * only thing that ever needed the `aura_app` role.
  */
 const STRUCTURAL_ONLY = process.argv.includes("--structural-only");

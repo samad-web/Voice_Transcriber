@@ -6,12 +6,12 @@ import { signPayload, verifyPayload } from "./signing";
  * The token → picker handoff for a reschedule. SERVER ONLY.
  *
  * `/reschedule/<token>` verifies the token and needs `/reschedule` to know
- * which booking is being moved. The obvious implementation — the slot id in the
- * URL or a hidden input — is a broken-access-control bug on a public page:
+ * which booking is being moved. The obvious implementation - the slot id in the
+ * URL or a hidden input - is a broken-access-control bug on a public page:
  * anyone could post any slot id and release a stranger's appointment.
  *
  * So the ids never reach the DOM. They live in a signed, httpOnly cookie that
- * only this server can mint and only this server can read — the same design
+ * only this server can mint and only this server can read - the same design
  * ./session.ts uses for the step-1 → step-2 handoff, reusing the same HMAC
  * primitives rather than growing a second one.
  *
@@ -19,8 +19,8 @@ import { signPayload, verifyPayload } from "./signing";
  *
  * It carries `hid`, a contact-history row, which is meaningless here; it does
  * not carry a booking id, which is the whole point; and it lives for 24 hours
- * to cover somebody finishing a form tomorrow. A reschedule is one sitting —
- * open the link, look at the times, pick one — so it gets a short life of its
+ * to cover somebody finishing a form tomorrow. A reschedule is one sitting -
+ * open the link, look at the times, pick one - so it gets a short life of its
  * own rather than borrowing a long one. Two purposes, two cookies, neither able
  * to be mistaken for the other.
  */
@@ -34,15 +34,15 @@ const COOKIE = "aura_reschedule_sid";
  * shared or public machine does not leave a stranger's appointment movable for
  * the rest of the day. Unlike the funnel session there is nothing to type here,
  * so the "I'll finish this tomorrow" case that forced that one to 24 hours does
- * not arise — and if it does, the link itself still works and mints a new
+ * not arise - and if it does, the link itself still works and mints a new
  * cookie.
  */
 const TTL_MS = 60 * 60 * 1000;
 
 export interface RescheduleSession {
-  /** booking_slots.id — the booking being moved. */
+  /** booking_slots.id - the booking being moved. */
   bid: string;
-  /** funnel_submissions.id — who it belongs to. The authorisation check. */
+  /** funnel_submissions.id - who it belongs to. The authorisation check. */
   sid: string;
   /** issued-at, epoch ms */
   iat: number;
@@ -80,7 +80,7 @@ export async function getRescheduleSession(): Promise<RescheduleSession | null> 
   if (!payload || typeof payload.iat !== "number") return null;
   if (Date.now() - payload.iat > TTL_MS) return null;
   // Shape check on both ids. They travel into parameterised queries, so this is
-  // not an injection defence — it is what stops a malformed value turning into
+  // not an injection defence - it is what stops a malformed value turning into
   // a Postgres `invalid input syntax for type uuid`, which is a 500 rather than
   // the "this link has expired" the visitor should see.
   if (!isUuid(payload.bid) || !isUuid(payload.sid)) return null;

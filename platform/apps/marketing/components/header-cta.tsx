@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * The header's one call to action — everywhere except the page it points at.
+ * The header's one call to action - everywhere except the page it points at.
  *
  * ── WHY IT DISAPPEARS ON /start ────────────────────────────────────────────
  *
  * `/start` IS the booking form. A sticky button that follows you down it saying
  * "Book my call" links to the page you are already reading, so it does nothing
- * — and on a phone it sits directly above a form whose own submit button is the
+ * - and on a phone it sits directly above a form whose own submit button is the
  * real action, competing with it for the same decision. A CTA that cannot be
  * acted on is not urgency, it is furniture.
  *
@@ -23,7 +23,7 @@ import { usePathname } from "next/navigation";
  * already sent.
  *
  * `usePathname` resolves during the server render too, so the button is absent
- * from the HTML on /start rather than being sent and then removed — no flash,
+ * from the HTML on /start rather than being sent and then removed - no flash,
  * and nothing for a reader on a slow connection to tap before it vanishes.
  *
  * It does mean the header is no longer literally zero-JavaScript, which its own

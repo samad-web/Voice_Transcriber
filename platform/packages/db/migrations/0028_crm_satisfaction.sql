@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0028 — "are you happy with your CRM?"
+-- 0028 - "are you happy with your CRM?"
 --
 -- Asked only when has_crm = 'yes'. Owner's request, 2026-08-09.
 --
@@ -32,7 +32,7 @@ ALTER TABLE marketing.funnel_submissions
 -- 0020 records every submission's ANSWERS as a history row, so a repeat
 -- enquirer's changing answers are visible rather than overwritten. A new answer
 -- that lands only on the submission would be invisible the moment someone fills
--- the form twice — and "we were unhappy with our CRM in March and fine with it
+-- the form twice - and "we were unhappy with our CRM in March and fine with it
 -- in August" is exactly the kind of change this table exists to capture.
 ------------------------------------------------------------------------------
 
@@ -63,7 +63,7 @@ ALTER TABLE marketing.funnel_contact_history
 --
 -- So the statement below is load-bearing exactly once. Without it the public
 -- site would capture this answer and fail with "permission denied for column
--- crm_satisfied" the first time a repeat visitor ticked it — at step 2, which
+-- crm_satisfied" the first time a repeat visitor ticked it - at step 2, which
 -- is the step 0022 already had to repair for precisely this reason.
 ------------------------------------------------------------------------------
 

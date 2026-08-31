@@ -1,7 +1,7 @@
 import { PageHeaderSkeleton, StatGridSkeleton } from "@/components/skeletons";
 import { Card, Skeleton } from "@aura/ui";
 
-// Literal Tailwind classes, not a computed percentage — Tailwind v4 only
+// Literal Tailwind classes, not a computed percentage - Tailwind v4 only
 // generates CSS for class names it can see statically in source.
 const BAR_HEIGHTS = [
   "h-16", "h-28", "h-20", "h-32", "h-24", "h-12", "h-36",
@@ -12,7 +12,7 @@ const BAR_HEIGHTS = [
  * The dashboard's own skeleton (mirrors owner/page.tsx: window pill row, 4
  * stat cards, two side-by-side chart cards, a telecaller table, a recent
  * activity list). The group-level (owner)/loading.tsx below this one in the
- * tree is a generic last-resort for a route that hasn't got its own — every
+ * tree is a generic last-resort for a route that hasn't got its own - every
  * route now does, this being the dashboard's.
  */
 export default function DashboardLoading() {

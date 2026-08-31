@@ -11,8 +11,8 @@ import { getPrincipal, isOperator } from "@/lib/owner-context";
  * of the same pass, and a page that fetches with the root admin key on an
  * `orgId` taken from `?org=`/`[id]` does that fetching on its own schedule,
  * not after the layout's decision. The same reasoning that put
- * `requireOperator()` at the top of every Server Action — the guard has to be
- * the first thing that runs, not a wrapper hoping to run first — applies here.
+ * `requireOperator()` at the top of every Server Action - the guard has to be
+ * the first thing that runs, not a wrapper hoping to run first - applies here.
  *
  * A Server Action has no render to fall back to, so it throws. A page IS a
  * render, so it can express "you may not see this" as its own return value.
@@ -25,7 +25,7 @@ import { getPrincipal, isOperator } from "@/lib/owner-context";
  * Note what this does NOT forbid: an operator naming any `orgId` they like.
  * That is what a platform operator is for. The defect this closes is that the
  * fetch could run before anyone had checked the caller was an operator at
- * all — not that operators can cross tenants.
+ * all - not that operators can cross tenants.
  */
 export async function operatorGate() {
   const principal = await getPrincipal();

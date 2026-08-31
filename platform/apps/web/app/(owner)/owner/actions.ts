@@ -7,8 +7,8 @@ import type { Lead, LeadCall, Stage } from "./types";
 
 /**
  * Every action re-resolves the owner from the session rather than trusting an
- * org id from the client. A server action is a public endpoint — anything it
- * accepts as an argument, a caller can forge — so the tenant is derived, never
+ * org id from the client. A server action is a public endpoint - anything it
+ * accepts as an argument, a caller can forge - so the tenant is derived, never
  * passed in.
  */
 export async function ownerHeaders(): Promise<Record<string, string> | null> {
@@ -48,7 +48,7 @@ export async function errorText(res: Response): Promise<string> {
 
 /**
  * Shared PATCH + parse-error + revalidate shape for updateLeadAction (below)
- * and updateDealAction (crm-actions.ts) — structurally the same operation on
+ * and updateDealAction (crm-actions.ts) - structurally the same operation on
  * two record types, differing only in the endpoint, the payload, and which
  * paths need revalidating after a successful save.
  */
@@ -77,7 +77,7 @@ export async function patchRecordAction<T>(
 }
 
 /**
- * Edit a lead — a stage move from the board, or a note from the drawer.
+ * Edit a lead - a stage move from the board, or a note from the drawer.
  *
  * The board applies the move optimistically and calls this; on failure it
  * rolls the card back, so the returned error matters.
@@ -114,7 +114,7 @@ export async function fetchLeadAction(
  * Put a human name against a handset so the dashboard ranks people.
  *
  * `reassign: true` mints a fresh telecaller identity instead of renaming the
- * current one — use it when the phone has genuinely changed hands, not to
+ * current one - use it when the phone has genuinely changed hands, not to
  * fix a typo in the existing holder's name.
  */
 export async function setTelecallerNameAction(

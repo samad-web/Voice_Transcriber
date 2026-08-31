@@ -5,7 +5,7 @@
  * `common/admin-key.guard.ts` (ADMIN_API_KEY), and `common/device-auth.guard.ts`,
  * `common/device-nonce.ts`, `modules/devices/devices.controller.ts`,
  * `modules/tenancy/erasure.controller.ts` (JWT_SECRET). Those defaults exist so
- * `pnpm dev` works with no setup, which is worth keeping — right up until the
+ * `pnpm dev` works with no setup, which is worth keeping - right up until the
  * same image boots in production with one variable missing, at which point a
  * string published in this repository is a working root credential on the open
  * internet. There is no compose flag, no typo and no fresh container that makes
@@ -14,7 +14,7 @@
  * So the fix is not to delete the dev defaults (that turns local dev into a
  * config exercise) but to make it impossible to REACH production carrying them.
  * This runs as the first statement of bootstrap(), before NestFactory.create,
- * and throws — the container dies in its restart loop instead of serving.
+ * and throws - the container dies in its restart loop instead of serving.
  * A crashed container is a strictly better outcome than an open one.
  *
  * ORDERING NOTE. In production the values are real process environment
@@ -22,7 +22,7 @@
  * .env.production`, so Docker populates the environment before node starts and
  * this check sees exactly what the guards will later see. In development
  * `ConfigModule.forRoot({ envFilePath: [...] })` loads `platform/.env` during
- * NestFactory.create — i.e. AFTER this runs — so a var supplied only by that
+ * NestFactory.create - i.e. AFTER this runs - so a var supplied only by that
  * file reads as unset here. That is precisely why the non-production branch
  * only warns and never throws: outside production this output is a heads-up,
  * not a verdict.
@@ -31,7 +31,7 @@
 /** A variable whose absence or dev value is a security hole, not a missing feature. */
 interface RequiredVar {
   name: string;
-  /** What is exposed when this one is wrong — the operator needs the stakes, not just the name. */
+  /** What is exposed when this one is wrong - the operator needs the stakes, not just the name. */
   why: string;
   /** Exact values that must never reach production (case-insensitive). */
   rejected: string[];
@@ -40,7 +40,7 @@ interface RequiredVar {
 }
 
 /**
- * Every literal below is copied from a file that ships in this repo —
+ * Every literal below is copied from a file that ships in this repo -
  * `.env.example`, `.env.production.example`, or the `??` fallback in the code
  * itself. Anything published is, by definition, not a secret.
  */
@@ -49,13 +49,13 @@ const REQUIRED: RequiredVar[] = [
     name: "ADMIN_API_KEY",
     why:
       "AdminKeyGuard mints a platform_admin principal for whoever presents it, " +
-      "with x-org-id trusted — it reads and writes every tenant's data",
+      "with x-org-id trusted - it reads and writes every tenant's data",
     rejected: ["dev-admin-key", "replace-with-a-long-random-key"],
   },
   {
     name: "JWT_SECRET",
     why:
-      "signs device access tokens, the enrollment nonces, and the erasure receipt HMAC — " +
+      "signs device access tokens, the enrollment nonces, and the erasure receipt HMAC - " +
       "anyone holding it can mint a token for any device in any tenant",
     rejected: [
       "dev-jwt-secret-change-me",
@@ -83,8 +83,8 @@ const REQUIRED: RequiredVar[] = [
   {
     name: "DATABASE_URL",
     why:
-      "the RLS-bypassing admin pool (getAdminPool in packages/db) — used for cross-tenant admin " +
-      "routes, enrollment, and webhook lookups before an org is known — falls back to a published " +
+      "the RLS-bypassing admin pool (getAdminPool in packages/db) - used for cross-tenant admin " +
+      "routes, enrollment, and webhook lookups before an org is known - falls back to a published " +
       "owner-credential connection string, unset means anyone who can reach the DB port has it",
     rejected: ["postgresql://aura:aura_dev_password@localhost:5433/callintel"],
   },
@@ -96,7 +96,7 @@ const REQUIRED: RequiredVar[] = [
   {
     name: "S3_SECRET_ACCESS_KEY",
     why:
-      "falls back to the published MinIO dev literal — unset, recordings and any S3-backed data " +
+      "falls back to the published MinIO dev literal - unset, recordings and any S3-backed data " +
       "sit behind a credential anyone can read in this repo",
     rejected: ["aura_minio_password"],
   },
@@ -105,7 +105,7 @@ const REQUIRED: RequiredVar[] = [
 /**
  * Advisory only, in every environment. 08 §0.2 lists SUPABASE_URL alongside the
  * four above, but an unset Supabase key CLOSES a feature (owner sign-ins can be
- * listed but not created — see modules/owner/supabase-admin.service.ts) rather
+ * listed but not created - see modules/owner/supabase-admin.service.ts) rather
  * than opening a door, and crashing a live API over a provisioning capability
  * would be a self-inflicted outage. It warns loudly and keeps serving.
  */
@@ -132,7 +132,7 @@ const LENGTH_CHECKED = new Set(["ADMIN_API_KEY", "JWT_SECRET", "CRM_SECRET_KEY"]
 /**
  * Describes what is wrong with a value, or null when it is acceptable.
  *
- * Only ever names the marker it matched, never the value itself — a real secret
+ * Only ever names the marker it matched, never the value itself - a real secret
  * must not end up in a log line or a crash trace.
  */
 function inspect(variable: RequiredVar, raw: string | undefined): string | null {
@@ -188,7 +188,7 @@ export function assertRequiredEnv(env: NodeJS.ProcessEnv = process.env): void {
 
   for (const variable of RECOMMENDED) {
     if (!env[variable.name]?.trim()) {
-      advisory.push(`${variable.name} is not set — ${variable.why}`);
+      advisory.push(`${variable.name} is not set - ${variable.why}`);
     }
   }
 

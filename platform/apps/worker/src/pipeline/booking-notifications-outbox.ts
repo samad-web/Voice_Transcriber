@@ -8,7 +8,7 @@ import { mintRescheduleLink } from "./reschedule-tokens";
 import { getWhatsAppSender } from "./whatsapp";
 
 /**
- * The booking outbox — everything sent because of a CALL, not because of a
+ * The booking outbox - everything sent because of a CALL, not because of a
  * person.
  *
  * ── WHY A SECOND OUTBOX ────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ import { getWhatsAppSender } from "./whatsapp";
  * reschedules needs a SECOND 24h/1h/5m sequence; somebody who no-shows, gets
  * nurtured, books again and no-shows again needs a second drip. Under the
  * per-person key the second sequence would silently ON CONFLICT DO NOTHING into
- * oblivion — the worst kind of bug, because it looks like the feature working.
+ * oblivion - the worst kind of bug, because it looks like the feature working.
  *
  * So this table is keyed (booking_slot_id, template, channel). Everything else
  * about it is `funnel-followup-outbox.ts` unchanged: the queue is the table,
@@ -34,7 +34,7 @@ import { getWhatsAppSender } from "./whatsapp";
  * A nurture message is queued up to 72 hours before it is sent, and the whole
  * point of it is that the person has not become a customer. Three days is
  * plenty of time for them to have signed. So the drain re-checks conversion at
- * SEND time, not at queue time — the same shape as the resume nudge's "did they
+ * SEND time, not at queue time - the same shape as the resume nudge's "did they
  * finish the form in the meantime" check, and for the same reason: the worst
  * message in the catalogue is the one that is correct about a state that has
  * since changed.
@@ -47,7 +47,7 @@ const MAX_ATTEMPTS = positiveInt(process.env.BOOKING_NOTIFY_MAX_ATTEMPTS, 6);
  *
  * Tighter than the follow-up outbox's 14 days, because everything here is
  * anchored to a specific hour in the diary. A "your call is tomorrow" that
- * escapes a stuck queue three days late is not merely stale, it is wrong — it
+ * escapes a stuck queue three days late is not merely stale, it is wrong - it
  * describes an appointment that has already been and gone. Two days is enough
  * to survive a weekend outage and short enough that nothing arrives describing
  * the past.
@@ -76,8 +76,8 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 /**
  * The zone booked times are stated in.
  *
- * Read exactly the way the website reads it — `SCHEDULER_TIMEZONE` or
- * Asia/Kolkata — including the empty-string handling, because compose passes
+ * Read exactly the way the website reads it - `SCHEDULER_TIMEZONE` or
+ * Asia/Kolkata - including the empty-string handling, because compose passes
  * these as `${VAR:-}` and `??` keeps the empty string. That precise mistake
  * silently disabled the calendar on 2026-08-10; here it would hand Postgres
  * `AT TIME ZONE ''` and throw on every send instead, which is louder but no
@@ -94,7 +94,7 @@ function bookingTimeZone(): string {
  * `ON CONFLICT DO NOTHING`, so a sweep that runs twice, or two workers racing,
  * cannot produce two reminders for one call.
  *
- * `sendAt` is the instant it becomes due — this is the one real difference from
+ * `sendAt` is the instant it becomes due - this is the one real difference from
  * the follow-up outbox, which always queues for "now". A reminder is inserted
  * the moment the booking is noticed and sits until its hour arrives, so the
  * schedule lives in the row rather than in a sweep that has to run at the right
@@ -120,7 +120,7 @@ export async function enqueueBookingNotification(
 /**
  * Stop anything still queued for a booking that is no longer happening.
  *
- * Called when a slot is released — a rejection, or a reschedule. Without it,
+ * Called when a slot is released - a rejection, or a reschedule. Without it,
  * somebody who moved their Tuesday call to Friday would still get "your call is
  * in about an hour" on Tuesday, from a row queued before they moved it.
  *
@@ -171,7 +171,7 @@ export function resetBookingNotificationCacheForTests(): void {
  *
  * The join to `booking_slots` and `funnel_submissions` supplies the recipient
  * and the call time, so an erasure request takes the queued message with it
- * — and an INNER join to the submission means a booking whose enquirer has been
+ * - and an INNER join to the submission means a booking whose enquirer has been
  * detached (`submission_id` is ON DELETE SET NULL) is simply never picked up,
  * rather than dead-lettering with "no recipient".
  */
@@ -215,8 +215,8 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
      * The slot label is formatted in SQL, in the booking timezone, with the
      * SAME `to_char` masks the website used to tell them the time
      * (apps/marketing/lib/funnel/slots.ts). A message that names a different
-     * hour from the confirmation screen — because one rendered in IST and the
-     * other in the container's UTC — reads as a second, conflicting
+     * hour from the confirmation screen - because one rendered in IST and the
+     * other in the container's UTC - reads as a second, conflicting
      * appointment.
      */
     `SELECT n.id, n.booking_slot_id, n.template, n.channel, n.attempts,
@@ -255,7 +255,7 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
     // Before every other check, and deliberately NOT counted as an attempt: a
     // message held because of the hour has not failed to deliver. Letting it
     // consume a retry would walk it up the backoff ladder and eventually
-    // dead-letter something that was never broken — a nurture message queued
+    // dead-letter something that was never broken - a nurture message queued
     // on a Friday evening could exhaust itself over a weekend of quiet
     // windows and never be sent at all.
     //
@@ -297,7 +297,7 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
         result = { ok: false, error: "they converted before this was sent", terminal: true };
       } else if (isPreCallReminder(row.template) && new Date(row.starts_at) <= new Date()) {
         // The call has already started. A reminder that arrives afterwards is
-        // worse than silence — it tells someone to join a meeting that is over.
+        // worse than silence - it tells someone to join a meeting that is over.
         result = { ok: false, error: "the call had already started", terminal: true };
       } else {
         // Minted at SEND time, not at queue time, so the token's life starts
@@ -344,7 +344,7 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
         }
       }
     } catch (err) {
-      // Terminal either way — both are bugs, and retrying a bug six times only
+      // Terminal either way - both are bugs, and retrying a bug six times only
       // delays noticing it.
       result = { ok: false, error: `render/send threw: ${(err as Error).message}`, terminal: true };
     }
@@ -376,7 +376,7 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
       const via = row.channel === "whatsapp" ? getWhatsAppSender().name : dispatcher.name;
       console.error(
         `booking notification ${row.id} (${row.template}/${row.channel}): ` +
-          `gave up after ${attempts} attempt(s) via ${via} — ${result.ok ? "" : result.error}`,
+          `gave up after ${attempts} attempt(s) via ${via} - ${result.ok ? "" : result.error}`,
       );
     }
     processed++;
@@ -389,7 +389,7 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
       wa > 0 ? `${wa} via ${getWhatsAppSender().name}` : null,
       mail > 0 ? `${mail} via ${dispatcher.name}` : null,
     ].filter(Boolean);
-    console.log(`booking notifications: attempted ${processed} message(s) — ${parts.join(", ")}`);
+    console.log(`booking notifications: attempted ${processed} message(s) - ${parts.join(", ")}`);
   }
   return processed;
 }
@@ -398,7 +398,7 @@ export async function drainBookingNotifications(limit = 100): Promise<number> {
  * Every 60 seconds, matching the follow-up drain.
  *
  * The five-minute reminder is the tightest thing this queue carries, so a
- * minute of jitter on it is the worst case and is acceptable — the alternative
+ * minute of jitter on it is the worst case and is acceptable - the alternative
  * is a tighter loop on a process already running eight timers, to shave
  * seconds off a message whose whole job is "your call is about to start".
  */

@@ -42,7 +42,7 @@ export function KeyGenerator({
 
         <div className="space-y-1.5">
           <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-            Device Server URL <span className="text-neutral-400">(optional — put in the QR)</span>
+            Device Server URL <span className="text-neutral-400">(optional - put in the QR)</span>
           </label>
           <input
             className={inputClass}
@@ -98,12 +98,12 @@ export function KeyGenerator({
         <EnrollmentCredentials
           result={{ ...result, instanceName }}
           serverUrl={serverUrl}
-          title="New Key — shown once"
+          title="New Key - shown once"
         />
       ) : (
         <Card className="flex items-center justify-center min-h-48">
           <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-            Generated key appears here — once
+            Generated key appears here - once
           </p>
         </Card>
       )}

@@ -9,7 +9,7 @@ import Script from "next/script";
  *
  * `NEXT_PUBLIC_META_PIXEL_ID` gates the whole thing. Without it nothing loads
  * and `trackLead()` is a no-op, which is what every developer machine and
- * preview build should do — a PageView fired from localhost lands in the same
+ * preview build should do - a PageView fired from localhost lands in the same
  * dataset as a real visitor's and quietly corrupts the conversion numbers the
  * ad account optimises against. It is a NEXT_PUBLIC_ value baked at build time,
  * so the container build sets it and nothing else does.
@@ -19,7 +19,7 @@ import Script from "next/script";
  * The site previously had no analytics, no pixel and no third-party embed, and
  * the drafted privacy policy said so in those words. It no longer can, and §3
  * of app/privacy/page.tsx has been rewritten to match. That page is still gated
- * behind lib/legal.ts so nothing false has been published — but if the pixel
+ * behind lib/legal.ts so nothing false has been published - but if the pixel
  * ships before the policy does, the site is tracking visitors while telling
  * them nothing, which is the wrong order.
  *
@@ -91,14 +91,14 @@ fbq('track', 'PageView');`}
  *
  * Fired from the funnel's booking success path, NOT from the /booked page and
  * NOT from reaching the slot picker. Those are both cheaper to trigger and
- * neither means what "Lead" is supposed to mean — /booked is reachable by
+ * neither means what "Lead" is supposed to mean - /booked is reachable by
  * typing the URL, and seeing the picker only means somebody qualified. An
  * optimisation target that counts near-misses teaches the ad account to buy
  * near-misses.
  *
  * Guarded on `window.fbq` because it is absent whenever the pixel is
  * unconfigured or still loading, and an unguarded call would throw inside the
- * success handler — turning a completed booking into an error the visitor sees.
+ * success handler - turning a completed booking into an error the visitor sees.
  */
 export function trackLead(): void {
   if (typeof window === "undefined") return;

@@ -30,14 +30,14 @@ const SendBody = z.discriminatedUnion("type", [
 /**
  * Send one WhatsApp message into one conversation, through Wasi.
  *
- * Mirrors outbound-mail.controller.ts's gate chain exactly — see that file's
+ * Mirrors outbound-mail.controller.ts's gate chain exactly - see that file's
  * header for the full "why a human, why capped, why no automated caller"
  * reasoning, which applies here unchanged. The one structural difference:
  * email's "connection" is a person's own mailbox (`connected_accounts`,
  * scoped by user_id); WhatsApp's is the ORG's shared number
  * (`messaging_channels`), because a WABA belongs to the business, not to
  * whichever rep happens to be replying. Any signed-in rep with `conversation:edit`
- * may send from it — the daily cap is what keeps a mistake small, not a
+ * may send from it - the daily cap is what keeps a mistake small, not a
  * per-person restriction.
  *
  * NOTHING AUTOMATED CALLS THIS. Same rule 3 as email.
@@ -69,12 +69,12 @@ export class WhatsAppSendController {
     const userId = z.string().uuid().safeParse(req.principal?.userId);
     if (!userId.success) {
       throw new ForbiddenException(
-        "sending WhatsApp needs a signed-in user — this caller has no seat of its own",
+        "sending WhatsApp needs a signed-in user - this caller has no seat of its own",
       );
     }
 
     return this.db.withOrg(orgId, async (client) => {
-      // A rep scoped to `owned` conversations may only send into their own —
+      // A rep scoped to `owned` conversations may only send into their own -
       // same predicate ConversationsController applies on view/update.
       const scoped = scopeClause("conversation", recordScope, 2);
       const {
@@ -121,7 +121,7 @@ export class WhatsAppSendController {
         throw new ForbiddenException("WhatsApp is not included on this org's plan");
       }
 
-      // Counted from what was actually sent, not a separate counter — same
+      // Counted from what was actually sent, not a separate counter - same
       // "cannot drift" reasoning as email's cap.
       const {
         rows: [sent],
@@ -134,7 +134,7 @@ export class WhatsAppSendController {
       const limit = dailyWhatsappLimit();
       if (Number(sent?.n ?? 0) >= limit) {
         throw new BadRequestException(
-          `this org has already sent ${limit} WhatsApp messages today — the daily cap is there to keep a mistake small`,
+          `this org has already sent ${limit} WhatsApp messages today - the daily cap is there to keep a mistake small`,
         );
       }
 

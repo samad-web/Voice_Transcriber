@@ -15,7 +15,7 @@ import { signInAction } from "./actions";
  * v2 note: the fields are <FormField> + <Input> rather than `inputClass` from
  * lib/form. That drops the last hard offset shadow in the console
  * (`focus:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]`, doc 18 §3) and replaces it
- * with the kit's global :focus-visible ring — which is the affordance the whole
+ * with the kit's global :focus-visible ring - which is the affordance the whole
  * v2 system now leans on. lib/form is left alone; other route groups still use
  * it and are being migrated separately.
  */

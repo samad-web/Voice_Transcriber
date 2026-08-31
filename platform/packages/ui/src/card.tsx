@@ -4,8 +4,8 @@ import { cx } from "./cx";
 /**
  * The standard surface: a 1px hairline and 24px of padding.
  *
- * Every card carries `--shadow-card` — the same soft, long-throw ambient
- * shadow as marketing's `.mk-card` — by default now, not just the ones that
+ * Every card carries `--shadow-card` - the same soft, long-throw ambient
+ * shadow as marketing's `.mk-card` - by default now, not just the ones that
  * opt in. In dark mode `--shadow-card` swaps to true black rather than a
  * light-mode tint, the same adjustment marketing's own token makes, so it
  * still registers against a dark ground.
@@ -19,11 +19,11 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   /**
    * Lifts the card further above the page with `--shadow-lift` (an
-   * accent-tinted glow) instead of the default ambient `--shadow-card` — for
+   * accent-tinted glow) instead of the default ambient `--shadow-card` - for
    * the handful of cards that should stand out from the rest of the page (a
    * primary CTA's card, a hero panel). Renamed from `shadow`: every card gets
    * a shadow by default now, so a prop named `shadow` no longer meant "has a
-   * shadow vs. flat" — it only ever meant "lifted further than the rest."
+   * shadow vs. flat" - it only ever meant "lifted further than the rest."
    */
   elevated?: boolean;
   className?: string;

@@ -16,13 +16,13 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * /consent — P0 (doc 10 §3): how call-recording consent works in India, what
+ * /consent - P0 (doc 10 §3): how call-recording consent works in India, what
  * Aura enforces, and what the customer is responsible for.
  *
  * The mechanisms described are real and were read from the source:
- *   audible tone     RecordingService.kt:87-88, :185-193 — a 200 ms beep at
+ *   audible tone     RecordingService.kt:87-88, :185-193 - a 200 ms beep at
  *                    capture start. CaptureSettings.kt:41-46: ON by default.
- *   server policy    ActivationManager.kt:55 — the consent-tone requirement is
+ *   server policy    ActivationManager.kt:55 - the consent-tone requirement is
  *                    part of the policy the server pushes to an enrolled device.
  *   per-call record  UploadWorker.kt:140-141 → device-api.ts:67 `consentPlayed`
  *                    is sent with the upload and stored against the call.

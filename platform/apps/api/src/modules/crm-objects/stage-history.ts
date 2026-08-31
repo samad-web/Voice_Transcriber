@@ -19,7 +19,7 @@ export interface StageTransition {
   changedBy?: string | null;
   /** console | pipeline | automation | backfill */
   source?: string;
-  /** For actors that aren't users — "automation: stale deal sweep". */
+  /** For actors that aren't users - "automation: stale deal sweep". */
   actorLabel?: string | null;
 }
 
@@ -59,7 +59,7 @@ export async function recordStageTransition(
  *
  * The funnel's central question, and the reason this table earns its keep. A
  * deal's `stage` column answers "where is it now", which for a lost deal is
- * the useless answer 'lost' — every trace of how far it progressed having
+ * the useless answer 'lost' - every trace of how far it progressed having
  * been overwritten by the move that killed it. The transition ledger still
  * has it.
  *
@@ -73,7 +73,7 @@ export function furthestOpenStage(
   status: string,
   openStageCount: number,
 ): number {
-  // A won deal passed everything, by definition — the win is the last step,
+  // A won deal passed everything, by definition - the win is the last step,
   // and its own transition rows stop at whichever stage it was in when it
   // closed.
   if (status === "won") return openStageCount - 1;

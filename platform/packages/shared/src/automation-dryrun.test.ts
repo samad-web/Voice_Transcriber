@@ -18,7 +18,7 @@ const event = (
   ...overrides,
 });
 
-describe("projectDryRun — validation", () => {
+describe("projectDryRun - validation", () => {
   it("reports an invalid conditions shape instead of previewing", () => {
     const res = projectDryRun(
       { trigger: "deal.created", conditions: { amountGte: "lots" }, actions: [] },
@@ -29,17 +29,17 @@ describe("projectDryRun — validation", () => {
     expect(res.firings).toHaveLength(0);
   });
 
-  it("reports a rule with no actions — it would fire and do nothing", () => {
+  it("reports a rule with no actions - it would fire and do nothing", () => {
     const res = projectDryRun({ trigger: "deal.created", conditions: {}, actions: [] }, [], NOW);
     expect(res.invalid).toBe("the rule has no actions");
   });
 });
 
-describe("projectDryRun — matching mirrors the executor", () => {
+describe("projectDryRun - matching mirrors the executor", () => {
   const rule = {
     trigger: "deal.stage_changed" as const,
     conditions: { toStage: ["won"] },
-    actions: [{ type: "add_note" as const, body: "Closed — send the welcome pack" }],
+    actions: [{ type: "add_note" as const, body: "Closed - send the welcome pack" }],
   };
 
   it("fires only on matching events", () => {
@@ -90,7 +90,7 @@ describe("projectDryRun — matching mirrors the executor", () => {
   });
 });
 
-describe("projectDryRun — action projection", () => {
+describe("projectDryRun - action projection", () => {
   it("resolves a task's assignee and its relative due date", () => {
     const res = projectDryRun(
       {
@@ -105,7 +105,7 @@ describe("projectDryRun — action projection", () => {
     );
     const action = res.firings[0].actions[0];
     expect(action.targetUserId).toBe("user-7");
-    // dueInDays is computed from the passed `now`, in UTC — the same
+    // dueInDays is computed from the passed `now`, in UTC - the same
     // convention tasks.due_on needs to avoid reading a day early.
     expect(action.describe).toContain("due 2026-08-21");
     expect(action.describe).toContain("assigned to user-7");
@@ -124,7 +124,7 @@ describe("projectDryRun — action projection", () => {
     expect(res.firings[0].actions[0].describe).toContain("UNASSIGNED");
   });
 
-  it("BLOCKS a notify with nobody to notify — the executor drops it", () => {
+  it("BLOCKS a notify with nobody to notify - the executor drops it", () => {
     const res = projectDryRun(
       {
         trigger: "deal.stage_changed",
@@ -152,7 +152,7 @@ describe("projectDryRun — action projection", () => {
   });
 });
 
-describe("projectDryRun — approximations are stated, not assumed away", () => {
+describe("projectDryRun - approximations are stated, not assumed away", () => {
   it("admits it cannot validate a custom-field value", () => {
     const res = projectDryRun(
       {
@@ -195,7 +195,7 @@ describe("projectDryRun — approximations are stated, not assumed away", () => 
   });
 });
 
-describe("projectDryRun — purity", () => {
+describe("projectDryRun - purity", () => {
   it("gives the same answer twice for the same inputs", () => {
     const rule = {
       trigger: "deal.stage_changed" as const,

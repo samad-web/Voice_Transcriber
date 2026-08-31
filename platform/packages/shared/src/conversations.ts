@@ -1,10 +1,10 @@
 /**
- * Conversations — the inbound messaging inbox (migration 0055).
+ * Conversations - the inbound messaging inbox (migration 0055).
  *
  * The vocabulary here is shared by three places that must agree or the thread
  * silently splits in two: the provider webhooks (apps/api), the inbox console
  * (apps/web) and the timeline projection. Anything spelled twice is spelled
- * once here instead — see the "hand-copied type unions drift" note in the
+ * once here instead - see the "hand-copied type unions drift" note in the
  * Track A gotchas.
  */
 import { z } from "zod";
@@ -20,7 +20,7 @@ export const ConversationChannel = z.enum(["whatsapp", "sms", "email"]);
 export type ConversationChannel = z.infer<typeof ConversationChannel>;
 
 /**
- * 'pending' is "waiting on them", not "waiting on us" — it is what an agent
+ * 'pending' is "waiting on them", not "waiting on us" - it is what an agent
  * sets after replying, so the inbox's default open filter stops showing a
  * thread whose ball is in the other court without pretending it is finished.
  */
@@ -48,13 +48,13 @@ export type MessageStatus = z.infer<typeof MessageStatus>;
  * ── WHY NOT normalizePhoneDigits() ──────────────────────────────────────
  *
  * That helper exists for the funnel form, where the country comes from a
- * <select> and the respondent types a NATIONAL number — so it strips leading
+ * <select> and the respondent types a NATIONAL number - so it strips leading
  * zeros as a trunk prefix. A webhook payload is the opposite case: the
  * provider hands over a full international number that is already unambiguous,
  * and stripping a leading zero there would corrupt numbers in the countries
  * whose subscriber digits legitimately begin with one.
  *
- * So this keeps every digit and only guarantees the "+" — the E.164 shape
+ * So this keeps every digit and only guarantees the "+" - the E.164 shape
  * `funnel_submissions.phone_e164` already uses, which is what makes matching an
  * inbound number to an existing enquirer a plain equality test.
  */
@@ -77,7 +77,7 @@ export const InboundMessage = z.object({
   channel: ConversationChannel,
   /** The other party. Normalised by the adapter before it gets here. */
   peerAddress: z.string().min(1),
-  /** Display name if the provider supplied one — advisory, never matched on. */
+  /** Display name if the provider supplied one - advisory, never matched on. */
   peerLabel: z.string().max(200).optional(),
   /** Our own address the message arrived at, when the provider reports it. */
   toAddress: z.string().max(320).optional(),
@@ -86,7 +86,7 @@ export const InboundMessage = z.object({
   provider: z.string().min(1).max(60),
   /**
    * The provider's own id for this message. Required, because it is the only
-   * thing standing between a retried webhook and a duplicated thread bubble —
+   * thing standing between a retried webhook and a duplicated thread bubble -
    * a provider that cannot supply one has to be given a synthesised stable key
    * by its adapter rather than being allowed through without.
    */

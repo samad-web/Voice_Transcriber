@@ -1,5 +1,5 @@
 /**
- * `lib/server-api.ts` — the console's copy of the platform root credential.
+ * `lib/server-api.ts` - the console's copy of the platform root credential.
  *
  * This is the WEB HALF of a deliberately mirrored pair. `server-api.ts:11-14`
  * says so in as many words: it "mirrors the API's own `resolveAdminKey()`
@@ -11,7 +11,7 @@
  * SO THE TABLE BELOW IS THAT ONE, ROW FOR ROW, IN THE SAME ORDER. The only
  * difference is the sentinel for "no key": the API returns `null` and the web
  * tier returns `""`. Both are values no configured key can ever equal, which is
- * the property that matters — see `NO_KEY` below. A row appearing on one side
+ * the property that matters - see `NO_KEY` below. A row appearing on one side
  * and not the other is the drift this pair of tests exists to catch, so if you
  * add a case here, add it there.
  *
@@ -28,15 +28,15 @@ const DEV_KEY = "dev-admin-key";
  * What "there is no usable key" looks like on THIS side of the mirror. The API
  * spells it `null`; both are unmatchable, and the web tier's `""` additionally
  * survives being interpolated into a header without becoming the string
- * `"null"` — which is why the two differ rather than one being wrong.
+ * `"null"` - which is why the two differ rather than one being wrong.
  */
 const NO_KEY = "";
 
 /**
  * `Partial<>`, where the API's table says plain `NodeJS.ProcessEnv`, and NOT a
  * cosmetic difference: `next-env.d.ts` augments `ProcessEnv` so `NODE_ENV` is
- * REQUIRED in this tier. The two rows that omit it — "unset + no NODE_ENV" and
- * "empty + development" — are therefore a hard `tsc` error here while being
+ * REQUIRED in this tier. The two rows that omit it - "unset + no NODE_ENV" and
+ * "empty + development" - are therefore a hard `tsc` error here while being
  * ordinary object literals over in apps/api. The rows themselves are unchanged;
  * only the annotation moves, so the mirror still reads row for row.
  */
@@ -55,7 +55,7 @@ describe("resolveAdminKey", () => {
       "real-key",
     ],
     // Stage 0.2: the dev literal is published in this repository, so in
-    // production it must never be the fallback — "" can match no header.
+    // production it must never be the fallback - "" can match no header.
     ["unset + production is empty", { NODE_ENV: "production" }, NO_KEY],
     ["empty + production is empty", { ADMIN_API_KEY: "", NODE_ENV: "production" }, NO_KEY],
     [
@@ -70,7 +70,7 @@ describe("resolveAdminKey", () => {
     // NODE_ENV branch: `.trim()` is what makes `ADMIN_API_KEY="   "` count as
     // unset, and a regression that dropped it would return "   " here (an
     // unmatchable key that looks configured) while still returning "" in
-    // production — so the production row alone would not catch it.
+    // production - so the production row alone would not catch it.
     [
       "whitespace-only + test keeps the dev literal",
       { ADMIN_API_KEY: "   ", NODE_ENV: "test" },
@@ -86,7 +86,7 @@ describe("resolveAdminKey", () => {
     // THE property, stated as a property rather than as three rows, because the
     // rows are a list of the ways `ADMIN_API_KEY` can be absent TODAY and this
     // is the invariant that must survive a fourth way being invented. Before
-    // Stage 0.2 the console presented `dev-admin-key` to a production API — a
+    // Stage 0.2 the console presented `dev-admin-key` to a production API - a
     // string anyone with the repository could read, minting a synthetic
     // platform_admin that trusts whatever `x-org-id` accompanies it.
     for (const absent of [undefined, "", " ", "\t", "\n", "   \t  "]) {
@@ -101,8 +101,8 @@ describe("resolveAdminKey", () => {
   });
 
   it("treats NODE_ENV values other than the exact string 'production' as non-production", async () => {
-    // The check is `=== "production"` (server-api.ts:39). Anything else — a
-    // typo, a staging label, a capitalised value — keeps the dev literal. Pinned
+    // The check is `=== "production"` (server-api.ts:39). Anything else - a
+    // typo, a staging label, a capitalised value - keeps the dev literal. Pinned
     // as today's behaviour, not endorsed: it means `NODE_ENV=Production` on a
     // real deployment silently restores the published credential. Harmless only
     // because `instrumentation.ts` throws at boot on the same condition and

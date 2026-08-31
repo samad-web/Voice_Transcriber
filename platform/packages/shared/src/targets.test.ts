@@ -97,7 +97,7 @@ describe("SalesTargetInput", () => {
     expect(bad.success).toBe(false);
   });
 
-  it("rejects a zero or negative target — an unreachable or meaningless one", () => {
+  it("rejects a zero or negative target - an unreachable or meaningless one", () => {
     expect(SalesTargetInput.safeParse({ ...base, targetValue: 0 }).success).toBe(false);
     expect(SalesTargetInput.safeParse({ ...base, targetValue: -5 }).success).toBe(false);
   });

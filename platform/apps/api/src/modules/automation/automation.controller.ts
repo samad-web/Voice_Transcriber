@@ -45,7 +45,7 @@ const DryRunInput = z.object({
   trigger: AutomationTrigger,
   conditions: z.unknown().optional(),
   actions: z.unknown().optional(),
-  /** How far back to replay. Capped — this reads raw events. */
+  /** How far back to replay. Capped - this reads raw events. */
   windowDays: z.coerce.number().int().min(1).max(90).default(30),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
@@ -56,7 +56,7 @@ const DryRunInput = z.object({
  * ── NO CRM PERMISSION GUARD ───────────────────────────────────────────────
  *
  * `CrmPermissionsGuard` gates records; this is org CONFIGURATION, in the same
- * class as pipelines, custom-field definitions and roles — all of which are
+ * class as pipelines, custom-field definitions and roles - all of which are
  * AdminKeyGuard + TenantGuard for exactly this reason and are pinned that way
  * in guard-mounting.spec.ts. Modelling "who may write an automation rule" as
  * a permission object is a real question, but it is the same question those
@@ -64,7 +64,7 @@ const DryRunInput = z.object({
  * would be worse than answering it for none.
  *
  * A rule that changes records is not a way around a person's own grants,
- * because the executor is the worker and runs with the tenant's own context —
+ * because the executor is the worker and runs with the tenant's own context -
  * a rule cannot reach outside the org that wrote it.
  */
 @Controller("automations")
@@ -116,7 +116,7 @@ export class AutomationController {
    *
    * ── IT IS A POST THAT WRITES NOTHING ────────────────────────────────
    *
-   * POST because the rule being previewed is a body, not a query string —
+   * POST because the rule being previewed is a body, not a query string -
    * conditions and actions are nested objects, and a rule is normally
    * previewed BEFORE it is saved, so there is no id to GET by. The handler
    * only SELECTs; the projection itself is a pure function that has no
@@ -168,7 +168,7 @@ export class AutomationController {
       // not. The count and the cap have to travel together.
       if (rows.length === limit) {
         result.approximations.push(
-          `Only the most recent ${limit} events were replayed — there may be older ones in this window.`,
+          `Only the most recent ${limit} events were replayed - there may be older ones in this window.`,
         );
       }
       return { ...result, windowDays };
@@ -214,7 +214,7 @@ export class AutomationController {
   ) {
     // A partial update is re-validated as a WHOLE rule, by merging onto what
     // is stored. Validating the patch alone would let "change the trigger to
-    // contact.created" leave a move_stage action behind that can never run —
+    // contact.created" leave a move_stage action behind that can never run -
     // the cross-field checks in AutomationRuleInput only mean anything
     // against the complete rule.
     return this.db.withOrg(orgId, async (client) => {
@@ -266,7 +266,7 @@ export class AutomationController {
   }
 
   /**
-   * Deleted, not archived — unlike a custom field.
+   * Deleted, not archived - unlike a custom field.
    *
    * A field definition is archived because records still hold values that
    * refer to it. A rule holds nothing: its history lives in automation_runs,

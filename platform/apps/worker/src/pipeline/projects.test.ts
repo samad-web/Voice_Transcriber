@@ -9,7 +9,7 @@ import { detectCallProjects } from "./projects";
  * leads.test.ts and crm-objects.test.ts use.
  *
  * The matching itself is tested exhaustively in @aura/shared's projects.test.ts
- * — this file is only about what gets WRITTEN, and specifically about the two
+ * - this file is only about what gets WRITTEN, and specifically about the two
  * rules that are easy to break: reprocessing must not accumulate stale rows,
  * and a human's label must survive a later call.
  */
@@ -28,7 +28,7 @@ interface FakeDbOptions {
   catalogue?: typeof CATALOGUE;
   haystack?: string | null;
   call?: boolean;
-  /** rowCount the leads UPDATE reports — 0 means a human owns the column. */
+  /** rowCount the leads UPDATE reports - 0 means a human owns the column. */
   leadUpdateRowCount?: number;
   writes?: Recorded[];
 }
@@ -111,7 +111,7 @@ describe("detectCallProjects", () => {
     );
   });
 
-  it("never overwrites a project a human set — on the lead or the deal", async () => {
+  it("never overwrites a project a human set - on the lead or the deal", async () => {
     const writes: Recorded[] = [];
     const result = await detectCallProjects(
       // rowCount 0 = the WHERE clause refused the row because source='human'.
@@ -142,7 +142,7 @@ describe("detectCallProjects", () => {
     expect(writes.some((w) => w.sql.includes("UPDATE deals"))).toBe(false);
   });
 
-  it("does nothing at all when the tenant has no projects — not even a DELETE", async () => {
+  it("does nothing at all when the tenant has no projects - not even a DELETE", async () => {
     const writes: Recorded[] = [];
     const result = await detectCallProjects(
       fakeDb({ catalogue: [], writes }),
@@ -169,7 +169,7 @@ describe("detectCallProjects", () => {
   });
 
   /**
-   * A call that mentioned nothing still clears its old rows — otherwise a
+   * A call that mentioned nothing still clears its old rows - otherwise a
    * project removed from a call by a re-transcription would linger.
    */
   it("clears stale rows even when the new pass matches nothing", async () => {

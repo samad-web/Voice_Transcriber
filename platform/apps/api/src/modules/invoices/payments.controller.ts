@@ -18,7 +18,7 @@ import { DbService } from "../../db/db.service";
 import { createPaymentLink, resolveRazorpayCredentials } from "./razorpay";
 
 /**
- * "Collect Payment" — a human click that creates a Razorpay Payment Link and
+ * "Collect Payment" - a human click that creates a Razorpay Payment Link and
  * nothing more. It cannot mark anything paid; only razorpay-webhook.controller.ts,
  * verifying a signed delivery, does that. See razorpay.ts's header.
  */

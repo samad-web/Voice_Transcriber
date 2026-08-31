@@ -193,7 +193,7 @@ export class InvoicesController {
       );
       if (!quotation) throw new NotFoundException("quotation not found");
       // numeric columns come back from node-postgres as STRINGS (it never
-      // guesses at float precision) — cast explicitly here rather than at the
+      // guesses at float precision) - cast explicitly here rather than at the
       // zod boundary below, which is stricter than this codebase's other
       // "re-read a numeric column" call sites and would otherwise reject a
       // perfectly valid row with "expected number, received string".
@@ -249,7 +249,7 @@ export class InvoicesController {
         await this.insertItems(client, orgId, id, p.items as any[]);
         items = p.items;
       } else {
-        // Cast explicitly — see the matching comment in createFromQuotation().
+        // Cast explicitly - see the matching comment in createFromQuotation().
         const { rows } = await client.query(
           `SELECT quantity::float8 AS quantity, unit_price::float8 AS "unitPrice",
                   discount_pct::float8 AS "discountPct", tax_rate::float8 AS "taxRate"

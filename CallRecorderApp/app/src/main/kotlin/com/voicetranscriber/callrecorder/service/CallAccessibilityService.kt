@@ -9,7 +9,7 @@ import com.voicetranscriber.callrecorder.recordings.CallSource
 import com.voicetranscriber.callrecorder.recordings.SourceRegistry
 
 /**
- * The "eyes and ears" for VoIP calls — clean-room analogue of Cube ACR's helper app.
+ * The "eyes and ears" for VoIP calls - clean-room analogue of Cube ACR's helper app.
  * Detects when a messenger's *call screen* is in the foreground, starts recording, and
  * stops when the call screen is dismissed.
  *
@@ -53,7 +53,7 @@ class CallAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Windows that appear over a call without ending it — don't stop recording for these. */
+    /** Windows that appear over a call without ending it - don't stop recording for these. */
     private fun isTransientOverlay(pkg: String): Boolean =
         pkg == "com.android.systemui" || pkg.contains("inputmethod", ignoreCase = true)
 
@@ -61,7 +61,7 @@ class CallAccessibilityService : AccessibilityService() {
         pkg ?: return null
         val known = SourceRegistry.matchByPackage(pkg) ?: return null // must be a known messenger
         if (SourceRegistry.matchByActivity(cls) != null) return known // exact activity match
-        // Fallback heuristic — survives activity renames across app versions.
+        // Fallback heuristic - survives activity renames across app versions.
         if (cls != null && CALL_HINTS.any { cls.contains(it, ignoreCase = true) }) return known
         return null
     }

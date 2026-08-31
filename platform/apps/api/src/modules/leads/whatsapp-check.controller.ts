@@ -28,7 +28,7 @@ import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
  * does NOT come back with IsInWhatsapp:false, and an all-miss request returns
  * `null` rather than `[]`. So sending three numbers can return two entries, and
  * any code pairing request to response BY INDEX will attribute one person's
- * answer to another — silently, and in the direction that matters (marking a
+ * answer to another - silently, and in the direction that matters (marking a
  * reachable customer unreachable, or the reverse).
  *
  * Everything here is therefore matched BY `Query`, and every requested number
@@ -36,7 +36,7 @@ import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
  *
  * ── IT DOES NOT SEND ANYTHING ──────────────────────────────────────────────
  *
- * A check is a presence lookup on the WhatsApp network — no message, no
+ * A check is a presence lookup on the WhatsApp network - no message, no
  * notification, nothing the person sees. It is still traffic on an unofficial
  * client, so the batch is capped: bulk-enumerating numbers is exactly the
  * behaviour that gets an account banned, and the cap is what keeps this a
@@ -86,7 +86,7 @@ export class WhatsAppCheckController {
 
     // Unconfigured is reported, not thrown. The console renders "checking is
     // unavailable" rather than an error toast that looks like the numbers are
-    // bad — a deployment with no WhatsApp connected is a valid deployment.
+    // bad - a deployment with no WhatsApp connected is a valid deployment.
     if (!base || !key) {
       return { configured: false, results: [] };
     }
@@ -118,7 +118,7 @@ export class WhatsAppCheckController {
       if (u.Query) found.set(digits(u.Query), u);
     }
 
-    // Driven by what was ASKED, never by what came back — so every number gets
+    // Driven by what was ASKED, never by what came back - so every number gets
     // exactly one answer and nothing is dropped or transposed.
     return {
       configured: true,

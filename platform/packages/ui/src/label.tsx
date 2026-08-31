@@ -15,7 +15,7 @@ export function Label({ children, required = false, className = "", ...rest }: L
       {required ? (
         <>
           {/* The asterisk is aria-hidden and paired with a real word, because
-              "*" is announced inconsistently across screen readers — VoiceOver
+              "*" is announced inconsistently across screen readers - VoiceOver
               says "star", NVDA often says nothing at all. The control itself
               also carries `required`/`aria-required`; this is the visual half. */}
           <span aria-hidden="true" className="ml-0.5 text-danger">

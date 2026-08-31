@@ -1,5 +1,5 @@
 /**
- * Shared source-scanning primitives for the guard-mounting checks — the
+ * Shared source-scanning primitives for the guard-mounting checks - the
  * `(platform)` Server Action suite and the page-level operator-gate suite
  * both need "find every exported function and look at its body as code, not
  * text" and neither should carry its own copy of a parser this fiddly.
@@ -10,15 +10,15 @@
  */
 
 /**
- * Blank out everything that is not code — line comments, block comments, and
- * the contents of every quoted string and template literal — preserving
+ * Blank out everything that is not code - line comments, block comments, and
+ * the contents of every quoted string and template literal - preserving
  * length and newlines so offsets still line up with the original.
  *
  * Not fastidiousness. Two concrete failures made it necessary:
  *
  *   · `` `${API_URL}/v1/calls/${callId}` `` appears in several of these
  *     files, and a brace counter that did not understand template literals
- *     closes the function early, at the `}` of `${callId}` — then reports a
+ *     closes the function early, at the `}` of `${callId}` - then reports a
  *     guarded function as unguarded, or worse, the reverse.
  *   · A doc comment inside a parameter list containing an apostrophe (e.g.
  *     "the environment's") opens a string that never closes and swallows the
@@ -76,7 +76,7 @@ export function matchDelimiter(code: string, open: number, openCh: string, close
     else if (code[i] === closeCh && --depth === 0) return i;
   }
   throw new Error(
-    `unbalanced ${openCh}${closeCh} at ${open} — the scanner is wrong, not the source`,
+    `unbalanced ${openCh}${closeCh} at ${open} - the scanner is wrong, not the source`,
   );
 }
 

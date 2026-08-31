@@ -32,7 +32,7 @@ export interface Workspace {
   created_at: string;
 }
 
-/** A row from `GET /v1/roles` — system-seeded or operator-defined. */
+/** A row from `GET /v1/roles` - system-seeded or operator-defined. */
 export interface CrmRole {
   id: string;
   key: string;
@@ -47,7 +47,7 @@ export interface CrmRole {
  * internal staff and deliberately absent).
  *
  * This list used to read ["owner","admin","manager","analyst","viewer"], which
- * matched nothing the API accepts — so every add/change to anything but
+ * matched nothing the API accepts - so every add/change to anything but
  * "viewer" was rejected with a 400 the UI showed as a bare status code.
  */
 const ROLES = ["org_admin", "workspace_admin", "workspace_member", "viewer"] as const;
@@ -207,7 +207,7 @@ export function TeamManager({
                           disabled={pending}
                           onChange={(e) => changeCrmRole(m.userId, e.target.value)}
                         >
-                          <option value="">— none —</option>
+                          <option value="">- none -</option>
                           {roles.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.name}

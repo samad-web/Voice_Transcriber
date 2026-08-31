@@ -13,19 +13,19 @@
  *     documented way this project's e2e attempts have flaked: a cold start after
  *     a fresh `pnpm build` is several seconds slower than a warm one, and the
  *     first suite of the run is the one that pays it. We poll `GET /v1/health`
- *     — the one route with no guard at all (route #1, doc 13 §1.2) — which is
+ *     - the one route with no guard at all (route #1, doc 13 §1.2) - which is
  *     true readiness: Nest has finished `app.listen()` and the router is up.
  *
  *  2. AN EARLY EXIT FAILS FAST, WITH THE CHILD'S OWN OUTPUT. If the API dies at
  *     boot (a migration missing, `assert-env` unhappy, port in use) the naive
- *     poll loop reports "timed out after 60s" and the actual reason — which the
- *     child already printed — is lost. So `exit` rejects the readiness promise
+ *     poll loop reports "timed out after 60s" and the actual reason - which the
+ *     child already printed - is lost. So `exit` rejects the readiness promise
  *     immediately and the captured stdout/stderr is attached to the error.
  *
  *  3. THE CHILD IS RUN FROM ITS OWN DIRECTORY, FROM `dist/`. `apps/api` resolves
  *     `@aura/*` through `main`/`types` to each package's `dist`, and
  *     `@nestjs/config` computes its `envFilePath` relative to `__dirname`. Both
- *     assume the layout `node dist/main.js` from the app root — the same command
+ *     assume the layout `node dist/main.js` from the app root - the same command
  *     `package.json`'s `start` script and `docker/node.Dockerfile` use. Running
  *     the TypeScript directly, or from the monorepo root, changes both.
  */
@@ -135,7 +135,7 @@ export async function startApi(extraEnv: Record<string, string> = {}): Promise<M
       });
       if (res.ok) return api;
     } catch {
-      // ECONNREFUSED until the listener binds — expected, keep polling.
+      // ECONNREFUSED until the listener binds - expected, keep polling.
     }
     if (Date.now() > deadline) {
       throw failure(
@@ -151,7 +151,7 @@ export async function startApi(extraEnv: Record<string, string> = {}): Promise<M
 /**
  * Starts the worker.
  *
- * There is no health endpoint to poll — the worker binds no port — so readiness
+ * There is no health endpoint to poll - the worker binds no port - so readiness
  * is "it did not exit". `readyMs` is a settle window, not a readiness guess: the
  * pipeline suite's first assertion already polls the database for an outcome, so
  * an extra second here only buys a clearer error when the worker cannot reach
@@ -176,7 +176,7 @@ export async function startWorker(
  * Terminates one child and waits for it to actually go.
  *
  * SIGTERM first so Nest's shutdown hooks close the pg pool and the AMQP channel
- * — a hard kill leaves the connection open until Postgres notices, and the next
+ * - a hard kill leaves the connection open until Postgres notices, and the next
  * run's `DROP SCHEMA` then waits on a lock held by a process that no longer
  * exists. SIGKILL after a grace period, because a wedged child must not hang the
  * whole test run.

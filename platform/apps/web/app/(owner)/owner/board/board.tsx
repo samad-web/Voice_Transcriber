@@ -13,7 +13,7 @@ import {
 } from "../types";
 
 /**
- * The lead pipeline board — a thin config over the generic ./kanban-board.tsx,
+ * The lead pipeline board - a thin config over the generic ./kanban-board.tsx,
  * which owns the drag-and-drop / optimistic-update-with-rollback mechanics
  * shared with the deal board (../deals/deals-board.tsx). See that file's own
  * header comment for why the DnD is hand-rolled rather than a library, and

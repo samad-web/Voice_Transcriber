@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
  * assert it in a build where it cannot have: with no scheduler configured, no
  * calendar event has ever been created by this application, and a "your call is
  * booked" page would be false for every single visitor who reaches it. In that
- * state it shows the contact screen instead — the same screen every other
+ * state it shows the contact screen instead - the same screen every other
  * unbooked path shows.
  *
  * Once the scheduler is real the guard weakens, because a direct visit still

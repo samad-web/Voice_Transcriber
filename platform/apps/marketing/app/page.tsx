@@ -13,7 +13,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * Homepage — five sections, one way in.
+ * Homepage - five sections, one way in.
  *
  * Reduced from thirteen on 2026-08-08. The sections that came off (pricing,
  * integrations, FAQ, language proof, compatibility teaser, trust block, the

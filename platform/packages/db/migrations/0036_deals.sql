@@ -1,9 +1,9 @@
--- 0036_deals.sql — CRM Phase 1 foundation, part 3: Deal, the pipeline object
+-- 0036_deals.sql - CRM Phase 1 foundation, part 3: Deal, the pipeline object
 -- that inherits leads' board/stage role.
 --
 -- See 0034's header. `stage` is validated in application code against the
 -- owning pipeline's `stages` list, exactly like leads.stage is validated
--- against organizations.lead_stages today (0010) — not a DB CHECK/FK, because
+-- against organizations.lead_stages today (0010) - not a DB CHECK/FK, because
 -- a tenant renaming a board column must not be a migration.
 
 CREATE TABLE IF NOT EXISTS deals (
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS deals (
   -- move who gets credit for a deal already in flight.
   telecaller_id uuid REFERENCES telecallers(id) ON DELETE SET NULL,
   -- Provenance + the dual-write/backfill idempotency key (see the unique
-  -- index below) — NULL for a deal created by hand rather than from a call.
+  -- index below) - NULL for a deal created by hand rather than from a call.
   source_lead_id uuid REFERENCES leads(id) ON DELETE SET NULL,
   facts         jsonb NOT NULL DEFAULT '{}'::jsonb,
   first_call_id uuid REFERENCES calls(id) ON DELETE SET NULL,

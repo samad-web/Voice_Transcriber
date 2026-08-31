@@ -6,8 +6,8 @@ import { navItemFor } from "@/lib/nav";
 
 /**
  * Suspense boundary for every page in the group. Without it a nav click blocks
- * on the page's server fetch before anything renders — the sidebar's own active
- * state included — so switching tabs felt like a full page load. With it Next
+ * on the page's server fetch before anything renders - the sidebar's own active
+ * state included - so switching tabs felt like a full page load. With it Next
  * commits the navigation immediately and streams the real page in behind this.
  *
  * The heading is rendered for real (not as a placeholder) because the title is

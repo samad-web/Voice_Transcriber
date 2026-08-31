@@ -5,7 +5,7 @@ import com.voicetranscriber.callrecorder.capture.ProfileKind
 /**
  * Clean-room analogue of Cube ACR's `ActivityRecordingFactory`: a lookup from a
  * foreground package/activity to the [CallSource] that describes how to record it.
- * Add sources by appending to [BUILT_IN] — the data here is our own.
+ * Add sources by appending to [BUILT_IN] - the data here is our own.
  */
 object SourceRegistry {
 
@@ -13,7 +13,7 @@ object SourceRegistry {
         CallSource(
             id = "telephony",
             label = "Phone call",
-            packageName = null, // native cellular — driven by PhoneStateReceiver
+            packageName = null, // native cellular - driven by PhoneStateReceiver
             profileKind = ProfileKind.PHONE,
         ),
         CallSource(

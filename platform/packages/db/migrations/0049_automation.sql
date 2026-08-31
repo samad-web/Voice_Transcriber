@@ -1,4 +1,4 @@
--- 0049_automation.sql — PRD Layer 2: when X happens, do Y.
+-- 0049_automation.sql - PRD Layer 2: when X happens, do Y.
 --
 -- Three tables, and the split between them is the whole design:
 --
@@ -9,7 +9,7 @@
 -- ── WHY A QUEUE AND NOT AN INLINE CALL ────────────────────────────────────
 --
 -- The obvious implementation is to run the rules inside the request that
--- caused them — in the deal PATCH, right after the stage moves. That couples
+-- caused them - in the deal PATCH, right after the stage moves. That couples
 -- a tenant's own configuration to the latency and the failure modes of every
 -- console action: a rule with four actions makes dragging a card visibly
 -- slower, and a rule that throws turns a successful stage change into a 500
@@ -24,7 +24,7 @@
 -- structural rather than a depth counter: NOTHING THE EXECUTOR WRITES EVER
 -- ENQUEUES AN EVENT. Only the API (a person did something) and the sweep (a
 -- deadline passed) insert here. A rule can therefore cause another rule's
--- condition to become true, but it cannot cause another rule to run — which
+-- condition to become true, but it cannot cause another rule to run - which
 -- is a limitation worth having, and stated in the worker's module header too.
 
 CREATE TABLE IF NOT EXISTS automation_rules (
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS automation_rules (
   description  text,
   -- App-validated against AutomationTrigger, like every other open set here.
   trigger      text NOT NULL,
-  -- Field comparisons as data, never an expression language — see
+  -- Field comparisons as data, never an expression language - see
   -- packages/shared/src/automation.ts for why.
   conditions   jsonb NOT NULL DEFAULT '{}'::jsonb,
   actions      jsonb NOT NULL DEFAULT '[]'::jsonb,

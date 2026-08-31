@@ -27,7 +27,7 @@ const ConnectBody = z.object({
 });
 
 /**
- * Columns every read returns. `access_token` is deliberately absent — the
+ * Columns every read returns. `access_token` is deliberately absent - the
  * same rule connections.controller.ts's CONNECTION_COLUMNS follows: a
  * credential that is never selected cannot be leaked by a future endpoint
  * that forgets to strip it.
@@ -37,7 +37,7 @@ const CONNECTION_COLUMNS = `
   server_info, tools, last_sync_at, created_at, updated_at`;
 
 /**
- * MCP server connections (migration 0074) — today, the tenant's Meta MCP.
+ * MCP server connections (migration 0074) - today, the tenant's Meta MCP.
  *
  * Org CONFIGURATION, so AdminKeyGuard+TenantGuard, the same tier as
  * marketing-sources, pipelines and projects. Note this differs deliberately
@@ -50,7 +50,7 @@ const CONNECTION_COLUMNS = `
  *
  * `server_url` is tenant-supplied and this service POSTs to it. Every
  * outbound request goes through assertPublicHttpUrl first, injected into the
- * client rather than checked once at save time — a hostname that resolves to
+ * client rather than checked once at save time - a hostname that resolves to
  * a public address when saved and a link-local one an hour later is the whole
  * point of re-checking.
  */
@@ -256,7 +256,7 @@ async function probeServer(serverUrl: string, accessToken: string | null): Promi
  * Whether this server can actually do the job, reported at connect time.
  *
  * A server that handshakes cleanly but advertises no lead tool is the most
- * likely way this integration disappoints someone — it looks connected and
+ * likely way this integration disappoints someone - it looks connected and
  * then never produces a lead. Saying so up front is the difference between a
  * five-second fix and a week of wondering.
  */

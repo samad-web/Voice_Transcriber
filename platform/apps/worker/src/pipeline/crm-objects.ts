@@ -5,17 +5,17 @@ import { leadTitle } from "./leads";
 
 /**
  * Project a lead the pipeline already qualified onto the new Contact/Deal
- * object model (packages/db/migrations/0035-0036), alongside — not instead
- * of — the existing `leads` row.
+ * object model (packages/db/migrations/0035-0036), alongside - not instead
+ * of - the existing `leads` row.
  *
  * Strangler-fig, CRM Phase 1 (see the Phase 1 plan): called live from
  * pipeline.ts's call-processing path (M3, non-blocking) immediately after
  * upsertLead(), and also replayed by scripts/backfill-crm-objects.js over
- * history — both call this exact function, so backfill and live projection
+ * history - both call this exact function, so backfill and live projection
  * can never drift from each other.
  *
  * Read-after-write from `leads`, keyed on the leadId upsertLead() already
- * returned, rather than re-deriving qualification from the call — the call
+ * returned, rather than re-deriving qualification from the call - the call
  * already decided whether it's a lead; this only decides where else that
  * lead's data lives.
  *
@@ -63,7 +63,7 @@ interface CallRow {
  *
  * Idempotent on `interactions(call_id) WHERE type = 'call'`, which is what
  * lets the live dual-write, a reprocess, and the backfill all run over the
- * same call without stacking duplicate timeline entries — the same role
+ * same call without stacking duplicate timeline entries - the same role
  * `deals(source_lead_id)` plays for the lead projection.
  *
  * `account_id` is deliberately left NULL: a call's account is whatever
@@ -169,7 +169,7 @@ export async function projectLeadToCrm(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)
        ON CONFLICT (org_id, phone_hash) WHERE phone_hash IS NOT NULL AND status <> 'merged'
        DO UPDATE SET
-         -- Only upgrade the name once a call has actually named the contact —
+         -- Only upgrade the name once a call has actually named the contact -
          -- otherwise a later unnamed/numberless call would overwrite a real
          -- name with the "Unknown caller" fallback.
          display_name   = CASE WHEN EXCLUDED.display_name <> 'Unknown caller'
@@ -197,7 +197,7 @@ export async function projectLeadToCrm(
     );
     contactId = contact.id;
   } else {
-    // No dedup key — same fallback upsertLead itself uses for a numberless
+    // No dedup key - same fallback upsertLead itself uses for a numberless
     // call: match by the call/lead this contact was already anchored to,
     // or create a fresh row.
     const {
@@ -256,7 +256,7 @@ export async function projectLeadToCrm(
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15)
      ON CONFLICT (source_lead_id) WHERE source_lead_id IS NOT NULL
      DO UPDATE SET
-       -- Stage/status/telecaller are the owner's, never the pipeline's —
+       -- Stage/status/telecaller are the owner's, never the pipeline's -
        -- deliberately absent here, mirroring upsertLead's own DO UPDATE SET
        -- (apps/worker/src/pipeline/leads.ts).
        contact_id   = EXCLUDED.contact_id,
@@ -287,8 +287,8 @@ export async function projectLeadToCrm(
   );
 
   // ── Stage history (migration 0046) ─────────────────────────────────────
-  // Only on creation. This projection deliberately never MOVES a deal —
-  // stage is the owner's, as the ON CONFLICT above says — so the one and only
+  // Only on creation. This projection deliberately never MOVES a deal -
+  // stage is the owner's, as the ON CONFLICT above says - so the one and only
   // transition it can honestly record is the deal entering the pipeline.
   // Writing anything on an update would put a move in the ledger that never
   // happened.
@@ -316,7 +316,7 @@ export async function projectLeadToCrm(
   // walking `calls` directly.
   //
   // Inside the same transaction as the Contact/Deal writes above, so a
-  // timeline row can never reference a deal that got rolled back — and
+  // timeline row can never reference a deal that got rolled back - and
   // outside any try/catch here, deliberately: pipeline.ts already wraps this
   // whole function non-blockingly, and swallowing an error a second time
   // would hide it from that log.

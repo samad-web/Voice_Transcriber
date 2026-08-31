@@ -32,7 +32,7 @@ const SourcePatch = SourceInput.partial()
   .refine((v) => Object.keys(v).length > 0, { message: "nothing to update" });
 
 /**
- * Marketing sources — the campaign beneath the channel (migration 0057).
+ * Marketing sources - the campaign beneath the channel (migration 0057).
  *
  * Org CONFIGURATION, so AdminKeyGuard+TenantGuard, alongside pipelines,
  * roles and custom-field definitions.
@@ -41,7 +41,7 @@ const SourcePatch = SourceInput.partial()
  *
  * `contact_count` / `deal_count` / `won_value` are computed on every read
  * rather than kept as counters on the row. A denormalised counter here would
- * be wrong the first time a contact was merged, reassigned or erased — and
+ * be wrong the first time a contact was merged, reassigned or erased - and
  * attribution figures that are quietly wrong are worse than none, because
  * somebody spends money on them.
  */

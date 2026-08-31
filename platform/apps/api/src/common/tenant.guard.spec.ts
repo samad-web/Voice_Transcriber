@@ -1,10 +1,10 @@
 /**
- * `TenantGuard` + `@OrgId()` — the tenant boundary (inventory 13 §2.2, T1–T6).
+ * `TenantGuard` + `@OrgId()` - the tenant boundary (inventory 13 §2.2, T1-T6).
  *
  * The boundary used to be ~70 hand-written `orgIdFromHeader` calls; it is now
  * this one guard. That makes these cases the whole of the tenant-scoping
  * contract, and `scripts/check-tenancy.js` is only a grep over the MOUNTING of
- * it — it cannot tell whether the guard is correct. This file does.
+ * it - it cannot tell whether the guard is correct. This file does.
  *
  * A real `Reflector` reads `@CrossTenant()` off real decorated fixtures, so the
  * handler-wins-over-class precedence (`GET /v1/analytics/fleet` is a
@@ -100,7 +100,7 @@ describe("TenantGuard", () => {
     // `req.tenantOrgId = undefined` (tenant.guard.ts:66) is an assignment, not a
     // no-op on an unset field. If it were dropped as "already undefined", a
     // cross-tenant route sitting behind anything that pre-populates the request
-    // — a future middleware, an interceptor, a test harness — would silently
+    // - a future middleware, an interceptor, a test harness - would silently
     // run an operator query scoped to whatever that left behind.
     const { context, req } = makeExecutionContext({
       cls: CrossTenantController,
@@ -124,7 +124,7 @@ describe("TenantGuard", () => {
     expect(req.tenantOrgId).toBe(ORG_A);
   });
 
-  it("T2 · 401s when no principal was set — a guard-ORDER bug, caught loudly", async () => {
+  it("T2 · 401s when no principal was set - a guard-ORDER bug, caught loudly", async () => {
     // Mounted alone, i.e. `@UseGuards(TenantGuard, AdminKeyGuard)` or a missing
     // AdminKeyGuard. Inventory 13 §2.0: a future reordering of @UseGuards must
     // fail here rather than silently unscope a query.
@@ -139,7 +139,7 @@ describe("TenantGuard", () => {
       message: "authentication required",
       status: 401,
     });
-    // Notably NOT scoped to the header — the header is never a fallback.
+    // Notably NOT scoped to the header - the header is never a fallback.
     expect(req.tenantOrgId).toBeUndefined();
   });
 
@@ -155,7 +155,7 @@ describe("TenantGuard", () => {
   });
 
   it("T4 · 400s the admin-key principal that named no org", async () => {
-    // AdminKeyGuard A1 produces orgId:"" — this is where that becomes a client
+    // AdminKeyGuard A1 produces orgId:"" - this is where that becomes a client
     // error, with the same message the old orgIdFromHeader raised.
     const { context } = makeExecutionContext({
       cls: ScopedController,
@@ -187,13 +187,13 @@ describe("TenantGuard", () => {
   it("T5 · 400s a uuid whose version/variant nibbles are out of range", async () => {
     // What zod 4's .uuid() actually enforces, verified against zod 4.4.3: the
     // version nibble must be 1-8 and the variant nibble 8/9/a/b (RFC 9562), plus
-    // the all-zero nil uuid. It does NOT pin the version to 4 — a v1-shaped id
-    // parses fine — so this asserts the real boundary rather than a v4-only rule
+    // the all-zero nil uuid. It does NOT pin the version to 4 - a v1-shaped id
+    // parses fine - so this asserts the real boundary rather than a v4-only rule
     // the guard has never had. Nothing on the platform requires v4 org ids; the
     // fixtures are v4-shaped only because gen_random_uuid() emits v4.
     for (const orgId of [
-      "00000000-0000-9000-8000-000000000001", // version nibble 9 — out of range
-      "00000000-0000-4000-c000-000000000001", // variant nibble c — out of range
+      "00000000-0000-9000-8000-000000000001", // version nibble 9 - out of range
+      "00000000-0000-4000-c000-000000000001", // variant nibble c - out of range
     ]) {
       const { context } = makeExecutionContext({
         cls: ScopedController,
@@ -209,7 +209,7 @@ describe("TenantGuard", () => {
     }
   });
 
-  it("T6 · WRONG TENANT — a session principal is scoped to its own org, header ignored", () => {
+  it("T6 · WRONG TENANT - a session principal is scoped to its own org, header ignored", () => {
     // AdminKeyGuard:114 has already overwritten the header by this point; this
     // asserts TenantGuard reads the PRINCIPAL and not the header, so the
     // pinning survives even if some later code re-sets the header.
@@ -261,7 +261,7 @@ describe("@OrgId()", () => {
     });
   });
 
-  it("throws 500 on the empty string too — falsy, not just undefined", async () => {
+  it("throws 500 on the empty string too - falsy, not just undefined", async () => {
     // This is exactly why TenantGuard leaves tenantOrgId undefined rather than
     // "" on the cross-tenant path: "" would otherwise reach withOrg and scope a
     // query to no tenant at all.
@@ -280,7 +280,7 @@ describe("@OrgId()", () => {
 /**
  * The ORDER of the chain, not just each guard in isolation (inventory 13 §2.0).
  *
- * Every `@UseGuards(AdminKeyGuard, TenantGuard)` on the platform — 57 routes —
+ * Every `@UseGuards(AdminKeyGuard, TenantGuard)` on the platform - 57 routes -
  * depends on that sequence: `TenantGuard` reads `req.principal`, which only
  * `AdminKeyGuard` writes. T2 above proves the guard 401s when the principal is
  * missing; this block proves the pair is order-DEPENDENT, so a
@@ -342,7 +342,7 @@ describe("AdminKeyGuard → TenantGuard chain order (inventory 13 §2.0)", () =>
 
   it("REVERSED, TenantGuard 401s before AdminKeyGuard can set a principal", async () => {
     // The regression this whole block exists for. Note the failure is NOT
-    // silent-and-unscoped — it is a hard 401 on a request that carries a valid
+    // silent-and-unscoped - it is a hard 401 on a request that carries a valid
     // admin key and a valid org header, which is the correct way for a
     // misconfiguration to fail. Pinning it means nobody can "fix" that 401 by
     // making TenantGuard fall back to the `x-org-id` header.
@@ -362,10 +362,10 @@ describe("AdminKeyGuard → TenantGuard chain order (inventory 13 §2.0)", () =>
     expect(req.principal).toBeUndefined();
   });
 
-  it("a @CrossTenant() route is order-INDEPENDENT — it never reads the principal", async () => {
+  it("a @CrossTenant() route is order-INDEPENDENT - it never reads the principal", async () => {
     // Why the operator surface (6 routes, inventory 13 §1.1) is not covered by
     // the case above: `TenantGuard` returns at tenant.guard.ts:62 before
-    // touching `req.principal`, so both orders allow. That is a real asymmetry —
+    // touching `req.principal`, so both orders allow. That is a real asymmetry -
     // a reordering would break the 57 tenant routes and leave the 6
     // cross-tenant ones working, which is exactly the kind of partial failure
     // that gets misdiagnosed as "the org header is wrong".

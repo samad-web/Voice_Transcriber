@@ -16,21 +16,21 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * /security — P0 (doc 10 §3), the page that answers objection #1.
+ * /security - P0 (doc 10 §3), the page that answers objection #1.
  *
  * EVERY CLAIM ON THIS PAGE WAS CHECKED AGAINST THE SOURCE. Doc 10 §15: no
- * "SOC 2", no "99.9% uptime", no "enterprise-grade security" as a bare phrase —
+ * "SOC 2", no "99.9% uptime", no "enterprise-grade security" as a bare phrase -
  * none of which exist, and none of which this page says. The mechanisms that DO
  * exist are strong enough on their own, and they are what is written here:
  *
- *   RLS isolation   packages/db/migrations/0001_init.sql — `aura_app` is created
+ *   RLS isolation   packages/db/migrations/0001_init.sql - `aura_app` is created
  *                   NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS (:11-12) and
  *                   every tenant table gets FORCE ROW LEVEL SECURITY (:338, :348).
  *                   packages/db/verify-rls.js asserts the invariant across every
  *                   org_id table, so it cannot silently regress.
  *   retention       organizations.retention_days, default 90 (0001_init.sql:27);
  *                   apps/worker/src/pipeline/reaper.ts deletes on that clock.
- *   erasure         apps/api/src/modules/tenancy/erasure.controller.ts — S3 object
+ *   erasure         apps/api/src/modules/tenancy/erasure.controller.ts - S3 object
  *                   → lead → transcript → ai_outputs → call_facts → crm_sync_log →
  *                   call row, then an HMAC-signed receipt in the audit log.
  *   audit log       audit_log (0001_init.sql:287): org_id, actor_type, actor_id,
@@ -266,7 +266,7 @@ export default function SecurityPage() {
 
       {/* The tracking disclosure lives HERE, not only in the privacy policy.
           /privacy is gated behind lib/legal.ts until the company facts exist,
-          so it currently 404s — and these trackers are live. Putting the
+          so it currently 404s - and these trackers are live. Putting the
           disclosure only there would mean the site tracks visitors and tells
           them nothing until an unrelated blocker clears. This page is
           published today.
@@ -275,7 +275,7 @@ export default function SecurityPage() {
           (owner's instruction, see components/meta-pixel.tsx) and Microsoft
           Clarity was added alongside the Meta pixel and GTM. This section no
           longer says "does not load until you accept it" or "no session
-          recorder" — both stopped being true the same day, and a disclosure
+          recorder" - both stopped being true the same day, and a disclosure
           page that still claimed otherwise would be worse than no page. */}
       <Section id="advertising" tone="subtle" labelledBy="adv-heading">
         <SectionHeading
@@ -293,7 +293,7 @@ export default function SecurityPage() {
             books a call.
           </p>
           <p>
-            We also use <strong>Microsoft Clarity</strong> to record how visitors use this site —
+            We also use <strong>Microsoft Clarity</strong> to record how visitors use this site -
             page views, clicks and scrolling, replayed as session recordings and aggregated into
             heatmaps. Clarity masks form input by default; we do not configure it to record what
             you type into the enquiry form.
@@ -301,7 +301,7 @@ export default function SecurityPage() {
           <p>
             <strong>None of these wait for your consent before loading.</strong> They start on
             every page view, for every visitor, as soon as the page is interactive. We do not ask
-            first and there is no control on this site to opt out — Meta&rsquo;s and
+            first and there is no control on this site to opt out - Meta&rsquo;s and
             Microsoft&rsquo;s own controls, linked below, are the way to limit what each of them
             does with your data.
           </p>

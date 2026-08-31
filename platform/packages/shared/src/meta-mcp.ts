@@ -6,7 +6,7 @@ import { z } from "zod";
  * There is no standard Meta MCP server and no registry of canonical tool
  * names, so this module is deliberately tolerant in two directions at once:
  * it tries several plausible TOOL names, and it accepts several plausible
- * LEAD shapes. What it will not do is guess — an unrecognised shape returns
+ * LEAD shapes. What it will not do is guess - an unrecognised shape returns
  * nothing and says so, rather than inventing a contact from a field it does
  * not understand.
  *
@@ -69,7 +69,7 @@ const RawLead = z.object({
 });
 
 export interface NormalizedLead {
-  /** Meta's leadgen id — the idempotency key for the whole ingest path. */
+  /** Meta's leadgen id - the idempotency key for the whole ingest path. */
   leadgenId: string;
   pageId: string | null;
   formId: string | null;
@@ -79,8 +79,8 @@ export interface NormalizedLead {
   phone: string | null;
   /**
    * Everything the lead said in words: the form name, campaign and ad names,
-   * plus every free-text answer. This is what project detection is run over —
-   * a lead from the "3D Website — Showroom" form should land on the 3D
+   * plus every free-text answer. This is what project detection is run over -
+   * a lead from the "3D Website - Showroom" form should land on the 3D
    * Website project without anyone wiring that up by hand.
    */
   text: string;
@@ -138,8 +138,8 @@ export function normalizeLeads(payload: unknown): NormalizedLead[] {
     const phone =
       fieldValue(fields, FIELD_ALIASES.phone) ?? lead.phone_number ?? lead.phone ?? null;
 
-    // Names of the form/campaign/ad first — they are the most reliable place
-    // a project is named — then every answer, so a free-text "what are you
+    // Names of the form/campaign/ad first - they are the most reliable place
+    // a project is named - then every answer, so a free-text "what are you
     // interested in?" field counts too.
     const text = [
       lead.form_name,

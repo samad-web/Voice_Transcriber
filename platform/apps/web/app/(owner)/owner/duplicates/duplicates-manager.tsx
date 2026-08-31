@@ -11,10 +11,10 @@ import {
 import type { DuplicateMatch } from "../types";
 
 /**
- * Review queue for /v1/merge/duplicates — scan, then keep-one-side merge or
+ * Review queue for /v1/merge/duplicates - scan, then keep-one-side merge or
  * dismiss each pending pair. No field-by-field picker: the API's
  * fieldDecisions defaults to "keep the survivor's own values", which stays
- * the right default for both match kinds — an external_id collision (both
+ * the right default for both match kinds - an external_id collision (both
  * sides already agree on the field that matched) and a fuzzy name match
  * (where the operator picks the side to keep, which IS the decision).
  */
@@ -39,7 +39,7 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
       // queue that stays empty looks identical either way. Say which.
       if (result.fuzzy === "unavailable") {
         setNotice(
-          "Scanned exact matches only — fuzzy name matching needs the pg_trgm extension, " +
+          "Scanned exact matches only - fuzzy name matching needs the pg_trgm extension, " +
             "which is not installed on this database.",
         );
       } else if (result.newCandidates === 0) {
@@ -47,7 +47,7 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
       }
 
       // The action already revalidates the path; nothing more to do here if
-      // the scan found zero — the list simply stays as it was.
+      // the scan found zero - the list simply stays as it was.
       if (result.newCandidates && result.newCandidates > 0) {
         router.refresh();
       }
@@ -165,7 +165,7 @@ function RecordSide({
   return (
     <div className="rounded-md border border-border p-3">
       <p className="font-medium text-text">{label ?? "Unnamed"}</p>
-      <p className="text-xs text-text-muted">{detail ?? "—"}</p>
+      <p className="text-xs text-text-muted">{detail ?? "-"}</p>
       <Button type="button" size="sm" className="mt-2" disabled={disabled} onClick={onKeep}>
         Keep this one
       </Button>

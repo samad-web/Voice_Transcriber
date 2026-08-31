@@ -1,5 +1,5 @@
 /**
- * `CrmPermissionsGuard` — enforces the `role_permissions` grid (migration 0039)
+ * `CrmPermissionsGuard` - enforces the `role_permissions` grid (migration 0039)
  * on the contact/account/deal routes.
  *
  * Mounted on the 14 routes pinned by `CRM_PERMISSION_ROUTES` in
@@ -72,7 +72,7 @@ function fakeDb(granted: boolean, scope: "all" | "owned" = "all"): { db: DbServi
 /**
  * A tenant that was never pinned. A distinct sentinel rather than `undefined`,
  * because passing `undefined` to a parameter that HAS a default silently
- * re-triggers that default — which quietly turned C9 into a second copy of the
+ * re-triggers that default - which quietly turned C9 into a second copy of the
  * pinned case until it was caught.
  */
 const UNPINNED = Symbol("unpinned");
@@ -94,7 +94,7 @@ describe("CrmPermissionsGuard", () => {
     const { context } = contextFor(FixtureController.prototype.undecorated, sessionPrincipal());
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
-    // Not merely allowed — it must not have touched the database at all, which
+    // Not merely allowed - it must not have touched the database at all, which
     // is what keeps this guard free on the other 110 principal routes.
     expect(calls).toHaveLength(0);
   });
@@ -102,9 +102,9 @@ describe("CrmPermissionsGuard", () => {
   it("C2 denies a BARE admin-key caller (no asserted user) without a lookup", async () => {
     // No carve-out: `userId` is the literal "admin-key", fails the uuid parse,
     // and is denied the same as any other unresolvable identity. Nothing in
-    // this repository calls these routes as a bare admin key — checked
+    // this repository calls these routes as a bare admin key - checked
     // directly: `scripts/backfill-crm-objects.js` writes the database, never
-    // `/v1/contacts`/`/v1/accounts`/`/v1/deals` — so there is no legitimate
+    // `/v1/contacts`/`/v1/accounts`/`/v1/deals` - so there is no legitimate
     // caller this would lock out. Ops tooling that needs this surface asserts
     // a real, seeded user id, same as every other admin-key caller (C3).
     const { db, calls } = fakeDb(false);
@@ -206,7 +206,7 @@ describe("CrmPermissionsGuard", () => {
 
   it("C9 rejects when the request was never pinned to a tenant", async () => {
     // Mounted without TenantGuard, or on a @CrossTenant() route. Refuses rather
-    // than falling back to the principal's own orgId — a guard that guessed the
+    // than falling back to the principal's own orgId - a guard that guessed the
     // tenant here would check the grant in the wrong one.
     const { db, calls } = fakeDb(true);
     const guard = new CrmPermissionsGuard(new Reflector(), db);
@@ -225,7 +225,7 @@ describe("CrmPermissionsGuard", () => {
   });
 
   it("C10 denies a non-admin-key principal with an unparseable user id", async () => {
-    // The carve-out on line 1 of the check is `viaAdminKey` AND no valid user —
+    // The carve-out on line 1 of the check is `viaAdminKey` AND no valid user -
     // a SESSION principal that somehow carries a malformed id must not inherit
     // it, so this asserts the two halves are actually conjoined.
     const { db, calls } = fakeDb(true);
@@ -247,8 +247,8 @@ describe("CrmPermissionsGuard", () => {
   //
   // `owned` was settable through the API from the day 0039 shipped and read by
   // nothing, so a role configured to see only its own records saw every record
-  // in the tenant. The guard cannot enforce that itself — it is a predicate on
-  // rows — so what it must do is resolve the scope and hand it to the
+  // in the tenant. The guard cannot enforce that itself - it is a predicate on
+  // rows - so what it must do is resolve the scope and hand it to the
   // controller. These pin that handoff.
 
   it("C11 puts an `all` scope on the request when the grant is unrestricted", async () => {
@@ -279,7 +279,7 @@ describe("CrmPermissionsGuard", () => {
 
   it("C13 denies the bare admin key rather than leaving it UNSCOPED", async () => {
     // Superseded case: this guard used to special-case a bare admin key to
-    // `{ scope: "all", userId: null }` with no lookup at all. Removed — see
+    // `{ scope: "all", userId: null }` with no lookup at all. Removed - see
     // C2 and the guard's own header for why nothing depended on it and why
     // it was backwards (an unresolvable-but-asserted id was denied while
     // asserting nothing at all was granted everything).
@@ -313,11 +313,11 @@ describe("CrmPermissionsGuard", () => {
   // ── module gate (migration 0072's `organizations.enabled_modules`) ───────
   //
   // The check lives inside the ONE permission query as an extra JOIN
-  // condition, not a separate lookup — so from this guard's own point of
+  // condition, not a separate lookup - so from this guard's own point of
   // view, "CRM disabled for the org" and "no matching grant" are the same
   // zero-rows outcome already covered by C4/C7, and `fakeDb`'s boolean
   // `granted` can't tell them apart. What CAN be pinned here is that the
-  // condition is actually IN the query text sent to the database — the live
+  // condition is actually IN the query text sent to the database - the live
   // Postgres check (crm-connectors-and-console-auth's own verification
   // pass) is what proves a real disabled org is actually denied.
 

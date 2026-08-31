@@ -5,7 +5,7 @@
  * THIS IS A SOURCE GREP, NOT A BEHAVIOUR TEST, for the same reason
  * `platform-actions.guard.test.ts` is one: `(platform)/layout.tsx` and
  * `(admin)/layout.tsx` both call `isOperator()`, but Next renders a layout
- * and the page nested inside it as part of the same pass — nothing
+ * and the page nested inside it as part of the same pass - nothing
  * guarantees the layout's decision is resolved before the page's OWN
  * `apiGetAs`/`apiGetAdmin` calls run. A page that fetches with the root admin
  * key on an `orgId` taken from `?org=`/`[id]` cannot rely on an ancestor to
@@ -13,8 +13,8 @@
  * has to since it has no layout at all.
  *
  * Not every page needs this. A page that renders no `apiGetAs`/`apiGetAdmin`
- * call of its own — because it delegates entirely to an already-guarded
- * Server Action, e.g. `(platform)/slots/page.tsx` → `listBookingsAction()` —
+ * call of its own - because it delegates entirely to an already-guarded
+ * Server Action, e.g. `(platform)/slots/page.tsx` → `listBookingsAction()` -
  * has nothing here to race the layout with. So the rule this suite enforces
  * is conditional: ANY page whose body calls the API directly MUST open with
  * `operatorGate()`. A page with no direct call is exempt, and the exemption
@@ -37,7 +37,7 @@ const GROUPS = ["(platform)", "(admin)"];
 
 /**
  * The 14 that call the API directly today, discovered 2026-08-16 while
- * closing the render-path hole. NOT the source of truth — a floor, so a
+ * closing the render-path hole. NOT the source of truth - a floor, so a
  * discovery walk that silently stops finding files fails loudly instead of
  * passing vacuously. A 15th direct-calling page must not fail here; it must
  * fail on its missing guard.
@@ -88,12 +88,12 @@ interface Page {
 
 /**
  * The `export default [async] function <Name>(…): … { … }` in one file.
- * Non-async is accepted too — a page with no server-side fetch of its own
+ * Non-async is accepted too - a page with no server-side fetch of its own
  * (e.g. a pure client-component wrapper like `instances/new/page.tsx`) has
  * nothing to `await`, and therefore cannot contain a direct API call in the
  * shape this suite checks for. Its body is still scanned like any other; it
  * simply won't match DIRECT_API_CALL, which is the correct, sufficient
- * reason to exempt it — not an assumption baked into the parser.
+ * reason to exempt it - not an assumption baked into the parser.
  */
 function defaultExportPage(file: string, code: string): Page | null {
   const signature = /export\s+default\s+(?:async\s+)?function\s+[A-Za-z0-9_$]+\s*\(/;
@@ -113,9 +113,9 @@ const pages = files
   .map((f) => defaultExportPage(f, code.get(f)!))
   .filter((p): p is Page => p !== null);
 
-describe("(platform)/(admin) pages — direct API calls re-assert operator identity", () => {
+describe("(platform)/(admin) pages - direct API calls re-assert operator identity", () => {
   it("discovers at least the pages known to call the API directly", () => {
-    // Vacuous if the walk finds nothing — exactly what a moved directory or a
+    // Vacuous if the walk finds nothing - exactly what a moved directory or a
     // renamed route group looks like.
     expect(files.length).toBeGreaterThan(0);
   });
@@ -124,7 +124,7 @@ describe("(platform)/(admin) pages — direct API calls re-assert operator ident
     for (const file of files) {
       expect(
         pages.some((p) => p.file === file),
-        `${file}: no \`export default async function\` parsed — either this file is not a page ` +
+        `${file}: no \`export default async function\` parsed - either this file is not a page ` +
           "component, or the parser needs to learn its shape.",
       ).toBe(true);
     }
@@ -174,7 +174,7 @@ describe("(platform)/(admin) pages — direct API calls re-assert operator ident
   it.each(directCallers.map((p) => [p.file, p] as const))(
     "%s mounts the guard as its FIRST statement, before any direct API call",
     (_label, page) => {
-      // Stronger than "calls operatorGate() somewhere" — it must be the
+      // Stronger than "calls operatorGate() somewhere" - it must be the
       // opening statement, mirroring the exact rule operator-gate.tsx states:
       // the check has to be the first thing that runs, not a wrapper hoping
       // to run first. Two statements are required, not one: `const blocked =
@@ -183,7 +183,7 @@ describe("(platform)/(admin) pages — direct API calls re-assert operator ident
       expect(
         FIRST_STATEMENT.test(page.body),
         `${page.file} does not open with \`const blocked = await operatorGate(); ` +
-          "if (blocked) return blocked;\` — see lib/operator-gate.tsx.",
+          "if (blocked) return blocked;\` - see lib/operator-gate.tsx.",
       ).toBe(true);
 
       // Belt-and-braces ordering check, independent of the exact first-two-
@@ -198,7 +198,7 @@ describe("(platform)/(admin) pages — direct API calls re-assert operator ident
   );
 
   it("every page with no direct API call also has no operatorGate() call", () => {
-    // Not a second requirement — a sanity check on the FIRST one. If this
+    // Not a second requirement - a sanity check on the FIRST one. If this
     // ever fails it means a page delegates to a guarded Server Action (fine,
     // exempt) while ALSO calling operatorGate() itself: harmless, but a sign
     // the exemption list above is stale and the page should just be added to
@@ -207,7 +207,7 @@ describe("(platform)/(admin) pages — direct API calls re-assert operator ident
     for (const page of exempt) {
       expect(
         GUARD_CALL.test(page.body),
-        `${page.file} calls operatorGate() but was classified as exempt (no direct API call) — ` +
+        `${page.file} calls operatorGate() but was classified as exempt (no direct API call) - ` +
           "add it to KNOWN_DIRECT_CALL_PAGES instead of leaving this inconsistent.",
       ).toBe(false);
     }

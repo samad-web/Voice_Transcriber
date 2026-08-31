@@ -6,13 +6,13 @@
     <string name="recording_title">Recording call</string>
     <string name="record_failed_title">Recording failed to start</string>
     <string name="record_failed_text">Couldn\'t open an audio source for this call</string>
-    <string name="record_blocked">No audio captured — the calling app has exclusive microphone access, so this call couldn\'t be recorded (VoIP recording isn\'t possible on this device).</string>
+    <string name="record_blocked">No audio captured - the calling app has exclusive microphone access, so this call couldn\'t be recorded (VoIP recording isn\'t possible on this device).</string>
     <string name="record_voip">Record messenger (VoIP) calls</string>
     <string name="recording_text">Recording • %1$s</string>
     <string name="unknown_caller">Unknown</string>
     <string name="enable_accessibility">Enable call detection (Accessibility)</string>
     <string name="accessibility_desc">Detects when a call screen is open so recording can start, and reads the other party\'s name shown on screen.</string>
-    <string name="consent_notice">Recording phone or app calls may be regulated where you live. Many places require that you inform — or get consent from — everyone on the call. You are responsible for using this app lawfully. A persistent notification is shown while recording.</string>
+    <string name="consent_notice">Recording phone or app calls may be regulated where you live. Many places require that you inform - or get consent from - everyone on the call. You are responsible for using this app lawfully. A persistent notification is shown while recording.</string>
     <string name="recordings_header">Recordings</string>
     <string name="recording_in_progress">recording…</string>
     <string name="play_pause">Play or pause</string>
@@ -35,7 +35,7 @@
     <string name="accessibility_on">Call detection: ON</string>
     <string name="accessibility_off">Call detection: OFF</string>
     <string name="force_speaker_phone">Force speaker on phone calls (capture far end)</string>
-    <string name="source_picker_label">Phone audio source — test each to find both ends:</string>
+    <string name="source_picker_label">Phone audio source - test each to find both ends:</string>
     <string name="time_progress">%1$s / %2$s</string>
 
     <!-- QR scanner -->
@@ -71,7 +71,7 @@
     <string name="scanner_media_perm">Audio &amp; storage</string>
     <string name="scanner_grant">Grant</string>
     <string name="scanner_granted">Granted</string>
-    <string name="scanner_not_granted">Not granted — results will be incomplete</string>
+    <string name="scanner_not_granted">Not granted - results will be incomplete</string>
     <string name="scanner_locations">Locations found</string>
     <string name="scanner_recent">Recent recordings</string>
     <string name="scanner_rescan">Re-scan</string>

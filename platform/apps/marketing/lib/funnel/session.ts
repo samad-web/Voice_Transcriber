@@ -6,7 +6,7 @@ import { signPayload, verifyPayload } from "./signing";
  * The step-1 → step-2 handoff. SERVER ONLY.
  *
  * Step 1 writes a `funnel_submissions` row and needs step 2 to update THAT row.
- * The obvious implementation — a hidden input carrying the uuid — is a
+ * The obvious implementation - a hidden input carrying the uuid - is a
  * broken-access-control bug on a public form: anyone can post any uuid and
  * overwrite a stranger's enquiry, and uuids leak through screenshots, browser
  * history and shared devices.
@@ -18,7 +18,7 @@ import { signPayload, verifyPayload } from "./signing";
 const COOKIE = "aura_funnel_sid";
 
 /**
- * Twenty-four hours. RAISED from two (2026-08-16) — two hours meant anyone who
+ * Twenty-four hours. RAISED from two (2026-08-16) - two hours meant anyone who
  * left step 2 for the rest of the day (end of shift, "I'll finish this
  * tomorrow") came back to "Your session expired" on a form that still had
  * their answers half filled in, with no way to resume except starting over.
@@ -31,7 +31,7 @@ export interface FunnelSession {
   /** funnel_submissions.id */
   sid: string;
   /**
-   * funnel_contact_history.id — THIS FILL's history row.
+   * funnel_contact_history.id - THIS FILL's history row.
    *
    * Carried alongside the submission id because a returning enquirer's
    * submission row is shared across every fill they have ever made, so "the
@@ -54,7 +54,7 @@ export async function setFunnelSession(submissionId: string, historyId: string):
     // origin check on top; this does not depend on that.
     sameSite: "lax",
     // In development this app is served over http://localhost:3200, and a
-    // `secure` cookie is silently dropped there — the form would appear to lose
+    // `secure` cookie is silently dropped there - the form would appear to lose
     // its session between steps with no error anywhere.
     secure: process.env.NODE_ENV === "production",
     path: "/",
@@ -75,7 +75,7 @@ export async function getFunnelSession(): Promise<FunnelSession | null> {
   if (!payload || typeof payload.iat !== "number") return null;
   if (Date.now() - payload.iat > TTL_MS) return null;
   // Shape check on both ids. They travel into parameterised queries, so this is
-  // not an injection defence — it is what stops a malformed value turning into a
+  // not an injection defence - it is what stops a malformed value turning into a
   // Postgres `invalid input syntax for type uuid`, which is a 500 rather than
   // the "your session expired" the respondent should see.
   if (!isUuid(payload.sid) || !isUuid(payload.hid)) return null;

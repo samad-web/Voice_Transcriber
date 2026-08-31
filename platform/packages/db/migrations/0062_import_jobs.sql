@@ -1,7 +1,7 @@
--- 0062_import_jobs.sql — Kailash gap Milestone 2: bulk CSV import for
+-- 0062_import_jobs.sql - Kailash gap Milestone 2: bulk CSV import for
 -- contacts/accounts/deals. The CSV itself is parsed in the browser (Papa
 -- Parse, matching the Kailash reference build's own architecture) and posted
--- here as plain JSON rows — no multer/file-upload plumbing needed.
+-- here as plain JSON rows - no multer/file-upload plumbing needed.
 
 CREATE TABLE IF NOT EXISTS import_jobs (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),

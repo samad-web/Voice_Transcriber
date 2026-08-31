@@ -18,7 +18,7 @@ object UploadApi {
 
     class ApiException(val code: Int, message: String) : Exception(message)
 
-    /** Result of POST /v1/calls — the multipart upload plan. */
+    /** Result of POST /v1/calls - the multipart upload plan. */
     data class CreateCallResult(
         val callId: String,
         val uploadId: String,
@@ -30,7 +30,7 @@ object UploadApi {
     data class PartResult(val n: Int, val etag: String)
 
     /**
-     * POST /v1/calls — registers the call and requests a multipart upload plan.
+     * POST /v1/calls - registers the call and requests a multipart upload plan.
      * [sha256] must be the lowercase 64-hex digest of the raw audio bytes.
      */
     fun createCall(
@@ -97,7 +97,7 @@ object UploadApi {
         }
     }
 
-    /** POST /v1/calls/{callId}/complete — finalizes the multipart upload. Returns the server status. */
+    /** POST /v1/calls/{callId}/complete - finalizes the multipart upload. Returns the server status. */
     fun completeCall(
         baseUrl: String,
         jwt: String,

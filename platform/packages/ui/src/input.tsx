@@ -10,7 +10,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 /**
  * A plain `<input>` with the system's chrome. Uncontrolled by default, so it
- * works inside a Server Action form with no client JS at all — which is what the
+ * works inside a Server Action form with no client JS at all - which is what the
  * slice-4 funnel needs on a 4G phone.
  *
  * There is no `label` prop: use `FormField`, which owns the id/`for` wiring.

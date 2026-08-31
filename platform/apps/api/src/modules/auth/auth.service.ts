@@ -44,7 +44,7 @@ export class AuthService {
   // ── login: verify credentials, resolve org+role, mint a session ────────
   /**
    * `orgId` is an optional caller hint (e.g. a returning user's last-used org,
-   * or a login screen that already knows which tenant it's for) — when given
+   * or a login screen that already knows which tenant it's for) - when given
    * AND the user actually has that membership, it wins; otherwise this falls
    * back to the earliest-created membership, same as before `orgId` existed.
    * That fallback is what let a multi-org user sign in at all before this hint
@@ -103,7 +103,7 @@ export class AuthService {
    *
    * Matching on the subject is authoritative; email is the fallback for an
    * account provisioned before the subject was linked. Runs on the admin pool
-   * because the whole point is to discover WHICH org context to use — there is
+   * because the whole point is to discover WHICH org context to use - there is
    * none yet to scope the query with.
    */
   async contextFor(identity: { subject?: string; email?: string }): Promise<{
@@ -151,7 +151,7 @@ export class AuthService {
   }
 
   /**
-   * The owner-console persona a real membership actually carries — used by
+   * The owner-console persona a real membership actually carries - used by
    * `OwnerRoleGuard` to enforce `@RequireOwnerRole` for an admin-key caller
    * (checklist 08 §2.5), instead of trusting the `x-caller-owner-role` header
    * the same caller supplied. A Bearer session never needs this: its
@@ -159,14 +159,14 @@ export class AuthService {
    * time (`principalFromToken`, above), not from anything the client sent.
    *
    * Three distinct outcomes, and the caller must be able to tell them apart:
-   *   - `undefined` — no membership row for this (user, org) pair AT ALL.
+   *   - `undefined` - no membership row for this (user, org) pair AT ALL.
    *     There is nothing here to derive a persona from, so there is nothing
    *     to grant based on one; the caller treats this as a denial.
-   *   - `null` — a membership row exists but its `owner_role` predates 0018.
+   *   - `null` - a membership row exists but its `owner_role` predates 0018.
    *     `resolveOwnerRole(null)` already has a documented default for this
    *     (the most permissive persona) and that default must apply the same
    *     way regardless of which auth mechanism resolved the membership.
-   *   - a real `OwnerRole` — the membership names one.
+   *   - a real `OwnerRole` - the membership names one.
    */
   async ownerRoleFor(userId: string, orgId: string): Promise<OwnerRole | null | undefined> {
     const {

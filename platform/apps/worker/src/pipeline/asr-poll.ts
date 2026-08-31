@@ -7,14 +7,14 @@ import { persistTranscript, priorAttempts, runPostAsrStages, stageHelpers } from
  *
  * `processCall` submits the audio, records the job id and stops at
  * TRANSCRIBING. This sweep finds those calls, asks the provider whether the job
- * is done, and — when it is — writes the transcript and runs the call through
+ * is done, and - when it is - writes the transcript and runs the call through
  * the remaining stages. Same shape and same reasoning as the retry sweeper and
  * the CRM outbox drain: the calls table IS the queue, so a worker restart, a
  * redeploy or a purged broker cannot strand a call whose audio the provider has
  * already accepted and charged for.
  *
  * Runs cross-tenant off the admin pool to find work, then re-enters each org's
- * RLS context to touch its rows — the sweep spans tenants, the writes never do.
+ * RLS context to touch its rows - the sweep spans tenants, the writes never do.
  */
 
 /**
@@ -22,7 +22,7 @@ import { persistTranscript, priorAttempts, runPostAsrStages, stageHelpers } from
  *
  * Sarvam's own client gives up after 10 minutes; this is deliberately looser,
  * because a long call queued behind a provider backlog is not an error. What it
- * catches is the job that never reaches a terminal state at all — without it,
+ * catches is the job that never reaches a terminal state at all - without it,
  * such a call would sit in TRANSCRIBING forever, invisible to the retry sweep
  * (which only looks at FAILED_*) and to anyone not reading worker logs.
  */
@@ -52,7 +52,7 @@ const CLAIM_SQL = `
 /**
  * Fail the claim fast when another worker already holds the row.
  *
- * Without this the UPDATE waits on the lock for the full statement_timeout —
+ * Without this the UPDATE waits on the lock for the full statement_timeout -
  * on Supabase that is tens of seconds of a pooled connection doing nothing,
  * and it surfaces as a scary `canceling statement due to statement timeout`
  * rather than the truth, which is simply "someone else got there first".
@@ -84,7 +84,7 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
     try {
       outcome = await collectSarvamAsrJob(row.asr_job_id);
     } catch (err) {
-      // A transport-level problem is not the job's verdict — leave it pending
+      // A transport-level problem is not the job's verdict - leave it pending
       // and ask again next tick. The stall check below is what eventually
       // ends a job that never resolves.
       console.error(`call ${row.id}: asr poll error for job ${row.asr_job_id}:`, err);
@@ -165,7 +165,7 @@ export function startAsrPoller(): NodeJS.Timeout {
   /**
    * One sweep at a time.
    *
-   * A tick is not a quick status check — collecting a finished job runs the
+   * A tick is not a quick status check - collecting a finished job runs the
    * whole back half of the pipeline, which on a long call means a dozen chunked
    * analyze requests and several minutes inside one transaction. A bare
    * setInterval starts the next tick anyway, and the ticks then fight over the
@@ -173,7 +173,7 @@ export function startAsrPoller(): NodeJS.Timeout {
    * until Postgres kills them with `canceling statement due to statement
    * timeout ... while locking tuple`. That failure rolls the claim back, so the
    * job is picked up again on the next tick and the provider is paid twice for
-   * exactly the same work — which is what it did in production before this
+   * exactly the same work - which is what it did in production before this
    * guard existed.
    */
   let running = false;

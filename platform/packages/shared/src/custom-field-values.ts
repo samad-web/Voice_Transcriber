@@ -28,7 +28,7 @@ import {
 /** What the caller sends: `{ values: { budget: 50000, region: "north" } }`. */
 export const CustomFieldValuesInput = z.object({
   /**
-   * Partial by design — a form that edits one field sends one key. A key
+   * Partial by design - a form that edits one field sends one key. A key
    * mapped to `null` clears that value; a key that is absent is untouched.
    * Those are genuinely different intents and collapsing them would make it
    * impossible to clear a field at all.
@@ -101,7 +101,7 @@ export function parseCustomFieldValue(
     }
 
     case "date": {
-      // Exactly YYYY-MM-DD, and it has to be a real calendar date — the same
+      // Exactly YYYY-MM-DD, and it has to be a real calendar date - the same
       // refusal-to-guess the worker's coercion makes, for the same reason:
       // `new Date("next Tuesday")` and `new Date("5000")` both produce
       // something a date column will happily accept.
@@ -154,7 +154,7 @@ export function parseCustomFieldValue(
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
         return { ok: false, message: `${field.label} must reference a record` };
       }
-      // Only the SHAPE is checked here — that the id names a real, visible
+      // Only the SHAPE is checked here - that the id names a real, visible
       // record of the right type is a database question, and it is answered
       // by the controller inside the tenant's own RLS context.
       return { ok: true, column, value: s };

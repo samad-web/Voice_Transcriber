@@ -21,17 +21,17 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
- * Roles & permissions (CRM Phase 1, E0.4) — additive to `memberships.role`/
+ * Roles & permissions (CRM Phase 1, E0.4) - additive to `memberships.role`/
  * `memberships.owner_role`, not a replacement. Schema: packages/db/
  * migrations/0039.
  *
  * SCHEMA ONLY, deliberately: nothing here is wired into PermissionsGuard/
  * OwnerRoleGuard/principalHasPermission, and there is no endpoint that
- * assigns a role to a membership — memberships.role stays the live 5-value
+ * assigns a role to a membership - memberships.role stays the live 5-value
  * CHECK enum every authorization call site reads today. See 0039's header
  * for why widening that is out of scope for a "foundation" phase. This
  * module lets an operator define custom roles and edit ANY role's (including
- * a system role's) permission grid — that's the point of the feature — but
+ * a system role's) permission grid - that's the point of the feature - but
  * a system role's identity (key/is_system) can't be renamed or archived,
  * since other code assumes the 5 seeded rows exist per org.
  */
@@ -89,7 +89,7 @@ export class RolesController {
     });
   }
 
-  /** Name/description/status only. A system role's key/is_system are fixed —
+  /** Name/description/status only. A system role's key/is_system are fixed -
    *  other code (e.g. the createTenant seed, memberships.role_id backfill)
    *  assumes the 5 seeded rows exist per org with those exact keys. */
   @Patch(":id")
@@ -147,7 +147,7 @@ export class RolesController {
   }
 
   /**
-   * Replace the full grant set for a role in one call — a permission grid is
+   * Replace the full grant set for a role in one call - a permission grid is
    * edited as a whole (every checkbox state submitted together), not one
    * cell at a time, so delete-then-insert is simpler and no less correct
    * than diffing.

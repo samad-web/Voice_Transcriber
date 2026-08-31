@@ -5,7 +5,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { Outreach } from "./outreach-client";
 import type { DueStep } from "./actions";
 
-export const metadata: Metadata = { title: "Outreach — Aura" };
+export const metadata: Metadata = { title: "Outreach - Aura" };
 
 /**
  * The follow-up ladder (migration 0058).

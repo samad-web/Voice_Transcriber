@@ -6,7 +6,7 @@ const secret = () => process.env.JWT_SECRET ?? "dev-jwt-secret-change-me";
 
 /**
  * Stateless HMAC nonce for the device auth challenge (design doc §3.2).
- * TODO (checklist §2.2): make single-use via Redis once it is wired in —
+ * TODO (checklist §2.2): make single-use via Redis once it is wired in -
  * stateless nonces are replayable within their 2-minute TTL.
  */
 export function issueNonce(deviceId: string): string {

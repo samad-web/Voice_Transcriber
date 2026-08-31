@@ -1,5 +1,5 @@
 /**
- * vitest `globalSetup` — one schema, one API, for the whole run.
+ * vitest `globalSetup` - one schema, one API, for the whole run.
  *
  * ORDER IS THE POINT. The API must not be started before the schema exists: it
  * opens its pool at boot and `OrgRegistryService` queries `organizations` on the
@@ -23,7 +23,7 @@ export default async function setup(): Promise<() => Promise<void>> {
   await startApi();
 
   return async () => {
-    // Nothing this run spawned may outlive it — a leaked API holds port 54000
+    // Nothing this run spawned may outlive it - a leaked API holds port 54000
     // and the next run fails at readiness with a confusing "already listening".
     await stopAll();
   };

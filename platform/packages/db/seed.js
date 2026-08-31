@@ -6,7 +6,7 @@ const { Client } = require("pg");
 const { sslFor } = require("./ssl");
 const { randomBytes, scryptSync } = require("node:crypto");
 
-// Version-4-shaped fixed UUIDs — zod 4's .uuid() validates RFC version bits,
+// Version-4-shaped fixed UUIDs - zod 4's .uuid() validates RFC version bits,
 // so nil-style IDs (version 0) would be rejected at the API boundary.
 const DEV_ORG_ID = "00000000-0000-4000-8000-000000000001";
 const DEV_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";

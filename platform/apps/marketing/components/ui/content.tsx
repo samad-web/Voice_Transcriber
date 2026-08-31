@@ -25,7 +25,7 @@ export function FeatureCard({
 
 /* ── StepFlow ──────────────────────────────────────────────────────────────
    Horizontal on desktop, stacked on mobile (doc 10 §3 row 4). An ordered list,
-   because the order is the meaning — the numbers are rendered from the list
+   because the order is the meaning - the numbers are rendered from the list
    rather than typed into each step, so they cannot drift. */
 export function StepFlow({
   steps,
@@ -53,7 +53,7 @@ export function StepFlow({
 /* ── LogoGrid ──────────────────────────────────────────────────────────────
    Doc 10 §15 bans invented logo walls, and there are no licensed vendor marks
    in this repository, so this renders NAMES, not logos. It is a catalogue of
-   software Aura connects to — not a claim that any of them endorse Aura, which
+   software Aura connects to - not a claim that any of them endorse Aura, which
    is exactly what a grid of borrowed logos would imply.
 
    `note` marks the four OAuth-pending providers honestly (doc 10 §3 row 10). */
@@ -110,7 +110,7 @@ export function FAQAccordion({
 
 /* ── ComparisonTable ───────────────────────────────────────────────────────
    Scrolls inside its own container so the page body never scrolls sideways on
-   a phone. `scope` on every header cell — without it the association between a
+   a phone. `scope` on every header cell - without it the association between a
    cell and its row label is guesswork for a screen reader, which is the whole
    point of the compatibility matrix. */
 export function ComparisonTable({
@@ -125,7 +125,7 @@ export function ComparisonTable({
   return (
     <>
       {/* The table is min-width 36rem and scrolls sideways inside its box on
-          anything narrower — which is every phone. That worked, but silently:
+          anything narrower - which is every phone. That worked, but silently:
           nothing on screen said the remaining columns existed, so on a 390px
           handset the compatibility matrix looked like it simply stopped at the
           second column. A scroll container with no affordance is a container
@@ -137,7 +137,7 @@ export function ComparisonTable({
         className="overflow-x-auto rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         // A scrollable region has to be reachable without a mouse or a finger.
         // Without tabIndex a keyboard user can never scroll this box, so the
-        // columns past the fold are unreachable to them — WCAG 2.1.1. The role
+        // columns past the fold are unreachable to them - WCAG 2.1.1. The role
         // and label are what stop a bare tabindex from being an unexplained
         // stop in the tab order for a screen reader.
         tabIndex={0}
@@ -205,7 +205,7 @@ export function Verdict({ ok, children }: { ok: boolean; children: React.ReactNo
 }
 
 /* ── Prose ─────────────────────────────────────────────────────────────────
-   The measure and rhythm for the trust pages. No typography plugin — a handful
+   The measure and rhythm for the trust pages. No typography plugin - a handful
    of descendant selectors is cheaper than a dependency, and this app has three
    long-form pages, not thirty. */
 export function Prose({

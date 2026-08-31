@@ -68,7 +68,7 @@ export async function reapExpired(): Promise<number> {
         );
       }
 
-      // Deals age out the same way, on their own last_activity_at clock — an
+      // Deals age out the same way, on their own last_activity_at clock - an
       // owner still working one keeps bumping it via every edit, same as
       // leads above. Deleting the deal itself cascades its custom-field
       // values, stage-transition ledger, and any interactions/tasks hung
@@ -86,7 +86,7 @@ export async function reapExpired(): Promise<number> {
         );
       }
 
-      // A contact goes once it's stale AND nothing else still needs it —
+      // A contact goes once it's stale AND nothing else still needs it -
       // same "last link" question erasure.controller.ts asks (a hand-created
       // deal, a manual note, a task), checked fresh here so a deal reaped
       // just above already counts as gone. `status <> 'merged'`: a merge

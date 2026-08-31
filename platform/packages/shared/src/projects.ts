@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Projects — which of the tenant's own offerings a call was about
+ * Projects - which of the tenant's own offerings a call was about
  * (migration 0073).
  *
  * The catalogue is the tenant's, created at runtime through the console. This
@@ -58,7 +58,7 @@ export interface Project {
  * Falls back to "project" for a name with no ASCII alphanumerics at all (a
  * purely Tamil or Devanagari project name is legal and would otherwise
  * produce an empty key that fails the CHECK constraint). Uniqueness is the
- * database's job — the caller retries with a suffix on 23505.
+ * database's job - the caller retries with a suffix on 23505.
  */
 export function deriveProjectKey(name: string): string {
   const key = name
@@ -124,7 +124,7 @@ export interface ProjectHit {
   projectId: string;
   /** 0..1, rounded to 3dp so it round-trips numeric(4,3) exactly. */
   confidence: number;
-  /** The name or alias that actually matched — shown to explain the label. */
+  /** The name or alias that actually matched - shown to explain the label. */
   matchedOn: string;
   hits: number;
 }
@@ -145,7 +145,7 @@ const BASE_CONFIDENCE_MULTI_TOKEN = 0.6;
  * That is the deliberate answer to the case that decided this number: a call
  * naming "3D Website" once and "LexDraft" twice. The multi-token bonus exists
  * to suppress FALSE positives on a word like "Aura" that could be a person's
- * name — it is not a claim that a two-word project matters more. Once a
+ * name - it is not a claim that a two-word project matters more. Once a
  * single-token name has been said twice, that ambiguity is settled, and what
  * the call kept returning to is the better guess. The two tie on confidence
  * and the hit-count tiebreak below picks LexDraft.
@@ -156,7 +156,7 @@ const REPEAT_BONUS = 0.15;
  * Find every project the text plausibly refers to, strongest first.
  *
  * Deliberately NOT an LLM call. The catalogue is a closed list of names the
- * tenant wrote down, so this is a lookup, not a judgement — and a lookup that
+ * tenant wrote down, so this is a lookup, not a judgement - and a lookup that
  * runs in microseconds, costs nothing, returns the same answer twice, and can
  * explain itself via `matchedOn`. An extra model round-trip per call would buy
  * fuzziness nobody asked for and a bill that scales with call volume.
@@ -199,7 +199,7 @@ export function detectProjects(text: string, catalogue: DetectableProject[]): Pr
     }
   }
 
-  // Confidence, then raw hit count, then the tenant's own ordering — a total
+  // Confidence, then raw hit count, then the tenant's own ordering - a total
   // order, so "the primary project" is never decided by row arrival order.
   const rank = new Map(catalogue.map((p, i) => [p.id, p.sort_order ?? i]));
   return found.sort(
@@ -210,7 +210,7 @@ export function detectProjects(text: string, catalogue: DetectableProject[]): Pr
   );
 }
 
-/** The single project a lead gets labelled with — the strongest hit, or none. */
+/** The single project a lead gets labelled with - the strongest hit, or none. */
 export function primaryProject(hits: ProjectHit[]): ProjectHit | null {
   return hits[0] ?? null;
 }

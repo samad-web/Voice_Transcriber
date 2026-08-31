@@ -16,14 +16,14 @@
  *
  *   2. THE DEVELOPER'S DEV STACK. This is the likelier accident and the one a
  *      localhost check does NOT catch: postgres 5433, rabbitmq 5672, minio 9000
- *      are all on 127.0.0.1 too. The suite is destructive — it truncates and
- *      re-seeds — so pointing it at the dev database would silently destroy
+ *      are all on 127.0.0.1 too. The suite is destructive - it truncates and
+ *      re-seeds - so pointing it at the dev database would silently destroy
  *      whatever a developer was mid-way through debugging. Hence
  *      `assertNotDevStack()`: the PORT is checked, by name, and the dev ports
  *      are rejected outright.
  *
  *   3. AMBIENT ENVIRONMENT LEAKING INTO THE SPAWNED API/WORKER. See
- *      `childEnv()` at the bottom — the subtlest of the three and the one most
+ *      `childEnv()` at the bottom - the subtlest of the three and the one most
  *      likely to be "cleaned up" by someone who does not know why it is there.
  */
 import { fileURLToPath } from "node:url";
@@ -31,7 +31,7 @@ import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** platform/ — the monorepo root. tests/setup/env.ts → tests/ → platform/. */
+/** platform/ - the monorepo root. tests/setup/env.ts → tests/ → platform/. */
 export const PLATFORM_ROOT = resolve(here, "../..");
 export const REPO_ROOT = resolve(PLATFORM_ROOT, "..");
 
@@ -59,7 +59,7 @@ export const TEST_API_PORT = 54000;
  * rather than trusted to a comment.
  *
  *   5432  a native PostgreSQL install (docker-compose.yml says so at its
- *         postgres service — that is why dev is on 5433 in the first place)
+ *         postgres service - that is why dev is on 5433 in the first place)
  *   5433  the dev stack's postgres
  *   5672  the dev stack's rabbitmq
  *   9000  the dev stack's minio
@@ -82,8 +82,8 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
  * Deliberately NARROWER than verify-rls.js's list, which also allows the
  * compose service names `postgres` and `db`. Those are legitimate there because
  * that script is designed to run *inside* the compose network. Nothing in this
- * suite does — the harness always runs on the host and reaches the containers
- * through published ports — so accepting a service name here would only ever
+ * suite does - the harness always runs on the host and reaches the containers
+ * through published ports - so accepting a service name here would only ever
  * mean someone had wired the URL to a network we cannot reason about.
  *
  * There is no RLS_TEST_ALLOW_REMOTE-style escape hatch, and that is intentional.
@@ -97,7 +97,7 @@ export function assertDisposable(label: string, url: string): URL {
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`${label} is not a parseable URL — refusing to run. Got: ${url}`);
+    throw new Error(`${label} is not a parseable URL - refusing to run. Got: ${url}`);
   }
 
   // IPv6 hostnames come back bracketed from the URL parser.
@@ -123,7 +123,7 @@ export function assertDisposable(label: string, url: string): URL {
 /**
  * Refuse the dev stack's ports specifically.
  *
- * `assertDisposable` passes for 127.0.0.1:5433 — it is loopback and it is
+ * `assertDisposable` passes for 127.0.0.1:5433 - it is loopback and it is
  * disposable in the sense of "not production". It is also the database the
  * person running this suite is actively using. This is the check that catches
  * that, and it is the reason the compose file uses 55432/55672/59000 at all.
@@ -145,7 +145,7 @@ export function assertNotDevStack(label: string, url: URL, expectedPort: number)
   if (port !== expectedPort) {
     throw new Error(
       `REFUSING TO RUN: ${label} is on port ${port}; the test stack publishes ${expectedPort}. ` +
-        "Both this file and docker-compose.test.yml have to agree — change them together.",
+        "Both this file and docker-compose.test.yml have to agree - change them together.",
     );
   }
 }
@@ -156,7 +156,7 @@ export function assertNotDevStack(label: string, url: URL, expectedPort: number)
 
 /**
  * `TEST_DATABASE_URL` exists so CI (or a developer with a stack on other ports)
- * can redirect the suite — but it is validated exactly as hard as the default,
+ * can redirect the suite - but it is validated exactly as hard as the default,
  * so an override cannot be used to escape the checks above. The default is a
  * literal, not a fallback to anything the environment might already hold: there
  * is no `DATABASE_URL ?? …` anywhere in this suite, which is what makes it
@@ -167,7 +167,7 @@ const ADMIN_URL_RAW =
   process.env.TEST_DATABASE_URL ??
   `postgresql://aura:aura_dev_password@127.0.0.1:${TEST_PG_PORT}/callintel`;
 
-/** The runtime role. NOBYPASSRLS (0001_init.sql:11-12) — this is what makes RLS bind. */
+/** The runtime role. NOBYPASSRLS (0001_init.sql:11-12) - this is what makes RLS bind. */
 const APP_URL_RAW =
   process.env.TEST_APP_DATABASE_URL ??
   `postgresql://aura_app:aura_app_password@127.0.0.1:${TEST_PG_PORT}/callintel`;
@@ -198,7 +198,7 @@ export const API_BASE = `http://127.0.0.1:${TEST_API_PORT}/v1`;
 /**
  * The bucket is `-test` suffixed so that even a mis-set S3_ENDPOINT reaching the
  * dev MinIO cannot write into the dev bucket. Belt and braces on top of the port
- * check — S3 is the one dependency where a wrong write is not recoverable by
+ * check - S3 is the one dependency where a wrong write is not recoverable by
  * re-running migrations.
  */
 export const S3_BUCKET = "aura-recordings-test";
@@ -209,8 +209,8 @@ export const S3_BUCKET = "aura-recordings-test";
 
 /**
  * Test-only, and long enough to clear assert-env.ts's MIN_SECRET_LENGTH (24) so
- * a run is not buried in advisory warnings. These are NOT secrets — they exist
- * only inside a container stack that lives for the length of one test run — but
+ * a run is not buried in advisory warnings. These are NOT secrets - they exist
+ * only inside a container stack that lives for the length of one test run - but
  * they must not be any of the literals `config/assert-env.ts` rejects, or the
  * suite would be exercising a configuration production forbids.
  */
@@ -239,18 +239,18 @@ export const PIPELINE_RETRY_INTERVAL_MS = 1000;
  *
  * `apps/api` and `apps/worker` both call
  * `ConfigModule.forRoot({ envFilePath: [join(__dirname, "../../../.env"), ".env"] })`
- * (app.module.ts:27, worker.module.ts:21), which resolves to `platform/.env` —
+ * (app.module.ts:27, worker.module.ts:21), which resolves to `platform/.env` -
  * the DEVELOPER'S file, holding real dev infrastructure and, depending on the
  * machine, real provider API keys.
  *
  * @nestjs/config does not overwrite a variable that is already set:
  * `assignVariablesToProcess` filters with `!(key in process.env)`
  * (config.module.js:202 in @nestjs/config@4.0.4). So every variable this
- * function sets is safe — the API sees ours and platform/.env cannot win.
+ * function sets is safe - the API sees ours and platform/.env cannot win.
  *
  * The corollary is the dangerous half: every variable this function does NOT
  * set is taken from platform/.env. Leaving `GEMINI_API_KEY` unset here does not
- * mean "no Gemini", it means "whatever the developer's Gemini key is" — and the
+ * mean "no Gemini", it means "whatever the developer's Gemini key is" - and the
  * pipeline suite would then bill a real provider and produce non-deterministic
  * transcripts. Same for `SARVAM_API_KEY` (which additionally switches ASR from
  * inline to the batch/poller path, a completely different code route), and for

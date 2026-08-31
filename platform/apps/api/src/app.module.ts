@@ -87,8 +87,8 @@ import { PublicApiModule } from "./modules/public-api/public-api.module";
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by
-    // remembering to decorate it. The two callers that must never be limited —
-    // the console (one source IP, admin key) and the handset fleet — are
+    // remembering to decorate it. The two callers that must never be limited -
+    // the console (one source IP, admin key) and the handset fleet - are
     // exempted explicitly: see config/throttling.ts and the `@SkipThrottle()`
     // on every device-authed route.
     { provide: APP_GUARD, useClass: ThrottlerGuard },

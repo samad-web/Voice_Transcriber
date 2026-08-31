@@ -3,7 +3,7 @@
  * person (Track A5).
  *
  * These are PLACEHOLDERS the pipeline itself writes when a call gave it
- * nothing to go on — `leadTitle()` in apps/worker/src/pipeline/leads.ts falls
+ * nothing to go on - `leadTitle()` in apps/worker/src/pipeline/leads.ts falls
  * back to "Unknown caller" for a call with no name and no number. Two such
  * contacts score 1.0 against each other under any string similarity measure
  * while being, precisely, two people nobody could identify. Queueing them as

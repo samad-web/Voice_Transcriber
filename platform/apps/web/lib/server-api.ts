@@ -3,14 +3,14 @@ import type { OwnerRole } from "@aura/shared";
 import { type ApiResult, NO_HTTP_STATUS, classifyStatus, unwrap } from "@/lib/api-result";
 
 /**
- * Server-side API access only — the admin key must never reach the browser.
+ * Server-side API access only - the admin key must never reach the browser.
  * Dev defaults match the seed script; production swaps this for the OIDC
  * session (checklist §4.1).
  *
  * `import "server-only"` is the belt-and-suspenders half of that sentence: it
  * throws a build error if any Client Component ever imports this module,
  * instead of relying on nobody doing so by discipline alone. No `"use client"`
- * file imports it today — this just makes that invariant load-bearing.
+ * file imports it today - this just makes that invariant load-bearing.
  */
 export const API_URL = process.env.API_URL ?? "http://localhost:4000";
 
@@ -19,9 +19,9 @@ export const API_URL = process.env.API_URL ?? "http://localhost:4000";
  * `resolveAdminKey()` (apps/api/src/common/admin-key.guard.ts) deliberately:
  * both sides of the same credential should fail the same way.
  *
- * `ADMIN_API_KEY` is the platform's root credential — AdminKeyGuard mints a
+ * `ADMIN_API_KEY` is the platform's root credential - AdminKeyGuard mints a
  * synthetic platform_admin from it and trusts the `x-org-id` that comes with
- * it — and `"dev-admin-key"` is a string published in this repository. Under
+ * it - and `"dev-admin-key"` is a string published in this repository. Under
  * `NODE_ENV=production` an unset variable therefore yields the empty string,
  * which no configured key can ever equal, so the API answers 401 rather than
  * the console quietly operating every tenant behind a public literal. Outside
@@ -32,7 +32,7 @@ export const API_URL = process.env.API_URL ?? "http://localhost:4000";
  * `instrumentation.ts` already throws at boot on the same condition, and that
  * is the control an operator will actually meet. This is the second line, for
  * the same reason the API side has one: a single chokepoint is one skipped code
- * path away from being no chokepoint. Empty counts as unset — a variable set to
+ * path away from being no chokepoint. Empty counts as unset - a variable set to
  * whitespace must not become the key.
  *
  * Deliberately NOT a throw at module load. `next build` runs with
@@ -55,14 +55,14 @@ export const DEV_WORKSPACE_ID =
  * The platform `users.id` the unconfigured-auth dev principal acts as.
  *
  * Defaults to null, which is exactly the behaviour before this existed. It is
- * read ONLY by getPrincipal's `!user && !AUTH_ENABLED` branch — the documented
- * local-dev mode — and cannot be reached with Supabase auth configured.
+ * read ONLY by getPrincipal's `!user && !AUTH_ENABLED` branch - the documented
+ * local-dev mode - and cannot be reached with Supabase auth configured.
  *
  * WHY IT IS NEEDED: without a user id, `orgHeaders` omits `x-caller-user-id`,
  * and `CrmPermissionsGuard` refuses any request whose principal has no valid
  * uuid userId. So with auth unconfigured, EVERY CRM-object page (contacts,
  * deals, tasks, products, quotations, invoices, reports) 403s and renders
- * "Data unavailable" — while the non-CRM pages beside them work, which makes
+ * "Data unavailable" - while the non-CRM pages beside them work, which makes
  * it read like an outage rather than a missing local credential.
  *
  * Set it to a user who actually holds a membership in DEV_ORG_ID. A value that
@@ -81,7 +81,7 @@ export const adminHeaders = {
  * Credentials WITHOUT an org, for the endpoints that legitimately span every
  * tenant: provisioning a new customer, resolving a login's memberships, the
  * fleet rollup. Sending `x-org-id` on those would tie them to whether
- * DEV_ORG_ID still names a live org — which is exactly backwards, since
+ * DEV_ORG_ID still names a live org - which is exactly backwards, since
  * creating the very first tenant happens when no such org exists yet.
  */
 export const crossTenantHeaders = {
@@ -90,7 +90,7 @@ export const crossTenantHeaders = {
 };
 
 /** Who is actually asking, threaded through the admin-key call so an API-side
- *  guard can enforce owner-console personas server-side (design doc §9) —
+ *  guard can enforce owner-console personas server-side (design doc §9) -
  *  without this the API would only ever see the omnipotent admin key. */
 export interface Caller {
   ownerRole?: OwnerRole | null;
@@ -100,7 +100,7 @@ export interface Caller {
 /**
  * Same admin credentials, pointed at a specific tenant. The platform operator
  * manages customers other than the dev org, so instance pages override the org
- * context per request — the admin key is not pinned to one tenant.
+ * context per request - the admin key is not pinned to one tenant.
  */
 export const orgHeaders = (orgId: string, caller?: Caller) => ({
   ...adminHeaders,
@@ -112,8 +112,8 @@ export const orgHeaders = (orgId: string, caller?: Caller) => ({
 /**
  * The single fetch in the web tier. Everything below is a wrapper over this.
  *
- * It never throws — every page in the console is written on the assumption that
- * a failed panel renders a card rather than blowing up the whole route — but it
+ * It never throws - every page in the console is written on the assumption that
+ * a failed panel renders a card rather than blowing up the whole route - but it
  * does say *why* it failed, and it says so in the server log. Until now a 403
  * from a persona guard and a 500 from the API were both a silent `null`, which
  * is why an empty page in production was undiagnosable without a repro.
@@ -127,7 +127,7 @@ async function request<T>(
   try {
     res = await fetch(`${API_URL}${path}`, { headers, cache: "no-store" });
   } catch (err) {
-    // No HTTP response at all — API not running, DNS, TLS, abort.
+    // No HTTP response at all - API not running, DNS, TLS, abort.
     const message = err instanceof Error ? err.message : String(err);
     logFailure(path, orgId, NO_HTTP_STATUS, message);
     return { ok: false, kind: "network", status: NO_HTTP_STATUS, message };
@@ -154,12 +154,12 @@ async function request<T>(
 }
 
 /** One line per failure, with the three facts needed to find it: which route,
- *  which tenant, which status. Server-side only — this module never reaches the
+ *  which tenant, which status. Server-side only - this module never reaches the
  *  browser. */
 function logFailure(path: string, orgId: string | null, status: number, message: string) {
   console.warn(
     `[api] ${status === NO_HTTP_STATUS ? "unreachable" : status} ${path}` +
-      ` org=${orgId ?? "cross-tenant"} — ${message}`,
+      ` org=${orgId ?? "cross-tenant"} - ${message}`,
   );
 }
 
@@ -184,7 +184,7 @@ export async function apiGet<T>(path: string): Promise<T | null> {
 /**
  * GET a cross-tenant operator endpoint (`/v1/admin/*`), sending NO org header.
  * Those routes span every tenant, and attaching `x-org-id` would tie them to
- * whether DEV_ORG_ID happens to name a live org — so a stale env var would
+ * whether DEV_ORG_ID happens to name a live org - so a stale env var would
  * take out the tenant list itself, and with it the switcher that is the only
  * way to reach a working tenant.
  */
@@ -195,7 +195,7 @@ export async function apiGetAdmin<T>(path: string): Promise<T | null> {
 /**
  * apiGet against an explicit tenant org.
  *
- * Kept exactly as it was — `T | null`, never throws — because ~35 call sites
+ * Kept exactly as it was - `T | null`, never throws - because ~35 call sites
  * depend on that shape. It is now a collapse of `apiTry`, so the failure is
  * logged even though the caller cannot see it. Migrating a page means switching
  * it to `apiTry` and rendering the four states; that is Stage 2, not this.

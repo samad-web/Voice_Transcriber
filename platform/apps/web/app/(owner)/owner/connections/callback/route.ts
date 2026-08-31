@@ -6,7 +6,7 @@ import { API_URL, orgHeaders } from "@/lib/server-api";
  * Where OAuth providers send the browser back (PRD Layer 1).
  *
  * This URL is what gets registered in the provider's app console, so it is
- * fixed and lives in the web app rather than the API — which also keeps the
+ * fixed and lives in the web app rather than the API - which also keeps the
  * root ADMIN_API_KEY behind the server boundary. The browser arrives here with
  * `code` and `state`; this hands both to the API, which is the only place that
  * knows whether the state was ever issued.

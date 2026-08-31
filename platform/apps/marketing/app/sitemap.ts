@@ -5,7 +5,7 @@ import { SITE_URL } from "@/lib/site";
 /**
  * Doc 10 §9. Listed by hand rather than generated from the filesystem: a
  * sitemap that silently grows an entry when someone adds a route is a sitemap
- * nobody reviews, and the priority ordering below is a judgement — doc 10 §9
+ * nobody reviews, and the priority ordering below is a judgement - doc 10 §9
  * says /compatibility carries the highest-intent organic traffic on the site,
  * ahead of the homepage.
  */

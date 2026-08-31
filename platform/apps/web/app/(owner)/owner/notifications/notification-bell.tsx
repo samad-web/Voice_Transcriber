@@ -75,7 +75,7 @@ export function NotificationBell() {
     startTransition(async () => {
       const res = await markNotificationReadAction(id);
       // On failure the optimistic update above is wrong and would otherwise
-      // sit there un-reconciled until the next 60s poll — resync now, same
+      // sit there un-reconciled until the next 60s poll - resync now, same
       // as markAll already does.
       if (res.error) load();
     });

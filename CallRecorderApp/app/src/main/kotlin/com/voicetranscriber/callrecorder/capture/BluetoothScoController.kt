@@ -7,7 +7,7 @@ import android.util.Log
 
 /**
  * Routes call audio through Bluetooth SCO so an AudioRecord (VOICE_COMMUNICATION) can
- * capture it when the call is on a Bluetooth headset. Best-effort and device-dependent —
+ * capture it when the call is on a Bluetooth headset. Best-effort and device-dependent -
  * on some phones the telephony stack owns SCO exclusively and capture stays empty.
  */
 class BluetoothScoController(private val am: AudioManager) {

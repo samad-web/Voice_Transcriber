@@ -93,7 +93,7 @@ describe("fillTemplate", () => {
     it("drops a trailing optional placeholder that ends the message", () => {
       // {{reschedule_link}} usually sits at the very end with no full stop
       // after it. The original regex demanded a terminator, so an un-minted
-      // link at end-of-string would have been left as the neutral word — i.e.
+      // link at end-of-string would have been left as the neutral word - i.e.
       // "Pick a new time: there" on somebody's phone.
       const out = fillTemplate("Sorry we missed you. Pick a new time: {{reschedule_link}}", {});
       expect(out).toBe("Sorry we missed you.");
@@ -110,7 +110,7 @@ describe("fillTemplate", () => {
 
 describe("titleNameOf", () => {
   it("puts the chosen salutation in front of the whole name", () => {
-    // The WHOLE name, not a guessed surname — in this funnel's market the last
+    // The WHOLE name, not a guessed surname - in this funnel's market the last
     // word is often a father's name or an initial, so "Mr. Kumar" is a coin
     // flip where "Mr. Ramesh Kumar" is always right.
     expect(titleNameOf("mr", "ramesh kumar")).toBe("Mr. Ramesh Kumar");
@@ -118,7 +118,7 @@ describe("titleNameOf", () => {
   });
 
   it("gives nothing back when they chose not to say", () => {
-    // 'other' is "prefer not to say" — inventing "Mr." for them is the exact
+    // 'other' is "prefer not to say" - inventing "Mr." for them is the exact
     // failure the option exists to avoid.
     expect(titleNameOf("other", "Ramesh Kumar")).toBeUndefined();
     expect(titleNameOf(null, "Ramesh Kumar")).toBeUndefined();
@@ -187,7 +187,7 @@ describe("firstNameOf", () => {
 
   it("leaves the neutral fallback lower case", () => {
     // "Hi There," would be the capitalisation rule leaking somewhere it does
-    // not belong — `there` is an ordinary word mid-sentence, not a name.
+    // not belong - `there` is an ordinary word mid-sentence, not a name.
     expect(fillTemplate("Hi {{first_name}},", { first_name: firstNameOf("R") })).toBe("Hi there,");
   });
 
@@ -229,7 +229,7 @@ describe("validateTemplateBody", () => {
 
   it("rejects {{slot}} outside the booking stage", () => {
     // The one that matters: no other stage has a booked time, so this would
-    // render as "there" on every send — a message that looks fine in the editor
+    // render as "there" on every send - a message that looks fine in the editor
     // and is nonsense on the phone.
     const result = validateTemplateBody("rejected", "See you at {{slot}}.", "whatsapp");
     expect(result.ok).toBe(false);
@@ -281,7 +281,7 @@ describe("validateTemplateBody", () => {
   });
 
   it("refuses email copy for a WhatsApp-only stage", () => {
-    // reminder_call_5m has no email variant on purpose — five minutes is not
+    // reminder_call_5m has no email variant on purpose - five minutes is not
     // enough notice for mail. Storing copy for it would be copy nothing reads.
     const result = validateTemplateBody("reminder_call_5m", "Hello.", "email");
     expect(result.ok).toBe(false);
@@ -352,7 +352,7 @@ describe("the catalogue", () => {
         spec.key,
         spec.whatsapp,
       ]);
-      // undefined for a WhatsApp-only stage is the correct answer, not a hole —
+      // undefined for a WhatsApp-only stage is the correct answer, not a hole -
       // it is what tells the drain to dead-letter an email row for that stage
       // instead of sending a blank.
       expect([spec.key, getTemplateFallback(spec.key, "email")?.body]).toEqual([
@@ -406,7 +406,7 @@ describe("the migration seed matches the built-in copy", () => {
    * Migration 0026 seeds these same five bodies into
    * `marketing.message_templates`, and this file holds them as the fallback.
    * Two copies of the same sentences, and nothing else notices when they
-   * diverge — an edit here would give a freshly-migrated environment different
+   * diverge - an edit here would give a freshly-migrated environment different
    * "original wording" from an existing one, and "Restore original" would put
    * back copy that was never what the database had.
    */

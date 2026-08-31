@@ -15,7 +15,7 @@ import { zonedDateParts, zonedTimeToUtc } from "./zoned-time";
 
    ── WHY THE CALENDAR IS ONE THE SERVICE ACCOUNT OWNS ────────────────────────
 
-   Not preference — necessity. The Workspace domain restricts OUTBOUND calendar
+   Not preference - necessity. The Workspace domain restricts OUTBOUND calendar
    sharing to free/busy only, so granting the service account write access to a
    human's calendar is impossible: `events.insert` returns 403
    `requiredAccessLevel` on the primary calendar AND on secondary ones. INBOUND
@@ -31,7 +31,7 @@ import { zonedDateParts, zonedTimeToUtc } from "./zoned-time";
      • a Meet link is requested and minted.
 
    With it unset, NEITHER happens. Both are entitlements of a real Workspace
-   mailbox, and a bare service account has neither — asking for a Meet link
+   mailbox, and a bare service account has neither - asking for a Meet link
    without it fails the whole insert with 400 "Invalid conference type value."
    (see note at `wantsMeet`). That coupling is deliberate; if the two ever need
    to be separated, split the flag rather than making the Meet request
@@ -51,7 +51,7 @@ export type GoogleCalendarConfig = {
   serviceAccountEmail: string;
   /** PEM private key from the service-account JSON. */
   privateKey: string;
-  /** Workspace mailbox to impersonate. Required for attendee invites — see (4). */
+  /** Workspace mailbox to impersonate. Required for attendee invites - see (4). */
   impersonateSubject?: string;
   /**
    * Extra calendars consulted for free/busy but never written to. Lets the
@@ -67,7 +67,7 @@ export type GoogleCalendarConfig = {
   dayEndMinutes: number;
   /** 0 = Sunday. Days the team takes calls. */
   weekdays: number[];
-  /** Never offer a slot sooner than this — nobody can take a call in 5 minutes. */
+  /** Never offer a slot sooner than this - nobody can take a call in 5 minutes. */
   minNoticeMinutes: number;
   /** Cap on how many slots the picker is handed. */
   maxSlots: number;
@@ -95,7 +95,7 @@ export class GoogleCalendarScheduler implements Scheduler {
 
     // A candidate survives only if it overlaps NOTHING busy. Half-open
     // comparison ([start, end)) so a slot that begins exactly when a meeting
-    // ends is still offered — back-to-back is normal, overlapping is not.
+    // ends is still offered - back-to-back is normal, overlapping is not.
     return candidates
       .filter((slot) => {
         const s = slot.start.getTime();
@@ -117,7 +117,7 @@ export class GoogleCalendarScheduler implements Scheduler {
      * same slot. This narrows that window from "however long the picker was on
      * screen" to one round trip. It does not close it. If double-booking ever
      * matters more than it does at this volume, the fix is a uniqueness
-     * constraint on `funnel_submissions.booking_slot` in our own database —
+     * constraint on `funnel_submissions.booking_slot` in our own database -
      * which is Dev C's table, not this module's call to make.
      */
     const busy = await this.freeBusy(slot.start, slot.end);
@@ -142,7 +142,7 @@ export class GoogleCalendarScheduler implements Scheduler {
      *     400  "Invalid conference type value."
      *
      * That is a hard failure of the whole insert, not a missing link on an
-     * otherwise good event — so sending it unconditionally would turn EVERY
+     * otherwise good event - so sending it unconditionally would turn EVERY
      * booking into an error for any deployment without domain-wide delegation.
      * The service account has no Meet entitlement; there is nothing to
      * configure that changes this short of delegation.
@@ -172,7 +172,7 @@ export class GoogleCalendarScheduler implements Scheduler {
       //
       // `createRequest` is the only way to get one: a Meet URL cannot be
       // constructed or guessed, and setting `hangoutLink` directly is ignored.
-      // The requestId is idempotency — repeating it returns the SAME conference
+      // The requestId is idempotency - repeating it returns the SAME conference
       // rather than creating a second one, which matters because this event id
       // is itself a dedupe key and a retry must not produce two links for one
       // meeting.
@@ -195,7 +195,7 @@ export class GoogleCalendarScheduler implements Scheduler {
 
     // `conferenceDataVersion=1` is REQUIRED whenever a conference is requested.
     // Without it Google silently drops the conferenceData block and returns a
-    // perfectly valid event with no Meet link — the failure that looks like the
+    // perfectly valid event with no Meet link - the failure that looks like the
     // feature simply not working.
     const params = new URLSearchParams();
     if (wantsMeet) params.set("conferenceDataVersion", "1");
@@ -225,7 +225,7 @@ export class GoogleCalendarScheduler implements Scheduler {
        * Workspace admin console long after this is configured and without
        * anyone touching this repository. A booking that has already been
        * confirmed to a person must not fail over a video URL, so this trades
-       * the link for the meeting — and only when the error names the
+       * the link for the meeting - and only when the error names the
        * conference, so a genuine failure still surfaces.
        */
       const message = err instanceof Error ? err.message : String(err);
@@ -269,7 +269,7 @@ export class GoogleCalendarScheduler implements Scheduler {
    * 404 and 410 are SUCCESS. Google returns 410 for an event already deleted
    * and 404 for one it never had, and in both cases the state we want is the
    * state that exists. Treating them as failures would make a retried
-   * reschedule — or one racing an operator who cancelled by hand — report an
+   * reschedule - or one racing an operator who cancelled by hand - report an
    * error for work that was already done.
    *
    * Not routed through `fetchJson`: a successful DELETE has an empty body, so
@@ -300,7 +300,7 @@ export class GoogleCalendarScheduler implements Scheduler {
    * deployment names.
    *
    * Why extras exist: where the domain forbids sharing a real calendar with
-   * write access, bookings land on a calendar the service account owns — which
+   * write access, bookings land on a calendar the service account owns - which
    * starts empty and knows nothing about the sales team's actual day. Consulted
    * alone it would cheerfully offer 3pm while 3pm is already a customer call.
    *
@@ -380,7 +380,7 @@ export class GoogleCalendarScheduler implements Scheduler {
       exp: nowSec + 3600,
     };
     // `sub` is what turns a service-account token into "acting as this human".
-    // Without it Google refuses to send attendee invites — see note (4) above.
+    // Without it Google refuses to send attendee invites - see note (4) above.
     if (this.config.impersonateSubject) claims.sub = this.config.impersonateSubject;
 
     const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -460,7 +460,7 @@ export class SlotTakenError extends Error {
 /**
  * A deterministic Calendar event id, so a retried booking collides in Google
  * instead of duplicating. Calendar ids must be base32hex (lowercase a-v and
- * 0-9), 5–1024 chars — a uuid with hyphens stripped contains w-z never, but
+ * 0-9), 5-1024 chars - a uuid with hyphens stripped contains w-z never, but
  * DOES contain hex only, so it is already legal; the timestamp suffix keeps a
  * rebooking by the same person distinct.
  */

@@ -6,7 +6,7 @@ import { cx } from "./cx";
  *
  * v2 drops the uppercase + 0.2em tracking. That convention goes with the
  * brutalist system: it hurts scanning at 10px and is actively hostile to Tamil,
- * Hindi and Telugu, which have no case distinction — so uppercasing does nothing
+ * Hindi and Telugu, which have no case distinction - so uppercasing does nothing
  * but break the shaping the reader relies on. This is a product whose headline
  * claim is native support for those scripts.
  *

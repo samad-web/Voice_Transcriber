@@ -8,7 +8,7 @@ import { Select } from "./select";
 export interface FormFieldProps {
   /** Visible question text. Sentence case. */
   label: ReactNode;
-  /** Form field name. Also seeds the generated ids — see the note below. */
+  /** Form field name. Also seeds the generated ids - see the note below. */
   name: string;
   /** Exactly one control: `Input`, `Select`, a `<textarea>`, anything. */
   children: ReactNode;
@@ -27,7 +27,7 @@ export interface FormFieldProps {
  * form in either app has to remember it.
  *
  * **Why ids are derived from `name` instead of `useId`.** `useId` is a hook, and
- * a hook makes this a Client Component — which would drag every form in an
+ * a hook makes this a Client Component - which would drag every form in an
  * RSC-first console, and the whole slice-4 funnel, into the client bundle for
  * the sake of a string. `name` is already required on any control that submits,
  * and is already unique within a form. Two fields sharing a `name` on one page
@@ -46,7 +46,7 @@ export interface FormFieldProps {
  *
  * The error and the hint both use *text*, never colour alone (WCAG 1.4.1).
  * Hint text uses `--color-text-muted` (4.89:1) rather than `--color-text-subtle`
- * (3.45:1) — a hint carries information, so it is body text and owes the full
+ * (3.45:1) - a hint carries information, so it is body text and owes the full
  * 4.5:1, not the large-text allowance.
  */
 export function FormField({
@@ -60,7 +60,7 @@ export function FormField({
   className = "",
 }: FormFieldProps) {
   // The child's own `id` wins, because the cloneElement below preserves it and
-  // that is what actually lands in the DOM — deriving `htmlFor` from `name`
+  // that is what actually lands in the DOM - deriving `htmlFor` from `name`
   // regardless would point the <label> at an element that does not exist.
   const childId =
     isValidElement(children) && typeof (children.props as Record<string, unknown>).id === "string"
@@ -71,7 +71,7 @@ export function FormField({
   const hintId = `${controlId}-hint`;
 
   // The hint is suppressed while an error is showing (see the render below), so
-  // it must drop out of aria-describedby at the same time — pointing the control
+  // it must drop out of aria-describedby at the same time - pointing the control
   // at an id that is not in the document is a dangling reference that some
   // screen readers report as an empty description and others skip silently.
   const showHint = Boolean(hint) && !error;

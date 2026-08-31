@@ -41,13 +41,13 @@ interface RowOutcome {
 /**
  * Bulk CSV import for contacts/accounts/deals (Kailash gap Milestone 2).
  *
- * On AdminKeyGuard+TenantGuard only, not CrmPermissionsGuard — a bulk
+ * On AdminKeyGuard+TenantGuard only, not CrmPermissionsGuard - a bulk
  * operation spanning up to 5,000 rows of a caller-chosen entity type doesn't
  * fit a single static `@RequireCrmPermission`, and this is the same
  * administrative-bulk-operation tier `scripts/backfill-crm-objects.js`
  * already operates at, not a per-record permission surface.
  *
- * The CSV itself is parsed in the browser (Papa Parse) — this only ever sees
+ * The CSV itself is parsed in the browser (Papa Parse) - this only ever sees
  * already-parsed JSON rows, so there is no file-upload/multer plumbing here.
  */
 @Controller("import")
@@ -100,7 +100,7 @@ export class ImportController {
         // Each row runs inside its own SAVEPOINT. A constraint violation
         // (e.g. a duplicate phone/email/domain) marks the whole surrounding
         // transaction aborted at the Postgres level even though the JS
-        // exception below is caught — every statement after it, including
+        // exception below is caught - every statement after it, including
         // this row's own import_job_errors insert, would then fail with
         // "current transaction is aborted" unless rolled back to a point
         // before the bad statement ran.
@@ -169,12 +169,12 @@ export class ImportController {
   }
 
   /**
-   * `raw` is the row exactly as the importer typed or pasted it — phone
+   * `raw` is the row exactly as the importer typed or pasted it - phone
    * numbers and emails included, unhashed, so the failing row is fixable and
    * re-uploadable. That is real PII sitting behind nothing but tenant
    * membership before this check: any member could browse (or CSV-export)
    * another member's failed import. Restricted to the person who ran the
-   * import, or an org admin — the same bar `OrgRoleGuard` uses elsewhere,
+   * import, or an org admin - the same bar `OrgRoleGuard` uses elsewhere,
    * inlined here because it turns on THIS job's `created_by_user_id`, not a
    * static per-route role, so a class-level guard can't express it.
    */
@@ -198,7 +198,7 @@ export class ImportController {
     });
   }
 
-  /** Same CSV as the report exports — one encoder for the whole codebase. */
+  /** Same CSV as the report exports - one encoder for the whole codebase. */
   @Get(":jobId/errors.csv")
   async errorsCsv(@OrgId() orgId: string, @Param("jobId", ParseUUIDPipe) jobId: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
@@ -339,13 +339,13 @@ async function importAccountRow(
     await client.query(`INSERT INTO accounts (org_id, name, domain) VALUES ($1, $2, $3)`, [orgId, row.name, domain]);
     return { outcome: "inserted" };
   } catch (err) {
-    // Thrown, not returned — see importContactRow's identical comment.
+    // Thrown, not returned - see importContactRow's identical comment.
     if (isUniqueViolation(err)) throw new Error("an account with this domain already exists");
     throw err;
   }
 }
 
-/** Deals have no natural dedup key across a CSV — always creates. */
+/** Deals have no natural dedup key across a CSV - always creates. */
 async function importDealRow(client: QueryClient, orgId: string, row: Record<string, string | null>): Promise<RowOutcome> {
   if (!row.name) return { outcome: "failed", error: "no name on this row" };
 

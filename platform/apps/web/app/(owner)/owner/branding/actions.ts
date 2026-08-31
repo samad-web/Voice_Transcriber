@@ -23,7 +23,7 @@ export interface BrandingActionResult {
 
 /**
  * PATCH /org/branding merges into the existing jsonb rather than replacing
- * it, so only the fields the user actually changed need to be sent — see
+ * it, so only the fields the user actually changed need to be sent - see
  * tenancy.controller.ts's `branding || $2::jsonb` update.
  */
 export async function updateBrandingAction(patch: BrandingPatch): Promise<BrandingActionResult> {

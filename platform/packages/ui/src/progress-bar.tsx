@@ -6,7 +6,7 @@ import { cx } from "./cx";
  * `role="progressbar"` + the value attributes are new (the DOM changed; the
  * props did not). Without them the bar was pure decoration and a screen-reader
  * user got no number at all, because the percentage exists only as a width.
- * There is intentionally no `aria-label` prop — adding props is out of scope for
+ * There is intentionally no `aria-label` prop - adding props is out of scope for
  * this pass, and every current call site already renders a `MonoLabel` next to
  * the bar saying what it measures.
  */

@@ -8,7 +8,7 @@ import type { PermissionGrant, PermissionGrantRow, Role } from "./types";
 /**
  * Server actions for the roles/permissions admin console (CRM Phase 1,
  * E0.4). Same shape as (platform)/crm/actions.ts and (platform)/
- * custom-fields/actions.ts — `requireOperator()` is the first statement of
+ * custom-fields/actions.ts - `requireOperator()` is the first statement of
  * every export; see lib/operator-guard.ts for why that can't live in the
  * layout instead.
  */
@@ -38,7 +38,7 @@ async function call<T>(
     }
     return { data: payload as T };
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 

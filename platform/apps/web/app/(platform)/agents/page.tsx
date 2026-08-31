@@ -33,7 +33,7 @@ export default async function AgentsPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : workspaces.length === 0 ? (
@@ -48,11 +48,11 @@ export default async function AgentsPage({
         <div className="space-y-6">
           {/* `key={orgId}` forces a full remount on tenant switch (TenantSwitcher
               navigates client-side within this same route via `?org=`), rather
-              than just a prop update — without it, `workspaceId`/`agentId`/the
+              than just a prop update - without it, `workspaceId`/`agentId`/the
               builder's draft state stay seeded from whichever tenant was active
               on first mount. Submitting Create Agent then sends the PREVIOUS
               tenant's workspaceId alongside the NEW orgId, which the API
-              correctly 404s as "workspace not found in this org" — the
+              correctly 404s as "workspace not found in this org" - the
               workspace is real, just not visible under the new tenant's RLS
               scope. */}
           <AgentStudio key={orgId} agents={data.agents} orgId={orgId} workspaces={workspaces} />

@@ -14,7 +14,7 @@ import kotlin.concurrent.thread
 
 /**
  * PCM capture via [AudioRecord] → [AacEncoder]. The source is chosen by probing
- * [CaptureProfile.sources] in priority order, and — crucially — each source is
+ * [CaptureProfile.sources] in priority order, and - crucially - each source is
  * tried at BOTH 8 kHz and 16 kHz. Clean-room version of Cube ACR's capture, which
  * we confirmed records calls at 8 kHz (`C6032c`): the telephony sources
  * (VOICE_CALL / VOICE_COMMUNICATION) are narrowband and often only initialize at
@@ -23,7 +23,7 @@ import kotlin.concurrent.thread
  * capture BOTH ends directly where the OEM permits it.
  *
  * Bluetooth: if the call is on a BT headset, route audio through SCO and capture
- * VOICE_COMMUNICATION (SCO doesn't carry VOICE_CALL). Best-effort — device dependent.
+ * VOICE_COMMUNICATION (SCO doesn't carry VOICE_CALL). Best-effort - device dependent.
  *
  * Fallback: if no both-ends source opens, we use a raw mic source and force the
  * loudspeaker so the far end plays out loud and the mic captures it acoustically
@@ -115,7 +115,7 @@ class AudioCapturer(
 
     /**
      * Rates to try per source. VOICE_CALL / VOICE_DOWNLINK carry BOTH ends but are
-     * narrowband — they only open at the telephony HAL's 8 kHz (this is how Cube ACR
+     * narrowband - they only open at the telephony HAL's 8 kHz (this is how Cube ACR
      * captures both sides: it records calls at 8 kHz, see C6032c). We try 8 kHz FIRST for
      * those, then 16 kHz. Mic sources stay at the proven 16 kHz. No audio-mode change is
      * involved, so this cannot disrupt capture the way forcing the speaker did.
@@ -167,14 +167,14 @@ class AudioCapturer(
     }
 
     private fun engageSpeakerIfNeeded() {
-        // Only raw mic sources need the speaker — VOICE_CALL/VOICE_COMMUNICATION already
+        // Only raw mic sources need the speaker - VOICE_CALL/VOICE_COMMUNICATION already
         // carry the far end (and forcing speaker onto VOICE_COMMUNICATION's AEC would
         // strip it). MIC / VOICE_RECOGNITION hear only the near end, so play the far end
         // out loud and capture it acoustically.
         val rawMic = chosenSource == MediaRecorder.AudioSource.MIC ||
             chosenSource == MediaRecorder.AudioSource.VOICE_RECOGNITION
         if (!(profile.forceSpeakerForMicSources && rawMic)) return
-        // Speaker routing must NEVER fail the recording — capture is already running by
+        // Speaker routing must NEVER fail the recording - capture is already running by
         // now. Any error here just means we may capture one side; we still keep the file.
         try {
             restoreMode = am.mode

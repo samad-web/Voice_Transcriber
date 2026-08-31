@@ -1,10 +1,10 @@
 /**
- * Outreach cadences — the follow-up ladder (migration 0058).
+ * Outreach cadences - the follow-up ladder (migration 0058).
  *
  * The ladder SCHEDULES HUMAN WORK. It does not send. Safety rule 3 says
  * nothing automated can send, and the sweep that drives this only ever moves
  * a step from 'waiting' to 'due'; a person opens the console and acts. The
- * schema it is modelled on (B2 Consultants') dispatches WhatsApp on a timer —
+ * schema it is modelled on (B2 Consultants') dispatches WhatsApp on a timer -
  * that half is deliberately absent, and the absence is the design.
  */
 import { z } from "zod";
@@ -16,7 +16,7 @@ export type OutreachChannel = z.infer<typeof OutreachChannel>;
 /**
  * What ends a journey early.
  *
- * The whole value of a cadence is "chase until X, then stop" — a ladder with
+ * The whole value of a cadence is "chase until X, then stop" - a ladder with
  * no stop condition is just a way to annoy somebody who has already said yes.
  */
 export const OutreachStopCondition = z.enum(["booked", "replied", "won", "none"]);
@@ -26,8 +26,8 @@ export const OutreachJourneyStatus = z.enum(["active", "completed", "stopped"]);
 export type OutreachJourneyStatus = z.infer<typeof OutreachJourneyStatus>;
 
 /**
- * 'skipped' is a rep saying "not doing this one" — a decision, kept.
- * 'cancelled' is the ladder stopping underneath them — not their choice, and
+ * 'skipped' is a rep saying "not doing this one" - a decision, kept.
+ * 'cancelled' is the ladder stopping underneath them - not their choice, and
  * not a thing to hold against a rep's completion rate. They are different
  * facts and are stored as different words.
  */
@@ -42,7 +42,7 @@ export const CadenceStepInput = z.object({
    *
    * Anchoring to the start is what keeps a schedule stable. Chaining delays
    * means a rep who acts on step 2 three days late drags steps 3 and 4 three
-   * days with them — but the enquiry did not move, and "call two hours after
+   * days with them - but the enquiry did not move, and "call two hours after
    * they enquired" does not become "call two hours after I got round to it".
    */
   delayHours: z.number().min(0).max(8760).default(0),
@@ -130,7 +130,7 @@ export const JourneyEnrolInput = z.object({
    *
    * Without this, enrolling somebody an hour after they came in restarts the
    * ladder from now, and the "message within five minutes" rung is scheduled
-   * five minutes from the moment a rep got round to enrolling them — which
+   * five minutes from the moment a rep got round to enrolling them - which
    * reports a speed-to-lead that never happened.
    */
   startedAt: z.coerce.date().optional(),

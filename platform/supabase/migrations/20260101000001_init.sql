@@ -1,4 +1,4 @@
--- 0001_init.sql — full Phase-1 schema (design doc §4) + RLS tenancy (§2).
+-- 0001_init.sql - full Phase-1 schema (design doc §4) + RLS tenancy (§2).
 -- Runs as the admin/owner role. The app connects as `aura_app` (no BYPASSRLS,
 -- not the owner) so ENABLE + FORCE ROW LEVEL SECURITY actually bind it.
 
@@ -35,7 +35,7 @@ CREATE TABLE organizations (
 );
 
 -- Platform-level humans; tenancy comes from memberships. No org_id here, so no
--- RLS — access is mediated by the auth module, never exposed raw to tenants.
+-- RLS - access is mediated by the auth module, never exposed raw to tenants.
 CREATE TABLE users (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email       text NOT NULL UNIQUE,
@@ -269,7 +269,7 @@ CREATE TABLE crm_sync_log (
   updated_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- Durable usage ledger (Redis is the fast path; this is the truth — §10)
+-- Durable usage ledger (Redis is the fast path; this is the truth - §10)
 CREATE TABLE usage_events (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id       uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -321,7 +321,7 @@ BEGIN
 END $$;
 
 ------------------------------------------------------------------------------
--- Row-Level Security — org isolation on every tenant table (§2).
+-- Row-Level Security - org isolation on every tenant table (§2).
 -- current_setting('app.org_id', true) is NULL when unset → default deny.
 ------------------------------------------------------------------------------
 DO $$

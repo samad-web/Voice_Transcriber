@@ -9,7 +9,7 @@ import {
  * deletion, and what it leaves behind.
  *
  * This is the only job in the platform that deletes customer-adjacent data on a
- * timer with no confirmation. A wrong predicate does not throw — it silently
+ * timer with no confirmation. A wrong predicate does not throw - it silently
  * removes real enquiries, irreversibly, and the log looks like a normal day.
  */
 
@@ -18,7 +18,7 @@ vi.mock("@aura/db", () => ({ getAdminPool: () => ({ query }) }));
 
 beforeEach(() => {
   // `vi.doMock` registrations outlive `resetModules`, so the floor tests below
-  // — which mock the retention constant down to 1 — would otherwise poison
+  // - which mock the retention constant down to 1 - would otherwise poison
   // every test declared after them. Clearing it here rather than reordering the
   // file keeps the tests independent of the order they happen to be written in.
   vi.doUnmock("@aura/shared");
@@ -86,7 +86,7 @@ describe("what it deletes", () => {
 describe("the booking-name scrub", () => {
   it("clears names left on slots whose enquiry is gone", async () => {
     // booking_slots.submission_id is ON DELETE SET NULL, so booked_name would
-    // otherwise survive the deletion — the person's name sitting in the
+    // otherwise survive the deletion - the person's name sitting in the
     // calendar forever, while we claim to have deleted their enquiry.
     const { sweepExpiredEnquiries } = await load();
     await sweepExpiredEnquiries();

@@ -28,7 +28,7 @@ function periodFor(kind: "month" | "quarter", now = new Date()): { start: string
   if (kind === "month") {
     return {
       start: iso(Date.UTC(y, m, 1)),
-      // Day 0 of the NEXT month is the last day of this one — no month-length
+      // Day 0 of the NEXT month is the last day of this one - no month-length
       // table, and February and leap years come out right for free.
       end: iso(Date.UTC(y, m + 1, 0)),
     };

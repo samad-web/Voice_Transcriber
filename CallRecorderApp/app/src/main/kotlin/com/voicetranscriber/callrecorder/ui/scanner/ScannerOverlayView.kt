@@ -22,7 +22,7 @@ import kotlin.math.min
  *   - four bright corner brackets around the window,
  *   - a glowing horizontal line that sweeps up and down inside the window.
  *
- * Pure Canvas drawing — no image assets. The framing window rect is exposed so
+ * Pure Canvas drawing - no image assets. The framing window rect is exposed so
  * the host activity can (optionally) constrain decoding to it.
  */
 class ScannerOverlayView @JvmOverloads constructor(
@@ -34,7 +34,7 @@ class ScannerOverlayView @JvmOverloads constructor(
     private val density = resources.displayMetrics.density
     private fun dp(v: Float) = v * density
 
-    /** Paytm accent — a bright cyan/blue. */
+    /** Paytm accent - a bright cyan/blue. */
     private val accent = Color.parseColor("#00C6FF")
     private val cornerRadius = dp(28f)
 

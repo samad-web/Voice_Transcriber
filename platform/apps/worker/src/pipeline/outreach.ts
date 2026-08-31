@@ -1,7 +1,7 @@
 import { getAdminPool } from "@aura/db";
 
 /**
- * The outreach sweep — what moves a follow-up ladder forward (migration 0058).
+ * The outreach sweep - what moves a follow-up ladder forward (migration 0058).
  *
  * ── IT DOES NOT SEND. THAT IS THE DESIGN, NOT AN OMISSION ───────────────
  *
@@ -9,13 +9,13 @@ import { getAdminPool } from "@aura/db";
  * message at each rung on a timer. Aura's third safety rule is that nothing
  * automated can send, so this sweep's entire job is to move a step from
  * 'waiting' to 'due' and stop. A human opens the console, sees what is owed,
- * and acts. There is no dispatcher imported here and no outbox written to —
+ * and acts. There is no dispatcher imported here and no outbox written to -
  * if one ever appears in this file, the rule has been broken.
  *
  * ── SET-BASED, NOT PER-TENANT ───────────────────────────────────────────
  *
  * Every statement below is one UPDATE across every org, on the admin pool,
- * with the tenant boundary expressed as a join rather than a loop — the same
+ * with the tenant boundary expressed as a join rather than a loop - the same
  * shape sweepAutomationTriggers uses. Iterating orgs would be N round trips
  * to do what the database does in one, and the join to `outreach_journeys`
  * keeps a step from ever being touched outside its own journey's org.
@@ -23,7 +23,7 @@ import { getAdminPool } from "@aura/db";
  * ── ORDER MATTERS ───────────────────────────────────────────────────────
  *
  * Stop before promote. A journey whose stop condition became true five
- * minutes ago must not have another rung fall due in the same tick — that is
+ * minutes ago must not have another rung fall due in the same tick - that is
  * exactly the "we kept chasing someone who had already booked" failure the
  * stop condition exists to prevent.
  */
@@ -41,7 +41,7 @@ export async function sweepOutreach(): Promise<OutreachSweepResult> {
   // ── 1. stop journeys whose condition has been met ────────────────────
   //
   // Each condition is evaluated against something that actually exists in
-  // this platform, and only counts evidence from AFTER the journey started —
+  // this platform, and only counts evidence from AFTER the journey started -
   // a reply from last month is not a reason to stop chasing about this week's
   // enquiry.
   const { rowCount: stopped } = await pool.query(
@@ -108,7 +108,7 @@ export async function sweepOutreach(): Promise<OutreachSweepResult> {
   // ── 3. finish journeys with nothing left to do ───────────────────────
   //
   // 'completed' rather than 'stopped': the ladder ran its course. The
-  // distinction is the one a report cares about — "how many did we chase all
+  // distinction is the one a report cares about - "how many did we chase all
   // the way to the end without a reply" is a different number from "how many
   // stopped because it worked".
   const { rowCount: completed } = await pool.query(
@@ -167,7 +167,7 @@ export async function runOutreachSweep(): Promise<OutreachSweepResult | null> {
 /**
  * Run the sweep on a timer.
  *
- * `unref()` so a pending tick never holds the process open during shutdown —
+ * `unref()` so a pending tick never holds the process open during shutdown -
  * the same treatment every other sweep in this worker gets.
  */
 export function startOutreachSweep(intervalMs = 5 * 60_000): NodeJS.Timeout {

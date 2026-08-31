@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Button, FormField, Input, MonoLabel } from "@aura/ui";
 import { sendContactEmailAction } from "./crm-actions";
 
-/** Same hand-copied textarea chrome as lead-drawer.tsx — see that file's note. */
+/** Same hand-copied textarea chrome as lead-drawer.tsx - see that file's note. */
 const TEXTAREA_CLASS =
   "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
   "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
@@ -18,7 +18,7 @@ const TEXTAREA_CLASS =
  * gets moved back; a note typed in the wrong place gets deleted. A message
  * that leaves is in somebody's inbox permanently, and they are a customer.
  * So this is the one action that asks twice, and the second prompt names the
- * actual address it is about to write to rather than saying "are you sure" —
+ * actual address it is about to write to rather than saying "are you sure" -
  * the mistake worth catching is sending the right message to the wrong
  * person, and only the address reveals that.
  *

@@ -31,7 +31,7 @@ export async function createAgentAction(input: {
   /**
    * Workspace the agent belongs to. Previously hardcoded to the environment's
    * DEV_WORKSPACE_ID, so an agent authored while viewing customer B was
-   * written into customer A's workspace — where it then ran against A's calls.
+   * written into customer A's workspace - where it then ran against A's calls.
    */
   workspaceId: string;
   orgId?: string;
@@ -61,7 +61,7 @@ export async function createAgentAction(input: {
     revalidatePath("/agents");
     return {};
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 
@@ -73,7 +73,7 @@ export interface GeneratedDraft {
 }
 
 /**
- * Draft a new agent from a description — the Studio's "describe it with AI"
+ * Draft a new agent from a description - the Studio's "describe it with AI"
  * path. When `baseAgentId` is set (the "Start from" picker), drafts a
  * MODIFICATION of that agent instead of one from scratch. Never persists
  * anything: the draft only fills the same form state the manual builder and
@@ -108,7 +108,7 @@ export async function generateAgentAction(input: {
     }
     return (await res.json()) as GeneratedDraft;
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 
@@ -151,7 +151,7 @@ export async function testAgentAction(input: {
     }
     return (await res.json()) as AgentTestResult;
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 

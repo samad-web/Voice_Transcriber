@@ -29,13 +29,13 @@ import { sourceToLineItemRows, useLineItemRows } from "../../use-line-item-rows"
 const STATUS_OPTIONS: QuotationStatus[] = ["draft", "sent", "accepted", "rejected", "expired"];
 
 /**
- * The quotation detail page's interactive half — status/valid-until/notes as
+ * The quotation detail page's interactive half - status/valid-until/notes as
  * one PATCH, the line-item table as another. Account/contact/deal are
  * rendered read-only in the parent server page; there's no picker yet.
  *
  * Every save uses the fresh `quotation`/`items` the action returns to update
  * local state directly, rather than relying on the server page re-rendering
- * around this component — the API recomputes subtotal/tax/total server-side,
+ * around this component - the API recomputes subtotal/tax/total server-side,
  * and this is the one path that is guaranteed to reflect that recomputation
  * without a second round trip.
  */
@@ -329,7 +329,7 @@ export function QuotationDetail({
                   ? quotation.discount_type === "percent"
                     ? `${Number(quotation.discount_value ?? 0)}%`
                     : formatMoney(quotation.discount_value, quotation.currency)
-                  : "—"}
+                  : "-"}
               </dd>
             </div>
             <div className="flex justify-between">
@@ -353,18 +353,18 @@ export function QuotationDetail({
             <div>
               <dt className="text-text-muted">Account</dt>
               <dd className="mt-0.5 font-medium break-words text-text">
-                {quotation.account_id ?? "—"}
+                {quotation.account_id ?? "-"}
               </dd>
             </div>
             <div>
               <dt className="text-text-muted">Contact</dt>
               <dd className="mt-0.5 font-medium break-words text-text">
-                {quotation.contact_id ?? "—"}
+                {quotation.contact_id ?? "-"}
               </dd>
             </div>
             <div>
               <dt className="text-text-muted">Deal</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{quotation.deal_id ?? "—"}</dd>
+              <dd className="mt-0.5 font-medium break-words text-text">{quotation.deal_id ?? "-"}</dd>
             </div>
           </dl>
         </Card>
@@ -373,7 +373,7 @@ export function QuotationDetail({
           <MonoLabel>Invoice</MonoLabel>
           <p className="mt-2 text-xs text-text-muted">
             Turns this quotation into a draft invoice, cloning its items and discount. Nothing sends
-            automatically — you still generate and share the payment link yourself once it exists.
+            automatically - you still generate and share the payment link yourself once it exists.
           </p>
           {invoiceError ? (
             <p role="alert" className="mt-2 text-xs font-medium text-danger-text">
@@ -392,7 +392,7 @@ export function QuotationDetail({
           </Button>
           {quotation.status !== "accepted" ? (
             <p className="mt-2 text-xs text-text-muted">
-              Only an accepted quotation can be turned into an invoice — set the status above to
+              Only an accepted quotation can be turned into an invoice - set the status above to
               Accepted and save first.
             </p>
           ) : null}

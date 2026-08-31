@@ -7,7 +7,7 @@ import { AuthService } from "./auth.service";
 /**
  * Global so AuthService is injectable by AdminKeyGuard wherever it's used.
  * Real session + RBAC live here; OIDC replaces only the login identity source.
- * OrgRegistryService rides along for the same reason — the guard needs it on
+ * OrgRegistryService rides along for the same reason - the guard needs it on
  * every module that mounts it.
  */
 @Global()

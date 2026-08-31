@@ -6,7 +6,7 @@ import { updateDealAction } from "../crm-actions";
 import type { Deal, DealBoardColumn, Stage } from "../types";
 
 /**
- * The deal pipeline board — a thin config over ../board/kanban-board.tsx, the
+ * The deal pipeline board - a thin config over ../board/kanban-board.tsx, the
  * generic board factored out of this file and the lead board
  * (../board/board.tsx) once the two turned out to be near-verbatim copies of
  * the same drag-and-drop / optimistic-update mechanics. See that file's own

@@ -6,20 +6,20 @@ import { CONNECTOR_COUNT } from "@/lib/content/connectors";
 import { WA_MESSAGES, startHref } from "@/lib/site";
 
 /**
- * ═══ THE CUSTOM-CRM SECTION — doc 16 §4.1, in full ═══════════════════════════
+ * ═══ THE CUSTOM-CRM SECTION - doc 16 §4.1, in full ═══════════════════════════
  *
  * PLACEMENT IS PART OF THE SPEC. This renders immediately after the connector
  * grid and immediately before pricing, so the two read as one offer with two
  * doors rather than as two products. Do not move it.
  *
  * WHY IT EXISTS. Aura's connector catalogue answers "we push leads into your
- * CRM". It has no answer at all for "I don't have a CRM" — which, for brick,
+ * CRM". It has no answer at all for "I don't have a CRM" - which, for brick,
  * interiors, real-estate and building-materials SMBs in Tamil Nadu, is the
  * majority. Today that visitor reaches pricing, realises the product assumes a
  * system they do not own, and leaves. This section converts that dead end into
  * the larger transaction.
  *
- * THE CREDIBILITY LINE IS TRUE, NOT MARKETING — which is the only reason this
+ * THE CREDIBILITY LINE IS TRUE, NOT MARKETING - which is the only reason this
  * offer is credible at an SMB price, and the reason it must be stated plainly
  * rather than inflated:
  *
@@ -111,7 +111,7 @@ export function CustomCrm() {
 
           Secondary deep-links /start with a UTM naming THIS section as the
           source, so §3.7's CRM answers can be attributed back to the section
-          that prompted them — that attribution is how anyone finds out whether
+          that prompted them - that attribution is how anyone finds out whether
           this section earns its place. `/start` is slice 5, so the link is
           gated on FUNNEL_LIVE and the banner renders WhatsApp-only until then
           rather than shipping a 404. */}

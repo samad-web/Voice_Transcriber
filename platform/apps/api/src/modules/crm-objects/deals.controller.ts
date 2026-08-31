@@ -67,7 +67,7 @@ const UpdateDealBody = z.object({
 });
 
 /**
- * Every deal view returns the same shape — one definition for list/board/detail.
+ * Every deal view returns the same shape - one definition for list/board/detail.
  *
  * `expected_close_date` goes through to_char for the reason spelled out in
  * tasks.controller.ts: node-postgres turns a `date` into a local-midnight JS
@@ -85,7 +85,7 @@ const DEAL_JOINS = `FROM deals d
   LEFT JOIN accounts a ON a.id = d.account_id`;
 
 /**
- * Deals — CRM Phase 1, E0.1. The pipeline object that inherits `leads`'
+ * Deals - CRM Phase 1, E0.1. The pipeline object that inherits `leads`'
  * board/stage role; `stage` is validated against the owning pipeline's
  * `stages`, exactly like owner/leads.controller.ts validates against
  * organizations.lead_stages. Strangler-fig: not linked into web nav yet.
@@ -137,7 +137,7 @@ export class DealsController {
       if (accountId) add("d.account_id = $?", accountId);
 
       // The `owned` half of the permission grid. A role granted deal:view with
-      // scope 'owned' sees only its own pipeline — applied here because it is a
+      // scope 'owned' sees only its own pipeline - applied here because it is a
       // predicate on rows, which no guard can express.
       const owned = scopeFilter("deal", recordScope, "d");
       if (owned) add(owned.sql, owned.value);
@@ -188,7 +188,7 @@ export class DealsController {
     return this.db.withOrg(orgId, async (client) => {
       const pipeline = await this.resolvePipeline(client, pipelineId);
 
-      // Rank inside each stage in one pass — a query per column would be N
+      // Rank inside each stage in one pass - a query per column would be N
       // round trips for a board that is read on every page load (same
       // reasoning as owner/leads.controller.ts's board endpoint).
       // The scoped predicate goes INSIDE the window functions, not outside:
@@ -221,7 +221,7 @@ export class DealsController {
       });
 
       // A deal sitting in a stage the tenant has since deleted would
-      // otherwise vanish from the board entirely — surface it rather than
+      // otherwise vanish from the board entirely - surface it rather than
       // lose it (same reasoning as the lead board's `orphaned` count).
       const known = new Set(pipeline.stages.map((s) => s.key));
       const orphans = rows.filter((r) => !known.has(String(r.stage)));
@@ -319,7 +319,7 @@ export class DealsController {
       const stage = p.stage ?? entryStage(pipeline.stages);
       if (!pipeline.stages.some((s) => s.key === stage)) {
         throw new BadRequestException(
-          `unknown stage "${stage}" — valid stages: ${pipeline.stages.map((s) => s.key).join(", ")}`,
+          `unknown stage "${stage}" - valid stages: ${pipeline.stages.map((s) => s.key).join(", ")}`,
         );
       }
       const status = statusForStage(pipeline.stages, stage);
@@ -350,7 +350,7 @@ export class DealsController {
         ],
       );
 
-      // The deal entering the pipeline is the first row of its history —
+      // The deal entering the pipeline is the first row of its history -
       // from_stage NULL. Without it a deal created directly in the console
       // would have a ledger that starts mid-story.
       await recordStageTransition(client, orgId, {
@@ -385,7 +385,7 @@ export class DealsController {
    * Move a card, or edit what's on it. A stage move is the one field with a
    * side effect: status is derived from the stage's terminal marker so "won"
    * stays true no matter what the column is called, and stage_changed_at is
-   * stamped for time-in-stage reporting — same contract as
+   * stamped for time-in-stage reporting - same contract as
    * owner/leads.controller.ts's update handler.
    */
   @Patch(":id")
@@ -417,17 +417,17 @@ export class DealsController {
         const pipeline = await this.resolvePipeline(client, existing.pipeline_id);
         if (!pipeline.stages.some((s) => s.key === p.stage)) {
           throw new BadRequestException(
-            `unknown stage "${p.stage}" — valid stages: ${pipeline.stages.map((s) => s.key).join(", ")}`,
+            `unknown stage "${p.stage}" - valid stages: ${pipeline.stages.map((s) => s.key).join(", ")}`,
           );
         }
         status = statusForStage(pipeline.stages, p.stage);
-        // Captured BEFORE the UPDATE — afterwards the old stage is gone, which
+        // Captured BEFORE the UPDATE - afterwards the old stage is gone, which
         // is precisely the erasure migration 0046 exists to stop.
         previous = { stage: existing.stage, status: existing.status };
       }
 
       // A scoped user editing somebody else's deal finds nothing to update and
-      // gets the same 404 the detail route gives — no write, no disclosure.
+      // gets the same 404 the detail route gives - no write, no disclosure.
       const scopedUpdate = scopeClause("deal", recordScope, 21);
       const {
         rows: [updated],
@@ -493,7 +493,7 @@ export class DealsController {
       } = await client.query(`SELECT ${DEAL_COLUMNS} ${DEAL_JOINS} WHERE d.id = $1`, [id]);
 
       // Only a stage MOVE is an event. Editing the amount or the notes is not
-      // something a rule should be able to react to yet — and adding a
+      // something a rule should be able to react to yet - and adding a
       // deal.updated trigger later is easy, where un-firing rules that have
       // already run on every keystroke is not.
       if (p.stage && previous && previous.stage !== p.stage) {
@@ -536,7 +536,7 @@ export class DealsController {
   }
 }
 
-/** Same validate-or-null the other CRM controllers need — see interactions.controller.ts. */
+/** Same validate-or-null the other CRM controllers need - see interactions.controller.ts. */
 function actorUserId(req: PrincipalRequest): string | null {
   const parsed = z.string().uuid().safeParse(req.principal?.userId);
   return parsed.success ? parsed.data : null;

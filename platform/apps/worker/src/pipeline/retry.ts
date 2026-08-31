@@ -12,7 +12,7 @@ import { priorAttempts, stageHelpers } from "./pipeline";
  * strand a call that was waiting to be retried.
  *
  * Runs cross-tenant off the admin pool to find work, then re-enters each org's
- * RLS context to touch its rows — the sweep spans tenants, the writes never do.
+ * RLS context to touch its rows - the sweep spans tenants, the writes never do.
  */
 
 /**
@@ -79,7 +79,7 @@ export async function retryDueCalls(limit = 200): Promise<number> {
  *
  * A call reaches UPLOADED and is published in the same breath, so the only ways
  * to be here for minutes are a broker that dropped the message or a worker that
- * died between the two. Neither leaves anything to retry from — the call is not
+ * died between the two. Neither leaves anything to retry from - the call is not
  * failed, so the sweep above will never look at it, and it would otherwise sit
  * untranscribed forever.
  */
@@ -127,7 +127,7 @@ const STALL_STAGE_OF: Record<string, string> = {
  * How long a call may sit in ONE in-flight state before we call the run dead.
  *
  * A pipeline run is seconds to a minute even on a long recording, so an hour is
- * far outside normal — deliberately so. Failing a call that is merely slow is
+ * far outside normal - deliberately so. Failing a call that is merely slow is
  * worse than the bug this closes: it costs a second round of ASR and analyze
  * (both billed) and, on the SYNCING stage, a second delivery into a customer's
  * CRM. The only thing an over-long timeout costs is a later recovery of a call
@@ -144,8 +144,8 @@ const STALLED_MS = Number(process.env.PIPELINE_STALL_MS ?? 60 * 60 * 1000);
 
 /**
  * Claim before failing. Conditional on the row still being in the same
- * in-flight state and still stale, so two sweepers — or a sweep racing an
- * operator pressing Reprocess — cannot both act on it: the first UPDATE takes
+ * in-flight state and still stale, so two sweepers - or a sweep racing an
+ * operator pressing Reprocess - cannot both act on it: the first UPDATE takes
  * the row lock for the rest of the transaction and moves `updated_at` to now,
  * and the second re-reads the row after the commit and matches nothing.
  *
@@ -167,7 +167,7 @@ const CLAIM_STALLED_SQL = `
  *
  * `retryDueCalls` covers a run that failed and said so; `requeueStuckUploads`
  * covers a wake-up that never arrived. Neither covers the third case: a worker
- * killed — OOM, redeploy, SIGKILL — while it held a call. That call keeps the
+ * killed - OOM, redeploy, SIGKILL - while it held a call. That call keeps the
  * in-flight status of the stage it died in, which is not `FAILED_%` and not
  * `UPLOADED`, so nothing ever looks at it again. It shows as "in pipeline" on
  * the dashboard forever and the customer's transcript simply never appears.
@@ -206,7 +206,7 @@ export async function failStalledCalls(limit = 200): Promise<number> {
   for (const [orgId, rows] of byOrg) {
     await withOrgContext(orgId, async (client) => {
       for (const row of rows) {
-        // Unreachable while the SELECT filters on the same map's keys — but the
+        // Unreachable while the SELECT filters on the same map's keys - but the
         // value goes into a CHECK-constrained column, so a status this map does
         // not know is skipped rather than written as FAILED_undefined.
         const stage = STALL_STAGE_OF[row.status];
@@ -227,7 +227,7 @@ export async function failStalledCalls(limit = 200): Promise<number> {
         await stageHelpers(client, row.id, attempts).fail(
           stage,
           new Error(
-            `stalled in ${row.status} for ${minutes} minutes — the run that claimed it never finished`,
+            `stalled in ${row.status} for ${minutes} minutes - the run that claimed it never finished`,
           ),
         );
         failed++;
@@ -251,8 +251,8 @@ export function startRetrySweeper(): NodeJS.Timeout {
  * The stall sweep runs on its own, much slower timer.
  *
  * Two reasons, both about cost rather than taste. Its SELECT has no `org_id`
- * predicate, so `calls_status (org_id, status)` cannot serve it and — unlike
- * `requeueStuckUploads`, which 0019 gave a partial index — it scans the whole
+ * predicate, so `calls_status (org_id, status)` cannot serve it and - unlike
+ * `requeueStuckUploads`, which 0019 gave a partial index - it scans the whole
  * multi-tenant calls table. And it is looking for a condition measured in
  * hours, so 30-second resolution buys nothing: five minutes is 288 scans a day
  * instead of 2,880, and the worst case is that a call already lost for an hour

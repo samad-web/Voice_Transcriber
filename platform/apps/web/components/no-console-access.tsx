@@ -9,7 +9,7 @@ import { SignOutButton } from "@/components/sign-out-button";
  * /login, so sending them there would just ping-pong.
  *
  * Lives here because every route group that gates on `isOperator()` must render
- * the identical thing — if one group grew a friendlier fallback it would read as
+ * the identical thing - if one group grew a friendlier fallback it would read as
  * a different, softer answer to the same refusal.
  */
 export function NoConsoleAccess({ email }: { email: string }) {

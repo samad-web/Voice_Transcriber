@@ -8,7 +8,7 @@ export type TaskStatus = z.infer<typeof TaskStatus>;
 export const TaskPriority = z.enum(["low", "normal", "high"]);
 export type TaskPriority = z.infer<typeof TaskPriority>;
 
-/** `YYYY-MM-DD`. A due date, not a due instant — see 0041's column comment. */
+/** `YYYY-MM-DD`. A due date, not a due instant - see 0041's column comment. */
 const DueOn = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
 export const TaskInput = z.object({

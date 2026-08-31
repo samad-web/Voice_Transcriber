@@ -55,7 +55,7 @@ const HANDLERS = {
     tools: [
       { name: "list_leadgen_forms", description: "Lead forms" },
       { name: "fetch_leads", description: "Leads for a form" },
-      { name: "broken" }, // still valid — only `name` is required
+      { name: "broken" }, // still valid - only `name` is required
       { description: "no name at all" }, // malformed, must be skipped
     ],
   },
@@ -115,7 +115,7 @@ describe("McpClient handshake", () => {
   /**
    * The URL is tenant-supplied and this client POSTs to it, which is the
    * textbook SSRF shape. The guard must run on EVERY request, not just the
-   * first — otherwise a redirect-free but slow-changing DNS name is only
+   * first - otherwise a redirect-free but slow-changing DNS name is only
    * checked once.
    */
   it("runs the URL guard before every request, and a rejection stops the call", async () => {

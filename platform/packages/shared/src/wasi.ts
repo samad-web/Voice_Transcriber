@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 /**
- * The contract for Wasi's Hub API (`C:\Users\mas20\Desktop\work\Wasi`) — the
+ * The contract for Wasi's Hub API (`C:\Users\mas20\Desktop\work\Wasi`) - the
  * user's own WhatsApp Business Solution Provider platform. Aura is a Hub
  * CLIENT: it never talks to Meta's Graph API directly, and never does its own
  * Embedded Signup. Everything here is transcribed from Wasi's real source
  * (`server/src/routes/apiV1Messages.js`, `metaWebhook.js`), not guessed.
  */
 
-/** Wasi's own error codes from `messagingService.js` — everything MessagingError throws. */
+/** Wasi's own error codes from `messagingService.js` - everything MessagingError throws. */
 export const WasiErrorCode = z.enum([
   "waba_not_connected",
   "consent_required",
@@ -55,10 +55,10 @@ export const WasiWebhookEvent = z.enum([
 export type WasiWebhookEvent = z.infer<typeof WasiWebhookEvent>;
 
 /**
- * `message.received` — built from a real message row, field-for-field
+ * `message.received` - built from a real message row, field-for-field
  * against metaWebhook.js. `media_id`/`media_mime_type`/`media_filename` ride
  * along incidentally (a DB-row spread on Wasi's side, not a designed
- * contract) — kept optional and unused rather than trusted.
+ * contract) - kept optional and unused rather than trusted.
  */
 export const WasiInboundMessage = z.object({
   chat_id: z.string(),
@@ -77,7 +77,7 @@ export const WasiInboundMessage = z.object({
 });
 export type WasiInboundMessage = z.infer<typeof WasiInboundMessage>;
 
-/** `message.status` — a delivery-lifecycle transition for one prior send. */
+/** `message.status` - a delivery-lifecycle transition for one prior send. */
 export const WasiMessageStatus = z.object({
   message_id: z.string(),
   status: z.enum(["sent", "delivered", "read", "failed"]),
@@ -88,10 +88,10 @@ export const WasiMessageStatus = z.object({
 export type WasiMessageStatus = z.infer<typeof WasiMessageStatus>;
 
 /**
- * `message_template_status_update` / `account_update` — Wasi forwards Meta's
+ * `message_template_status_update` / `account_update` - Wasi forwards Meta's
  * raw `value` object verbatim plus the `waba_id`/`enqueued_at` envelope. Its
  * own code only trusts a couple of fields on each and documents the rest as
- * unconfirmed against a live payload — so this stays a passthrough bag rather
+ * unconfirmed against a live payload - so this stays a passthrough bag rather
  * than a strict schema; parse defensively, store the whole thing.
  */
 export const WasiRawEvent = z.record(z.string(), z.unknown());

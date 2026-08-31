@@ -1,4 +1,4 @@
--- 0056_messaging_channels.sql — per-org messaging identities.
+-- 0056_messaging_channels.sql - per-org messaging identities.
 --
 -- ── WHY THIS HAD TO COME FIRST ──────────────────────────────────────────
 --
@@ -10,7 +10,7 @@
 -- conversation had no way to be reached.
 --
 -- This is that missing half: the number/address a tenant receives on, the
--- credentials to answer with, and — the part that actually does the work — a
+-- credentials to answer with, and - the part that actually does the work - a
 -- routing key that turns an anonymous webhook POST into a known tenant.
 --
 -- ── HOW A WEBHOOK FINDS ITS TENANT ──────────────────────────────────────
@@ -22,7 +22,7 @@
 -- what shape (Evolution reports a JID, Twilio an E.164, a mail relay an
 -- envelope recipient that may be an alias), so the one field the routing
 -- depends on is the least reliable one in the payload. And a number is
--- public — anyone who knows a tenant's WhatsApp number could POST messages
+-- public - anyone who knows a tenant's WhatsApp number could POST messages
 -- into their inbox. A token identifies AND authenticates in the same lookup.
 --
 -- `inbound_address` is still stored and still UNIQUE across the platform,
@@ -33,7 +33,7 @@
 -- ── THE LOOKUP DELIBERATELY BYPASSES RLS ────────────────────────────────
 --
 -- Resolving the token is the step that DECIDES the org, so it cannot itself
--- run inside an org context — the same bootstrap-shaped exception
+-- run inside an org context - the same bootstrap-shaped exception
 -- DbService.adminPool() documents for enrollment-token lookup. Everything
 -- after the token resolves runs under withOrg() like any other write. The
 -- table still carries full RLS below so that ordinary console reads of it are
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS messaging_channels (
   provider        text NOT NULL,
 
   -- The address this tenant receives on: E.164 for phone channels, lower-cased
-  -- address for email. UNIQUE platform-wide, not per-org — see header.
+  -- address for email. UNIQUE platform-wide, not per-org - see header.
   inbound_address text NOT NULL,
   display_name    text,
 
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS messaging_channels (
   webhook_token   text NOT NULL,
 
   -- Sealed by encryptSecret() (packages/db/src/secrets.ts, AES-256-GCM under
-  -- CRM_SECRET_KEY) — the same envelope connected_accounts and the CRM
+  -- CRM_SECRET_KEY) - the same envelope connected_accounts and the CRM
   -- connectors' API keys already use. RLS does not protect a stolen dump, so
   -- the value at rest is ciphertext regardless of who can SELECT it.
   api_key         text,
@@ -118,7 +118,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ── Which channel a conversation arrived on ─────────────────────────────
 -- Nullable: 0055's rows predate this, and a thread created by hand from the
--- console has no channel row behind it. SET NULL rather than CASCADE — losing
+-- console has no channel row behind it. SET NULL rather than CASCADE - losing
 -- the configuration must not delete the correspondence.
 ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS messaging_channel_id uuid

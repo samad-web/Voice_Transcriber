@@ -17,10 +17,10 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /**
- * Projects — the tenant's own offerings, and which one a call was about
+ * Projects - the tenant's own offerings, and which one a call was about
  * (migration 0073).
  *
- * Org CONFIGURATION, so AdminKeyGuard+TenantGuard and no CrmPermissionsGuard —
+ * Org CONFIGURATION, so AdminKeyGuard+TenantGuard and no CrmPermissionsGuard -
  * the same tier as marketing-sources, tags and pipelines. Deliberately NOT a
  * new PermissionObjectType: that would mean widening the shared enum and
  * seeding grants for all five system roles in the migration, to gate a

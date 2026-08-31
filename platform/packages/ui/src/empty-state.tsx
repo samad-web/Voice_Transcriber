@@ -22,7 +22,7 @@ export function EmptyState({
 }: {
   title: ReactNode;
   description?: ReactNode;
-  /** Decorative. Rendered aria-hidden — never the only carrier of meaning. */
+  /** Decorative. Rendered aria-hidden - never the only carrier of meaning. */
   icon?: ReactNode;
   /** Usually a `Button` or a link styled as one. */
   action?: ReactNode;

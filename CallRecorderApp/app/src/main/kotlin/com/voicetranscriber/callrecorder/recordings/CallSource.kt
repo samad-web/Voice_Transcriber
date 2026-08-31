@@ -3,7 +3,7 @@ package com.voicetranscriber.callrecorder.recordings
 import com.voicetranscriber.callrecorder.capture.ProfileKind
 
 /**
- * Declarative description of one recordable call source — the clean-room analogue of
+ * Declarative description of one recordable call source - the clean-room analogue of
  * Cube ACR's per-app `*Recording` classes (package name, call-screen activity IDs, and
  * the view IDs to read the caller name from). Plain data; no vendor code copied.
  */

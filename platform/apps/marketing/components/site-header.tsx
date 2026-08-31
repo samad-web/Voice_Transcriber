@@ -11,12 +11,12 @@ import { BRAND, NAV } from "@/lib/site";
  *
  * · The lockup, at the same left edge as the hero headline. Both sit in a
  *   max-w-6xl / px-6 measure, so the mark lines up with the H1 below it rather
- *   than landing a few pixels off — the header used a Container with a
+ *   than landing a few pixels off - the header used a Container with a
  *   different gutter (px-4 on phones) and that misalignment was visible.
  *
  * · Two anchors. This site is one page with five sections; a nav is a table of
  *   contents for it, not a site map. Compatibility, Security and Pricing came
- *   out at the owner's instruction — and three of the five links were pointing
+ *   out at the owner's instruction - and three of the five links were pointing
  *   at sections the homepage cut, so the nav was quietly scrolling people to
  *   the footer.
  *
@@ -24,7 +24,7 @@ import { BRAND, NAV } from "@/lib/site";
  *   it is the only thing in here with a filled background. The "Sign in" that
  *   used to sit beside it is gone: it competed for the same corner of the same
  *   bar as the primary action, and it was aimed at people who already bought.
- *   Console access is now an address — /admin — which redirects to the login.
+ *   Console access is now an address - /admin - which redirects to the login.
  *
  * The `<details>` mobile menu is gone with the nav it was holding: two in-page
  * anchors on a page you scroll anyway do not earn a disclosure widget, a
@@ -33,7 +33,7 @@ import { BRAND, NAV } from "@/lib/site";
  *
  * This used to say "still zero client JavaScript, and now with nothing to
  * hydrate at all". That stopped being true when the CTA learned to hide itself
- * on /start — see ./header-cta.tsx for why that needed the pathname and why the
+ * on /start - see ./header-cta.tsx for why that needed the pathname and why the
  * server-only alternatives were worse. The header is otherwise unchanged: the
  * lockup and the nav are still static server-rendered markup.
  */

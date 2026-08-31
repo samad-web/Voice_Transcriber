@@ -34,7 +34,7 @@ interface Invoice {
   hosted_invoice_url?: string;
 }
 
-/** Safe integer display — SUM() over no rows returns null once data is cleared. */
+/** Safe integer display - SUM() over no rows returns null once data is cleared. */
 function n(value: number | null | undefined) {
   return (value ?? 0).toLocaleString();
 }
@@ -54,7 +54,7 @@ function formatPeriod(period: UsageData["period"]): string | null {
   const day = (s?: string) => (s ? new Date(s).toLocaleDateString() : "");
   const start = day(period.start);
   const end = day(period.end);
-  return start && end ? `${start} – ${end}` : start || end || null;
+  return start && end ? `${start} - ${end}` : start || end || null;
 }
 
 /**
@@ -93,7 +93,7 @@ export default async function UsagePage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (
@@ -181,7 +181,7 @@ export default async function UsagePage({
                 <div className="flex flex-col items-center py-8 gap-3">
                   <FileText className="h-8 w-8 text-neutral-300" />
                   <p className="text-xs font-mono font-bold uppercase text-neutral-400">
-                    No invoices yet — metered usage bills at period close
+                    No invoices yet - metered usage bills at period close
                   </p>
                 </div>
               ) : (
@@ -215,12 +215,12 @@ export default async function UsagePage({
                           <td className="py-3 px-4 font-mono text-[11px]">
                             {inv.period_start
                               ? new Date(inv.period_start).toLocaleDateString()
-                              : "—"}
+                              : "-"}
                           </td>
                           <td className="py-3 px-4 font-mono text-xs font-bold">
                             {inv.amount_due != null
                               ? `${(inv.amount_due / 100).toFixed(2)} ${(inv.currency ?? "usd").toUpperCase()}`
-                              : "—"}
+                              : "-"}
                           </td>
                           <td className="py-3 px-4 text-right">
                             <StatusChip tone={inv.status === "paid" ? "solid" : "muted"}>

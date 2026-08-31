@@ -4,7 +4,7 @@ import { ComparisonTable, Verdict } from "../ui/content";
 import { OEM_MATRIX, STATUS_LABEL } from "@/lib/content/compatibility";
 
 /**
- * Phone compatibility (doc 10 §3 row 8) — objection #2, answered on the
+ * Phone compatibility (doc 10 §3 row 8) - objection #2, answered on the
  * homepage with the matrix itself rather than a link and a hedge.
  *
  * The unsupported row is not buried at the bottom of a page nobody scrolls to.

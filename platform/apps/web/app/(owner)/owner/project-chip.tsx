@@ -25,7 +25,7 @@ export const PROJECT_COLORS = Object.keys(PALETTE) as ProjectColor[];
 
 /**
  * A project with no colour chosen still gets a stable one, derived from its
- * name — so the catalogue is usable the moment it is typed, and a project
+ * name - so the catalogue is usable the moment it is typed, and a project
  * does not change colour when the list is reordered or another is added.
  * `neutral` is excluded from the hash: it reads as "unset", so landing on it
  * by accident would look like a bug.
@@ -46,7 +46,7 @@ export function ProjectChip({
 }: {
   name: string;
   color: string | null;
-  /** 'extraction' earns the sparkle — see below. */
+  /** 'extraction' earns the sparkle - see below. */
   source?: string | null;
   className?: string;
 }) {
@@ -57,7 +57,7 @@ export function ProjectChip({
     >
       {machine ? (
         // A machine guess is marked, a person's choice is not. Nobody needs
-        // telling that what they typed was typed — but acting on a detected
+        // telling that what they typed was typed - but acting on a detected
         // label without knowing it was detected is how a rep quotes the wrong
         // product back to a customer. The title carries it for screen readers
         // and hover; the glyph is aria-hidden so it is not read twice.

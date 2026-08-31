@@ -27,7 +27,7 @@ export const withGeminiRetry = withProviderRetry;
  * Reasoning budget for every Gemini call in the pipeline.
  *
  * Gemini has thinking ON by default with a dynamic budget, and thinking tokens
- * bill at the OUTPUT rate — the most expensive line on the invoice. Neither of
+ * bill at the OUTPUT rate - the most expensive line on the invoice. Neither of
  * our jobs needs reasoning: ASR is dictation, and analyze copies values out of
  * a transcript into a fixed schema. Left at the default, a call silently pays
  * for hundreds of hidden tokens per request.
@@ -53,7 +53,7 @@ export function geminiThinking(): ThinkingConfig {
  *
  * The default is deliberately NOT gemini-2.5-flash: Google retired it for new
  * users and the API now answers `404 … no longer available`, which the analyze
- * stage swallowed as a non-blocking conversation-intelligence error — calls
+ * stage swallowed as a non-blocking conversation-intelligence error - calls
  * completed with an empty summary and no failure recorded anywhere. A default
  * that 404s is worse than no default at all, so it tracks a live model.
  *
@@ -69,13 +69,13 @@ export function geminiAnalyzeModel(): string {
  * Render an instance's vocabulary as a glossary the analyser must spell by.
  *
  * The batch ASR API takes no hotword parameter, so this cannot stop the
- * recogniser mishearing a name — an English brand spoken inside Tamil comes
+ * recogniser mishearing a name - an English brand spoken inside Tamil comes
  * back transliterated ("RD Interlock" → "ஆர்டி இன்டர்லாக்"). What it can do is
  * stop that reaching the customer's CRM: the analyser is told the canonical
  * spelling and told the transcript may be wrong, so the extracted field and the
  * summary come out right even when the transcript does not.
  *
- * Empty vocabulary contributes nothing to the prompt at all — no stray heading,
+ * Empty vocabulary contributes nothing to the prompt at all - no stray heading,
  * no wasted tokens.
  */
 export function glossaryBlock(vocabulary?: string[] | null): string {
@@ -90,7 +90,7 @@ export function glossaryBlock(vocabulary?: string[] | null): string {
   // cap on every attempt. Terms go inline rather than as a bulleted list for
   // the same reason.
   return (
-    `\n\nKnown names for this business — if one appears in the transcript, ` +
+    `\n\nKnown names for this business - if one appears in the transcript, ` +
     `however it was written or transliterated, spell it exactly like this: ` +
     `${terms.join(", ")}. These are spellings, not answers: the list includes ` +
     `this business's own name, so never put a term in a field unless the ` +
@@ -111,7 +111,7 @@ export function glossaryBlock(vocabulary?: string[] | null): string {
  *
  * So 10, with ~1,500 tokens of headroom for the run-to-run variation in how
  * long it thinks. An 84-segment call becomes 9 labelling requests plus one for
- * the call-level reading — more round trips, ~₹0.50 a call, still far below the
+ * the call-level reading - more round trips, ~₹0.50 a call, still far below the
  * ₹45/hour the ASR costs.
  *
  * Raise this together with SARVAM_MAX_TOKENS if the plan's ceiling goes up; the
@@ -145,7 +145,7 @@ export interface ConversationTurn {
 /**
  * One ASR segment offered to the analyzer for labelling. When these are passed,
  * the analyzer assigns roles and intents to segments that already exist rather
- * than re-deriving turns from flat text — ASR is the only stage that knows the
+ * than re-deriving turns from flat text - ASR is the only stage that knows the
  * real speaker boundaries and timings, so it must stay the source of truth.
  */
 export interface DiarizedSegment {
@@ -164,13 +164,13 @@ export interface QualityCriteria {
   professionalism: number;
   /** 0-10: did the agent ask for the sale/next step, handle objections. */
   conversionSignal: number;
-  /** One short sentence — why this score, not a transcript re-summary. */
+  /** One short sentence - why this score, not a transcript re-summary. */
   rationale: string;
 }
 
 /** One compliance/escalation-worthy moment the model noticed in the call. */
 export interface RiskFlag {
-  /** e.g. "competitor_mention", "cancellation_request", "legal_threat". Free text — the automation-rule condition matches on severity, not category. */
+  /** e.g. "competitor_mention", "cancellation_request", "legal_threat". Free text - the automation-rule condition matches on severity, not category. */
   category: string;
   /** A short quoted or paraphrased snippet, for a human reviewer to locate it. */
   snippet: string;
@@ -179,7 +179,7 @@ export interface RiskFlag {
 
 /**
  * Coercion for the quality/risk fields an LLM hands back as loosely-typed
- * JSON. Never throws — a malformed or absent field degrades to null/empty
+ * JSON. Never throws - a malformed or absent field degrades to null/empty
  * rather than failing conversation intelligence, which must never block a
  * call (§ pipeline.ts runPostAsrStages).
  */
@@ -204,7 +204,7 @@ function coerceQualityCriteria(value: unknown): QualityCriteria | null {
   };
 }
 
-/** Capped at 5 regardless of how many the model returned — this is a spotter
+/** Capped at 5 regardless of how many the model returned - this is a spotter
  *  a human triages, not an exhaustive transcript re-derivation. */
 function coerceRiskFlags(value: unknown): RiskFlag[] {
   if (!Array.isArray(value)) return [];
@@ -242,7 +242,7 @@ export interface ConversationIntelligence {
   /** 0-100, or null when the model's read didn't land. */
   qualityScore: number | null;
   qualityCriteria: QualityCriteria | null;
-  /** Capped at 5 — this is a spotter, not a transcript re-derivation. */
+  /** Capped at 5 - this is a spotter, not a transcript re-derivation. */
   riskFlags: RiskFlag[];
   provider: string;
   model: string;
@@ -258,7 +258,7 @@ export interface ConversationIntelligence {
  *
  * Provider precedence (§8 router): STUB → Sarvam → Gemini. Sarvam wins when a
  * key is present because the calls this platform analyses are Indic telecalling
- * audio, which is what it is built for — and its output tokens are ~86× cheaper
+ * audio, which is what it is built for - and its output tokens are ~86× cheaper
  * than Gemini Flash's, on a stage whose cost is almost entirely output.
  * ANALYZE_STUB=1 produces schema-conformant placeholder output for dev/e2e.
  */
@@ -353,7 +353,7 @@ export async function analyzeTranscript(
       tokensOut,
     };
   }
-  // Store raw output flagged as failed — never drop it (PRD §5.3).
+  // Store raw output flagged as failed - never drop it (PRD §5.3).
   return {
     output: second.output,
     validationStatus: "failed",
@@ -371,7 +371,7 @@ export interface AgentDraft {
   fields: ExtractionField[];
 }
 
-/** What generateAgentDraft asks the model to return — mirrors ExtractionField's
+/** What generateAgentDraft asks the model to return - mirrors ExtractionField's
  *  own shape (packages/shared/src/extraction.ts) plus the two agent-level
  *  strings that aren't part of a field. */
 const AGENT_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
@@ -411,7 +411,7 @@ function agentDraftPrompt(
     "transcript) and a list of structured fields it extracts from that transcript. " +
     "Field keys must be snake_case (lowercase letters, digits, underscores, starting " +
     "with a letter). Every 'enum' field must list at least one non-empty enumValues " +
-    "option — an enum with no options can never be satisfied. Field types are exactly " +
+    "option - an enum with no options can never be satisfied. Field types are exactly " +
     "one of: string, number, boolean, enum, datetime, string[].";
 
   const baseBlock = base
@@ -434,7 +434,7 @@ function agentDraftPrompt(
   return `${domain}${baseBlock}${ask}${repair}`;
 }
 
-/** Best-effort normalization of what a model hands back, before validation —
+/** Best-effort normalization of what a model hands back, before validation -
  *  same spirit as agent-studio.tsx's own client-side key cleanup, done again
  *  here because a model can ignore the prompt's instructions. */
 function normalizeDraft(raw: unknown): unknown {
@@ -454,7 +454,7 @@ function normalizeDraft(raw: unknown): unknown {
 
 /** Validates a generated draft's shape. `name`/`systemPrompt` are checked by
  *  hand (packages/llm has no zod dependency of its own); `fields` reuses
- *  ExtractionSchema (@aura/shared) — the exact rules a human-authored agent
+ *  ExtractionSchema (@aura/shared) - the exact rules a human-authored agent
  *  is held to, including "an enum field needs at least one option". */
 function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[] } {
   if (typeof raw !== "object" || raw === null) return { errors: ["output is not a JSON object"] };
@@ -508,14 +508,14 @@ function stubAgentDraft(input: {
 
 /**
  * Generate a draft agent definition (name, system prompt, extraction fields)
- * from an operator's free-text description — the AI Agent Studio's
+ * from an operator's free-text description - the AI Agent Studio's
  * "describe it and it is created accordingly" path. Optionally given an
  * existing agent's current definition as `base`, in which case the model is
- * asked to MODIFY it per the description rather than start from nothing —
+ * asked to MODIFY it per the description rather than start from nothing -
  * the Studio's "build from a previous agent by modifying it" path, when the
  * modification is expressed as a description rather than hand-edited.
  *
- * This is a PREVIEW, not a persisted write — apps/api/src/modules/agents/
+ * This is a PREVIEW, not a persisted write - apps/api/src/modules/agents/
  * agents.controller.ts's `POST /agents/generate` returns the draft for the
  * operator to review (and further hand-edit) before the existing
  * `POST /agents` actually saves it, same non-persisting contract as
@@ -523,8 +523,8 @@ function stubAgentDraft(input: {
  *
  * Same provider precedence and structured-output mechanics as
  * analyzeTranscript (ANALYZE_STUB → Sarvam → Gemini), but validated against
- * ExtractionSchema instead of a tenant's own field schema, and — unlike
- * analyzeTranscript, which must never drop a call — a second invalid
+ * ExtractionSchema instead of a tenant's own field schema, and - unlike
+ * analyzeTranscript, which must never drop a call - a second invalid
  * response THROWS rather than being saved with `validationStatus: "failed"`:
  * nothing has been persisted yet, so failing loud here is strictly better
  * than handing the operator a broken draft that silently doesn't validate.
@@ -589,7 +589,7 @@ export async function generateAgentDraft(input: {
  * whole job (speaker turns, per-turn intent, overall intent/sentiment/outcome).
  * Provider precedence matches the rest of the file: STUB → Gemini, falling back
  * to a passthrough turn only when no provider is configured at all. Never
- * throws for content reasons — returns a safe shape.
+ * throws for content reasons - returns a safe shape.
  *
  * Pass `segments` (ASR's diarized output) whenever they exist: the analyzer
  * then *labels* those segments by index instead of re-splitting `transcript`,
@@ -625,7 +625,7 @@ export async function analyzeConversation(
   const text = (transcript ?? "").trim();
   if (!text) return base;
 
-  // Only fall back to the passthrough turn when there is genuinely no provider —
+  // Only fall back to the passthrough turn when there is genuinely no provider -
   // a stubbed turn overwrites ASR's real diarization downstream.
   const hasGemini =
     !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "your-gemini-api-key-here";
@@ -657,7 +657,7 @@ export async function analyzeConversation(
     "questions; the Customer answers, asks about price/product, and raises " +
     "objections. Speaker roles must stay consistent for the whole call.\n";
   const intentRule =
-    "Give each turn a short 2–5 word intent (e.g. \"greeting\", \"price objection\", " +
+    "Give each turn a short 2-5 word intent (e.g. \"greeting\", \"price objection\", " +
     "\"asking availability\", \"not interested\", \"schedule follow-up\").\n";
   const callRule =
     "Summarise the call and read the overall intent, sentiment and outcome. " +
@@ -666,7 +666,7 @@ export async function analyzeConversation(
     "the agent state this call may be recorded, or that consent policy does " +
     "not require it; scriptAdherence, professionalism, conversionSignal: each " +
     "0-10). One short rationale sentence.\n" +
-    "5. List up to 5 risk flags ONLY for things actually said — a competitor " +
+    "5. List up to 5 risk flags ONLY for things actually said - a competitor " +
     "mention, a cancellation/refund request, a legal threat, a broken promise, " +
     "hostility. Empty array when there is nothing to flag; do not invent one.\n" +
     "Return ONLY a JSON object.";
@@ -675,7 +675,7 @@ export async function analyzeConversation(
     ? "You are a call-intelligence engine for a telecalling / sales team. You are " +
       "given ONE phone call already split into numbered segments by the speech " +
       "recogniser, in order. The recogniser's own speaker tags (S1/S2) are only a " +
-      "hint — they mark who changed, not who is who.\n" +
+      "hint - they mark who changed, not who is who.\n" +
       "1. For EVERY segment index, decide the role. " +
       roleRules +
       "2. " +
@@ -689,7 +689,7 @@ export async function analyzeConversation(
       "speaker. " +
       roleRules +
       "If only ONE side is actually present in the text, only label the turns you " +
-      "can — never invent the other party's words.\n" +
+      "can - never invent the other party's words.\n" +
       "2. " +
       intentRule +
       "3. Keep the turn text in its original language. " +
@@ -728,7 +728,7 @@ export async function analyzeConversation(
    * The reply shape as a schema, not just as prose in the prompt.
    *
    * Describing the shape and asking for `application/json` is best-effort: on a
-   * long call Gemini intermittently emitted malformed JSON around 9 KB in — a
+   * long call Gemini intermittently emitted malformed JSON around 9 KB in - a
    * parse error hundreds of lines deep, on maybe one run in three, which is the
    * worst possible failure signature. Constraining generation with a schema
    * makes the JSON well-formed by construction. `analyzeTranscript` has always
@@ -755,7 +755,7 @@ export async function analyzeConversation(
   };
   const riskFlagsSchema = {
     type: "array",
-    // Capped in the prompt (§5), not here — the schema constrains shape, not
+    // Capped in the prompt (§5), not here - the schema constrains shape, not
     // count, and a hard array-length limit would make a genuinely risky call
     // with 6 flags fail generation entirely rather than return 5.
     items: {
@@ -854,14 +854,14 @@ export async function analyzeConversation(
           responseSchema: replySchema,
           thinkingConfig: geminiThinking(),
           // One label per ASR segment, and a diarizing ASR produces a lot of
-          // them — 85 on a six-minute call, ~20 output tokens each. 16k covers
+          // them - 85 on a six-minute call, ~20 output tokens each. 16k covers
           // a very long call with room to spare, and bounds what a runaway
           // costs; left at the model default, a loop bills 32k tokens.
           maxOutputTokens: cap,
         },
       });
-      // Occasionally — measured at roughly 1 run in 4 once a vocabulary
-      // glossary is in the prompt — the model falls into a repetition loop and
+      // Occasionally - measured at roughly 1 run in 4 once a vocabulary
+      // glossary is in the prompt - the model falls into a repetition loop and
       // generates until it hits the ceiling. It is not reproducible: the same
       // request succeeds on the next attempt, which is precisely what the
       // backoff is for. Retrying beats returning a call with no summary.
@@ -969,13 +969,13 @@ export async function analyzeConversation(
  *
  * The insight that fixes it: Sarvam has already separated the speakers
  * ACOUSTICALLY and reliably. Nothing needs to re-derive that per segment. There
- * is exactly one open question — which acoustic tag is the Agent — so it gets
+ * is exactly one open question - which acoustic tag is the Agent - so it gets
  * one request, with the whole transcript and the call's direction, and a
  * one-token answer. Every segment's role then follows from its ASR tag, which
  * makes drift impossible by construction rather than by prompting.
  *
  * Chunks are left with intent only, which is a genuinely local property, and
- * their answers get smaller as a bonus — more headroom under the output ceiling.
+ * their answers get smaller as a bonus - more headroom under the output ceiling.
  *
  * A chunk that fails loses only its own intents; roles are unaffected because
  * they never depended on it.
@@ -994,7 +994,7 @@ async function sarvamConversation(
    *
    * Deliberately a fragment, not the whole call. Input tokens are cheap (₹4/1M
    * against ₹16 for output), but everything in the prompt lengthens the
-   * reasoning that has to fit under the output ceiling — the full 12k-character
+   * reasoning that has to fit under the output ceiling - the full 12k-character
    * transcript pushed a 30-segment request from "truncated with a partial
    * answer" to "truncated with nothing at all". The opening of a call is also
    * the part that actually settles who is who, so a fragment buys most of the
@@ -1026,7 +1026,7 @@ async function sarvamConversation(
    * Who the recording belongs to is a real prior, not a guess. These calls are
    * captured on the telecaller's own handset: on an outgoing call they dial and
    * speak first, on an incoming one they answer it. Either way the first voice
-   * is usually the Agent — which is also the fallback if this pass fails.
+   * is usually the Agent - which is also the fallback if this pass fails.
    */
   const directionHint =
     direction === "incoming"
@@ -1037,7 +1037,7 @@ async function sarvamConversation(
 
   let agentTag: string | null = tags[0] ?? null;
   if (tags.length === 2) {
-    // A transcript with the acoustic tag on every line — this is the only view
+    // A transcript with the acoustic tag on every line - this is the only view
     // from which the question is answerable, and it is cheap to send.
     const tagged = usable
       .map((s) => `${s.speaker}: ${s.text.trim()}`)
@@ -1049,7 +1049,7 @@ async function sarvamConversation(
           `Below is ONE phone call for a telecalling / sales business. The ` +
           `speech recogniser has already separated the two voices as ` +
           `${tags[0]} and ${tags[1]}.\n\n` +
-          `Decide which of the two is the AGENT — the telecaller or sales rep ` +
+          `Decide which of the two is the AGENT - the telecaller or sales rep ` +
           `working for the business. The Agent quotes prices, describes what ` +
           `their company supplies, and says things like "we deliver" or "our ` +
           `rate is". The CUSTOMER asks what it costs, asks whether they do the ` +
@@ -1107,7 +1107,7 @@ async function sarvamConversation(
     const prompt =
       `You are labelling segments of ONE phone call for a telecalling team. ` +
       `${roleRules}\n` +
-      `The speaker of each segment is already known and is given to you — do ` +
+      `The speaker of each segment is already known and is given to you - do ` +
       `NOT second-guess it. Return only a short 2-5 word intent for each index ` +
       `(e.g. "greeting", "price objection", "asking availability", ` +
       `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"intent":"greeting"}]}` +
@@ -1212,7 +1212,7 @@ async function sarvamConversation(
         `qualityCriteria ({consentDisclosed: did the agent state this call may ` +
         `be recorded, scriptAdherence 0-10, professionalism 0-10, ` +
         `conversionSignal 0-10, rationale: one short sentence}), riskFlags ` +
-        `(up to 5, ONLY for things actually said — competitor mention, ` +
+        `(up to 5, ONLY for things actually said - competitor mention, ` +
         `cancellation/refund request, legal threat, broken promise, hostility; ` +
         `empty array when there is nothing to flag).` +
         `${glossary}\n\n${fullContext}`,
@@ -1228,7 +1228,7 @@ async function sarvamConversation(
     console.error("analyzeConversation: call-level pass failed:", err);
   }
 
-  // Role comes from the one global mapping, never from the chunk — so a chunk
+  // Role comes from the one global mapping, never from the chunk - so a chunk
   // that failed costs an intent, not a swapped speaker.
   const turns: ConversationTurn[] = usable.map((seg, i) => ({
     speaker: roleOf(seg),

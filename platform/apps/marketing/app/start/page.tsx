@@ -22,7 +22,7 @@ export const metadata: Metadata = pageMetadata({
  * `lg:order-last` puts it back on the right from 1024px up, where the two
  * columns sit side by side and "first" and "second" stop meaning anything
  * vertically. So the desktop composition is unchanged and only the phone
- * ordering is fixed — one CSS property rather than two layouts.
+ * ordering is fixed - one CSS property rather than two layouts.
  *
  * The reassurance list stays: the page asks a stranger for a phone number, and
  * what-happens-next and who-sees-this deserve answering. It just no longer
@@ -34,7 +34,7 @@ export default async function StartPage({
   searchParams: Promise<{ resume?: string; link?: string }>;
 }) {
   // Set by /continue/<token>, which has already verified the token and the
-  // session cookie. These are presentation hints only — nothing here grants
+  // session cookie. These are presentation hints only - nothing here grants
   // access to anything, so a visitor typing ?resume=1 by hand gets step 2 with
   // no session and the ordinary "your session expired" on submit.
   const params = await searchParams;
@@ -56,7 +56,7 @@ function StartPageBody({
       <div className="mk-wash" />
       {/* Top padding is deliberately small and asymmetric. It was `py-6 sm:py-12
           lg:py-16`, which on a desktop put 4rem of empty ground under a 64px
-          sticky header before the form began — the card started roughly a
+          sticky header before the form began - the card started roughly a
           seventh of the way down the viewport, so the page opened on whitespace
           rather than on the thing the visitor came to do.
 

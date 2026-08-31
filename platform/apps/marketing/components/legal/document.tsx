@@ -7,7 +7,7 @@ import { formatLegalDate } from "@/lib/legal";
  * Shared chrome for /privacy, /terms and /dpa.
  *
  * One shell for all three so the effective date, the "last updated" line and
- * the counsel-review posture cannot drift between documents — a privacy policy
+ * the counsel-review posture cannot drift between documents - a privacy policy
  * dated differently from the DPA it references is the kind of small
  * inconsistency that a buyer's legal team treats as a signal about everything
  * else.
@@ -78,7 +78,7 @@ export function LegalDocument({
  * Tables scroll inside their own container rather than widening the page. A
  * three-column sub-processor table is the widest thing on the site and would
  * otherwise be the one element that makes the whole document scroll sideways on
- * a phone — on a page whose entire job is to be read carefully.
+ * a phone - on a page whose entire job is to be read carefully.
  */
 export function LegalProse({ children }: { children: React.ReactNode }) {
   return (

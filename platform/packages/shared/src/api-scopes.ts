@@ -15,7 +15,7 @@ import { z } from "zod";
  * would have to remember that some principals are not people.
  *
  * So: a small, closed, flat list. Easy to read on a key-creation screen, easy
- * to reason about in a security review, and impossible to accidentally widen —
+ * to reason about in a security review, and impossible to accidentally widen -
  * adding a scope means editing this array, the CHECK in migration 0076, and
  * the route that requires it.
  *
@@ -25,14 +25,14 @@ import { z } from "zod";
  *
  * The first two because call audio and transcripts are the most sensitive data
  * in the product and are gated on a person's own `recordings_listen` /
- * `recordings_export` flags — a headless credential should not be able to reach
+ * `recordings_export` flags - a headless credential should not be able to reach
  * them at all, and the safest way to guarantee that is for the scope not to
  * exist.
  *
  * The third because of the standing rule that nothing automated can send. An
  * integration may create a lead, read a pipeline, and label a project; it may
  * not put a message in front of a human being. That rule is enforced by there
- * being no scope, no route, and no MCP tool that sends — not by a runtime check
+ * being no scope, no route, and no MCP tool that sends - not by a runtime check
  * somebody could later relax.
  *
  * There is also no `:delete` on anything. An integration that can create data
@@ -68,7 +68,7 @@ export const ApiScopeList = z.array(ApiScope).max(API_SCOPES.length);
 /**
  * A `:read` scope is implied by its `:write` counterpart.
  *
- * Creating a record returns it, and every create path here find-or-creates —
+ * Creating a record returns it, and every create path here find-or-creates -
  * so a write already discloses whether a record existed and what it holds. A
  * key with `leads:write` but not `leads:read` would therefore be a distinction
  * the implementation cannot actually honour, and pretending otherwise on the

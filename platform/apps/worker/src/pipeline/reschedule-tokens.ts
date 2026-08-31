@@ -8,12 +8,12 @@ import { funnelSiteUrl } from "./resume-tokens";
  * Deliberately the same shape as `resume-tokens.ts`, because it is the same
  * kind of object and the differences would be the bugs:
  *
- *   · 32 bytes from a CSPRNG, base64url. Not a uuid — uuids identify rows, and
+ *   · 32 bytes from a CSPRNG, base64url. Not a uuid - uuids identify rows, and
  *     a recognisable shape invites guessing at the rest of the table.
  *   · Only sha256 of it is stored, so a dump of `reschedule_tokens` is not a
  *     set of working handles on other people's appointments.
  *   · It expires, and the marketing app refuses it once the booking it points
- *     at is no longer live — so the window in which a leaked link is useful is
+ *     at is no longer live - so the window in which a leaked link is useful is
  *     bounded from both ends.
  *   · The WORKER mints it. Migration 0053 gives `aura_marketing` SELECT and
  *     `UPDATE (used_at)` and nothing else; an internet-facing server that can
@@ -23,7 +23,7 @@ import { funnelSiteUrl } from "./resume-tokens";
  *
  * A resume token points at a submission because the thing it resumes is the
  * enquiry. This points at a `booking_slots` row because the thing it moves is
- * that specific reservation — and once the move happens, the old row is
+ * that specific reservation - and once the move happens, the old row is
  * released and the token stops resolving to anything live, which is exactly the
  * revocation you want without a separate revoke step.
  */
@@ -34,7 +34,7 @@ import { funnelSiteUrl } from "./resume-tokens";
  * Longer than it sounds like it needs to be. The 24-hour reminder carries one,
  * and somebody who reads that message, moves the call a week out, and then
  * wants to move it again is following the link from the NEW booking's own
- * reminder — a fresh token. Seven days covers the realistic "I saw this
+ * reminder - a fresh token. Seven days covers the realistic "I saw this
  * yesterday and am acting on it now" case without leaving bearer credentials
  * alive for a month.
  */
@@ -47,7 +47,7 @@ export function hashRescheduleToken(raw: string): string {
 /**
  * Mint a token for this booking and return the full link, or null.
  *
- * Null when there is no site URL to build against — a link reading
+ * Null when there is no site URL to build against - a link reading
  * `undefined/reschedule/…` is worse than no link, because the second is visible
  * in the outbox and the first is only visible on somebody's phone. Every
  * template that uses `{{reschedule_link}}` treats it as OPTIONAL, so a null

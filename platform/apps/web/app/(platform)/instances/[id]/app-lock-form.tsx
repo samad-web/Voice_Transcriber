@@ -9,7 +9,7 @@ import { setAppLockPasswordAction } from "./actions";
 /**
  * The mobile app-lock password for one instance. Every handset enrolled
  * under this org shows a lock screen on open, checked offline against the
- * hash synced through devices/me/config — set it here, never read back.
+ * hash synced through devices/me/config - set it here, never read back.
  */
 export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolean }) {
   const router = useRouter();
@@ -77,7 +77,7 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
 
       <p className="text-sm text-text-muted leading-relaxed">
         {enabled
-          ? "Every handset enrolled under this instance asks for this password when the app is opened. Synced automatically — no re-enrollment needed."
+          ? "Every handset enrolled under this instance asks for this password when the app is opened. Synced automatically - no re-enrollment needed."
           : "Off by default: the app opens straight to the recordings list. Set a password here to require it on every enrolled handset."}
       </p>
 

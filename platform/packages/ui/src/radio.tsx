@@ -10,7 +10,7 @@ export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 /**
  * One radio option. Same native-control reasoning as `Checkbox`.
  *
- * Radios only make sense in a group, and a group needs a group label — wrap them
+ * Radios only make sense in a group, and a group needs a group label - wrap them
  * in `RadioGroup` rather than dropping loose `Radio`s next to a `<p>`. Arrow-key
  * navigation and roving focus come from the browser as long as every option in
  * the group shares a `name`.
@@ -43,7 +43,7 @@ export function Radio({ label, description, className = "", ...rest }: RadioProp
  * `<fieldset>` + `<legend>` around a set of `Radio`s.
  *
  * This is not decoration. Without it a screen reader announces "Yes, radio
- * button, 1 of 3" with no indication of what the question was — the legend is
+ * button, 1 of 3" with no indication of what the question was - the legend is
  * the only thing that attaches the question to the answers. The funnel's three
  * CRM questions (doc 16 §3.7) are exactly this shape.
  *

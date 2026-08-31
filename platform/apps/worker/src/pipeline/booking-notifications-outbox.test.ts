@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Every row here is queued minutes to days before it goes out, and in that gap
  * the world moves. Someone converts; someone cancels; the call starts. Each of
  * those makes a queued message wrong rather than merely late, and none of them
- * is visible from the row itself — which is why they are re-checked against the
+ * is visible from the row itself - which is why they are re-checked against the
  * joined state instead of trusted from when the row was written.
  */
 

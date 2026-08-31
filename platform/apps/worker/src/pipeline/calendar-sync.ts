@@ -15,7 +15,7 @@ import { refreshAccessToken } from "./email-sync";
  * a competitor; copying it wholesale into a system their manager reads would
  * be surveillance with a CRM logo on it. Matching first means the calendar
  * contributes the meetings the CRM already had a reason to know about, and
- * nothing else. Only the title, time and location are stored — never the
+ * nothing else. Only the title, time and location are stored - never the
  * description, which is where agendas and dial-in details live.
  *
  * ── A MEETING IS NOT ONLY A PAST EVENT ────────────────────────────────────
@@ -32,8 +32,8 @@ import { refreshAccessToken } from "./email-sync";
  * A cancelled event is DELETED from the timeline, not left in place. It is
  * the one case where removing CRM data is the honest act: the row asserts
  * that a meeting happened, and if the meeting was called off that assertion
- * is simply false. Only rows this sync itself wrote are ever removed —
- * matched on connection_id AND external_id — so a note somebody typed by hand
+ * is simply false. Only rows this sync itself wrote are ever removed -
+ * matched on connection_id AND external_id - so a note somebody typed by hand
  * is never in scope.
  */
 
@@ -72,7 +72,7 @@ export interface CalendarSyncOutcome {
  * Exported so the rule can be tested directly rather than only through a
  * database. `self` is excluded before matching for the same reason the mail
  * sync excludes it: a rep who is themselves a contact in the CRM (it happens
- * — test data, or a colleague who was once a customer) must not turn every
+ * - test data, or a colleague who was once a customer) must not turn every
  * private appointment into a CRM record.
  */
 export function attendeeContact(
@@ -139,7 +139,7 @@ export async function syncCalendar(
     );
   }
   if (!accessToken && process.env.CALENDAR_STUB !== "1") {
-    return { ...base, reason: "no usable access token — reconnect required" };
+    return { ...base, reason: "no usable access token - reconnect required" };
   }
 
   // A fixed window rather than "since last sync": an event's DETAILS can

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 /**
- * The email delivery seam — doc 16 §3.6, `lead-funnel-spec.md` "Follow-up
+ * The email delivery seam - doc 16 §3.6, `lead-funnel-spec.md` "Follow-up
  * Message Template".
  *
  * ── THE TEMPLATES USED TO LIVE HERE, AND NO LONGER DO ──────────────────────
@@ -11,8 +11,8 @@ import { randomUUID } from "node:crypto";
  * switch. That made email the one channel an operator could not edit: WhatsApp
  * copy moved into `marketing.message_templates` in migration 0026, and email
  * stayed behind because there was no mail provider and no editor for it.
- * Migration 0026's own header set the exit condition — "when email goes live,
- * seed it here and delete the literals there, in that order" — and 0053 did
+ * Migration 0026's own header set the exit condition - "when email goes live,
+ * seed it here and delete the literals there, in that order" - and 0053 did
  * exactly that. The copy is now in the `@aura/shared` catalogue with its
  * WhatsApp sibling, stored per (key, channel), rendered by
  * `./message-templates.ts`, and editable from the console.
@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
  * credential anywhere in this repository. `getFollowUpDispatcher()` therefore
  * returns `LogOnlyFollowUpDispatcher` unless `FUNNEL_FOLLOWUP_ENDPOINT` is set.
  * It prints the rendered message and reports success, so the queue drains
- * instead of growing forever — but **nothing is delivered to anybody**.
+ * instead of growing forever - but **nothing is delivered to anybody**.
  *
  * That success is recorded honestly. Every log-only delivery stamps
  * `provider_message_id` with a `log-only:` prefix, so the rows that were never
@@ -60,13 +60,13 @@ export interface FollowUpDispatcher {
 }
 
 /**
- * The default. Prints the message and reports success — see the module header
+ * The default. Prints the message and reports success - see the module header
  * for why that is honest and how the never-delivered rows are found later.
  *
  * The recipient's address is logged in full and deliberately: this only runs in
  * a deployment with no mail provider, the log is the only record that the
  * message existed, and a redacted address would make the backfill impossible.
- * If that ever stops being an acceptable trade, configure a provider — which is
+ * If that ever stops being an acceptable trade, configure a provider - which is
  * the correct fix anyway.
  */
 export class LogOnlyFollowUpDispatcher implements FollowUpDispatcher {
@@ -74,7 +74,7 @@ export class LogOnlyFollowUpDispatcher implements FollowUpDispatcher {
 
   async send(message: FollowUpMessage): Promise<DeliveryResult> {
     console.warn(
-      `[funnel follow-up] NOT DELIVERED — no mail provider configured.\n` +
+      `[funnel follow-up] NOT DELIVERED - no mail provider configured.\n` +
         `  to:      ${message.to.name} <${message.to.email}>\n` +
         `  subject: ${message.subject}\n` +
         message.text.replace(/^/gm, "  | "),
@@ -84,13 +84,13 @@ export class LogOnlyFollowUpDispatcher implements FollowUpDispatcher {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   ⚠️  UNVERIFIED — no mail provider account exists, so this has never run.
+   ⚠️  UNVERIFIED - no mail provider account exists, so this has never run.
 
    A provider-agnostic HTTP sender. Resend, Postmark, Brevo and Mailgun all
    accept a JSON POST with a bearer token, they just disagree on field names, so
    the field names are configuration rather than code:
 
-     FUNNEL_FOLLOWUP_ENDPOINT   e.g. https://api.resend.com/emails   (required —
+     FUNNEL_FOLLOWUP_ENDPOINT   e.g. https://api.resend.com/emails   (required -
                                 its presence is what selects this dispatcher)
      FUNNEL_FOLLOWUP_TOKEN      bearer token
      FUNNEL_FOLLOWUP_FROM       e.g. "Aura <hello@sirahagents.com>"
@@ -146,7 +146,7 @@ export class HttpFollowUpDispatcher implements FollowUpDispatcher {
     return {
       ok: false,
       error: `${res.status} ${text.slice(0, 300)}`,
-      // 4xx other than 408/429 means the request itself is wrong — a bad
+      // 4xx other than 408/429 means the request itself is wrong - a bad
       // address, an unverified domain, a revoked key. Retrying it six times
       // changes nothing and just delays the dead state that tells an operator
       // to look.
@@ -161,13 +161,13 @@ let cached: FollowUpDispatcher | null = null;
  * Whether mail can actually be delivered, as opposed to logged.
  *
  * The presence of an endpoint is the whole test, mirroring
- * `getFollowUpDispatcher` below — one condition, so the two can never disagree
+ * `getFollowUpDispatcher` below - one condition, so the two can never disagree
  * about whether email is real.
  *
  * Callers use this to decide whether to QUEUE an email at all. That is a
  * different question from whether to SEND one: a rejection is queued regardless
  * and logged if it cannot go, because the row is the record that the message
- * was owed. A reminder is not — a second, undeliverable copy of every reminder
+ * was owed. A reminder is not - a second, undeliverable copy of every reminder
  * would double the outbox and make "what did we send this person" harder to
  * read, for no gain.
  */
@@ -202,7 +202,7 @@ export function getFollowUpDispatcher(): FollowUpDispatcher {
   return cached;
 }
 
-/** Tests only — module state outlives an env change. */
+/** Tests only - module state outlives an env change. */
 export function resetFollowUpDispatcherForTests(): void {
   cached = null;
 }

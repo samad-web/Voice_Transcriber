@@ -10,7 +10,7 @@ import { DbService } from "../../db/db.service";
  * That service is the shared implementation behind both front doors, and its
  * justification is that a REST route and its MCP tool twin must not drift.
  * Nothing here has a REST twin: a "board summary" or a "stalled deals" digest
- * is a composed answer assembled to be READ BY A MODEL — several tables joined
+ * is a composed answer assembled to be READ BY A MODEL - several tables joined
  * and pre-aggregated so an agent does not have to make six tool calls and do
  * arithmetic it will get wrong. Putting these in the shared service would imply
  * a REST contract nobody asked for and would have to be kept stable for.
@@ -23,7 +23,7 @@ import { DbService } from "../../db/db.service";
  *
  * No transcript text, no recording URLs, no message bodies. A resource is the
  * easiest thing in MCP for a client to attach to a conversation wholesale, so
- * it is the worst possible place to put something sensitive by accident — the
+ * it is the worst possible place to put something sensitive by accident - the
  * user attaching it may never read what it contains. Contact numbers stay
  * part-masked (prefix + last three) exactly as they are in the console.
  */
@@ -35,7 +35,7 @@ export class CrmContextService {
    * The default board: its columns in order, with how much is sitting in each.
    *
    * Counts are derived through `board_column_stages` (migration 0075) rather
-   * than by matching `leads.stage` to `board_columns.key` directly — several
+   * than by matching `leads.stage` to `board_columns.key` directly - several
    * stages may map into one column, and the whole point of the reverse map is
    * that the column a record appears in is a lookup, not a string comparison.
    */
@@ -68,7 +68,7 @@ export class CrmContextService {
     });
   }
 
-  /** Open pipeline by stage — the number an owner actually asks for. */
+  /** Open pipeline by stage - the number an owner actually asks for. */
   async pipelineSummary(orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows: byStage } = await client.query(
@@ -99,7 +99,7 @@ export class CrmContextService {
    * Deals that have not moved in `days`.
    *
    * `stage_changed_at` and not `last_activity_at` on purpose: a deal can look
-   * busy — calls logged, notes added — while never actually advancing, and that
+   * busy - calls logged, notes added - while never actually advancing, and that
    * is precisely the deal worth surfacing. Terminal deals are excluded; a won
    * deal that has not moved in ninety days is not stalled, it is finished.
    */
@@ -143,7 +143,7 @@ export class CrmContextService {
       if (!lead) throw new NotFoundException("no lead with that id");
 
       // Every project this person has been discussed for (0075), not just the
-      // primary — the whole reason lead_projects exists.
+      // primary - the whole reason lead_projects exists.
       const { rows: projects } = await client.query(
         `SELECT p.key, p.name, lp.is_primary, lp.source, lp.confidence
            FROM lead_projects lp JOIN crm_projects p ON p.id = lp.project_id
@@ -205,7 +205,7 @@ export class CrmContextService {
         [contactId],
       );
 
-      // Timeline as SUBJECT AND SNIPPET ONLY — never a body, never a
+      // Timeline as SUBJECT AND SNIPPET ONLY - never a body, never a
       // transcript. The standing rule for anything synced into the CRM, and it
       // matters twice over on a resource a user may attach without reading.
       const { rows: timeline } = await client.query(
@@ -248,7 +248,7 @@ export class CrmContextService {
    *
    * The aliases are included deliberately: they are what the call detector
    * matches a transcript against, so an agent that can see them knows why a
-   * lead was labelled the way it was — and a human reading the resource can
+   * lead was labelled the way it was - and a human reading the resource can
    * spot the alias that is missing.
    */
   async listProjectsWithStats(orgId: string) {

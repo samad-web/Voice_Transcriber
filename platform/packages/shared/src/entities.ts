@@ -13,7 +13,7 @@ export const Agent = z.object({
   id: z.string().uuid(),
   workspaceId: z.string().uuid(),
   name: z.string().min(1).max(120),
-  /** Agents are versioned and immutable — editing creates a new version. */
+  /** Agents are versioned and immutable - editing creates a new version. */
   version: z.number().int().positive(),
   systemPrompt: z.string().max(20000),
   fieldSchema: ExtractionSchema,

@@ -34,13 +34,13 @@ const FIELD_TYPES = [
 const NEEDS_OPTIONS = new Set(["picklist", "multiselect"]);
 
 /**
- * Define fields on Contact/Account/Deal — CRM Phase 1, E0.2.
+ * Define fields on Contact/Account/Deal - CRM Phase 1, E0.2.
  *
  * The form fields are hand-declared here rather than rendered from a spec
  * array, unlike (platform)/crm's provider-picker.tsx: that page renders one
  * of many THIRD-PARTY provider specs, where the fields genuinely differ per
- * provider. Here there is exactly one spec — the field-definition shape
- * itself — so a fixed form is the honest version of the same idea.
+ * provider. Here there is exactly one spec - the field-definition shape
+ * itself - so a fixed form is the honest version of the same idea.
  */
 export function CustomFieldsManager({
   fields,

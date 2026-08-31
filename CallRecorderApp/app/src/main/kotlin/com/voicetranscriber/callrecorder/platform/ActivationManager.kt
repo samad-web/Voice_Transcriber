@@ -60,7 +60,7 @@ object ActivationManager {
             "Config v${config.version}: recording ${if (config.recordingEnabled) "ENABLED" else "DISABLED"}"
         } catch (e: PlatformApi.ApiException) {
             if (e.code == 401) {
-                // Remote logout/wipe or revocation — close the recording gate locally.
+                // Remote logout/wipe or revocation - close the recording gate locally.
                 // The app-lock hash is left exactly as last synced: a revoked device
                 // should still show its lock screen, not fall open on an auth failure.
                 ActivationStore.saveConfig(
@@ -69,7 +69,7 @@ object ActivationManager {
                     configVersion = 0,
                     appLockPasswordHash = ActivationStore.appLockPasswordHash(context),
                 )
-                "Server rejected device (${e.code}) — recording disabled"
+                "Server rejected device (${e.code}) - recording disabled"
             } else {
                 "Config refresh failed: ${e.message}"
             }

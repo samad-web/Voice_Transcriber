@@ -48,7 +48,7 @@ const CreateQuotationBody = z.object({
   items: z.array(LineItem).min(1, "a quotation needs at least one line item"),
 });
 
-// Header fields only — line items are replaced wholesale via replaceItems()
+// Header fields only - line items are replaced wholesale via replaceItems()
 // below rather than patched individually; a quotation is small enough that
 // re-sending the full item list on every edit is simpler than diffing it,
 // and it's how the web editor naturally works (one form, one save).
@@ -77,10 +77,10 @@ const QUOTATION_COLUMNS = `id, workspace_id, account_id, contact_id, deal_id, qu
 type QueryClient = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
 
 /**
- * Quotations — Kailash gap Milestone 1. `quotation_number` is server-generated
+ * Quotations - Kailash gap Milestone 1. `quotation_number` is server-generated
  * (Q-<year>-<sequence>), never client-supplied; a true concurrent-create race
  * on the same org surfaces as 409 off the unique index rather than silently
- * reusing a number — rare enough for this record volume that a retry loop
+ * reusing a number - rare enough for this record volume that a retry loop
  * isn't worth the complexity.
  */
 @Controller("quotations")
@@ -200,7 +200,7 @@ export class QuotationsController {
             p.validUntil ?? null,
             p.notes ?? null,
             // Stamped as the creator's when they are scoped, or they would
-            // create a record and immediately lose sight of it — same rule
+            // create a record and immediately lose sight of it - same rule
             // accounts.controller.ts's create() uses.
             recordScope.scope === "owned" ? recordScope.userId : null,
           ],
@@ -246,7 +246,7 @@ export class QuotationsController {
         await this.insertItems(client, orgId, id, p.items);
         items = p.items;
       } else {
-        // numeric columns come back from node-postgres as strings — cast
+        // numeric columns come back from node-postgres as strings - cast
         // explicitly rather than trust JS's `*`/`-` auto-coercion, which
         // happens to make computeDocumentTotals's arithmetic work today but
         // would silently stop the moment it does anything stricter than that.

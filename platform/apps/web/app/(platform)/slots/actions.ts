@@ -8,7 +8,7 @@ import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 /**
  * Bookable slots.
  *
- * Every export opens with a bare `await requireOperator()` — a Server Action is
+ * Every export opens with a bare `await requireOperator()` - a Server Action is
  * an independently-addressable POST endpoint and these carry the root
  * ADMIN_API_KEY. Enforced mechanically by platform-actions.guard.test.ts.
  */
@@ -57,7 +57,7 @@ export async function listSlotsAction(
     const data = await res.json();
     return { slots: data.slots ?? [], timeZone: data.timeZone };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -65,7 +65,7 @@ export async function listSlotsAction(
    The diary above answers "when am I free". This answers "who am I speaking to
    and how do I reach them", which is the question somebody actually opens this
    page to ask. The contact details come from the enquirer's submission, joined
-   server-side — a name alone is not enough to make a call. */
+   server-side - a name alone is not enough to make a call. */
 
 export interface Booking {
   id: string;
@@ -78,7 +78,7 @@ export interface Booking {
   day_label: string;
   time_label: string;
   duration_minutes: string;
-  /** Null when the enquirer was erased — the appointment still stands. */
+  /** Null when the enquirer was erased - the appointment still stands. */
   enquirer_name: string | null;
   enquirer_email: string | null;
   enquirer_phone: string | null;
@@ -135,7 +135,7 @@ export async function listBookingsAction(
     const data = await res.json();
     return { bookings: data.bookings ?? [], timeZone: data.timeZone };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -158,7 +158,7 @@ export async function createSlotsAction(input: {
   }
   // `||` not `??`. getPrincipal() can return a principal whose email is an
   // empty string (no session in development), and `?? "console"` only replaces
-  // null or undefined — so "" sailed through and the API rejected the request
+  // null or undefined - so "" sailed through and the API rejected the request
   // with `actor: too_small`. Found by clicking the button, not by typechecking.
   const actor = (await getPrincipal())?.email || "console";
   try {
@@ -176,7 +176,7 @@ export async function createSlotsAction(input: {
     revalidatePath("/slots");
     return { created: data.created?.length ?? 0, skipped: data.skipped ?? 0 };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -197,7 +197,7 @@ export interface AttendanceResult {
  * call and nobody was told, or told somebody about an outcome that was never
  * recorded. Two fetches from here could not offer that.
  *
- * Revalidates `/leads` as well as `/slots` — the leads table shows the booking
+ * Revalidates `/leads` as well as `/slots` - the leads table shows the booking
  * beside each enquirer, so an outcome recorded here changes what that page
  * should say.
  */
@@ -210,7 +210,7 @@ export async function markAttendanceAction(
   } catch {
     return { error: "Not authorized" };
   }
-  // `||` not `??` — see createSlotsAction. An empty email sails past `??` and
+  // `||` not `??` - see createSlotsAction. An empty email sails past `??` and
   // the API rejects the request with `actor: too_small`.
   const actor = (await getPrincipal())?.email || "console";
   try {
@@ -223,7 +223,7 @@ export async function markAttendanceAction(
     if (!res.ok) {
       if (res.status === 404) {
         // The API's own guard is `attendance IS NULL`, so this is overwhelmingly
-        // "somebody already marked it" rather than a missing row — said in those
+        // "somebody already marked it" rather than a missing row - said in those
         // terms, because "API 404" would send an operator looking for a bug.
         return { error: "That call has already been marked, or is no longer booked." };
       }
@@ -235,7 +235,7 @@ export async function markAttendanceAction(
     revalidatePath("/leads");
     return { attendance: data.attendance, queued: data.queued, hasEnquirer: data.hasEnquirer };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -274,7 +274,7 @@ export interface GenerateResult {
  * Bulk-generate slots across a date range.
  *
  * The buffer is applied by spacing the generated times, not by a rule enforced
- * at booking — see the controller. So what comes back from this is exactly what
+ * at booking - see the controller. So what comes back from this is exactly what
  * the diary will look like.
  */
 export async function generateSlotsAction(input: {
@@ -313,6 +313,6 @@ export async function generateSlotsAction(input: {
     revalidatePath("/slots");
     return { created: data.created, requested: data.requested, skipped: data.skipped };
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }

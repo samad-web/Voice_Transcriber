@@ -12,7 +12,7 @@ import {
 
 /**
  * WhatsApp-via-Wasi setup (Kailash gap Milestone 3). Aura is a Hub API
- * client of Wasi (the user's own WhatsApp Business Solution Provider) —
+ * client of Wasi (the user's own WhatsApp Business Solution Provider) -
  * this page never talks to Meta directly, and there is no Embedded Signup
  * here: that already happened on Wasi's side for this org's WABA.
  */
@@ -75,7 +75,7 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               </p>
               <p className="text-text-muted">
                 Paste this into the client's page in Wasi's admin panel (Clients → this client →
-                CRM Inbound Forwarding), tick all four events, and save. Wasi will show a secret —
+                CRM Inbound Forwarding), tick all four events, and save. Wasi will show a secret -
                 paste it below.
               </p>
               <Button variant="secondary" size="sm" onClick={() => setSecretDialogFor(c.id)}>
@@ -146,7 +146,7 @@ function CreateDialog({
   // The kit's <Dialog> only toggles the underlying <dialog> element and never
   // unmounts its children, so without this a cancelled (or completed) attempt
   // leaves its field values and error text showing the next time the dialog
-  // opens — for a different channel, or just a second try.
+  // opens - for a different channel, or just a second try.
   useEffect(() => {
     if (!open) return;
     setInboundAddress("");
@@ -234,7 +234,7 @@ function SecretDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  // Same stale-content issue as CreateDialog above — reset when opened for a
+  // Same stale-content issue as CreateDialog above - reset when opened for a
   // (possibly different) channel, not just left over from the last attempt.
   useEffect(() => {
     if (channelId === null) return;

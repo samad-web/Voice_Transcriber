@@ -1,10 +1,10 @@
--- 0039_roles_permissions.sql — CRM Phase 1 foundation, part 6: a real
+-- 0039_roles_permissions.sql - CRM Phase 1 foundation, part 6: a real
 -- role -> object -> action(+scope/field) permission model, additive to the
 -- existing memberships.role / memberships.owner_role axes.
 --
 -- Schema only. This migration does NOT wire role_permissions into
 -- PermissionsGuard/OwnerRoleGuard/principalHasPermission, and does NOT let a
--- membership be assigned a genuinely custom (non-system) role — memberships
+-- membership be assigned a genuinely custom (non-system) role - memberships
 -- .role is a live 5-value CHECK enum read by authorization code across the
 -- API and web, and widening that blast radius is deliberately deferred past
 -- this "foundation" phase.
@@ -71,7 +71,7 @@ SELECT o.id, v.key, v.name, true
  WHERE NOT EXISTS (SELECT 1 FROM roles r WHERE r.org_id = o.id AND r.key = v.key);
 
 -- ── Grants ─────────────────────────────────────────────────────────────
--- object_type is contact|account|deal only this phase — deliberately not
+-- object_type is contact|account|deal only this phase - deliberately not
 -- touching the existing recordings_listen/recordings_export mechanism, which
 -- keeps its own separate enforcement path untouched.
 CREATE TABLE IF NOT EXISTS role_permissions (
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS role_permissions (
   -- building full territories yet.
   scope       text NOT NULL DEFAULT 'all' CHECK (scope IN ('all', 'owned')),
   -- Field-level half. {fieldKey: 'hidden'|'readonly'}. Enforced in app code
-  -- when wired (a later phase) — Postgres has no per-application-role column
+  -- when wired (a later phase) - Postgres has no per-application-role column
   -- security mechanism here, so this was never going to be a DB-level control.
   field_restrictions jsonb NOT NULL DEFAULT '{}'::jsonb,
   PRIMARY KEY (role_id, object_type, action)
@@ -109,7 +109,7 @@ BEGIN
 END $$;
 REVOKE ALL ON role_permissions FROM PUBLIC;
 
--- Seed sensible, NON-ENFORCED defaults per system role — safe to be
+-- Seed sensible, NON-ENFORCED defaults per system role - safe to be
 -- approximate since nothing reads this table yet (see header): admin roles
 -- get full access, workspace_member gets view/create/edit, viewer gets view.
 INSERT INTO role_permissions (org_id, role_id, object_type, action, scope)
@@ -129,7 +129,7 @@ SELECT r.org_id, r.id, ot.object_type, a.action, 'all'
    );
 
 -- ── memberships.role_id ────────────────────────────────────────────────
--- Additive, nullable — same shape as 0018's owner_role addition. Backfilled
+-- Additive, nullable - same shape as 0018's owner_role addition. Backfilled
 -- by matching org_id+role to the system role seeded above: lossless,
 -- mechanical, the same style as 0018's own backfill.
 ALTER TABLE memberships ADD COLUMN IF NOT EXISTS role_id uuid REFERENCES roles(id) ON DELETE SET NULL;

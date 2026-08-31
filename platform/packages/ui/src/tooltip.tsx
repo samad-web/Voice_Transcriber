@@ -7,7 +7,7 @@ import { cx } from "./cx";
 export interface TooltipProps {
   /** Short supplementary text. Never the only place information exists. */
   content: ReactNode;
-  /** The trigger. Must itself be focusable — a button or a link. */
+  /** The trigger. Must itself be focusable - a button or a link. */
   children: ReactNode;
   side?: "top" | "bottom";
   className?: string;
@@ -20,19 +20,19 @@ export interface TooltipProps {
  * Focus), which is the one almost every tooltip fails:
  *
  * - **Dismissible.** Escape hides it without moving the pointer. That is the
- *   requirement that forces this to be a Client Component — CSS `:hover` alone
+ *   requirement that forces this to be a Client Component - CSS `:hover` alone
  *   cannot be dismissed, and a tooltip that permanently covers the control
  *   underneath it is a trap for a screen-magnifier user.
  * - **Hoverable.** The bubble sits inside the same wrapper and does not vanish
  *   when the pointer crosses onto it, so its text can be selected.
- * - **Persistent.** It stays until blur, Escape, or pointer-out — no timeout.
+ * - **Persistent.** It stays until blur, Escape, or pointer-out - no timeout.
  *
  * It shows on `focus`, not `focus-visible`: a keyboard user reaching the trigger
  * must get the same information a mouse user gets on hover.
  *
  * `aria-describedby` rather than `aria-label`, so the tooltip *supplements* the
  * trigger's own name instead of replacing it. Consequence: the trigger must
- * already have an accessible name — an icon-only button still needs its
+ * already have an accessible name - an icon-only button still needs its
  * `aria-label`. A tooltip is not a substitute for a label, because it is not
  * announced at all on a touch device, where there is no hover.
  */

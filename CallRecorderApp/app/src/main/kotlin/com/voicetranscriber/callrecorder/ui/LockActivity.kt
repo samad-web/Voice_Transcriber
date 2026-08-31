@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The real launcher entry point (see AndroidManifest — MainActivity is no
+ * The real launcher entry point (see AndroidManifest - MainActivity is no
  * longer exported). Gates the WHOLE app behind the instance's app-lock
  * password, set on the CRM's Instance page and synced via device config.
  *
@@ -54,7 +54,7 @@ class LockActivity : AppCompatActivity() {
     /**
      * PBKDF2 at AppLock's iteration count is deliberately slow enough to resist
      * brute-forcing, which also makes it slow enough to notice on a budget
-     * handset — so it runs off the main thread with the button visibly busy,
+     * handset - so it runs off the main thread with the button visibly busy,
      * rather than leaving the tap looking like it did nothing until it suddenly
      * either unlocks or shows an error.
      */

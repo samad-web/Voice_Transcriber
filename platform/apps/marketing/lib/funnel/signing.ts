@@ -6,11 +6,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * Two cookies in this funnel are security-relevant and neither may be
  * client-writable:
  *
- *   the step-1 session — carries the submission id that step 2 attaches to. A
+ *   the step-1 session - carries the submission id that step 2 attaches to. A
  *   forgeable value would let anyone overwrite a stranger's enquiry, which is
  *   why the id never appears in the DOM as a hidden field.
  *
- *   the split-test variant (§3.5) — a forgeable value would let a visitor (or a
+ *   the split-test variant (§3.5) - a forgeable value would let a visitor (or a
  *   bot, or a curious developer) reassign themselves, and the experiment's whole
  *   claim is that assignment is stable and unbiased.
  *
@@ -23,7 +23,7 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * FAIL CLOSED. Returns null when unset — there is no development default and no
+ * FAIL CLOSED. Returns null when unset - there is no development default and no
  * generated-at-boot fallback.
  *
  * A generated fallback would be worse than useless here: it would work perfectly
@@ -40,7 +40,7 @@ export function funnelSecret(): string | null {
 /**
  * Salt for hashing IPs and identities into rate-limit keys.
  *
- * Separate from the cookie secret so rotating one does not blow away the other —
+ * Separate from the cookie secret so rotating one does not blow away the other -
  * rotating the cookie secret logs everyone out of a half-finished form, which is
  * cheap; rotating the hash salt resets every rate-limit counter, which is not.
  * Falls back to the cookie secret rather than to a constant, because a constant
@@ -78,7 +78,7 @@ export function signPayload(payload: unknown): string {
 }
 
 /**
- * Verify and parse. Returns null on ANY failure — wrong shape, bad signature,
+ * Verify and parse. Returns null on ANY failure - wrong shape, bad signature,
  * unparseable JSON, missing secret. One return value for every failure mode,
  * because a caller that could tell them apart would eventually branch on it.
  */
@@ -108,7 +108,7 @@ export function verifyPayload<T>(value: string | undefined | null): T | null {
  * A salted, one-way key for the rate-limit table.
  *
  * The table must not become a second, unregulated copy of the personal data the
- * submissions table is careful about — and an IP address is personal data under
+ * submissions table is careful about - and an IP address is personal data under
  * both the GDPR and the DPDP Act. Truncated to 32 hex characters: 128 bits is
  * far past any collision concern at this volume, and a shorter row is a smaller
  * index.

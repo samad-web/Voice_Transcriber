@@ -7,14 +7,14 @@ import { randomBytes } from "node:crypto";
  * The console signs in against Supabase Auth (apps/web/lib/supabase), so an
  * owner login is a Supabase user plus the platform-side binding that says which
  * org they own. Creating that user needs the service-role key, which must never
- * leave the server — hence here, in the API, and not in the web app.
+ * leave the server - hence here, in the API, and not in the web app.
  *
  * No SDK on purpose: three REST calls against a documented, stable surface,
  * consistent with how @aura/llm and crm-dispatch talk to their providers.
  */
 @Injectable()
 export class SupabaseAdminService {
-  /** Shared with the web app's NEXT_PUBLIC_SUPABASE_URL — same project. */
+  /** Shared with the web app's NEXT_PUBLIC_SUPABASE_URL - same project. */
   private readonly url = (
     process.env.SUPABASE_URL ??
     process.env.NEXT_PUBLIC_SUPABASE_URL ??
@@ -47,7 +47,7 @@ export class SupabaseAdminService {
   ): Promise<Record<string, unknown>> {
     if (!this.configured) {
       throw new ServiceUnavailableException(
-        "Supabase Auth is not configured on the API — set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+        "Supabase Auth is not configured on the API - set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
       );
     }
     const res = await fetch(`${this.url}/auth/v1${path}`, {
@@ -66,7 +66,7 @@ export class SupabaseAdminService {
     try {
       parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
     } catch {
-      // Non-JSON body — keep the raw text for the error message below.
+      // Non-JSON body - keep the raw text for the error message below.
     }
     if (!res.ok) {
       const message =
@@ -83,7 +83,7 @@ export class SupabaseAdminService {
    * Create a confirmed user with a known password.
    *
    * `email_confirm: true` because the operator is provisioning this account on
-   * the customer's behalf — there is no inbox round-trip to wait for, and an
+   * the customer's behalf - there is no inbox round-trip to wait for, and an
    * unconfirmed user cannot sign in.
    */
   async createUser(

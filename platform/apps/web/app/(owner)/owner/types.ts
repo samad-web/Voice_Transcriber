@@ -1,4 +1,4 @@
-/** Shapes returned by /v1/owner/* and /v1/leads — shared by all three pages. */
+/** Shapes returned by /v1/owner/* and /v1/leads - shared by all three pages. */
 
 export interface Stage {
   key: string;
@@ -43,7 +43,7 @@ export interface Lead {
   project_color: string | null;
 }
 
-/** One row of the tenant's project catalogue — `GET /v1/projects`. */
+/** One row of the tenant's project catalogue - `GET /v1/projects`. */
 export interface Project {
   id: string;
   key: string;
@@ -125,10 +125,10 @@ export function num(value: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Compact money formatting — a board card has no room for "1,250,000". */
+/** Compact money formatting - a board card has no room for "1,250,000". */
 export function formatValue(value: string | number | null | undefined): string {
   const n = num(value);
-  if (n === null) return "—";
+  if (n === null) return "-";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
   return n.toLocaleString();
@@ -142,9 +142,9 @@ export function formatDuration(seconds: number): string {
 
 /** "3 days ago" without pulling in a date library. */
 export function relativeTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
+  if (Number.isNaN(then)) return "-";
   const diff = Date.now() - then;
   const mins = Math.round(diff / 60_000);
   if (mins < 1) return "just now";
@@ -163,7 +163,7 @@ export function contactLabel(lead: Lead): string {
 }
 
 /**
- * CRM Phase 1 foundation (E0.1) — Account/Contact/Deal, alongside the Lead
+ * CRM Phase 1 foundation (E0.1) - Account/Contact/Deal, alongside the Lead
  * shapes above rather than instead of them. See the Phase 1 plan.
  */
 
@@ -215,7 +215,7 @@ export interface Contact {
   facts: Record<string, unknown>;
   status: "active" | "archived" | "merged";
   call_count: number;
-  /** Kailash gap Milestone 4 — a point ledger scored by a worker sweep, not stored elsewhere. */
+  /** Kailash gap Milestone 4 - a point ledger scored by a worker sweep, not stored elsewhere. */
   lead_score: number;
   last_activity_at: string;
   created_at: string;
@@ -242,7 +242,7 @@ export interface CustomFieldOption {
 
 /**
  * A follow-up task (Track A3). `due_on` is a plain `YYYY-MM-DD` string, never
- * a timestamp — see tasks.controller.ts for why that distinction is load-
+ * a timestamp - see tasks.controller.ts for why that distinction is load-
  * bearing rather than cosmetic.
  */
 export interface Task {
@@ -302,7 +302,7 @@ export interface DuplicateMatch {
 }
 
 /**
- * One custom field AS IT APPLIES TO A RECORD — the definition and this
+ * One custom field AS IT APPLIES TO A RECORD - the definition and this
  * record's value in a single shape, which is what the API returns.
  *
  * `source` is the provenance from migration 0045 and it is deliberately on

@@ -2,7 +2,7 @@ import { scopeClause, scopeFilter, UNSCOPED, type CrmRecordScope } from "./crm-s
 
 /**
  * `scope: 'owned'` was settable through the API from the day migration 0039
- * shipped and was read by nothing — a role configured to see only its own
+ * shipped and was read by nothing - a role configured to see only its own
  * records saw every record in the tenant. These cases pin the predicate that
  * closed that, including the column each object scopes on, because getting the
  * column wrong is a silent leak rather than an error.
@@ -12,7 +12,7 @@ const USER = "33333333-3333-4333-8333-333333333333";
 const OWNED: CrmRecordScope = { scope: "owned", userId: USER };
 
 describe("scopeFilter", () => {
-  it("returns nothing for an unscoped caller — the SQL is untouched", () => {
+  it("returns nothing for an unscoped caller - the SQL is untouched", () => {
     for (const objectType of ["contact", "account", "deal", "task"] as const) {
       expect(scopeFilter(objectType, UNSCOPED)).toBeNull();
       expect(scopeFilter(objectType, { scope: "all", userId: USER })).toBeNull();
@@ -60,7 +60,7 @@ describe("scopeFilter", () => {
 describe("scopeClause", () => {
   it("substitutes the parameter index into every placeholder", () => {
     expect(scopeClause("deal", OWNED, 2)).toBe("owner_user_id = $2");
-    // Both task branches take the SAME index — one value, two comparisons.
+    // Both task branches take the SAME index - one value, two comparisons.
     expect(scopeClause("task", OWNED, 5, "t")).toBe(
       "(t.assignee_user_id = $5 OR t.created_by = $5)",
     );
@@ -70,7 +70,7 @@ describe("scopeClause", () => {
     expect(scopeClause("contact", UNSCOPED, 2)).toBeNull();
   });
 
-  it("leaves no `$?` behind — an unsubstituted placeholder is a syntax error", () => {
+  it("leaves no `$?` behind - an unsubstituted placeholder is a syntax error", () => {
     for (const objectType of ["contact", "account", "deal", "task"] as const) {
       expect(scopeClause(objectType, OWNED, 3)).not.toContain("$?");
     }

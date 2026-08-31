@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
- * Admin-only screen — the device half of the activation gate. Reached via a
+ * Admin-only screen - the device half of the activation gate. Reached via a
  * hidden entry (long-press the toolbar title), NOT from normal navigation.
  * The admin enters the instance ID + one-time admin key generated in the web
  * app's Device Activation page. Until this succeeds, the app cannot record.
@@ -25,7 +25,7 @@ class AdminActivationActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAdminActivationBinding
     private var statusText: String = ""
 
-    // QR scanner (Paytm-style animated viewfinder) — returns the JSON the web
+    // QR scanner (Paytm-style animated viewfinder) - returns the JSON the web
     // activation page encodes into the code.
     private val scanLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),

@@ -87,10 +87,10 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
 
   // Sync handler, not `async`: React drops whatever an event handler returns, so
   // an async onClick hands it a promise nobody owns and a rejected clipboard
-  // write (insecure origin, permission denied — both real for a console reached
+  // write (insecure origin, permission denied - both real for a console reached
   // over plain http or inside an iframe) surfaces only as an unhandled
   // rejection. Resolve it here instead, and on failure clear `copied` rather
-  // than leave the button claiming COPIED from an earlier successful click —
+  // than leave the button claiming COPIED from an earlier successful click -
   // this secret is shown exactly once, so a false "copied" loses it.
   const copyKey = () => {
     const key = created?.key;
@@ -114,7 +114,7 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
           </div>
           {keys.length === 0 ? (
             <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-10 text-center">
-              No API keys yet — create one to authenticate integrations
+              No API keys yet - create one to authenticate integrations
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -142,12 +142,12 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
                         <span className="text-[10px] font-mono text-neutral-400">
                           {k.prefix}…
                         </span>
-                        {/* What it can actually do, on the row — so an audit is
+                        {/* What it can actually do, on the row - so an audit is
                             reading this table, not cross-referencing the API. */}
                         <span className="mt-1 flex flex-wrap gap-1">
                           {(k.scopes ?? []).length === 0 ? (
                             <span className="text-[10px] font-mono text-red-700 font-bold">
-                              no scopes — this key cannot do anything
+                              no scopes - this key cannot do anything
                             </span>
                           ) : (
                             (k.scopes ?? []).map((s) => (
@@ -263,7 +263,7 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
           <Card elevated className="space-y-4 border-red-600">
             <div className="flex justify-between items-start gap-2">
               <div>
-                <MonoLabel>Secret Key — shown once</MonoLabel>
+                <MonoLabel>Secret Key - shown once</MonoLabel>
                 <h4 className="text-lg font-display font-black text-black uppercase tracking-tight mt-1">
                   {created.name}
                 </h4>

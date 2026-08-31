@@ -19,14 +19,14 @@ import {
  * These unions against the CHECK constraints they claim to mirror.
  *
  * enums.ts is the file anyone reaches for when building a fixture, so a union
- * that has drifted from the database does not fail — it produces a test that
+ * that has drifted from the database does not fail - it produces a test that
  * passes while the code is wrong. That is exactly how `TRANSCRIPTION_OFF` (0014)
  * and the outbox's `'dead'` (0008) stayed missing for six migrations while the
  * worker wrote both of them every day.
  *
  * The lists below are therefore READ OUT OF THE MIGRATIONS rather than
  * transcribed here: a transcription drifts the same way the union did. No
- * database is opened — `packages/db/migrations` is parsed as text, and it is the
+ * database is opened - `packages/db/migrations` is parsed as text, and it is the
  * canonical directory (`platform/supabase/migrations` is generated from it).
  *
  * The failure mode this buys: the next migration that adds a status fails HERE,
@@ -110,7 +110,7 @@ describe("enums mirror their CHECK constraints", () => {
   it("CallStatus matches calls_status_check", () => {
     // 12 values since 0014 added TRANSCRIPTION_OFF. FAILED_TRANSCODE and
     // FAILED_CRM are legal here but not currently reachable through the
-    // pipeline — legality is this file's contract, reachability is not.
+    // pipeline - legality is this file's contract, reachability is not.
     const sql = checkList("calls", "status");
     expect(sql).toContain("TRANSCRIPTION_OFF");
     expectSameVocabulary(CallStatus.options, sql);

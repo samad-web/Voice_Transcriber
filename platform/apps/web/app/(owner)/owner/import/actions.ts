@@ -34,7 +34,7 @@ export interface ImportRowError {
 }
 
 /**
- * Bulk CSV import — contacts, accounts or deals.
+ * Bulk CSV import - contacts, accounts or deals.
  *
  * Every action re-resolves the owner from the session via ownerHeaders()
  * rather than trusting anything the client passed, same as every other
@@ -70,7 +70,7 @@ export async function previewImportAction(
 
 /**
  * Run the import. `rows` are the RAW parsed CSV rows keyed by original
- * header — the API applies `mapping` itself, so nothing is pre-mapped here.
+ * header - the API applies `mapping` itself, so nothing is pre-mapped here.
  */
 export async function runImportAction(
   entity: ImportEntity,

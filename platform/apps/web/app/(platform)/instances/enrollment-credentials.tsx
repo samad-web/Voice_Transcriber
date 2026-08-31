@@ -15,13 +15,13 @@ export interface Credentials {
 
 /**
  * Copy-once enrollment credentials + the QR the Android admin screen scans.
- * The QR payload shape is a contract with the handset — do not change `v: 1`
+ * The QR payload shape is a contract with the handset - do not change `v: 1`
  * field names without updating AdminActivationActivity.
  */
 export function EnrollmentCredentials({
   result,
   serverUrl,
-  title = "Activation Credentials — shown once",
+  title = "Activation Credentials - shown once",
 }: {
   result: Credentials;
   serverUrl?: string;
@@ -49,7 +49,7 @@ export function EnrollmentCredentials({
     setCopied(false);
   }, [result.instanceId, result.adminKey, serverUrl]);
 
-  // Sync, not `async` — see api-keys-manager.tsx: an async onClick hands React a
+  // Sync, not `async` - see api-keys-manager.tsx: an async onClick hands React a
   // promise it discards, so a rejected clipboard write would only ever appear as
   // an unhandled rejection. The admin key is shown once; a button still saying
   // COPIED after a failed re-copy is how it gets lost.

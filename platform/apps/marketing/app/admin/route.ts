@@ -1,7 +1,7 @@
 import { CONSOLE_URL } from "@/lib/site";
 
 /**
- * `/admin` — the console door.
+ * `/admin` - the console door.
  *
  * The public navigation no longer carries a "Sign in" link (doc 10 §2 had it
  * de-emphasised in the header; on 2026-08-08 the owner took it out entirely, so
@@ -15,7 +15,7 @@ import { CONSOLE_URL } from "@/lib/site";
  *
  * 307, not 308: the redirect is temporary in the HTTP sense because
  * CONSOLE_URL is a deployment fact that may change, and a 308 is cached by the
- * browser more or less permanently — a wrong 308 is very hard to take back.
+ * browser more or less permanently - a wrong 308 is very hard to take back.
  *
  * This is not an access control. It hides the door from a visitor who has no
  * reason to open it; the console's own Supabase auth and the operator allowlist
@@ -24,7 +24,7 @@ import { CONSOLE_URL } from "@/lib/site";
  * ── IN PRODUCTION THIS NEVER RUNS, AS OF 2026-08-09 ────────────────────────
  *
  * The console moved onto this same hostname under /admin, and nginx matches
- * `location ^~ /admin` before anything reaches this app — so the console
+ * `location ^~ /admin` before anything reaches this app - so the console
  * answers /admin directly and no redirect is involved.
  *
  * It is kept because LOCAL DEVELOPMENT has no nginx: the marketing site runs on

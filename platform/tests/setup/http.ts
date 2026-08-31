@@ -8,7 +8,7 @@
  *                 credential (`apps/web/lib/server-api.ts:17`): a cross-tenant
  *                 root key whose tenant is chosen by a HEADER. It is therefore
  *                 the only credential that can *express* "tenant A asking for
- *                 tenant B's row", which is the whole point of the loop — a
+ *                 tenant B's row", which is the whole point of the loop - a
  *                 credential that cannot name the wrong tenant proves nothing.
  *
  *   asSession(t)  `Authorization: Bearer aus_…`. AdminKeyGuard:114 OVERWRITES
@@ -17,7 +17,7 @@
  *                 sends a tenant-A session together with tenant B's org header.
  *
  * Nothing here throws on a non-2xx. Every assertion in the loop is about WHICH
- * status came back — a helper that threw on 404 would make the most important
+ * status came back - a helper that threw on 404 would make the most important
  * expected outcome in the suite unobservable.
  */
 import { API_BASE, ADMIN_API_KEY } from "./env.js";
@@ -65,7 +65,7 @@ export function asSessionClaiming(t: Tenant, claimed: Tenant): Caller {
   };
 }
 
-/** No credential at all — for the six unguarded routes in doc 13 §1.2. */
+/** No credential at all - for the six unguarded routes in doc 13 §1.2. */
 export const ANONYMOUS: Caller = { label: "anonymous", headers: {} };
 
 export async function call<T = any>(

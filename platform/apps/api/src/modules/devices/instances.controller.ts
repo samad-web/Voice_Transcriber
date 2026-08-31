@@ -45,7 +45,7 @@ const MintKeyBody = z.object({
   tokenMaxUses: z.number().int().min(1).max(500).default(1),
 });
 
-/** Key metadata for the UI — the raw token is unrecoverable by design. */
+/** Key metadata for the UI - the raw token is unrecoverable by design. */
 const KEY_COLUMNS = `id, expires_at, max_uses, use_count, created_at,
          CASE WHEN use_count >= max_uses THEN 'exhausted'
               WHEN expires_at < now()    THEN 'expired'
@@ -53,7 +53,7 @@ const KEY_COLUMNS = `id, expires_at, max_uses, use_count, created_at,
 
 /**
  * Instance = deployment target devices enroll against (design doc §2).
- * POST returns the one-time admin/enrollment key EXACTLY ONCE — only its
+ * POST returns the one-time admin/enrollment key EXACTLY ONCE - only its
  * hash is stored. The web activation page renders it as copy-once + QR.
  */
 @Controller("instances")
@@ -103,7 +103,7 @@ export class InstancesController {
         instance,
         enrollment: {
           instanceId: instance.id,
-          // Shown once, never retrievable again — only the hash is stored.
+          // Shown once, never retrievable again - only the hash is stored.
           adminKey: rawToken,
           expiresAt: token.expires_at,
           maxUses: token.max_uses,
@@ -187,7 +187,7 @@ export class InstancesController {
 
     // Read-only pass under RLS: resolve the instance, the blocking counts, and
     // (if purging) the S3 keys that need to go. Kept separate from the writes
-    // below so the S3 delete loop — a network call per recording — never runs
+    // below so the S3 delete loop - a network call per recording - never runs
     // while a pool connection is checked out inside a live transaction.
     const { instance, counts, s3Keys } = await this.db.withOrg(orgId, async (client) => {
       const {
@@ -236,14 +236,14 @@ export class InstancesController {
     // Outside any transaction / pool connection now. S3 objects go before any
     // DB delete: losing the rows first would strand the audio with no key
     // left to find it by, and nothing in the DB has been touched yet if this
-    // throws — still retryable exactly as before.
+    // throws - still retryable exactly as before.
     for (const key of s3Keys) {
       try {
         await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
       } catch (err) {
         throw new ServiceUnavailableException(
           `object storage delete failed for ${key}: ${(err as Error).message}. ` +
-            `Nothing was deleted — retry once storage is reachable.`,
+            `Nothing was deleted - retry once storage is reachable.`,
         );
       }
     }
@@ -289,7 +289,7 @@ export class InstancesController {
   }
 
   /**
-   * Mint an additional enrollment key for an existing instance — used when a
+   * Mint an additional enrollment key for an existing instance - used when a
    * customer onboards more handsets after the one issued at provisioning.
    */
   @Post(":id/keys")
@@ -327,7 +327,7 @@ export class InstancesController {
 
       return {
         instanceId,
-        // Shown once, never retrievable again — only the hash is stored.
+        // Shown once, never retrievable again - only the hash is stored.
         adminKey: rawToken,
         expiresAt: token.expires_at,
         maxUses: token.max_uses,

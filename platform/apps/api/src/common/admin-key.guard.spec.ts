@@ -1,5 +1,5 @@
 /**
- * `AdminKeyGuard` — the platform's front door (inventory 13 §2.1, cases A1–A15).
+ * `AdminKeyGuard` - the platform's front door (inventory 13 §2.1, cases A1-A15).
  *
  * Every case below is the REAL guard class with only its two injected
  * dependencies faked. `AuthService` is faked because the alternative is a
@@ -48,7 +48,7 @@ describe("resolveAdminKey", () => {
       "real-key",
     ],
     // Stage 0.2: the dev literal is published in this repository, so in
-    // production it must never be the fallback — null can match no header.
+    // production it must never be the fallback - null can match no header.
     ["unset + production is null", { NODE_ENV: "production" }, null],
     ["empty + production is null", { ADMIN_API_KEY: "", NODE_ENV: "production" }, null],
     [
@@ -63,7 +63,7 @@ describe("resolveAdminKey", () => {
     // NODE_ENV branch: `.trim()` is what makes `ADMIN_API_KEY="   "` count as
     // unset, and a regression that dropped it would return "   " here (an
     // unmatchable key that looks configured) while still returning null in
-    // production — so the production row alone would not catch it.
+    // production - so the production row alone would not catch it.
     [
       "whitespace-only + test keeps the dev literal",
       { ADMIN_API_KEY: "   ", NODE_ENV: "test" },
@@ -169,7 +169,7 @@ describe("AdminKeyGuard", () => {
       await expect(guard.canActivate(context)).resolves.toBe(true);
       // The uuid parse failing SKIPS the existence check entirely
       // (admin-key.guard.ts:67), so the malformed value reaches the principal
-      // and only TenantGuard rejects it — see tenant.guard.spec.ts T5.
+      // and only TenantGuard rejects it - see tenant.guard.spec.ts T5.
       expect(orgs.exists).not.toHaveBeenCalled();
       expect(req.principal?.orgId).toBe("not-a-uuid");
     });
@@ -207,7 +207,7 @@ describe("AdminKeyGuard", () => {
         });
 
         await expect(guard.canActivate(context)).resolves.toBe(true);
-        // null is not "unknown, deny" — OwnerRoleGuard:53 reads it as
+        // null is not "unknown, deny" - OwnerRoleGuard:53 reads it as
         // "unchecked, pass". See owner-role.guard.spec.ts O4/O9.
         expect(req.principal?.ownerRole).toBeNull();
       }
@@ -247,7 +247,7 @@ describe("AdminKeyGuard", () => {
     it("A7 · carries every persona in the OwnerRole enum through verbatim", async () => {
       // A8 covers the values that FAIL to parse; this is the other half. All
       // three are accepted unverified, and `telecaller`/`manager` are personas
-      // no route on the platform can even assign (inventory 13 §5.4) — they
+      // no route on the platform can even assign (inventory 13 §5.4) - they
       // exist only because a caller asserted them.
       for (const persona of ["owner", "manager", "telecaller"] as const) {
         const { context, req } = makeExecutionContext({
@@ -263,12 +263,12 @@ describe("AdminKeyGuard", () => {
       }
     });
 
-    it("the admin key WINS over a session bearer token — the session is never consulted", async () => {
+    it("the admin key WINS over a session bearer token - the session is never consulted", async () => {
       // Precedence, and it is not academic: apps/web holds the admin key AND
       // forwards the signed-in user's bearer token on some paths, so requests
       // carrying both are real. The admin-key branch returns at `:106` before
       // `:109` is reached, which means the resulting principal is
-      // `platform_admin` with BOTH recordings grants — not the user's own role.
+      // `platform_admin` with BOTH recordings grants - not the user's own role.
       // That is why `x-caller-user-id` exists at all, and why PermissionsGuard
       // P3 is inert for the console.
       auth.principalFromToken.mockResolvedValue(sessionPrincipal({ role: "viewer" }));
@@ -328,7 +328,7 @@ describe("AdminKeyGuard", () => {
       });
     });
 
-    it("still admits a real session in production — the rejection is of the key, not the request", async () => {
+    it("still admits a real session in production - the rejection is of the key, not the request", async () => {
       process.env.NODE_ENV = "production";
       auth.principalFromToken.mockResolvedValue(sessionPrincipal());
       const { context, req } = makeExecutionContext({
@@ -347,14 +347,14 @@ describe("AdminKeyGuard", () => {
       const { context, req } = makeExecutionContext({ headers: { authorization: SESSION_HEADER } });
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
-      // Only "Bearer " is stripped — the `aus_` prefix is part of what gets
+      // Only "Bearer " is stripped - the `aus_` prefix is part of what gets
       // hashed (auth.service.ts:40). Slicing it off here would make every
       // session lookup miss and read as an expiry bug.
       expect(auth.principalFromToken).toHaveBeenCalledWith(SESSION_TOKEN);
       expect(req.principal?.viaAdminKey).toBe(false);
     });
 
-    it("PINS SESSION ORG — a session sending another tenant's x-org-id is forced back to its own", async () => {
+    it("PINS SESSION ORG - a session sending another tenant's x-org-id is forced back to its own", async () => {
       // Proved by hand on 2026-07-29 and untested since. This is the property
       // that makes "a session can never act outside its tenant" true; Stage 2.4
       // rewrites how the web tier authenticates and must not lose it.
@@ -381,12 +381,12 @@ describe("AdminKeyGuard", () => {
       expect(req.headers["x-org-id"]).toBe(ORG_A);
     });
 
-    it("a session CANNOT assert an identity or a persona — the x-caller-* headers are ignored", async () => {
+    it("a session CANNOT assert an identity or a persona - the x-caller-* headers are ignored", async () => {
       // The counterweight to the A5/A7 pin below. Both caller-asserted headers
       // are read INSIDE the admin-key branch (`:94-95`); the session branch
       // (`:110-117`) takes the principal wholesale from
       // `AuthService.principalFromToken` and never looks at them. So the trust
-      // in those headers is scoped to admin-key callers only — a leaked session
+      // in those headers is scoped to admin-key callers only - a leaked session
       // token does not become a persona-escalation primitive. Stage 2.4/2.5
       // move the console onto the session path, so this property is the thing
       // that makes that migration a de-escalation rather than a lateral move.
@@ -449,7 +449,7 @@ describe("AdminKeyGuard", () => {
       // admin-key holder asserts who the caller is and which persona they hold,
       // and the API believes both. Stage 2.5 replaces it with a persona derived
       // server-side from memberships.owner_role (migration 0018). WHEN 2.5
-      // LANDS, THIS TEST FAILING IS THE SIGNAL THE TRANSITION COMPLETED —
+      // LANDS, THIS TEST FAILING IS THE SIGNAL THE TRANSITION COMPLETED -
       // delete it then, and un-skip its sibling below.
       const { context, req } = makeExecutionContext({
         headers: {

@@ -8,7 +8,7 @@ import { resolveTenantScope } from "@/lib/tenant-scope";
 import { AutomationsManager } from "./automations-manager";
 import type { AutomationRule, AutomationRun } from "./actions";
 
-export const metadata: Metadata = { title: "Automations — Aura" };
+export const metadata: Metadata = { title: "Automations - Aura" };
 
 /**
  * Workflow automation (PRD Layer 2). Same tenant-scoping shape as
@@ -48,7 +48,7 @@ export default async function AutomationsPage({
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API — start it with <code>pnpm --filter @aura/api dev</code>.
+            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
           </p>
         </Card>
       ) : (

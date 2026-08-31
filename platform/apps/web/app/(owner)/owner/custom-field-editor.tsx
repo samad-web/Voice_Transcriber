@@ -16,7 +16,7 @@ import { relativeTime, type RecordCustomField } from "./types";
  *
  * The missing half of Track A4. The pipeline has been writing typed values
  * into these tables on every call since `6e4dead`, and until now there was no
- * route and no screen that read them back — the field existed, the data
+ * route and no screen that read them back - the field existed, the data
  * existed, and nobody could see either.
  *
  * FETCHES ON MOUNT, like InteractionTimeline and for the same reason: the
@@ -76,7 +76,7 @@ export function CustomFieldEditor({
     setError(null);
     startTransition(async () => {
       // "" means the person emptied the box, which is a request to clear the
-      // field — sent as an explicit null so the API deletes the row rather
+      // field - sent as an explicit null so the API deletes the row rather
       // than storing an empty string that would render as a filled-in blank.
       const payload: Record<string, unknown> = {};
       for (const key of keys) {
@@ -184,7 +184,7 @@ export function CustomFieldEditor({
   );
 }
 
-/** One input per field type — the render half of `parseCustomFieldValue`. */
+/** One input per field type - the render half of `parseCustomFieldValue`. */
 function FieldInput({
   field,
   value,
@@ -217,7 +217,7 @@ function FieldInput({
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
         >
-          <option value="">—</option>
+          <option value="">-</option>
           {field.options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -287,7 +287,7 @@ function FieldInput({
           objectType={(field.lookupObjectType as "contact" | "account" | "deal") ?? "contact"}
           value={value === null || value === undefined ? null : String(value)}
           disabled={disabled}
-          // `null` clears the field — the same distinction the API draws
+          // `null` clears the field - the same distinction the API draws
           // between an absent key and an explicit null.
           onChange={(id) => onChange(id)}
         />

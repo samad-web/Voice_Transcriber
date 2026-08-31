@@ -42,14 +42,14 @@ interface KeyRow {
  * of those properties:
  *
  *  1. THE ORG COMES FROM THE KEY. `x-org-id` is never read. There is no header
- *     — none — that can move an API-key request to another tenant, because the
+ *     - none - that can move an API-key request to another tenant, because the
  *     org is a column on the row the key hashes to. This is the single most
  *     important line in the file: an integration credential that could name its
  *     own tenant would be a cross-tenant read primitive handed to a third party.
  *
  *  2. IT IS NOT A PERSON. The principal is written with role `viewer` and both
  *     recording permissions FALSE, so `principalHasPermission` returns false for
- *     `recordings:listen` and `recordings:export` — a headless credential can
+ *     `recordings:listen` and `recordings:export` - a headless credential can
  *     never reach call audio or transcripts, whatever route it finds. Authority
  *     comes from `req.apiKey.scopes`, checked here, not from the CRM grid.
  *
@@ -62,8 +62,8 @@ interface KeyRow {
  * `api_keys` is FORCE RLS'd on `app.org_id` (0076), and this lookup has to
  * establish WHICH org the request belongs to before any org context can exist.
  * Same bootstrap the Meta webhook performs when it resolves an org from a
- * page_id before calling withOrg. The query is narrowed by the key hash — a
- * value the caller must already possess — and returns exactly one row.
+ * page_id before calling withOrg. The query is narrowed by the key hash - a
+ * value the caller must already possess - and returns exactly one row.
  */
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
@@ -99,7 +99,7 @@ export class ApiKeyGuard implements CanActivate {
     // One message for "no such key", "revoked", "expired" and "suspended org".
     // Distinguishing them tells an attacker which of their guesses was once
     // real, and the holder of a legitimately revoked key learns nothing useful
-    // from the difference either — they need to talk to the tenant regardless.
+    // from the difference either - they need to talk to the tenant regardless.
     if (!key || key.org_status !== "active") {
       throw new UnauthorizedException("invalid or expired API key");
     }
@@ -107,7 +107,7 @@ export class ApiKeyGuard implements CanActivate {
     const required = this.reflector.get<ApiScope | undefined>(API_SCOPE_KEY, context.getHandler());
 
     // A route with no declared scope is a bug, not a public route. Refusing
-    // here means forgetting `@RequireScope` fails closed — the opposite of the
+    // here means forgetting `@RequireScope` fails closed - the opposite of the
     // default where an un-annotated handler quietly accepts every key.
     if (!required) {
       throw new ForbiddenException("route declares no API scope");
@@ -133,7 +133,7 @@ export class ApiKeyGuard implements CanActivate {
     };
 
     // TenantGuard reads `principal.orgId`, so the org this request is pinned to
-    // is the key's own — never anything the caller sent.
+    // is the key's own - never anything the caller sent.
     req.headers["x-org-id"] = key.org_id;
 
     void this.touch(key.id);
@@ -181,7 +181,7 @@ export class ApiKeyGuard implements CanActivate {
  *
  * Bearer is rejected for values starting `aus_`, which is the USER SESSION
  * prefix AdminKeyGuard consumes. Without that check a session token presented
- * here would be sha256'd, match nothing, and return "invalid API key" — a
+ * here would be sha256'd, match nothing, and return "invalid API key" - a
  * confusing 401 for what is actually a valid credential on the wrong door.
  */
 function extractKey(req: PrincipalRequest): string | null {

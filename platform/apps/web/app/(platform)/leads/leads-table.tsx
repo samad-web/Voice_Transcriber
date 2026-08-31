@@ -23,7 +23,7 @@ import { RejectPanel } from "./reject-panel";
  * ── IT IS FREE TEXT, SO MOST OF IT IS NOT A URL ────────────────────────────
  *
  * Real answers look like "instagram.com/ourshop", "@ourshop", "we're only on
- * JustDial" and "www.example.in — also on FB". Only the parts that plausibly
+ * JustDial" and "www.example.in - also on FB". Only the parts that plausibly
  * address something get linked; everything else is printed as written. A naive
  * `href={value}` would produce links to `/admin/leads/@ourshop`, which look
  * live and go nowhere.
@@ -41,7 +41,7 @@ function DigitalPresence({ value }: { value: string }) {
     <span className="break-words">
       {parts.map((part, i) => {
         // A host-looking token: something.tld, optionally with a path. Not a
-        // validator — it only has to be right often enough to be useful, and
+        // validator - it only has to be right often enough to be useful, and
         // wrong safely, which printing the text achieves.
         const looksLikeHost = /^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?$/i.test(part);
         if (!looksLikeHost) return <span key={i}>{part}</span>;
@@ -69,7 +69,7 @@ function DigitalPresence({ value }: { value: string }) {
  * The leads list, and the convert flow.
  *
  * A client component because converting is a two-step server round trip whose
- * result — a one-time enrollment key — has to stay on screen afterwards. A
+ * result - a one-time enrollment key - has to stay on screen afterwards. A
  * form post that re-rendered the page would show the key once in a flash and
  * then lose it on the next navigation, and the key cannot be re-fetched.
  */
@@ -84,7 +84,7 @@ function DigitalPresence({ value }: { value: string }) {
  *
  * "Didn't qualify" rather than "Disqualified": these are people, the operator
  * may well call them anyway, and the funnel's rules are a filter for who gets
- * offered a slot automatically — not a judgement anyone should read as final.
+ * offered a slot automatically - not a judgement anyone should read as final.
  */
 const STATUS_LABELS: Record<string, { label: string; tone: "solid" | "muted" | "danger" }> = {
   qualified: { label: "Qualified", tone: "solid" },
@@ -101,7 +101,7 @@ const STATUS_LABELS: Record<string, { label: string; tone: "solid" | "muted" | "
  * chosen and stored in the team's zone (SCHEDULER_TIMEZONE), so rendering it in
  * whatever zone the operator's laptop happens to be set to is how a 6:30 pm call
  * becomes a 1:00 pm one in the only place anybody reads it. The label is printed
- * alongside for the same reason — a time with no zone is a guess.
+ * alongside for the same reason - a time with no zone is a guess.
  */
 function formatSlot(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
@@ -126,7 +126,7 @@ function messagingNumber(lead: Lead): string {
   return lead.whatsapp_e164?.trim() || lead.phone_e164;
 }
 
-/** Digits only — the API compares this way, and so must the lookup key. */
+/** Digits only - the API compares this way, and so must the lookup key. */
 const digitsOf = (value: string) => value.replace(/\D/g, "");
 
 type Filter = "all" | "qualified" | "disqualified" | "contact_captured";
@@ -157,7 +157,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
    * common case) and one lookup should answer for both.
    *
    * `undefined` for a number means "not checked yet", which is deliberately
-   * distinct from `false` — an unchecked number must never render as a warning,
+   * distinct from `false` - an unchecked number must never render as a warning,
    * because the operator would read it as a verified problem.
    */
   const [waChecks, setWaChecks] = useState<Map<string, { onWhatsApp: boolean; verifiedName?: string }>>(
@@ -207,7 +207,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
    *
    * Scoped to the filtered view rather than the whole list, so an operator
    * looking at "Didn't qualify" checks those and not 200 others. Nothing is
-   * sent to anybody — this is a presence lookup and the person sees nothing —
+   * sent to anybody - this is a presence lookup and the person sees nothing -
    * but it is still traffic on an unofficial WhatsApp client, so it is a
    * deliberate button press rather than something that fires on page load.
    */
@@ -230,7 +230,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
       setWaNote(
         missing === 0
           ? `All ${res.results?.length ?? 0} number(s) are on WhatsApp.`
-          : `${missing} of ${res.results?.length ?? 0} number(s) are NOT on WhatsApp — messages to those will never arrive.`,
+          : `${missing} of ${res.results?.length ?? 0} number(s) are NOT on WhatsApp - messages to those will never arrive.`,
       );
     });
 
@@ -247,12 +247,12 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
     <div className="flex flex-col gap-3">
       {/* Each filter carries its own count, so "how many didn't qualify" is
           answered without pressing anything. A tab that would show nothing is
-          disabled rather than hidden — a disappearing tab reads as a bug, and
+          disabled rather than hidden - a disappearing tab reads as a bug, and
           the zero is itself the answer to the question.
 
           RENDERED EVEN WHEN THERE ARE NO LEADS AT ALL. An early return used to
           replace this whole block with the empty-state card, which hid the
-          filters at precisely the moment someone goes looking for them — an
+          filters at precisely the moment someone goes looking for them - an
           operator asking "where do I see the ones that didn't qualify?" saw no
           answer and reasonably concluded the feature was missing. Four tabs
           reading (0) say what the empty card cannot: the views exist, and they
@@ -295,7 +295,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
         {confirmAll ? (
           <div className="flex items-center gap-2">
             {/* The scope FOLLOWS THE FILTER. `scope: "all"` on the API means
-                every enquiry in the table, not every row on screen — so with a
+                every enquiry in the table, not every row on screen - so with a
                 filter applied it would delete the ones being looked at plus all
                 the ones being hidden. Filtered views delete by explicit id
                 instead, which is exactly the rows the count names. */}
@@ -385,7 +385,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
         // once is the same problem more slowly.
         const showAnswers = answersFor === lead.id;
         const answers = describeAnswers(lead);
-        // undefined = not checked. Never rendered as a warning — an operator
+        // undefined = not checked. Never rendered as a warning - an operator
         // would read an unchecked number as a verified problem.
         const wa = waChecks.get(digitsOf(messagingNumber(lead)));
         return (
@@ -444,7 +444,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                     only a qualified visitor is ever offered a slot, so for
                     everyone who did not qualify there was no time on the row of
                     any kind, and no way to tell this morning's enquiry from
-                    last month's. Same pinned zone as the call time — see
+                    last month's. Same pinned zone as the call time - see
                     formatSlot. */}
                 <p className="mt-1 text-xs text-text-muted">
                   Enquired {formatSlot(lead.created_at)} IST
@@ -458,7 +458,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                 {/* WHAT THEY WERE ASKED, AND WHAT THEY SAID.
 
                     This used to be five hardcoded pairs printing the STORED
-                    VALUE — "Budget: below_10k", "CRM: spreadsheets_whatsapp" —
+                    VALUE - "Budget: below_10k", "CRM: spreadsheets_whatsapp" -
                     with a made-up label on the left that was not any question
                     the visitor saw. Two things were wrong with it: the operator
                     had to translate enum values in their head, and an answer
@@ -531,7 +531,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
 
                     {/* Manual send. The worker confirms every NEW booking by
                         itself, so this is for a resend and for the bookings
-                        that predate the feature — those were settled by
+                        that predate the feature - those were settled by
                         migration 0032 precisely so nobody was messaged
                         retrospectively, which means the automatic sweep will
                         never pick them up and only a person can decide to. */}
@@ -549,12 +549,12 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                           setSendNote({
                             id: lead.id,
                             // Says which message actually went. A confirmation
-                            // with no join link is still correct copy — the
-                            // sentence is removed rather than left blank — but
+                            // with no join link is still correct copy - the
+                            // sentence is removed rather than left blank - but
                             // an operator pressing this to get somebody their
                             // link needs to know that is not what they sent.
                             text: res.hasMeetLink
-                              ? "Queued — they'll get the time and the Meet link on WhatsApp within a minute."
+                              ? "Queued - they'll get the time and the Meet link on WhatsApp within a minute."
                               : "Queued, but this booking has no Meet link, so the message confirms the time only.",
                             tone: res.hasMeetLink ? "good" : "warn",
                           });
@@ -632,7 +632,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                     const res = await convertLeadAction({ leadId: lead.id, ...form });
                     setResult(res);
                     // Marked converted whenever a tenant exists, even if the link
-                    // step failed — the client is real either way, and offering
+                    // step failed - the client is real either way, and offering
                     // "Convert" again would create a second one.
                     if (res.orgId) setConverted((s) => new Set(s).add(lead.id));
                   })
@@ -709,7 +709,7 @@ function ConvertForm({
               consentPolicy,
               retentionDays,
               // Enrollment key defaults: one handset, one hour. Short and narrow
-              // on purpose — it is a bearer credential, and a wide one sitting in
+              // on purpose - it is a bearer credential, and a wide one sitting in
               // a chat thread is the usual way these leak.
               ttlMinutes: 60,
               maxUses: 1,
@@ -745,7 +745,7 @@ function Outcome({ result }: { result: ConvertResult }) {
           {result.orgName} is provisioned.
         </p>
       )}
-      <MonoLabel>Enrollment key — shown once, not recoverable</MonoLabel>
+      <MonoLabel>Enrollment key - shown once, not recoverable</MonoLabel>
       <code className="mt-1 block break-all rounded bg-surface p-3 text-xs text-text">
         {result.adminKey}
       </code>

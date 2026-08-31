@@ -8,12 +8,12 @@ const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" });
 
 export const metadata: Metadata = {
-  title: "Aura Platform — Call Intelligence",
+  title: "Aura Platform - Call Intelligence",
   description: "AI Call Intelligence Platform",
 };
 
 /** Explicit so the layout is never rendered at a desktop width on a phone.
- *  maximumScale is left at the default — pinch-zoom stays available. */
+ *  maximumScale is left at the default - pinch-zoom stays available. */
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,

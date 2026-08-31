@@ -135,7 +135,7 @@ const DEVICE_TONE = {
   lost: "danger",
 } as const;
 
-/** Baseline tone per staleness bucket — overridden by `needsAttention` below,
+/** Baseline tone per staleness bucket - overridden by `needsAttention` below,
  *  since a device can be freshly-seen and still be flagged (e.g. low storage). */
 const HEALTH_TONE = {
   "<1h": "solid",
@@ -162,7 +162,7 @@ function healthTooltip(row: FleetHealthRow | undefined): string {
     pendingUploads != null ? `${pendingUploads} pending upload(s)` : null,
   ].filter(Boolean);
   const base = parts.length > 0 ? parts.join(" · ") : "No telemetry reported";
-  return row.needsAttention ? `${base} — ${row.attentionReasons.join(", ")}` : base;
+  return row.needsAttention ? `${base} - ${row.attentionReasons.join(", ")}` : base;
 }
 
 const KEY_TONE = {
@@ -179,14 +179,14 @@ const PANEL_HEAD =
   "flex items-center justify-between gap-2 border-b border-border bg-bg-subtle px-5 py-3";
 
 /**
- * Scroll wrapper for a panel table. Mirrors the kit's <Table> accessibility —
+ * Scroll wrapper for a panel table. Mirrors the kit's <Table> accessibility -
  * tabIndex + role="region" so a wide table's right-hand columns are reachable
- * without a mouse (WCAG 2.1.1) — while keeping the min-width the kit's wrapper
+ * without a mouse (WCAG 2.1.1) - while keeping the min-width the kit's wrapper
  * cannot express, since that has to sit on the <table> itself.
  */
 const SCROLLER = "overflow-x-auto";
 
-/** `id` is the customer's org id — the tenant boundary the instance lives in. */
+/** `id` is the customer's org id - the tenant boundary the instance lives in. */
 export default async function InstanceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const blocked = await operatorGate();
   if (blocked) return blocked;
@@ -226,7 +226,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
     ),
   );
 
-  // Recent calls per instance — the answer to "what has this customer actually
+  // Recent calls per instance - the answer to "what has this customer actually
   // recorded", which the page could not show at all before.
   const recentCalls = await Promise.all(
     instances.map((inst) =>
@@ -349,7 +349,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                     </span>
                   </div>
                   <StatusChip tone={e.actor_type === "system" ? "muted" : "solid"}>
-                    {e.target_type ?? "—"}
+                    {e.target_type ?? "-"}
                   </StatusChip>
                 </div>
               ))
@@ -363,7 +363,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
           <div>
             <h3 className="text-xl font-semibold text-text">Lead delivery</h3>
             <p className="mt-0.5 text-sm text-text-muted">
-              Where this customer&apos;s calls are pushed. Scoped to {org.name} — nothing here
+              Where this customer&apos;s calls are pushed. Scoped to {org.name} - nothing here
               affects another tenant.
             </p>
           </div>
@@ -441,7 +441,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                               className="text-xs text-text-muted tabular-nums"
                             />
                           </TableCell>
-                          <TableCell className="text-xs">{c.device_label ?? "—"}</TableCell>
+                          <TableCell className="text-xs">{c.device_label ?? "-"}</TableCell>
                           <TableCell className="text-xs tabular-nums">
                             {formatDuration(c.duration_s)}
                           </TableCell>
@@ -511,7 +511,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
               </div>
               {!detail || detail.devices.length === 0 ? (
                 <p className="py-8 text-center text-sm text-text-muted">
-                  No devices enrolled — issue a key above to enroll the first handset
+                  No devices enrolled - issue a key above to enroll the first handset
                 </p>
               ) : (
                 <div tabIndex={0} role="region" aria-label={`Devices, ${inst.name}`} className={SCROLLER}>
@@ -547,7 +547,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                             />
                           </TableCell>
                           <TableCell className="font-mono text-xs">
-                            {device.fingerprint ?? "—"}
+                            {device.fingerprint ?? "-"}
                           </TableCell>
                           <TableCell className="font-mono text-xs">
                             {device.capture_capability ?? "unprobed"}
@@ -555,7 +555,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                           <TableCell className="font-mono text-xs tabular-nums">
                             {device.last_seen_at
                               ? new Date(device.last_seen_at).toLocaleString()
-                              : "—"}
+                              : "-"}
                           </TableCell>
                           <TableCell>
                             <StatusChip tone={DEVICE_TONE[device.status]}>
@@ -570,7 +570,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
                               return (
                                 <Tooltip content={healthTooltip(health)}>
                                   {/* Tooltip's trigger must itself be focusable (Tooltip's own
-                                      doc comment) — a bare StatusChip <span> would never show
+                                      doc comment) - a bare StatusChip <span> would never show
                                       this to a keyboard user. */}
                                   <button type="button" className="cursor-default rounded-full">
                                     <StatusChip tone={tone}>{HEALTH_LABEL[staleness]}</StatusChip>

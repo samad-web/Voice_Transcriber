@@ -1,17 +1,17 @@
 /**
- * `lib/operator-guard.ts` — the check every `(platform)` Server Action runs for
+ * `lib/operator-guard.ts` - the check every `(platform)` Server Action runs for
  * itself (road map §1.4, inventory 13 §4).
  *
  * WHY IT EXISTS. A Server Action is an independently-addressable POST endpoint
  * with a stable action id that ships in the client bundle. The `isOperator()`
  * call in `(platform)/layout.tsx` runs during a RENDER, so it decides what a
- * browser is shown and nothing else — it never executes when an action is
+ * browser is shown and nothing else - it never executes when an action is
  * invoked directly. Every action in that group also takes an `orgId` from its
  * caller and sends the root `ADMIN_API_KEY`, so before this guard any signed-in
  * account at all could POST `searchTranscriptsAction("payment", "<someone
  * else's org>")` and read that tenant's transcripts.
  *
- * NOTHING IS FAKED EXCEPT THE TWO REAL BOUNDARIES — `getSessionUser` (Supabase
+ * NOTHING IS FAKED EXCEPT THE TWO REAL BOUNDARIES - `getSessionUser` (Supabase
  * cookies) and `fetch` (`/v1/auth/context`). `getPrincipal` and `isOperator`
  * run for real, which is the point: a suite that stubbed `isOperator` would
  * prove only that `requireOperator` calls something, and the interesting
@@ -39,7 +39,7 @@ const OWNER_EMAIL = "owner@rdinterlock.example";
 const STRANGER_EMAIL = "stranger@example.com";
 const SUPABASE_SUBJECT = "9f1c0d5e-0000-4000-8000-00000000abcd";
 
-/** The contract's message, asserted verbatim — see the leak case at the bottom. */
+/** The contract's message, asserted verbatim - see the leak case at the bottom. */
 const NOT_AUTHORIZED = "Not authorized";
 
 const membershipRow = (over: Record<string, unknown> = {}) => ({
@@ -115,7 +115,7 @@ describe("requireOperator", () => {
   it("returns the principal for a listed operator who ALSO holds a membership", async () => {
     // The documented override (owner-context.ts:151-155). Provisioning yourself
     // an owner login on a test tenant must not lock you out of the console, so
-    // this has to keep working — it is the case most likely to be broken by a
+    // this has to keep working - it is the case most likely to be broken by a
     // well-meaning "operators must have no membership" tightening.
     const { requireOperator } = await load({
       operatorEmails: OPERATOR_EMAIL,
@@ -129,7 +129,7 @@ describe("requireOperator", () => {
     expect(principal.membership?.orgId).toBe(ORG_B);
   });
 
-  it("REFUSES a customer owner — the account the layout correctly redirects to /owner", async () => {
+  it("REFUSES a customer owner - the account the layout correctly redirects to /owner", async () => {
     // The headline case. This principal renders nothing under `(platform)`, and
     // before the guard it could still POST every action in the group.
     const { requireOperator, NotAuthorizedError } = await load({
@@ -145,8 +145,8 @@ describe("requireOperator", () => {
   it("REFUSES a signed-in self-signup account with no membership at all", async () => {
     // Supabase's `/auth/v1/signup` is on by default and the anon key ships in
     // the browser bundle, so `stranger → account → session` is a public path.
-    // Such a session classifies as `kind: "operator"` — a *candidate*, per the
-    // owner-context header — and must still be refused.
+    // Such a session classifies as `kind: "operator"` - a *candidate*, per the
+    // owner-context header - and must still be refused.
     const { requireOperator, NotAuthorizedError } = await load({
       operatorEmails: OPERATOR_EMAIL,
       authEnabled: true,
@@ -157,7 +157,7 @@ describe("requireOperator", () => {
     await expect(requireOperator()).rejects.toBeInstanceOf(NotAuthorizedError);
   });
 
-  it("REFUSES a null principal — nobody signed in", async () => {
+  it("REFUSES a null principal - nobody signed in", async () => {
     const { requireOperator, NotAuthorizedError } = await load({
       operatorEmails: OPERATOR_EMAIL,
       authEnabled: true,
@@ -184,7 +184,7 @@ describe("requireOperator", () => {
   it("REFUSES a listed operator whose session could not be bound (API down)", async () => {
     // `getPrincipal` swallows an API failure into an unbound session
     // (owner-context.ts:136-139). The email is still the session's, so a LISTED
-    // operator survives that — assert the direction rather than assume it.
+    // operator survives that - assert the direction rather than assume it.
     const { requireOperator } = await load({
       operatorEmails: OPERATOR_EMAIL,
       authEnabled: true,
@@ -206,7 +206,7 @@ describe("requireOperator", () => {
 
   it("admits the synthetic dev principal when auth is unconfigured", async () => {
     // The documented local-dev escape (owner-context.ts:173-178). Narrow by
-    // construction — it needs NEXT_PUBLIC_SUPABASE_URL/ANON_KEY absent, which is
+    // construction - it needs NEXT_PUBLIC_SUPABASE_URL/ANON_KEY absent, which is
     // never true of a deployed console.
     const { requireOperator } = await load({
       operatorEmails: "",
@@ -247,7 +247,7 @@ describe("NotAuthorizedError", () => {
     }
   });
 
-  it("is identical whoever is refused — the three refusals are indistinguishable", async () => {
+  it("is identical whoever is refused - the three refusals are indistinguishable", async () => {
     const refusals: string[] = [];
     const configs: LoadOptions[] = [
       // not signed in
@@ -278,7 +278,7 @@ describe("NotAuthorizedError", () => {
     expect(refusals[0]).toBe(`NotAuthorizedError: ${NOT_AUTHORIZED}`);
   });
 
-  it("throws rather than redirecting — no NEXT_REDIRECT digest", async () => {
+  it("throws rather than redirecting - no NEXT_REDIRECT digest", async () => {
     // Contract, decided deliberately: a Server Action invoked outside a
     // navigation has nowhere to redirect to, and Next's `redirect()` works by
     // throwing a control-flow signal carrying a `digest` of `NEXT_REDIRECT;…`

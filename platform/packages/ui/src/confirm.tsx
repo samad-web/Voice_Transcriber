@@ -13,7 +13,7 @@ export interface ConfirmOptions {
   cancelLabel?: string;
   /**
    * `danger` styles the confirming button red AND stops a stray backdrop click
-   * from dismissing — for irreversible actions the accidental outcome should be
+   * from dismissing - for irreversible actions the accidental outcome should be
    * "nothing happened", and a click landing outside the dialog is the most
    * common accident there is.
    */
@@ -40,10 +40,10 @@ const ConfirmContext = createContext<((options: ConfirmOptions) => Promise<boole
  *    updates flush, no timer runs until the person answers.
  *  - It cannot be dismissed by the app, cannot be tested without stubbing a
  *    global, and renders `\n\n` as a literal line break with no typographic
- *    hierarchy — every one of ours was already faking a title/body split that way.
+ *    hierarchy - every one of ours was already faking a title/body split that way.
  *  - Browsers are progressively restricting it: it is already suppressed in
  *    cross-origin iframes, and repeated calls let the user tick "prevent this
- *    page from creating more dialogues" — which silently turns every future
+ *    page from creating more dialogues" - which silently turns every future
  *    confirm into `false`. A guard that can be switched off by the person it
  *    guards is not a guard.
  *
@@ -54,8 +54,8 @@ const ConfirmContext = createContext<((options: ConfirmOptions) => Promise<boole
  * is pending" into state, and every one of them would invent its own slightly
  * different version of it.
  *
- * `await confirm({...})` keeps the exact control flow `window.confirm` had —
- * one line, inline, returning a boolean — so each call site changes by a single
+ * `await confirm({...})` keeps the exact control flow `window.confirm` had -
+ * one line, inline, returning a boolean - so each call site changes by a single
  * line and nothing else moves. The dialog itself lives once, at the layout root.
  */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
@@ -81,7 +81,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       new Promise<boolean>((resolve) => {
         // A second request while one is open (double-click on two different
         // destructive buttons) must not strand the first promise. The earlier
-        // question is answered "no" — never "yes" — and replaced.
+        // question is answered "no" - never "yes" - and replaced.
         resolverRef.current?.(false);
         resolverRef.current = resolve;
         setOptions(next);
@@ -125,7 +125,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
  *
  * Throws when used outside the provider rather than silently returning true.
  * A confirmation that quietly stops confirming is the worst possible failure
- * for the destructive actions this guards — better a loud error in development
+ * for the destructive actions this guards - better a loud error in development
  * than a wipe that never asked.
  */
 export function useConfirm(): (options: ConfirmOptions) => Promise<boolean> {

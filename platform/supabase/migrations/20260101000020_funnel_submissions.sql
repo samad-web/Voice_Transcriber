@@ -1,4 +1,4 @@
--- 0020_funnel_submissions.sql — the acquisition funnel's storage (doc 16 §3.1).
+-- 0020_funnel_submissions.sql - the acquisition funnel's storage (doc 16 §3.1).
 --
 -- ── Why this is not in `public`, and not called `leads` ──────────────────────
 -- `public.leads` already exists and means something entirely different: one row
@@ -21,7 +21,7 @@
 -- model), or widen that allowlist (and weaken the single invariant that proves
 -- tenants cannot see each other). Putting it in `marketing` means the sweep does
 -- not see it at all, the grants are separate, and the invariant is untouched.
--- verify-rls.js gets a comment recording that this schema was reviewed and why —
+-- verify-rls.js gets a comment recording that this schema was reviewed and why -
 -- see NON_TENANT_TABLES there.
 --
 -- One database, one backup, one connection story; two blast radii.
@@ -45,7 +45,7 @@ CREATE SCHEMA IF NOT EXISTS marketing;
 -- apps/marketing is a PUBLIC, UNAUTHENTICATED web server. It must not hold
 -- aura_app's credentials: aura_app reaches every tenant table in `public`, and
 -- its isolation depends on the caller setting app.org_id correctly on every
--- transaction — a discipline that exists in apps/api and apps/worker and has no
+-- transaction - a discipline that exists in apps/api and apps/worker and has no
 -- reason to exist in a marketing site. A server-action bug or an SQL injection
 -- in the funnel would then be a cross-tenant data breach rather than a marketing
 -- database problem.
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS marketing.funnel_submissions (
   email             text NOT NULL,
   -- lower(trim(email)). Stored rather than expression-indexed so the dedupe
   -- lookup, the unique index and the application all agree on one definition of
-  -- "the same email" — see packages/shared/src/funnel.ts normalizeEmail().
+  -- "the same email" - see packages/shared/src/funnel.ts normalizeEmail().
   email_normalized  text NOT NULL,
   phone_e164        text NOT NULL,
   -- Stored separately even when identical to phone_e164: a fair number of Indian
@@ -123,12 +123,12 @@ CREATE TABLE IF NOT EXISTS marketing.funnel_submissions (
   -- and a different quote. Four catalogue entries (Zoho, Salesforce, monday,
   -- Dynamics 365) authenticate today with pasted tokens that expire in hours
   -- and have no OAuth refresh flow (DEPLOYMENT.md §7.8), so they are their own
-  -- value — the call has to be set up honestly.
+  -- value - the call has to be set up honestly.
   crm_connector_status text
                     CHECK (crm_connector_status IN
                       ('catalogue','catalogue_oauth_pending','custom_build','none')),
   -- §3.2: wants_custom_crm = 'tell_me_more' takes the disqualified path (it
-  -- books no slot — an information request is not a buying signal) but must be
+  -- books no slot - an information request is not a buying signal) but must be
   -- FLAGGED so a human triages it and the follow-up answers the question
   -- instead of pushing a call. Without this column that distinction is lost the
   -- moment the row is written.
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS marketing.funnel_submissions (
 );
 
 -- Append-only journal of every repeat fill. §3.1/dedupe: a returning person does
--- not create a second row — their new answers land here, because business type,
+-- not create a second row - their new answers land here, because business type,
 -- budget and intent genuinely change between fills and overwriting them destroys
 -- the only signal that says so.
 CREATE TABLE IF NOT EXISTS marketing.funnel_contact_history (
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS marketing.funnel_contact_history (
   -- fill, which is how "same person, new work address" stays reconstructable.
   submitted_email  text,
   submitted_phone  text,
-  -- 'new' | 'phone' | 'email' | 'phone_over_email' — which key matched, so the
+  -- 'new' | 'phone' | 'email' | 'phone_over_email' - which key matched, so the
   -- dedupe rule's behaviour on live traffic is measurable instead of assumed.
   match_reason     text
 );
@@ -185,12 +185,12 @@ CREATE INDEX IF NOT EXISTS funnel_history_submission
 --
 -- The key is a SALTED HASH, never a raw IP or a raw phone number. This table
 -- would otherwise become a second, unregulated copy of the personal data the
--- submissions table is careful about — and an IP address is personal data under
+-- submissions table is careful about - and an IP address is personal data under
 -- both the GDPR and the DPDP Act. The salt lives in the application
 -- (FUNNEL_HASH_SALT), so a database dump alone does not reverse a /32.
 --
 -- `window_start` is bucketed by the application; rows older than the widest
--- window are disposable. There is no sweeper yet — the volume this form will see
+-- window are disposable. There is no sweeper yet - the volume this form will see
 -- makes that a later problem, and the index below keeps the lookup cheap
 -- regardless.
 ------------------------------------------------------------------------------
@@ -211,7 +211,7 @@ CREATE INDEX IF NOT EXISTS funnel_rate_limit_window
 --
 -- No RLS here, and that is the correct answer rather than an omission: RLS in
 -- this codebase means org_isolation keyed on current_setting('app.org_id'), and
--- there is no org. The boundary is the schema plus the role — aura_marketing can
+-- there is no org. The boundary is the schema plus the role - aura_marketing can
 -- reach these three tables and nothing else in the database.
 ------------------------------------------------------------------------------
 
@@ -225,7 +225,7 @@ GRANT SELECT, INSERT, UPDATE ON marketing.funnel_rate_limit       TO aura_market
 -- No DELETE anywhere, on purpose. Nothing in the funnel's write path deletes a
 -- row: dedupe UPDATEs, history APPENDs, and rate limiting UPSERTs. A public web
 -- server that can delete its own audit trail is a public web server whose audit
--- trail proves nothing — and an erasure request is a deliberate, owner-run
+-- trail proves nothing - and an erasure request is a deliberate, owner-run
 -- operation, not something the form should be able to do by accident.
 
 -- The console (aura_app) is NOT granted anything here. Reading funnel
@@ -234,7 +234,7 @@ GRANT SELECT, INSERT, UPDATE ON marketing.funnel_rate_limit       TO aura_market
 
 -- Supabase's PostgREST roles must never see this schema. 0007 revoked their
 -- access to `public` and set default privileges for FUTURE public tables, but
--- neither covers a schema created three years of migrations later — and unlike
+-- neither covers a schema created three years of migrations later - and unlike
 -- `public`, this one holds nothing but pre-customer personal data (name, phone,
 -- WhatsApp, email, budget) reachable with the project's public anon key if the
 -- grant were ever inherited.
@@ -258,6 +258,6 @@ END $$;
 
 -- A table added to this schema by a later migration inherits the funnel role's
 -- access, so the funnel keeps working without an edit here. It does NOT inherit
--- anything for the API roles — the ALTER DEFAULT PRIVILEGES above sees to that.
+-- anything for the API roles - the ALTER DEFAULT PRIVILEGES above sees to that.
 ALTER DEFAULT PRIVILEGES IN SCHEMA marketing
   GRANT SELECT, INSERT, UPDATE ON TABLES TO aura_marketing;

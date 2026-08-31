@@ -32,14 +32,14 @@ const CompleteCallBody = z.object({
 });
 
 /**
- * Filters for the Call Explorer. All optional — bare GET keeps the old
+ * Filters for the Call Explorer. All optional - bare GET keeps the old
  * behaviour. `status` takes either an exact pipeline state or one of two
  * buckets: `in_pipeline` (still moving) and `failed` (any FAILED_* stage).
- * The buckets matter because "in pipeline" spans five states — matching one
+ * The buckets matter because "in pipeline" spans five states - matching one
  * of them exactly would hide the rest and read as "no stuck calls".
  */
 /**
- * Bulk rewind. Only terminal states are accepted — an in-flight call must never
+ * Bulk rewind. Only terminal states are accepted - an in-flight call must never
  * be rewound out from under the worker, and allowing arbitrary statuses here
  * would make that a one-typo mistake.
  */
@@ -56,7 +56,7 @@ const ReprocessBacklogBody = z.object({
       ]),
     )
     .min(1),
-  /** How far back to reach. Omitted or null means the whole history — which for
+  /** How far back to reach. Omitted or null means the whole history - which for
    *  a dormant instance can be a lot of paid audio, so the console always asks. */
   sinceDays: z.number().int().min(1).max(3650).nullable().optional(),
   /** Backstop against a single click sweeping thousands of calls into the queue. */
@@ -72,7 +72,7 @@ const ReprocessBacklogBody = z.object({
  * table actually holds. The (workspace_id, remote_number_hash) index from 0001
  * makes recomputing it cheap, and the answer is always true of the data now.
  *
- * A call whose number was withheld has a NULL hash and gets no history at all —
+ * A call whose number was withheld has a NULL hash and gets no history at all -
  * every such call would otherwise look like the same mystery customer ringing
  * back, which is worse than admitting we do not know.
  */
@@ -137,7 +137,7 @@ export class CallsController {
         [deviceId],
       );
       if (!ctx || ctx.device_status !== "active" || ctx.org_status !== "active") {
-        throw new ConflictException("device or org is not active — recording is disabled");
+        throw new ConflictException("device or org is not active - recording is disabled");
       }
       if (ctx.consent_policy === "prohibited") {
         throw new ConflictException("tenant consent policy prohibits recording");
@@ -159,7 +159,7 @@ export class CallsController {
       const remoteName = call.remoteName?.trim() || null;
       // The full number is retained ONLY for an org that opted in (0011), which
       // is what makes a CRM lead callable. Everyone else keeps the fragments
-      // above and nothing more — the column stays NULL.
+      // above and nothing more - the column stays NULL.
       const numberFull = ctx.store_full_number && digits ? digits : null;
 
       const {
@@ -176,7 +176,7 @@ export class CallsController {
           orgId,
           ctx.workspace_id,
           deviceId,
-          // Written once, at call creation — never updated afterward. A live
+          // Written once, at call creation - never updated afterward. A live
           // join through the device would reproduce the reassignment bug
           // (0068) one level deeper.
           ctx.telecaller_id,
@@ -212,7 +212,7 @@ export class CallsController {
   /** §6.1: verify the upload landed, flip to UPLOADED, wake the pipeline. */
   @Post(":id/complete")
   @UseGuards(DeviceAuthGuard)
-  // Not throttled — the second half of ingest. Losing this call after the bytes
+  // Not throttled - the second half of ingest. Losing this call after the bytes
   // are already in S3 strands the recording in AWAITING_AUDIO with no sweeper
   // that recovers it, so it is the worst possible request to rate-limit.
   @SkipThrottle()
@@ -228,7 +228,7 @@ export class CallsController {
 
     // Read + validate under RLS, then get OUT of the transaction before the S3
     // network calls. This route is @SkipThrottle() precisely because a
-    // tenant's whole device fleet can burst uploads from one office IP — a
+    // tenant's whole device fleet can burst uploads from one office IP - a
     // slow S3 round trip while holding a checked-out pool connection open
     // would starve DB_POOL_MAX for every tenant, not just this one.
     const rec = await this.db.withOrg(orgId, async (client) => {
@@ -279,7 +279,7 @@ export class CallsController {
    *
    * Every row carries the instance it belongs to. Without that the console
    * could show a flat pile of calls but never answer "what did THIS customer
-   * record", which is the question the Instances page exists to ask — so the
+   * record", which is the question the Instances page exists to ask - so the
    * instance join is part of the contract, not an optimisation.
    */
   @Get()
@@ -358,7 +358,7 @@ export class CallsController {
    * Detail: call + transcript + AI output for the drawer.
    *
    * `recordings:listen` also gates the verbatim transcript, not just the audio
-   * — the text is the same privacy-sensitive artifact the audio route already
+   * - the text is the same privacy-sensitive artifact the audio route already
    * treats specially, and a caller who cannot listen to a recording should not
    * be able to read a word-for-word account of it instead. Redacted rather
    * than 403ing the whole route: the call's status, AI summary and analytics
@@ -427,7 +427,7 @@ export class CallsController {
 
   /**
    * Presigned playback URL for the web player. Every access is audited
-   * (`recording.playback`) — a compliance requirement, since listening to a
+   * (`recording.playback`) - a compliance requirement, since listening to a
    * recording is itself a privacy event. 404 when no audio exists.
    */
   @Get(":id/audio")
@@ -458,7 +458,7 @@ export class CallsController {
   }
 
   /**
-   * Re-run the pipeline for a finished call — e.g. after an agent/model change.
+   * Re-run the pipeline for a finished call - e.g. after an agent/model change.
    * Only terminal states (COMPLETE or FAILED_*) may be rewound to UPLOADED so
    * an in-flight call is never disturbed; the queue is just the wake-up.
    */
@@ -521,7 +521,7 @@ export class CallsController {
    *
    * `sinceDays` is the guard rail. Switching transcription back on for a
    * long-dormant instance can otherwise sweep up months of stored audio and
-   * spend real money on it — so the console asks how far back to go and the
+   * spend real money on it - so the console asks how far back to go and the
    * answer lands here, rather than "all" being the only thing the API can do.
    *
    * Claiming is the same optimistic UPDATE as the single-call path, so a call
@@ -554,7 +554,7 @@ export class CallsController {
         // orgId is bound TWICE, as $1 and $2, and that is not redundancy.
         // org_id is uuid and target_id is text; reusing one placeholder for both
         // makes Postgres deduce two types for the same parameter and abort the
-        // statement with "inconsistent types deduced for parameter $1" — which
+        // statement with "inconsistent types deduced for parameter $1" - which
         // rolled the whole transaction back, so the rewind above never committed
         // and the endpoint answered 500. Same two-binding shape as the other
         // org-targeted audit row (tenancy.controller.ts:125).

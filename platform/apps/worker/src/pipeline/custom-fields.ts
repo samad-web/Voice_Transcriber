@@ -9,7 +9,7 @@ import type { DbClient } from "./crm-dispatch";
 
 /**
  * Project a record's raw `facts` blob into typed custom-field values
- * (packages/db/migrations/0037) — Track A4.
+ * (packages/db/migrations/0037) - Track A4.
  *
  * Until now the AI extraction only ever reached the new object model as an
  * untyped jsonb blob; a field an admin had defined in /custom-fields stayed
@@ -53,7 +53,7 @@ export async function projectFactsToCustomFields(
   if (keys.length === 0) return { written: 0, skipped: 0 };
 
   // Only fields this org actually defined, and only those the extraction
-  // produced a key for — so an org with no custom fields costs exactly one
+  // produced a key for - so an org with no custom fields costs exactly one
   // indexed lookup that returns nothing.
   const { rows: definitions } = await client.query<FieldDefinition>(
     `SELECT id, key, type, options
@@ -78,7 +78,7 @@ export async function projectFactsToCustomFields(
 
     const column = valueColumnForType(definition.type as CustomFieldType);
     // The column name comes from valueColumnForType's closed switch and the
-    // table from the object type, never from caller input — no interpolation
+    // table from the object type, never from caller input - no interpolation
     // of anything a tenant controls.
     //
     // The WHERE on the conflict clause is the human-owns-it rule this file's
@@ -95,7 +95,7 @@ export async function projectFactsToCustomFields(
         WHERE ${table}.source <> 'human'`,
       [orgId, recordId, definition.id, coerced],
     );
-    // A row the human owns reports as skipped, not written — "written: 3"
+    // A row the human owns reports as skipped, not written - "written: 3"
     // when one of them was declined would be a lie in the logs.
     if (rowCount && rowCount > 0) written++;
     else skipped++;
@@ -110,7 +110,7 @@ export async function projectFactsToCustomFields(
  *
  * Skipping is the right failure mode throughout: the extraction is an LLM's
  * best guess, and a value that does not fit the admin's declared type is
- * better absent than stored wrong — a number column holding NaN or a picklist
+ * better absent than stored wrong - a number column holding NaN or a picklist
  * holding an option that is not on the list would both surface as a broken
  * field in the UI rather than as missing data.
  */
@@ -133,7 +133,7 @@ function coerce(raw: unknown, definition: FieldDefinition): unknown {
 
     case "date": {
       // Only ISO-ish dates. Deliberately NOT `new Date(str)`, which happily
-      // reads "next Tuesday" as Invalid Date and "5000" as the year 5000 —
+      // reads "next Tuesday" as Invalid Date and "5000" as the year 5000 -
       // both of which would land silently in a date column.
       const s = String(raw).trim();
       const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);

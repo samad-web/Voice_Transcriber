@@ -6,7 +6,7 @@
 --
 -- language_code
 --   Left to auto-detect, the recogniser occasionally picks the wrong language
---   outright — one 3-second Tamil call in this very database was transcribed as
+--   outright - one 3-second Tamil call in this very database was transcribed as
 --   Spanish. A telecalling floor almost always knows what its agents speak, so
 --   naming it removes a whole class of silent, total transcription failure.
 --   NULL keeps auto-detect for instances that genuinely are mixed.
@@ -14,7 +14,7 @@
 -- mode
 --   Saaras v3's output format, and the fix for brand names. In the default
 --   `transcribe` mode an English name spoken inside Tamil speech comes back
---   transliterated — "RD Interlock" becomes "ஆர்டி இன்டர்லாக்", which is
+--   transliterated - "RD Interlock" becomes "ஆர்டி இன்டர்லாக்", which is
 --   unusable as a CRM value. `codemix` keeps English words in English and Indic
 --   words in native script; `translate` renders the whole call in English.
 --   Measured on a real call, both preserve "RD Interlock" verbatim.

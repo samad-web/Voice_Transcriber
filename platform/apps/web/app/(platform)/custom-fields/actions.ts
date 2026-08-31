@@ -6,7 +6,7 @@ import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
  * Server actions for the custom-fields admin console (CRM Phase 1, E0.2).
- * Same shape as (platform)/crm/actions.ts deliberately — `requireOperator()`
+ * Same shape as (platform)/crm/actions.ts deliberately - `requireOperator()`
  * is the first statement of every export, not merely gated by the layout;
  * see that file's `call()` and lib/operator-guard.ts for why.
  */
@@ -36,7 +36,7 @@ async function call<T>(
     }
     return { data: payload as T };
   } catch {
-    return { error: "API unreachable — is the API running?" };
+    return { error: "API unreachable - is the API running?" };
   }
 }
 

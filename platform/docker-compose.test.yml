@@ -1,12 +1,12 @@
 # Ephemeral infrastructure for the integration suite (08_ROAD_TO_10 §1.3).
 #
-# ── WHY THE PORTS LOOK ODD — DO NOT "TIDY" THEM BACK ────────────────────────
+# ── WHY THE PORTS LOOK ODD - DO NOT "TIDY" THEM BACK ────────────────────────
 #
 # A developer on this project runs the real dev stack (docker-compose.yml) at
 # the same time as this one: postgres 5433, rabbitmq 5672/15672, minio
 # 9000/9001, api 4000, web 3000/3001. Every port below is deliberately moved out
 # of that range so `docker compose -f docker-compose.test.yml up` never has to
-# be preceded by tearing the dev stack down — and, far more importantly, so the
+# be preceded by tearing the dev stack down - and, far more importantly, so the
 # integration suite can never silently connect to the DEV database and start
 # deleting rows a developer is mid-way through debugging.
 #
@@ -27,8 +27,8 @@
 # This file provides INFRASTRUCTURE ONLY. The harness spawns the API and worker
 # itself, from the built `dist/`, as child processes (tests/setup/processes.ts).
 # That is deliberate: those two processes need a precisely controlled
-# environment — ASR_STUB=1, ANALYZE_STUB=1, a low PIPELINE_MAX_ATTEMPTS, and an
-# explicit value for EVERY variable the code reads — because @nestjs/config
+# environment - ASR_STUB=1, ANALYZE_STUB=1, a low PIPELINE_MAX_ATTEMPTS, and an
+# explicit value for EVERY variable the code reads - because @nestjs/config
 # loads `platform/.env` at boot and fills in any variable the harness leaves
 # unset (see tests/setup/env.ts for the full argument). Baking them in here
 # would put half of that environment in a YAML file the test cannot see.
@@ -103,14 +103,14 @@ services:
   # Creates the bucket the API and worker expect. Runs to completion and exits 0.
   #
   # DELIBERATELY EXCLUDED FROM `up --wait`'S SERVICE LIST (test:integration:up in
-  # package.json) — confirmed on Compose v2.40.3-desktop.1, 2026-08-16: `--wait`
+  # package.json) - confirmed on Compose v2.40.3-desktop.1, 2026-08-16: `--wait`
   # treats ANY container it observes in an "exited" state as a failure and returns
   # exit code 1, even at code 0, even for a service with no healthcheck and
   # restart: "no" (the implicit default) that was always going to exit. There is
   # no per-service opt-out for this in `--wait` itself. So `up --wait` names only
   # the three long-running services (postgres/rabbitmq/minio); this one-shot job
   # runs as a SEPARATE, un-waited `docker compose up minio-init` immediately
-  # after, whose own exit code is the real signal — 0 means the bucket exists, and
+  # after, whose own exit code is the real signal - 0 means the bucket exists, and
   # a nonzero one correctly fails the script instead of being swallowed by the
   # first command's already-successful exit.
   minio-init:

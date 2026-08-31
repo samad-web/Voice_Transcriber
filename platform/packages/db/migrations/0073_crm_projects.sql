@@ -1,4 +1,4 @@
--- 0073_crm_projects.sql — the thing a call is ABOUT.
+-- 0073_crm_projects.sql - the thing a call is ABOUT.
 --
 -- A telecalling floor that sells one product does not need this. Sirah
 -- Digital's does not sell one product: a single call moves between the 3D
@@ -10,7 +10,7 @@
 --
 -- All three already exist and all three are the wrong shape:
 --   * a TAG (0057) is an open-ended editorial label a human sticks on a
---     handful of records — no catalogue, no stable key, nothing an extractor
+--     handful of records - no catalogue, no stable key, nothing an extractor
 --     can be pointed at;
 --   * a CUSTOM FIELD (0037) is a typed slot on EVERY record of an object, and
 --     a picklist custom field would put the project list inside a field
@@ -20,7 +20,7 @@
 --     A lead from the Instagram ad can be about LexDraft.
 --
 -- A project is a first-class thing the tenant owns, with its own name, its own
--- lifetime, and — critically — its own list of spoken ALIASES, because the
+-- lifetime, and - critically - its own list of spoken ALIASES, because the
 -- catalogue is what the extractor matches a transcript against. That makes it
 -- a table.
 --
@@ -29,7 +29,7 @@
 -- No seeded rows, no CHECK constraint listing product names, no enum. Every
 -- project is created by the tenant at runtime through the console, exactly
 -- like a tag or a campaign. "3D website" is not privileged over whatever they
--- add next quarter — same precedent as marketing_sources.channel (0057) and
+-- add next quarter - same precedent as marketing_sources.channel (0057) and
 -- role_permissions.object_type (0039).
 
 CREATE TABLE IF NOT EXISTS crm_projects (
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS crm_projects (
 
   description text,
 
-  -- A design-token key, not a hex value — the console renders from the theme
+  -- A design-token key, not a hex value - the console renders from the theme
   -- so a project chip stays legible in both light and dark. Matches tags.color
   -- (0057) exactly; NULL falls back to a hashed default.
   color       text,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS crm_projects (
   aliases     text[] NOT NULL DEFAULT '{}',
 
   -- Retiring a project must not orphan the leads it produced, so this is a
-  -- flag rather than a DELETE — same call marketing_sources.active makes.
+  -- flag rather than a DELETE - same call marketing_sources.active makes.
   -- An inactive project stops being offered for new detection and stays
   -- readable on every record that already carries it.
   active      boolean NOT NULL DEFAULT true,
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS call_projects (
   project_id uuid NOT NULL REFERENCES crm_projects(id)  ON DELETE CASCADE,
 
   -- 0..1. How strongly the transcript pointed here, used to rank the hits and
-  -- to pick the lead's primary project. numeric, not float — a score that has
+  -- to pick the lead's primary project. numeric, not float - a score that has
   -- been through a float sorts differently on two machines.
   confidence numeric(4, 3) NOT NULL DEFAULT 0
     CHECK (confidence >= 0 AND confidence <= 1),
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS call_projects (
   PRIMARY KEY (call_id, project_id)
 );
 
--- "Every call about this project" — the query the project detail view is.
+-- "Every call about this project" - the query the project detail view is.
 CREATE INDEX IF NOT EXISTS call_projects_project
   ON call_projects (org_id, project_id);
 
@@ -190,8 +190,8 @@ ALTER TABLE deals
 
 -- Partial, mirroring contacts_marketing_source: the overwhelming majority of
 -- rows have no project yet, and indexing those NULLs helps nothing. Carries
--- last_activity_at so "this project's pipeline, newest first" — the list view
--- filtered by project — is served by the index rather than a sort.
+-- last_activity_at so "this project's pipeline, newest first" - the list view
+-- filtered by project - is served by the index rather than a sort.
 CREATE INDEX IF NOT EXISTS leads_org_project
   ON leads (org_id, project_id, last_activity_at DESC) WHERE project_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS deals_org_project

@@ -16,7 +16,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 /** Sarvam's BCP-47 set, plus the sentinel that forces auto-detect. Mirrors the
- *  CHECK constraint in migration 0016 — both are generated from the same list
+ *  CHECK constraint in migration 0016 - both are generated from the same list
  *  in the sense that they must be changed together. */
 const ASR_LANGUAGES = [
   "unknown", "en-IN", "hi-IN", "bn-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN",
@@ -27,7 +27,7 @@ const ASR_LANGUAGES = [
 /**
  * Per-tenant logo/colors (Kailash gap Milestone 4). One jsonb column
  * (migration 0065), same "tenant config as jsonb on organizations" precedent
- * as lead_stages/lead_rules — this is too small to earn its own table.
+ * as lead_stages/lead_rules - this is too small to earn its own table.
  */
 const BrandingBody = z.object({
   logoUrl: z.string().url().max(500).nullish(),
@@ -54,22 +54,22 @@ const PolicyBody = z.object({
   transcriptionEnabled: z.boolean().optional(),
   /**
    * What this instance's agents actually speak (0016). Auto-detect is only
-   * right when we genuinely don't know — it has mislabelled a Tamil call as
+   * right when we genuinely don't know - it has mislabelled a Tamil call as
    * Spanish, losing the whole transcript. `unknown` forces auto-detect back on.
    */
   asrLanguage: z.enum(ASR_LANGUAGES).nullable().optional(),
   /**
    * Saaras output format. `codemix` is the one that keeps an English brand name
-   * out of Indic script — "RD Interlock" instead of "ஆர்டி இன்டர்லாக்".
+   * out of Indic script - "RD Interlock" instead of "ஆர்டி இன்டர்லாக்".
    */
   asrMode: z.enum(["transcribe", "translate", "verbatim", "translit", "codemix"]).nullable().optional(),
   /**
    * Proper nouns and domain terms in their correct spelling. Handed to the
-   * analyse stages, not to ASR — the batch speech API takes no hotword list.
+   * analyse stages, not to ASR - the batch speech API takes no hotword list.
    */
   vocabulary: z.array(z.string().trim().min(1).max(120)).max(200).optional(),
   /**
-   * The mobile app-lock password (raw, over HTTPS — hashed below before it
+   * The mobile app-lock password (raw, over HTTPS - hashed below before it
    * ever touches the database). `null` clears the lock for every device
    * under this org; omitted leaves whatever is set untouched.
    */
@@ -141,7 +141,7 @@ export class TenancyController {
       } = await client.query(
         // asr_language and asr_mode use CASE, not COALESCE: NULL is a MEANINGFUL
         // value for them ("follow the deployment default"), so COALESCE would
-        // make clearing a setting impossible — the write would silently keep
+        // make clearing a setting impossible - the write would silently keep
         // the old one. The boolean says whether the field was sent at all.
         `UPDATE organizations SET
            consent_policy = COALESCE($2, consent_policy),
@@ -178,7 +178,7 @@ export class TenancyController {
         "UPDATE instances SET config_version = config_version + 1 WHERE org_id = $1",
         [orgId],
       );
-      // Never let the raw app-lock password reach the audit log — record only
+      // Never let the raw app-lock password reach the audit log - record only
       // that it changed, the same way a "set" is visible without the value.
       const auditMeta =
         p.appLockPassword !== undefined

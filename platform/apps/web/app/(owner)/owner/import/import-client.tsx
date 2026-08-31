@@ -38,15 +38,15 @@ interface TargetField {
 }
 
 const ENTITY_OPTIONS: Array<{ value: ImportEntity; label: string; hint: string }> = [
-  { value: "contact", label: "Contacts", hint: "People — name, email, phone, title." },
-  { value: "account", label: "Accounts", hint: "Companies — name and domain." },
-  { value: "deal", label: "Deals", hint: "Opportunities — name, amount, stage." },
+  { value: "contact", label: "Contacts", hint: "People - name, email, phone, title." },
+  { value: "account", label: "Accounts", hint: "Companies - name and domain." },
+  { value: "deal", label: "Deals", hint: "Opportunities - name, amount, stage." },
 ];
 
 /**
  * The full target-field list per entity (the same set `/import/preview`
  * guesses against). Fixed by the API contract, so it is hardcoded here rather
- * than derived from a response that might arrive empty on error — the
+ * than derived from a response that might arrive empty on error - the
  * mapping step needs the whole list of Selects to render even before the
  * preview call returns.
  */
@@ -76,7 +76,7 @@ const DEDUPE_OPTIONS: Array<{ value: DedupeStrategy; label: string; description:
   {
     value: "skip",
     label: "Skip duplicates",
-    description: "Leave existing records alone — a row that matches one already on file is left untouched.",
+    description: "Leave existing records alone - a row that matches one already on file is left untouched.",
   },
   {
     value: "update",
@@ -88,7 +88,7 @@ const DEDUPE_OPTIONS: Array<{ value: DedupeStrategy; label: string; description:
     value: "create",
     label: "Always create",
     description:
-      "Insert every row even if it looks like a duplicate — some rows may fail if they'd collide with an existing unique phone, email or domain.",
+      "Insert every row even if it looks like a duplicate - some rows may fail if they'd collide with an existing unique phone, email or domain.",
   },
 ];
 
@@ -107,7 +107,7 @@ const STEP_LABELS: Record<Step, string> = {
 
 /** The required target fields to validate against: the API's own answer when
  *  it loaded, falling back to the fixed list above if the preview call
- *  failed — required-ness must never silently disappear just because a
+ *  failed - required-ness must never silently disappear just because a
  *  network call did. */
 function requiredFieldsFor(entity: ImportEntity, apiRequired: string[]): string[] {
   return apiRequired.length > 0
@@ -117,7 +117,7 @@ function requiredFieldsFor(entity: ImportEntity, apiRequired: string[]): string[
 
 /**
  * The bulk-import wizard: entity → CSV → column mapping → dedupe strategy →
- * run → results. One `step` state machine, all client-side — the CSV itself
+ * run → results. One `step` state machine, all client-side - the CSV itself
  * is parsed in the browser with papaparse and never touches the server until
  * "Start import", which sends the raw rows plus the mapping the human
  * confirmed. The API applies the mapping itself (see ./actions.ts).
@@ -178,7 +178,7 @@ export function ImportWizard() {
       setFields(parsedFields);
       setRows([]);
       setParseError(
-        `That file has ${data.length.toLocaleString()} rows — this wizard imports up to ` +
+        `That file has ${data.length.toLocaleString()} rows - this wizard imports up to ` +
           `${MAX_ROWS.toLocaleString()} at a time. Split the file and import it in batches.`,
       );
       return;
@@ -227,7 +227,7 @@ export function ImportWizard() {
     const missing = TARGET_FIELDS[entity].filter((f) => required.includes(f.field) && !mapping[f.field]);
     if (missing.length > 0) {
       setMappingError(
-        `Map every required field before continuing — still missing: ${missing.map((f) => f.label).join(", ")}.`,
+        `Map every required field before continuing - still missing: ${missing.map((f) => f.label).join(", ")}.`,
       );
       return;
     }
@@ -399,7 +399,7 @@ function EntityStep({
     <div>
       <h3 className="text-lg font-semibold text-text">What are you importing?</h3>
       <p className="mt-1 text-sm text-text-muted">
-        Pick one CSV type per import — run the wizard again for the others.
+        Pick one CSV type per import - run the wizard again for the others.
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {ENTITY_OPTIONS.map((opt) => (
@@ -458,7 +458,7 @@ function UploadStep({
     <div>
       <h3 className="text-lg font-semibold text-text">Upload a CSV of {entityLabel}</h3>
       <p className="mt-1 text-sm text-text-muted">
-        The first row must be column headers. Up to {MAX_ROWS.toLocaleString()} rows per import — split a
+        The first row must be column headers. Up to {MAX_ROWS.toLocaleString()} rows per import - split a
         larger file and run this wizard again for the rest.
       </p>
 
@@ -503,7 +503,7 @@ function UploadStep({
       {rows.length > 0 ? (
         <div className="mt-4">
           <MonoLabel>
-            Preview — first {Math.min(PREVIEW_ROWS, rows.length)} of {rows.length.toLocaleString()} row
+            Preview - first {Math.min(PREVIEW_ROWS, rows.length)} of {rows.length.toLocaleString()} row
             {rows.length === 1 ? "" : "s"}
           </MonoLabel>
           <Table caption="Parsed CSV preview" className="mt-1.5">
@@ -569,8 +569,8 @@ function MappingStep({
     <div>
       <h3 className="text-lg font-semibold text-text">Match your columns</h3>
       <p className="mt-1 text-sm text-text-muted">
-        We guessed a mapping from your headers — check it, and fill in anything left as
-        &ldquo;— none —&rdquo;. Fields marked <span className="text-danger">*</span> are required.
+        We guessed a mapping from your headers - check it, and fill in anything left as
+        &ldquo;- none -&rdquo;. Fields marked <span className="text-danger">*</span> are required.
       </p>
 
       {loading ? (
@@ -588,7 +588,7 @@ function MappingStep({
                 value={mapping[tf.field] ?? ""}
                 onChange={(e) => onChange(tf.field, e.target.value || null)}
               >
-                <option value="">— none —</option>
+                <option value="">- none -</option>
                 {fields.map((h) => (
                   <option key={h} value={h}>
                     {h}

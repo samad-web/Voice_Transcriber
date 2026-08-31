@@ -36,7 +36,7 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
       <div className="flex items-center gap-2">
         <FlaskConical className="h-4 w-4" />
         <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
-          Sandbox — Test Against a Stored Call
+          Sandbox - Test Against a Stored Call
         </h4>
       </div>
       <p className="text-xs text-neutral-400 font-sans font-medium">

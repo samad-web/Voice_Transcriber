@@ -55,7 +55,7 @@ const CONTACT_COLUMNS = `id, workspace_id, account_id, first_name, last_name, di
   call_count, lead_score, last_activity_at, created_at, updated_at`;
 
 /**
- * Contacts (people) — CRM Phase 1, E0.1. Strangler-fig: nothing here reads
+ * Contacts (people) - CRM Phase 1, E0.1. Strangler-fig: nothing here reads
  * from or writes to `leads`/`call_facts`, and this module is not linked into
  * web nav yet. See the Phase 1 plan.
  */
@@ -85,7 +85,7 @@ export class ContactsController {
 
       if (accountId) add("account_id = $?", accountId);
 
-      // The `owned` half of the permission grid (migration 0039) — see
+      // The `owned` half of the permission grid (migration 0039) - see
       // common/crm-scope.ts for why this lives in the query, not the guard.
       const owned = scopeFilter("contact", recordScope);
       if (owned) add(owned.sql, owned.value);
@@ -158,7 +158,7 @@ export class ContactsController {
       } = await client.query(`SELECT id FROM contacts WHERE id = $1`, [id]);
       if (!contact) throw new NotFoundException("contact not found");
 
-      // Scoped on DEAL, not contact — this route's grant is `deal:view`, so
+      // Scoped on DEAL, not contact - this route's grant is `deal:view`, so
       // the rows being protected are the deals. A scoped rep looking at a
       // shared contact sees their own deals on it and not a colleague's.
       const scoped = scopeClause("deal", recordScope, 2);

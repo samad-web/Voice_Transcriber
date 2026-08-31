@@ -1,4 +1,4 @@
--- 0055_conversations.sql — the inbound side of messaging.
+-- 0055_conversations.sql - the inbound side of messaging.
 --
 -- ── WHY THIS EXISTS ─────────────────────────────────────────────────────
 --
@@ -17,7 +17,7 @@
 -- stands unchanged for connected_accounts/email_sync.
 --
 -- This table is the other thing. A message sent TO the business's own
--- WhatsApp/SMS number is business correspondence by construction — someone
+-- WhatsApp/SMS number is business correspondence by construction - someone
 -- deliberately wrote to the company. There is no private third-party traffic
 -- to protect, and an inbox that hides the body is not an inbox. So bodies are
 -- stored here and only here.
@@ -26,7 +26,7 @@
 -- contact_id is nullable and the peer address is always retained, so an
 -- inbound message from an unrecognised number lands in an unmatched queue for
 -- a human to claim. It is never dropped, and it never silently auto-creates a
--- contact — the same "human owns it" line rule 2 draws.
+-- contact - the same "human owns it" line rule 2 draws.
 --
 -- Rule 3 is untouched: nothing here sends. This migration adds storage and a
 -- receive path. Outbound rows exist so a thread reads as a conversation, and
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   -- sender cannot be threaded or replied to at all.
   peer_address   text NOT NULL,
   -- The display name the provider gave us, when it gave one. Advisory only:
-  -- never used for matching (see UNMATCHABLE_DISPLAY_NAMES — a provider that
+  -- never used for matching (see UNMATCHABLE_DISPLAY_NAMES - a provider that
   -- reports "WhatsApp User" would otherwise match everybody).
   peer_label     text,
 

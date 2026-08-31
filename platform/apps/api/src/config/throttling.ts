@@ -14,7 +14,7 @@ const MINUTE_MS = 60_000;
  * different kinds of caller and a naive global limit breaks two of them:
  *
  *  1. The console. `apps/web` is server-rendered and calls this API from the
- *     Next.js container with the admin key — every console request in the whole
+ *     Next.js container with the admin key - every console request in the whole
  *     platform arrives from ONE source IP, and a single page render fans out
  *     into several calls. A per-IP limit of 100/min would cap the entire
  *     customer-facing console at roughly twenty page loads a minute, for
@@ -22,7 +22,7 @@ const MINUTE_MS = 60_000;
  *  2. The handset fleet. Devices poll config, beat health, and upload calls.
  *     A tenant's phones sit behind one office WiFi or one carrier NAT, so they
  *     share a source IP too, and throttling them means silently dropping
- *     recordings — the one failure this product cannot have. Handled by
+ *     recordings - the one failure this product cannot have. Handled by
  *     `@SkipThrottle()` on the device-authed routes.
  *  3. Everyone else: the open internet, probing. That is what the limit is for.
  *
@@ -44,16 +44,16 @@ export function throttlerOptions(): ThrottlerModuleOptions {
 /**
  * True for a caller presenting the correct admin key.
  *
- * Rate-limiting the admin key protects nothing — it is already the credential
+ * Rate-limiting the admin key protects nothing - it is already the credential
  * that reads and writes every tenant (see the AdminKeyGuard header comment), so
- * a holder does not need volume to do damage — while throttling it would take
+ * a holder does not need volume to do damage - while throttling it would take
  * the console down, per note 1 above.
  *
  * What this deliberately does NOT skip is a WRONG or absent key. Guessing
  * ADMIN_API_KEY is exactly the attack 08 §0.2 is about, and those attempts stay
  * on the 100/min budget.
  *
- * Comparison goes through timing-safe-equal.ts, shared with AdminKeyGuard —
+ * Comparison goes through timing-safe-equal.ts, shared with AdminKeyGuard -
  * the two must not disagree, and neither should compare a secret with `===`.
  */
 function isTrustedPlatformCaller(context: ExecutionContext): boolean {

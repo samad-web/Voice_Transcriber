@@ -1,8 +1,8 @@
 import { safeFilename, toCsv } from "./csv";
 
 /**
- * CSV export takes one tenant's data — including display names that come from
- * call transcripts and from an open API — and writes a file an operator opens
+ * CSV export takes one tenant's data - including display names that come from
+ * call transcripts and from an open API - and writes a file an operator opens
  * in a spreadsheet. The escaping below is the whole security boundary of that
  * feature.
  */
@@ -53,7 +53,7 @@ describe("toCsv", () => {
     });
 
     it("does not mistake a negative number for a formula in a way that loses it", () => {
-      // It IS prefixed — a leading '-' is genuinely a formula trigger — but the
+      // It IS prefixed - a leading '-' is genuinely a formula trigger - but the
       // value must remain readable rather than being dropped or altered.
       expect(toCsv([columns[0]], [{ name: "-42" }])).toContain("-42");
     });

@@ -31,7 +31,7 @@ import {
 const SendBody = z.object({
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(20_000),
-  /** Optional — defaults to the caller's only email connection. */
+  /** Optional - defaults to the caller's only email connection. */
   connectionId: z.string().uuid().optional(),
 });
 
@@ -41,7 +41,7 @@ const SendBody = z.object({
  * ── WHAT THE CALLER CANNOT DO ─────────────────────────────────────────────
  *
  * There is no recipient field. The address is read from the contact named in
- * the path, so this endpoint cannot be pointed at an arbitrary inbox — the
+ * the path, so this endpoint cannot be pointed at an arbitrary inbox - the
  * CRM is not a mail relay, and an endpoint that took a `to` would make it
  * one for anybody holding a session. There is no cc, no bcc and no list
  * form: one message, one person, one click.
@@ -50,8 +50,8 @@ const SendBody = z.object({
  *
  *   1. EMAIL_SENDING_ENABLED=true. Off by default, so no deployment sends
  *      mail until an operator decides it should.
- *   2. The caller resolves to a real user. A bare admin key — the credential
- *      every script and backfill in this codebase uses — is refused, because
+ *   2. The caller resolves to a real user. A bare admin key - the credential
+ *      every script and backfill in this codebase uses - is refused, because
  *      a mailbox belongs to a person and "the system" is not one.
  *   3. That user has their OWN connected mailbox. The connection is looked up
  *      by their user_id; there is no path that borrows a colleague's.
@@ -59,7 +59,7 @@ const SendBody = z.object({
  *   5. That mailbox is under its daily cap.
  *
  * Every send is recorded as an outgoing interaction on the timeline, in the
- * same transaction shape as everything else here — a message that went out
+ * same transaction shape as everything else here - a message that went out
  * and left no trace in the CRM would be worse than not sending it.
  *
  * NOTHING AUTOMATED CALLS THIS. The Layer 2 rule engine has no send action,
@@ -92,12 +92,12 @@ export class OutboundMailController {
     const userId = z.string().uuid().safeParse(req.principal?.userId);
     if (!userId.success) {
       throw new ForbiddenException(
-        "sending mail needs a signed-in user — this caller has no mailbox of its own",
+        "sending mail needs a signed-in user - this caller has no mailbox of its own",
       );
     }
 
     return this.db.withOrg(orgId, async (client) => {
-      // A rep scoped to `owned` contacts may only email their own — same
+      // A rep scoped to `owned` contacts may only email their own - same
       // predicate every other contact write route applies. See crm-scope.ts.
       const scoped = scopeClause("contact", recordScope, 2);
       const {
@@ -141,7 +141,7 @@ export class OutboundMailController {
       }
       if (!canSend(connection.provider)) {
         throw new BadRequestException(
-          `sending through ${connection.provider} is not supported yet — see the connections page`,
+          `sending through ${connection.provider} is not supported yet - see the connections page`,
         );
       }
 
@@ -158,7 +158,7 @@ export class OutboundMailController {
       const limit = dailySendLimit();
       if (Number(sent?.n ?? 0) >= limit) {
         throw new BadRequestException(
-          `this mailbox has already sent ${limit} messages today — the daily cap is there to keep a mistake small`,
+          `this mailbox has already sent ${limit} messages today - the daily cap is there to keep a mistake small`,
         );
       }
 

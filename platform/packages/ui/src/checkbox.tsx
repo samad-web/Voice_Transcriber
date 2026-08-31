@@ -2,7 +2,7 @@ import type { InputHTMLAttributes, ReactNode } from "react";
 import { cx } from "./cx";
 
 export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
-  /** Visible label text. Required — an unlabelled checkbox is a WCAG failure. */
+  /** Visible label text. Required - an unlabelled checkbox is a WCAG failure. */
   label: ReactNode;
   /** Secondary line under the label: consent wording, an explanation, a caveat. */
   description?: ReactNode;

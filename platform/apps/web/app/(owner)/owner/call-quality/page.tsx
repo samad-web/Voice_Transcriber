@@ -5,7 +5,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { CallQualityManager } from "./call-quality-manager";
 import type { CallIntegrityFlag } from "./actions";
 
-export const metadata: Metadata = { title: "Call Quality — Aura" };
+export const metadata: Metadata = { title: "Call Quality - Aura" };
 
 interface ListResponse {
   flags: CallIntegrityFlag[];
@@ -38,7 +38,7 @@ export default async function CallQualityPage() {
     <>
       <PageHeader title="Call Quality" context="Pipeline" />
       <p className="-mt-2 text-sm text-text-muted">
-        Calls where the AI read and the CRM disagree — a promising call with no
+        Calls where the AI read and the CRM disagree - a promising call with no
         deal, an outcome that contradicts the deal&rsquo;s status, or a deal
         that&rsquo;s gone quiet since a strong first call. Dismiss what turns
         out to be fine, resolve what you fixed.

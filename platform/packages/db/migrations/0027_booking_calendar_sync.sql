@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0027 — connect a booked slot to Google Calendar
+-- 0027 - connect a booked slot to Google Calendar
 --
 -- WHAT WAS BROKEN
 --
@@ -13,7 +13,7 @@
 --
 -- So every real booking went into Postgres and Google Calendar never heard about
 -- it. The visitor got a confirmation, the row said 'booked', and no event ever
--- appeared in anyone's calendar — a booking that is real in our database and
+-- appeared in anyone's calendar - a booking that is real in our database and
 -- invisible to the person who has to attend it.
 --
 -- The DB stays the source of truth for AVAILABILITY: it is the concurrency
@@ -52,8 +52,8 @@ CREATE INDEX IF NOT EXISTS booking_slots_calendar_unsynced
 --
 -- 0023 REVOKEd everything from `aura_marketing` and granted back SELECT plus
 -- UPDATE on exactly four columns. That column list is the security model of the
--- public site's access to this table — it may take an appointment out of the
--- diary and it categorically cannot invent availability — so the two new
+-- public site's access to this table - it may take an appointment out of the
+-- diary and it categorically cannot invent availability - so the two new
 -- columns have to be added to it explicitly. A plain `GRANT UPDATE` would hand
 -- the public server the whole row, including starts_at.
 ------------------------------------------------------------------------------

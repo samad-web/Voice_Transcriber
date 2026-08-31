@@ -6,7 +6,7 @@ import { FUNNEL_LIVE } from "@/lib/site";
  * A conversion band: one question, one primary WhatsApp CTA, one secondary.
  *
  * The secondary is optional and is skipped entirely while the funnel route it
- * points at does not exist (slice 4/5) — linking a live page at a 404 to keep a
+ * points at does not exist (slice 4/5) - linking a live page at a 404 to keep a
  * layout symmetrical is not a trade worth making.
  */
 export function CTABanner({

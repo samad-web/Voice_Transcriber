@@ -23,7 +23,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, rmSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 
-// Playwright is not a dependency of this app and should not become one — it
+// Playwright is not a dependency of this app and should not become one - it
 // would put a browser download in every CI install for a script that runs by
 // hand, a few times a year. PLAYWRIGHT env var overrides if it lives elsewhere.
 const PW = process.env.PLAYWRIGHT
@@ -44,7 +44,7 @@ const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../pu
 const STEM = THEME === 'dark' ? 'hero-card-dark' : 'hero-card'
 const TARGET = `${PUBLIC}/${STEM}.gif`
 const TARGET_WEBP = `${PUBLIC}/${STEM}.webp`
-// The page ground behind the card, per theme — brand.css --mk-ground.
+// The page ground behind the card, per theme - brand.css --mk-ground.
 // Capture the CARD FACE ONLY. The ground is the card's own surface so the
 // few pixels outside its rounded corners blend away; CSS re-adds the radius
 // and the shadow on the page. Baking a flat page-ground into the image made
@@ -76,7 +76,7 @@ await probe.close()
 if (!box) throw new Error('Could not find .mk-card on the page')
 // 2x. Playwright encodes the video at recordVideo.size and will not supersample
 // for us, so the only way to get real retina detail is to make the page itself
-// twice as big — CSS `zoom` on the body — and record a surface twice the size.
+// twice as big - CSS `zoom` on the body - and record a surface twice the size.
 // deviceScaleFactor alone does nothing for video output.
 const SCALE = Number(process.env.CAPTURE_SCALE ?? 2)
 const W = (Math.ceil(box.width) + PAD * 2) * SCALE
@@ -108,13 +108,13 @@ await page.evaluate(({ pad, ground, scale }) => {
   document.body.style.cssText =
     `margin:0;padding:${pad}px;background:${ground};display:block;overflow:hidden`
   card.style.margin = '0'
-  // No shadow in the raster — CSS draws it, so it stays theme-aware and
+  // No shadow in the raster - CSS draws it, so it stays theme-aware and
   // does not darken the image edges.
   card.style.boxShadow = 'none'
   card.style.border = 'none'
   document.body.style.zoom = String(scale)
 
-  // Periods that divide evenly — see the header comment.
+  // Periods that divide evenly - see the header comment.
   const s = document.createElement('style')
   s.textContent = `
     .mk-wave-bar { animation-duration: 1.5s !important; }
@@ -147,7 +147,7 @@ const WIDTH = process.env.GIF_WIDTH ?? String(W)
 // almost exactly and needs no dithering at all.
 //
 // stats_mode=diff weights the palette toward the pixels that CHANGE between
-// frames — the waveform and the transcript — rather than spending entries on
+// frames - the waveform and the transcript - rather than spending entries on
 // the large static white areas.
 const filters =
   `fps=${FPS},scale=${WIDTH}:-1:flags=lanczos,split[s0][s1]` +

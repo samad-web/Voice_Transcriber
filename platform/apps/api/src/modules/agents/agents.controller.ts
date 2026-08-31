@@ -33,7 +33,7 @@ const TestBody = z.object({ callId: z.string().uuid(), version: z.number().int()
 const GenerateBody = z.object({
   description: z.string().min(1).max(2000),
   /** Draft a MODIFICATION of this agent per `description`, instead of a
-   *  fresh one — the Studio's "start from an existing agent" + "describe
+   *  fresh one - the Studio's "start from an existing agent" + "describe
    *  with AI" paths composed. Defaults to the latest version. */
   baseAgentId: z.string().uuid().optional(),
   baseVersion: z.number().int().positive().optional(),
@@ -188,12 +188,12 @@ export class AgentsController {
   }
 
   /**
-   * Draft a new agent definition from a free-text description — the Studio's
-   * "describe it and it is created accordingly" path — WITHOUT persisting
+   * Draft a new agent definition from a free-text description - the Studio's
+   * "describe it and it is created accordingly" path - WITHOUT persisting
    * it, same non-persisting-preview contract as `:id/test` below. When
    * `baseAgentId` is given, drafts a MODIFICATION of that agent instead of a
    * fresh one (the "start from an existing agent" clone path, expressed as a
-   * description rather than hand-edited) — its current prompt/fields are
+   * description rather than hand-edited) - its current prompt/fields are
    * read through `withOrg`, so a caller can never read another tenant's
    * agent by id. The operator reviews/edits the draft client-side; saving it
    * still goes through the ordinary `POST /agents` above.
@@ -229,7 +229,7 @@ export class AgentsController {
   }
 
   /**
-   * §9: run an agent version against a stored call WITHOUT persisting — the
+   * §9: run an agent version against a stored call WITHOUT persisting - the
    * feature every tenant asks for in week two. Uses the same analyze core as
    * the pipeline, so what you test is what runs.
    */

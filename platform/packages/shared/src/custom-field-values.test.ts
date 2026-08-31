@@ -10,7 +10,7 @@ import {
  * The worker's `coerce` skips what it can't understand; this one refuses it.
  * These cases exist to pin that difference, because the two functions look
  * similar enough that a later edit could quietly make one behave like the
- * other — and a form that silently discards what somebody typed is the exact
+ * other - and a form that silently discards what somebody typed is the exact
  * failure this split was designed to prevent.
  */
 
@@ -25,7 +25,7 @@ function field(overrides: Partial<CustomFieldSpec> = {}): CustomFieldSpec {
   };
 }
 
-describe("parseCustomFieldValue — blanks", () => {
+describe("parseCustomFieldValue - blanks", () => {
   it("clears an optional field", () => {
     for (const blank of [null, undefined, "", []]) {
       expect(parseCustomFieldValue(field(), blank)).toEqual({
@@ -47,7 +47,7 @@ describe("parseCustomFieldValue — blanks", () => {
   });
 });
 
-describe("parseCustomFieldValue — number", () => {
+describe("parseCustomFieldValue - number", () => {
   it("accepts a formatted number", () => {
     expect(parseCustomFieldValue(field(), "1,250 ")).toMatchObject({
       column: "value_num",
@@ -55,7 +55,7 @@ describe("parseCustomFieldValue — number", () => {
     });
   });
 
-  it("REJECTS text rather than skipping it — the whole point of this function", () => {
+  it("REJECTS text rather than skipping it - the whole point of this function", () => {
     expect(parseCustomFieldValue(field(), "about fifty thousand")).toEqual({
       ok: false,
       message: "Budget must be a number",
@@ -76,7 +76,7 @@ describe("parseCustomFieldValue — number", () => {
   });
 });
 
-describe("parseCustomFieldValue — date", () => {
+describe("parseCustomFieldValue - date", () => {
   const dated = field({ type: "date", label: "Close date" });
 
   it("accepts an ISO date", () => {
@@ -102,7 +102,7 @@ describe("parseCustomFieldValue — date", () => {
   });
 });
 
-describe("parseCustomFieldValue — picklist and multiselect", () => {
+describe("parseCustomFieldValue - picklist and multiselect", () => {
   const options = [
     { value: "north", label: "North" },
     { value: "south", label: "South" },
@@ -145,7 +145,7 @@ describe("parseCustomFieldValue — picklist and multiselect", () => {
   });
 });
 
-describe("parseCustomFieldValue — boolean and lookup", () => {
+describe("parseCustomFieldValue - boolean and lookup", () => {
   it("takes only true/false, not the worker's yes/y/1 leniency", () => {
     const flag = field({ type: "boolean", label: "Decision maker" });
     expect(parseCustomFieldValue(flag, true)).toMatchObject({ value: true });
@@ -153,7 +153,7 @@ describe("parseCustomFieldValue — boolean and lookup", () => {
     expect(parseCustomFieldValue(flag, "yes")).toMatchObject({ ok: false });
   });
 
-  it("checks only the SHAPE of a lookup — existence is the controller's job", () => {
+  it("checks only the SHAPE of a lookup - existence is the controller's job", () => {
     const lookup = field({ type: "lookup", label: "Parent account" });
     expect(parseCustomFieldValue(lookup, "11111111-1111-4111-8111-111111111111")).toMatchObject({
       ok: true,
@@ -176,7 +176,7 @@ describe("readCustomFieldValue", () => {
     expect(readCustomFieldValue("multiselect", { value_json: ["north"] })).toEqual(["north"]);
   });
 
-  it("brings numeric back as a number — node-postgres hands it over as a string", () => {
+  it("brings numeric back as a number - node-postgres hands it over as a string", () => {
     expect(readCustomFieldValue("number", { value_num: "1250" })).toBe(1250);
   });
 

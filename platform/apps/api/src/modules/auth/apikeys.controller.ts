@@ -26,7 +26,7 @@ const CreateApiKeyBody = z.object({
   /**
    * Required, and with no default. A key minted without stating what it is for
    * can do nothing (0076 defaults `scopes` to the empty set), and silently
-   * handing out a dead credential is worse than refusing to mint one — the
+   * handing out a dead credential is worse than refusing to mint one - the
    * holder discovers it only when their integration 403s in production.
    */
   scopes: z.array(ApiScope).min(1),
@@ -36,7 +36,7 @@ const CreateApiKeyBody = z.object({
 
 /**
  * Programmatic API keys. The raw `cik_live_...` key is returned EXACTLY ONCE at
- * creation — only its sha256 hash is stored, alongside a 12-char display prefix
+ * creation - only its sha256 hash is stored, alongside a 12-char display prefix
  * so the UI can identify keys without ever holding the secret again.
  */
 @Controller("apikeys")
@@ -86,7 +86,7 @@ export class ApiKeysController {
          VALUES ($1, 'user', $2, 'apikey.create', 'api_key', $3)`,
         [orgId, req.principal?.userId ?? "dev-admin", row.id],
       );
-      // `key` is shown once, never retrievable again — only the hash is stored.
+      // `key` is shown once, never retrievable again - only the hash is stored.
       return {
         id: row.id,
         prefix: row.prefix,
@@ -122,8 +122,8 @@ export class ApiKeysController {
     return this.db.withOrg(orgId, async (client) => {
       // SOFT revoke, not DELETE.
       //
-      // The key stops authenticating immediately — ApiKeyGuard's lookup filters
-      // on `revoked_at IS NULL` — but the row survives, and with it the trail of
+      // The key stops authenticating immediately - ApiKeyGuard's lookup filters
+      // on `revoked_at IS NULL` - but the row survives, and with it the trail of
       // what the key was called, who minted it, what it could do and when it was
       // last used. That trail is most valuable at exactly the moment someone
       // revokes a key in a hurry, which is when a DELETE would destroy it.

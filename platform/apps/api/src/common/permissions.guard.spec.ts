@@ -1,10 +1,10 @@
 /**
- * `PermissionsGuard` — the recordings privacy grants (inventory 13 §2.3, P1–P8).
+ * `PermissionsGuard` - the recordings privacy grants (inventory 13 §2.3, P1-P8).
  *
  * Mounted on exactly ONE route in the whole platform today,
  * `GET /v1/calls/:id/audio` with `@RequirePermission("recordings:listen")`
  * (calls.controller.ts:393). That makes the guard's behaviour easy to change by
- * accident and hard to notice — hence the table.
+ * accident and hard to notice - hence the table.
  */
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -22,7 +22,7 @@ class AudioController {
   @RequirePermission("recordings:listen")
   audio(): void {}
 
-  /** Every other route on the controller — no decorator, guard inert. */
+  /** Every other route on the controller - no decorator, guard inert. */
   list(): void {}
 }
 
@@ -37,7 +37,7 @@ class ExportController {
 
 describe("principalHasPermission", () => {
   it("declares exactly the two permissions the platform knows about", () => {
-    // If a third is added, the guard's table below is incomplete — fail here.
+    // If a third is added, the guard's table below is incomplete - fail here.
     expect([...PERMISSIONS]).toEqual(["recordings:listen", "recordings:export"]);
   });
 
@@ -86,7 +86,7 @@ describe("PermissionsGuard", () => {
     });
 
     // Note this is a 403, not the 401 TenantGuard raises for the same missing
-    // principal — asserting the type here is what makes that distinction real.
+    // principal - asserting the type here is what makes that distinction real.
     await expectHttpError(() => guard.canActivate(context), {
       type: ForbiddenException,
       message: "missing permission: recordings:listen",
@@ -94,7 +94,7 @@ describe("PermissionsGuard", () => {
     });
   });
 
-  it("P3 · allows the admin-key principal — every console request today", () => {
+  it("P3 · allows the admin-key principal - every console request today", () => {
     // CONSEQUENCE WORTH KNOWING (inventory 13 §2.3): the web tier holds the
     // admin key (server-api.ts:17), so every console request arrives
     // viaAdminKey:true and `recordings:listen` is NOT enforced for any console
@@ -144,7 +144,7 @@ describe("PermissionsGuard", () => {
     });
   });
 
-  it("P8 · 403s an org_admin whose grant was revoked — role does not imply the grant", async () => {
+  it("P8 · 403s an org_admin whose grant was revoked - role does not imply the grant", async () => {
     // recordings_listen/export default FALSE in 0001:67-68 and POST /v1/members
     // writes both false, so "org_admin but no grant" is the common shape, not
     // an exotic one.

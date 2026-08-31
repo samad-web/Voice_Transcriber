@@ -10,7 +10,7 @@ import { RetryableError, withProviderRetry } from "./retry";
  * while NOT retrying a 503 marks the call FAILED_ASR / FAILED_ANALYZE
  * permanently and someone has to notice and reprocess it by hand.
  *
- * Fake timers throughout — the real backoff is 2s/6s/18s and no test may
+ * Fake timers throughout - the real backoff is 2s/6s/18s and no test may
  * actually wait for it.
  */
 
@@ -27,7 +27,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("withProviderRetry — what it does not retry", () => {
+describe("withProviderRetry - what it does not retry", () => {
   it("returns the first result without any delay when the call succeeds", async () => {
     const fn = vi.fn().mockResolvedValue("ok");
     await expect(withProviderRetry(fn, "test")).resolves.toBe("ok");
@@ -40,7 +40,7 @@ describe("withProviderRetry — what it does not retry", () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it("gives up immediately on a 404 — a retired model id fails identically every time", async () => {
+  it("gives up immediately on a 404 - a retired model id fails identically every time", async () => {
     // This is why the default analyze model is pinned: `gemini-2.5-flash` began
     // answering 404 and four rounds of backoff only delayed the diagnosis.
     const fn = vi.fn().mockRejectedValue(err("model is no longer available", { status: 404 }));
@@ -70,16 +70,16 @@ describe("withProviderRetry — what it does not retry", () => {
   });
 });
 
-describe("withProviderRetry — what it does retry", () => {
+describe("withProviderRetry - what it does retry", () => {
   // Written as a loop rather than `it.each` so the case list stays strongly
-  // typed — an entry that is not an Error would otherwise pass silently.
+  // typed - an entry that is not an Error would otherwise pass silently.
   const transient: Array<[string, Error]> = [
     ["a 429 rate limit", err("Too Many Requests", { status: 429 })],
     ["a 500", err("Internal", { status: 500 })],
     ["a 502", err("Bad Gateway", { status: 502 })],
     ["a 503 capacity signal", err("UNAVAILABLE", { status: 503 })],
     ["a 504", err("Gateway Timeout", { status: 504 })],
-    // Sarvam's SDK reports statusCode rather than status — the second half of
+    // Sarvam's SDK reports statusCode rather than status - the second half of
     // the provider-agnostic status read.
     ["Sarvam's statusCode form", err("rate limited", { statusCode: 429 })],
     ["a RetryableError with no status at all", new RetryableError("ran to the token ceiling")],
@@ -132,7 +132,7 @@ describe("withProviderRetry — what it does retry", () => {
   });
 });
 
-describe("withProviderRetry — the backoff itself", () => {
+describe("withProviderRetry - the backoff itself", () => {
   it("waits 2s before the first retry", async () => {
     // Jitter pinned to 0 so the boundary is exact. Without the wait the retry
     // would land inside the same rate-limit window that caused the failure.

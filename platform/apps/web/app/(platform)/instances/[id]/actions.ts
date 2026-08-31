@@ -9,7 +9,7 @@ import type { Credentials } from "../enrollment-credentials";
 /**
  * The most dangerous file in the console: every action here takes an `orgId`
  * from its caller and sends the root admin key at it, and several of them
- * destroy data — erasure, device wipe, instance deletion — or mint an
+ * destroy data - erasure, device wipe, instance deletion - or mint an
  * enrollment credential for a handset.
  *
  * So every exported function opens with `requireOperator()`, before anything
@@ -46,11 +46,11 @@ export async function mintKeyAction(input: {
 }
 
 /**
- * Every org-level setting below — transcription, ASR, consent policy, app
- * lock — PATCHes this one endpoint: it is audited, and it bumps every
+ * Every org-level setting below - transcription, ASR, consent policy, app
+ * lock - PATCHes this one endpoint: it is audited, and it bumps every
  * enrolled handset's config version like any other policy edit. Follows the
- * same de-duplication as `deviceAction()` further down — one fetch/error
- * path, thin wrappers per setting — rather than repeating the same
+ * same de-duplication as `deviceAction()` further down - one fetch/error
+ * path, thin wrappers per setting - rather than repeating the same
  * try/fetch/catch four times. `requireOperator()` and `revalidatePath` stay
  * in each wrapper rather than here, because which paths to revalidate differs
  * per setting (transcription and ASR also bump the calls explorer; consent
@@ -64,7 +64,7 @@ async function patchOrgPolicy(orgId: string, body: Record<string, unknown>): Pro
 
 /**
  * Turn transcription on or off for an instance. Rides the existing org policy
- * endpoint — it is one more org-level setting, and reusing it means the change
+ * endpoint - it is one more org-level setting, and reusing it means the change
  * is audited and bumps device config versions like every other policy edit.
  */
 export async function setTranscriptionEnabledAction(input: {
@@ -88,11 +88,11 @@ export async function setTranscriptionEnabledAction(input: {
  * above, this can have a side effect (seeding roles/a default pipeline the
  * first time CRM is enabled) so it rides the dedicated admin endpoint next
  * to that seeding logic, not `patchOrgPolicy`. Disabling never deletes any
- * CRM data it already seeded — CrmPermissionsGuard is what actually revokes
- * access — so re-enabling later needs no reseed.
+ * CRM data it already seeded - CrmPermissionsGuard is what actually revokes
+ * access - so re-enabling later needs no reseed.
  *
  * `admin/tenants/*` is `AdminController`'s cross-tenant surface (same as
- * `createTenantAction` in `instances/new/actions.ts`) — it takes the org id
+ * `createTenantAction` in `instances/new/actions.ts`) - it takes the org id
  * as a URL param, not via `x-org-id`, so this uses `crossTenantHeaders`
  * directly rather than `call()`'s `orgId` option, which would send
  * `adminHeaders`' `x-org-id: DEV_ORG_ID` instead (harmless here since the
@@ -121,7 +121,7 @@ export async function setCrmEnabledAction(input: {
     revalidatePath(`/instances/${input.orgId}`);
     return {};
   } catch {
-    return { error: "API unreachable — is `pnpm --filter @aura/api dev` running?" };
+    return { error: "API unreachable - is `pnpm --filter @aura/api dev` running?" };
   }
 }
 
@@ -131,7 +131,7 @@ export async function setCrmEnabledAction(input: {
  * Used when transcription is switched back on: the calls that arrived while it
  * was off are sitting in TRANSCRIPTION_OFF with their audio intact, and this is
  * what picks them up. `sinceDays: null` means the entire history, which is why
- * the caller is made to choose rather than defaulting to it — a dormant instance
+ * the caller is made to choose rather than defaulting to it - a dormant instance
  * can hold months of stored audio and transcribing it costs real money.
  */
 export async function reprocessBacklogAction(input: {
@@ -162,7 +162,7 @@ export async function reprocessBacklogAction(input: {
  * Rides the same org policy endpoint as the transcription toggle, for the same
  * reasons: audited, and it bumps device config versions with every other policy
  * edit. `null` for language or mode clears the setting back to the deployment
- * default — distinct from omitting the field, which leaves it untouched.
+ * default - distinct from omitting the field, which leaves it untouched.
  */
 export async function setAsrSettingsAction(input: {
   orgId: string;
@@ -252,7 +252,7 @@ export async function updatePolicyAction(input: {
 /**
  * Set, change, or clear the mobile app-lock password for this instance.
  * Rides the org policy endpoint like the transcription toggle and ASR
- * settings — audited, and it bumps device config versions so every enrolled
+ * settings - audited, and it bumps device config versions so every enrolled
  * handset picks the change up on its next config refresh. `password: null`
  * clears the lock for the whole fleet under this org.
  */
@@ -272,11 +272,11 @@ export async function setAppLockPasswordAction(input: {
 }
 
 /**
- * Set (or correct) the telecaller holding one handset — name and an optional
- * employee/agent code — right where the device shows up as connected in the
+ * Set (or correct) the telecaller holding one handset - name and an optional
+ * employee/agent code - right where the device shows up as connected in the
  * console, instead of only after the fact from the org's own owner dashboard.
  * Calling it again on the same device edits the existing telecaller rather
- * than creating a new one, unless `reassign` is set — that mints a fresh
+ * than creating a new one, unless `reassign` is set - that mints a fresh
  * identity for a genuinely different person instead of renaming the last one.
  */
 export async function setDeviceTelecallerAction(input: {
@@ -292,7 +292,7 @@ export async function setDeviceTelecallerAction(input: {
     return { error: "Not authorized" };
   }
   // telecaller-form.tsx already refuses to submit a blank name, but that is
-  // client-side only — this action is an independently-addressable POST
+  // client-side only - this action is an independently-addressable POST
   // endpoint (see the file banner above), so a caller that skips the form
   // entirely could otherwise blank out an existing telecaller's name.
   const name = input.name.trim();
@@ -343,7 +343,7 @@ export async function deleteInstanceAction(
   );
   if (res.error) {
     // `call()` already formats a display-ready error string, but this one
-    // case needs the structured body too — the API answers 409 with
+    // case needs the structured body too - the API answers 409 with
     // {error: "instance_has_calls", calls, devices, message} so the caller
     // can offer the purge-and-retry confirmation instead of a dead end.
     const payload = res.rawBody as { message?: Record<string, unknown> } | undefined;
@@ -375,7 +375,7 @@ export interface OwnerResult {
  * Create a console login for this customer's owner.
  *
  * The API provisions the Supabase Auth user and the org membership together,
- * and hands back the password once — the same one-time contract as an
+ * and hands back the password once - the same one-time contract as an
  * enrollment key, since nothing stores it in readable form afterwards.
  */
 export async function createOwnerAction(input: {

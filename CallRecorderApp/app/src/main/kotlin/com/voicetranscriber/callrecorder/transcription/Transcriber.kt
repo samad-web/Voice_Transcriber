@@ -7,9 +7,9 @@ import java.io.File
  * to this interface and the concrete engine is swapped in one place ([active]).
  *
  * Candidate implementations:
- *  • On-device offline: Whisper (whisper.cpp via JNI) or Vosk — private, no per-use
+ *  • On-device offline: Whisper (whisper.cpp via JNI) or Vosk - private, no per-use
  *    cost, works offline; larger app, heavier CPU.
- *  • Cloud STT: post the file to a hosted speech-to-text API — higher accuracy,
+ *  • Cloud STT: post the file to a hosted speech-to-text API - higher accuracy,
  *    tiny app, but needs network + has per-use cost and privacy trade-offs.
  */
 interface Transcriber {

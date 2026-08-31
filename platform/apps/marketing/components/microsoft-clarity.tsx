@@ -1,7 +1,7 @@
 import Script from "next/script";
 
 /**
- * Microsoft Clarity — session recordings and heatmaps.
+ * Microsoft Clarity - session recordings and heatmaps.
  *
  * ── OFF UNLESS A PROJECT ID IS CONFIGURED ──────────────────────────────────
  *
@@ -9,7 +9,7 @@ import Script from "next/script";
  * Meta pixel and GTM: a developer machine or preview build recording sessions
  * into the same project as real traffic pollutes the heatmaps and replay
  * list with noise nobody can filter out. Baked in at BUILD time, so it is a
- * Docker build arg — setting it only at runtime does nothing.
+ * Docker build arg - setting it only at runtime does nothing.
  *
  * ── IT FIRES ON LOAD, WITH NO CONSENT PROMPT ───────────────────────────────
  *

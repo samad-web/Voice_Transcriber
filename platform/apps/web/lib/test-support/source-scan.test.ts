@@ -5,10 +5,10 @@ import { blankNonCode, matchDelimiter } from "./source-scan";
  * Self-tests for the scanner every guard-mounting suite in this app depends
  * on. Necessary for the same reason `apps/api` ships `guard-harness.spec.ts`
  * with its own: a silently wrong scanner weakens every assertion built on it
- * at once, and it fails OPEN — a function body it truncates before the guard
+ * at once, and it fails OPEN - a function body it truncates before the guard
  * call is reported as unguarded; one it over-extends is reported as guarded.
  */
-describe("blankNonCode — the scanner every guard-mounting suite rests on", () => {
+describe("blankNonCode - the scanner every guard-mounting suite rests on", () => {
   it("blanks a template literal's interpolations, braces included", () => {
     const out = blankNonCode("const u = `${API}/v1/calls/${id}`;");
     expect(out).toHaveLength("const u = `${API}/v1/calls/${id}`;".length);

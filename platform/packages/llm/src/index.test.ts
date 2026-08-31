@@ -5,8 +5,8 @@ import { ExtractionSchema, compileToJsonSchema, validateExtraction } from "@aura
 /**
  * Provider response handling in the analyze stage.
  *
- * The parts worth pinning are the ones that fire when a model misbehaves —
- * empty replies, non-JSON replies, replies that ignore the schema — because
+ * The parts worth pinning are the ones that fire when a model misbehaves -
+ * empty replies, non-JSON replies, replies that ignore the schema - because
  * that is routine, not exceptional, and because `ai_outputs.validation_status`
  * is what qualifyLead reads to decide whether the call becomes a lead.
  *
@@ -37,7 +37,7 @@ import {
   glossaryBlock,
 } from "./index";
 
-/** RD Interlock Brick's real agent shape — see packages/shared extraction tests. */
+/** RD Interlock Brick's real agent shape - see packages/shared extraction tests. */
 const RD_SCHEMA = ExtractionSchema.parse({
   fields: [
     { key: "customer_name", type: "string", description: "Caller's name as stated" },
@@ -105,7 +105,7 @@ describe("glossaryBlock", () => {
 
   it("tells the model the terms are spellings, not answers", () => {
     // Without this sentence the model puts the business's own name into
-    // customer_name — a measured production failure, not a hypothetical.
+    // customer_name - a measured production failure, not a hypothetical.
     expect(glossaryBlock(["RD Interlock"])).toContain("These are spellings, not answers");
   });
 });
@@ -132,7 +132,7 @@ describe("geminiThinking / geminiAnalyzeModel", () => {
   });
 });
 
-describe("analyzeTranscript — provider selection", () => {
+describe("analyzeTranscript - provider selection", () => {
   it("throws a directive error when no provider is configured", () => {
     // Better than returning an empty extraction: an unconfigured worker must
     // fail the call loudly rather than mark every call as "nothing was said".
@@ -160,7 +160,7 @@ describe("analyzeTranscript — provider selection", () => {
   });
 });
 
-describe("analyzeTranscript — response handling", () => {
+describe("analyzeTranscript - response handling", () => {
   beforeEach(() => {
     sarvam.configured.mockReturnValue(true);
   });
@@ -207,7 +207,7 @@ describe("analyzeTranscript — response handling", () => {
 
     expect(result.validationStatus).toBe("repaired");
     expect(result.validationErrors).toStrictEqual([]);
-    // Both attempts are metered — the repair is not free and usage_events must
+    // Both attempts are metered - the repair is not free and usage_events must
     // reflect what was actually spent.
     expect(result.tokensIn).toBe(1900);
     expect(result.tokensOut).toBe(180);
@@ -226,7 +226,7 @@ describe("analyzeTranscript — response handling", () => {
   });
 
   it("treats an empty provider reply as an empty extraction, not a crash", async () => {
-    // `JSON.parse(res.text || "{}")` — an empty reply becomes {}, which passes
+    // `JSON.parse(res.text || "{}")` - an empty reply becomes {}, which passes
     // an all-optional schema. It is qualifyLead's minFilled, not this layer,
     // that stops such a call becoming a lead. Pinned so the division is explicit.
     sarvam.chat.mockResolvedValue(reply(""));
@@ -248,7 +248,7 @@ describe("analyzeTranscript — response handling", () => {
   it("throws on a non-JSON reply so the stage records FAILED_ANALYZE and retries", async () => {
     // The truncated / prose-wrapped reply. Throwing is correct here: the analyze
     // stage catches it, sets error_message and next_attempt_at, and the same
-    // request usually succeeds on the retry — whereas swallowing it would write
+    // request usually succeeds on the retry - whereas swallowing it would write
     // an empty extraction and permanently lose the call's content.
     sarvam.chat.mockResolvedValue(reply('{"customer_name": "Rajesh"'));
     await expect(analyzeTranscript("p", RD_SCHEMA, "t")).rejects.toThrow(SyntaxError);
@@ -371,7 +371,7 @@ describe("generateAgentDraft", () => {
 describe("analyzeConversation", () => {
   it("returns the safe empty shape for a blank transcript without calling a provider", async () => {
     // TRANSCRIPTION_OFF calls and silent recordings reach here. Every string
-    // empty, sentiment neutral, outcome "unknown" — distinct from the "other"
+    // empty, sentiment neutral, outcome "unknown" - distinct from the "other"
     // that a real reading defaults to.
     sarvam.configured.mockReturnValue(true);
     const result = await analyzeConversation("   \n  ");
@@ -399,7 +399,7 @@ describe("analyzeConversation", () => {
   });
 
   it("falls back to a single passthrough turn when no provider is configured", async () => {
-    // Never throws for content reasons — a missing provider must not strand the
+    // Never throws for content reasons - a missing provider must not strand the
     // call, it must degrade to a transcript with one unlabelled turn.
     const result = await analyzeConversation("Hello, RD Interlock?");
 

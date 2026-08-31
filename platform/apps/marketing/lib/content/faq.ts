@@ -1,5 +1,5 @@
 /**
- * Homepage FAQ. Doc 10 §3 row 12 — SEO plus objection handling, marked up as
+ * Homepage FAQ. Doc 10 §3 row 12 - SEO plus objection handling, marked up as
  * schema.org FAQPage (§9).
  *
  * Plain strings, not JSX, because the same array feeds both the rendered

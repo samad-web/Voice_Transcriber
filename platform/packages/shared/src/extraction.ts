@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Dynamic extraction schema — deliberately constrained (design doc §7):
+ * Dynamic extraction schema - deliberately constrained (design doc §7):
  * scalar types, enums, arrays of scalars, one nesting level maximum.
  * One definition drives the LLM schema, the validator, the call_facts
  * projection, and the web UI columns.
@@ -41,7 +41,7 @@ export const ExtractionField = z
    * list: EVERY call for that agent then validates as failed, and the default
    * lead rules treat a failed validation as "not a lead" (leads.ts). One
    * un-filled dropdown in the agent editor and the tenant's board goes silently
-   * dry — no error, no failed call, just nothing arriving. The message names the
+   * dry - no error, no failed call, just nothing arriving. The message names the
    * field because the editor shows it against that row.
    */
   .superRefine((field, ctx) => {
@@ -49,7 +49,7 @@ export const ExtractionField = z
       ctx.addIssue({
         code: "custom",
         path: ["enumValues"],
-        message: `enum field "${field.key}" must list at least one option — an enum with no options can never be satisfied, so every call for this agent would fail validation`,
+        message: `enum field "${field.key}" must list at least one option - an enum with no options can never be satisfied, so every call for this agent would fail validation`,
       });
     }
   });
@@ -65,7 +65,7 @@ export type ExtractionSchema = z.infer<typeof ExtractionSchema>;
  * above existed.
  *
  * Agents are versioned and immutable (entities.ts), so a saved version cannot be
- * corrected in place — and a call being analysed months later must not blow up
+ * corrected in place - and a call being analysed months later must not blow up
  * on a config that was legal when it was written. Reading therefore degrades an
  * optionless enum to an unconstrained string instead of throwing: the field
  * stops being a validation trap and starts collecting whatever the caller
@@ -128,8 +128,8 @@ export function compileToJsonSchema(schema: ExtractionSchema): Record<string, un
  * ISO-8601 calendar date, optionally with a time and an offset.
  *
  * `Date.parse` alone is not this check, despite reading like it: it accepts a
- * bare year, so a model that answers `quotation_date` with the QUANTITY —
- * "5000" — validated cleanly and landed in the customer's CRM as the year 5000.
+ * bare year, so a model that answers `quotation_date` with the QUANTITY -
+ * "5000" - validated cleanly and landed in the customer's CRM as the year 5000.
  * The shape is asserted first and `Date.parse` only confirms the components are
  * a real date ("2026-13-01" matches the shape and is not a date).
  *
@@ -146,7 +146,7 @@ export function isIsoDateTime(value: unknown): boolean {
 }
 
 /**
- * Runtime validator — consumer (b) of the single field definition. Returns a
+ * Runtime validator - consumer (b) of the single field definition. Returns a
  * list of problems; empty means valid. Used by the analyze stage (with one
  * repair attempt on failure) and by the agent test endpoint.
  */

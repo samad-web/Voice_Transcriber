@@ -5,7 +5,7 @@ import { ownerGet } from "@/lib/owner-context";
 import type { DealBoardColumn, Stage } from "../types";
 import { DealsBoard } from "./deals-board";
 
-export const metadata: Metadata = { title: "Deals — Aura" };
+export const metadata: Metadata = { title: "Deals - Aura" };
 
 interface DealBoardResponse {
   pipelineId: string;
@@ -15,7 +15,7 @@ interface DealBoardResponse {
 }
 
 /**
- * CRM Phase 1 foundation (E0.1) — the Deal board, alongside /owner/board
+ * CRM Phase 1 foundation (E0.1) - the Deal board, alongside /owner/board
  * (leads) rather than replacing it. Same shape as that page: one ownerGet
  * call, null -> fallback card, else pass straight to the client board.
  */

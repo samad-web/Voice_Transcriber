@@ -1,16 +1,16 @@
--- 0034_deal_pipelines.sql — CRM Phase 1 foundation, part 1: pipelines.
+-- 0034_deal_pipelines.sql - CRM Phase 1 foundation, part 1: pipelines.
 --
 -- Strangler-fig build (CRM PRD, Phase 1 / Layer 0): this and the five
 -- migrations that follow (0035-0039) add a real Account/Contact/Deal object
 -- model alongside the existing `leads` table. Nothing here changes `leads`,
 -- apps/worker/src/pipeline/leads.ts, call_facts, or the CRM outbound
--- connector pipeline (crm_integrations/crm_sync_log) — those stay exactly as
+-- connector pipeline (crm_integrations/crm_sync_log) - those stay exactly as
 -- they are until a later, separately-reviewed cutover migration.
 --
 -- organizations.lead_stages (0010) is one implicit pipeline per org. Deals
 -- need multiple pipelines per org (a brick supplier's sales pipeline is not
--- its support pipeline), so this reuses that column's SHAPE — a jsonb array
--- of {key,label,terminal?}, app-validated, not a DB enum — as a real table
+-- its support pipeline), so this reuses that column's SHAPE - a jsonb array
+-- of {key,label,terminal?}, app-validated, not a DB enum - as a real table
 -- instead of a single organizations column, for the same reason 0010 gave:
 -- renaming a board column must not be a migration.
 
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS deal_pipelines (
   -- widening it to other object types is a deliberate future decision, not a
   -- config knob an admin could turn on by accident.
   object_type  text NOT NULL DEFAULT 'deal' CHECK (object_type = 'deal'),
-  -- Array of {key,label,terminal?:'won'|'lost'} — same shape and validation
+  -- Array of {key,label,terminal?:'won'|'lost'} - same shape and validation
   -- (packages/shared/src/pipelines.ts) as organizations.lead_stages.
   stages       jsonb NOT NULL DEFAULT '[]'::jsonb,
   -- Exactly one default per org is an app-enforced invariant (pipelines

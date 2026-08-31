@@ -5,7 +5,7 @@ import { ownerGet } from "@/lib/owner-context";
 import { MessagingSetup } from "./messaging-setup-client";
 import type { MessagingChannel } from "./actions";
 
-export const metadata: Metadata = { title: "WhatsApp Setup — Aura" };
+export const metadata: Metadata = { title: "WhatsApp Setup - Aura" };
 
 export default async function MessagingSetupPage() {
   const data = await ownerGet<{ channels: MessagingChannel[] }>("/v1/messaging/channels");
@@ -28,7 +28,7 @@ export default async function MessagingSetupPage() {
     <>
       <PageHeader title="WhatsApp Setup" context="Settings" />
       <p className="max-w-2xl text-sm text-text-muted">
-        WhatsApp goes through Wasi — your own WhatsApp Business Solution Provider platform — not
+        WhatsApp goes through Wasi - your own WhatsApp Business Solution Provider platform - not
         Meta directly. Connecting a number here needs the Hub API key and client id Wasi already
         issued for this org, plus a one-time paste of the forward secret from Wasi's admin panel.
       </p>

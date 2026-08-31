@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0053 — the booking lifecycle: reminders, reschedule, attendance, nurture
+-- 0053 - the booking lifecycle: reminders, reschedule, attendance, nurture
 --
 -- Everything the funnel does to a submission BEFORE a booking exists is already
 -- built: capture, qualify, dedupe, the resume nudge. Nothing exists for what
@@ -15,13 +15,13 @@
 -- ── WHY A SECOND OUTBOX, NOT A WIDER funnel_followups ───────────────────────
 --
 -- funnel_followups is keyed (submission_id, template, channel) and that key
--- means "once per person, ever" — the right rule for a rejection or a
+-- means "once per person, ever" - the right rule for a rejection or a
 -- went-quiet nudge, which happen at most once in a person's life in this
 -- system. A reminder does not fit that key: a rescheduled call needs a SECOND
 -- 24h/1h/5min sequence for the same submission, and a person who no-shows,
 -- gets nurtured, then books and no-shows again needs a second nurture drip.
 -- The natural key for all of this is the BOOKING, not the person, so it is a
--- separate table keyed on booking_slot_id — everything else about it (the
+-- separate table keyed on booking_slot_id - everything else about it (the
 -- queue is the table, attempts/backoff/dead-letter, ON CONFLICT DO NOTHING) is
 -- copied from funnel_followups unchanged.
 ------------------------------------------------------------------------------
@@ -29,7 +29,7 @@
 ------------------------------------------------------------------------------
 -- Form fields (§ the salutation and the business-type "other" gap)
 --
--- Both descriptive, not qualifying — same status as digital_presence already
+-- Both descriptive, not qualifying - same status as digital_presence already
 -- has. Neither feeds qualify() and neither gets a NOT NULL: every question on
 -- this form is optional except the three contact fields (§3.3).
 ------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ ALTER TABLE marketing.funnel_submissions
   ADD COLUMN IF NOT EXISTS salutation text
     CHECK (salutation IN ('mr', 'mrs', 'ms', 'dr', 'other')),
   -- Free text, populated only when business_type = 'other'. Same shape as
-  -- crm_name (free text behind a select) — no CHECK, because what someone
+  -- crm_name (free text behind a select) - no CHECK, because what someone
   -- types to describe "something else" cannot be enumerated in advance.
   ADD COLUMN IF NOT EXISTS business_type_other text;
 
@@ -51,7 +51,7 @@ ALTER TABLE marketing.funnel_contact_history
 --
 -- NULL = the call hasn't happened yet, or happened and nobody has recorded the
 -- outcome. Deliberately not folded into `booking_slots.status` (open / booked
--- / cancelled) — status answers "is this hour claimed", attendance answers
+-- / cancelled) - status answers "is this hour claimed", attendance answers
 -- "did the conversation happen", and a slot can be booked with either
 -- attendance value or none. Recorded by an operator from the console, so who
 -- and when are worth keeping for the same reason rejected_by/rejected_at are.
@@ -69,7 +69,7 @@ ALTER TABLE marketing.booking_slots
 -- Identical reasoning to 0033's funnel_resume_tokens: a table and not a signed
 -- URL, because it is minted by the worker and verified by the marketing app
 -- (sharing FUNNEL_COOKIE_SECRET across both would be a second copy of a
--- security primitive), and because it needs to be revocable — it grants
+-- security primitive), and because it needs to be revocable - it grants
 -- write access to someone's calendar slot and travels over WhatsApp/email.
 -- Only the hash is stored, for the same reason a password hash is.
 --
@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS reschedule_tokens_booking_slot
 -- Same shape as marketing.funnel_followups (0024): the queue is the table,
 -- ON CONFLICT DO NOTHING makes enqueue idempotent, NULL next_attempt_at is
 -- terminal. The unique key is (booking_slot_id, template, channel) rather than
--- (submission_id, template, channel) — see the file header for why.
+-- (submission_id, template, channel) - see the file header for why.
 ------------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS marketing.booking_notifications (
@@ -140,7 +140,7 @@ CREATE INDEX IF NOT EXISTS booking_notifications_due
 --
 --   reminder_call_*  is a NEW, untested delivery path (a new outbox, a new
 --                    worker sweep) going out to people close to a real
---                    appointment — 0033's lesson (shipped enabled once,
+--                    appointment - 0033's lesson (shipped enabled once,
 --                    three real people were messaged before the owner had
 --                    read the wording) applies directly.
 --
@@ -176,16 +176,16 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
 
 ('call_attended', 'whatsapp',
  'Hi {{title_name}}, thanks for the call today. It was good to talk through what you''re ' ||
- 'looking for — we''ll follow up with next steps shortly.',
+ 'looking for - we''ll follow up with next steps shortly.',
  true),
 
 ('call_no_show', 'whatsapp',
  'Hi {{title_name}}, we had a call scheduled today and didn''t manage to connect. ' ||
- 'No trouble at all — pick a new time whenever suits: {{reschedule_link}}',
+ 'No trouble at all - pick a new time whenever suits: {{reschedule_link}}',
  true),
 
 ('nurture_1', 'whatsapp',
- -- ⚠️ UNAPPROVED WORDING — see components/proof.tsx in apps/marketing. Get the
+ -- ⚠️ UNAPPROVED WORDING - see components/proof.tsx in apps/marketing. Get the
  -- customer's written sign-off before enabling this row.
  'Hi {{title_name}}, following up after the call we missed. One of our customers, RD Interlock ' ||
  'Bricks, told us: "Our conversion rate is five times what it was. We are not calling more ' ||
@@ -194,14 +194,14 @@ INSERT INTO marketing.message_templates (key, channel, body, enabled) VALUES
  false),
 
 ('nurture_2', 'whatsapp',
- -- ⚠️ UNAPPROVED WORDING — same caveat as nurture_1.
+ -- ⚠️ UNAPPROVED WORDING - same caveat as nurture_1.
  'Hi {{title_name}}, another quick note. Fortune Innovatives told us: "The insights are ' ||
  'what we train the team on now. Our objection handling is a different thing from what ' ||
  'it was." If you''d still like to see this on your own calls: {{reschedule_link}}',
  false),
 
 ('nurture_3', 'whatsapp',
- 'Hi {{title_name}}, last note from us on this — the offer to talk stands whenever you''re ' ||
+ 'Hi {{title_name}}, last note from us on this - the offer to talk stands whenever you''re ' ||
  'ready, no pressure. Pick a time here if that changes: {{reschedule_link}}',
  false)
 
@@ -227,7 +227,7 @@ ON CONFLICT (key, channel) DO NOTHING;
 -- nothing. A migration that silently overwrote hand-written copy would make the
 -- editor untrustworthy.
 --
--- `{{reschedule_link}}` is OPTIONAL, like `{{meet_link}}` beside it —
+-- `{{reschedule_link}}` is OPTIONAL, like `{{meet_link}}` beside it -
 -- fillTemplate() deletes the sentence containing it when no link could be
 -- minted, rather than substituting a placeholder word. So a deployment with no
 -- SITE_DOMAIN keeps sending a correct confirmation that simply does not offer
@@ -246,21 +246,21 @@ UPDATE marketing.message_templates
 -- Greet people with the title they gave us.
 --
 -- The form now asks for a salutation, so `{{title_name}}` resolves to
--- "Mr. Ramesh Kumar" for anyone who chose one. It degrades in two steps —
+-- "Mr. Ramesh Kumar" for anyone who chose one. It degrades in two steps -
 -- to the first name when they did not, and to "there" when the name is
--- unusable — so this is strictly an upgrade over `{{first_name}}` and cannot
+-- unusable - so this is strictly an upgrade over `{{first_name}}` and cannot
 -- produce a worse greeting than the one it replaces.
 --
 -- Every default body in @aura/shared now opens with it. These UPDATEs bring the
 -- ALREADY-SEEDED rows (0026 and 0033) into line, because a row that exists wins
--- over the code fallback — without them, production would keep sending
+-- over the code fallback - without them, production would keep sending
 -- "Hi Ramesh," from the database while the catalogue claimed otherwise, and
 -- message-templates.test.ts would be asserting a string nothing sends.
 --
 -- ── GUARDED ON THE EXACT PRIOR TEXT, ONE STATEMENT PER STAGE ──────────────
 --
 -- The tempting version is one `regexp_replace` over every row. It is wrong
--- twice: it would rewrite copy an operator has reworded (0029's rule — theirs
+-- twice: it would rewrite copy an operator has reworded (0029's rule - theirs
 -- wins), and it would leave no literal of the new text anywhere in the SQL, so
 -- the catalogue-vs-seed drift test would have nothing to match and would stop
 -- being able to tell these two sources apart. Verbose and checkable beats
@@ -301,10 +301,10 @@ UPDATE marketing.message_templates
 
 UPDATE marketing.message_templates
    SET body = 'Hi {{title_name}}, you started telling us about your business on Aura but didn''t finish. ' ||
-              'It takes under a minute — pick up where you left off: {{resume_link}}'
+              'It takes under a minute - pick up where you left off: {{resume_link}}'
  WHERE key = 'resume_form' AND channel = 'whatsapp'
    AND body = 'Hi {{first_name}}, you started telling us about your business on Aura but didn''t finish. ' ||
-              'It takes under a minute — pick up where you left off: {{resume_link}}';
+              'It takes under a minute - pick up where you left off: {{resume_link}}';
 
 UPDATE marketing.message_templates
    SET body = 'Hi {{title_name}}, your Aura enquiry is still open. Answer the last few questions and ' ||
@@ -319,20 +319,20 @@ UPDATE marketing.message_templates
 -- apps/api and apps/worker reach every table above through the admin pool
 -- (schema owner), so neither needs a grant.
 --
--- `aura_marketing` — the public, unauthenticated website — gets:
+-- `aura_marketing` - the public, unauthenticated website - gets:
 --   · booking_slots: no NEW grant needed. attendance/attendance_recorded_*
 --     are written only from the admin console via the admin pool; the
 --     existing column-scoped UPDATE from 0023 is untouched and does not cover
 --     these columns.
 --   · reschedule_tokens: SELECT + UPDATE (used_at) only, identical reasoning
---     to 0033 — the website must read a token and stamp first-use, and must
+--     to 0033 - the website must read a token and stamp first-use, and must
 --     never be able to mint one itself.
 --   · booking_notifications: NOTHING, for the same reason funnel_followups
---     gets nothing (0024) — an internet-facing server that can insert into an
+--     gets nothing (0024) - an internet-facing server that can insert into an
 --     outbox is one that can make the platform message an arbitrary number.
 ------------------------------------------------------------------------------
 
--- REVOKE FIRST. This is not defensive tidying — without it the two GRANTs
+-- REVOKE FIRST. This is not defensive tidying - without it the two GRANTs
 -- below are no-ops on top of something wider. See the block at the end of this
 -- file for what that cost, and why it is being fixed here for two other tables
 -- as well.
@@ -345,7 +345,7 @@ GRANT UPDATE (used_at) ON marketing.reschedule_tokens TO aura_marketing;
 -- The column-scoped UPDATE that 0051 forgot and 0052 had to add afterwards.
 --
 -- 0020 granted `funnel_contact_history` only SELECT and INSERT table-wide, so
--- EVERY updatable column on it has to be named explicitly — 0022 did it for the
+-- EVERY updatable column on it has to be named explicitly - 0022 did it for the
 -- original seven answers, 0028 for crm_satisfied, and 0052 for digital_presence
 -- after 0051 shipped without it and every step-2 submission in production
 -- failed with "permission denied for table funnel_contact_history".
@@ -356,7 +356,7 @@ GRANT UPDATE (used_at) ON marketing.reschedule_tokens TO aura_marketing;
 --
 -- `salutation` on that table needs nothing: it is only ever INSERTed, on the
 -- history row created at step 1, and INSERT is already granted table-wide.
--- Both columns on `funnel_submissions` need nothing either — 0020 granted
+-- Both columns on `funnel_submissions` need nothing either - 0020 granted
 -- SELECT, INSERT and UPDATE table-wide there.
 ------------------------------------------------------------------------------
 
@@ -400,7 +400,7 @@ END $$;
 --       GRANT SELECT, INSERT, UPDATE ON TABLES TO aura_marketing;
 --
 -- so every table created in this schema afterwards ARRIVES with all three.
--- A migration that only adds grants therefore narrows nothing — the GRANT is a
+-- A migration that only adds grants therefore narrows nothing - the GRANT is a
 -- no-op on top of something wider, and the file reads as though it worked.
 -- 0023, 0024, 0026 and 0032 all get this right by doing `REVOKE ALL ... FROM
 -- aura_marketing` first; 0031 and 0033 skipped that step, and the comments
@@ -408,8 +408,8 @@ END $$;
 --
 -- ── WHAT IT MEANT ─────────────────────────────────────────────────────────
 --
--- Exploiting it needs a second bug — an injection or a code path that writes
--- where it should not — because nothing in the application issues these
+-- Exploiting it needs a second bug - an injection or a code path that writes
+-- where it should not - because nothing in the application issues these
 -- statements. That is exactly the point: this is the containment layer that is
 -- supposed to hold WHEN something else fails, and it was not holding. With
 -- INSERT on funnel_resume_tokens, the compromise of a public unauthenticated
@@ -433,8 +433,8 @@ GRANT SELECT ON marketing.funnel_criteria TO aura_marketing;
 -- The default is narrowed to SELECT and INSERT: SELECT because every table here
 -- is read by the site, INSERT because `funnel_contact_history` and
 -- `funnel_rate_limit` genuinely need it table-wide. UPDATE is dropped, because
--- every table that needs it has needed it on SPECIFIC COLUMNS — booking_slots
--- (0023/0027/0029), funnel_resume_tokens (0033), reschedule_tokens (above) —
+-- every table that needs it has needed it on SPECIFIC COLUMNS - booking_slots
+-- (0023/0027/0029), funnel_resume_tokens (0033), reschedule_tokens (above) -
 -- and a table-wide default is what silently overrode each of those.
 --
 -- `funnel_submissions` and `funnel_criteria` keep their existing table-wide

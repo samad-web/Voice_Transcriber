@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- 0021 — converting a funnel lead into a client
+-- 0021 - converting a funnel lead into a client
 --
 -- 0020 captures enquiries into `marketing.funnel_submissions`. This adds the
 -- other end of that journey: the record that a given enquiry became a paying
@@ -15,12 +15,12 @@
 --     public marketing server a readable pointer into the tenant table it was
 --     specifically walled off from.
 --   · ON DELETE would couple the two lifecycles. Erasing a customer's org must
---     not silently rewrite the marketing record of how they arrived — that
+--     not silently rewrite the marketing record of how they arrived - that
 --     record is pre-contract sales history, kept under its own retention rule.
 --
 -- So it is a plain uuid, resolved with a LEFT JOIN by the operator API, which
 -- connects as the schema owner and can see both. A converted org that is later
--- deleted leaves a dangling id, and the join simply reports no name — which is
+-- deleted leaves a dangling id, and the join simply reports no name - which is
 -- the honest answer, not a broken row.
 ------------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
--- 0009_crm_connectors.sql — turn the webhook dispatcher into a CRM connector engine.
+-- 0009_crm_connectors.sql - turn the webhook dispatcher into a CRM connector engine.
 --
 -- 0008 made the request configurable: endpoint, auth scheme, headers, field
 -- map. That is enough for a webhook, and not enough for a CRM. Real targets
@@ -20,7 +20,7 @@
 --      auth_prefix carries the literal.
 --
 -- Plus `id_path`, so the id the CRM assigns to the record it just created is
--- captured into crm_sync_log.external_id rather than thrown away — without it
+-- captured into crm_sync_log.external_id rather than thrown away - without it
 -- there is no way to answer "which lead did this call become?".
 
 -- ── 1. Connector configuration ────────────────────────────────────────
@@ -87,11 +87,11 @@ CREATE INDEX IF NOT EXISTS crm_sync_log_integration_recent
 -- auth_secret now holds "v1.gcm:<iv>:<tag>:<ciphertext>" when CRM_SECRET_KEY
 -- is configured. The column stays text and the prefix is self-describing, so
 -- rows written before this migration decrypt as themselves and are sealed the
--- next time they are saved — no backfill, no downtime.
+-- next time they are saved - no backfill, no downtime.
 COMMENT ON COLUMN crm_integrations.auth_secret IS
   'AES-256-GCM sealed credential (v1.gcm:iv:tag:ct) when CRM_SECRET_KEY is set; '
   'plaintext for rows written before 0009. Never returned by the API.';
 
 COMMENT ON COLUMN crm_integrations.config IS
   'Non-secret per-tenant values interpolated into endpoint/headers/body. '
-  'Readable by the console — do not put credentials here.';
+  'Readable by the console - do not put credentials here.';

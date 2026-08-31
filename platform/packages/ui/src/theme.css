@@ -1,9 +1,9 @@
 /*
- * @aura/ui — design system v2 tokens.
+ * @aura/ui - design system v2 tokens.
  * Contract: "Build docs/16_DESIGN_SYSTEM_V2_AND_FUNNEL.md" §1.
  *
  * ONE token set for the console (apps/web) and the marketing site (apps/marketing).
- * Tailwind v4, CSS-first. There is deliberately NO tailwind.config.js in this repo —
+ * Tailwind v4, CSS-first. There is deliberately NO tailwind.config.js in this repo -
  * do not add one.
  *
  * ── HOW TO WIRE IT UP ────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@
  * pull in CSS. Without the @import above, every `bg-surface` / `text-text` /
  * `border-border` utility in this package resolves to nothing and the kit
  * renders unstyled. apps/web is slice 2 and is not edited by this slice, so
- * that one line is an outstanding integration step — see the run report.
+ * that one line is an outstanding integration step - see the run report.
  *
  * ── WHY THE @theme BLOCK IS PURELY ADDITIVE ──────────────────────────────────
  * No `--color-*: initial;` reset. The console still has ~50 files on Tailwind's
@@ -33,14 +33,14 @@
  */
 
 @theme {
-  /* ── Neutrals — the system is 90% these ─────────────────────────────────── */
+  /* ── Neutrals - the system is 90% these ─────────────────────────────────── */
   --color-bg: #ffffff;
   --color-bg-subtle: #fafafa;
   --color-surface: #ffffff;
   --color-surface-hover: #f5f5f5;
 
   /* Decorative hairline: card edges, table rules, dividers. 1.26:1 on bg, and
-     that is fine — WCAG 1.4.11 governs boundaries that *identify a control or
+     that is fine - WCAG 1.4.11 governs boundaries that *identify a control or
      its state*, not ornament. Anything a user has to find and operate uses
      --color-border-strong instead. */
   --color-border: #e5e5e5;
@@ -53,17 +53,17 @@
 
   --color-text: #171717;
   /* CHANGED #737373 -> #6B6B6B. #737373 is 4.74:1 on #FFFFFF but only 4.35:1 on
-     --color-surface-hover (#F5F5F5) — so muted text failed AA the moment a row
+     --color-surface-hover (#F5F5F5) - so muted text failed AA the moment a row
      or menu item was hovered, which is precisely when it is being read.
      #6B6B6B holds 4.89:1 on the hover surface. */
   --color-text-muted: #6b6b6b;
-  /* CHANGED #A3A3A3 -> #8A8A8A. 3.45:1 — the LARGE-TEXT/decorative tier only:
+  /* CHANGED #A3A3A3 -> #8A8A8A. 3.45:1 - the LARGE-TEXT/decorative tier only:
      watermarks, disabled labels, icon tint. Hints and placeholders convey
      information and must use --color-text-muted. FormField enforces that. */
   --color-text-subtle: #8a8a8a;
 
-  /* ── Accent — sparingly: primary CTA, active nav, focus ring, selection ──── */
-  --color-accent: #2563eb; /* 5.17:1 on bg — also the focus ring, needs >=3:1 */
+  /* ── Accent - sparingly: primary CTA, active nav, focus ring, selection ──── */
+  --color-accent: #2563eb; /* 5.17:1 on bg - also the focus ring, needs >=3:1 */
   --color-accent-hover: #1d4ed8;
   --color-accent-subtle: #eff6ff;
   --color-accent-text: #1e40af; /* 8.01:1 on --color-accent-subtle */
@@ -73,12 +73,12 @@
      against it. In dark mode this resolves to near-black on bright blue. */
   --color-accent-fg: #ffffff; /* 5.17:1 on accent, 6.70:1 on accent-hover */
 
-  /* ── Semantic — status only, never decoration ───────────────────────────── */
+  /* ── Semantic - status only, never decoration ───────────────────────────── */
   /* The bare hue is for ICONS AND GRAPHICS (>=3:1). It is NOT a text colour on
      bg: --color-success is 3.30:1 on white. Status *text* uses the -text token
      on its -subtle background; StatusChip is built that way. */
   --color-success: #16a34a; /* 3.30:1 on bg */
-  /* CHANGED #CA8A04 -> #A16207. The contract value is 2.94:1 on white — it
+  /* CHANGED #CA8A04 -> #A16207. The contract value is 2.94:1 on white - it
      misses even the 3:1 graphic floor, so a warning icon was invisible against
      the one background it always sits on. #A16207 is 4.92:1. */
   --color-warning: #a16207;
@@ -87,32 +87,32 @@
 
   /* ADDED: tinted background + accessible foreground per status. Needed because
      StatusChip must be legible in both modes and colour-alone fails anyway
-     (see status-chip.tsx — every status also carries a distinct glyph). */
+     (see status-chip.tsx - every status also carries a distinct glyph). */
   --color-success-subtle: #f0fdf4;
   --color-success-text: #15803d; /* 4.79:1 on success-subtle */
   --color-warning-subtle: #fefce8;
   --color-warning-text: #854d0e; /* 6.62:1 on warning-subtle */
   --color-danger-subtle: #fef2f2;
   --color-danger-text: #b91c1c; /* 5.91:1 on danger-subtle */
-  --color-danger-fg: #ffffff; /* 4.83:1 on danger — label on a danger fill */
+  --color-danger-fg: #ffffff; /* 4.83:1 on danger - label on a danger fill */
   --color-info-subtle: #ecfeff;
   --color-info-text: #155e75; /* 6.99:1 on info-subtle */
 
   /* ── Terminal surface (ConsolePanel) ────────────────────────────────────── */
-  /* The raw-JSON / pipeline-log panel. It stays dark in BOTH modes on purpose —
-     a monospace log panel reading as a terminal is the affordance — but it now
+  /* The raw-JSON / pipeline-log panel. It stays dark in BOTH modes on purpose -
+     a monospace log panel reading as a terminal is the affordance - but it now
      uses its own named tokens rather than `bg-black`, so it reads as a
      deliberate inverted surface instead of a leftover from the old system. */
   --color-terminal: #0f1115;
   --color-terminal-border: #262b33;
   --color-terminal-text: #c9d1d9; /* 12.24:1 on terminal */
-  --color-terminal-muted: #8b949e; /* 6.14:1 — the panel header label */
+  --color-terminal-muted: #8b949e; /* 6.14:1 - the panel header label */
   --color-terminal-log: #7ee787; /* 12.30:1 on terminal */
   --color-terminal-danger: #ff9492; /* 8.91:1 on terminal */
 
   /* ── Type ───────────────────────────────────────────────────────────────── */
   /* Inter for everything; the three-font system is retired (doc 16 §1.2).
-     `--font-inter` is what next/font sets in both apps — next/font self-hosts
+     `--font-inter` is what next/font sets in both apps - next/font self-hosts
      the woff2, subsets it, and emits font-display:swap, which is the contract's
      "self-hosted, subset, swap" requirement met without checking a binary into
      the repo. The literal "Inter" fallback keeps the stack valid in any app
@@ -132,9 +132,9 @@
   --text-xs--line-height: 1.5;
   --text-sm: 0.875rem; /* 14 */
   --text-sm--line-height: 1.5;
-  --text-base: 1rem; /* 16 — console body */
+  --text-base: 1rem; /* 16 - console body */
   --text-base--line-height: 1.5;
-  --text-lg: 1.125rem; /* 18 — marketing body */
+  --text-lg: 1.125rem; /* 18 - marketing body */
   --text-lg--line-height: 1.5;
   --text-xl: 1.25rem; /* 20 */
   --text-xl--line-height: 1.4;
@@ -147,15 +147,15 @@
   --text-5xl: 3rem; /* 48 */
   --text-5xl--line-height: 1.1;
 
-  /* Weights 400/500/600 only — 700+ is not in the system. */
+  /* Weights 400/500/600 only - 700+ is not in the system. */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
 
-  /* ── Space — 4px base: 4 8 12 16 24 32 48 64 96 ─────────────────────────── */
+  /* ── Space - 4px base: 4 8 12 16 24 32 48 64 96 ─────────────────────────── */
   --spacing: 0.25rem;
 
-  /* ── Radius — `rounded-none` is gone ────────────────────────────────────── */
+  /* ── Radius - `rounded-none` is gone ────────────────────────────────────── */
   --radius-sm: 6px; /* inputs, chips */
   --radius-md: 8px; /* buttons, cards */
   --radius-lg: 12px; /* modals, feature cards */
@@ -164,14 +164,14 @@
   --radius-xl: 20px;
   --radius-full: 9999px;
 
-  /* ── Elevation — borders do most of the work ────────────────────────────── */
+  /* ── Elevation - borders do most of the work ────────────────────────────── */
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
-  /* "Lifted" elevation for brand-register surfaces — mirrors marketing's own
+  /* "Lifted" elevation for brand-register surfaces - mirrors marketing's own
      --mk-shadow-lift (a tinted glow, not just a bigger grey shadow). */
   --shadow-lift: 0 2px 4px rgb(11 18 32 / 0.05), 0 20px 40px -20px rgb(59 107 238 / 0.32);
-  /* Card's new DEFAULT elevation — mirrors marketing's own --mk-shadow (a
+  /* Card's new DEFAULT elevation - mirrors marketing's own --mk-shadow (a
      soft, long-throw ambient shadow), so every card reads as "designed" like
      .mk-card, not just the ones that opt into --shadow-lift. Console cards
      used to default to the flatter --shadow-sm; that was the single biggest
@@ -187,13 +187,13 @@
 
 /*
  * ── Brand gradient ──────────────────────────────────────────────────────────
- * The one canonical definition. Previously declared twice — once here
- * implicitly via apps/marketing's own brand.css — which is exactly the drift
+ * The one canonical definition. Previously declared twice - once here
+ * implicitly via apps/marketing's own brand.css - which is exactly the drift
  * doc 16's "one token set" rule exists to prevent. brand.css now references
  * these instead of redeclaring the hexes. Plain custom properties, not inside
  * the @theme block above: a gradient isn't a Tailwind colour/spacing
  * namespace, so this is consumed via `style` / arbitrary values, the same way
- * brand.css always used it. Constant across light and dark — the mark reads
+ * brand.css always used it. Constant across light and dark - the mark reads
  * the same intensity on both grounds, only the surface around it changes.
  */
 :root {
@@ -216,7 +216,7 @@
  *
  * Specificity note: Tailwind emits @theme vars onto `:root,:host` (0,1,0). Both
  * blocks below are (0,2,0), so they win regardless of source order. That is
- * load-bearing — an app importing this file before its own @theme block would
+ * load-bearing - an app importing this file before its own @theme block would
  * otherwise silently lose dark mode.
  *
  * Shadows barely register on a dark background, so hierarchy in dark mode comes
@@ -234,11 +234,11 @@
 
     --color-text: #fafafa; /* 17.18:1 on surface */
     --color-text-muted: #a3a3a3; /* 7.11:1 on surface */
-    --color-text-subtle: #7d7d7d; /* 4.81:1 on bg — decorative tier */
+    --color-text-subtle: #7d7d7d; /* 4.81:1 on bg - decorative tier */
 
     /* Brighter blue: at #2563EB the focus ring is only 3.07:1 on --color-surface,
        which is too close to the floor for the one affordance this system now
-       depends on. #3B82F6 gives 4.87:1 — and the accent FILL therefore takes a
+       depends on. #3B82F6 gives 4.87:1 - and the accent FILL therefore takes a
        near-black label (5.19:1) rather than white (which would be 3.95:1, a
        fail). Dark-on-bright in dark mode is intentional, not an oversight. */
     --color-accent: #3b82f6;
@@ -267,12 +267,12 @@
        lighter panel AND a noticeably stronger edge than --color-border here
        (2.01:1 vs bg, against the general border token's 1.46:1). Both are
        decorative container edges, not control boundaries, so the 3:1 of
-       WCAG 1.4.11 does not apply — this is a legibility fix, not a compliance
+       WCAG 1.4.11 does not apply - this is a legibility fix, not a compliance
        one. */
     --color-terminal: #14181f;
     --color-terminal-border: #3d444d;
 
-    /* --shadow-card is the one shadow token that DOES change in dark mode —
+    /* --shadow-card is the one shadow token that DOES change in dark mode -
        unlike sm/md/lg above, it mirrors marketing's own --mk-shadow, which
        needs actual black rather than a light-mode navy tint to register on a
        dark ground at all. */
@@ -339,7 +339,7 @@
 
   /*
    * THE focus ring (doc 16 §1.5). Global, not per-component, because the old
-   * system used thick black borders for affordance and this one does not —
+   * system used thick black borders for affordance and this one does not -
    * focus visibility is now load-bearing for keyboard and low-vision users
    * rather than decorative. Declared in @layer base so a component can still
    * *offset* it (Checkbox does) without any component being able to remove it.
@@ -356,7 +356,7 @@
 
   /*
    * One global honouring of prefers-reduced-motion. Kill the durations rather
-   * than the transitions — components read these vars, so a reduced-motion user
+   * than the transitions - components read these vars, so a reduced-motion user
    * gets the same end state instantly instead of a half-animated one, and no
    * individual component has to remember the media query.
    */

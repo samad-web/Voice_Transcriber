@@ -24,7 +24,7 @@ class HealthWorker(
     override suspend fun doWork(): Result {
         val context = applicationContext
         if (!ActivationStore.isActivated(context)) {
-            Log.i(TAG, "skip — device not activated")
+            Log.i(TAG, "skip - device not activated")
             return Result.success()
         }
         return try {
