@@ -324,6 +324,7 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
             orgId={orgId}
             enabled={org.enabled_modules.includes("crm")}
             instanceName={org.name}
+            owners={ownerData?.owners ?? []}
           />
           <PolicyForm orgId={orgId} initial={org} />
           <AppLockForm orgId={orgId} enabled={org.app_lock_enabled} />
