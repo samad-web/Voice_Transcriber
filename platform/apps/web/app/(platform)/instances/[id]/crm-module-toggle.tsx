@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Handshake } from "lucide-react";
+import { Handshake } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
-import { setCrmEnabledAction } from "./actions";
+import { SignInLink } from "../sign-in-link";
+import { setModuleEnabledAction } from "./actions";
 import type { OwnerRow } from "./owner-accounts";
 
 /**
@@ -22,12 +23,15 @@ export function CrmModuleToggle({
   enabled,
   instanceName,
   owners,
+  modules,
 }: {
   orgId: string;
   enabled: boolean;
   instanceName: string;
   /** Owner accounts for this instance - the people who can actually sign in. */
   owners: OwnerRow[];
+  /** The tenant's whole entitlement, so toggling CRM leaves the rest alone. */
+  modules: string[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +52,12 @@ export function CrmModuleToggle({
     }
     setError(null);
     startTransition(async () => {
-      const res = await setCrmEnabledAction({ orgId, enabled: next });
+      const res = await setModuleEnabledAction({
+        orgId,
+        module: "crm",
+        enabled: next,
+        current: modules,
+      });
       if (res.error) {
         setError(res.error);
         return;
@@ -99,22 +108,12 @@ export function CrmModuleToggle({
  * has to tell somebody where to go and confirm a login exists. That answer used
  * to live only in this repo's docs, so it was retold by hand every time.
  *
- * The URL is built from `window.location.origin` on mount rather than from an
- * env var: the console already knows its own origin, and `NEXT_PUBLIC_BASE_PATH`
- * (baked in at image build) is the same prefix Next puts on every link here. A
- * separate "console URL" setting would be a third place for the same fact to
- * drift out of date. It is deferred to an effect because the server render has
- * no `window` and a guess would mismatch on hydration.
+ * The link itself comes from `../sign-in-link`, which the Instances list also
+ * renders: the address is the console's, not this tenant's, so there must not
+ * be two places deciding how it is built. What is local to here is the second
+ * half of the answer - WHO can actually use it for this instance.
  */
 function SignInDetails({ instanceName, owners }: { instanceName: string; owners: OwnerRow[] }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    setUrl(`${window.location.origin}${basePath}/login`);
-  }, []);
-
   // `hasLogin` is the Supabase account; `status` is whether we still honour it.
   // A member with one and not the other cannot sign in, so neither alone counts.
   const canSignIn = owners.filter((o) => o.hasLogin && o.status === "active");
@@ -128,28 +127,7 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
         </StatusChip>
       </div>
 
-      <div className="bg-neutral-50 border-2 border-black p-2.5 font-mono text-xs break-all">
-        {url ?? "Loading…"}
-      </div>
-
-      <BrutalButton
-        variant="secondary"
-        className="w-full"
-        disabled={!url}
-        // Sync, not `async` - same reasoning as PasswordReveal in
-        // owner-accounts.tsx: React discards the return value, so an async
-        // handler turns a rejected clipboard write into an unhandled rejection.
-        onClick={() => {
-          if (!url) return;
-          void navigator.clipboard
-            .writeText(url)
-            .then(() => setCopied(true))
-            .catch(() => setCopied(false));
-        }}
-      >
-        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-        {copied ? "COPIED" : "COPY SIGN-IN LINK"}
-      </BrutalButton>
+      <SignInLink />
 
       {canSignIn.length > 0 ? (
         <div className="space-y-1">

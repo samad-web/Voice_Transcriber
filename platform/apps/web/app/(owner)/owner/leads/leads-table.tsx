@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@aura/ui";
 import { LeadDrawer } from "../lead-drawer";
+import { CallReadChips } from "../call-intel";
 import { ProjectChip } from "../project-chip";
 import {
   contactLabel,
@@ -58,6 +59,16 @@ export function LeadsTable({
   const router = useRouter();
   const params = useSearchParams();
   const [rows, setRows] = useState(leads);
+  /**
+   * Whether this tenant has the `call_intel` module, decided from the payload
+   * rather than a prop: the API omits these keys entirely for a tenant without
+   * it (owner/leads.controller.ts), so their PRESENCE is the entitlement. A
+   * flag threaded down from the layout would be a second copy of that decision
+   * living in the browser, free to disagree with the one that matters.
+   *
+   * `some`, not `rows[0]`: the first page can legitimately be empty.
+   */
+  const showRead = rows.some((lead) => "call_sentiment" in lead);
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [open, setOpen] = useState<Lead | null>(null);
 
@@ -247,7 +258,9 @@ export function LeadsTable({
             aria-label="Leads"
             className="overflow-x-auto"
           >
-            <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+            <table
+              className={`w-full ${showRead ? "min-w-[1140px]" : "min-w-[980px]"} border-collapse text-left text-sm`}
+            >
               <TableHead>
                 <tr>
                   <TableHeaderCell>Lead</TableHeaderCell>
@@ -256,6 +269,7 @@ export function LeadsTable({
                   <TableHeaderCell className="text-right">Value</TableHeaderCell>
                   <TableHeaderCell>Telecaller</TableHeaderCell>
                   <TableHeaderCell className="text-right">Calls</TableHeaderCell>
+                  {showRead ? <TableHeaderCell>Last call read</TableHeaderCell> : null}
                   <TableHeaderCell>Next action</TableHeaderCell>
                   <TableHeaderCell>Last activity</TableHeaderCell>
                 </tr>
@@ -313,6 +327,22 @@ export function LeadsTable({
                     </TableCell>
                     <TableCell className="text-text-muted">{lead.telecaller ?? "-"}</TableCell>
                     <TableCell className="text-right tabular-nums">{lead.call_count}</TableCell>
+                    {showRead ? (
+                      <TableCell>
+                        {/* Renders nothing when the lead has no read yet - a
+                            call that failed ASR, or one from before the module
+                            was switched on. The dash keeps the column legible
+                            rather than looking like a rendering fault. */}
+                        {lead.call_sentiment || lead.call_outcome ? (
+                          <CallReadChips
+                            sentiment={lead.call_sentiment}
+                            outcome={lead.call_outcome}
+                          />
+                        ) : (
+                          <span className="text-xs text-text-subtle">-</span>
+                        )}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="max-w-[16rem] truncate text-text-muted">
                       {lead.next_action ?? "-"}
                     </TableCell>

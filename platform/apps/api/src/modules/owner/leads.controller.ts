@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -12,7 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
+import { LeadSourceChannel, parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -32,6 +33,12 @@ const ListQuery = z.object({
   status: z.enum(["open", "won", "lost"]).optional(),
   telecallerId: z.string().uuid().optional(),
   projectId: ProjectFilter.optional(),
+  /**
+   * "none" alongside a channel for the same reason ProjectFilter has it: the
+   * leads with no recorded channel are the ones that predate migration 0078,
+   * and an owner reconciling their numbers needs to be able to see them.
+   */
+  sourceChannel: z.union([LeadSourceChannel, z.literal("none")]).optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
   sort: z.enum(["activity", "created", "value", "title"]).default("activity"),
@@ -71,6 +78,10 @@ const LEAD_COLUMNS = `
   l.telecaller_device_id, l.last_call_id,
   l.project_id, l.project_source,
   pr.key AS project_key, pr.name AS project_name, pr.color AS project_color,
+  -- Where the lead came from (migration 0078). Until then this board could not
+  -- tell a phone call from an ad from a CSV import, so "which channel is worth
+  -- the money" was unanswerable from the screen people actually work in.
+  l.source_channel, ls.name AS source_name, ms.name AS campaign_name,
   COALESCE(d.telecaller_name, d.label) AS telecaller`;
 
 /**
@@ -81,7 +92,65 @@ const LEAD_COLUMNS = `
  */
 const LEAD_JOINS = `
   LEFT JOIN devices d      ON d.id = l.telecaller_device_id
-  LEFT JOIN crm_projects pr ON pr.id = l.project_id`;
+  LEFT JOIN crm_projects pr ON pr.id = l.project_id
+  LEFT JOIN lead_sources ls ON ls.id = l.lead_source_id
+  LEFT JOIN marketing_sources ms ON ms.id = l.marketing_source_id`;
+
+/**
+ * The AI read of the lead's most recent call - what the operator console has
+ * always shown on `/calls`, narrowed to the one call that produced this card.
+ *
+ * SPLICED IN ONLY FOR TENANTS WITH THE `call_intel` MODULE (org-modules.ts).
+ * A tenant without it gets exactly the response it got before this existed:
+ * the keys are absent, not null, so the console can tell "this client does not
+ * have call intelligence" from "this lead has no call yet" without a second
+ * request or a flag on the wire.
+ *
+ * LATERAL with LIMIT 1 rather than a plain join, for the same reason the
+ * booked-slot join in the funnel list carries one: `transcripts` holds one row
+ * per call today, but a reprocess that ever wrote a second would duplicate the
+ * LEAD in the list - a data bug showing up as a phantom pipeline card, which is
+ * a far worse failure than a missing label. LIMIT 1 makes it impossible.
+ *
+ * `intelligence` is the ASR/LLM output blob; the three keys read here are the
+ * ones the operator drawer renders as chips (calls-explorer.tsx:651).
+ */
+const CALL_INTEL_COLUMNS = `,
+  ci.intent    AS call_intent,
+  ci.sentiment AS call_sentiment,
+  ci.outcome   AS call_outcome`;
+
+/**
+ * The same read, per call rather than per lead, for the drawer's call history.
+ * `has_transcript` is here so the console can offer "read the transcript" only
+ * where there is one, instead of promising text and opening an empty panel.
+ */
+const CALL_HISTORY_INTEL_COLUMNS = `,
+  ci.intent, ci.sentiment, ci.outcome, ci.has_transcript, ca.quality_score`;
+
+const CALL_HISTORY_INTEL_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT t.intelligence ->> 'overall_intent' AS intent,
+           t.intelligence ->> 'sentiment'      AS sentiment,
+           t.intelligence ->> 'outcome'        AS outcome,
+           (t.text IS NOT NULL OR t.segments IS NOT NULL) AS has_transcript
+      FROM transcripts t
+     WHERE t.call_id = c.id
+     LIMIT 1
+  ) ci ON true
+  LEFT JOIN LATERAL (
+    SELECT a.quality_score FROM call_analytics a WHERE a.call_id = c.id LIMIT 1
+  ) ca ON true`;
+
+const CALL_INTEL_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT t.intelligence ->> 'overall_intent' AS intent,
+           t.intelligence ->> 'sentiment'      AS sentiment,
+           t.intelligence ->> 'outcome'        AS outcome
+      FROM transcripts t
+     WHERE t.call_id = l.last_call_id
+     LIMIT 1
+  ) ci ON true`;
 
 /**
  * The lead pipeline (§4.2 owner console).
@@ -107,14 +176,78 @@ export class LeadsController {
     return parseLeadStages(org?.lead_stages);
   }
 
+  /**
+   * Whether this tenant is entitled to see its own calls' transcripts and AI
+   * read (migration 0072's `enabled_modules`, see org-modules.ts).
+   *
+   * Read per request from `organizations` under the same `withOrg` connection
+   * as everything else, exactly like stagesFor: RLS has already narrowed that
+   * table to this one org, so there is no org predicate to get wrong here.
+   */
+  private async hasCallIntel(client: {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+  }): Promise<boolean> {
+    const {
+      rows: [org],
+    } = await client.query(
+      "SELECT 'call_intel' = ANY(enabled_modules) AS enabled FROM organizations LIMIT 1",
+    );
+    return org?.enabled === true;
+  }
+
+  /**
+   * Whether the human making this request may read a word-for-word account of
+   * a call, per the `recordings_listen` flag an operator sets on their account
+   * in Owner accounts.
+   *
+   * NOT `principalHasPermission(req.principal, ...)`, and this is the whole
+   * point of the helper: the owner console reaches this API with the PLATFORM
+   * ADMIN KEY, asserting the signed-in user in `x-caller-user-id`, and
+   * AdminKeyGuard mints that principal with `recordingsListen: true` because
+   * the admin key is the platform's root credential (admin-key.guard.ts:104).
+   * Trusting the principal here would hand every owner the verbatim transcript
+   * no matter what flag was set on their account - the flag would be console
+   * decoration. So the identity comes from the principal and the GRANT is read
+   * from `memberships`: the same split CrmPermissionsGuard makes, for the same
+   * reason ("a caller can say who they are, but not what they may do").
+   *
+   * NO MEMBERSHIP ROW MEANS NO. This route exists for the owner console alone -
+   * the operator console reads calls through `/v1/calls/:id`, which is
+   * unchanged - so there is no bare-admin-key caller to keep working, and
+   * denying is the safe direction for a surface whose whole subject is
+   * privacy-sensitive text.
+   */
+  private async canReadTranscript(
+    client: {
+      query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+    },
+    principal: PrincipalRequest["principal"],
+    orgId: string,
+  ): Promise<boolean> {
+    const userId = z.string().uuid().safeParse(principal?.userId);
+    if (!userId.success) return false;
+    const {
+      rows: [membership],
+    } = await client.query(
+      // `org_id` spelled out even though RLS has already narrowed the table:
+      // belt and braces, and the same shape CrmPermissionsGuard uses, so the
+      // two membership reads cannot drift into meaning different things.
+      "SELECT recordings_listen FROM memberships WHERE user_id = $1 AND org_id = $2 LIMIT 1",
+      [userId.data, orgId],
+    );
+    return membership?.recordings_listen === true;
+  }
+
   /** List view: filtered, sorted, paginated. */
   @Get()
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { stage, status, telecallerId, projectId, q, sort, limit, offset } = parsed.data;
+    const { stage, status, telecallerId, projectId, sourceChannel, q, sort, limit, offset } =
+      parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
+      const intel = await this.hasCallIntel(client);
       const where: string[] = [];
       const params: unknown[] = [];
       const add = (clause: string, value: unknown) => {
@@ -127,6 +260,8 @@ export class LeadsController {
       if (telecallerId) add("l.telecaller_device_id = $?", telecallerId);
       if (projectId === "none") where.push("l.project_id IS NULL");
       else if (projectId) add("l.project_id = $?", projectId);
+      if (sourceChannel === "none") where.push("l.source_channel IS NULL");
+      else if (sourceChannel) add("l.source_channel = $?", sourceChannel);
       if (q) {
         // One param, three columns - pushed once so the placeholder numbering
         // stays in step with `params`.
@@ -147,9 +282,10 @@ export class LeadsController {
 
       params.push(limit, offset);
       const { rows } = await client.query(
-        `SELECT ${LEAD_COLUMNS}, count(*) OVER()::int AS total_count
+        `SELECT ${LEAD_COLUMNS}${intel ? CALL_INTEL_COLUMNS : ""},
+                count(*) OVER()::int AS total_count
            FROM leads l
-           ${LEAD_JOINS}
+           ${LEAD_JOINS}${intel ? CALL_INTEL_JOIN : ""}
           ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
           ORDER BY ${ORDER[sort]}
           LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -231,13 +367,15 @@ export class LeadsController {
     @Param("id", ParseUUIDPipe) leadId: string,
   ) {
     return this.db.withOrg(orgId, async (client) => {
+      const intel = await this.hasCallIntel(client);
       const {
         rows: [lead],
       } = await client.query(
-        `SELECT ${LEAD_COLUMNS}, l.workspace_id, l.contact_number_hash, l.first_call_id,
+        `SELECT ${LEAD_COLUMNS}${intel ? CALL_INTEL_COLUMNS : ""},
+                l.workspace_id, l.contact_number_hash, l.first_call_id,
                 l.agent_id, l.agent_version
            FROM leads l
-           ${LEAD_JOINS}
+           ${LEAD_JOINS}${intel ? CALL_INTEL_JOIN : ""}
           WHERE l.id = $1`,
         [leadId],
       );
@@ -246,11 +384,19 @@ export class LeadsController {
       // Calls reached through the contact hash, so the history survives the
       // lead being re-derived - plus the originating call when there is no
       // number to match on.
+      //
+      // With `call_intel` on, every row also carries its OWN read rather than
+      // the lead's: a first call that went well and a third that went badly is
+      // the most useful thing this history can say, and a single lead-level
+      // label would hide it. Quality is call_analytics' score out of 100
+      // (migration 0068), the same number the operator drawer shows. Both
+      // LATERAL for the reason CALL_INTEL_JOIN is - a duplicate transcript row
+      // must never duplicate the call in the history.
       const { rows: calls } = await client.query(
         `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
-                COALESCE(d.telecaller_name, d.label) AS telecaller
+                COALESCE(d.telecaller_name, d.label) AS telecaller${intel ? CALL_HISTORY_INTEL_COLUMNS : ""}
            FROM calls c
-           LEFT JOIN devices d ON d.id = c.device_id
+           LEFT JOIN devices d ON d.id = c.device_id${intel ? CALL_HISTORY_INTEL_JOIN : ""}
           WHERE ($1::text IS NOT NULL AND c.remote_number_hash = $1)
              OR c.id = $2 OR c.id = $3
           ORDER BY c.started_at DESC
@@ -261,6 +407,95 @@ export class LeadsController {
       );
 
       return { lead, calls, stages: await this.stagesFor(client) };
+    });
+  }
+
+  /**
+   * What was actually said on one of this lead's calls: the transcript, the AI
+   * read behind the chips, and the call's own quality analytics.
+   *
+   * A SEPARATE REQUEST, not part of the detail payload above, because a
+   * transcript is unbounded text and the drawer lists up to 50 calls - folding
+   * them in would make opening any lead pay for every conversation it ever had,
+   * to render a panel the reader may never open.
+   *
+   * NESTED UNDER THE LEAD deliberately: the call has to satisfy the same
+   * predicate the history list uses, so this route can only reach a call the
+   * drawer already showed. RLS scopes both to the tenant regardless; what the
+   * nesting buys is that the two can never disagree about which calls belong to
+   * this card.
+   *
+   * TWO INDEPENDENT GATES, each refusing at the level it is about. The tenant's
+   * `call_intel` module is an entitlement, so its absence is a 403 - this
+   * client does not have the surface at all. The reader's own
+   * `recordings_listen` is a permission over one artifact, so its absence
+   * REDACTS: the AI read still comes back, the verbatim text does not. That
+   * split mirrors `calls.controller.ts:406` exactly - status, summary and
+   * analytics stay visible to any tenant member; a word-for-word account of
+   * someone's phone call is the privileged part.
+   */
+  @Get(":id/calls/:callId")
+  async callDetail(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) leadId: string,
+    @Param("callId", ParseUUIDPipe) callId: string,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      if (!(await this.hasCallIntel(client))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+
+      const {
+        rows: [lead],
+      } = await client.query(
+        "SELECT contact_number_hash, first_call_id, last_call_id FROM leads WHERE id = $1",
+        [leadId],
+      );
+      if (!lead) throw new NotFoundException("lead not found");
+
+      const {
+        rows: [call],
+      } = await client.query(
+        `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
+                COALESCE(d.telecaller_name, d.label) AS telecaller
+           FROM calls c
+           LEFT JOIN devices d ON d.id = c.device_id
+          WHERE c.id = $1
+            AND (($2::text IS NOT NULL AND c.remote_number_hash = $2)
+                 OR c.id = $3 OR c.id = $4)`,
+        [callId, lead.contact_number_hash, lead.first_call_id, lead.last_call_id],
+      );
+      if (!call) throw new NotFoundException("call not found for this lead");
+
+      const {
+        rows: [transcript],
+      } = await client.query(
+        `SELECT language, engine, diarized, text, segments, intelligence
+           FROM transcripts WHERE call_id = $1 LIMIT 1`,
+        [callId],
+      );
+      const {
+        rows: [analytics],
+      } = await client.query(
+        `SELECT quality_score, talk_ratio, agent_talk_seconds, customer_talk_seconds,
+                interruption_count, risk_flags, has_escalation_risk
+           FROM call_analytics WHERE call_id = $1 LIMIT 1`,
+        [callId],
+      );
+
+      const canRead = await this.canReadTranscript(client, req.principal, orgId);
+      if (!canRead && transcript) {
+        transcript.text = null;
+        transcript.segments = null;
+      }
+
+      return {
+        call,
+        transcript: transcript ?? null,
+        analytics: analytics ?? null,
+        transcriptRedacted: !canRead,
+      };
     });
   }
 

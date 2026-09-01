@@ -41,6 +41,20 @@ export interface Lead {
   project_key: string | null;
   project_name: string | null;
   project_color: string | null;
+  /**
+   * The AI read of the call that most recently touched this lead.
+   *
+   * OPTIONAL BECAUSE THE KEYS ARE ABSENT, NOT NULL, for a tenant without the
+   * `call_intel` module - the API leaves the columns out of the query entirely
+   * (owner/leads.controller.ts). That distinction is load-bearing: `undefined`
+   * means "this client is not entitled to call intelligence" and `null` means
+   * "this lead has no read yet", and the list uses the first to decide whether
+   * the column exists at all. Reading it as a plain nullable would put an
+   * always-empty column in front of every other tenant.
+   */
+  call_intent?: string | null;
+  call_sentiment?: string | null;
+  call_outcome?: string | null;
 }
 
 /** One row of the tenant's project catalogue - `GET /v1/projects`. */
@@ -74,6 +88,69 @@ export interface LeadCall {
   duration_s: number;
   status: string;
   telecaller: string | null;
+  /**
+   * Per-call read, present only with the `call_intel` module - same
+   * absent-vs-null contract as the lead-level fields above.
+   *
+   * `has_transcript` is separate from the read on purpose: a call can be
+   * analysed and still have no text stored, and offering "read transcript" on
+   * one of those opens an empty panel.
+   */
+  intent?: string | null;
+  sentiment?: string | null;
+  outcome?: string | null;
+  has_transcript?: boolean | null;
+  quality_score?: string | number | null;
+}
+
+/** One line of a diarized transcript - the shape the ASR pipeline stores. */
+export interface CallSegment {
+  speaker?: string | null;
+  text: string;
+  intent?: string | null;
+  startMs?: number | null;
+  endMs?: number | null;
+}
+
+/** The LLM's read of a whole call (`transcripts.intelligence`). */
+export interface CallIntelligence {
+  summary?: string;
+  overall_intent?: string;
+  customer_intent?: string;
+  agent_intent?: string;
+  sentiment?: string;
+  outcome?: string;
+  key_points?: string[];
+  action_items?: string[];
+}
+
+/**
+ * `GET /v1/leads/:id/calls/:callId` - one call in full.
+ *
+ * `transcriptRedacted` is the API telling the console that the text was
+ * withheld for THIS reader (their membership's `recordings_listen`), not that
+ * there is none - the two look identical on the wire otherwise, and rendering
+ * "no transcript" over a withheld one would be a lie about the record.
+ */
+export interface LeadCallDetail {
+  call: LeadCall;
+  transcript: {
+    language: string | null;
+    engine: string | null;
+    diarized: boolean | null;
+    text: string | null;
+    segments: CallSegment[] | null;
+    intelligence: CallIntelligence | null;
+  } | null;
+  analytics: {
+    quality_score: string | number | null;
+    talk_ratio: string | number | null;
+    agent_talk_seconds: number | null;
+    customer_talk_seconds: number | null;
+    interruption_count: number | null;
+    has_escalation_risk: boolean | null;
+  } | null;
+  transcriptRedacted: boolean;
 }
 
 export interface Telecaller {

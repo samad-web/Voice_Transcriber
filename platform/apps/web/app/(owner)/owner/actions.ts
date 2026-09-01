@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
-import type { Lead, LeadCall, Stage } from "./types";
+import type { Lead, LeadCall, LeadCallDetail, Stage } from "./types";
 
 /**
  * Every action re-resolves the owner from the session rather than trusting an
@@ -105,6 +105,36 @@ export async function fetchLeadAction(
     const res = await fetch(`${API_URL}/v1/leads/${leadId}`, { headers, cache: "no-store" });
     if (!res.ok) return { error: `API ${res.status}` };
     return (await res.json()) as { lead: Lead; calls: LeadCall[]; stages: Stage[] };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * One call in full - transcript and AI read - for the drawer's transcript panel.
+ *
+ * Called on expand rather than with the lead: see call-intel.tsx. The 403 is
+ * given its own message because it is not a failure, it is an entitlement -
+ * `call_intel` is off for this instance - and "API 403" would send an owner to
+ * support to be told something the sentence could have said itself.
+ */
+export async function fetchLeadCallAction(
+  leadId: string,
+  callId: string,
+): Promise<{ detail?: LeadCallDetail; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/leads/${leadId}/calls/${callId}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (res.status === 403) {
+      return { error: "Call transcripts are not enabled for this instance." };
+    }
+    if (!res.ok) return { error: `API ${res.status}` };
+    return { detail: (await res.json()) as LeadCallDetail };
   } catch {
     return { error: "API unreachable" };
   }

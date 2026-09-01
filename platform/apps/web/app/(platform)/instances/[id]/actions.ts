@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { OrgModule } from "@aura/shared";
 import { call } from "@/lib/action-call";
 import { requireOperator } from "@/lib/operator-guard";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
@@ -84,12 +85,22 @@ export async function setTranscriptionEnabledAction(input: {
 }
 
 /**
- * Turn the CRM module on or off for a tenant. Unlike the org-policy settings
- * above, this can have a side effect (seeding roles/a default pipeline the
- * first time CRM is enabled) so it rides the dedicated admin endpoint next
- * to that seeding logic, not `patchOrgPolicy`. Disabling never deletes any
- * CRM data it already seeded - CrmPermissionsGuard is what actually revokes
- * access - so re-enabling later needs no reseed.
+ * Turn ONE module on or off for a tenant (org-modules.ts), leaving the rest of
+ * its entitlement exactly as it was.
+ *
+ * THAT LAST PART IS THE WHOLE SIGNATURE. The endpoint behind this replaces
+ * `enabled_modules` wholesale, and this action used to post a hardcoded
+ * `["aura", "crm"]` - correct while CRM was the only toggle, and silently
+ * destructive the moment a second one existed: turning CRM off would also
+ * strip Call Intelligence, from a card that says nothing about it. So the
+ * caller passes the tenant's CURRENT modules (the instance page already has
+ * them) and this computes the difference.
+ *
+ * Unlike the org-policy settings above, this can have a side effect (seeding
+ * roles/a default pipeline the first time CRM is enabled) so it rides the
+ * dedicated admin endpoint next to that seeding logic, not `patchOrgPolicy`.
+ * Disabling never deletes any CRM data it already seeded - CrmPermissionsGuard
+ * is what actually revokes access - so re-enabling later needs no reseed.
  *
  * `admin/tenants/*` is `AdminController`'s cross-tenant surface (same as
  * `createTenantAction` in `instances/new/actions.ts`) - it takes the org id
@@ -98,21 +109,37 @@ export async function setTranscriptionEnabledAction(input: {
  * `adminHeaders`' `x-org-id: DEV_ORG_ID` instead (harmless here since the
  * route ignores it, but the wrong credential to reach for).
  */
-export async function setCrmEnabledAction(input: {
+export async function setModuleEnabledAction(input: {
   orgId: string;
+  module: OrgModule;
   enabled: boolean;
+  /** The tenant's entitlement as the page rendering this toggle read it. */
+  current: string[];
 }): Promise<{ error?: string }> {
   try {
     await requireOperator();
   } catch {
     return { error: "Not authorized" };
   }
+  // Unknown strings are dropped rather than echoed back: the endpoint's zod
+  // enum would reject the whole request over one stale value, which would turn
+  // "a module was retired" into "no module can be toggled on this tenant".
+  const next = new Set(
+    input.current.filter((m): m is OrgModule => OrgModule.safeParse(m).success),
+  );
+  if (input.enabled) next.add(input.module);
+  else next.delete(input.module);
+  // Every tenant has an instance, workspace and devices, and the endpoint
+  // requires at least one module - so "aura" is re-added last, after the
+  // toggle, rather than being something a click could remove.
+  next.add("aura");
+
   try {
     const res = await fetch(`${API_URL}/v1/admin/tenants/${input.orgId}/modules`, {
       method: "PATCH",
       headers: crossTenantHeaders,
       cache: "no-store",
-      body: JSON.stringify({ modules: input.enabled ? ["aura", "crm"] : ["aura"] }),
+      body: JSON.stringify({ modules: [...next] }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

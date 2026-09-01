@@ -21,8 +21,17 @@ import { z } from "zod";
  * manually per client on the Wasi side (a `messaging_channels` row, see
  * migration 0061), there is no bulk-provisioning action for it yet, and it
  * is not exposed as a toggle anywhere.
+ *
+ * "call_intel" is the second live toggle. It decides whether a tenant sees
+ * the AI read of their own calls - intent, sentiment, outcome, and the
+ * transcript itself - inside their console, or only the lead it produced.
+ * It is a module rather than an always-on feature because a transcript is
+ * the most privacy-sensitive artifact this platform stores: who may read a
+ * word-for-word account of a customer's phone call is a decision per client
+ * contract, not a product default. Off for every tenant until an operator
+ * turns it on, including tenants that already have CRM.
  */
-export const OrgModule = z.enum(["aura", "crm", "wasi"]);
+export const OrgModule = z.enum(["aura", "crm", "wasi", "call_intel"]);
 export type OrgModule = z.infer<typeof OrgModule>;
 
 export interface OrgModuleSpec {
@@ -41,6 +50,11 @@ export const ORG_MODULES: OrgModuleSpec[] = [
     id: "crm",
     label: "CRM",
     blurb: "Accounts, Contacts, Deals, pipelines, roles and permissions.",
+  },
+  {
+    id: "call_intel",
+    label: "Call Intelligence",
+    blurb: "Transcripts and the AI read - intent, sentiment, outcome - inside the client's console.",
   },
   {
     id: "wasi",

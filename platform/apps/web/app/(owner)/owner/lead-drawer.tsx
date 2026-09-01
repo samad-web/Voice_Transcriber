@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
 import { fetchLeadAction, updateLeadAction } from "./actions";
+import { CallReadChips, CallTranscript } from "./call-intel";
 import { ProjectChip } from "./project-chip";
 import {
   contactLabel,
@@ -353,18 +354,32 @@ export function LeadDrawer({
             ) : (
               <div className="divide-y divide-border rounded-md border border-border">
                 {calls.map((call) => (
-                  <div key={call.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                    <div className="min-w-0">
-                      <span className="block text-xs text-text">
-                        {new Date(call.started_at).toLocaleString()}
-                      </span>
-                      <span className="text-xs text-text-muted">
-                        {call.direction} · {call.telecaller ?? "unknown handset"}
+                  <div key={call.id} className="px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="block text-xs text-text">
+                          {new Date(call.started_at).toLocaleString()}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {call.direction} · {call.telecaller ?? "unknown handset"}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-xs text-text-muted tabular-nums">
+                        {formatDuration(call.duration_s)}
                       </span>
                     </div>
-                    <span className="shrink-0 text-xs text-text-muted tabular-nums">
-                      {formatDuration(call.duration_s)}
-                    </span>
+                    {/* Both render nothing without the `call_intel` module: the
+                        API leaves the fields out, so a tenant that does not have
+                        it sees exactly the row it saw before. */}
+                    <div className="mt-1.5 empty:mt-0">
+                      <CallReadChips
+                        intent={call.intent}
+                        sentiment={call.sentiment}
+                        outcome={call.outcome}
+                        qualityScore={call.quality_score}
+                      />
+                    </div>
+                    {call.has_transcript ? <CallTranscript leadId={lead.id} call={call} /> : null}
                   </div>
                 ))}
               </div>

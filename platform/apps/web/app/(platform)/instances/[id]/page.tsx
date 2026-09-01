@@ -31,6 +31,7 @@ import { OwnerAccounts, type OwnerRow } from "./owner-accounts";
 import { PolicyForm } from "./policy-form";
 import { TelecallerForm } from "./telecaller-form";
 import { AsrSettings } from "./asr-settings";
+import { CallIntelToggle } from "./call-intel-toggle";
 import { CrmModuleToggle } from "./crm-module-toggle";
 import { TranscriptionToggle } from "./transcription-toggle";
 
@@ -325,6 +326,14 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
             enabled={org.enabled_modules.includes("crm")}
             instanceName={org.name}
             owners={ownerData?.owners ?? []}
+            modules={org.enabled_modules}
+          />
+          <CallIntelToggle
+            orgId={orgId}
+            enabled={org.enabled_modules.includes("call_intel")}
+            instanceName={org.name}
+            owners={ownerData?.owners ?? []}
+            modules={org.enabled_modules}
           />
           <PolicyForm orgId={orgId} initial={org} />
           <AppLockForm orgId={orgId} enabled={org.app_lock_enabled} />
