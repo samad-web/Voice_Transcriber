@@ -13,7 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { LeadSourceChannel, parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
+import { parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -33,12 +33,6 @@ const ListQuery = z.object({
   status: z.enum(["open", "won", "lost"]).optional(),
   telecallerId: z.string().uuid().optional(),
   projectId: ProjectFilter.optional(),
-  /**
-   * "none" alongside a channel for the same reason ProjectFilter has it: the
-   * leads with no recorded channel are the ones that predate migration 0078,
-   * and an owner reconciling their numbers needs to be able to see them.
-   */
-  sourceChannel: z.union([LeadSourceChannel, z.literal("none")]).optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
   sort: z.enum(["activity", "created", "value", "title"]).default("activity"),
@@ -78,10 +72,6 @@ const LEAD_COLUMNS = `
   l.telecaller_device_id, l.last_call_id,
   l.project_id, l.project_source,
   pr.key AS project_key, pr.name AS project_name, pr.color AS project_color,
-  -- Where the lead came from (migration 0078). Until then this board could not
-  -- tell a phone call from an ad from a CSV import, so "which channel is worth
-  -- the money" was unanswerable from the screen people actually work in.
-  l.source_channel, ls.name AS source_name, ms.name AS campaign_name,
   COALESCE(d.telecaller_name, d.label) AS telecaller`;
 
 /**
@@ -92,9 +82,7 @@ const LEAD_COLUMNS = `
  */
 const LEAD_JOINS = `
   LEFT JOIN devices d      ON d.id = l.telecaller_device_id
-  LEFT JOIN crm_projects pr ON pr.id = l.project_id
-  LEFT JOIN lead_sources ls ON ls.id = l.lead_source_id
-  LEFT JOIN marketing_sources ms ON ms.id = l.marketing_source_id`;
+  LEFT JOIN crm_projects pr ON pr.id = l.project_id`;
 
 /**
  * The AI read of the lead's most recent call - what the operator console has
@@ -106,8 +94,7 @@ const LEAD_JOINS = `
  * have call intelligence" from "this lead has no call yet" without a second
  * request or a flag on the wire.
  *
- * LATERAL with LIMIT 1 rather than a plain join, for the same reason the
- * booked-slot join in the funnel list carries one: `transcripts` holds one row
+ * LATERAL with LIMIT 1 rather than a plain join: `transcripts` holds one row
  * per call today, but a reprocess that ever wrote a second would duplicate the
  * LEAD in the list - a data bug showing up as a phantom pipeline card, which is
  * a far worse failure than a missing label. LIMIT 1 makes it impossible.
@@ -119,6 +106,16 @@ const CALL_INTEL_COLUMNS = `,
   ci.intent    AS call_intent,
   ci.sentiment AS call_sentiment,
   ci.outcome   AS call_outcome`;
+
+const CALL_INTEL_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT t.intelligence ->> 'overall_intent' AS intent,
+           t.intelligence ->> 'sentiment'      AS sentiment,
+           t.intelligence ->> 'outcome'        AS outcome
+      FROM transcripts t
+     WHERE t.call_id = l.last_call_id
+     LIMIT 1
+  ) ci ON true`;
 
 /**
  * The same read, per call rather than per lead, for the drawer's call history.
@@ -141,16 +138,6 @@ const CALL_HISTORY_INTEL_JOIN = `
   LEFT JOIN LATERAL (
     SELECT a.quality_score FROM call_analytics a WHERE a.call_id = c.id LIMIT 1
   ) ca ON true`;
-
-const CALL_INTEL_JOIN = `
-  LEFT JOIN LATERAL (
-    SELECT t.intelligence ->> 'overall_intent' AS intent,
-           t.intelligence ->> 'sentiment'      AS sentiment,
-           t.intelligence ->> 'outcome'        AS outcome
-      FROM transcripts t
-     WHERE t.call_id = l.last_call_id
-     LIMIT 1
-  ) ci ON true`;
 
 /**
  * The lead pipeline (§4.2 owner console).
@@ -243,8 +230,7 @@ export class LeadsController {
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { stage, status, telecallerId, projectId, sourceChannel, q, sort, limit, offset } =
-      parsed.data;
+    const { stage, status, telecallerId, projectId, q, sort, limit, offset } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const intel = await this.hasCallIntel(client);
@@ -260,8 +246,6 @@ export class LeadsController {
       if (telecallerId) add("l.telecaller_device_id = $?", telecallerId);
       if (projectId === "none") where.push("l.project_id IS NULL");
       else if (projectId) add("l.project_id = $?", projectId);
-      if (sourceChannel === "none") where.push("l.source_channel IS NULL");
-      else if (sourceChannel) add("l.source_channel = $?", sourceChannel);
       if (q) {
         // One param, three columns - pushed once so the placeholder numbering
         // stays in step with `params`.
