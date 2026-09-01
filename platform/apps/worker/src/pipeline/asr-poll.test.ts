@@ -93,13 +93,24 @@ vi.mock("./asr-sarvam", () => ({
 
 // Only the last stage is replaced: `stageHelpers` and `persistTranscript` stay
 // real, because the transition this suite is about is the one THEY issue.
-const runPostAsrStages = vi.fn(async () => {});
+//
+// vi.hoisted, not a plain const: the vi.mock factory below is hoisted above
+// every import, so a const declared here is still in its temporal dead zone
+// when the factory runs - "Cannot access before initialization", at module
+// load, before a single test starts.
+const { runPostAsrStages } = vi.hoisted(() => ({
+  runPostAsrStages: vi.fn(async () => {}),
+}));
 vi.mock("./pipeline", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pipeline")>();
   return { ...actual, runPostAsrStages };
 });
 
-const { pollAsrJobs } = await import("./asr-poll");
+// Safe despite the mocks above: vitest hoists every vi.mock over the imports,
+// so asr-poll.ts is loaded against the fakes. A static import rather than a
+// top-level await because this package does not compile with a module target
+// that allows one.
+import { pollAsrJobs } from "./asr-poll";
 
 /** The transaction index each `advance(from, to)` ran in. */
 function advances(): Array<{ tx: number; from: string; to: string }> {
