@@ -112,6 +112,38 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
       continue;
     }
 
+    /*
+     * TWO transactions, not one, and the split is the whole point.
+     *
+     * `withOrgContext` is BEGIN…COMMIT. Holding the transcript write, the
+     * TRANSCRIBING → ANALYZING advance and the whole of analyze inside a single
+     * one meant none of it was visible until all of it was done: the console
+     * read the last COMMITTED status, so a call sat on "Transcribing" for the
+     * entire run and then jumped straight to Complete, never once showing
+     * "Analysing". With ASR taking nine seconds and analyze taking minutes,
+     * every one of those minutes was reported as transcription - the transcript
+     * had been sitting finished and paid for the whole time.
+     *
+     * So: commit the claim, the transcript and the advance first, then analyse
+     * in a second transaction that starts from ANALYZING.
+     *
+     * WHAT THIS COSTS. Before, a worker killed mid-analyze rolled everything
+     * back and the call returned to TRANSCRIBING with its job id, for the
+     * poller to collect again for free. Now the transcript is already
+     * committed, so a death mid-analyze leaves the call in ANALYZING until
+     * `failStalledCalls` lands it on FAILED_ANALYZE, and the retry sweep rewinds
+     * that all the way to UPLOADED - paying the ASR provider a second time for
+     * audio already transcribed. That is a rare crash against a status every
+     * call was reporting wrongly, so it is the right trade, but the honest fix
+     * is for a FAILED_ANALYZE retry to resume from the stored transcript rather
+     * than from the audio. Worth doing; it is not this change.
+     *
+     * The single-flight guard in startAsrPoller stays load-bearing for a
+     * different reason now: the claim clears `asr_job_id`, and this sweep only
+     * selects rows that still have one, so a committed claim is what stops a
+     * second tick from collecting the same job twice.
+     */
+    let claimed = false;
     await withOrgContext(row.org_id, async (client) => {
       await client.query(`SET LOCAL lock_timeout = ${CLAIM_LOCK_TIMEOUT_MS}`);
       let claim;
@@ -125,9 +157,6 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
         throw err;
       }
       if ((claim.rowCount ?? 0) === 0) return;
-      // The claim is committed only when this callback returns, so the row stays
-      // locked for the whole of runPostAsrStages below. That is what makes the
-      // single-flight guard in startAsrPoller load-bearing rather than tidy.
       await client.query("SET LOCAL lock_timeout = 0");
 
       const attempts = await priorAttempts(client, row.id);
@@ -142,7 +171,18 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
         `call ${row.id}: transcript from ${outcome.result.engine} ` +
           `(${outcome.result.segments.length} segments, ${outcome.result.diarized ? "diarized" : "single speaker"})`,
       );
-      await runPostAsrStages(client, row.org_id, row.id, helpers);
+      // The advance rides in THIS transaction with the transcript it belongs
+      // to. If it does not take, something else moved the call while we held
+      // it - leave the second half alone rather than analysing a call we no
+      // longer own.
+      claimed = await helpers.advance("TRANSCRIBING", "ANALYZING");
+    });
+    if (!claimed) continue;
+
+    await withOrgContext(row.org_id, async (client) => {
+      const attempts = await priorAttempts(client, row.id);
+      const helpers = stageHelpers(client, row.id, attempts);
+      await runPostAsrStages(client, row.org_id, row.id, helpers, true);
     });
     finished++;
   }

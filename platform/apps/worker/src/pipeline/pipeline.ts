@@ -227,17 +227,25 @@ export async function persistTranscript(
  * Everything after the transcript exists: analyze → crm-dispatch → COMPLETE.
  *
  * Entered from two places - the inline run, and the batch-ASR poller once the
- * provider hands back a transcript. Both arrive with the call in TRANSCRIBING,
- * so the first transition is the same either way.
+ * provider hands back a transcript.
+ *
+ * The inline run arrives with the call still in TRANSCRIBING and lets this
+ * function make the transition. The poller does NOT: it commits the transcript
+ * and the ANALYZING advance in a transaction of their own first, so the console
+ * can see the call move on rather than sitting on its last committed status for
+ * the whole of analyze (asr-poll.ts). `alreadyAnalyzing` is how it says so -
+ * without it the advance below finds the call already in ANALYZING, returns
+ * false, and this function silently does nothing at all.
  */
 export async function runPostAsrStages(
   client: PoolClient,
   orgId: string,
   callId: string,
   { advance, fail }: StageHelpers,
+  alreadyAnalyzing = false,
 ): Promise<void> {
   // ── analyze ──────────────────────────────────────────────────────────
-  if (!(await advance("TRANSCRIBING", "ANALYZING"))) return;
+  if (!alreadyAnalyzing && !(await advance("TRANSCRIBING", "ANALYZING"))) return;
 
   // Read here rather than threading it down from processCall: the batch-ASR
   // path re-enters this function from the poller, which never saw the org row.
