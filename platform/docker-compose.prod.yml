@@ -77,6 +77,29 @@ services:
   worker:
     <<: *node-image
     command: ["node", "apps/worker/dist/main.js"]
+    # Sarvam's output ceiling, and the chunk size that exists only to fit under
+    # it. Both were sized for the starter tier, where max_tokens above 4096 was
+    # rejected outright with a 400 and sarvam-105b's own reasoning spent
+    # 2,700-4,000 of those before writing a character - so every analyze request
+    # came back finish_reason: "length", was retried six times, and failed six
+    # times. One call spent 13 minutes there and still extracted nothing.
+    #
+    # That is not just slow for the call it happens to: asr-poll.ts collects
+    # finished ASR jobs one at a time and runs the whole back half of the
+    # pipeline inline before looking at the next, so a stalled analyze holds up
+    # every call behind it. On 2026-09-01 three calls landed together, Sarvam
+    # transcribed each within four seconds, and the third still showed
+    # "Transcribing" 27 minutes later with its transcript sitting finished and
+    # paid for on Sarvam's side.
+    #
+    # The plan now accepts 32768 (verified against the live endpoint), so ask
+    # for headroom and let a request succeed on its first attempt. Set here
+    # rather than in .env.production because these are tuning constants tied to
+    # the plan, not secrets. Raise the chunk further only with evidence - the
+    # 10 it replaces was measured, not guessed.
+    environment:
+      SARVAM_MAX_TOKENS: "16384"
+      SARVAM_LABEL_CHUNK: "30"
     depends_on:
       rabbitmq:
         condition: service_healthy
