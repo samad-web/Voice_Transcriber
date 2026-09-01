@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ownerNavItemsFor } from "./nav";
+import { ownerNavItemsFor, ownerNavSectionsFor } from "./nav";
 
 const hrefs = (
   role: Parameters<typeof ownerNavItemsFor>[0],
@@ -21,33 +21,25 @@ describe("ownerNavItemsFor", () => {
     expect(hrefs("owner")).toEqual(hrefs("owner", false));
   });
 
-  it("moves Deals/Contacts/Accounts/Reports right after Dashboard when crmPrimary is true", () => {
-    expect(hrefs("owner", true)).toEqual([
-      "/owner",
-      "/owner/deals",
-      "/owner/contacts",
-      "/owner/accounts",
-      "/owner/reports",
-      "/owner/board",
-      "/owner/leads",
-      "/owner/projects",
-      "/owner/tasks",
-      "/owner/inbox",
-      "/owner/outreach",
-      // Kailash gap Milestones 1/2/4 - not part of the CRM_PRIMARY_HREFS
-      // group, so they stay in their declared OWNER_NAV_ITEMS order rather
-      // than moving with Deals/Contacts/Accounts/Reports.
-      "/owner/products",
-      "/owner/quotations",
-      "/owner/invoices",
-      "/owner/connections",
-      "/owner/duplicates",
-      "/owner/import",
-      "/owner/messaging-setup",
-      "/owner/meta-ads",
-      "/owner/branding",
-      "/owner/call-quality",
-    ]);
+  it("promotes the CRM pages above the legacy Board/All Leads pair when crmPrimary is true", () => {
+    const items = hrefs("owner", true);
+    const at = (href: string) => items.indexOf(href);
+
+    // Dashboard stays first: it is outside every section, above the first
+    // heading, and no flag moves it.
+    expect(items[0]).toBe("/owner");
+    // The promotion, stated as the relationship it is - not as a frozen list.
+    // Sections move, so Deals/Contacts/Accounts arrive together, ahead of the
+    // pages that read `leads`.
+    for (const promoted of ["/owner/deals", "/owner/contacts", "/owner/accounts"]) {
+      expect([promoted, at(promoted) > 0 && at(promoted) < at("/owner/board")]).toEqual([
+        promoted,
+        true,
+      ]);
+      expect([promoted, at(promoted) < at("/owner/leads")]).toEqual([promoted, true]);
+    }
+    // Reports rides with them: it reads the CRM object model too.
+    expect(at("/owner/reports")).toBeLessThan(at("/owner/board"));
   });
 
   it("never removes the legacy Board/All Leads pair - they stay present, just lower", () => {
@@ -57,23 +49,15 @@ describe("ownerNavItemsFor", () => {
   });
 
   it("only reorders items the role can actually see - a telecaller's hidden Deals/Reports don't appear", () => {
-    const telecallerItems = hrefs("telecaller", true);
-    expect(telecallerItems).not.toContain("/owner/deals");
-    expect(telecallerItems).not.toContain("/owner/reports");
+    const items = hrefs("telecaller", true);
+    expect(items).not.toContain("/owner/deals");
+    expect(items).not.toContain("/owner/reports");
     // Of the CRM group, only Contacts/Accounts are visible to a telecaller -
-    // they still move up, right after Dashboard.
-    expect(telecallerItems).toEqual([
-      "/owner",
-      "/owner/contacts",
-      "/owner/accounts",
-      "/owner/leads",
-      "/owner/tasks",
-      // Unrestricted, like Tasks: answering replies and working the ladder are
-      // a telecaller's job.
-      "/owner/inbox",
-      "/owner/outreach",
-      "/owner/connections",
-    ]);
+    // and they still move up, ahead of the pages that read `leads`.
+    expect(items).toContain("/owner/contacts");
+    expect(items).toContain("/owner/accounts");
+    expect(items.indexOf("/owner/contacts")).toBeLessThan(items.indexOf("/owner/leads"));
+    expect(items[0]).toBe("/owner");
   });
 });
 
@@ -104,7 +88,11 @@ describe("ownerNavItemsFor - crmEnabled", () => {
     ]) {
       expect(items).not.toContain(gated);
     }
-    expect(items).toEqual([
+    // What SURVIVES, asserted as membership rather than as a frozen list: the
+    // pages that read `leads` (core Aura, no CRM needed), the connectors that
+    // feed them, and the workspace settings. A pinned array here would fail on
+    // the next page anyone adds, having proved nothing about the gate.
+    for (const kept of [
       "/owner",
       "/owner/board",
       "/owner/leads",
@@ -115,12 +103,14 @@ describe("ownerNavItemsFor - crmEnabled", () => {
       "/owner/meta-ads",
       "/owner/branding",
       "/owner/call-quality",
-    ]);
+    ]) {
+      expect([kept, items.includes(kept)]).toEqual([kept, true]);
+    }
   });
 
   it("still reorders within what's left when crmPrimary is also true", () => {
-    // Nothing in CRM_PRIMARY_HREFS survives crmEnabled=false, so the reorder
-    // step is a no-op and this collapses to the same list as crmPrimary=false.
+    // The promoted sections are empty once crmEnabled=false, so moving them
+    // to the front is a no-op and this collapses to the crmPrimary=false list.
     expect(hrefs("owner", true, false)).toEqual(hrefs("owner", false, false));
   });
 });
@@ -163,5 +153,64 @@ describe("ownerNavItemsFor - callIntelEnabled", () => {
   it("changes nothing else about the list", () => {
     const withIt = hrefs("owner", false, true, true).filter((h) => h !== "/owner/calls");
     expect(withIt).toEqual(hrefs("owner", false, true, false));
+  });
+});
+
+/**
+ * The grouped rail. Two dozen destinations is a wall without headings, and the
+ * grouping is the thing a client actually navigates by - so what is asserted
+ * here is that nothing falls out of it, not the exact taxonomy, which is a
+ * product decision that will keep moving.
+ */
+describe("ownerNavSectionsFor", () => {
+  const groups = (
+    role: Parameters<typeof ownerNavSectionsFor>[0],
+    crmPrimary?: boolean,
+    crmEnabled?: boolean,
+    callIntelEnabled?: boolean,
+  ) => ownerNavSectionsFor(role, crmPrimary, crmEnabled, callIntelEnabled);
+
+  it("files every visible page under some heading - nothing is lost in the grouping", () => {
+    // THE ASSERTION THIS SUITE EXISTS FOR. A page missing from the rail is a
+    // page nobody can reach, and it would be invisible in review: the code
+    // still compiles, the route still resolves, the link is simply gone.
+    for (const role of ["owner", "manager", "telecaller"] as const) {
+      const flat = ownerNavItemsFor(role, false, true, true).map((i) => i.href);
+      const grouped = groups(role, false, true, true).flatMap((g) => g.items.map((i) => i.href));
+      expect([role, grouped]).toEqual([role, flat]);
+    }
+  });
+
+  it("puts Dashboard above the first heading", () => {
+    const [first] = groups("owner", false, true, true);
+    expect(first.label).toBeNull();
+    expect(first.items.map((i) => i.href)).toEqual(["/owner"]);
+  });
+
+  it("groups the lead connectors together, away from the rest of the settings", () => {
+    // The example the grouping was asked for: an ad platform, a messaging
+    // provider and the source catalogue all answer "where do leads come from".
+    const connectors = groups("owner", false, true, true).find((g) => g.key === "connectors");
+    expect(connectors?.label).toBe("Lead connectors");
+    expect(connectors?.items.map((i) => i.href)).toContain("/owner/meta-ads");
+    expect(connectors?.items.map((i) => i.href)).toContain("/owner/messaging-setup");
+  });
+
+  it("drops empty groups rather than rendering a heading over nothing", () => {
+    // A telecaller sees no Sales pages at all, so that heading must not appear.
+    const keys = groups("telecaller", false, true, true).map((g) => g.key);
+    expect(keys).not.toContain("sales");
+    for (const group of groups("telecaller", false, true, true)) {
+      expect([group.key, group.items.length > 0]).toEqual([group.key, true]);
+    }
+  });
+
+  it("hides the call log's whole group when it would be the only thing in it", () => {
+    // Conversations also holds Inbox and Call Quality, so the group survives -
+    // but the call log itself must not, without the module.
+    const withoutModule = groups("owner", false, true, false).flatMap((g) =>
+      g.items.map((i) => i.href),
+    );
+    expect(withoutModule).not.toContain("/owner/calls");
   });
 });

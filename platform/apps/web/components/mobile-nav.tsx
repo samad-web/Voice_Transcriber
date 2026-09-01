@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Lock, Menu, User, X } from "lucide-react";
 import { Logo } from "@aura/ui";
 import type { OwnerRole } from "@aura/shared";
-import { NAV_ITEMS, navItemFor, ownerNavItemsFor, type NavArea } from "@/lib/nav";
+import { NAV_ITEMS, navItemFor, ownerNavSectionsFor, type NavArea, type NavGroup } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 /**
@@ -41,8 +41,13 @@ export function MobileNav({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const items =
-    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled) : NAV_ITEMS;
+  // Grouped for the owner, flat for the platform - see <Sidebar>. The two
+  // rails render the same rail; only the breakpoint differs.
+  const groups: NavGroup[] =
+    area === "owner"
+      ? ownerNavSectionsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled)
+      : [{ key: null, label: null, items: NAV_ITEMS }];
+  const items = groups.flatMap((group) => group.items);
   const current = navItemFor(pathname, items);
 
   // Focus management for the drawer-as-dialog: the trigger opens it, the close
@@ -181,32 +186,47 @@ export function MobileNav({
                 </button>
               </div>
 
-              <div className="flex-1 space-y-0.5 p-3">
-                {items.map((item) => {
-                  const Icon = item.icon;
-                  // Reuse the same longest-prefix match `current` already
-                  // holds (used above for the header title) instead of
-                  // testing each item's own prefix independently - otherwise
-                  // Dashboard ("/owner") matches every owner route's prefix
-                  // test too, and renders active alongside the real page.
-                  const isActive = item === current;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-current={isActive ? "page" : undefined}
-                      style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
-                      className={`flex w-full items-center gap-3 rounded-full px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out ${
-                        // Same brand-register active state as <Sidebar>; the two
-                        // rails must agree on what "you are here" looks like.
-                        isActive ? "text-white" : "text-text-muted active:bg-surface-hover"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="truncate">{item.label}</span>
-                    </Link>
-                  );
-                })}
+              <div className="flex-1 space-y-4 p-3">
+                {groups.map((group) => (
+                  <section
+                    key={group.key ?? "top"}
+                    aria-label={group.label ?? undefined}
+                    className="space-y-0.5"
+                  >
+                    {group.label ? (
+                      <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase">
+                        {group.label}
+                      </h2>
+                    ) : null}
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      // Reuse the same longest-prefix match `current` already
+                      // holds (used above for the header title) instead of
+                      // testing each item's own prefix independently - otherwise
+                      // Dashboard ("/owner") matches every owner route's prefix
+                      // test too, and renders active alongside the real page.
+                      const isActive = item === current;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          aria-current={isActive ? "page" : undefined}
+                          style={
+                            isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined
+                          }
+                          className={`flex w-full items-center gap-3 rounded-full px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out ${
+                            // Same brand-register active state as <Sidebar>; the two
+                            // rails must agree on what "you are here" looks like.
+                            isActive ? "text-white" : "text-text-muted active:bg-surface-hover"
+                          }`}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </section>
+                ))}
               </div>
 
               <div className="space-y-3 border-t border-border p-4">

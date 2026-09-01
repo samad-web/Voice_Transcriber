@@ -312,14 +312,6 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
 ];
 
 /**
- * The CRM object pages - what A6's shadow-read flag promotes to sit right
- * after Dashboard, above the legacy Board/All Leads pair, once it's on.
- * Neither page group is ever hidden by this: the legacy pair stays exactly
- * where it is, one click away, for the whole burn-in period.
- */
-const CRM_PRIMARY_HREFS = ["/owner/deals", "/owner/contacts", "/owner/accounts", "/owner/reports"];
-
-/**
  * The CRM-object nav items - hidden entirely (not just reordered) when the
  * org's `enabled_modules` (migration 0072) doesn't include 'crm'. Matched
  * against what `CrmPermissionsGuard`'s `@RequireCrmPermission` actually
@@ -354,17 +346,167 @@ const CRM_GATED_HREFS = [
 ];
 
 /**
+ * The owner console's sidebar groups, in render order.
+ *
+ * WHY THIS EXISTS. The customer console grew to two dozen destinations, and a
+ * flat rail of two dozen is not a menu - it is a list you read top to bottom
+ * every time because nothing tells you where to look. Grouping is what turns
+ * "somewhere in there" into "under Lead connectors".
+ *
+ * The grouping is by WHAT SOMEBODY CAME TO DO, not by what the code is. Meta
+ * Lead Ads and WhatsApp Setup sit beside Lead Sources under Lead connectors
+ * because all three answer "where do new leads arrive from" - even though one
+ * is an ad platform, one is a messaging provider and one is a CSV/webhook
+ * catalogue. Filing them under Settings, where they were, meant the person
+ * connecting a lead source had to already know that.
+ *
+ * Dashboard has no section on purpose: it sits above the first heading, which
+ * is what makes the first heading read as a heading rather than a label for
+ * everything under it.
+ */
+export const OWNER_NAV_SECTIONS = [
+  { key: "pipeline", label: "Pipeline" },
+  { key: "crm", label: "Customers" },
+  { key: "conversations", label: "Conversations" },
+  { key: "sales", label: "Sales" },
+  { key: "insights", label: "Insights" },
+  { key: "connectors", label: "Lead connectors" },
+  { key: "workspace", label: "Workspace" },
+] as const;
+
+export type NavSection = (typeof OWNER_NAV_SECTIONS)[number]["key"];
+
+/**
+ * Which group each owner page belongs to.
+ *
+ * A map here rather than a `section` field on each item, so the whole taxonomy
+ * is readable in one screen - the question this file gets asked is "what is
+ * next to what", and a property spread across two dozen object literals cannot
+ * answer it. `ownerNavSectionsFor` is tested to leave nothing unfiled.
+ *
+ * Keys for pages that do not exist on every branch are harmless and
+ * deliberate: a page lands in one commit and its nav entry in another, and an
+ * entry with nowhere to go would otherwise disappear from the rail with no
+ * error anywhere.
+ */
+const OWNER_SECTION_OF: Record<string, NavSection> = {
+  "/owner/board": "pipeline",
+  "/owner/leads": "pipeline",
+  "/owner/tasks": "pipeline",
+  "/owner/outreach": "pipeline",
+
+  "/owner/deals": "crm",
+  "/owner/contacts": "crm",
+  "/owner/accounts": "crm",
+
+  "/owner/calls": "conversations",
+  "/owner/call-quality": "conversations",
+  "/owner/inbox": "conversations",
+
+  "/owner/products": "sales",
+  "/owner/quotations": "sales",
+  "/owner/invoices": "sales",
+
+  "/owner/reports": "insights",
+  "/owner/reports/builder": "insights",
+
+  "/owner/lead-sources": "connectors",
+  "/owner/meta-ads": "connectors",
+  "/owner/messaging-setup": "connectors",
+
+  "/owner/projects": "workspace",
+  "/owner/import": "workspace",
+  "/owner/duplicates": "workspace",
+  "/owner/branding": "workspace",
+  "/owner/connections": "workspace",
+};
+
+/** Sections carrying the CRM object model - what `crmPrimary` promotes. */
+const CRM_PRIMARY_SECTIONS: NavSection[] = ["crm", "insights"];
+
+export interface NavGroup {
+  /** null for the ungrouped items above the first heading (Dashboard). */
+  key: NavSection | null;
+  label: string | null;
+  items: NavItem[];
+}
+
+/**
+ * The owner nav as the sidebar renders it: grouped, in section order, with
+ * empty groups dropped.
+ *
+ * `crmPrimary` (CRM_SHADOW_READ_ENABLED) keeps the job it had before there
+ * were sections - putting the CRM object pages first - but now moves whole
+ * SECTIONS rather than individual items. Reordering items inside a grouped
+ * rail would have produced the same list in a different order under headings
+ * that no longer described it.
+ *
+ * An unfiled page falls into the last group rather than vanishing: a rail
+ * missing a page is a page nobody can reach, which is worse than one filed
+ * under the wrong heading.
+ */
+export function ownerNavSectionsFor(
+  role: OwnerRole,
+  crmPrimary = false,
+  crmEnabled = true,
+  callIntelEnabled = false,
+): NavGroup[] {
+  const visible = OWNER_NAV_ITEMS.filter(
+    (item) => !item.ownerRoles || item.ownerRoles.includes(role),
+  )
+    .filter((item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href))
+    // Defaults OFF, unlike crmEnabled: call intelligence is an opt-in
+    // disclosure of what was said on a customer's phone call, so a caller that
+    // forgets to pass it must hide the page, not reveal it.
+    .filter((item) => callIntelEnabled || !CALL_INTEL_GATED_HREFS.includes(item.href));
+
+  const ungrouped = visible.filter((item) => !OWNER_SECTION_OF[item.href]);
+  const order = crmPrimary
+    ? [
+        ...OWNER_NAV_SECTIONS.filter((s) => CRM_PRIMARY_SECTIONS.includes(s.key)),
+        ...OWNER_NAV_SECTIONS.filter((s) => !CRM_PRIMARY_SECTIONS.includes(s.key)),
+      ]
+    : [...OWNER_NAV_SECTIONS];
+
+  // Order INSIDE a group comes from the map above too, not from the order the
+  // items happen to be declared in: the map is where someone reasons about
+  // what sits next to what, and having half the answer there and half of it
+  // three hundred lines up is how a group ends up reading in an order nobody
+  // chose. Object key order is insertion order for string keys.
+  const filed = Object.keys(OWNER_SECTION_OF);
+  const groups: NavGroup[] = order.map(({ key, label }) => ({
+    key,
+    label,
+    items: visible
+      .filter((item) => OWNER_SECTION_OF[item.href] === key)
+      .sort((a, b) => filed.indexOf(a.href) - filed.indexOf(b.href)),
+  }));
+
+  // Unfiled pages join the final group, keeping their declared order.
+  const unfiled = ungrouped.filter((item) => item.href !== "/owner");
+  if (unfiled.length > 0) groups[groups.length - 1].items.push(...unfiled);
+
+  return [
+    { key: null, label: null, items: ungrouped.filter((item) => item.href === "/owner") },
+    ...groups,
+  ].filter((group) => group.items.length > 0);
+}
+
+/**
  * Which of `OWNER_NAV_ITEMS` a given owner-console persona may see, in what
- * order. `crmPrimary` (CRM_SHADOW_READ_ENABLED, resolved server-side and
- * passed down - see the owner layout) moves the CRM object pages to sit
- * right after Dashboard rather than after the legacy Board/All Leads pair -
- * nothing is added or removed by it, only the order changes. `crmEnabled`
- * (the org's own `enabled_modules`, also resolved server-side) is different:
- * it actually removes `CRM_GATED_HREFS` when the org doesn't have the CRM
- * module, since those pages would otherwise 403 or show data that doesn't
- * exist for that tenant. `callIntelEnabled` does the same for the call log,
- * from the same `enabled_modules` column - and defaults to false rather than
- * true, because the thing behind it is a disclosure.
+ * order - the same rail `ownerNavSectionsFor` builds, flattened, for the
+ * callers that want a plain list (`navItemFor`'s longest-prefix match, and
+ * anything counting pages rather than drawing them).
+ *
+ * `crmPrimary` (CRM_SHADOW_READ_ENABLED, resolved server-side and passed down
+ * - see the owner layout) promotes the CRM sections; nothing is added or
+ * removed by it, only the order changes. `crmEnabled` (the org's own
+ * `enabled_modules`, also resolved server-side) is different: it removes
+ * `CRM_GATED_HREFS` when the org doesn't have the CRM module, since those
+ * pages would otherwise 403 or show data that doesn't exist for that tenant.
+ * `callIntelEnabled` does the same for the call log, from the same column -
+ * and defaults to false rather than true, because the thing behind it is a
+ * disclosure.
  */
 export function ownerNavItemsFor(
   role: OwnerRole,
@@ -372,18 +514,9 @@ export function ownerNavItemsFor(
   crmEnabled = true,
   callIntelEnabled = false,
 ): NavItem[] {
-  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role))
-    .filter((item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href))
-    // Defaults OFF, unlike crmEnabled: call intelligence is an opt-in
-    // disclosure of what was said on a customer's phone call, so a caller that
-    // forgets to pass it must hide the page, not reveal it.
-    .filter((item) => callIntelEnabled || !CALL_INTEL_GATED_HREFS.includes(item.href));
-  if (!crmPrimary) return visible;
-
-  const crmGroup = visible.filter((item) => CRM_PRIMARY_HREFS.includes(item.href));
-  const rest = visible.filter((item) => !CRM_PRIMARY_HREFS.includes(item.href));
-  const afterDashboard = rest.findIndex((item) => item.href === "/owner") + 1;
-  return [...rest.slice(0, afterDashboard), ...crmGroup, ...rest.slice(afterDashboard)];
+  return ownerNavSectionsFor(role, crmPrimary, crmEnabled, callIntelEnabled).flatMap(
+    (g) => g.items,
+  );
 }
 
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */

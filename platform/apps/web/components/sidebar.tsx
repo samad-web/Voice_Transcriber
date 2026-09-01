@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Lock, User } from "lucide-react";
 import { Logo } from "@aura/ui";
 import type { OwnerRole } from "@aura/shared";
-import { NAV_ITEMS, navItemFor, ownerNavItemsFor, type NavArea } from "@/lib/nav";
+import { NAV_ITEMS, navItemFor, ownerNavSectionsFor, type NavArea, type NavGroup } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export function Sidebar({
@@ -38,8 +38,14 @@ export function Sidebar({
   subtitle?: string;
 }) {
   const pathname = usePathname();
-  const items =
-    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled) : NAV_ITEMS;
+  // The owner rail is grouped under headings (two dozen destinations is a wall
+  // without them); the platform rail is one flat list, which is the same shape
+  // with a single unlabelled group.
+  const groups: NavGroup[] =
+    area === "owner"
+      ? ownerNavSectionsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled)
+      : [{ key: null, label: null, items: NAV_ITEMS }];
+  const items = groups.flatMap((group) => group.items);
   // Longest-prefix match against every item at once, not each item tested
   // independently - otherwise Dashboard (href "/owner") matches the prefix
   // test on every other owner route too, and both it and the real current
@@ -63,30 +69,47 @@ export function Sidebar({
           </div>
         </div>
 
-        <nav aria-label="Main" className="space-y-0.5">
-          {items.map((item) => {
-            const Icon = item.icon;
-            const isActive = item === active;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={isActive ? "page" : undefined}
-                style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
-                className={`flex w-full items-center gap-3 rounded-full px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out ${
-                  isActive
-                    ? // The gradient fill is the "you are here" signal now -
-                      // white holds contrast against every stop (same pairing
-                      // marketing's CTA already ships in production).
-                      "text-white"
-                    : "text-text-muted hover:bg-surface-hover hover:text-text"
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            );
-          })}
+        <nav aria-label="Main" className="space-y-4">
+          {groups.map((group) => (
+            // A <section> per group with its heading as the accessible name,
+            // so a screen reader can move between them the way a sighted
+            // reader skims the headings - a flat list of links with visual
+            // separators only would announce as one run of two dozen.
+            <section
+              key={group.key ?? "top"}
+              aria-label={group.label ?? undefined}
+              className="space-y-0.5"
+            >
+              {group.label ? (
+                <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase">
+                  {group.label}
+                </h2>
+              ) : null}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = item === active;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={isActive ? "page" : undefined}
+                    style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+                    className={`flex w-full items-center gap-3 rounded-full px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out ${
+                      isActive
+                        ? // The gradient fill is the "you are here" signal now -
+                          // white holds contrast against every stop (same pairing
+                          // marketing's CTA already ships in production).
+                          "text-white"
+                        : "text-text-muted hover:bg-surface-hover hover:text-text"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </section>
+          ))}
         </nav>
       </div>
 
