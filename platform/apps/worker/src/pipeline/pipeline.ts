@@ -276,16 +276,77 @@ export async function runPostAsrStages(
   let riskFlags: Array<{ category: string; snippet: string; severity: string }> = [];
 
   try {
+    // ONE read for both halves of analyze. The extraction used to re-select
+    // `text` further down; nothing between the two writes that column, so the
+    // second read only existed because the two halves were written apart.
+    const {
+      rows: [t],
+    } = await client.query(
+      "SELECT text, segments, diarized FROM transcripts WHERE call_id = $1",
+      [callId],
+    );
+    const {
+      rows: [agent],
+    } = await client.query(
+      `SELECT a.id, a.version, a.system_prompt, a.field_schema FROM agents a
+        JOIN calls c ON c.workspace_id = a.workspace_id
+       WHERE c.id = $1 AND a.is_active = true
+       ORDER BY a.version DESC LIMIT 1`,
+      [callId],
+    );
+
+    /*
+     * The tenant's extraction starts HERE, and is awaited far below.
+     *
+     * The two halves of analyze - conversation intelligence and the tenant's
+     * own field extraction - share nothing. One reads the segments, the other
+     * reads the flat text, neither reads the other's output, and both are pure
+     * provider calls with no database access of their own. Run one after the
+     * other they were simply two lots of ~95s; started together they are one.
+     *
+     * Started, not awaited. The await stays after the intelligence writes so
+     * the ORDER of writes is exactly what it was: a call whose extraction
+     * throws still keeps the summary and analytics that landed before it,
+     * which is what a reader sees while the retry is pending.
+     *
+     * `.then(ok, err)` rather than a bare promise, and this is load-bearing: a
+     * rejection sitting unhandled for the minutes intelligence takes is an
+     * unhandledRejection, which this Node version turns into a process crash.
+     * Settling it into a value keeps the rejection alive but handled, to be
+     * re-thrown at the await where the outer catch can still turn it into
+     * fail("ANALYZE") exactly as before.
+     *
+     * No transcript means the call was gated as too short, or ASR genuinely
+     * heard nothing. Running the agent over that can only invent field values,
+     * and it is billed either way - so skip it.
+     */
+    const extraction = (
+      agent && t?.text
+        ? (async () => {
+            // The parsed schema travels WITH the result: the call_facts
+            // projection below walks its fields, and it is parsed in here so a
+            // malformed field_schema still surfaces at the await, where the
+            // outer catch can fail the stage - not before intelligence has had
+            // a chance to write.
+            const schema = ExtractionSchema.parse(agent.field_schema);
+            const output = await analyzeTranscript(
+              agent.system_prompt,
+              schema,
+              t.text,
+              vocabulary,
+            );
+            return { schema, output };
+          })()
+        : Promise.resolve(null)
+    ).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+
     // Conversation intelligence: diarize (Agent/Customer) + per-turn intent +
     // call-level intent/sentiment/outcome. Always on, non-blocking - a failure
     // here must never fail the whole call (the tenant extraction still runs).
     try {
-      const {
-        rows: [t],
-      } = await client.query(
-        "SELECT text, segments, diarized FROM transcripts WHERE call_id = $1",
-        [callId],
-      );
       if (t?.text) {
         // Hand ASR's segments to the analyzer so it labels them instead of
         // re-splitting the flat text: ASR owns the boundaries and timings,
@@ -370,30 +431,16 @@ export async function runPostAsrStages(
       console.error(`call ${callId}: conversation-intelligence error (non-blocking):`, err);
     }
 
-    const {
-      rows: [agent],
-    } = await client.query(
-      `SELECT a.id, a.version, a.system_prompt, a.field_schema FROM agents a
-        JOIN calls c ON c.workspace_id = a.workspace_id
-       WHERE c.id = $1 AND a.is_active = true
-       ORDER BY a.version DESC LIMIT 1`,
-      [callId],
-    );
-    const {
-      rows: [transcript],
-    } = await client.query("SELECT text FROM transcripts WHERE call_id = $1", [callId]);
-    // No transcript means the call was gated as too short, or ASR genuinely
-    // heard nothing. Running the agent over that can only invent field
-    // values, and it is billed either way - so skip it.
-    if (agent && transcript?.text) {
-      const schema = ExtractionSchema.parse(agent.field_schema);
-      const result = await analyzeTranscript(
-        agent.system_prompt,
-        schema,
-        transcript.text,
-        vocabulary,
-      );
+    // The extraction started before intelligence did; collect it now. A
+    // rejection is re-thrown rather than logged, because unlike conversation
+    // intelligence this half IS the call's purpose - the outer catch lands it
+    // on FAILED_ANALYZE, exactly as when the call was made inline here.
+    const settled = await extraction;
+    if (!settled.ok) throw settled.error;
+    const extracted = settled.value;
 
+    if (extracted) {
+      const { schema, output: result } = extracted;
       await client.query(
         `INSERT INTO ai_outputs
            (org_id, call_id, agent_id, agent_version, output, provider, model,

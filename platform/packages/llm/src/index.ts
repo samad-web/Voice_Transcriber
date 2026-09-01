@@ -119,6 +119,50 @@ export function glossaryBlock(vocabulary?: string[] | null): string {
  */
 const SARVAM_LABEL_CHUNK = Number(process.env.SARVAM_LABEL_CHUNK ?? 10);
 
+/**
+ * How many labelling requests are in flight at once.
+ *
+ * The chunks were run one after another, which was invisible while each one
+ * FAILED in about a second and became the whole cost once they started
+ * succeeding: on the starter tier a request returned truncated in ~50s, and
+ * with real headroom sarvam-105b reasons for ~95s before answering. A
+ * 39-segment call was four serial requests - roles, two chunk passes, the
+ * call-level read - and took 7m52s, of which nine seconds was the actual
+ * transcription.
+ *
+ * Nothing about a chunk depends on another chunk. Roles are decided ONCE for
+ * the whole call before any of this runs (see the function docblock), and each
+ * chunk only labels intent, which is local to its own segments - so they are
+ * independent by construction, not by luck.
+ *
+ * Bounded rather than a bare Promise.all: an 84-segment call is three chunks
+ * today, but the ceiling is however long a call someone records, and firing
+ * twenty simultaneous requests at a starter-tier plan trades a latency problem
+ * for a 429 problem. Four is enough to make the count of chunks stop mattering
+ * for any realistic call.
+ */
+const SARVAM_LABEL_CONCURRENCY = Number(process.env.SARVAM_LABEL_CONCURRENCY ?? 4);
+
+/**
+ * Run `job` over every item, at most `limit` at a time.
+ *
+ * Workers pull from a shared cursor rather than taking a fixed slice each, so
+ * one slow request cannot leave the others idle behind it.
+ */
+async function inPoolOf<T>(
+  limit: number,
+  items: T[],
+  job: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      await job(items[i]!);
+    }
+  });
+  await Promise.all(workers);
+}
+
 export interface AnalyzeResult {
   output: Record<string, unknown>;
   validationStatus: "valid" | "repaired" | "failed";
@@ -1102,8 +1146,14 @@ async function sarvamConversation(
 
   const decided = new Map<number, string | null>();
 
+  const chunkStarts: number[] = [];
   for (let start = 0; start < usable.length; start += SARVAM_LABEL_CHUNK) {
-    const slice = usable.slice(start, start + SARVAM_LABEL_CHUNK);
+    chunkStarts.push(start);
+  }
+
+  const runLabels = () =>
+    inPoolOf(SARVAM_LABEL_CONCURRENCY, chunkStarts, async (start) => {
+      const slice = usable.slice(start, start + SARVAM_LABEL_CHUNK);
     const prompt =
       `You are labelling segments of ONE phone call for a telecalling team. ` +
       `${roleRules}\n` +
@@ -1139,7 +1189,7 @@ async function sarvamConversation(
         err,
       );
     }
-  }
+    });
 
   // ── call-level reading: one small answer, so one request always suffices ──
   const summarySchema = {
@@ -1199,9 +1249,15 @@ async function sarvamConversation(
     required: ["language", "summary", "sentiment", "outcome"],
   };
 
-  let raw: Partial<ConversationIntelligence> = {};
-  try {
-    const res = await sarvamChat({
+  /**
+   * The call-level read. A SIBLING of the labelling above, not its successor:
+   * it reads the transcript and the role mapping, never the per-segment
+   * intents, so waiting for the chunks bought nothing and cost a full request's
+   * latency on every call.
+   */
+  const runSummary = async (): Promise<Partial<ConversationIntelligence>> => {
+    try {
+      const res = await sarvamChat({
       prompt:
         `Read ONE phone call for a telecalling / sales team and report on it. ` +
         `${roleRules}\n` +
@@ -1221,12 +1277,20 @@ async function sarvamConversation(
     });
     tokensIn += res.tokensIn;
     tokensOut += res.tokensOut;
-    raw = JSON.parse(res.text || "{}") as Partial<ConversationIntelligence>;
-  } catch (err) {
-    // Labels may well have landed; returning them without a summary is better
-    // than throwing the whole stage away.
-    console.error("analyzeConversation: call-level pass failed:", err);
-  }
+      return JSON.parse(res.text || "{}") as Partial<ConversationIntelligence>;
+    } catch (err) {
+      // Labels may well have landed; returning them without a summary is better
+      // than throwing the whole stage away.
+      console.error("analyzeConversation: call-level pass failed:", err);
+      return {};
+    }
+  };
+
+  // Both halves at once. Each keeps its own try/catch, so this is still "a
+  // failed chunk loses its intents, a failed summary loses the summary" - one
+  // rejecting must never take the other down with it, which is exactly what a
+  // shared try around a Promise.all would have done.
+  const [, raw] = await Promise.all([runLabels(), runSummary()]);
 
   // Role comes from the one global mapping, never from the chunk - so a chunk
   // that failed costs an intent, not a swapped speaker.
