@@ -3,6 +3,7 @@ import { Building2, Plus } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { apiGet } from "@/lib/server-api";
+import { SignInLinkCard } from "./sign-in-link";
 
 interface TenantRow {
   id: string;
@@ -42,6 +43,8 @@ export default async function InstancesPage() {
           </BrutalButton>
         </Link>
       </div>
+
+      <SignInLinkCard />
 
       {data === null ? (
         <Card>

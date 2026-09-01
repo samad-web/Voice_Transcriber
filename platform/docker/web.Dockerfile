@@ -51,8 +51,13 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 # workspace layout: server.js lands at apps/web/server.js.
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static      ./apps/web/.next/static
-# (no apps/web/public — the console ships no static assets today; add a COPY
-#  here if one appears, standalone does not trace that directory.)
+# The console DOES ship static assets now - public/logo.png, the mark the
+# sidebar and the sign-in page render through next/image - and `standalone`
+# does not trace `public/`. This COPY was missing when the logo landed, so the
+# image built and started perfectly and every page rendered with a broken mark;
+# nothing catches that before a human looks at the page. (Not the favicon: the
+# icons live in app/ and are compiled into the build output.)
+COPY --from=builder /app/apps/web/public             ./apps/web/public
 
 RUN addgroup -g 10001 aura && adduser -u 10001 -G aura -s /bin/sh -D aura \
  && chown -R aura:aura /app
