@@ -12,6 +12,23 @@ import Image from "next/image";
  *
  * The artwork is transparent-background and reads on both the light and dark
  * grounds, so it needs no per-theme variant.
+ *
+ * ── WHY THE SRC IS BUILT AND NOT THE LITERAL "/logo.png" ────────────────────
+ *
+ * The console is mounted under a base path (/admin, see apps/web/next.config.ts)
+ * and the marketing site is not. `next/image` handles those two halves
+ * inconsistently: it DOES prefix the optimizer endpoint it points the browser at
+ * (/admin/_next/image), and it does NOT prefix the `url` parameter it puts
+ * inside. The optimizer then fetches that url back off this same server, where
+ * the public file lives at /admin/logo.png - so it asks for /logo.png, gets a
+ * 404, and answers 400 "The requested resource isn't a valid image". The mark
+ * renders broken while the file it wants is sitting right there, reachable, one
+ * prefix away.
+ *
+ * So the prefix goes on the src. `NEXT_PUBLIC_BASE_PATH` is empty for
+ * marketing, which leaves "/logo.png" exactly as it was, and is baked in per
+ * app at build time - the same value next.config.ts reads for `basePath`, so
+ * the two cannot disagree.
  */
 export function Logo({
   size = 36,
@@ -23,7 +40,7 @@ export function Logo({
 }) {
   return (
     <Image
-      src="/logo.png"
+      src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/logo.png`}
       alt=""
       width={size}
       height={size}
