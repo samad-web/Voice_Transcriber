@@ -3,27 +3,36 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, X } from "lucide-react";
+import { AlertTriangle, Play, RefreshCw, Search, X } from "lucide-react";
 import {
   Button,
   Input,
   MonoLabel,
+  StatusChip,
   TableBody,
   TableCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  useConfirm,
 } from "@aura/ui";
 import { CallReadChips, TranscriptBody, humanize } from "../call-intel";
 import {
   formatDuration,
   num,
   relativeTime,
+  type CallNote,
   type OwnerCall,
   type OwnerCallDetail,
   type Telecaller,
 } from "../types";
-import { fetchOwnerCallAction } from "./actions";
+import {
+  addOwnerCallNoteAction,
+  fetchOwnerCallAction,
+  fetchOwnerCallAudioAction,
+  fetchOwnerCallNotesAction,
+  reprocessOwnerCallAction,
+} from "./actions";
 
 const STATES = [
   { key: "complete", label: "Done" },
@@ -368,12 +377,26 @@ function FilterChip({
  * the parts no list can afford to carry for every row.
  */
 function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => void }) {
+  const confirm = useConfirm();
   const [detail, setDetail] = useState<OwnerCallDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<CallNote[] | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     setDetail(null);
     setError(null);
+    setNotes(null);
+    setNoteDraft("");
+    // Audio and the last action's message are per-call: leaving either behind
+    // would have the next call opened play the previous one's recording, or
+    // claim a reprocess that was never asked for on it.
+    setAudioUrl(null);
+    setActionMsg(null);
     if (!call) return;
     let cancelled = false;
     void fetchOwnerCallAction(call.id).then((result) => {
@@ -381,15 +404,81 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
       if (result.error) setError(result.error);
       else if (result.detail) setDetail(result.detail);
     });
+    // Notes ride alongside rather than inside the detail response - see
+    // fetchOwnerCallNotesAction for why they are their own round trip. A
+    // failure here degrades to "no notes" instead of blocking the drawer: the
+    // AI read is the reason the panel was opened.
+    void fetchOwnerCallNotesAction(call.id).then((result) => {
+      if (cancelled) return;
+      setNotes(result.notes ?? []);
+    });
     return () => {
       cancelled = true;
     };
   }, [call]);
 
+  async function submitNote() {
+    if (!call || !noteDraft.trim()) return;
+    setNoteBusy(true);
+    const result = await addOwnerCallNoteAction(call.id, noteDraft);
+    setNoteBusy(false);
+    if (result.error) {
+      setActionMsg(result.error);
+      return;
+    }
+    if (result.note) {
+      // Prepend rather than re-fetch: the list is newest-first and the server
+      // just handed back the row it wrote.
+      setNotes((current) => [result.note as CallNote, ...(current ?? [])]);
+      setNoteDraft("");
+    }
+  }
+
+  async function loadAudio() {
+    if (!call) return;
+    setPending(true);
+    setActionMsg(null);
+    const result = await fetchOwnerCallAudioAction(call.id);
+    setPending(false);
+    if (result.error) setActionMsg(result.error);
+    else setAudioUrl(result.url ?? null);
+  }
+
+  async function reprocess() {
+    if (!call) return;
+    // Confirmed, not because the action is hard to undo - it is not - but
+    // because it SPENDS: the call goes back through the ASR provider and the
+    // analyzer, both billed, on a transcript already paid for once. The dialog
+    // is the only place a reader is told that before it happens.
+    const ok = await confirm({
+      title: "Reprocess this call?",
+      body: "The recording is transcribed and analysed again from scratch. This costs the same as a new call, and the current transcript and AI read are replaced.",
+      confirmLabel: "Reprocess",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    setPending(true);
+    setActionMsg(null);
+    const result = await reprocessOwnerCallAction(call.id);
+    setPending(false);
+    setActionMsg(
+      result.error ?? "Queued - this call will update as the pipeline works through it.",
+    );
+  }
+
   if (!call) return null;
 
   const analytics = detail?.analytics ?? null;
   const talkRatio = num(analytics?.talk_ratio ?? null);
+  // The detail's score, falling back to the row's - the list already carries
+  // one, and the drawer opening should not blank a chip that was on screen a
+  // moment ago while the fetch is in flight.
+  const qualityScore = num(analytics?.quality_score ?? call.quality_score ?? null);
+  const isTerminal =
+    call.status === "COMPLETE" ||
+    call.status === "TRANSCRIPTION_OFF" ||
+    call.status.startsWith("FAILED");
   const facts = (detail?.facts ?? []).filter(
     (f) => f.value_text !== null || f.value_num !== null || f.value_bool !== null,
   );
@@ -444,23 +533,100 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
             </Link>
           ) : null}
 
+          {/*
+            The coaching panel, in the same shape and the same words as the
+            operator drawer (calls-explorer.tsx:559). The two consoles are read
+            side by side during a support call, and a score that appeared bare
+            here and itemised there made the same call look like two different
+            verdicts. `quality_criteria` and `risk_flags` are what the owner
+            API started returning alongside the score for exactly this.
+          */}
           {analytics ? (
-            <div className="grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">
-              <div>
-                <dt className="text-text-muted">Who talked</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">
-                  {talkRatio === null
-                    ? "-"
-                    : `${Math.round(talkRatio * 100)}% your side`}
-                </dd>
+            <section className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <MonoLabel>Call analytics</MonoLabel>
+                {analytics.has_escalation_risk ? (
+                  <StatusChip tone="danger">Needs review</StatusChip>
+                ) : null}
               </div>
-              <div>
-                <dt className="text-text-muted">Interruptions</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">
-                  {analytics.interruption_count ?? "-"}
-                </dd>
+
+              <div className="flex flex-wrap gap-2">
+                {qualityScore !== null ? (
+                  <StatusChip
+                    tone={qualityScore >= 70 ? "solid" : qualityScore >= 40 ? "muted" : "danger"}
+                  >
+                    Quality: {Math.round(qualityScore)}/100
+                  </StatusChip>
+                ) : null}
+                {talkRatio !== null ? (
+                  <StatusChip tone="outline">
+                    Agent talk: {Math.round(talkRatio * 100)}%
+                  </StatusChip>
+                ) : null}
+                {analytics.interruption_count !== null ? (
+                  <StatusChip tone="outline">
+                    {analytics.interruption_count} interruption
+                    {analytics.interruption_count === 1 ? "" : "s"}
+                  </StatusChip>
+                ) : null}
               </div>
-            </div>
+
+              {analytics.quality_criteria ? (
+                <div className="space-y-1.5">
+                  {(
+                    [
+                      [
+                        "Consent disclosed",
+                        analytics.quality_criteria.consentDisclosed ? "Yes" : "No",
+                      ],
+                      ["Script adherence", `${analytics.quality_criteria.scriptAdherence}/10`],
+                      ["Professionalism", `${analytics.quality_criteria.professionalism}/10`],
+                      ["Conversion signal", `${analytics.quality_criteria.conversionSignal}/10`],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div key={label} className="flex gap-2 text-sm">
+                      <span className="w-36 shrink-0 text-xs text-text-muted">{label}</span>
+                      <span className="text-text">{value}</span>
+                    </div>
+                  ))}
+                  {analytics.quality_criteria.rationale ? (
+                    <p className="rounded-md border border-border bg-bg-subtle p-3 text-sm leading-relaxed text-text">
+                      {analytics.quality_criteria.rationale}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {analytics.risk_flags && analytics.risk_flags.length > 0 ? (
+                <div className="space-y-1.5">
+                  <MonoLabel>Risk flags</MonoLabel>
+                  {analytics.risk_flags.map((flag, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 rounded-md border border-border bg-bg-subtle p-2.5 text-xs"
+                    >
+                      <AlertTriangle
+                        aria-hidden="true"
+                        className={
+                          flag.severity === "high"
+                            ? "mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-text"
+                            : "mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted"
+                        }
+                      />
+                      <span className="min-w-0">
+                        <span className="font-medium text-text">{humanize(flag.category)}</span>
+                        <span className="text-text-muted"> · {flag.severity}</span>
+                        {flag.snippet ? (
+                          <span className="mt-0.5 block break-words text-text">
+                            &ldquo;{flag.snippet}&rdquo;
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
           ) : null}
 
           {facts.length > 0 ? (
@@ -487,6 +653,101 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
             ) : (
               <TranscriptBody detail={detail} />
             )}
+          </div>
+
+          {/* Notes - the same `call_notes` rows the operator console writes. */}
+          <div className="space-y-2 border-t border-border pt-4">
+            <MonoLabel>Notes</MonoLabel>
+            {notes === null ? (
+              <p className="text-xs text-text-muted">Loading…</p>
+            ) : notes.length === 0 ? (
+              <p className="text-xs text-text-muted">No notes yet</p>
+            ) : (
+              <ul className="space-y-2">
+                {notes.map((note) => (
+                  <li key={note.id} className="rounded-md border border-border bg-bg-subtle p-2.5">
+                    <p className="text-xs leading-relaxed whitespace-pre-wrap text-text">
+                      {note.body}
+                    </p>
+                    <p className="mt-1 text-[10px] text-text-subtle">
+                      {new Date(note.created_at).toLocaleString()}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <textarea
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              rows={3}
+              placeholder="Add a note about this call…"
+              aria-label="Add a note about this call"
+              className="w-full rounded-md border border-border bg-surface p-2 text-xs text-text placeholder:text-text-subtle focus:border-accent focus:outline-none"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => void submitNote()}
+              disabled={noteBusy || !noteDraft.trim()}
+            >
+              {noteBusy ? "Saving…" : "Add note"}
+            </Button>
+          </div>
+
+          {/* Playback and reprocess. */}
+          <div className="space-y-2 border-t border-border pt-4">
+            {/* A recording is streamed from a signed URL and has no caption
+                track to point at - the transcript above is its accessible text
+                alternative. Keyed on the URL so pressing Reload swaps the
+                source instead of leaving the old one playing. */}
+            {audioUrl ? (
+              <audio
+                key={audioUrl}
+                controls
+                preload="metadata"
+                src={audioUrl}
+                className="w-full"
+              />
+            ) : null}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void loadAudio()}
+                disabled={pending}
+              >
+                <Play aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                {audioUrl ? "Reload audio" : "Load audio"}
+              </Button>
+
+              {/*
+                Hidden rather than disabled while the pipeline still holds the
+                call: the API answers 409 for a non-terminal status, and a
+                button whose only outcome is an error is worse than no button.
+              */}
+              {isTerminal ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void reprocess()}
+                  disabled={pending}
+                >
+                  <RefreshCw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                  {pending ? "Working…" : "Reprocess"}
+                </Button>
+              ) : null}
+            </div>
+
+            {actionMsg ? (
+              <p role="status" className="text-xs text-text-muted">
+                {actionMsg}
+              </p>
+            ) : null}
           </div>
         </div>
       </aside>

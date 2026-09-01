@@ -104,6 +104,62 @@ export interface LeadCall {
 }
 
 /** One line of a diarized transcript - the shape the ASR pipeline stores. */
+/**
+ * The coaching breakdown behind `quality_score` - the same four criteria the
+ * operator drawer shows, because a manager reading "74/100" needs to know
+ * which part of the call earned it.
+ */
+export interface QualityCriteria {
+  consentDisclosed: boolean;
+  /** 0-10: did the agent follow the pitch/script. */
+  scriptAdherence: number;
+  /** 0-10: tone, courtesy, no talking over the customer. */
+  professionalism: number;
+  /** 0-10: did the agent ask for the sale/next step, handle objections. */
+  conversionSignal: number;
+  /** One short sentence - why this score. */
+  rationale: string | null;
+}
+
+/** One compliance/escalation-worthy moment the model noticed in the call. */
+export interface RiskFlag {
+  category: string;
+  snippet: string;
+  severity: "low" | "medium" | "high";
+}
+
+/**
+ * `call_analytics` for one call, as both call-shaped endpoints return it.
+ *
+ * ONE type rather than a copy per response. `quality_score` and the talk
+ * metrics are what the console shows a manager about their own floor, and the
+ * lead drawer and the call log are read side by side - a shape that drifted
+ * between them would let the same conversation score differently depending on
+ * which screen it was opened from.
+ *
+ * Numeric columns arrive as strings from `pg` for the NUMERIC ones and as
+ * numbers for the INTEGER ones, hence the union - run them through `num()`
+ * rather than trusting either.
+ */
+export interface CallAnalytics {
+  quality_score: string | number | null;
+  quality_criteria: QualityCriteria | null;
+  talk_ratio: string | number | null;
+  agent_talk_seconds: number | null;
+  customer_talk_seconds: number | null;
+  interruption_count: number | null;
+  risk_flags: RiskFlag[] | null;
+  has_escalation_risk: boolean | null;
+}
+
+/** A reviewer note on a call (`call_notes`), newest first. */
+export interface CallNote {
+  id: string;
+  body: string;
+  author: string | null;
+  created_at: string;
+}
+
 export interface CallSegment {
   speaker?: string | null;
   text: string;
@@ -142,14 +198,7 @@ export interface LeadCallDetail {
     segments: CallSegment[] | null;
     intelligence: CallIntelligence | null;
   } | null;
-  analytics: {
-    quality_score: string | number | null;
-    talk_ratio: string | number | null;
-    agent_talk_seconds: number | null;
-    customer_talk_seconds: number | null;
-    interruption_count: number | null;
-    has_escalation_risk: boolean | null;
-  } | null;
+  analytics: CallAnalytics | null;
   transcriptRedacted: boolean;
 }
 
@@ -194,14 +243,7 @@ export interface OwnerCallDetail {
     segments: CallSegment[] | null;
     intelligence: CallIntelligence | null;
   } | null;
-  analytics: {
-    quality_score: string | number | null;
-    talk_ratio: string | number | null;
-    agent_talk_seconds: number | null;
-    customer_talk_seconds: number | null;
-    interruption_count: number | null;
-    has_escalation_risk: boolean | null;
-  } | null;
+  analytics: CallAnalytics | null;
   /** What the AI pulled out of the conversation, as key/value pairs. */
   facts: Array<{
     field_key: string;
