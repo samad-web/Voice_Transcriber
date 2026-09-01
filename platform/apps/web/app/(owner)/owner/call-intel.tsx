@@ -140,7 +140,18 @@ export function CallTranscript({ leadId, call }: { leadId: string; call: LeadCal
   );
 }
 
-function TranscriptBody({ detail }: { detail: LeadCallDetail }) {
+/**
+ * Shared by the lead drawer and the call log's own drawer, which fetch from
+ * different endpoints. The prop is the STRUCTURE it reads rather than either
+ * response type: both carry a transcript and a redaction flag, and typing it
+ * to one of them would have meant either an import cycle between two features
+ * or a second copy of this panel drifting away from the first.
+ */
+export function TranscriptBody({
+  detail,
+}: {
+  detail: Pick<LeadCallDetail, "transcript" | "transcriptRedacted">;
+}) {
   const intel = detail.transcript?.intelligence ?? null;
   const segments = detail.transcript?.segments ?? null;
   const text = detail.transcript?.text ?? null;

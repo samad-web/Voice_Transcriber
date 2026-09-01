@@ -139,6 +139,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Pipeline",
   },
   {
+    href: "/owner/calls",
+    label: "Calls",
+    icon: Phone,
+    title: "Calls",
+    context: "Pipeline",
+    // Owner/manager only, like Call Quality: a call log is a view over the
+    // whole floor's conversations, not a telecaller's view of their own work
+    // (design doc §9). The API enforces the same pair - the nav is the
+    // convenience, not the control.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/projects",
     label: "Projects",
     icon: Layers,
@@ -319,6 +331,14 @@ const CRM_PRIMARY_HREFS = ["/owner/deals", "/owner/contacts", "/owner/accounts",
  * legacy `leads`-table pages) are deliberately NOT here - those are core
  * Aura, independent of the CRM toggle.
  */
+/**
+ * Hidden without the `call_intel` module, the way CRM_GATED_HREFS is hidden
+ * without CRM. Separate list because it is a separate entitlement: a tenant
+ * can have the whole CRM and still not have bought the right to read its own
+ * call transcripts, and the page 403s rather than rendering empty.
+ */
+const CALL_INTEL_GATED_HREFS = ["/owner/calls"];
+
 const CRM_GATED_HREFS = [
   "/owner/deals",
   "/owner/contacts",
@@ -342,12 +362,22 @@ const CRM_GATED_HREFS = [
  * (the org's own `enabled_modules`, also resolved server-side) is different:
  * it actually removes `CRM_GATED_HREFS` when the org doesn't have the CRM
  * module, since those pages would otherwise 403 or show data that doesn't
- * exist for that tenant.
+ * exist for that tenant. `callIntelEnabled` does the same for the call log,
+ * from the same `enabled_modules` column - and defaults to false rather than
+ * true, because the thing behind it is a disclosure.
  */
-export function ownerNavItemsFor(role: OwnerRole, crmPrimary = false, crmEnabled = true): NavItem[] {
-  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role)).filter(
-    (item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href),
-  );
+export function ownerNavItemsFor(
+  role: OwnerRole,
+  crmPrimary = false,
+  crmEnabled = true,
+  callIntelEnabled = false,
+): NavItem[] {
+  const visible = OWNER_NAV_ITEMS.filter((item) => !item.ownerRoles || item.ownerRoles.includes(role))
+    .filter((item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href))
+    // Defaults OFF, unlike crmEnabled: call intelligence is an opt-in
+    // disclosure of what was said on a customer's phone call, so a caller that
+    // forgets to pass it must hide the page, not reveal it.
+    .filter((item) => callIntelEnabled || !CALL_INTEL_GATED_HREFS.includes(item.href));
   if (!crmPrimary) return visible;
 
   const crmGroup = visible.filter((item) => CRM_PRIMARY_HREFS.includes(item.href));

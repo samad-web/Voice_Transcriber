@@ -15,6 +15,7 @@ import {
 import { z } from "zod";
 import { parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { orgHasModule } from "../../common/org-modules";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -164,25 +165,6 @@ export class LeadsController {
   }
 
   /**
-   * Whether this tenant is entitled to see its own calls' transcripts and AI
-   * read (migration 0072's `enabled_modules`, see org-modules.ts).
-   *
-   * Read per request from `organizations` under the same `withOrg` connection
-   * as everything else, exactly like stagesFor: RLS has already narrowed that
-   * table to this one org, so there is no org predicate to get wrong here.
-   */
-  private async hasCallIntel(client: {
-    query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
-  }): Promise<boolean> {
-    const {
-      rows: [org],
-    } = await client.query(
-      "SELECT 'call_intel' = ANY(enabled_modules) AS enabled FROM organizations LIMIT 1",
-    );
-    return org?.enabled === true;
-  }
-
-  /**
    * Whether the human making this request may read a word-for-word account of
    * a call, per the `recordings_listen` flag an operator sets on their account
    * in Owner accounts.
@@ -233,7 +215,7 @@ export class LeadsController {
     const { stage, status, telecallerId, projectId, q, sort, limit, offset } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      const intel = await this.hasCallIntel(client);
+      const intel = await orgHasModule(client, "call_intel");
       const where: string[] = [];
       const params: unknown[] = [];
       const add = (clause: string, value: unknown) => {
@@ -351,7 +333,7 @@ export class LeadsController {
     @Param("id", ParseUUIDPipe) leadId: string,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      const intel = await this.hasCallIntel(client);
+      const intel = await orgHasModule(client, "call_intel");
       const {
         rows: [lead],
       } = await client.query(
@@ -426,7 +408,7 @@ export class LeadsController {
     @Param("callId", ParseUUIDPipe) callId: string,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      if (!(await this.hasCallIntel(client))) {
+      if (!(await orgHasModule(client, "call_intel"))) {
         throw new ForbiddenException("call intelligence is not enabled for this instance");
       }
 

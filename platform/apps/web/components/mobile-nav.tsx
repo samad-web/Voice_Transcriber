@@ -25,6 +25,8 @@ export function MobileNav({
   crmPrimary = false,
   /** See <Sidebar>: whether this org has the CRM module, resolved server-side. */
   crmEnabled = true,
+  /** Whether this org has the call-intelligence module - hides the call log. */
+  callIntelEnabled = false,
   title = "Aura Platform",
   subtitle = "Call Intelligence",
 }: {
@@ -33,13 +35,14 @@ export function MobileNav({
   ownerRole?: OwnerRole;
   crmPrimary?: boolean;
   crmEnabled?: boolean;
+  callIntelEnabled?: boolean;
   title?: string;
   subtitle?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const items =
-    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled) : NAV_ITEMS;
+    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled) : NAV_ITEMS;
   const current = navItemFor(pathname, items);
 
   // Focus management for the drawer-as-dialog: the trigger opens it, the close

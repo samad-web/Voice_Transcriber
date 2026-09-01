@@ -26,6 +26,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // Whether this ORG has the CRM module at all (migration 0072) - unlike
   // crmPrimary, this does hide nav items. See nav.ts's CRM_GATED_HREFS.
   const crmEnabled = owner.membership.enabledModules.includes("crm");
+  // Same column, separate entitlement: whether this client may read the AI
+  // read of their own calls, and the transcripts behind it (org-modules.ts).
+  const callIntelEnabled = owner.membership.enabledModules.includes("call_intel");
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row">
@@ -35,6 +38,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         ownerRole={owner.membership.ownerRole}
         crmPrimary={crmPrimary}
         crmEnabled={crmEnabled}
+        callIntelEnabled={callIntelEnabled}
         title={company}
         subtitle="Sales Pipeline"
       />
@@ -44,6 +48,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         ownerRole={owner.membership.ownerRole}
         crmPrimary={crmPrimary}
         crmEnabled={crmEnabled}
+        callIntelEnabled={callIntelEnabled}
         title={company}
         subtitle="Sales Pipeline"
       />

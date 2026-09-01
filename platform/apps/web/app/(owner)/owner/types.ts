@@ -153,6 +153,65 @@ export interface LeadCallDetail {
   transcriptRedacted: boolean;
 }
 
+/**
+ * A row of the client's own call log - `GET /v1/owner/calls`.
+ *
+ * Deliberately NOT the operator explorer's row shape. That one carries the
+ * pipeline's internals (attempt counts, next_attempt_at, error_message, the
+ * instance it belongs to) because the operator acts on them; a client is shown
+ * what the call was about and which lead it produced.
+ */
+export interface OwnerCall {
+  id: string;
+  direction: string;
+  started_at: string;
+  duration_s: number;
+  status: string;
+  remote_name: string | null;
+  remote_number_prefix: string | null;
+  remote_number_last3: string | null;
+  device_id: string | null;
+  telecaller: string | null;
+  intent: string | null;
+  sentiment: string | null;
+  outcome: string | null;
+  summary: string | null;
+  has_transcript: boolean | null;
+  quality_score: string | number | null;
+  /** The lead this call produced or advanced, for the link back. */
+  lead_id: string | null;
+  lead_title: string | null;
+}
+
+/** `GET /v1/owner/calls/:id` - see LeadCallDetail for `transcriptRedacted`. */
+export interface OwnerCallDetail {
+  call: OwnerCall;
+  transcript: {
+    language: string | null;
+    engine: string | null;
+    diarized: boolean | null;
+    text: string | null;
+    segments: CallSegment[] | null;
+    intelligence: CallIntelligence | null;
+  } | null;
+  analytics: {
+    quality_score: string | number | null;
+    talk_ratio: string | number | null;
+    agent_talk_seconds: number | null;
+    customer_talk_seconds: number | null;
+    interruption_count: number | null;
+    has_escalation_risk: boolean | null;
+  } | null;
+  /** What the AI pulled out of the conversation, as key/value pairs. */
+  facts: Array<{
+    field_key: string;
+    value_text: string | null;
+    value_num: string | number | null;
+    value_bool: boolean | null;
+  }>;
+  transcriptRedacted: boolean;
+}
+
 export interface Telecaller {
   id: string;
   label: string | null;

@@ -99,6 +99,7 @@ import { MetaOAuthController } from "../modules/meta-ads/meta-oauth.controller";
 import { MetaWebhookController } from "../modules/meta-ads/meta-webhook.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
+import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
 import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
@@ -124,6 +125,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   DeviceTelemetryController,
   InstancesController,
   LeadsController,
+  OwnerCallsController,
   OwnerController,
   OwnersController,
   ErasureController,
@@ -320,6 +322,12 @@ const OWNER_ROLE_ROUTES = [
   "GET /owner/overview",
   "GET /owner/crm-overview",
   "PATCH /owner/telecallers/:deviceId",
+  // The client's own call log. Unlike the three above it declares a real
+  // `@RequireOwnerRole("owner", "manager")` at class level rather than
+  // mounting the guard inertly: reading the whole floor's conversations is a
+  // manager's view of the team, not a telecaller's view of their own work.
+  "GET /owner/calls",
+  "GET /owner/calls/:id",
 ];
 
 /**
@@ -646,8 +654,15 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // from `organizations`, and `recordings_listen` REDACTS part of the
     // response rather than refusing it - the same shape `GET /calls/:id`
     // already has.
-    expect(ROUTES).toHaveLength(248);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(248);
+        // - and the client's own call log's two (`GET /owner/calls` and
+    // `GET /owner/calls/:id`): tenant-scoped, and the only routes outside
+    // OwnerController carrying OwnerRoleGuard at class level - a call log is a
+    // manager's view of the floor, not a telecaller's view of their own work.
+    // Their `call_intel` module check is not a guard for the same reason the
+    // leads one is not: the list answers normally without the module and the
+    // detail refuses, which is a decision each route makes for itself.
+    expect(ROUTES).toHaveLength(250);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(250);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -660,9 +675,9 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(207);
+    expect(tenantScoped).toHaveLength(209);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(248);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(250);
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 215 principal routes", () => {
@@ -673,7 +688,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(223);
+    expect(principalRoutes).toHaveLength(225);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

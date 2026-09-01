@@ -6,7 +6,8 @@ const hrefs = (
   role: Parameters<typeof ownerNavItemsFor>[0],
   crmPrimary?: boolean,
   crmEnabled?: boolean,
-) => ownerNavItemsFor(role, crmPrimary, crmEnabled).map((i) => i.href);
+  callIntelEnabled?: boolean,
+) => ownerNavItemsFor(role, crmPrimary, crmEnabled, callIntelEnabled).map((i) => i.href);
 
 /**
  * A6, Milestone 4: `crmPrimary` (CRM_SHADOW_READ_ENABLED) reorders the CRM
@@ -121,5 +122,46 @@ describe("ownerNavItemsFor - crmEnabled", () => {
     // Nothing in CRM_PRIMARY_HREFS survives crmEnabled=false, so the reorder
     // step is a no-op and this collapses to the same list as crmPrimary=false.
     expect(hrefs("owner", true, false)).toEqual(hrefs("owner", false, false));
+  });
+});
+
+/**
+ * `call_intel` (org-modules.ts): whether this client may read the AI read of
+ * their own calls, and the transcripts behind them.
+ *
+ * Every case here is about the DEFAULT being off. The CRM gate defaults on -
+ * a caller that forgets it shows a page a tenant probably has - and getting
+ * that backwards for this one would put a customer's phone conversations in
+ * front of a client who never bought the right to read them. So the assertion
+ * that matters is the boring one: absent means hidden.
+ */
+describe("ownerNavItemsFor - callIntelEnabled", () => {
+  it("hides the call log by default, and when passed false", () => {
+    expect(hrefs("owner")).not.toContain("/owner/calls");
+    expect(hrefs("owner", false, true, false)).not.toContain("/owner/calls");
+  });
+
+  it("shows it to an owner and a manager when the module is on", () => {
+    expect(hrefs("owner", false, true, true)).toContain("/owner/calls");
+    expect(hrefs("manager", false, true, true)).toContain("/owner/calls");
+  });
+
+  it("never shows it to a telecaller, module or no module", () => {
+    // The floor's whole call history is a manager's view, not a telecaller's
+    // view of their own work (design doc §9) - the same restriction Call
+    // Quality carries. The API asserts this too; the nav is the convenience.
+    expect(hrefs("telecaller", false, true, true)).not.toContain("/owner/calls");
+  });
+
+  it("is independent of the CRM module", () => {
+    // A tenant can have call intelligence without the CRM, and the reverse.
+    // Neither gate may quietly stand in for the other.
+    expect(hrefs("owner", false, false, true)).toContain("/owner/calls");
+    expect(hrefs("owner", false, true, false)).not.toContain("/owner/calls");
+  });
+
+  it("changes nothing else about the list", () => {
+    const withIt = hrefs("owner", false, true, true).filter((h) => h !== "/owner/calls");
+    expect(withIt).toEqual(hrefs("owner", false, true, false));
   });
 });

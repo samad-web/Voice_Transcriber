@@ -22,6 +22,8 @@ export function Sidebar({
    *  resolved server-side by the owner layout. Hides CRM-object nav items
    *  entirely when false - see nav.ts's CRM_GATED_HREFS. */
   crmEnabled = true,
+  /** Whether this org has the call-intelligence module - hides the call log. */
+  callIntelEnabled = false,
   /** Rail heading. The owner console shows their company name here. */
   title = "Aura Platform",
   subtitle = "Call Intelligence",
@@ -31,12 +33,13 @@ export function Sidebar({
   ownerRole?: OwnerRole;
   crmPrimary?: boolean;
   crmEnabled?: boolean;
+  callIntelEnabled?: boolean;
   title?: string;
   subtitle?: string;
 }) {
   const pathname = usePathname();
   const items =
-    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled) : NAV_ITEMS;
+    area === "owner" ? ownerNavItemsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled) : NAV_ITEMS;
   // Longest-prefix match against every item at once, not each item tested
   // independently - otherwise Dashboard (href "/owner") matches the prefix
   // test on every other owner route too, and both it and the real current
