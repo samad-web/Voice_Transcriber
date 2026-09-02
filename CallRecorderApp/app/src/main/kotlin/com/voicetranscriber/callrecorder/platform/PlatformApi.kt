@@ -110,6 +110,50 @@ object PlatformApi {
         )
     }
 
+    /**
+     * A build the server is offering this handset. `notes` is null when the
+     * release carries no note - the server OMITS the key rather than sending a
+     * JSON null, for the same reason documented on [DeviceConfig] below.
+     */
+    data class AppUpdate(
+        val versionCode: Int,
+        val versionName: String,
+        val url: String,
+        val sha256: String,
+        val sizeBytes: Long,
+        val notes: String?,
+    )
+
+    /**
+     * GET /v1/devices/me/update - the self-update channel.
+     *
+     * Returns null when this handset is already on the newest published build,
+     * which is what almost every call gets. [currentVersionCode] is sent so the
+     * server can answer "nothing for you" itself instead of the client having
+     * to compare - and so the fleet dashboard learns which build each phone is
+     * actually running.
+     */
+    fun checkUpdate(baseUrl: String, accessToken: String, currentVersionCode: Int): AppUpdate? {
+        val response = request(
+            baseUrl, "GET", "/devices/me/update?versionCode=$currentVersionCode",
+            null, bearer = accessToken,
+        )
+        if (response.isNull("update")) return null
+        val update = response.getJSONObject("update")
+        return AppUpdate(
+            versionCode = update.getInt("versionCode"),
+            versionName = update.getString("versionName"),
+            url = update.getString("url"),
+            sha256 = update.getString("sha256"),
+            sizeBytes = update.getLong("sizeBytes"),
+            // `isNull` first - the same guard, and the same reason, as
+            // appLockPasswordHash above: optString hands back the four-character
+            // string "null" for a JSON null, which would be shown to the user as
+            // the release note.
+            notes = if (update.isNull("notes")) null else update.optString("notes", null),
+        )
+    }
+
     /** POST /v1/devices/me/health - periodic device telemetry for the fleet dashboard. */
     fun reportHealth(
         baseUrl: String,

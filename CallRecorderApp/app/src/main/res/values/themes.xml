@@ -29,6 +29,20 @@
         <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Aura.BottomSheet</item>
     </style>
 
+    <!--
+      For UpdateInstallActivity, which has no UI of its own: it exists only so
+      the package installer's confirmation has a foreground window to appear
+      over. Without a transparent theme the user would see the app's background
+      flash between tapping the notification and the system dialog.
+    -->
+    <style name="Theme.Aura.Invisible" parent="Theme.Aura">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
     <style name="Widget.Aura.CardView" parent="Widget.Material3.CardView.Filled">
         <item name="cardCornerRadius">20dp</item>
     </style>

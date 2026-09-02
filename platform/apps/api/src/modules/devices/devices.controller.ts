@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -16,7 +17,7 @@ import { createHash, createVerify, randomBytes } from "node:crypto";
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import * as jwt from "jsonwebtoken";
 import { z } from "zod";
-import { DeviceConfig, DeviceRegisterRequest } from "@aura/shared";
+import { AppUpdateResponse, DeviceConfig, DeviceRegisterRequest } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
@@ -24,6 +25,7 @@ import { issueNonce, verifyNonce } from "../../common/device-nonce";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { S3Service } from "../../s3/s3.service";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
 const SetTelecallerBody = z.object({
@@ -147,7 +149,10 @@ const LATEST_HEALTH_JOIN = `
 
 @Controller("devices")
 export class DevicesController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly s3: S3Service,
+  ) {}
 
   /**
    * Device enrollment - the activation gate (design doc §3.2). Called by the
@@ -370,6 +375,92 @@ export class DevicesController {
           ? { appLockPasswordHash: row.app_lock_password_hash }
           : {}),
       });
+    });
+  }
+
+  /**
+   * The self-update channel (migration 0081). The handset reports the
+   * versionCode it is running and gets back the newest PUBLISHED build that is
+   * strictly newer, or `{ update: null }` - which is what almost every poll
+   * gets, and is deliberately a 200 rather than a 204 so the client has one
+   * response shape to parse instead of two.
+   *
+   * Two things this route is careful about:
+   *
+   * 1. **It is advisory, never a gate.** Nothing here can stop a device
+   *    recording. `recordingEnabled` lives in /me/config and is not influenced
+   *    by the version a handset is on, so a bad release - or a release channel
+   *    that is empty, misconfigured or erroring - cannot take the fleet offline.
+   *    An update the phone declines is a phone that keeps working.
+   *
+   * 2. **The URL is presigned per request.** Storing a URL in app_releases
+   *    would bake in a link that expires long before the row does; the bucket
+   *    is not public, and it must not become public just to serve an APK.
+   */
+  @Get("me/update")
+  @UseGuards(DeviceAuthGuard)
+  // Polled by every handset on the same cycle as /me/config, from a shared
+  // source IP behind the customer's NAT. Same reasoning as config: already
+  // authenticated by a signed device token, and rate-limiting the fleet's
+  // shared egress address would starve the phones that poll last.
+  @SkipThrottle()
+  async appUpdate(@Req() req: DeviceRequest, @Query("versionCode") versionCode?: string) {
+    const { deviceId, orgId } = req.device;
+
+    // Parse before use: an absent or junk param must not silently become 0 and
+    // offer an update to a device that is already current. Unknown means
+    // "tell me nothing" - the phone re-asks in an hour with a real number.
+    const current = Number.parseInt(versionCode ?? "", 10);
+    if (!Number.isInteger(current) || current < 0) return { update: null };
+
+    // Record what the handset says it is running, so the fleet view can show
+    // which phones have taken an update and which are lagging. Best-effort:
+    // this is telemetry, and failing the update check because a bookkeeping
+    // UPDATE failed would be the tail wagging the dog.
+    try {
+      await this.db.withOrg(orgId, (client) =>
+        client.query(
+          `UPDATE devices SET app_version = $2, updated_at = now()
+            WHERE id = $1 AND app_version IS DISTINCT FROM $2`,
+          [deviceId, String(current)],
+        ),
+      );
+    } catch {
+      // Ignored on purpose - see above.
+    }
+
+    // app_releases has no org_id and no RLS (it is one fleet-wide APK), so
+    // there is no tenant context to enter. The admin pool is the right handle
+    // for a platform-level table, the same way enrollment does its token lookup.
+    const {
+      rows: [release],
+    } = await this.db
+      .adminPool()
+      .query(
+        `SELECT version_code, version_name, object_key, sha256, size_bytes, notes
+           FROM app_releases
+          WHERE published AND version_code > $1
+          ORDER BY version_code DESC
+          LIMIT 1`,
+        [current],
+      );
+    if (!release) return { update: null };
+
+    return AppUpdateResponse.parse({
+      update: {
+        versionCode: release.version_code,
+        versionName: release.version_name,
+        // 30 minutes: long enough for a phone on a weak connection to finish a
+        // few-MB download, short enough that a leaked URL is worthless by the
+        // time anyone finds it.
+        url: await this.s3.presignedGetUrl(release.object_key, 1800, "application/octet-stream"),
+        sha256: release.sha256,
+        sizeBytes: Number(release.size_bytes),
+        // Spread-or-nothing, not an explicit null - see the schema comment in
+        // packages/shared/src/device-api.ts. A JSON null reaches Android's
+        // optString as the string "null" and would print as the release note.
+        ...(release.notes ? { notes: release.notes } : {}),
+      },
     });
   }
 

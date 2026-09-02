@@ -1,6 +1,7 @@
 package com.voicetranscriber.callrecorder.platform
 
 import android.content.Context
+import com.voicetranscriber.callrecorder.update.AppVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -43,10 +44,7 @@ object ActivationManager {
         val deviceId = ActivationStore.deviceId(context)
             ?: return@withContext "Not activated"
         try {
-            val nonce = PlatformApi.challenge(baseUrl, deviceId)
-            val token = PlatformApi.authenticate(
-                baseUrl, deviceId, nonce, DeviceIdentity.signNonce(nonce),
-            )
+            val token = accessToken(baseUrl, deviceId)
             val config = PlatformApi.fetchConfig(baseUrl, token)
             ActivationStore.saveConfig(
                 context, config.recordingEnabled, config.version, config.appLockPasswordHash,
@@ -75,6 +73,43 @@ object ActivationManager {
             }
         }
     }
+
+    /**
+     * Nonce → Keystore signature → 15-minute JWT. Device tokens are short-lived
+     * by design, so nothing caches one: every caller mints a fresh token for the
+     * one request it is about to make.
+     *
+     * Blocking, and deliberately not `suspend` - callers are already inside a
+     * `Dispatchers.IO` block, and making this suspend would only hide that.
+     */
+    internal fun accessToken(baseUrl: String, deviceId: String): String {
+        val nonce = PlatformApi.challenge(baseUrl, deviceId)
+        return PlatformApi.authenticate(baseUrl, deviceId, nonce, DeviceIdentity.signNonce(nonce))
+    }
+
+    /**
+     * Ask the server whether a newer build is published for this fleet.
+     *
+     * Returns null for "nothing newer" AND for every failure - an unreachable
+     * server, a revoked device, a release channel that is empty. Updating is a
+     * convenience; it must never be able to report a problem that looks like a
+     * recording problem, and the caller ([AppUpdateWorker]) simply tries again
+     * on its next cycle.
+     */
+    suspend fun checkForUpdate(context: Context): PlatformApi.AppUpdate? =
+        withContext(Dispatchers.IO) {
+            val baseUrl = ActivationStore.apiBaseUrl(context)
+            val deviceId = ActivationStore.deviceId(context) ?: return@withContext null
+            try {
+                PlatformApi.checkUpdate(
+                    baseUrl,
+                    accessToken(baseUrl, deviceId),
+                    AppVersion.current(context),
+                )
+            } catch (_: Throwable) {
+                null
+            }
+        }
 
     fun deactivate(context: Context) {
         ActivationStore.clear(context)

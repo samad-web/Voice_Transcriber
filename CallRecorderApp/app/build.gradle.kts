@@ -34,8 +34,13 @@ android {
         // Bump versionCode on EVERY release build that leaves this machine -
         // Android refuses to install an APK whose code is lower than the one
         // already on the device.
-        versionCode = 3
-        versionName = "1.0.1"
+        //
+        // Since 4 this is also what the fleet's self-update channel compares
+        // against: publish-app-release.js refuses a code that is not higher than
+        // the live one, because a handset offered an equal code would prompt
+        // forever and never be able to satisfy the prompt.
+        versionCode = 4
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -80,6 +85,41 @@ tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.co
                 "ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD. " +
                 "See DEPLOYMENT.md §5."
         }
+    }
+}
+
+/**
+ * Copies the signed release APK out of build/ under the name the fleet's
+ * publisher expects: `Aura-<versionName>-<versionCode>.apk`.
+ *
+ * scripts/publish-app-release.js reads the version straight back out of that
+ * filename, so this task is what keeps the published version honest - the
+ * alternative is an operator typing --version-code by hand against a file called
+ * `app-release.apk`, which is exactly how a build gets published under the wrong
+ * number and offered to a fleet that can never install it.
+ *
+ *   gradle :app:releaseApk    ->   CallRecorderApp/dist/Aura-1.1.0-4.apk
+ *
+ * Into `dist/`, not the project root: a Copy task snapshots its destination, and
+ * the root holds `.gradle/` - whose lock files Gradle cannot hash, so the task
+ * fails outright with "Copying to a directory which contains unreadable
+ * content". A dedicated output directory sidesteps that and keeps shipped
+ * builds in one place.
+ */
+tasks.register<Copy>("releaseApk") {
+    group = "distribution"
+    description = "Builds the signed release APK and names it for publish-app-release.js"
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist"))
+    rename {
+        "Aura-${android.defaultConfig.versionName}-${android.defaultConfig.versionCode}.apk"
+    }
+    doLast {
+        logger.lifecycle(
+            "APK -> ${rootProject.layout.projectDirectory.dir("dist").asFile}\\" +
+                "Aura-${android.defaultConfig.versionName}-${android.defaultConfig.versionCode}.apk",
+        )
     }
 }
 

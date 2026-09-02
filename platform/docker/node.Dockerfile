@@ -68,6 +68,9 @@ COPY --from=builder /app/packages/db/verify-rls.js     packages/db/verify-rls.js
 COPY --from=builder /app/packages/db/seed.js           packages/db/seed.js
 COPY --from=builder /app/packages/db/ssl.js            packages/db/ssl.js
 COPY --from=builder /app/packages/db/migrations        packages/db/migrations
+# Operator tooling that has to run against production's own env (S3_* +
+# DATABASE_URL) rather than a laptop's. Plain CJS, same as the migrate job.
+COPY --from=builder /app/scripts/publish-app-release.js scripts/publish-app-release.js
 
 # Never run as root; the containers only ever read their own bundle.
 RUN addgroup -g 10001 aura && adduser -u 10001 -G aura -s /bin/sh -D aura \
