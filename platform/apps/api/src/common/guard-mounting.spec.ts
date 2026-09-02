@@ -332,6 +332,14 @@ const OWNER_ROLE_ROUTES = [
   // manager's view of the team, not a telecaller's view of their own work.
   "GET /owner/calls",
   "GET /owner/calls/:id",
+  // The call-detail actions the same log grew (f7a7a1f): playback, the notes
+  // an owner leaves on a conversation, and re-running the pipeline over one.
+  // Same class-level @RequireOwnerRole("owner", "manager") as the two above -
+  // they are reached only from that log, so they inherit its tier.
+  "GET /owner/calls/:id/audio",
+  "GET /owner/calls/:id/notes",
+  "POST /owner/calls/:id/notes",
+  "POST /owner/calls/:id/reprocess",
 ];
 
 /**
@@ -665,8 +673,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // Their `call_intel` module check is not a guard for the same reason the
     // leads one is not: the list answers normally without the module and the
     // detail refuses, which is a decision each route makes for itself.
-    expect(ROUTES).toHaveLength(251);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(251);
+    expect(ROUTES).toHaveLength(255);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(255);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -679,9 +687,9 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(209);
+    expect(tenantScoped).toHaveLength(213);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(250);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(255);
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 215 principal routes", () => {
@@ -692,7 +700,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(225);
+    expect(principalRoutes).toHaveLength(229);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
