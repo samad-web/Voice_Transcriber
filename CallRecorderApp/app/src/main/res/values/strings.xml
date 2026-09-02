@@ -119,6 +119,20 @@
     <string name="admin_scanned_confirm">Scanned instance + key. Confirm the server URL, then Activate.</string>
     <string name="admin_scan_unrecognized">Unrecognized QR (expected the activation code from the web app).</string>
 
+    <!-- In-app updates -->
+    <string name="channel_updates">App updates</string>
+    <string name="update_ready_title">Aura %1$s is ready to install</string>
+    <string name="update_ready_body">Tap to update. Your recordings and settings are kept.</string>
+    <string name="update_needs_install_permission">Allow Aura to install app updates, then tap the update again.</string>
+    <string name="update_install_failed">Update could not be installed. It will be offered again.</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_up_to_date">Aura %1$s — up to date</string>
+    <string name="update_available">Update to %1$s</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_check_failed">Could not check for updates</string>
+    <string name="update_banner_install">Install</string>
+
     <!-- App lock -->
     <string name="lock_subtitle">Enter the password to continue</string>
     <string name="lock_password_hint">Password</string>

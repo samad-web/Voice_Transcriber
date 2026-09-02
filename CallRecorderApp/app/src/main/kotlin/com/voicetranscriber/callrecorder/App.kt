@@ -8,6 +8,7 @@ import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.platform.ConfigRefreshWorker
 import com.voicetranscriber.callrecorder.platform.HealthWorker
 import com.voicetranscriber.callrecorder.storage.RecordingDatabase
+import com.voicetranscriber.callrecorder.update.AppUpdateWorker
 import com.voicetranscriber.callrecorder.util.ThemeManager
 
 class App : Application() {
@@ -32,6 +33,18 @@ class App : Application() {
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_UPDATES,
+                getString(R.string.channel_updates),
+                // DEFAULT, not LOW: this notification is the ONLY thing that will
+                // ever ask for the update, and a silent one in a crowded shade is
+                // a fleet that stays on an old build. Its own channel so someone
+                // who finds it noisy can mute updates without muting the
+                // recording indicator - or the reverse.
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
 
         // Periodic platform sync. Both workers no-op internally until the device is
         // activated, and KEEP means these are idempotent across app restarts.
@@ -44,10 +57,14 @@ class App : Application() {
         //   Safety net for anything missed while the app was killed; the per-call trigger in
         //   PhoneStateReceiver handles the responsive path.
         OemIngestWorker.schedule(this)
+        // - AppUpdateWorker (~6h, wifi): downloads and verifies a newer APK, then
+        //   offers it. Purely advisory - it can never stop this device recording.
+        AppUpdateWorker.schedule(this)
     }
 
     companion object {
         const val CHANNEL_RECORDING = "recording"
+        const val CHANNEL_UPDATES = "updates"
         lateinit var instance: App
             private set
     }

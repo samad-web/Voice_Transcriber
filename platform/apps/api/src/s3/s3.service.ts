@@ -119,15 +119,25 @@ export class S3Service {
    * for the whole session, and a signature that dies mid-file breaks seeking on
    * any recording longer than the window. 300s was shorter than a six-minute
    * call.
+   *
+   * `contentType` defaults to audio because playback is what this method was
+   * built for, but it is a parameter rather than a constant because the bucket
+   * also holds the fleet's APKs (migration 0081). Serving one of those as
+   * `audio/mp4` would have Android hand the download to a media player instead
+   * of the package installer.
    */
-  async presignedGetUrl(key: string, expiresIn = 1800): Promise<string> {
+  async presignedGetUrl(
+    key: string,
+    expiresIn = 1800,
+    contentType = "audio/mp4",
+  ): Promise<string> {
     return getSignedUrl(
       this.publicClient,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
         // Force a playable content-type even for objects stored as octet-stream.
-        ResponseContentType: "audio/mp4",
+        ResponseContentType: contentType,
       }),
       { expiresIn },
     );

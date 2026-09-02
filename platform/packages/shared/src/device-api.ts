@@ -99,3 +99,34 @@ export const CreateCallResponse = z.object({
   }),
 });
 export type CreateCallResponse = z.infer<typeof CreateCallResponse>;
+
+/**
+ * GET /v1/devices/me/update - the self-update channel (migration 0081).
+ *
+ * `update` is null when the handset already carries the newest published build,
+ * which is the answer almost every poll gets. A present object is always
+ * strictly newer than the versionCode the device reported.
+ */
+export const AppUpdateResponse = z.object({
+  update: z
+    .object({
+      /** Android's ordering key. Always > the device's own versionCode. */
+      versionCode: z.number().int().positive(),
+      versionName: z.string(),
+      /** Presigned GET, minted per request. Short-lived - download immediately. */
+      url: z.string().url(),
+      /** Lowercase hex, verified on the handset before the installer is touched. */
+      sha256: z.string().regex(/^[0-9a-f]{64}$/),
+      sizeBytes: z.number().int().positive(),
+      /**
+       * Omitted, never null, when the release carries no note. Same reason
+       * appLockPasswordHash is spread-or-nothing above: Android's
+       * `JSONObject.optString(name, fallback)` honours the fallback only for an
+       * ABSENT key and hands back the literal string "null" for a JSON null,
+       * which would render as `null` in the update prompt.
+       */
+      notes: z.string().optional(),
+    })
+    .nullable(),
+});
+export type AppUpdateResponse = z.infer<typeof AppUpdateResponse>;

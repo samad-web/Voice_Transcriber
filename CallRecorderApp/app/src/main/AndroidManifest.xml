@@ -5,6 +5,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Scan the activation QR (instance id + admin key) on the admin screen -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- In-app updates. This app is sideloaded, not on Play, so nothing else can
+         replace it - without this a fix means physically collecting handsets.
+         It only permits ASKING: the user still confirms every install in the
+         system dialog, and Android verifies the signature matches the installed
+         app, so this cannot be used to swap in a different app. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Core capture -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -65,6 +71,19 @@
         <activity
             android:name=".ui.RecordingsScannerActivity"
             android:exported="false" />
+
+        <!-- Applies an already-downloaded, digest-verified update. No layout: it
+             only exists to give the system's install confirmation a foreground
+             window (a background component cannot launch one on Android 10+).
+             singleTop because the PackageInstaller session reports its status
+             back into this same activity via onNewIntent. -->
+        <activity
+            android:name=".update.UpdateInstallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Aura.Invisible" />
 
         <!-- Full-screen QR scanner (Paytm-style viewfinder) for reading the activation QR -->
         <activity

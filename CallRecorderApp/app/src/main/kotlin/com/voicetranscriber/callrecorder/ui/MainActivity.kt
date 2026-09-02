@@ -45,6 +45,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.voicetranscriber.callrecorder.service.AccessibilityStatus
 import com.voicetranscriber.callrecorder.storage.RecordingEntity
+import com.voicetranscriber.callrecorder.update.AppUpdateManager
+import com.voicetranscriber.callrecorder.update.AppUpdateStore
+import com.voicetranscriber.callrecorder.update.AppVersion
+import com.voicetranscriber.callrecorder.update.UpdateInstallActivity
+import com.voicetranscriber.callrecorder.update.UpdateNotification
 import com.voicetranscriber.callrecorder.util.ThemeManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -302,11 +307,76 @@ class MainActivity : AppCompatActivity() {
         }
         setupThemeToggle(sheet)
         setupSourcePicker(sheet.sourcePicker)
+        setupUpdateRow(sheet)
 
         BottomSheetDialog(this).apply {
             setContentView(sheet.root)
             show()
         }
+    }
+
+    /**
+     * The manual half of in-app updates: shows this build's version, and on tap
+     * runs the same check → download → verify the background worker runs.
+     *
+     * It exists because the automatic path has two conditions the field will
+     * eventually break - it waits for wifi, and its notification needs
+     * POST_NOTIFICATIONS. This one has neither, so there is always a way to pull
+     * an update onto a specific handset while someone is holding it.
+     */
+    private fun setupUpdateRow(sheet: SheetSettingsBinding) {
+        val installed = AppVersion.currentName(this)
+
+        // Mutually recursive locals: render() wires the button to runCheck(), and
+        // runCheck() calls render() when it finishes. Kotlin resolves a local
+        // function only AFTER its declaration, so the forward reference goes
+        // through this holder rather than being declared first - and the name is
+        // runCheck, not check, because a local `check()` is shadowed by
+        // kotlin.check() at every call site above its own declaration.
+        lateinit var render: () -> Unit
+
+        fun runCheck() {
+            sheet.btnUpdate.isEnabled = false
+            sheet.updateStatus.setText(R.string.update_checking)
+            lifecycleScope.launch {
+                // A download outlives the sheet easily, so the result is only
+                // applied while the activity is still up - the sheet's
+                // ViewBinding is dead once it isn't.
+                val outcome = AppUpdateManager.sync(this@MainActivity)
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
+                when (outcome) {
+                    is AppUpdateManager.Outcome.Ready -> {
+                        UpdateNotification.show(
+                            this@MainActivity, outcome.versionName, outcome.notes,
+                        )
+                        render()
+                    }
+                    is AppUpdateManager.Outcome.UpToDate -> render()
+                    is AppUpdateManager.Outcome.Unavailable -> {
+                        sheet.updateStatus.setText(R.string.update_check_failed)
+                        sheet.btnUpdate.isEnabled = true
+                    }
+                }
+            }
+        }
+
+        render = {
+            val pendingName = AppUpdateStore.pendingVersionName(this)
+            sheet.btnUpdate.isEnabled = true
+            if (AppUpdateStore.readyFile(this) != null && pendingName != null) {
+                sheet.updateStatus.text = getString(R.string.update_available, pendingName)
+                sheet.btnUpdate.setText(R.string.update_banner_install)
+                sheet.btnUpdate.setOnClickListener {
+                    startActivity(Intent(this, UpdateInstallActivity::class.java))
+                }
+            } else {
+                sheet.updateStatus.text = getString(R.string.update_up_to_date, installed)
+                sheet.btnUpdate.setText(R.string.update_check)
+                sheet.btnUpdate.setOnClickListener { runCheck() }
+            }
+        }
+
+        render()
     }
 
     /** Phone audio-source dropdown - test each source to find both-ends capture. */

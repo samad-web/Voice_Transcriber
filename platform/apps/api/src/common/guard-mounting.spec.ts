@@ -275,6 +275,10 @@ const DEVICE_AUTHED = [
   "POST /devices/me/health",
   "POST /devices/me/events",
   "GET /devices/me/calls/:callId",
+  // The handset's own update check. Advisory only - it cannot gate recording,
+  // and the APK URL is presigned per request rather than stored. DeviceAuthGuard
+  // like every other /devices/me route: the signed device token IS the identity.
+  "GET /devices/me/update",
 ];
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
@@ -661,8 +665,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // Their `call_intel` module check is not a guard for the same reason the
     // leads one is not: the list answers normally without the module and the
     // detail refuses, which is a decision each route makes for itself.
-    expect(ROUTES).toHaveLength(250);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(250);
+    expect(ROUTES).toHaveLength(251);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(251);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
