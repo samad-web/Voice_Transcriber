@@ -30,7 +30,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const { PutObjectCommand, S3Client } = require("@aws-sdk/client-s3");
+// pnpm keeps node_modules isolated per package, so the AWS SDK - a dependency of
+// apps/api, not of the workspace root - is not resolvable from this directory.
+// Anchor the require on the api package instead of reaching for a relative path
+// into its node_modules, which would be a different (and wronger) guess in the
+// repo than in the runtime image.
+const { createRequire } = require("node:module");
+const apiRequire = createRequire(require.resolve("../apps/api/package.json"));
+const { PutObjectCommand, S3Client } = apiRequire("@aws-sdk/client-s3");
+// @aura/db is loaded by path rather than by name for the same reason; `pg`
+// then resolves from that package's own node_modules, where it does live.
 const { getAdminPool, closeAllPools } = require("../packages/db/dist/index.js");
 
 const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
