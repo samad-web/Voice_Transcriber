@@ -49,8 +49,8 @@ const APP_URL =
 
 /**
  * Tables in the public schema that legitimately have no org_id, and therefore
- * no org_isolation policy. THREE ENTRIES, ON PURPOSE: this is an allowlist, so
- * adding a fourth requires a reviewed edit to this file rather than a silent
+ * no org_isolation policy. FOUR ENTRIES, ON PURPOSE: this is an allowlist, so
+ * adding a fifth requires a reviewed edit to this file rather than a silent
  * pass. Anything else that turns up without an org_id fails the run.
  *
  *   users             platform-level humans; tenancy comes from `memberships`.
@@ -71,8 +71,23 @@ const APP_URL =
  *                     messaging_channels.webhook_token resolution documents.
  *                     Holds only a provider name + an opaque event id, no
  *                     tenant data.
+ *   app_releases      (0081) The Android fleet's release channel. There is ONE
+ *                     APK for every tenant, so an org_id column would have no
+ *                     value to put in it - this is not tenant data that lost
+ *                     its scoping, it is platform data that never had any.
+ *                     Holds a version number, an object key, a digest and a
+ *                     release note; nothing here is a tenant's, and nothing
+ *                     here is a secret. Read on the admin pool by
+ *                     devices.controller.ts (no org context exists to enter),
+ *                     written only by scripts/publish-app-release.js - the API
+ *                     has SELECT and nothing more, so no request can publish.
  */
-const NON_TENANT_TABLES = new Set(["users", "schema_migrations", "payment_webhook_events"]);
+const NON_TENANT_TABLES = new Set([
+  "users",
+  "schema_migrations",
+  "payment_webhook_events",
+  "app_releases",
+]);
 
 /**
  * Schemas OTHER THAN `public` that hold application data and have been reviewed
