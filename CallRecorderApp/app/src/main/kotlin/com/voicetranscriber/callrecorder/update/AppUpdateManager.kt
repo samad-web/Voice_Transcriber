@@ -41,6 +41,23 @@ object AppUpdateManager {
      * that is already downloaded and verified is not fetched again.
      */
     suspend fun sync(context: Context): Outcome = withContext(Dispatchers.IO) {
+        // A debug-signed handset can never install the release-signed APK this
+        // channel serves: Android rejects it with INSTALL_FAILED_UPDATE_INCOMPATIBLE
+        // because the signing certificates differ. Without this guard such a phone
+        // downloads a few megabytes every cycle, verifies the digest perfectly,
+        // and then fails at the very last step - forever, with nothing the person
+        // holding it can do about it.
+        //
+        // Found the hard way on a handset that had been flashed with
+        // `assembleDebug` rather than the release APK. The fix for those is a
+        // one-time uninstall + reinstall from a release build; until that happens
+        // the honest answer is that updates are not available here, not a retry
+        // loop pretending otherwise.
+        if (ActivationStore.isDebugBuild(context)) {
+            return@withContext Outcome.Unavailable(
+                "debug build - a release-signed update cannot install over it",
+            )
+        }
         if (!ActivationStore.isActivated(context)) {
             return@withContext Outcome.Unavailable("device not activated")
         }

@@ -39,8 +39,8 @@ android {
         // against: publish-app-release.js refuses a code that is not higher than
         // the live one, because a handset offered an equal code would prompt
         // forever and never be able to satisfy the prompt.
-        versionCode = 4
-        versionName = "1.1.0"
+        versionCode = 5
+        versionName = "1.1.1"
     }
 
     signingConfigs {

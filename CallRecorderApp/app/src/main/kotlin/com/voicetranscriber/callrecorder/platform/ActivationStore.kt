@@ -64,8 +64,13 @@ object ActivationStore {
      * silently disables ALL recording (isActivated == false) until the device is re-enrolled
      * against the platform. Release builds (FLAG_DEBUGGABLE == 0) are unaffected - still fully
      * gated on real enrollment + the server recording flag.
+     *
+     * `internal` rather than private because the self-update path needs the same
+     * answer for an unrelated reason - see [update.AppUpdateManager.sync]. Read
+     * from the INSTALLED package's flags, not from BuildConfig, so it describes
+     * the APK actually on the handset.
      */
-    private fun isDebugBuild(context: Context): Boolean =
+    internal fun isDebugBuild(context: Context): Boolean =
         (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     fun saveEnrollment(
