@@ -45,6 +45,22 @@ const PolicyBody = z.object({
    */
   transcriptionEnabled: z.boolean().optional(),
   /**
+   * Read inbound WhatsApp threads and propose leads from them (0080).
+   *
+   * OFF by default and deliberately a tenant decision, not a deployment one:
+   * turning it on sends this tenant's own customer conversations to an LLM
+   * provider. It lives beside transcriptionEnabled because it is the same kind
+   * of switch - "may this platform read our customers' words" - and belongs
+   * wherever a tenant already goes to answer that question.
+   *
+   * Turning it OFF stops the sweep for this org on its next tick. It does not
+   * delete verdicts already written; qualificationRetentionDays ages those out,
+   * and a tenant who wants them gone sooner sets that lower.
+   */
+  whatsappQualificationEnabled: z.boolean().optional(),
+  /** How long a decided qualification verdict is kept (0082). Default 90 days. */
+  qualificationRetentionDays: z.number().int().min(1).max(3650).optional(),
+  /**
    * What this instance's agents actually speak (0016). Auto-detect is only
    * right when we genuinely don't know - it has mislabelled a Tamil call as
    * Spanish, losing the whole transcript. `unknown` forces auto-detect back on.
@@ -82,7 +98,7 @@ export class TenancyController {
       } = await client.query(
         `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
                 store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary, branding,
-                enabled_modules,
+                enabled_modules, whatsapp_qualification_enabled, qualification_retention_days,
                 (app_lock_password_hash IS NOT NULL) AS app_lock_enabled
            FROM organizations WHERE id = $1`,
         [orgId],
@@ -141,6 +157,8 @@ export class TenancyController {
            retention_days = COALESCE($4, retention_days),
            store_full_number = COALESCE($5, store_full_number),
            transcription_enabled = COALESCE($6, transcription_enabled),
+           whatsapp_qualification_enabled = COALESCE($14, whatsapp_qualification_enabled),
+           qualification_retention_days = COALESCE($15, qualification_retention_days),
            asr_language = CASE WHEN $7::boolean THEN $8::text ELSE asr_language END,
            asr_mode = CASE WHEN $9::boolean THEN $10::text ELSE asr_mode END,
            vocabulary = COALESCE($11::text[], vocabulary),
@@ -148,6 +166,7 @@ export class TenancyController {
          WHERE id = $1
          RETURNING consent_policy, on_consent_failure, retention_days, store_full_number,
                    transcription_enabled, asr_language, asr_mode, vocabulary,
+                   whatsapp_qualification_enabled, qualification_retention_days,
                    (app_lock_password_hash IS NOT NULL) AS app_lock_enabled`,
         [
           orgId,
@@ -163,6 +182,8 @@ export class TenancyController {
           p.vocabulary ?? null,
           p.appLockPassword !== undefined,
           p.appLockPassword ? hashAppLockPassword(p.appLockPassword) : null,
+          p.whatsappQualificationEnabled ?? null,
+          p.qualificationRetentionDays ?? null,
         ],
       );
       // Policy changes must reach devices: bump every instance's config version.

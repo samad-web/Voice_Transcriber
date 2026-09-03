@@ -34,6 +34,7 @@ import { AsrSettings } from "./asr-settings";
 import { CallIntelToggle } from "./call-intel-toggle";
 import { CrmModuleToggle } from "./crm-module-toggle";
 import { TranscriptionToggle } from "./transcription-toggle";
+import { QualificationToggle } from "./qualification-toggle";
 
 interface Org {
   id: string;
@@ -50,6 +51,8 @@ interface Org {
   vocabulary: string[] | null;
   app_lock_enabled: boolean;
   enabled_modules: string[];
+  whatsapp_qualification_enabled: boolean;
+  qualification_retention_days: number;
 }
 
 interface InstanceRow {
@@ -319,6 +322,12 @@ export default async function InstanceDetailPage({ params }: { params: Promise<{
           <TranscriptionToggle
             orgId={orgId}
             enabled={org.transcription_enabled !== false}
+            instanceName={org.name}
+          />
+          <QualificationToggle
+            orgId={orgId}
+            enabled={org.whatsapp_qualification_enabled === true}
+            retentionDays={org.qualification_retention_days ?? 90}
             instanceName={org.name}
           />
           <CrmModuleToggle

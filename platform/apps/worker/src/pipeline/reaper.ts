@@ -20,7 +20,7 @@ const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
  */
 export async function reapExpired(): Promise<number> {
   const { rows: orgs } = await getAdminPool().query(
-    "SELECT id, retention_days FROM organizations WHERE status = 'active'",
+    "SELECT id, retention_days, qualification_retention_days FROM organizations WHERE status = 'active'",
   );
 
   let reaped = 0;
@@ -83,6 +83,35 @@ export async function reapExpired(): Promise<number> {
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
            VALUES ($1, 'system', 'reaper', 'retention.reap', 'deal', $2::jsonb)`,
           [org.id, JSON.stringify({ count: dormantDeals.rowCount })],
+        );
+      }
+
+      // WhatsApp qualification verdicts (0080/0082) age out on their OWN clock,
+      // not retention_days. A verdict is a small, short-lived thing: once the
+      // thread has been approved or rejected its only remaining jobs are to
+      // stop the sweep re-reading and re-billing that conversation, and to
+      // answer "why did this enquiry never reach the board". Both expire.
+      //
+      // This matters most for the rows nobody ever asked for: every message the
+      // qualifier judged `personal` has a row here, and while 0082 guarantees
+      // it holds no extracted content, "this number wrote to us and it was
+      // private" is itself a fact with no reason to live forever.
+      //
+      // PENDING rows are excluded. A verdict still waiting for a human is work
+      // in progress, and deleting it would silently drop an enquiry nobody had
+      // got to yet - the exact failure this whole feature exists to end.
+      const staleVerdicts = await client.query(
+        `DELETE FROM conversation_qualifications
+          WHERE status <> 'pending'
+            AND created_at < now() - make_interval(days => $1)
+          RETURNING id`,
+        [org.qualification_retention_days],
+      );
+      if ((staleVerdicts.rowCount ?? 0) > 0) {
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
+           VALUES ($1, 'system', 'reaper', 'retention.reap', 'conversation_qualification', $2::jsonb)`,
+          [org.id, JSON.stringify({ count: staleVerdicts.rowCount })],
         );
       }
 

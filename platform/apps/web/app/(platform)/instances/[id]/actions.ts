@@ -85,6 +85,29 @@ export async function setTranscriptionEnabledAction(input: {
 }
 
 /**
+ * Turn WhatsApp lead qualification on or off for an instance (0080/0082).
+ *
+ * Rides the same org policy endpoint as transcription, and for the same reason:
+ * it is one more org-level setting, so reusing it means the change is audited
+ * like every other policy edit. It bumps no device config - handsets know
+ * nothing about this - so unlike transcription it revalidates only this page.
+ */
+export async function setWhatsAppQualificationAction(input: {
+  orgId: string;
+  enabled: boolean;
+}): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await patchOrgPolicy(input.orgId, { whatsappQualificationEnabled: input.enabled });
+  if (res.error) return res;
+  revalidatePath(`/instances/${input.orgId}`);
+  return {};
+}
+
+/**
  * Turn ONE module on or off for a tenant (org-modules.ts), leaving the rest of
  * its entitlement exactly as it was.
  *

@@ -254,6 +254,30 @@ export class ErasureController {
         if (row.safe_to_delete) deletableIds.push(row.id);
         else retainedContactIds.push(row.id);
       }
+      // WhatsApp qualification verdicts (0080/0082) carry a COPY of the
+      // subject's name, email, company and what they wrote. Erasing the contact
+      // while leaving those behind would move the data to another table rather
+      // than remove it - the same reasoning that already makes this method
+      // erase the lead alongside the call.
+      //
+      // The verdict ROW survives, scrubbed. It is what stops the sweep re-reading
+      // and re-qualifying the thread forever, and 0055 deliberately keeps the
+      // conversation itself when a contact is erased, so deleting the verdict
+      // would simply cause a new one to be written about the same messages.
+      //
+      // Scoped to conversations linked to the contacts actually being erased -
+      // an approval sets conversations.contact_id, which is the link.
+      const scrubbed = await client.query(
+        `UPDATE conversation_qualifications q
+            SET extracted_name = NULL, extracted_email = NULL, extracted_company = NULL,
+                extracted_budget = NULL, extracted_notes = NULL, facts = '{}'::jsonb
+           FROM conversations c
+          WHERE c.id = q.conversation_id
+            AND c.contact_id = ANY($1::uuid[])`,
+        [contactIds],
+      );
+      if ((scrubbed.rowCount ?? 0) > 0) purged.push("qualification_extracts");
+
       if (deletableIds.length > 0) {
         await client.query("DELETE FROM contacts WHERE id = ANY($1::uuid[])", [deletableIds]);
         deletedAnyContact = true;
