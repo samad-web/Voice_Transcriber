@@ -89,11 +89,26 @@ export interface MetaLead {
   created_time: string;
   form_id?: string;
   field_data: MetaLeadFieldData[];
+  /**
+   * Requested explicitly by `fetchLead` - the Graph node does not return these
+   * by default. They are the most reliable place a PROJECT is named ("3D
+   * Website - Showroom"), which is what the intake path runs project detection
+   * over. `form_name` is deliberately absent: it lives on the form node, not
+   * the lead, and fetching it would be a second round trip per lead.
+   */
+  ad_name?: string;
+  adset_name?: string;
+  campaign_name?: string;
+  platform?: string;
 }
 
 /** The full submitted answers for one leadgen event - the webhook only ever carries the id. */
 export async function fetchLead(leadgenId: string, pageAccessToken: string, fetchImpl: typeof fetch = fetch): Promise<MetaLead> {
-  const res = await fetchImpl(`${GRAPH_BASE}/${encodeURIComponent(leadgenId)}?access_token=${encodeURIComponent(pageAccessToken)}`);
+  const fields = "id,created_time,form_id,field_data,ad_name,adset_name,campaign_name,platform";
+  const res = await fetchImpl(
+    `${GRAPH_BASE}/${encodeURIComponent(leadgenId)}?fields=${fields}` +
+      `&access_token=${encodeURIComponent(pageAccessToken)}`,
+  );
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`Meta rejected the lead fetch (${res.status}): ${detail.slice(0, 300)}`);

@@ -24,6 +24,7 @@ import { MergeModule } from "./modules/merge/merge.module";
 import { RolesModule } from "./modules/roles/roles.module";
 import { ConnectionsModule } from "./modules/connections/connections.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { ReportBuilderModule } from "./modules/report-builder/report-builder.module";
 import { ConversationsModule } from "./modules/conversations/conversations.module";
 import { TagsModule } from "./modules/tags/tags.module";
 import { OutreachModule } from "./modules/outreach/outreach.module";
@@ -35,6 +36,7 @@ import { QuotationsModule } from "./modules/quotations/quotations.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ImportModule } from "./modules/import/import.module";
 import { MetaAdsModule } from "./modules/meta-ads/meta-ads.module";
+import { LeadIntakeModule } from "./modules/lead-intake/lead-intake.module";
 import { ProjectsModule } from "./modules/projects/projects.module";
 import { McpModule } from "./modules/mcp/mcp.module";
 import { PublicApiModule } from "./modules/public-api/public-api.module";
@@ -78,12 +80,14 @@ import { PublicApiModule } from "./modules/public-api/public-api.module";
     NotificationsModule,
     AutomationModule,
     ReportsModule,
+    ReportBuilderModule,
     ConnectionsModule,
     ProductsModule,
     QuotationsModule,
     InvoicesModule,
     ImportModule,
     MetaAdsModule,
+    LeadIntakeModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

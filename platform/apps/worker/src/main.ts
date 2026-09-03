@@ -24,7 +24,10 @@ import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
+import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
+import { startLinkedInSweep } from "./pipeline/linkedin-sync";
+import { startReportScheduleSweep } from "./pipeline/report-schedules";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -131,10 +134,27 @@ async function bootstrap() {
   // off replies/meetings/inactivity that already exist. Pure computation, no
   // sends - see the module header for the safety-rule reasoning.
   startLeadScoringSweep();
+  // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
+  // threads and writes a scored PROPOSAL a person then approves - it creates no
+  // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only
+  // for orgs that set whatsapp_qualification_enabled, because it sends their
+  // customer conversations to an LLM provider.
+  startWhatsAppQualificationSweep();
   // Meta lead ads pulled through the tenant's MCP server onto the SAME lead
   // board the handset's calls land on. Off unless META_MCP_SYNC_ENABLED is
   // exactly "true" - it makes outbound requests to a tenant-supplied URL.
+  // Scheduled Report Builder deliveries (migration 0077). Renders a published
+  // report, freezes the result, and raises an IN-APP notification for each
+  // recipient - who must still hold a live membership at delivery time. It
+  // sends nothing outward, which is what keeps safety rule 3 true; see the
+  // module header and design doc D6 for the reasoning and the seam.
+  startReportScheduleSweep();
   const metaMcp = startMetaMcpSweep();
+  // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
+  // webhook to receive, so it is polled. Does not start at all unless an
+  // approved LinkedIn app's credentials are configured - it says so once at
+  // boot rather than failing per sweep. Also ages out the intake ledger.
+  const linkedin = startLinkedInSweep();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
@@ -142,7 +162,8 @@ async function bootstrap() {
     `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
       "+ booking confirmations + call reminders + form nudges" +
-      (metaMcp ? " + meta-mcp lead pull" : ""),
+      (metaMcp ? " + meta-mcp lead pull" : "") +
+      (linkedin ? " + linkedin lead pull" : ""),
   );
 }
 

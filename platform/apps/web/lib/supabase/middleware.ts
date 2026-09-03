@@ -42,9 +42,20 @@ export async function updateSession(request: NextRequest) {
 
   // Must run before any redirect below - this is what refreshes an expired
   // access token and writes the new cookies onto `response`.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  //
+  // getClaims(), not getUser(): this runs on EVERY request that reaches the
+  // matcher, and getUser() means a round trip to the auth server for each one.
+  // Supabase is in AWS Seoul and this app runs in Mumbai, so that round trip
+  // costs ~125ms each way - paid before a single byte of any page is rendered.
+  // getClaims() verifies the ES256 signature locally against the cached JWKS
+  // instead, which is the same verification without the flight. See
+  // lib/supabase/server.ts for the full reasoning and the HS256 fallback.
+  //
+  // Refresh still happens: getClaims() with no argument goes through
+  // getSession(), which renews an expired access token and writes the new
+  // cookies through the setAll callback above exactly as before.
+  const { data, error } = await supabase.auth.getClaims();
+  const user = error ? null : (data?.claims ?? null);
 
   const { pathname, search } = request.nextUrl;
 

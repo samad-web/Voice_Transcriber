@@ -49,6 +49,36 @@ export interface CreateLeadInput {
   value?: number | null;
   /** Overrides detection when the caller already knows the project. */
   projectKey?: string | null;
+
+  // ── Attribution (migration 0078) ────────────────────────────────────────
+  //
+  // Optional throughout, so the existing API-key callers behave exactly as
+  // before. The intake engine supplies them for every channel it serves, which
+  // is what finally lets the board say where a card came from.
+  //
+  // FIRST TOUCH WINS on every one of these. A lead that arrived from a Google
+  // Ads form in March and re-submits through a LinkedIn form in June is still
+  // a lead Google Ads produced; overwriting the channel on the second touch
+  // would silently move the credit and make every acquisition report wrong in
+  // the direction of whatever the prospect touched last. The ON CONFLICT
+  // clauses below COALESCE rather than assign for exactly this reason.
+  /** Which channel this arrived by. See @aura/shared LeadSourceChannel. */
+  sourceChannel?: string | null;
+  /** The specific configured `lead_sources` row, when there was one. */
+  leadSourceId?: string | null;
+  /** The campaign, inherited from the source's own configuration. */
+  marketingSourceId?: string | null;
+  /** Who works it. Inherited from the source; never a rotation - see 0078. */
+  assignedTelecallerId?: string | null;
+  /** Which desk. Defaults to the org's first workspace, as before. */
+  workspaceId?: string | null;
+  /** Recorded as a fact; accounts are not auto-created from an integration. */
+  company?: string | null;
+}
+
+/** Any open transaction. Both the pool client and a test double satisfy it. */
+export interface IngestClient {
+  query: <R>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
 }
 
 export interface LeadRecord {
@@ -93,15 +123,37 @@ export class CrmIngestService {
   constructor(private readonly db: DbService) {}
 
   async createLead(orgId: string, input: CreateLeadInput): Promise<LeadRecord> {
-    return this.db.withOrg(orgId, async (client) => {
+    return this.db.withOrg(orgId, (client) => this.writeLead(client, orgId, input));
+  }
+
+  /**
+   * The write itself, on a caller-supplied transaction.
+   *
+   * Split out for the intake engine (0078), which must land its ledger row and
+   * its lead in ONE transaction: if the lead write fails, the claim that says
+   * "this arrival was handled" has to disappear with it, or a retry from the
+   * provider would be swallowed as a duplicate and the lead lost for good.
+   * Nesting `withOrg` here would put them on two connections and two
+   * transactions, which is precisely the failure that would produce.
+   */
+  async writeLead(client: IngestClient, orgId: string, input: CreateLeadInput): Promise<LeadRecord> {
+    {
       const {
         rows: [org],
       } = await client.query<{ lead_stages: unknown; workspace_id: string | null }>(
+        // A caller-supplied workspace is honoured only if it really belongs to
+        // this org. RLS would already refuse a foreign one on INSERT, but that
+        // surfaces as a constraint violation mid-transaction; resolving it here
+        // means an unknown workspace quietly falls back to the default instead
+        // of failing a webhook the tenant cannot debug.
         `SELECT o.lead_stages,
-                (SELECT w.id FROM workspaces w
-                  WHERE w.org_id = o.id ORDER BY w.created_at ASC LIMIT 1) AS workspace_id
+                COALESCE(
+                  (SELECT w.id FROM workspaces w WHERE w.org_id = o.id AND w.id = $2::uuid),
+                  (SELECT w.id FROM workspaces w
+                    WHERE w.org_id = o.id ORDER BY w.created_at ASC LIMIT 1)
+                ) AS workspace_id
            FROM organizations o WHERE o.id = $1`,
-        [orgId],
+        [orgId, input.workspaceId ?? null],
       );
       // workspace_id is NOT NULL on leads. An org with no workspace cannot hold
       // one, and silently inventing a workspace from an integration request
@@ -117,7 +169,11 @@ export class CrmIngestService {
         email ||
         (phone.prefix ? `${phone.prefix}…` : null) ||
         "API lead";
-      const facts = input.facts ?? {};
+      // Company rides in facts rather than creating an `accounts` row. An
+      // account is a real CRM object with an owner and a hierarchy, and a
+      // string typed into a web form is not evidence enough to make one - the
+      // import path (0062) makes the same call.
+      const facts = { ...(input.facts ?? {}), ...(input.company ? { company: input.company } : {}) };
 
       const stages = parseLeadStages(org.lead_stages);
       const stage = entryStage(stages);
@@ -151,8 +207,9 @@ export class CrmIngestService {
           rows: [contact],
         } = await client.query<{ id: string }>(
           `INSERT INTO contacts (org_id, workspace_id, display_name, email,
-                                 phone_hash, phone_prefix, phone_last3, facts)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+                                 phone_hash, phone_prefix, phone_last3, facts,
+                                 source_channel, marketing_source_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
            RETURNING id`,
           [
             orgId,
@@ -163,6 +220,8 @@ export class CrmIngestService {
             phone.prefix,
             phone.last3,
             JSON.stringify(facts),
+            input.sourceChannel ?? null,
+            input.marketingSourceId ?? null,
           ],
         ));
       } else {
@@ -175,9 +234,21 @@ export class CrmIngestService {
                   phone_prefix = COALESCE(phone_prefix, $4),
                   phone_last3  = COALESCE(phone_last3, $5),
                   facts        = facts || $6::jsonb,
+                  -- First touch, never last: see CreateLeadInput's header.
+                  source_channel      = COALESCE(source_channel, $7),
+                  marketing_source_id = COALESCE(marketing_source_id, $8),
                   last_activity_at = now()
             WHERE id = $1`,
-          [contact.id, email, phone.hash, phone.prefix, phone.last3, JSON.stringify(facts)],
+          [
+            contact.id,
+            email,
+            phone.hash,
+            phone.prefix,
+            phone.last3,
+            JSON.stringify(facts),
+            input.sourceChannel ?? null,
+            input.marketingSourceId ?? null,
+          ],
         );
       }
 
@@ -189,8 +260,11 @@ export class CrmIngestService {
         } = await client.query<{ id: string; created: boolean }>(
           `INSERT INTO leads (org_id, workspace_id, contact_name, contact_number_hash,
                               contact_number_prefix, contact_number_last3, title, stage, status,
-                              summary, facts, value_num, call_count, last_activity_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now())
+                              summary, facts, value_num, call_count, last_activity_at,
+                              source_channel, lead_source_id, marketing_source_id,
+                              assigned_telecaller_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now(),
+                   $13, $14, $15, $16)
            ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
            DO UPDATE SET
              -- Stage and status are the owner's, never an integration's: a
@@ -199,6 +273,15 @@ export class CrmIngestService {
              summary      = COALESCE(EXCLUDED.summary, leads.summary),
              facts        = leads.facts || EXCLUDED.facts,
              value_num    = COALESCE(EXCLUDED.value_num, leads.value_num),
+             -- Attribution is first-touch, and assignment is a person's
+             -- decision: a second submission through a different form must not
+             -- re-credit the channel or take the lead off whoever is working
+             -- it. All four COALESCE onto the EXISTING row for that reason.
+             source_channel      = COALESCE(leads.source_channel, EXCLUDED.source_channel),
+             lead_source_id      = COALESCE(leads.lead_source_id, EXCLUDED.lead_source_id),
+             marketing_source_id = COALESCE(leads.marketing_source_id, EXCLUDED.marketing_source_id),
+             assigned_telecaller_id =
+               COALESCE(leads.assigned_telecaller_id, EXCLUDED.assigned_telecaller_id),
              last_activity_at = now()
            RETURNING id, (xmax = 0) AS created`,
           [
@@ -214,6 +297,10 @@ export class CrmIngestService {
             input.notes?.trim() ?? null,
             JSON.stringify(facts),
             input.value ?? null,
+            input.sourceChannel ?? null,
+            input.leadSourceId ?? null,
+            input.marketingSourceId ?? null,
+            input.assignedTelecallerId ?? null,
           ],
         ));
       } else {
@@ -224,8 +311,10 @@ export class CrmIngestService {
           rows: [lead],
         } = await client.query<{ id: string; created: boolean }>(
           `INSERT INTO leads (org_id, workspace_id, contact_name, title, stage, status,
-                              summary, facts, value_num, call_count, last_activity_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 0, now())
+                              summary, facts, value_num, call_count, last_activity_at,
+                              source_channel, lead_source_id, marketing_source_id,
+                              assigned_telecaller_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 0, now(), $10, $11, $12, $13)
            RETURNING id, true AS created`,
           [
             orgId,
@@ -237,9 +326,27 @@ export class CrmIngestService {
             input.notes?.trim() ?? null,
             JSON.stringify(facts),
             input.value ?? null,
+            input.sourceChannel ?? null,
+            input.leadSourceId ?? null,
+            input.marketingSourceId ?? null,
+            input.assignedTelecallerId ?? null,
           ],
         ));
       }
+
+      // Link the contact back to the lead it came from.
+      //
+      // The contact is created BEFORE the lead (its id is needed for the deal),
+      // so this cannot be a column on that INSERT. It matters because the
+      // worker's `projectLeadToCrm` matches a PHONE-LESS contact on
+      // `source_lead_id` - a contact created here without one is invisible to
+      // it, and `scripts/backfill-crm-objects.js` runs that function over every
+      // lead. Without this line, an email-only lead from a web form or an
+      // enquiry inbox becomes a SECOND contact the next time the backfill runs.
+      await client.query(
+        `UPDATE contacts SET source_lead_id = COALESCE(source_lead_id, $2) WHERE id = $1`,
+        [contact.id, lead.id],
+      );
 
       // ── Deal, on the org's default pipeline ──────────────────────────────
       const {
@@ -258,13 +365,18 @@ export class CrmIngestService {
           rows: [deal],
         } = await client.query<{ id: string }>(
           `INSERT INTO deals (org_id, workspace_id, pipeline_id, contact_id, name, stage, status,
-                              amount, summary, source_lead_id, facts, call_count, last_activity_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, 0, now())
+                              amount, summary, source_lead_id, facts, call_count, last_activity_at,
+                              source_channel, marketing_source_id, assigned_telecaller_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, 0, now(), $12, $13, $14)
            ON CONFLICT (source_lead_id) WHERE source_lead_id IS NOT NULL
            DO UPDATE SET
              summary = COALESCE(EXCLUDED.summary, deals.summary),
              amount  = COALESCE(EXCLUDED.amount, deals.amount),
              facts   = deals.facts || EXCLUDED.facts,
+             source_channel      = COALESCE(deals.source_channel, EXCLUDED.source_channel),
+             marketing_source_id = COALESCE(deals.marketing_source_id, EXCLUDED.marketing_source_id),
+             assigned_telecaller_id =
+               COALESCE(deals.assigned_telecaller_id, EXCLUDED.assigned_telecaller_id),
              last_activity_at = now()
            RETURNING id`,
           [
@@ -282,6 +394,9 @@ export class CrmIngestService {
             input.notes?.trim() ?? null,
             lead.id,
             JSON.stringify(facts),
+            input.sourceChannel ?? null,
+            input.marketingSourceId ?? null,
+            input.assignedTelecallerId ?? null,
           ],
         );
         dealId = deal.id;
@@ -291,9 +406,11 @@ export class CrmIngestService {
       const project = await this.labelProject(client, orgId, lead.id, dealId, input);
 
       await client.query(
+        // The actor names the channel, so the audit trail distinguishes a lead
+        // an integration pushed from one a web form or a phone system did.
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'system', 'public-api', 'lead.create_via_api', 'lead', $2)`,
-        [orgId, lead.id],
+         VALUES ($1, 'system', $3, 'lead.create_via_api', 'lead', $2)`,
+        [orgId, lead.id, input.sourceChannel ? `intake:${input.sourceChannel}` : "public-api"],
       );
 
       return {
@@ -307,7 +424,7 @@ export class CrmIngestService {
         projectKey: project.key,
         projectDetectedFrom: project.matchedOn,
       };
-    });
+    }
   }
 
   /**

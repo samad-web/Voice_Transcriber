@@ -79,7 +79,9 @@ export class PublicApiController {
       });
       throw new BadRequestException(parsed.error.issues);
     }
-    const lead = await this.ingest.createLead(orgId, parsed.data);
+    // Stamped so a key-pushed lead is distinguishable on the board from a web
+    // form, a call or an ad - the whole point of migration 0078.
+    const lead = await this.ingest.createLead(orgId, { ...parsed.data, sourceChannel: "api" });
     await this.event(req, orgId, "POST /public/leads", "ok", { leadId: lead.leadId });
     return lead;
   }

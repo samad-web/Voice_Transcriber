@@ -37,6 +37,26 @@ export interface PrincipalRequest extends Request {
    */
   crmScope?: { scope: "all" | "owned"; userId: string | null };
   /**
+   * Row-level scope from the owner console's PERSONA (migration 0079), written
+   * by `OwnerScopeGuard` and read via `@OwnerScope()`.
+   *
+   * Distinct from `crmScope` above and not a duplicate of it: that one is the
+   * permission GRID's answer, keyed on `owner_user_id`; this one is the
+   * persona's, keyed on the caller's `telecallers` row - the identity a lead
+   * or a call actually hangs off. The two compose by intersection, never
+   * union; owner-scope.ts sets out why at length.
+   *
+   * Typed loosely here for the same reason `crmScope` is: to keep `common/`
+   * free of an import cycle between the principal shape and the guard that
+   * fills it in.
+   */
+  ownerScope?: {
+    role: OwnerRole;
+    scope: "all" | "own";
+    userId: string | null;
+    telecallerId: string | null;
+  };
+  /**
    * The external integration key behind this request, written by `ApiKeyGuard`
    * and absent on every other route.
    *

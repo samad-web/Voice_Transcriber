@@ -5,8 +5,15 @@ import { z } from "zod";
  * from `memberships.role`, which drives the operator-side team self-service
  * (members.controller.ts, design doc §3.4). Do not conflate the two: see
  * migration 0018's header for why.
+ *
+ * `sales` and `marketing` joined the original three in migration 0079. They
+ * are personas, not permission grids: the fine-grained role -> object ->
+ * action model lives in `permissions.ts` / `role_permissions` and is layered
+ * ALONGSIDE this, never replaced by it. A persona answers "which console does
+ * this person get, and whose records are in it"; a grant answers "may this
+ * role edit a deal". Both must say yes.
  */
-export const OwnerRole = z.enum(["owner", "manager", "telecaller"]);
+export const OwnerRole = z.enum(["owner", "manager", "telecaller", "sales", "marketing"]);
 export type OwnerRole = z.infer<typeof OwnerRole>;
 
 /**
@@ -27,9 +34,96 @@ export type OwnerRole = z.infer<typeof OwnerRole>;
  * stray whitespace comes from, and " manager " means manager.
  *
  * The `null`/absent default is deliberately untouched - see above.
+ *
+ * DEPLOY ORDER, now that the enum can grow. This function is fail-OPEN on a
+ * string it does not recognise, so a build that predates a persona resolves
+ * that persona to `owner` - full access. That is only reachable during a
+ * rolling deploy where new DATA (an `owner_role` of 'sales') meets OLD CODE.
+ * Ship the code first and assign the new personas second; 0079's header says
+ * the same thing where an operator will actually read it.
  */
 export function resolveOwnerRole(ownerRole: string | null | undefined): OwnerRole {
   const normalised = typeof ownerRole === "string" ? ownerRole.trim().toLowerCase() : ownerRole;
   const parsed = OwnerRole.safeParse(normalised);
   return parsed.success ? parsed.data : "owner";
+}
+
+/** Human-readable persona names - the console's dropdowns and the team table. */
+export const OWNER_ROLE_LABELS: Record<OwnerRole, string> = {
+  owner: "Owner",
+  manager: "Manager",
+  telecaller: "Telecaller",
+  sales: "Sales",
+  marketing: "Marketing",
+};
+
+/**
+ * One line each, shown beside the persona wherever somebody is choosing one.
+ * Phrased as what the person SEES, because that is the question being asked at
+ * the moment of assignment - not as a list of the routes we happen to gate.
+ */
+export const OWNER_ROLE_DESCRIPTIONS: Record<OwnerRole, string> = {
+  owner: "Full access to every record, report and setting in the workspace.",
+  manager: "The whole team's pipeline, calls and reports. No billing or branding.",
+  telecaller: "Only the leads, calls and tasks assigned to them.",
+  sales: "Only the deals, quotations and leads assigned to them, plus their own targets.",
+  marketing: "Lead sources, campaigns and attribution across the workspace. No deal values or invoices.",
+};
+
+/**
+ * Whose records a persona may read.
+ *
+ * `all`  - every record in the org.
+ * `own`  - only records assigned to this person.
+ *
+ * WHY THIS IS A TABLE AND NOT AN `if`. It is read by the API (to build a SQL
+ * predicate) and by the web tier (to decide which dashboard to compose), and
+ * those two answers drifting apart is precisely how a page renders a KPI the
+ * API will not back. One exported table, imported by both.
+ *
+ * Marketing is `all` deliberately, and it is the one row worth pausing on: a
+ * marketer's whole job is the shape of the funnel across every source, which
+ * is meaningless narrowed to records assigned to them (none are). They are
+ * restricted by OBJECT instead - no deal values, no invoices, no transcripts -
+ * which nav.ts and the persona guards enforce. Scope and object are separate
+ * questions and this table only answers the first.
+ */
+export const OWNER_ROLE_RECORD_SCOPE: Record<OwnerRole, "all" | "own"> = {
+  owner: "all",
+  manager: "all",
+  telecaller: "own",
+  sales: "own",
+  marketing: "all",
+};
+
+/** The record scope for a persona. See OWNER_ROLE_RECORD_SCOPE. */
+export function ownerRoleRecordScope(role: OwnerRole): "all" | "own" {
+  return OWNER_ROLE_RECORD_SCOPE[role];
+}
+
+/**
+ * True when this persona reads the whole org's records.
+ *
+ * Written as the positive question because that is how the call sites read
+ * ("if they can see everything, skip the join"), and because the negative
+ * form invites `!ownerRoleSeesAllRecords(role)` to be mistaken for "may see
+ * nothing".
+ */
+export function ownerRoleSeesAllRecords(role: OwnerRole): boolean {
+  return OWNER_ROLE_RECORD_SCOPE[role] === "all";
+}
+
+/**
+ * The personas that manage other people: who may open the Team page, change
+ * somebody's persona, and read org-wide settings.
+ *
+ * A single exported list rather than `role === "owner" || role === "manager"`
+ * spelled out at each call site - the set has changed twice already and a
+ * missed call site is an authorization hole, not a cosmetic bug.
+ */
+export const OWNER_ROLE_ADMINS: OwnerRole[] = ["owner", "manager"];
+
+/** True when this persona may administer the workspace's people and settings. */
+export function isWorkspaceAdminRole(role: OwnerRole): boolean {
+  return OWNER_ROLE_ADMINS.includes(role);
 }

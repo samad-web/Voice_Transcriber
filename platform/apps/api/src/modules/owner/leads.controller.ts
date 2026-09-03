@@ -13,10 +13,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
+import { LeadSourceChannel, parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { orgHasModule } from "../../common/org-modules";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { OwnerScope, type OwnerRecordScope, ownerScopeFilter } from "../../common/owner-scope";
+import { OwnerScopeGuard } from "../../common/owner-scope.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { recordStageTransition } from "../crm-objects/stage-history";
@@ -34,6 +36,12 @@ const ListQuery = z.object({
   status: z.enum(["open", "won", "lost"]).optional(),
   telecallerId: z.string().uuid().optional(),
   projectId: ProjectFilter.optional(),
+  /**
+   * "none" alongside a channel for the same reason ProjectFilter has it: the
+   * leads with no recorded channel are the ones that predate migration 0078,
+   * and an owner reconciling their numbers needs to be able to see them.
+   */
+  sourceChannel: z.union([LeadSourceChannel, z.literal("none")]).optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
   sort: z.enum(["activity", "created", "value", "title"]).default("activity"),
@@ -73,6 +81,10 @@ const LEAD_COLUMNS = `
   l.telecaller_device_id, l.last_call_id,
   l.project_id, l.project_source,
   pr.key AS project_key, pr.name AS project_name, pr.color AS project_color,
+  -- Where the lead came from (migration 0078). Until then this board could not
+  -- tell a phone call from an ad from a CSV import, so "which channel is worth
+  -- the money" was unanswerable from the screen people actually work in.
+  l.source_channel, ls.name AS source_name, ms.name AS campaign_name,
   COALESCE(d.telecaller_name, d.label) AS telecaller`;
 
 /**
@@ -83,7 +95,9 @@ const LEAD_COLUMNS = `
  */
 const LEAD_JOINS = `
   LEFT JOIN devices d      ON d.id = l.telecaller_device_id
-  LEFT JOIN crm_projects pr ON pr.id = l.project_id`;
+  LEFT JOIN crm_projects pr ON pr.id = l.project_id
+  LEFT JOIN lead_sources ls ON ls.id = l.lead_source_id
+  LEFT JOIN marketing_sources ms ON ms.id = l.marketing_source_id`;
 
 /**
  * The AI read of the lead's most recent call - what the operator console has
@@ -95,7 +109,8 @@ const LEAD_JOINS = `
  * have call intelligence" from "this lead has no call yet" without a second
  * request or a flag on the wire.
  *
- * LATERAL with LIMIT 1 rather than a plain join: `transcripts` holds one row
+ * LATERAL with LIMIT 1 rather than a plain join, for the same reason the
+ * booked-slot join in the funnel list carries one: `transcripts` holds one row
  * per call today, but a reprocess that ever wrote a second would duplicate the
  * LEAD in the list - a data bug showing up as a phantom pipeline card, which is
  * a far worse failure than a missing label. LIMIT 1 makes it impossible.
@@ -107,16 +122,6 @@ const CALL_INTEL_COLUMNS = `,
   ci.intent    AS call_intent,
   ci.sentiment AS call_sentiment,
   ci.outcome   AS call_outcome`;
-
-const CALL_INTEL_JOIN = `
-  LEFT JOIN LATERAL (
-    SELECT t.intelligence ->> 'overall_intent' AS intent,
-           t.intelligence ->> 'sentiment'      AS sentiment,
-           t.intelligence ->> 'outcome'        AS outcome
-      FROM transcripts t
-     WHERE t.call_id = l.last_call_id
-     LIMIT 1
-  ) ci ON true`;
 
 /**
  * The same read, per call rather than per lead, for the drawer's call history.
@@ -140,6 +145,16 @@ const CALL_HISTORY_INTEL_JOIN = `
     SELECT a.quality_score FROM call_analytics a WHERE a.call_id = c.id LIMIT 1
   ) ca ON true`;
 
+const CALL_INTEL_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT t.intelligence ->> 'overall_intent' AS intent,
+           t.intelligence ->> 'sentiment'      AS sentiment,
+           t.intelligence ->> 'outcome'        AS outcome
+      FROM transcripts t
+     WHERE t.call_id = l.last_call_id
+     LIMIT 1
+  ) ci ON true`;
+
 /**
  * The lead pipeline (§4.2 owner console).
  *
@@ -150,7 +165,10 @@ const CALL_HISTORY_INTEL_JOIN = `
  * without a migration and the API still rejects a stage that doesn't exist.
  */
 @Controller("leads")
-@UseGuards(AdminKeyGuard, TenantGuard)
+// OwnerScopeGuard on the class - see OwnerController for why it is mounted
+// here rather than per-handler. It never denies; it only resolves whose
+// records these are.
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerScopeGuard)
 export class LeadsController {
   constructor(private readonly db: DbService) {}
 
@@ -209,10 +227,15 @@ export class LeadsController {
 
   /** List view: filtered, sorted, paginated. */
   @Get()
-  async list(@OrgId() orgId: string, @Query() query: unknown) {
+  async list(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @OwnerScope() scope: OwnerRecordScope,
+  ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { stage, status, telecallerId, projectId, q, sort, limit, offset } = parsed.data;
+    const { stage, status, telecallerId, projectId, sourceChannel, q, sort, limit, offset } =
+      parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const intel = await orgHasModule(client, "call_intel");
@@ -220,14 +243,37 @@ export class LeadsController {
       const params: unknown[] = [];
       const add = (clause: string, value: unknown) => {
         params.push(value);
-        where.push(clause.replace("$?", `$${params.length}`));
+        // Global replace, matching tasks.controller.ts: the persona's
+        // owned-scope clause carries TWO `$?` placeholders bound to the same
+        // value (assignment OR attribution - see ownerScopeFilter), and a
+        // single-occurrence replace would leave the second one literal and
+        // send `$?` to Postgres as a syntax error. Every other clause here has
+        // exactly one placeholder, so this is identical for them.
+        where.push(clause.replace(/\$\?/g, `$${params.length}`));
       };
+
+      // The persona narrowing (migration 0079), FIRST in the predicate list so
+      // it can never be skipped by an early return added later.
+      //
+      // nav.ts has described this page as "All Leads (self-filtered)" for a
+      // telecaller since the personas were designed, and until now nothing
+      // filtered it: the nav hid the board and left the full list one URL
+      // away. This is the filter that claim was always describing.
+      //
+      // It is an AND alongside the caller's own filters, never a replacement
+      // for them - `?telecallerId=` still works for an owner, and still
+      // narrows further (rather than widening) for anybody scoped to their
+      // own records.
+      const scoped = ownerScopeFilter("lead", scope, "l");
+      if (scoped) add(scoped.sql, scoped.value);
 
       if (stage) add("l.stage = $?", stage);
       if (status) add("l.status = $?", status);
       if (telecallerId) add("l.telecaller_device_id = $?", telecallerId);
       if (projectId === "none") where.push("l.project_id IS NULL");
       else if (projectId) add("l.project_id = $?", projectId);
+      if (sourceChannel === "none") where.push("l.source_channel IS NULL");
+      else if (sourceChannel) add("l.source_channel = $?", sourceChannel);
       if (q) {
         // One param, three columns - pushed once so the placeholder numbering
         // stays in step with `params`.
@@ -270,7 +316,11 @@ export class LeadsController {
 
   /** Board view: every column, with its true count and the top N cards. */
   @Get("board")
-  async board(@OrgId() orgId: string, @Query() query: unknown) {
+  async board(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @OwnerScope() scope: OwnerRecordScope,
+  ) {
     const parsed = BoardQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
@@ -280,13 +330,29 @@ export class LeadsController {
       const stages = await this.stagesFor(client);
 
       const params: unknown[] = [perStage];
-      let projectWhere = "";
+      const boardWhere: string[] = [];
       if (projectId === "none") {
-        projectWhere = "WHERE l.project_id IS NULL";
+        boardWhere.push("l.project_id IS NULL");
       } else if (projectId) {
         params.push(projectId);
-        projectWhere = `WHERE l.project_id = $${params.length}`;
+        boardWhere.push(`l.project_id = $${params.length}`);
       }
+
+      // The persona narrowing (0079). The board is nav-restricted to
+      // owner/manager, but the nav is the convenience and not the control -
+      // this endpoint is reachable by URL, and a telecaller who reaches it
+      // must see their own column counts rather than the floor's.
+      //
+      // Inside the subquery for the same reason the project filter is: the
+      // window functions must see only the rows this person may read, or the
+      // per-column totals would describe a board they are not being shown.
+      const scoped = ownerScopeFilter("lead", scope, "l");
+      if (scoped) {
+        params.push(scoped.value);
+        boardWhere.push(scoped.sql.replace(/\$\?/g, `$${params.length}`));
+      }
+
+      const projectWhere = boardWhere.length > 0 ? `WHERE ${boardWhere.join(" AND ")}` : "";
 
       // Rank inside each stage in one pass - a query per column would be N
       // round trips for a board that is read on every page load. The project
@@ -331,9 +397,26 @@ export class LeadsController {
   async detail(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) leadId: string,
+    @OwnerScope() scope: OwnerRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       const intel = await orgHasModule(client, "call_intel");
+      // The persona narrowing (0079) applied to a single-record read, which is
+      // the one that matters most: hiding a lead from a LIST while leaving it
+      // readable at /v1/leads/<id> protects nothing - the ids are in the list
+      // response of anyone who ever had wider access, and a drawer deep-link
+      // is shared between colleagues constantly.
+      //
+      // Folded into the WHERE rather than checked after the fetch, so an
+      // out-of-scope lead is indistinguishable from one that does not exist.
+      // A 403 here would confirm the record's existence to somebody not
+      // allowed to read it; the 404 below says only "not yours to see".
+      // `ownerScopeFilter` rather than `ownerScopeClause`, because the VALUE is
+      // needed too and only the filter carries it - the sentinel an unresolved
+      // identity falls back to lives in owner-scope.ts and must not be
+      // re-derived here, where it could silently drift from the one every
+      // other query uses.
+      const owned = ownerScopeFilter("lead", scope, "l");
       const {
         rows: [lead],
       } = await client.query(
@@ -342,8 +425,8 @@ export class LeadsController {
                 l.agent_id, l.agent_version
            FROM leads l
            ${LEAD_JOINS}${intel ? CALL_INTEL_JOIN : ""}
-          WHERE l.id = $1`,
-        [leadId],
+          WHERE l.id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$2")}` : ""}`,
+        owned ? [leadId, owned.value] : [leadId],
       );
       if (!lead) throw new NotFoundException("lead not found");
 
@@ -406,17 +489,25 @@ export class LeadsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) leadId: string,
     @Param("callId", ParseUUIDPipe) callId: string,
+    @OwnerScope() scope: OwnerRecordScope,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       if (!(await orgHasModule(client, "call_intel"))) {
         throw new ForbiddenException("call intelligence is not enabled for this instance");
       }
 
+      // Scoped on the LEAD, which is what gates this route: everything below -
+      // the call row, its transcript, its analytics - is reached through this
+      // lookup, so narrowing it here narrows all of them. A telecaller may
+      // read the recording and the verbatim transcript of a call on their own
+      // lead; on a colleague's lead this 404s before any of it is fetched.
+      const owned = ownerScopeFilter("lead", scope, "");
       const {
         rows: [lead],
       } = await client.query(
-        "SELECT contact_number_hash, first_call_id, last_call_id FROM leads WHERE id = $1",
-        [leadId],
+        `SELECT contact_number_hash, first_call_id, last_call_id FROM leads
+          WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$2")}` : ""}`,
+        owned ? [leadId, owned.value] : [leadId],
       );
       if (!lead) throw new NotFoundException("lead not found");
 
@@ -444,8 +535,9 @@ export class LeadsController {
       const {
         rows: [analytics],
       } = await client.query(
-        `SELECT quality_score, talk_ratio, agent_talk_seconds, customer_talk_seconds,
-                interruption_count, risk_flags, has_escalation_risk
+        `SELECT quality_score, quality_criteria, talk_ratio, agent_talk_seconds,
+                customer_talk_seconds, interruption_count, risk_flags,
+                has_escalation_risk
            FROM call_analytics WHERE call_id = $1 LIMIT 1`,
         [callId],
       );
@@ -478,6 +570,7 @@ export class LeadsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) leadId: string,
     @Body() body: unknown,
+    @OwnerScope() scope: OwnerRecordScope,
   ) {
     const parsed = UpdateLeadBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -493,6 +586,13 @@ export class LeadsController {
         );
       }
       const status = p.stage ? statusForStage(stages, p.stage) : null;
+
+      // WRITES ARE SCOPED TOO, not only reads. A telecaller who can see just
+      // their own leads but could still PATCH any lead id would be able to
+      // move a colleague's card, reprice it, or reassign the handset on it -
+      // and the read filter would then hide the evidence from them. Scoping
+      // the read without the write is the worse of the two half-measures.
+      const owned = ownerScopeFilter("lead", scope, "");
 
       const {
         rows: [lead],
@@ -518,7 +618,7 @@ export class LeadsController {
            -- Working a lead IS activity: without this a card the owner is
            -- actively progressing would age out of the retention sweep.
            last_activity_at = now()
-         WHERE id = $1
+         WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$17")}` : ""}
          RETURNING id, stage, status, title, value_num, next_action, notes, contact_name,
                    telecaller_device_id, project_id, project_source,
                    stage_changed_at, last_activity_at`,
@@ -541,8 +641,14 @@ export class LeadsController {
           p.telecallerDeviceId ?? null,
           p.projectId !== undefined,
           p.projectId ?? null,
+          // $17, present only when the persona narrows. Spread rather than
+          // pushed unconditionally so the placeholder numbering above stays
+          // literal and readable.
+          ...(owned ? [owned.value] : []),
         ],
       );
+      // Same 404-not-403 reasoning as detail(): a scoped persona editing
+      // somebody else's lead must not be told the lead exists.
       if (!lead) throw new NotFoundException("lead not found");
 
       // Keep the dual-written deal in step, exactly as the stage move below

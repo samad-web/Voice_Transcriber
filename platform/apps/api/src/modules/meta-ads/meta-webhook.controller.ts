@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
 import { Controller, Get, Post, Query, Req, Res } from "@nestjs/common";
 import type { RawBodyRequest } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { decryptSecret } from "@aura/db";
 import { DbService } from "../../db/db.service";
-import { entryStage, parsePipelineStages, statusForStage } from "@aura/shared";
+import { LeadIntakeService } from "../lead-intake/lead-intake.service";
 import { fetchLead, mapLeadFields, verifyMetaSignature } from "./meta-client";
 
 interface MetaWebhookBody {
@@ -27,12 +26,27 @@ interface MetaWebhookBody {
  * one, so verification happens with META_APP_SECRET directly, same as the
  * WhatsApp Cloud API's own webhook would.
  *
- * Captures land on `contacts`/`deals` directly, NOT the legacy `leads` table
- * - see this migration's header (0063) for why.
+ * ── WHERE CAPTURES LAND, AND THE BUG THAT CHANGED IT ───────────────────
+ *
+ * They used to land on `contacts`/`deals` only - 0063's header argued `leads`
+ * was too call-centric to hold an ad lead. The consequence went unnoticed for
+ * as long as the feature existed: `/owner/board` and `/owner/leads` READ
+ * `leads`, so every Meta lead ever captured was invisible on the two pages an
+ * owner actually works in, while handset-call leads showed up fine. 0074's MCP
+ * pull was built to work around exactly this and only covered the pull path.
+ *
+ * Since migration 0078 this writes through `LeadIntakeService` - the same
+ * service the web form, the telephony webhook and the email relay use - which
+ * creates the lead, the contact AND the deal, records the arrival in the intake
+ * ledger, and stamps `source_channel = 'meta_ads'` so the board can say where
+ * the card came from. The special-case SQL that used to live here is gone.
  */
 @Controller("meta/webhook")
 export class MetaWebhookController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly intake: LeadIntakeService,
+  ) {}
 
   /** Meta's subscription handshake - confirms this endpoint is really us. */
   @Get()
@@ -110,111 +124,74 @@ export class MetaWebhookController {
 
       const lead = await fetchLead(leadgenId, pageToken);
       const { fullName, email, phone } = mapLeadFields(lead.field_data);
-      const displayName = fullName || email || phone || "Facebook lead";
 
-      const digits = phone ? phone.replace(/\D+/gu, "") : "";
-      const phoneHash = digits ? createHash("sha256").update(digits).digest("hex") : null;
-      const phonePrefix = digits ? digits.slice(0, 5) || null : null;
-      const phoneLast3 = digits.length >= 3 ? digits.slice(-3) : null;
+      // Flattened for the intake normaliser, which reads a field map rather
+      // than Meta's `[{name, values[]}]` wire shape. The form, campaign and ad
+      // names ride along so project detection has something to recognise -
+      // a lead from the "3D Website - Showroom" form should land on the 3D
+      // Website project without anybody wiring that up by hand.
+      const payload: Record<string, unknown> = {
+        leadgen_id: leadgenId,
+        page_id: pageId,
+        form_id: formId,
+        full_name: fullName,
+        email,
+        phone_number: phone,
+        campaign_name: lead.campaign_name ?? null,
+        adset_name: lead.adset_name ?? null,
+        ad_name: lead.ad_name ?? null,
+        created_time: lead.created_time ?? null,
+      };
+      const answers: string[] = [];
+      for (const field of lead.field_data ?? []) {
+        // Answers to the form's own custom questions, which are often where
+        // the actual enquiry is. Prefixed keys cannot collide with the
+        // normalised ones above.
+        const value = field.values?.[0];
+        if (value === undefined || value === null) continue;
+        payload[`answer_${field.name}`] = String(value);
+        // The three Meta already gives us as normalised fields would otherwise
+        // be repeated back as the enquiry text.
+        if (!["full_name", "email", "phone_number", "name", "phone"].includes(field.name)) {
+          answers.push(`${field.name.replace(/_/gu, " ")}: ${String(value)}`);
+        }
+      }
+      // What the person actually said, for the card and for project detection.
+      // Assembled here rather than mapped, because an answer is keyed by the
+      // form author's own question wording and no static field map can reach it.
+      payload.notes = [lead.campaign_name, lead.ad_name, ...answers]
+        .filter((part): part is string => Boolean(part && part.trim()))
+        .join("\n");
 
-      // find-or-create the one marketing source every Meta capture attributes to.
-      const {
-        rows: [source],
-      } = await client.query<{ id: string }>(
-        `INSERT INTO marketing_sources (org_id, name, channel)
-         VALUES ($1, 'Meta Lead Ads', 'meta_ads')
-         ON CONFLICT (org_id, lower(btrim(name))) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [connection.org_id],
+      // The source row every Meta capture for this org attributes to. Created
+      // on first use so it appears in the console's lead-source list beside the
+      // tenant's web form, where they can pin a project or an owner to it.
+      const source = await this.intake.ensureManagedSource(
+        client,
+        connection.org_id,
+        "meta_ads",
+        "Facebook Lead Ads",
+        "meta",
       );
 
-      // FIND-OR-CREATE, not a bare INSERT.
-      //
-      // This used to be an unguarded `INSERT INTO contacts`, and `contacts`
-      // carries TWO partial unique indexes - `contacts_org_phone` and
-      // `contacts_org_email` (0035_accounts_and_contacts.sql). So a lead from
-      // somebody the tenant already knows raised 23505; `withOrg` is a real
-      // transaction, so the ROLLBACK also destroyed the `meta_leadgen_events`
-      // claim taken above; the throw was swallowed by the caller's .catch and
-      // the handler still answered `{ ok: true }`. Meta saw a 200, never
-      // redelivered, and the lead was gone silently and permanently - and the
-      // better a customer they already were, the more certain the loss.
-      //
-      // Two lookups rather than one ON CONFLICT because a single conflict
-      // target cannot cover two indexes. Same order the CSV importer uses
-      // (import.controller.ts): phone first, then email.
-      let contact: { id: string } | undefined;
-      if (phoneHash) {
-        ({
-          rows: [contact],
-        } = await client.query<{ id: string }>(
-          `SELECT id FROM contacts WHERE org_id = $1 AND phone_hash = $2 AND status <> 'merged'`,
-          [connection.org_id, phoneHash],
-        ));
-      }
-      if (!contact && email) {
-        ({
-          rows: [contact],
-        } = await client.query<{ id: string }>(
-          `SELECT id FROM contacts WHERE org_id = $1 AND lower(email) = $2 AND status <> 'merged'`,
-          [connection.org_id, email.toLowerCase()],
-        ));
-      }
-
-      if (contact) {
-        // Attribute the returning person to this campaign without overwriting
-        // anything a human curated. COALESCE only fills blanks - an existing
-        // marketing source is the FIRST touch that won them, and a later ad
-        // click must not rewrite that history.
-        await client.query(
-          `UPDATE contacts
-              SET email               = COALESCE(email, $2),
-                  phone_hash          = COALESCE(phone_hash, $3),
-                  phone_prefix        = COALESCE(phone_prefix, $4),
-                  phone_last3         = COALESCE(phone_last3, $5),
-                  marketing_source_id = COALESCE(marketing_source_id, $6),
-                  last_activity_at    = now()
-            WHERE id = $1`,
-          [contact.id, email, phoneHash, phonePrefix, phoneLast3, source.id],
-        );
-      } else {
-        ({
-          rows: [contact],
-        } = await client.query<{ id: string }>(
-          `INSERT INTO contacts (org_id, display_name, email, phone_hash, phone_prefix, phone_last3, marketing_source_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id`,
-          [connection.org_id, displayName, email, phoneHash, phonePrefix, phoneLast3, source.id],
-        ));
-      }
-
-      const {
-        rows: [pipeline],
-      } = await client.query<{ id: string; stages: unknown }>(`SELECT id, stages FROM deal_pipelines WHERE is_default = true LIMIT 1`);
-      let dealId: string | null = null;
-      if (pipeline) {
-        const stages = parsePipelineStages(pipeline.stages);
-        const stage = entryStage(stages);
-        const status = statusForStage(stages, stage);
-        const {
-          rows: [deal],
-        } = await client.query<{ id: string }>(
-          `INSERT INTO deals (org_id, pipeline_id, contact_id, name, stage, status, marketing_source_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id`,
-          [connection.org_id, pipeline.id, contact.id, `${displayName} - Facebook lead`, stage, status, source.id],
-        );
-        dealId = deal.id;
-      }
+      const result = await this.intake.ingestOnClient(client, source, {
+        payload,
+        headers: {},
+        // No signature to re-verify here: Meta's own X-Hub-Signature-256 was
+        // already checked over the raw webhook body in `receive`, and this
+        // payload is one we assembled, not one that arrived.
+        url: "",
+        origin: null,
+      });
 
       await client.query(
         `UPDATE meta_leadgen_events SET raw = $2::jsonb, contact_id = $3, deal_id = $4 WHERE id = $1`,
-        [claim.rows[0].id, JSON.stringify(lead), contact.id, dealId],
+        [claim.rows[0].id, JSON.stringify(lead), result.contactId ?? null, result.dealId ?? null],
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'system', 'meta-webhook', 'contact.create_from_leadgen', 'contact', $2)`,
-        [connection.org_id, contact.id],
+         VALUES ($1, 'system', 'meta-webhook', 'lead.create_from_leadgen', 'lead', $2)`,
+        [connection.org_id, result.leadId],
       );
     });
   }

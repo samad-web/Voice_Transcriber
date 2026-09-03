@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-
+import { OwnerRole } from "@aura/shared";
 import { ownerNavItemsFor, ownerNavSectionsFor } from "./nav";
 
 const hrefs = (
@@ -20,7 +20,6 @@ describe("ownerNavItemsFor", () => {
   it("is unaffected by crmPrimary when it's false (the default)", () => {
     expect(hrefs("owner")).toEqual(hrefs("owner", false));
   });
-
   it("promotes the CRM pages above the legacy Board/All Leads pair when crmPrimary is true", () => {
     const items = hrefs("owner", true);
     const at = (href: string) => items.indexOf(href);
@@ -83,6 +82,7 @@ describe("ownerNavItemsFor - crmEnabled", () => {
       "/owner/quotations",
       "/owner/invoices",
       "/owner/reports",
+      "/owner/reports/builder",
       "/owner/duplicates",
       "/owner/import",
     ]) {
@@ -174,7 +174,11 @@ describe("ownerNavSectionsFor", () => {
     // THE ASSERTION THIS SUITE EXISTS FOR. A page missing from the rail is a
     // page nobody can reach, and it would be invisible in review: the code
     // still compiles, the route still resolves, the link is simply gone.
-    for (const role of ["owner", "manager", "telecaller"] as const) {
+    // Every persona the enum declares, not a hand-written three: adding
+    // `sales`/`marketing` (0079) without filing their pages would otherwise
+    // pass this suite untouched, which is the exact failure it exists to
+    // catch.
+    for (const role of OwnerRole.options) {
       const flat = ownerNavItemsFor(role, false, true, true).map((i) => i.href);
       const grouped = groups(role, false, true, true).flatMap((g) => g.items.map((i) => i.href));
       expect([role, grouped]).toEqual([role, flat]);
@@ -212,5 +216,119 @@ describe("ownerNavSectionsFor", () => {
       g.items.map((i) => i.href),
     );
     expect(withoutModule).not.toContain("/owner/calls");
+  });
+});
+
+/**
+ * The five-persona matrix (migration 0079).
+ *
+ * Written as PROPERTIES rather than as a frozen list of hrefs per role, so a
+ * page added tomorrow does not have to be added here too - only a page that
+ * breaks one of these rules does. Each `it` states a rule somebody actually
+ * decided, and the comment says who decided it and why, because "why can
+ * marketing see Reports but not the Inbox" is the question this file will be
+ * opened to answer.
+ *
+ * The nav is not the control - the API guards are - so nothing here is a
+ * security assertion. It is an assertion that the console AGREES with the
+ * guards, which matters because a rail offering a page that 403s is how a
+ * persona gets reported as broken.
+ */
+describe("the owner personas (migration 0079)", () => {
+  const nav = (role: Parameters<typeof ownerNavItemsFor>[0]) =>
+    ownerNavItemsFor(role, false, true, true).map((i) => i.href);
+
+  it("gives every persona a dashboard, and puts it first", () => {
+    // The one page nobody can be without. A persona that lands on a console
+    // with no first page has nowhere to be sent after login.
+    for (const role of OwnerRole.options) {
+      expect([role, nav(role)[0]]).toEqual([role, "/owner"]);
+    }
+  });
+
+  it("shows the call log - and its transcripts - to owner and manager alone", () => {
+    // The most sensitive page in the console: verbatim accounts of customers'
+    // phone calls. Neither new persona inherits it, deliberately.
+    expect(nav("owner")).toContain("/owner/calls");
+    expect(nav("manager")).toContain("/owner/calls");
+    for (const role of ["telecaller", "sales", "marketing"] as const) {
+      expect([role, nav(role).includes("/owner/calls")]).toEqual([role, false]);
+      expect([role, nav(role).includes("/owner/call-quality")]).toEqual([role, false]);
+    }
+  });
+
+  it("lets sales quote but not invoice", () => {
+    // The deliberate stopping point for the sales persona: raising a quotation
+    // is the job, committing the business to bill for it is not.
+    expect(nav("sales")).toContain("/owner/quotations");
+    expect(nav("sales")).toContain("/owner/products");
+    expect(nav("sales")).not.toContain("/owner/invoices");
+  });
+
+  it("gives sales a pipeline and marketing none", () => {
+    // Scope, not seniority: the API narrows a sales rep to records assigned to
+    // them, so their board is their own. A marketer has nothing assigned to
+    // them at all, so the same board would be permanently empty.
+    for (const href of ["/owner/board", "/owner/deals"] as const) {
+      expect([href, nav("sales").includes(href)]).toEqual([href, true]);
+      expect([href, nav("marketing").includes(href)]).toEqual([href, false]);
+    }
+  });
+
+  it("gives marketing the lead connectors and the attribution reports", () => {
+    // The load-bearing pages for the persona. Reports is included knowing it
+    // discloses deal values - "which channel produced revenue" cannot be
+    // answered without them.
+    for (const href of [
+      "/owner/lead-sources",
+      "/owner/meta-ads",
+      "/owner/messaging-setup",
+      "/owner/reports",
+      "/owner/import",
+    ] as const) {
+      expect([href, nav("marketing").includes(href)]).toEqual([href, true]);
+    }
+  });
+
+  it("keeps marketing out of one-to-one customer correspondence", () => {
+    // The Inbox is named threads with named people, not campaign material.
+    expect(nav("marketing")).not.toContain("/owner/inbox");
+    for (const role of ["owner", "manager", "telecaller", "sales"] as const) {
+      expect([role, nav(role).includes("/owner/inbox")]).toEqual([role, true]);
+    }
+  });
+
+  it("shows the Team page only to the personas the API lets read it", () => {
+    // owner-team.controller.ts: GET is owner-or-manager, PATCH is owner alone.
+    // The rail must not offer the page to anybody the GET would refuse.
+    expect(nav("owner")).toContain("/owner/team");
+    expect(nav("manager")).toContain("/owner/team");
+    for (const role of ["telecaller", "sales", "marketing"] as const) {
+      expect([role, nav(role).includes("/owner/team")]).toEqual([role, false]);
+    }
+  });
+
+  it("keeps every persona narrower than the owner - a persona never adds a page", () => {
+    // THE INVARIANT, stated once and checked for all of them: roles.ts says
+    // "adding a persona must only ever narrow access", and this is what that
+    // sentence means in the rail. A page reachable by a restricted persona but
+    // NOT by the owner would be a hole no review would spot, because it looks
+    // like an ordinary entry in a list.
+    const ownerPages = new Set(nav("owner"));
+    for (const role of OwnerRole.options) {
+      const extra = nav(role).filter((href) => !ownerPages.has(href));
+      expect([role, extra]).toEqual([role, []]);
+    }
+  });
+
+  it("leaves the shared working pages open to everyone", () => {
+    // The counterweight to all the restrictions above: a persona that can see
+    // nothing but a dashboard is not a role, it is a lockout. Every persona
+    // keeps their own leads, tasks, follow-ups and contacts.
+    for (const role of OwnerRole.options) {
+      for (const href of ["/owner/leads", "/owner/tasks", "/owner/contacts"] as const) {
+        expect([role, href, nav(role).includes(href)]).toEqual([role, href, true]);
+      }
+    }
   });
 });

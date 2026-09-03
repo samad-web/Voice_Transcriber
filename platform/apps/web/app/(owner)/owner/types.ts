@@ -294,6 +294,20 @@ export interface Overview {
     last_activity_at: string;
     telecaller: string | null;
   }>;
+  /**
+   * Where demand arrived from (migration 0078's `source_channel`), rolled up
+   * for the marketing dashboard. Present on EVERY response regardless of who
+   * asked - see the API's own note on why the shape does not vary by persona.
+   */
+  bySource: Array<{ channel: string; leads: number; won: number; won_value: number }>;
+  /** The same, per campaign (`marketing_sources`). Top 8 by lead count. */
+  byCampaign: Array<{ id: string; name: string; leads: number; won: number; won_value: number }>;
+  /**
+   * Open follow-ups for whoever is asking. NOT windowed by `?days=` - a task
+   * three months overdue is more urgent than one due tomorrow, so the API
+   * deliberately ignores the reporting window here.
+   */
+  tasks: { open: number; overdue: number; due_today: number; undated: number };
 }
 
 /** numeric columns arrive from pg as strings; one place to make them numbers. */

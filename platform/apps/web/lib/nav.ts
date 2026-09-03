@@ -8,6 +8,7 @@ import {
   Copy,
   FileText,
   Handshake,
+  Inbox,
   KeyRound,
   LayoutGrid,
   ListFilter,
@@ -18,6 +19,7 @@ import {
   MessagesSquare,
   Milestone,
   PieChart,
+  LineChart,
   Link2,
   Package,
   Palette,
@@ -129,7 +131,13 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Pipeline",
     // Telecaller's nav is Dashboard + All Leads (self-filtered) + their own
     // team profile once that route lands (design doc §9) - not the full board.
-    ownerRoles: ["owner", "manager"],
+    //
+    // Sales joins them (0079) because working a pipeline IS the sales job -
+    // and the board they get is their own, since the API scopes every card to
+    // records assigned to them (owner-scope.ts). Marketing does not: a
+    // marketer generates demand and hands it over, and a board of deals
+    // nobody has assigned to them would be empty by construction.
+    ownerRoles: ["owner", "manager", "sales"],
   },
   {
     href: "/owner/leads",
@@ -148,6 +156,12 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // whole floor's conversations, not a telecaller's view of their own work
     // (design doc §9). The API enforces the same pair - the nav is the
     // convenience, not the control.
+    //
+    // Sales and marketing stay out for a reason that is not seniority: this
+    // page carries verbatim transcripts of customers' phone calls, the most
+    // sensitive artefact in the product. The set of people who may read them
+    // should grow one deliberate decision at a time, not by inheriting from a
+    // persona added for another purpose.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -160,7 +174,12 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // Leads: the catalogue labels `leads`, which are core Aura, so a tenant
     // without the CRM module still sees project chips on their board and
     // still needs somewhere to edit the list behind them.
-    ownerRoles: ["owner", "manager"],
+    //
+    // Marketing reads it because a campaign is aimed at a PROJECT - "which
+    // offering is this ad for" is the question the catalogue answers, and
+    // running attribution without it means reporting on labels whose
+    // definition you cannot see.
+    ownerRoles: ["owner", "manager", "sales", "marketing"],
   },
   {
     href: "/owner/deals",
@@ -169,8 +188,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     title: "Deals",
     context: "Pipeline",
     // Same persona restriction as the lead board (design doc §9) - a
-    // telecaller's nav stays Dashboard + All Leads, not the full pipeline.
-    ownerRoles: ["owner", "manager"],
+    // telecaller's nav stays Dashboard + All Leads, not the full pipeline -
+    // and sales joins for the same reason it joins the board.
+    ownerRoles: ["owner", "manager", "sales"],
   },
   {
     href: "/owner/tasks",
@@ -187,9 +207,27 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: MessagesSquare,
     title: "Inbox",
     context: "Pipeline",
-    // Unrestricted for the same reason Tasks is: a telecaller answering
-    // replies is the whole job, and routing correspondence to a persona who
-    // cannot see it is how an enquiry goes unanswered.
+    // Everyone who works a customer, for the same reason Tasks is: a
+    // telecaller answering replies is the whole job, and routing
+    // correspondence to a persona who cannot see it is how an enquiry goes
+    // unanswered.
+    //
+    // Marketing is the exception (0079). This is one-to-one correspondence
+    // with named customers, not campaign material; a marketer has no thread
+    // assigned to them, and the shared queue is not a broadcast channel.
+    ownerRoles: ["owner", "manager", "telecaller", "sales"],
+  },
+  {
+    href: "/owner/whatsapp-leads",
+    label: "WhatsApp leads",
+    icon: MessagesSquare,
+    title: "WhatsApp leads",
+    context: "Pipeline",
+    // Same audience as the Inbox it feeds off, and for the same reason: the
+    // person who answers a thread is the person who can tell whether it was a
+    // buyer or a courier. Marketing is excluded as it is there - this is
+    // one-to-one correspondence with named customers, not campaign material.
+    ownerRoles: ["owner", "manager", "telecaller", "sales"],
   },
   {
     href: "/owner/outreach",
@@ -220,7 +258,8 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Package,
     title: "Products",
     context: "Pipeline",
-    ownerRoles: ["owner", "manager"],
+    // Sales quotes from the catalogue, so it has to be able to read it.
+    ownerRoles: ["owner", "manager", "sales"],
   },
   {
     href: "/owner/quotations",
@@ -228,7 +267,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: FileText,
     title: "Quotations",
     context: "Pipeline",
-    ownerRoles: ["owner", "manager"],
+    // Raising a quote is the sales job. Turning one into an INVOICE is not -
+    // see the next entry, which deliberately stops at owner/manager.
+    ownerRoles: ["owner", "manager", "sales"],
   },
   {
     href: "/owner/invoices",
@@ -236,6 +277,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Receipt,
     title: "Invoices",
     context: "Pipeline",
+    // Owner/manager only, and the one place the sales persona stops short of
+    // the quotation it raised: billing a customer is a financial commitment by
+    // the business, and the person who negotiated the price should not also be
+    // the one who invoices it.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -245,9 +290,27 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     title: "Reports",
     context: "Pipeline",
     // Pipeline value and per-rep win rates are a manager's view of the team,
-    // not a telecaller's view of their own work - same restriction the boards
-    // carry (design doc §9).
-    ownerRoles: ["owner", "manager"],
+    // not a telecaller's or a rep's view of their own work - same restriction
+    // the boards carry (design doc §9). A rep's own numbers are on their
+    // dashboard, which is scoped to them.
+    //
+    // Marketing joins (0079): source and campaign attribution lives here, and
+    // "which channel produced revenue" is unanswerable without the revenue
+    // half. That is a deliberate disclosure of deal values to the marketing
+    // persona - narrower than the whole console, wider than nothing.
+    ownerRoles: ["owner", "manager", "marketing"],
+  },
+  {
+    href: "/owner/reports/builder",
+    label: "Report Builder",
+    icon: LineChart,
+    title: "Report builder",
+    context: "Pipeline",
+    // Same persona restriction as Reports, and for the same reason: a report
+    // is a view over the whole team's pipeline, not a telecaller's view of
+    // their own work (design doc §9). The API narrows it further per record
+    // scope regardless of who reaches the page.
+    ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/connections",
@@ -265,7 +328,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Copy,
     title: "Duplicates",
     context: "Pipeline",
-    ownerRoles: ["owner", "manager"],
+    // Marketing owns the intake that CREATES most duplicates - the same
+    // person should be able to clean them up.
+    ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/import",
@@ -273,7 +338,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Upload,
     title: "Bulk Import",
     context: "Pipeline",
-    ownerRoles: ["owner", "manager"],
+    // A list bought from an event or an agency arrives as a CSV, and loading
+    // it is marketing's job.
+    ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/messaging-setup",
@@ -281,7 +348,20 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: MessageCircle,
     title: "WhatsApp Setup",
     context: "Settings",
-    ownerRoles: ["owner", "manager"],
+    // Grouped under Lead connectors, and marketing owns lead connectors.
+    ownerRoles: ["owner", "manager", "marketing"],
+  },
+  {
+    href: "/owner/lead-sources",
+    label: "Lead Sources",
+    icon: Inbox,
+    title: "Lead Sources",
+    context: "Pipeline",
+    // Not a telecaller's or a rep's decision: a source carries a credential
+    // and decides who new business is assigned to. Marketing joins because
+    // connecting the channels demand arrives on IS the marketing job - it is
+    // the single most load-bearing page for that persona.
+    ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/meta-ads",
@@ -289,6 +369,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Megaphone,
     title: "Meta Lead Ads",
     context: "Settings",
+    ownerRoles: ["owner", "manager", "marketing"],
+  },
+  {
+    href: "/owner/team",
+    label: "Team",
+    icon: Users,
+    title: "Team",
+    context: "Settings",
+    // Owner and manager, matching what the API allows: a manager reads the
+    // roster, only an owner changes a persona (owner-team.controller.ts). The
+    // page renders read-only for a manager rather than being hidden from
+    // them - knowing who sits where is part of running the floor.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -297,7 +389,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Palette,
     title: "Branding",
     context: "Settings",
-    ownerRoles: ["owner", "manager"],
+    // Marketing owns how the business presents itself, which is what this page
+    // is - the logo and palette on every quote and invoice a customer receives.
+    ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/call-quality",
@@ -337,10 +431,15 @@ const CRM_GATED_HREFS = [
   "/owner/accounts",
   "/owner/tasks",
   "/owner/inbox",
+  "/owner/whatsapp-leads",
   "/owner/products",
   "/owner/quotations",
   "/owner/invoices",
   "/owner/reports",
+  // The Report Builder (migration 0077) reads the same records - it is gated
+  // on `deal:view` server-side, so a tenant without the CRM module would get a
+  // page of 403s.
+  "/owner/reports/builder",
   "/owner/duplicates",
   "/owner/import",
 ];
@@ -402,6 +501,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/calls": "conversations",
   "/owner/call-quality": "conversations",
   "/owner/inbox": "conversations",
+  "/owner/whatsapp-leads": "conversations",
 
   "/owner/products": "sales",
   "/owner/quotations": "sales",
@@ -417,6 +517,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/projects": "workspace",
   "/owner/import": "workspace",
   "/owner/duplicates": "workspace",
+  "/owner/team": "workspace",
   "/owner/branding": "workspace",
   "/owner/connections": "workspace",
 };

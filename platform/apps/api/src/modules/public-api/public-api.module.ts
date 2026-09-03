@@ -18,5 +18,10 @@ import { PublicApiController } from "./public-api.controller";
   imports: [DbModule],
   controllers: [PublicApiController, McpServerController],
   providers: [CrmIngestService, CrmContextService],
+  // Exported for the lead intake engine (migration 0078), which writes every
+  // channel's lead through this same service rather than growing a second
+  // definition of what creating a lead means. Only the service is exported -
+  // the two transports above stay private to this module.
+  exports: [CrmIngestService],
 })
 export class PublicApiModule {}

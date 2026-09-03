@@ -120,34 +120,69 @@ export class AuthService {
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
-    const {
-      rows: [user],
-    } = await this.db.adminPool().query(
-      `SELECT id, email, name, status FROM users
-        WHERE ($1::text IS NOT NULL AND sso_subject = $1)
-           OR ($2::text IS NOT NULL AND lower(email) = lower($2))
-        ORDER BY (sso_subject = $1) DESC NULLS LAST
-        LIMIT 1`,
-      [identity.subject ?? null, identity.email ?? null],
-    );
-    if (!user || user.status !== "active") return { memberships: [], user: null };
-
+    // ONE round trip, not two. The web console calls this on every single
+    // navigation - it is how a Supabase session becomes an org - and the two
+    // queries this replaces ran back to back against a database in AWS Seoul
+    // while the API runs in Mumbai, so the second lookup cost ~125ms of pure
+    // flight time on every page in the product.
+    //
+    // The dependency that forced the split (memberships need `users.id`, which
+    // only the first query knows) is expressed as a CTE instead, so Postgres
+    // resolves it server-side in a single exchange. LEFT JOIN, not JOIN: a user
+    // holding no memberships must still come back as a found user, exactly as
+    // it did when the membership query simply returned no rows.
     const { rows } = await this.db.adminPool().query(
-      `SELECT m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
+      `WITH u AS (
+         SELECT id, email, name, status FROM users
+          WHERE ($1::text IS NOT NULL AND sso_subject = $1)
+             OR ($2::text IS NOT NULL AND lower(email) = lower($2))
+          ORDER BY (sso_subject = $1) DESC NULLS LAST
+          LIMIT 1
+       )
+       SELECT u.id AS "userId", u.email AS "userEmail", u.name AS "userName",
+              u.status AS "userStatus",
+              m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
               m.owner_role AS "ownerRole",
               m.recordings_listen AS "recordingsListen",
               m.recordings_export AS "recordingsExport",
               (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
                 ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
               o.enabled_modules AS "enabledModules"
-         FROM memberships m
-         JOIN organizations o ON o.id = m.org_id
-        WHERE m.user_id = $1
+         FROM u
+         LEFT JOIN memberships m ON m.user_id = u.id
+         LEFT JOIN organizations o ON o.id = m.org_id
         ORDER BY m.created_at ASC`,
-      [user.id],
+      [identity.subject ?? null, identity.email ?? null],
     );
 
-    return { memberships: rows, user };
+    const found = rows[0];
+    if (!found || found.userStatus !== "active") return { memberships: [], user: null };
+
+    const user = {
+      id: found.userId,
+      email: found.userEmail,
+      name: found.userName,
+      status: found.userStatus,
+    };
+
+    // A user with no memberships still produces one row, with every membership
+    // column NULL from the LEFT JOIN - that is "found, but unbound", not a
+    // membership in an org whose id is null. Drop those rows.
+    const memberships = rows
+      .filter((r) => r.orgId !== null)
+      .map((r) => ({
+        orgId: r.orgId,
+        orgName: r.orgName,
+        orgStatus: r.orgStatus,
+        role: r.role,
+        ownerRole: r.ownerRole,
+        recordingsListen: r.recordingsListen,
+        recordingsExport: r.recordingsExport,
+        workspaceId: r.workspaceId,
+        enabledModules: r.enabledModules,
+      }));
+
+    return { memberships, user };
   }
 
   /**

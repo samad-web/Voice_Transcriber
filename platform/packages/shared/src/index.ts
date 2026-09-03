@@ -35,3 +35,7 @@ export * from "./projects";
 export * from "./mcp";
 export * from "./meta-mcp";
 export * from "./api-scopes";
+export * from "./report-builder";
+export * from "./lead-intake";
+export * from "./linkedin";
+export * from "./whatsapp-qualification";

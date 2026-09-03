@@ -1358,3 +1358,8 @@ function stubAnalyze(schema: ExtractionSchema): AnalyzeResult {
     tokensOut: 0,
   };
 }
+
+export {
+  qualifyWhatsAppConversation,
+  type QualificationResult,
+} from "./qualify";

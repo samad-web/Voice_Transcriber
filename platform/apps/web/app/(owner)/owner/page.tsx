@@ -1,23 +1,51 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Banknote, PhoneCall, Target, Trophy } from "lucide-react";
-import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
+import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } from "lucide-react";
+import type { OwnerRole } from "@aura/shared";
+import { Card, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
-import { ownerGet } from "@/lib/owner-context";
-import { TelecallerName } from "./telecaller-name";
-import { formatDuration, formatValue, num, relativeTime, type Overview } from "./types";
+import { getOwner, ownerGet } from "@/lib/owner-context";
+import {
+  ActivityChart,
+  CampaignTable,
+  PipelineByStage,
+  RecentActivity,
+  SourceBreakdown,
+  TaskLoad,
+  TelecallerTable,
+  WindowPicker,
+} from "./dashboard-panels";
+import { formatDuration, formatValue, type Overview } from "./types";
 
 export const metadata: Metadata = { title: "Dashboard - Aura" };
 
-/** The "see everything" link that sits opposite a panel's own label. */
-const PANEL_LINK =
-  "rounded-sm text-xs font-medium text-text-muted transition-colors duration-150 ease-out hover:text-text";
-
 /**
- * The owner's landing page: how the desk is performing and what the pipeline
- * is worth, over a rolling window. Everything here is scoped by the session's
- * org - see lib/owner-context.
+ * The owner console's landing page - five dashboards behind one route
+ * (migration 0079).
+ *
+ * ── WHY ONE ROUTE AND NOT FIVE ────────────────────────────────────────────
+ *
+ * `/owner` is where the layout sends everybody after login, and it is the href
+ * in the sidebar. Splitting it into `/owner/manager`, `/owner/telecaller` and
+ * so on would mean the console's most-linked URL had to know the reader's
+ * persona before it could route them - so every link to "the dashboard" would
+ * need resolving server-side, and a bookmarked one would send a demoted
+ * manager to a page they can no longer read. One route that composes itself
+ * from the persona has neither problem: the URL is stable, and a persona
+ * change takes effect on the next render.
+ *
+ * ── THE DATA IS ALREADY NARROWED ──────────────────────────────────────────
+ *
+ * Nothing below filters anything. `/v1/owner/overview` applies the persona's
+ * record scope in SQL (owner-scope.ts), so a telecaller's payload contains
+ * only their leads and calls before it reaches this file. What varies here is
+ * WHICH numbers are worth showing and what they are called - "Open leads" for
+ * an owner is the whole floor, and the same key for a telecaller is their own
+ * desk, so the label changes even though the field does not.
+ *
+ * Rendering is therefore never the control. If this file had a bug that showed
+ * a telecaller the manager composition, they would see their own numbers under
+ * the wrong headings - not somebody else's data.
  */
 export default async function OwnerDashboardPage({
   searchParams,
@@ -29,6 +57,12 @@ export default async function OwnerDashboardPage({
   // A6, Milestone 4: same page, same Overview shape - only which table it's
   // read from forks, behind the shadow-read flag. See lib/crm-cutover.ts.
   const crmPrimary = crmShadowReadEnabled();
+
+  // `getPrincipal` is React-cached, so this costs nothing beyond what
+  // `ownerGet` already resolves to authenticate the call below.
+  const owner = await getOwner();
+  const role: OwnerRole = owner?.membership.ownerRole ?? "owner";
+
   const data = await ownerGet<Overview>(
     crmPrimary ? `/v1/owner/crm-overview?days=${days}` : `/v1/owner/overview?days=${days}`,
   );
@@ -47,47 +81,79 @@ export default async function OwnerDashboardPage({
     );
   }
 
-  // The board/leads pages don't accept a ?stage=/?focus= query yet, so the
-  // CRM-primary links point at the plain page rather than a param it would
-  // silently ignore - see CRM_STATUS.md, A6 Milestone 4.
-  const pipelineHref = crmPrimary ? "/owner/deals" : "/owner/board";
-  const pipelineLinkLabel = crmPrimary ? "Open deals board →" : "Open board →";
-  const stageHref = (stageKey: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`);
-  const allHref = crmPrimary ? "/owner/deals" : "/owner/leads";
-  const allLinkLabel = crmPrimary ? "All deals →" : "All leads →";
-  const recordHref = (id: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?focus=${id}`);
-
-  const { leads, calls, funnel, telecallers, byDay } = data;
-  const closed = leads.won + leads.lost;
-  const winRate = closed > 0 ? Math.round((leads.won / closed) * 100) : null;
-  const maxDay = Math.max(...byDay.map((d) => Math.max(d.calls, d.leads)), 1);
-  const funnelMax = Math.max(...funnel.map((f) => f.count), 1);
+  const view = { data, days, crmPrimary, role };
 
   return (
     <>
-      <PageHeader title={data.org.name || "Dashboard"} context="Instance" />
+      <PageHeader title={data.org.name || "Dashboard"} context={HEADER_CONTEXT[role]} />
+      <WindowPicker days={days} />
+      {role === "telecaller" ? <TelecallerDashboard {...view} /> : null}
+      {role === "sales" ? <SalesDashboard {...view} /> : null}
+      {role === "marketing" ? <MarketingDashboard {...view} /> : null}
+      {role === "manager" ? <ManagerDashboard {...view} /> : null}
+      {role === "owner" ? <OwnerDashboard {...view} /> : null}
+    </>
+  );
+}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <MonoLabel className="mr-1">Window</MonoLabel>
-        {[7, 30, 90].map((d) => (
-          <Link
-            key={d}
-            href={`/owner?days=${d}`}
-            aria-current={d === days ? "true" : undefined}
-            // Selected window = the gradient fill, the same "you are here"
-            // signal the sidebar and the lead filters use.
-            style={d === days ? { backgroundImage: "var(--brand-gradient)" } : undefined}
-            className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors duration-150 ease-out ${
-              d === days
-                ? "border-transparent text-white"
-                : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
-            }`}
-          >
-            {d} days
-          </Link>
-        ))}
-      </div>
+/**
+ * The eyebrow above the page title. Small, and the only thing on the page that
+ * names the persona outright - which is the point: somebody handed a login
+ * should be able to tell what kind of account they have without having to
+ * infer it from which sidebar entries are missing.
+ */
+const HEADER_CONTEXT: Record<OwnerRole, string> = {
+  owner: "Instance",
+  manager: "Team",
+  telecaller: "Your desk",
+  sales: "Your pipeline",
+  marketing: "Demand",
+};
 
+interface ViewProps {
+  data: Overview;
+  days: number;
+  crmPrimary: boolean;
+  role: OwnerRole;
+}
+
+/** Links fork on the shadow-read flag, not on the persona. */
+function links(crmPrimary: boolean) {
+  return {
+    pipelineHref: crmPrimary ? "/owner/deals" : "/owner/board",
+    pipelineLinkLabel: crmPrimary ? "Open deals board →" : "Open board →",
+    // The board/leads pages don't accept a ?stage=/?focus= query yet, so the
+    // CRM-primary links point at the plain page rather than a param it would
+    // silently ignore - see CRM_STATUS.md, A6 Milestone 4.
+    stageHref: (stageKey: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`),
+    allHref: crmPrimary ? "/owner/deals" : "/owner/leads",
+    allLinkLabel: crmPrimary ? "All deals →" : "All leads →",
+    recordHref: (id: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?focus=${id}`),
+    emptyLabel: crmPrimary ? "No deals yet" : "No leads yet",
+  };
+}
+
+/** Won / (won + lost), or null when nothing has closed - never 0%. */
+function winRate(leads: Overview["leads"]): number | null {
+  const closed = leads.won + leads.lost;
+  return closed > 0 ? Math.round((leads.won / closed) * 100) : null;
+}
+
+/**
+ * THE OWNER — the whole business, unchanged from before personas existed.
+ *
+ * Deliberately identical to what shipped: an owner's dashboard was never the
+ * problem this change set out to solve, and quietly redesigning the page every
+ * existing customer already reads would have been an unrequested cost paid by
+ * people who did not ask for it.
+ */
+function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
+  const { leads, calls, funnel, telecallers, byDay, stages, recent } = data;
+  const l = links(crmPrimary);
+  const rate = winRate(leads);
+
+  return (
+    <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
           label="Open leads"
@@ -107,7 +173,7 @@ export default async function OwnerDashboardPage({
           icon={<Trophy className="h-5 w-5" />}
           footer={
             <span>
-              {winRate === null ? "nothing closed yet" : `${winRate}% win rate`}
+              {rate === null ? "nothing closed yet" : `${rate}% win rate`}
               {leads.won_value > 0 ? ` · ${formatValue(leads.won_value)}` : ""}
             </span>
           }
@@ -121,236 +187,320 @@ export default async function OwnerDashboardPage({
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <Card elevated className="space-y-4">
-          <div className="flex items-baseline justify-between gap-3">
-            <MonoLabel>Pipeline by stage</MonoLabel>
-            <Link href={pipelineHref} className={PANEL_LINK}>
-              {pipelineLinkLabel}
-            </Link>
-          </div>
-          {leads.total === 0 ? (
-            <EmptyPipeline crmPrimary={crmPrimary} />
-          ) : (
-            <div className="space-y-2.5">
-              {funnel.map((stage) => (
-                <Link key={stage.key} href={stageHref(stage.key)} className="group block">
-                  <div className="flex items-center justify-between gap-3 text-xs">
-                    <span className="text-text-muted transition-colors duration-150 ease-out group-hover:text-text">
-                      {stage.label}
-                    </span>
-                    <span className="shrink-0 font-medium text-text tabular-nums">
-                      {stage.count}
-                      {stage.value > 0 ? (
-                        <span className="font-normal text-text-muted">
-                          {" "}
-                          · {formatValue(stage.value)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                  {/* aria-hidden: the bar is a picture of the count that is
-                      already written beside it in text, so announcing a second
-                      unlabelled meter would just read the row twice. */}
-                  <div
-                    aria-hidden="true"
-                    className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-border"
-                  >
-                    <div
-                      // Lost stays neutral rather than red: a lost lead is a
-                      // normal outcome, not a fault condition, and semantic
-                      // colour is for status only (doc 16 §1.1).
-                      className={`h-full rounded-full ${
-                        stage.terminal === "lost" ? "bg-border-strong" : "bg-accent"
-                      }`}
-                      style={{ width: `${(stage.count / funnelMax) * 100}%` }}
-                    />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card elevated className="space-y-4">
-          <MonoLabel>Calls and new leads - last {days} days</MonoLabel>
-          {byDay.length === 0 ? (
-            <p className="py-10 text-center text-sm text-text-muted">No activity in this window</p>
-          ) : (
-            <>
-              <div className="flex h-40 items-end gap-1">
-                {byDay.map((d) => (
-                  <div key={d.day} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                    <div className="flex h-32 w-full items-end justify-center gap-0.5">
-                      <div
-                        title={`${d.calls} calls`}
-                        className="w-1/2 rounded-t-sm bg-border-strong"
-                        style={{ height: `${(d.calls / maxDay) * 100}%` }}
-                      />
-                      <div
-                        title={`${d.leads} leads`}
-                        className="w-1/2 rounded-t-sm bg-accent"
-                        style={{ height: `${(d.leads / maxDay) * 100}%` }}
-                      />
-                    </div>
-                    <span className="w-full truncate text-center text-xs text-text-muted tabular-nums">
-                      {new Date(d.day).toLocaleDateString(undefined, { day: "numeric" })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-4 border-t border-border pt-3">
-                <span className="flex items-center gap-1.5 text-xs text-text-muted">
-                  <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-border-strong" /> Calls
-                </span>
-                <span className="flex items-center gap-1.5 text-xs text-text-muted">
-                  <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-accent" /> Leads
-                </span>
-              </div>
-            </>
-          )}
-        </Card>
+        <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+        <ActivityChart byDay={byDay} days={days} leadLabel={crmPrimary ? "Deals" : "Leads"} />
       </div>
 
-      <Card className="overflow-hidden p-0">
-        <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
-          <span className="text-sm font-medium text-text">Telecaller performance</span>
-          <span className="text-xs text-text-muted tabular-nums">last {days} days</span>
-        </div>
-        {telecallers.length === 0 ? (
-          <p className="py-10 text-center text-sm text-text-muted">No handsets enrolled yet</p>
-        ) : (
-          // tabIndex+role so the horizontal scroll is reachable without a mouse
-          // (WCAG 2.1.1) - the kit's <Table> does the same, but it draws its own
-          // border and this table already sits inside a bordered Card.
-          <div tabIndex={0} role="region" aria-label="Telecaller performance" className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-              <thead className="bg-bg-subtle">
-                <tr>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-xs font-medium text-text-muted">
-                    Telecaller
-                  </th>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
-                    Calls
-                  </th>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium whitespace-nowrap text-text-muted">
-                    Talk time
-                  </th>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
-                    Leads
-                  </th>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
-                    Won
-                  </th>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
-                    Pipeline
-                  </th>
-                  <th scope="col" className="border-b border-border px-4 py-2.5 text-xs font-medium whitespace-nowrap text-text-muted">
-                    Last call
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {telecallers.map((t) => (
-                  <tr
-                    key={t.id}
-                    className="transition-colors duration-150 ease-out hover:bg-surface-hover"
-                  >
-                    <td className="px-4 py-3 align-middle text-text">
-                      <TelecallerName
-                        deviceId={t.id}
-                        name={t.telecaller_name}
-                        deviceLabel={t.label}
-                      />
-                      {t.status !== "active" ? (
-                        <StatusChip tone="muted" className="mt-1.5">
-                          {t.status}
-                        </StatusChip>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                      {t.calls}
-                    </td>
-                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                      {formatDuration(t.talk_seconds)}
-                    </td>
-                    <td className="px-4 py-3 text-right align-middle font-medium text-text tabular-nums">
-                      {t.leads}
-                    </td>
-                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                      {t.won}
-                    </td>
-                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                      {formatValue(t.pipeline_value)}
-                    </td>
-                    <td className="px-4 py-3 align-middle text-text-muted tabular-nums">
-                      {relativeTime(t.last_call_at)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      <Card elevated className="space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <MonoLabel>Latest activity</MonoLabel>
-          <Link href={allHref} className={PANEL_LINK}>
-            {allLinkLabel}
-          </Link>
-        </div>
-        {data.recent.length === 0 ? (
-          <p className="py-6 text-center text-sm text-text-muted">
-            {crmPrimary ? "No deals yet" : "No leads yet"}
-          </p>
-        ) : (
-          <div className="divide-y divide-border">
-            {data.recent.map((lead) => (
-              <Link
-                key={lead.id}
-                href={recordHref(lead.id)}
-                className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2.5 transition-colors duration-150 ease-out hover:bg-surface-hover"
-              >
-                <div className="min-w-0">
-                  <span className="block truncate font-medium text-text">{lead.title}</span>
-                  <span className="text-xs text-text-muted">
-                    {lead.telecaller ?? "unassigned"} · {relativeTime(lead.last_activity_at)}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {num(lead.value_num) === null ? null : (
-                    <span className="text-xs font-medium text-text tabular-nums">
-                      {formatValue(lead.value_num)}
-                    </span>
-                  )}
-                  <StatusChip tone={lead.status === "won" ? "solid" : "muted"}>
-                    {data.stages.find((s) => s.key === lead.stage)?.label ?? lead.stage}
-                  </StatusChip>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </Card>
+      <TelecallerTable telecallers={telecallers} days={days} />
+      <RecentActivity recent={recent} stages={stages} {...l} />
     </>
   );
 }
 
 /**
- * Leads/deals only appear once a call's extraction qualifies, so an empty
- * pipeline is usually a setup gap rather than a quiet week - say which.
+ * THE MANAGER — the same data, led by the team rather than by the money.
+ *
+ * The difference from the owner's page is ORDER and EMPHASIS, not access: a
+ * manager sees every record an owner does (their record scope is `all`). What
+ * changes is that the leaderboard comes first instead of fourth, and the KPI
+ * row swaps "pipeline value" - a number a manager does not control - for the
+ * overdue follow-up count, which is the thing they can actually do something
+ * about this afternoon.
  */
-function EmptyPipeline({ crmPrimary }: { crmPrimary: boolean }) {
-  const noun = crmPrimary ? "deal" : "lead";
+function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
+  const { leads, calls, funnel, telecallers, byDay, stages, recent, tasks } = data;
+  const l = links(crmPrimary);
+  const rate = winRate(leads);
+  const active = telecallers.filter((t) => t.calls > 0).length;
+
   return (
-    <div className="space-y-2 py-8 text-center">
-      <p className="text-sm font-medium text-text">No {noun}s yet</p>
-      <p className="mx-auto max-w-sm text-sm leading-relaxed text-text-muted">
-        A {noun} appears here once a recorded call is transcribed and the AI agent
-        extracts something usable from it. If calls are arriving but no {noun}s
-        are, the extraction agent may need tuning.
-      </p>
-    </div>
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+        <StatCard
+          label="Open leads"
+          value={String(leads.open)}
+          icon={<Target className="h-5 w-5" />}
+          footer={<span>{leads.created_in_window} new in {days}d</span>}
+        />
+        <StatCard
+          label="Team on the phone"
+          value={`${active}/${telecallers.length}`}
+          icon={<Users className="h-5 w-5" />}
+          footer={<span>{formatDuration(calls.total_seconds)} across {calls.total} calls</span>}
+        />
+        <StatCard
+          label="Win rate"
+          value={rate === null ? "-" : `${rate}%`}
+          icon={<Trophy className="h-5 w-5" />}
+          footer={
+            <span>
+              {leads.won} won · {leads.lost} lost
+            </span>
+          }
+        />
+        <StatCard
+          label="Overdue follow-ups"
+          value={String(tasks.overdue)}
+          icon={<ListChecks className="h-5 w-5" />}
+          footer={<span>{tasks.open} open in total</span>}
+        />
+      </div>
+
+      {/* The leaderboard leads. A manager opens this page to find out who needs
+          help today, and that answer was previously three scrolls down. */}
+      <TelecallerTable telecallers={telecallers} days={days} title="Who is working what" />
+
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+        <ActivityChart byDay={byDay} days={days} leadLabel={crmPrimary ? "Deals" : "Leads"} />
+      </div>
+
+      <RecentActivity recent={recent} stages={stages} {...l} label="Latest across the team" />
+    </>
+  );
+}
+
+/**
+ * THE TELECALLER — one person's desk.
+ *
+ * Every number here is already narrowed to them by the API. The composition is
+ * built around the question they actually have, which is not "how is the
+ * business doing" but "what should I do next": follow-ups first, then their
+ * own pipeline, then the calls they made.
+ *
+ * No pipeline VALUE anywhere on this page, and that is deliberate rather than
+ * an omission. A telecaller is measured on activity and conversion; putting a
+ * rupee total on their landing page invites them to work the biggest card
+ * rather than the next one, and the value of a lead they were handed is not a
+ * number they set.
+ */
+function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
+  const { leads, calls, funnel, byDay, stages, recent, tasks } = data;
+  const l = links(crmPrimary);
+  const rate = winRate(leads);
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+        <StatCard
+          label="Your open leads"
+          value={String(leads.open)}
+          icon={<Target className="h-5 w-5" />}
+          footer={<span>{leads.created_in_window} new in {days}d</span>}
+        />
+        <StatCard
+          label="Your calls"
+          value={String(calls.total)}
+          icon={<PhoneCall className="h-5 w-5" />}
+          footer={<span>{formatDuration(calls.total_seconds)} on the phone</span>}
+        />
+        <StatCard
+          label="Follow-ups due"
+          value={String(tasks.overdue + tasks.due_today)}
+          icon={<ListChecks className="h-5 w-5" />}
+          footer={
+            <span>
+              {tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}
+              {tasks.open} open
+            </span>
+          }
+        />
+        <StatCard
+          label="You won"
+          value={String(leads.won)}
+          icon={<Trophy className="h-5 w-5" />}
+          footer={<span>{rate === null ? "nothing closed yet" : `${rate}% win rate`}</span>}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <TaskLoad tasks={tasks} />
+        <PipelineByStage
+          funnel={funnel}
+          total={leads.total}
+          crmPrimary={crmPrimary}
+          scoped
+          {...l}
+          label="Your leads by stage"
+        />
+      </div>
+
+      <ActivityChart
+        byDay={byDay}
+        days={days}
+        leadLabel={crmPrimary ? "Deals" : "Leads"}
+        title={`Your calls and new leads - last ${days} days`}
+      />
+
+      <RecentActivity
+        recent={recent}
+        stages={stages}
+        {...l}
+        label="Your latest activity"
+        emptyLabel="Nothing assigned to you yet"
+      />
+    </>
+  );
+}
+
+/**
+ * THE SALES REP — one person's pipeline, measured in money.
+ *
+ * The mirror image of the telecaller page, and the difference is the point: a
+ * rep IS measured on value, so pipeline and won value lead, and talk time does
+ * not appear at all. Both personas are scoped to their own records; what
+ * separates them is which of their own numbers matter.
+ */
+function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
+  const { leads, funnel, byDay, stages, recent, tasks } = data;
+  const l = links(crmPrimary);
+  const rate = winRate(leads);
+  const noun = crmPrimary ? "deals" : "leads";
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+        <StatCard
+          label="Your pipeline"
+          value={formatValue(leads.pipeline_value)}
+          icon={<Banknote className="h-5 w-5" />}
+          footer={<span>across {leads.open} open {noun}</span>}
+        />
+        <StatCard
+          label="You won"
+          value={formatValue(leads.won_value)}
+          icon={<Trophy className="h-5 w-5" />}
+          footer={<span>{leads.won} closed in this window</span>}
+        />
+        <StatCard
+          label="Win rate"
+          value={rate === null ? "-" : `${rate}%`}
+          icon={<Target className="h-5 w-5" />}
+          footer={
+            <span>
+              {leads.won} won · {leads.lost} lost
+            </span>
+          }
+        />
+        <StatCard
+          label="Follow-ups due"
+          value={String(tasks.overdue + tasks.due_today)}
+          icon={<ListChecks className="h-5 w-5" />}
+          footer={
+            <span>
+              {tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}
+              {tasks.open} open
+            </span>
+          }
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <PipelineByStage
+          funnel={funnel}
+          total={leads.total}
+          crmPrimary={crmPrimary}
+          scoped
+          {...l}
+          label={`Your ${noun} by stage`}
+        />
+        <TaskLoad tasks={tasks} />
+      </div>
+
+      <ActivityChart
+        byDay={byDay}
+        days={days}
+        leadLabel={crmPrimary ? "Deals" : "Leads"}
+        title={`Your new ${noun} - last ${days} days`}
+      />
+
+      <RecentActivity
+        recent={recent}
+        stages={stages}
+        {...l}
+        label="Your latest activity"
+        emptyLabel={`Nothing assigned to you yet`}
+      />
+    </>
+  );
+}
+
+/**
+ * THE MARKETER — demand, by where it came from.
+ *
+ * The only persona whose dashboard is a genuinely different QUESTION rather
+ * than a re-cut of the same one. A marketer is not working a pipeline; they
+ * are answering "which channel is worth the money", so the page leads with
+ * arrivals per source and the conversion rate behind each, and the pipeline
+ * appears only as the downstream result.
+ *
+ * Their record scope is `all`, not `own` (roles.ts): nothing is assigned to a
+ * marketer, so narrowing them to their own records would produce an empty page
+ * by construction. They are restricted by OBJECT instead - no call transcripts,
+ * no invoices, no customer inbox - which the nav and the API guards enforce.
+ */
+function MarketingDashboard({ data, days, crmPrimary }: ViewProps) {
+  const { leads, funnel, byDay, bySource, byCampaign, stages, recent } = data;
+  const l = links(crmPrimary);
+  const rate = winRate(leads);
+  const channels = bySource.length;
+  const best = [...bySource].sort((a, b) => b.won - a.won)[0];
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+        <StatCard
+          label={`New leads in ${days}d`}
+          value={String(leads.created_in_window)}
+          icon={<Megaphone className="h-5 w-5" />}
+          footer={<span>{channels} {channels === 1 ? "channel" : "channels"} attributed</span>}
+        />
+        <StatCard
+          label="Converted"
+          value={rate === null ? "-" : `${rate}%`}
+          icon={<Target className="h-5 w-5" />}
+          footer={<span>{leads.won} won · {leads.lost} lost</span>}
+        />
+        <StatCard
+          label="Revenue won"
+          value={formatValue(leads.won_value)}
+          icon={<Banknote className="h-5 w-5" />}
+          footer={
+            // Names the channel that CLOSED the most, not the one that
+            // delivered the most - the whole reason this dashboard exists.
+            <span>{best && best.won > 0 ? `best: ${best.channel}` : "nothing closed yet"}</span>
+          }
+        />
+        <StatCard
+          label="Open pipeline"
+          value={formatValue(leads.pipeline_value)}
+          icon={<Trophy className="h-5 w-5" />}
+          footer={<span>across {leads.open} open leads</span>}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <SourceBreakdown bySource={bySource} days={days} />
+        <ActivityChart
+          byDay={byDay}
+          days={days}
+          leadLabel="Arrivals"
+          title={`Arrivals per day - last ${days} days`}
+        />
+      </div>
+
+      <CampaignTable byCampaign={byCampaign} days={days} />
+
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <PipelineByStage
+          funnel={funnel}
+          total={leads.total}
+          crmPrimary={crmPrimary}
+          {...l}
+          label="What happened to them"
+        />
+        <RecentActivity recent={recent} stages={stages} {...l} label="Newest arrivals" />
+      </div>
+    </>
   );
 }
