@@ -17,6 +17,7 @@ import {
 import { LeadDrawer } from "../lead-drawer";
 import { CallReadChips } from "../call-intel";
 import { ProjectChip } from "../project-chip";
+import { TemperatureChip } from "../temperature-chip";
 import {
   contactLabel,
   formatValue,
@@ -264,6 +265,7 @@ export function LeadsTable({
               <TableHead>
                 <tr>
                   <TableHeaderCell>Lead</TableHeaderCell>
+                  <TableHeaderCell>How warm</TableHeaderCell>
                   <TableHeaderCell>Project</TableHeaderCell>
                   <TableHeaderCell>Stage</TableHeaderCell>
                   <TableHeaderCell className="text-right">Value</TableHeaderCell>
@@ -297,6 +299,16 @@ export function LeadsTable({
                     <TableCell>
                       <span className="block font-medium text-text">{lead.title}</span>
                       <span className="text-xs text-text-muted">{contactLabel(lead)}</span>
+                    </TableCell>
+                    <TableCell>
+                      {lead.temperature ? (
+                        <TemperatureChip
+                          temperature={lead.temperature}
+                          source={lead.temperature_source}
+                        />
+                      ) : (
+                        <span className="text-xs text-text-subtle">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {lead.project_name ? (

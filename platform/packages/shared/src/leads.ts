@@ -66,6 +66,20 @@ export function entryStage(stages: LeadStages): string {
   return (stages.find((s) => !s.terminal) ?? stages[0]).key;
 }
 
+/**
+ * The next OPEN column after `key`, or null when there is none.
+ *
+ * Terminal columns are skipped rather than returned: advancing a lead is a
+ * statement that the conversation progressed, and nothing automatic should
+ * ever decide that a deal was won or lost. A tenant whose board is
+ * [New, Won, Lost] therefore has nowhere to advance to, and gets null.
+ */
+export function stageAfter(stages: LeadStages, key: string): string | null {
+  const index = stages.findIndex((s) => s.key === key);
+  if (index < 0) return null;
+  return stages.slice(index + 1).find((s) => !s.terminal)?.key ?? null;
+}
+
 // ── qualification ───────────────────────────────────────────────────────
 
 /**
@@ -184,4 +198,85 @@ export function mergeFacts(
     if (isFilled(value)) out[key] = value;
   }
   return out;
+}
+
+// -- temperature ---------------------------------------------------------
+
+/**
+ * How warm a lead is, independent of where it sits in the funnel.
+ *
+ * Stage and temperature answer different questions and a board needs both:
+ * stage is how far along the conversation has got, temperature is whether it
+ * is worth having. A lead can sit in Negotiation and be going cold, and that
+ * pairing is exactly the one a manager wants to see - which is why these are a
+ * chip on the card and not three more columns. Columns would force each lead
+ * into one or the other.
+ */
+export const LeadTemperature = z.enum(["hot", "medium", "cold"]);
+export type LeadTemperature = z.infer<typeof LeadTemperature>;
+
+export const LEAD_TEMPERATURE_LABELS: Record<LeadTemperature, string> = {
+  hot: "Hot",
+  medium: "Medium",
+  cold: "Cold",
+};
+
+/** Hottest first - the order the console lists them in, everywhere. */
+export const LEAD_TEMPERATURE_ORDER: LeadTemperature[] = ["hot", "medium", "cold"];
+
+/** Who last set the rating. See migration 0083 for why this is tracked. */
+export const LeadTemperatureSource = z.enum(["auto", "user"]);
+export type LeadTemperatureSource = z.infer<typeof LeadTemperatureSource>;
+
+/** What the call analysis heard, reduced to the parts that predict interest. */
+export interface LeadTemperatureSignals {
+  /** `transcripts.intelligence -> 'outcome'`. */
+  outcome: string | null;
+  /** `transcripts.intelligence -> 'sentiment'`. */
+  sentiment: string | null;
+  /** A money figure the extraction produced, if any. */
+  valueNum: number | null;
+}
+
+/**
+ * Outcomes that settle the question on their own, whatever else was said.
+ *
+ * Checked BEFORE any positive signal, deliberately. A customer can decline
+ * warmly - "no thank you, that is very kind" reads as `not_interested` with
+ * `positive` sentiment, and production has exactly that row. Reading the
+ * sentiment first would file a polite refusal as Hot, which is the single most
+ * expensive mistake this function can make: it puts a telecaller's next hour
+ * into someone who already said no.
+ */
+const CLOSING_OUTCOMES = new Set(["not_interested", "wrong_number", "no_answer"]);
+
+/** Outcomes where the customer asked for the conversation to continue. */
+const ENGAGED_OUTCOMES = new Set(["interested", "follow_up", "callback"]);
+
+/**
+ * Rate a lead from one call.
+ *
+ * Only ever returns a rating from evidence. `null` means the call said nothing
+ * either way - no analysis, or an outcome this build does not recognise - and
+ * a null must not overwrite a rating an earlier call established, so callers
+ * COALESCE rather than assign.
+ */
+export function deriveLeadTemperature(signals: LeadTemperatureSignals): LeadTemperature | null {
+  const outcome = signals.outcome?.trim().toLowerCase() || null;
+  const sentiment = signals.sentiment?.trim().toLowerCase() || null;
+
+  if (outcome && CLOSING_OUTCOMES.has(outcome)) return "cold";
+  if (sentiment === "negative") return "cold";
+
+  // A figure on the table is the strongest signal available that is not the
+  // model's own opinion: somebody quoted, and somebody asked what it costs.
+  if (signals.valueNum !== null && signals.valueNum > 0) return "hot";
+
+  if (outcome === "interested") return "hot";
+  if (sentiment === "positive" && outcome && ENGAGED_OUTCOMES.has(outcome)) return "hot";
+
+  if (outcome && ENGAGED_OUTCOMES.has(outcome)) return "medium";
+  if (sentiment === "positive" || sentiment === "neutral") return "medium";
+
+  return null;
 }

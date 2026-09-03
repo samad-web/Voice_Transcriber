@@ -1,5 +1,6 @@
 "use server";
 
+import type { LeadTemperature } from "@aura/shared";
 import { revalidatePath } from "next/cache";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
@@ -33,6 +34,12 @@ export interface LeadUpdate {
   valueNum?: number | null;
   /** null clears the label; either way the API stamps it as a human's choice. */
   projectId?: string | null;
+  /**
+   * Hot / Medium / Cold. Setting one takes the rating off the worker for
+   * good; null hands it back, so the two are not interchangeable and the
+   * field has to be able to carry an explicit null.
+   */
+  temperature?: LeadTemperature | null;
 }
 
 /** Zod issue arrays and plain messages both arrive under `message`. Shared

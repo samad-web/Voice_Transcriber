@@ -1,3 +1,5 @@
+import type { LeadTemperature } from "@aura/shared";
+
 /** Shapes returned by /v1/owner/* and /v1/leads - shared by all three pages. */
 
 export interface Stage {
@@ -27,6 +29,16 @@ export interface Lead {
   telecaller_device_id: string | null;
   last_call_id: string | null;
   telecaller: string | null;
+  /**
+   * How warm the lead is (migration 0083), independent of its stage - a card
+   * can be in Negotiation and going cold, which is the pairing worth seeing.
+   *
+   * `temperature_source` rides along for the same reason `project_source`
+   * does: "the call analysis rated this" and "a colleague rated this" are not
+   * the same claim, and the card says which.
+   */
+  temperature: LeadTemperature | null;
+  temperature_source: "auto" | "user";
   /**
    * Which of the tenant's offerings this lead is for (migration 0073),
    * joined from crm_projects so a card can render without a second lookup.

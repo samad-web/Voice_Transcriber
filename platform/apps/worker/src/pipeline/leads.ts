@@ -1,9 +1,11 @@
 import {
+  deriveLeadTemperature,
   entryStage,
   isFilled,
   parseLeadRules,
   parseLeadStages,
   qualifyLead,
+  stageAfter,
   type LeadQualification,
 } from "@aura/shared";
 import { confidenceScore, type DbClient } from "./crm-dispatch";
@@ -37,6 +39,9 @@ interface CallRow {
   lead_rules: unknown;
   lead_stages: unknown;
   summary: string | null;
+  /** `transcripts.intelligence` - what the analysis made of the conversation. */
+  outcome: string | null;
+  sentiment: string | null;
   facts: Record<string, unknown> | null;
   validation_status: string | null;
 }
@@ -76,8 +81,10 @@ export function leadTitle(
  *  - call_count is recomputed from the calls table instead of incremented, so a
  *    reprocess cannot inflate it.
  *
- * Never resets stage or status. Once an owner drags a card to Negotiation, a
- * follow-up call enriches the lead - it does not send it back to New.
+ * Never moves a lead BACKWARDS, and never touches status. Once an owner drags
+ * a card to Negotiation, a follow-up call enriches the lead - it does not send
+ * it back to New. The one automatic move is forward and only out of the entry
+ * stage, on a lead nobody has worked: see the `stage = CASE` in the upsert.
  */
 export async function upsertLead(
   client: DbClient,
@@ -93,6 +100,8 @@ export async function upsertLead(
             COALESCE(a.lead_rules, '{}'::jsonb) AS lead_rules,
             o.lead_stages,
             t.intelligence ->> 'summary' AS summary,
+            t.intelligence ->> 'outcome' AS outcome,
+            t.intelligence ->> 'sentiment' AS sentiment,
             (SELECT jsonb_object_agg(f.field_key,
                       COALESCE(to_jsonb(f.value_num), to_jsonb(f.value_bool), to_jsonb(f.value_text)))
                FROM call_facts f WHERE f.call_id = c.id) AS facts,
@@ -136,6 +145,19 @@ export async function upsertLead(
   const score = confidenceScore(row.validation_status, verdict.filled, Object.keys(facts).length);
   const activityAt = row.started_at ?? new Date();
 
+  // How warm this call sounded, and where a lead goes once the conversation is
+  // demonstrably running. Both are null-safe: `deriveLeadTemperature` returns
+  // null when the call said nothing either way, and `stageAfter` returns null
+  // on a board with nowhere open to advance to. The SQL below treats both
+  // nulls as "change nothing", so a tenant with a two-column board or a call
+  // with no analysis simply keeps what it had.
+  const temperature = deriveLeadTemperature({
+    outcome: row.outcome,
+    sentiment: row.sentiment,
+    valueNum: verdict.valueNum,
+  });
+  const advanceTo = stageAfter(stages, entryStage(stages));
+
   const hash = row.remote_number_hash;
   const params = [
     orgId,                       // $1
@@ -156,6 +178,8 @@ export async function upsertLead(
     row.agent_version,           // $16
     activityAt,                  // $17
     row.telecaller_id,           // $18
+    temperature,                 // $19
+    advanceTo,                   // $20
   ];
 
   // A numberless call (the handset had no call-log permission) has no dedup
@@ -177,9 +201,25 @@ export async function upsertLead(
                 score      = $4,
                 value_num  = COALESCE($5, value_num),
                 facts      = facts || $6::jsonb,
+                -- Same two rules as the keyed path below: a rating a person
+                -- set is never overwritten, and a call that read as nothing
+                -- leaves the existing rating alone.
+                temperature = CASE
+                                WHEN temperature_source = 'user' THEN temperature
+                                ELSE COALESCE($8, temperature)
+                              END,
                 last_activity_at = GREATEST(last_activity_at, $7::timestamptz)
           WHERE id = $1`,
-        [existing.id, title, row.summary, score, verdict.valueNum, JSON.stringify(incomingFacts), activityAt],
+        [
+          existing.id,
+          title,
+          row.summary,
+          score,
+          verdict.valueNum,
+          JSON.stringify(incomingFacts),
+          activityAt,
+          temperature,
+        ],
       );
       return { leadId: existing.id, created: false, reason: "updated (no contact number)" };
     }
@@ -192,14 +232,16 @@ export async function upsertLead(
        (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
         contact_number_last3, title, stage, score, value_num, summary, facts,
         telecaller_device_id, telecaller_id, first_call_id, last_call_id, agent_id, agent_version,
-        last_activity_at, call_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $18, $14, $14, $15, $16, $17,
+        last_activity_at, temperature, call_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $18, $14, $14, $15, $16, $17, $19,
              GREATEST(1, (SELECT count(*)::int FROM calls c
                            WHERE c.workspace_id = $2 AND c.remote_number_hash = $4)))
      ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
      DO UPDATE SET
-       -- Stage and status are the owner's, never the pipeline's. telecaller_id
-       -- is deliberately absent here too, same as telecaller_device_id: it is
+       -- STATUS is the owner's, never the pipeline's - won and lost are human
+       -- decisions and nothing here touches them. STAGE is now the one
+       -- exception, and only in one direction: see below. telecaller_id is
+       -- deliberately absent here too, same as telecaller_device_id: it is
        -- a write-once snapshot of who first qualified the lead, and must never
        -- move to whoever's device happens to make the next call.
        contact_name = COALESCE(leads.contact_name, EXCLUDED.contact_name),
@@ -213,6 +255,35 @@ export async function upsertLead(
        score     = EXCLUDED.score,
        value_num = COALESCE(EXCLUDED.value_num, leads.value_num),
        facts     = leads.facts || EXCLUDED.facts,
+       -- The rating (0083). Two guards, both load-bearing:
+       --   * a rating a PERSON set is theirs - re-deriving over it is how a
+       --     field stops being trusted;
+       --   * COALESCE, not assignment - a follow-up call the analysis could
+       --     make nothing of returns null, and null must not erase what an
+       --     earlier call established.
+       temperature = CASE
+                       WHEN leads.temperature_source = 'user' THEN leads.temperature
+                       ELSE COALESCE(EXCLUDED.temperature, leads.temperature)
+                     END,
+       -- The one automatic stage move there is, and it only ever goes forward
+       -- one column, out of the entry stage, on a lead nobody has worked yet.
+       -- A second qualified call to the same number means the conversation is
+       -- running, so the card should not still be sitting in New - which is
+       -- where boards were banking up, 303 leads of 305 on one tenant.
+       --
+       -- $8 is the entry stage and $20 the open column after it, both
+       -- computed from THIS org's own lead_stages, so a tenant that renamed
+       -- its columns advances within its own board and a tenant with nowhere
+       -- open to advance to gets null and keeps its stage. The status column is
+       -- untouched: both columns are non-terminal, so it stays 'open'.
+       stage = CASE
+                 WHEN $20::text IS NOT NULL
+                  AND leads.stage = $8::text
+                  AND leads.status = 'open'
+                  AND EXCLUDED.call_count > 1
+                   THEN $20::text
+                 ELSE leads.stage
+               END,
        last_call_id  = EXCLUDED.last_call_id,
        agent_id      = EXCLUDED.agent_id,
        agent_version = EXCLUDED.agent_version,

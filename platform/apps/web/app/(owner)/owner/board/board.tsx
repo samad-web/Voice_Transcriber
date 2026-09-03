@@ -3,6 +3,7 @@
 import { KanbanBoard, type KanbanColumn } from "./kanban-board";
 import { LeadDrawer } from "../lead-drawer";
 import { ProjectChip } from "../project-chip";
+import { TemperatureChip } from "../temperature-chip";
 import { updateLeadAction } from "../actions";
 import {
   contactLabel,
@@ -49,13 +50,21 @@ export function Board({
         getCallCount: (lead) => lead.call_count,
         getLastActivityAt: (lead) => lead.last_activity_at,
         dragDataKey: "text/lead-id",
+        // Two chips share this slot: how warm the lead is, and what it is
+        // for. Temperature first - it is the one that decides whether the
+        // card is worth opening at all.
         renderBadge: (lead) =>
-          lead.project_name ? (
-            <ProjectChip
-              name={lead.project_name}
-              color={lead.project_color}
-              source={lead.project_source}
-            />
+          lead.temperature || lead.project_name ? (
+            <span className="flex flex-wrap items-center gap-1.5">
+              <TemperatureChip temperature={lead.temperature} source={lead.temperature_source} />
+              {lead.project_name ? (
+                <ProjectChip
+                  name={lead.project_name}
+                  color={lead.project_color}
+                  source={lead.project_source}
+                />
+              ) : null}
+            </span>
           ) : null,
         emptyState: {
           title: "Nothing in the pipeline yet",

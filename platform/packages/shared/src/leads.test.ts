@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LEAD_RULES,
   DEFAULT_LEAD_STAGES,
+  LEAD_TEMPERATURE_LABELS,
+  LEAD_TEMPERATURE_ORDER,
+  LeadTemperature,
+  type LeadTemperatureSignals,
+  deriveLeadTemperature,
+  stageAfter,
   LeadRules,
   entryStage,
   isFilled,
@@ -465,5 +471,91 @@ describe("mergeFacts", () => {
     const existing = { total_budget: 50000 };
     mergeFacts(existing, { total_budget: 90000 });
     expect(existing).toStrictEqual({ total_budget: 50000 });
+  });
+});
+
+describe("deriveLeadTemperature", () => {
+  const call = (o: Partial<LeadTemperatureSignals> = {}): LeadTemperatureSignals => ({
+    outcome: null,
+    sentiment: null,
+    valueNum: null,
+    ...o,
+  });
+
+  it("rates an explicitly interested customer hot", () => {
+    expect(deriveLeadTemperature(call({ outcome: "interested" }))).toBe("hot");
+  });
+
+  it("rates a named figure hot, whatever the model made of the tone", () => {
+    expect(deriveLeadTemperature(call({ outcome: "other", valueNum: 240000 }))).toBe("hot");
+  });
+
+  it("does not read a zero as a figure", () => {
+    expect(deriveLeadTemperature(call({ outcome: "callback", valueNum: 0 }))).toBe("medium");
+  });
+
+  it("rates a positive follow-up hot, and a neutral one medium", () => {
+    expect(deriveLeadTemperature(call({ outcome: "follow_up", sentiment: "positive" }))).toBe("hot");
+    expect(deriveLeadTemperature(call({ outcome: "follow_up", sentiment: "neutral" }))).toBe("medium");
+  });
+
+  it.each(["not_interested", "wrong_number", "no_answer"])("rates %s cold", (outcome) => {
+    expect(deriveLeadTemperature(call({ outcome }))).toBe("cold");
+  });
+
+  it("rates a POLITE refusal cold - the outcome outranks the tone", () => {
+    // Production has this exact row: not_interested + positive. Reading the
+    // sentiment first would file it as Hot and send someone back to a person
+    // who already said no.
+    expect(deriveLeadTemperature(call({ outcome: "not_interested", sentiment: "positive" }))).toBe(
+      "cold",
+    );
+    expect(deriveLeadTemperature(call({ outcome: "no_answer", sentiment: "positive" }))).toBe("cold");
+  });
+
+  it("rates a negative call cold even on an otherwise engaged outcome", () => {
+    expect(deriveLeadTemperature(call({ outcome: "callback", sentiment: "negative" }))).toBe("cold");
+  });
+
+  it("still rates a figure hot on a cold-sounding outcome? no - the refusal wins", () => {
+    expect(deriveLeadTemperature(call({ outcome: "not_interested", valueNum: 500000 }))).toBe("cold");
+  });
+
+  it("returns null when the call said nothing either way", () => {
+    expect(deriveLeadTemperature(call())).toBeNull();
+    expect(deriveLeadTemperature(call({ outcome: "  ", sentiment: "" }))).toBeNull();
+  });
+
+  it("ignores case and padding from the model", () => {
+    expect(deriveLeadTemperature(call({ outcome: " Not_Interested " }))).toBe("cold");
+  });
+
+  it("falls back to medium for an outcome this build has never seen", () => {
+    expect(deriveLeadTemperature(call({ outcome: "escalated", sentiment: "neutral" }))).toBe("medium");
+  });
+
+  it("labels and orders every rating it can produce", () => {
+    for (const t of LEAD_TEMPERATURE_ORDER) expect(LEAD_TEMPERATURE_LABELS[t]).toBeTruthy();
+    expect(LEAD_TEMPERATURE_ORDER).toEqual(LeadTemperature.options);
+  });
+});
+
+describe("stageAfter", () => {
+  it("returns the next open column", () => {
+    expect(stageAfter(DEFAULT_LEAD_STAGES, "new")).toBe("contacted");
+    expect(stageAfter(DEFAULT_LEAD_STAGES, "qualified")).toBe("negotiation");
+  });
+
+  it("never advances into a terminal column - nothing automatic decides won or lost", () => {
+    expect(stageAfter(DEFAULT_LEAD_STAGES, "negotiation")).toBeNull();
+    expect(stageAfter([{ key: "new", label: "New" }, { key: "won", label: "Won", terminal: "won" }], "new")).toBeNull();
+  });
+
+  it("returns null for a stage the board does not have", () => {
+    expect(stageAfter(DEFAULT_LEAD_STAGES, "nonexistent")).toBeNull();
+  });
+
+  it("returns null at the end of the board", () => {
+    expect(stageAfter(DEFAULT_LEAD_STAGES, "lost")).toBeNull();
   });
 });

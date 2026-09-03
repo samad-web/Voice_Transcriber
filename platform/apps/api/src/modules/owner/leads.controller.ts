@@ -13,7 +13,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { LeadSourceChannel, parseLeadStages, parsePipelineStages, statusForStage } from "@aura/shared";
+import {
+  LeadSourceChannel,
+  LeadTemperature,
+  parseLeadStages,
+  parsePipelineStages,
+  statusForStage,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { orgHasModule } from "../../common/org-modules";
 import type { PrincipalRequest } from "../../common/auth-principal";
@@ -71,11 +77,21 @@ const UpdateLeadBody = z.object({
   telecallerDeviceId: z.string().uuid().nullable().optional(),
   /** null clears the label. Either way this becomes the owner's column. */
   projectId: z.string().uuid().nullable().optional(),
+  /**
+   * Hot / Medium / Cold (migration 0083). null clears it, which is not the
+   * same as never sending it: clearing hands the rating BACK to the worker,
+   * while setting one takes it away from the worker for good.
+   */
+  temperature: LeadTemperature.nullable().optional(),
 });
 
 /** Columns every lead view returns - one shape for the board and the list. */
 const LEAD_COLUMNS = `
   l.id, l.title, l.stage, l.status, l.score, l.value_num, l.summary, l.next_action,
+  -- Hot/Medium/Cold, and whether it was derived or chosen. The console shows
+  -- the second one: a rating somebody picked reads differently from one the
+  -- AI guessed, and hiding that difference is what makes people mistrust both.
+  l.temperature, l.temperature_source,
   l.notes, l.facts, l.contact_name, l.contact_number_prefix, l.contact_number_last3,
   l.call_count, l.last_activity_at, l.stage_changed_at, l.created_at,
   l.telecaller_device_id, l.last_call_id,
@@ -615,12 +631,23 @@ export class LeadsController {
            -- Clearing it to NULL counts too - "not any of these" is a
            -- judgement the next call must not silently overturn.
            project_source = CASE WHEN $15::boolean THEN 'human' ELSE project_source END,
+           temperature = CASE WHEN $17::boolean THEN $18::text ELSE temperature END,
+           -- HUMAN-OWNS-IT again, and the same shape as project_source above.
+           -- Setting a rating takes it off the worker permanently; CLEARING it
+           -- ($17 sent, $18 null) is the deliberate way to hand it back, which
+           -- is why this cannot be a plain WHEN $17 THEN 'user'.
+           temperature_source = CASE
+                                  WHEN $17::boolean AND $18::text IS NOT NULL THEN 'user'
+                                  WHEN $17::boolean THEN 'auto'
+                                  ELSE temperature_source
+                                END,
            -- Working a lead IS activity: without this a card the owner is
            -- actively progressing would age out of the retention sweep.
            last_activity_at = now()
-         WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$17")}` : ""}
+         WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$19")}` : ""}
          RETURNING id, stage, status, title, value_num, next_action, notes, contact_name,
                    telecaller_device_id, project_id, project_source,
+                   temperature, temperature_source,
                    stage_changed_at, last_activity_at`,
         [
           leadId,
@@ -641,7 +668,9 @@ export class LeadsController {
           p.telecallerDeviceId ?? null,
           p.projectId !== undefined,
           p.projectId ?? null,
-          // $17, present only when the persona narrows. Spread rather than
+          p.temperature !== undefined,
+          p.temperature ?? null,
+          // $19, present only when the persona narrows. Spread rather than
           // pushed unconditionally so the placeholder numbering above stays
           // literal and readable.
           ...(owned ? [owned.value] : []),

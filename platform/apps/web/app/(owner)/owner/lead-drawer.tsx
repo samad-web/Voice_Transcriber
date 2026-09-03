@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { LEAD_TEMPERATURE_LABELS, LEAD_TEMPERATURE_ORDER } from "@aura/shared";
 import { fetchLeadAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
 import { ProjectChip } from "./project-chip";
@@ -216,6 +217,42 @@ export function LeadDrawer({
                   }`}
                 >
                   {stage.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <MonoLabel>How warm</MonoLabel>
+              {lead.temperature && lead.temperature_source === "auto" ? (
+                // The same disclosure the project label makes, for the same
+                // reason: this was the AI's read of the call, and picking one
+                // yourself takes the rating off the AI permanently. Someone
+                // correcting a wrong rating deserves to know it sticks.
+                <span className="text-xs text-text-muted">
+                  Rated from the call - choosing one makes it yours
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {LEAD_TEMPERATURE_ORDER.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  disabled={pending}
+                  aria-pressed={t === lead.temperature}
+                  // Clicking the current rating clears it, which is the only
+                  // way to hand it back to the AI - so this is a toggle, not
+                  // a radio, and unlike Stage the selected one stays enabled.
+                  onClick={() => apply({ temperature: t === lead.temperature ? null : t })}
+                  className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out disabled:cursor-default ${
+                    t === lead.temperature
+                      ? "border-transparent bg-accent-subtle text-accent-text"
+                      : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+                  }`}
+                >
+                  {LEAD_TEMPERATURE_LABELS[t]}
                 </button>
               ))}
             </div>

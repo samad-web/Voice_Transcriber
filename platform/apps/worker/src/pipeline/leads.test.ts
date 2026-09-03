@@ -158,18 +158,57 @@ describe("upsertLead", () => {
     expect(factsParam).toEqual({ customer_name: "Rajesh", brick_quantity: 5000 });
   });
 
-  it("never lets a reprocess overwrite the owner's stage, status or telecaller assignment", async () => {
+  it("never lets a reprocess overwrite the owner's status or telecaller assignment", async () => {
     const inserts: Recorded[] = [];
     await upsertLead(fakeDb({ inserts }), ORG_ID, CALL_ID);
     const sql = inserts[0].sql;
-    // The DO UPDATE clause must never reset these - see the "owner's, never
-    // the pipeline's" comment in leads.ts. Bare column names in the INSERT
-    // list (e.g. "stage") don't match "=", so this only catches an actual
-    // assignment in the conflict clause.
-    expect(sql).not.toMatch(/\bstage\s*=/);
-    expect(sql).not.toMatch(/\bstatus\s*=/);
-    expect(sql).not.toMatch(/telecaller_device_id\s*=/);
-    expect(sql).not.toMatch(/telecaller_id\s*=\s*EXCLUDED/);
+    // The DO UPDATE clause must never reset these - see the "the owner's,
+    // never the pipeline's" comment in leads.ts. Bare column names in the
+    // INSERT list don't match "=", so this only catches an actual assignment
+    // in the conflict clause.
+    //
+    // `stage` USED to be on this list and deliberately no longer is: 0083
+    // added exactly one automatic move. The test below pins that move to the
+    // narrow shape it is allowed to have, which is a stronger guarantee than
+    // "never assigned" was - a blanket ban is satisfied by any bug that
+    // simply avoids the word.
+    //
+    // Anchored per line, because an assignment in this statement always opens
+    // one. An unanchored /\bstatus\s*=/ also matches the `leads.status =
+    // 'open'` READ inside that new CASE, which is the opposite of a violation.
+    expect(sql).not.toMatch(/^\s*status\s*=/m);
+    expect(sql).not.toMatch(/^\s*telecaller_device_id\s*=/m);
+    expect(sql).not.toMatch(/^\s*telecaller_id\s*=/m);
+  });
+
+  it("advances the stage only forward, only out of the entry column, only on an open lead with a second call", async () => {
+    const inserts: Recorded[] = [];
+    await upsertLead(fakeDb({ inserts }), ORG_ID, CALL_ID);
+    const sql = inserts[0].sql;
+
+    // Each of these four guards is what stops this from becoming a bug that
+    // rewrites a board somebody has been working by hand.
+    expect(sql).toMatch(/stage = CASE/);
+    expect(sql).toMatch(/\$20::text IS NOT NULL/); // the board has somewhere open to go
+    expect(sql).toMatch(/leads\.stage = \$8::text/); // still in the entry column
+    expect(sql).toMatch(/leads\.status = 'open'/); // not already won or lost
+    expect(sql).toMatch(/EXCLUDED\.call_count > 1/); // the conversation actually ran
+    expect(sql).toMatch(/ELSE leads\.stage/); // anything else keeps what it had
+
+    // $8 is the entry stage and $20 the open column after it, both derived
+    // from THIS org's lead_stages rather than hardcoded to new/contacted.
+    expect(inserts[0].params[7]).toBe("new");
+    expect(inserts[0].params[19]).toBe("contacted");
+  });
+
+  it("rates the lead from the call, and never lets a null rating erase an earlier one", async () => {
+    const inserts: Recorded[] = [];
+    await upsertLead(fakeDb({ inserts }), ORG_ID, CALL_ID);
+    const sql = inserts[0].sql;
+    // A rating a person set is returned unchanged; otherwise COALESCE, so a
+    // call the analysis made nothing of leaves the existing rating alone.
+    expect(sql).toMatch(/WHEN leads\.temperature_source = 'user' THEN leads\.temperature/);
+    expect(sql).toMatch(/COALESCE\(EXCLUDED\.temperature, leads\.temperature\)/);
   });
 
   it("recomputes call_count from the calls table instead of incrementing it, so a replay can't inflate it", async () => {

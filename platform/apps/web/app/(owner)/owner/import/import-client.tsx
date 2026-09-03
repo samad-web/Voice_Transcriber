@@ -19,6 +19,14 @@ import {
   TableRow,
 } from "@aura/ui";
 import {
+  IMPORT_FIELDS,
+  type ImportField,
+  importTemplateCsv,
+  importTemplateFilename,
+  looksLikeTemplateSample,
+  suggestMapping,
+} from "@aura/shared";
+import {
   fetchImportErrorsAction,
   fetchImportErrorsCsvAction,
   previewImportAction,
@@ -31,46 +39,11 @@ import {
 
 type Step = "entity" | "upload" | "mapping" | "strategy" | "running" | "results";
 
-interface TargetField {
-  field: string;
-  label: string;
-  required: boolean;
-}
-
 const ENTITY_OPTIONS: Array<{ value: ImportEntity; label: string; hint: string }> = [
   { value: "contact", label: "Contacts", hint: "People - name, email, phone, title." },
   { value: "account", label: "Accounts", hint: "Companies - name and domain." },
   { value: "deal", label: "Deals", hint: "Opportunities - name, amount, stage." },
 ];
-
-/**
- * The full target-field list per entity (the same set `/import/preview`
- * guesses against). Fixed by the API contract, so it is hardcoded here rather
- * than derived from a response that might arrive empty on error - the
- * mapping step needs the whole list of Selects to render even before the
- * preview call returns.
- */
-const TARGET_FIELDS: Record<ImportEntity, TargetField[]> = {
-  contact: [
-    { field: "displayName", label: "Full name", required: true },
-    { field: "firstName", label: "First name", required: false },
-    { field: "lastName", label: "Last name", required: false },
-    { field: "email", label: "Email", required: false },
-    { field: "phone", label: "Phone", required: false },
-    { field: "title", label: "Title", required: false },
-  ],
-  account: [
-    { field: "name", label: "Company name", required: true },
-    { field: "domain", label: "Domain", required: false },
-  ],
-  deal: [
-    { field: "name", label: "Deal name", required: true },
-    { field: "amount", label: "Amount", required: false },
-    { field: "stage", label: "Stage", required: false },
-    { field: "contactEmail", label: "Contact email", required: false },
-    { field: "accountName", label: "Account name", required: false },
-  ],
-};
 
 const DEDUPE_OPTIONS: Array<{ value: DedupeStrategy; label: string; description: string }> = [
   {
@@ -106,13 +79,27 @@ const STEP_LABELS: Record<Step, string> = {
 };
 
 /** The required target fields to validate against: the API's own answer when
- *  it loaded, falling back to the fixed list above if the preview call
- *  failed - required-ness must never silently disappear just because a
- *  network call did. */
+ *  it loaded, falling back to `@aura/shared` if the preview call failed -
+ *  required-ness must never silently disappear just because a network call
+ *  did. Both sides read the same table, so the fallback cannot disagree. */
 function requiredFieldsFor(entity: ImportEntity, apiRequired: string[]): string[] {
   return apiRequired.length > 0
     ? apiRequired
-    : TARGET_FIELDS[entity].filter((f) => f.required).map((f) => f.field);
+    : IMPORT_FIELDS[entity].filter((f) => f.required).map((f) => f.field);
+}
+
+/** Hand the browser a file. Same three lines for the template and for the
+ *  failed-row export, so they are written once. */
+function downloadCsv(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -131,6 +118,8 @@ export function ImportWizard() {
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState("");
+  /** How many parsed rows still look like the template's own sample rows. */
+  const [sampleRowCount, setSampleRowCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── column mapping (step: mapping) ──────────────────────────────────
@@ -156,6 +145,7 @@ export function ImportWizard() {
     setRows([]);
     setParseError(null);
     setPasteText("");
+    setSampleRowCount(0);
     setMapping({});
     setApiRequiredFields([]);
     setMappingError(null);
@@ -171,12 +161,14 @@ export function ImportWizard() {
     if (data.length === 0) {
       setFields([]);
       setRows([]);
+      setSampleRowCount(0);
       setParseError("No rows found in that file.");
       return;
     }
     if (data.length > MAX_ROWS) {
       setFields(parsedFields);
       setRows([]);
+      setSampleRowCount(0);
       setParseError(
         `That file has ${data.length.toLocaleString()} rows - this wizard imports up to ` +
           `${MAX_ROWS.toLocaleString()} at a time. Split the file and import it in batches.`,
@@ -186,6 +178,16 @@ export function ImportWizard() {
     setParseError(null);
     setFields(parsedFields);
     setRows(data);
+
+    // Whether the template's sample rows survived into a real import. Guessed
+    // locally with the SAME function the API uses server-side, because the
+    // mapping step has not run yet at this point - and a warning that only
+    // appeared two screens later would arrive after the human had stopped
+    // looking at their spreadsheet.
+    if (entity) {
+      const guessed = suggestMapping(entity, parsedFields);
+      setSampleRowCount(data.filter((row) => looksLikeTemplateSample(entity, guessed, row)).length);
+    }
   }
 
   function handleFile(file: File) {
@@ -224,7 +226,7 @@ export function ImportWizard() {
   function goToStrategy() {
     if (!entity) return;
     const required = requiredFieldsFor(entity, apiRequiredFields);
-    const missing = TARGET_FIELDS[entity].filter((f) => required.includes(f.field) && !mapping[f.field]);
+    const missing = IMPORT_FIELDS[entity].filter((f) => required.includes(f.field) && !mapping[f.field]);
     if (missing.length > 0) {
       setMappingError(
         `Map every required field before continuing - still missing: ${missing.map((f) => f.label).join(", ")}.`,
@@ -263,15 +265,7 @@ export function ImportWizard() {
       setDownloadError(res.error ?? "Could not download the error rows.");
       return;
     }
-    const blob = new Blob([res.csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `import-${job.id}-errors.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    downloadCsv(`import-${job.id}-errors.csv`, res.csv);
   }
 
   const previewRows = useMemo(() => rows.slice(0, PREVIEW_ROWS), [rows]);
@@ -302,6 +296,8 @@ export function ImportWizard() {
           onParsePaste={handlePaste}
           onFile={handleFile}
           fileInputRef={fileInputRef}
+          sampleRowCount={sampleRowCount}
+          onDownloadTemplate={() => downloadCsv(importTemplateFilename(entity), importTemplateCsv(entity))}
           onBack={() => setStep("entity")}
           onNext={goToMapping}
         />
@@ -435,6 +431,8 @@ function UploadStep({
   onParsePaste,
   onFile,
   fileInputRef,
+  sampleRowCount,
+  onDownloadTemplate,
   onBack,
   onNext,
 }: {
@@ -448,11 +446,14 @@ function UploadStep({
   onParsePaste: () => void;
   onFile: (file: File) => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  sampleRowCount: number;
+  onDownloadTemplate: () => void;
   onBack: () => void;
   onNext: () => void;
 }) {
   const canContinue = rows.length > 0 && !parseError;
   const entityLabel = ENTITY_OPTIONS.find((o) => o.value === entity)?.label.toLowerCase() ?? entity;
+  const columns = IMPORT_FIELDS[entity];
 
   return (
     <div>
@@ -461,6 +462,8 @@ function UploadStep({
         The first row must be column headers. Up to {MAX_ROWS.toLocaleString()} rows per import - split a
         larger file and run this wizard again for the rest.
       </p>
+
+      <TemplatePanel entityLabel={entityLabel} columns={columns} onDownload={onDownloadTemplate} />
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
@@ -499,6 +502,15 @@ function UploadStep({
       </div>
 
       {parseError ? <p className="mt-3 text-sm text-danger-text">{parseError}</p> : null}
+
+      {sampleRowCount > 0 ? (
+        <p className="mt-3 rounded-md border border-warning-text/30 bg-warning-subtle px-3 py-2 text-sm text-warning-text">
+          {sampleRowCount === 1 ? "One row is" : `${sampleRowCount} rows are`} still the template&rsquo;s
+          example {sampleRowCount === 1 ? "row" : "rows"} - delete{" "}
+          {sampleRowCount === 1 ? "it" : "them"} in your spreadsheet and upload again, or{" "}
+          {sampleRowCount === 1 ? "it" : "they"} will be imported as real records.
+        </p>
+      ) : null}
 
       {rows.length > 0 ? (
         <div className="mt-4">
@@ -541,6 +553,71 @@ function UploadStep({
   );
 }
 
+/**
+ * "Here is the shape we want, here is a file of that shape."
+ *
+ * Both halves matter. The download alone leaves anyone who opens the file in
+ * Notepad guessing; the table alone leaves them retyping headers by hand and
+ * getting one of them slightly wrong. Together they are the answer to the only
+ * question this step actually raises, which is what the file should look like.
+ *
+ * The columns come from `@aura/shared`, the same table the API maps against -
+ * so this can never advertise a column the importer would then ignore.
+ */
+function TemplatePanel({
+  entityLabel,
+  columns,
+  onDownload,
+}: {
+  entityLabel: string;
+  columns: ImportField[];
+  onDownload: () => void;
+}) {
+  return (
+    <div className="mt-4 rounded-md border border-border bg-bg-subtle p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-[16rem] flex-1">
+          <MonoLabel>Not sure of the format?</MonoLabel>
+          <p className="mt-1 text-sm text-text-muted">
+            Download the template, fill it in with your {entityLabel}, and upload it back. Its headers
+            are the ones this wizard recognises, so the mapping step arrives already filled in.
+          </p>
+        </div>
+        <Button type="button" variant="secondary" size="sm" onClick={onDownload}>
+          Download CSV template
+        </Button>
+      </div>
+
+      <Table caption={`Columns in the ${entityLabel} template`} className="mt-3">
+        <TableHead>
+          <tr>
+            <TableHeaderCell>Column</TableHeaderCell>
+            <TableHeaderCell>Required</TableHeaderCell>
+            <TableHeaderCell>Example</TableHeaderCell>
+          </tr>
+        </TableHead>
+        <TableBody>
+          {columns.map((c) => (
+            <TableRow key={c.field}>
+              <TableCell className="whitespace-nowrap font-medium">{c.header}</TableCell>
+              <TableCell className="text-text-muted">{c.required ? "Yes" : "Optional"}</TableCell>
+              <TableCell className="text-text-muted">
+                {c.example}
+                {c.hint ? <span className="mt-0.5 block text-xs">{c.hint}</span> : null}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <p className="mt-2 text-xs text-text-muted">
+        Opens in Excel, Numbers or Google Sheets. It ships with two example rows - delete them before
+        you upload. Extra columns of your own are ignored, and the order does not matter.
+      </p>
+    </div>
+  );
+}
+
 function MappingStep({
   entity,
   fields,
@@ -562,7 +639,7 @@ function MappingStep({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const targetFields = TARGET_FIELDS[entity];
+  const targetFields = IMPORT_FIELDS[entity];
   const required = requiredFieldsFor(entity, apiRequiredFields);
 
   return (
