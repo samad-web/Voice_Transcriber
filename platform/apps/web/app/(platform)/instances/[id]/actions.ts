@@ -259,6 +259,33 @@ export async function logoutDeviceAction(
   return deviceAction(orgId, deviceId, "logout");
 }
 
+/**
+ * Remove a handset from the fleet - the action Logout and Wipe never covered,
+ * since both leave the device sitting in the table forever.
+ *
+ * The API decides the two possible outcomes (a phone with no calls is
+ * hard-deleted; one with calls is de-enrolled and kept for history), so this
+ * only has to relay whichever one came back and let the confirmation dialog at
+ * the call site phrase them differently.
+ */
+export async function deleteDeviceAction(
+  orgId: string,
+  deviceId: string,
+): Promise<{ outcome?: "deleted" | "de-enrolled"; calls?: number; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await call<{ outcome: "deleted" | "de-enrolled"; calls: number }>(
+    `/v1/devices/${deviceId}`,
+    { method: "DELETE", orgId },
+  );
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  return { outcome: res.data?.outcome, calls: res.data?.calls };
+}
+
 /** Remote wipe. Destructive and irreversible for the handset it lands on. */
 export async function wipeDeviceAction(
   orgId: string,

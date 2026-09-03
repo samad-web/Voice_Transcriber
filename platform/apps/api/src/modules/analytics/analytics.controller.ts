@@ -42,10 +42,11 @@ export class AnalyticsController {
       const {
         rows: [devices],
       } = await client.query(
+        // Live handsets only (0087), same as devices.controller's fleet.
         `SELECT count(*)::int AS total,
                 count(*) FILTER (WHERE status = 'active')::int AS active
            FROM devices
-          WHERE ($1::uuid IS NULL OR instance_id = $1::uuid)`,
+          WHERE removed_at IS NULL AND ($1::uuid IS NULL OR instance_id = $1::uuid)`,
         [instanceId],
       );
       const { rows: usage } = await client.query(
@@ -107,9 +108,11 @@ export class AnalyticsController {
     const {
       rows: [devices],
     } = await admin.query(
+      // Live handsets only (0087) - a removed phone is not part of the fleet
+      // this platform-wide count is describing.
       `SELECT count(*)::int AS total,
               count(*) FILTER (WHERE status = 'active')::int AS active
-         FROM devices`,
+         FROM devices WHERE removed_at IS NULL`,
     );
     const { rows: byTenant } = await admin.query(
       `SELECT o.id, o.name, o.status,

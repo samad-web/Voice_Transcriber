@@ -116,8 +116,12 @@ export class InstancesController {
   async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
+        // device_count excludes removed handsets (0087) - the same LIVE filter
+        // devices.controller uses, inlined here since this query has no `d`
+        // alias to share that constant against.
         `SELECT i.id, i.workspace_id, i.name, i.config_version, i.created_at,
-                (SELECT count(*)::int FROM devices d WHERE d.instance_id = i.id) AS device_count
+                (SELECT count(*)::int FROM devices d
+                  WHERE d.instance_id = i.id AND d.removed_at IS NULL) AS device_count
          FROM instances i
          ORDER BY i.created_at DESC`,
       );
@@ -151,11 +155,18 @@ export class InstancesController {
       );
 
       const { rows: devices } = await client.query(
+        // `connected` mirrors devices.controller.ts's CONNECTED constant
+        // (active + heard from inside 24h) verbatim - the two live in
+        // different controllers with no shared query builder between them, so
+        // this is a deliberate duplication kept in sync by that cross-reference
+        // rather than a coincidence to "clean up" later.
         `SELECT d.id, d.label, d.fingerprint, d.status, d.capture_capability, d.last_seen_at,
-                d.created_at, d.telecaller_name, d.telecaller_id, t.external_id AS telecaller_external_id
+                d.created_at, d.telecaller_name, d.telecaller_id, t.external_id AS telecaller_external_id,
+                (d.status = 'active' AND d.last_seen_at > now() - interval '24 hours') AS connected
            FROM devices d
            LEFT JOIN telecallers t ON t.id = d.telecaller_id
-          WHERE d.instance_id = $1 ORDER BY d.created_at DESC`,
+          WHERE d.instance_id = $1 AND d.removed_at IS NULL
+          ORDER BY d.created_at DESC`,
         [instanceId],
       );
 

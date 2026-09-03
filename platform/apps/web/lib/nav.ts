@@ -29,6 +29,7 @@ import {
   Receipt,
   Search,
   ShieldCheck,
+  Smartphone,
   SlidersHorizontal,
   Sparkles,
   Target,
@@ -386,6 +387,21 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // changing the spoken LANGUAGE or the transcript style re-shapes every
     // transcript the floor produces, and that is a decision about how the
     // business runs, not about how it presents itself.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/handsets",
+    label: "Handsets",
+    icon: Smartphone,
+    title: "Handsets",
+    context: "Settings",
+    // Read-only here on purpose: provisioning a key, remote-wiping or
+    // removing a phone from the fleet stays an operator action on the other
+    // console (Instances -> <instance> -> Devices), the same asymmetry the
+    // rest of Settings already draws (Transcription lets an owner edit their
+    // own glossary; nothing here lets them re-enroll a handset). Owner and
+    // manager, matching Transcription and Team - the two personas who run
+    // the floor, not the two who sell on it.
     ownerRoles: ["owner", "manager"],
   },
   {

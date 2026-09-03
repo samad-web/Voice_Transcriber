@@ -238,7 +238,12 @@ export class OwnerController {
                 WHERE created_at > now() - make_interval(days => ${days})
                 GROUP BY telecaller_device_id
              ) l ON l.telecaller_device_id = d.id
+            -- Same amnesty as the wiped exclusion: a removed handset (0087)
+            -- only disappears from the leaderboard once it has nothing in
+            -- this window either, so its historical rows in the totals above
+            -- still reconcile against a name shown somewhere on the page.
             WHERE (d.status <> 'wiped' OR COALESCE(c.calls, 0) > 0 OR COALESCE(l.leads, 0) > 0)
+              AND (d.removed_at IS NULL OR COALESCE(c.calls, 0) > 0 OR COALESCE(l.leads, 0) > 0)
               ${leaderboardAnd}
             ORDER BY COALESCE(l.leads, 0) DESC, COALESCE(c.calls, 0) DESC, d.label ASC`,
 
@@ -438,7 +443,10 @@ export class OwnerController {
                 WHERE created_at > now() - make_interval(days => ${days})
                 GROUP BY telecaller_id
              ) dl ON dl.telecaller_id = d.telecaller_id
+            -- Same amnesty as the wiped exclusion, and for the same reason
+            -- as overview()'s identical clause above.
             WHERE (d.status <> 'wiped' OR COALESCE(c.calls, 0) > 0 OR COALESCE(dl.deals, 0) > 0)
+              AND (d.removed_at IS NULL OR COALESCE(c.calls, 0) > 0 OR COALESCE(dl.deals, 0) > 0)
               ${leaderboardAnd}
             ORDER BY COALESCE(dl.deals, 0) DESC, COALESCE(c.calls, 0) DESC, d.label ASC`,
 

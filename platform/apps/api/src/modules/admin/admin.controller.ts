@@ -347,7 +347,11 @@ export class AdminController {
       `SELECT o.id, o.name, o.status, o.consent_policy, o.retention_days, o.region,
               o.enabled_modules, o.created_at,
               (SELECT count(*)::int FROM calls c     WHERE c.org_id = o.id) AS call_count,
-              (SELECT count(*)::int FROM devices d   WHERE d.org_id = o.id) AS device_count,
+              -- Live handsets only (0087) - matches devices.controller's LIVE
+              -- filter, so this list's count never disagrees with the fleet
+              -- table an operator lands on after clicking through.
+              (SELECT count(*)::int FROM devices d
+                WHERE d.org_id = o.id AND d.removed_at IS NULL) AS device_count,
               (SELECT count(*)::int FROM instances i WHERE i.org_id = o.id) AS instance_count
          FROM organizations o
         ORDER BY o.created_at DESC`,

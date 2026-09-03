@@ -310,6 +310,16 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
+  it("shows Handsets to owner and manager alone, matching Transcription and Team", () => {
+    // The fleet is read-only here (see nav.ts's comment on the item) - no API
+    // guard to mirror, so this test IS the contract until one exists.
+    expect(nav("owner")).toContain("/owner/handsets");
+    expect(nav("manager")).toContain("/owner/handsets");
+    for (const role of ["telecaller", "sales", "marketing"] as const) {
+      expect([role, nav(role).includes("/owner/handsets")]).toEqual([role, false]);
+    }
+  });
+
   it("shows the Team page only to the personas the API lets read it", () => {
     // owner-team.controller.ts: GET is owner-or-manager, PATCH is owner alone.
     // The rail must not offer the page to anybody the GET would refuse.

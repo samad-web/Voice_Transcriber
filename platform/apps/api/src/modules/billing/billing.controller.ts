@@ -38,7 +38,11 @@ export class BillingController {
 
       const {
         rows: [devices],
-      } = await client.query(`SELECT count(*)::int AS n FROM devices`);
+      } = await client.query(
+        // Live handsets only (0087) - a removed phone is no longer a billable
+        // seat, and this powers the usage page's device line.
+        `SELECT count(*)::int AS n FROM devices WHERE removed_at IS NULL`,
+      );
       const {
         rows: [apiKeys],
       } = await client.query(`SELECT count(*)::int AS n FROM api_keys`);

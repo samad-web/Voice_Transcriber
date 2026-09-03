@@ -3,7 +3,9 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -146,6 +148,29 @@ const LATEST_HEALTH_JOIN = `
      ORDER BY dh.ts DESC
      LIMIT 1
   ) h ON true`;
+
+/**
+ * The fleet is the handsets that have NOT been removed (0087).
+ *
+ * Every listing and every count filters on this. A removed device keeps its
+ * row - `calls.device_id` has no cascade, so its history has to stay
+ * resolvable - but it is no longer part of the fleet anyone is looking at, and
+ * leaving it in the counts would mean an operator can never make the number on
+ * screen match the number of phones in the building.
+ */
+const LIVE = "d.removed_at IS NULL";
+
+/**
+ * "Connected" = authenticating AND heard from within a day.
+ *
+ * Deliberately the same 24h boundary the staleness buckets already use
+ * (`<1h` and `1-24h` are connected; `1-7d`, `stale` and `never` are not), so
+ * the count on the instances list can never disagree with the chip on the
+ * device row it summarises. Status matters as well as recency: a handset that
+ * was wiped or logged out this morning reported in recently and is emphatically
+ * not connected.
+ */
+const CONNECTED = `d.status = 'active' AND d.last_seen_at > now() - interval '${STALE_UNDER_24H_HOURS} hours'`;
 
 @Controller("devices")
 export class DevicesController {
@@ -600,16 +625,97 @@ export class DevicesController {
     });
   }
 
+  /**
+   * Take a handset out of the fleet.
+   *
+   * Logout and Wipe are both states a device STAYS in - neither takes it off
+   * the list - so until now a phone that left the company a year ago read
+   * exactly like one that is merely offline this afternoon. This is the third
+   * action, and the only one that removes.
+   *
+   * Two tiers, mirroring instances.controller's decommission and for the same
+   * FK reason: `calls.device_id` has no cascade, so a handset that recorded
+   * anything cannot be DELETEd without destroying that history.
+   *
+   *  - **no calls**  → the row goes outright. `device_health` cascades,
+   *                    `leads.telecaller_device_id` nulls (0010). A test
+   *                    enrollment or a mis-scanned QR leaves nothing behind.
+   *  - **has calls** → de-enrolled: `removed_at` stamped and `status` dropped
+   *                    to `logged_out`, so it leaves every listing and count
+   *                    AND stops authenticating, while its calls keep
+   *                    resolving in the log, the reports and the lead board.
+   *
+   * Deliberately NOT a wipe. Wiping destroys the recordings still sitting on
+   * the handset, which is a separate and more destructive choice the operator
+   * already has one button for; taking a phone off the console's list must not
+   * silently reach out and erase it. An operator who wants both presses both.
+   */
+  @Delete(":id")
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async remove(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [device],
+      } = await client.query(
+        "SELECT id, label, status, removed_at FROM devices WHERE id = $1",
+        [id],
+      );
+      if (!device) throw new NotFoundException("device not found in this org");
+      // Not an error worth a 500, but not a silent no-op either: a second
+      // Delete on the same row means the operator is looking at a stale table.
+      if (device.removed_at) {
+        throw new ConflictException("that handset has already been removed from the fleet");
+      }
+
+      const {
+        rows: [{ calls }],
+      } = await client.query("SELECT count(*)::int AS calls FROM calls WHERE device_id = $1", [id]);
+
+      const outcome: "deleted" | "de-enrolled" = calls === 0 ? "deleted" : "de-enrolled";
+      if (outcome === "deleted") {
+        await client.query("DELETE FROM devices WHERE id = $1", [id]);
+      } else {
+        await client.query(
+          "UPDATE devices SET removed_at = now(), status = 'logged_out' WHERE id = $1",
+          [id],
+        );
+      }
+
+      // After the write, and safe there: audit_log.target_id is plain `text`
+      // with no FK back to devices (0001), so the trail survives the hard
+      // delete that is the whole point of the first branch.
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'device.remove', 'device', $3, $4)`,
+        [
+          orgId,
+          req.principal?.userId ?? "dev-admin",
+          id,
+          JSON.stringify({ outcome, calls, label: device.label, previousStatus: device.status }),
+        ],
+      );
+
+      return { id, outcome, calls };
+    });
+  }
+
   /** Fleet listing for the web Devices page. */
   @Get()
   @UseGuards(AdminKeyGuard, TenantGuard)
   async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
-        `SELECT id, instance_id, label, fingerprint, os_version, app_version,
-                status, capture_capability, last_seen_at, created_at
-         FROM devices
-         ORDER BY created_at DESC`,
+        `SELECT d.id, d.instance_id, d.label, d.fingerprint, d.os_version, d.app_version,
+                d.status, d.capture_capability, d.last_seen_at, d.created_at,
+                d.telecaller_name, (${CONNECTED}) AS connected
+         FROM devices d
+         WHERE ${LIVE}
+         ORDER BY d.created_at DESC`,
       );
       return { devices: rows };
     });
@@ -633,6 +739,7 @@ export class DevicesController {
                 h.battery_level, h.free_storage_mb, h.pending_uploads, h.failure_counts, h.ts AS health_ts
            FROM devices d
            ${LATEST_HEALTH_JOIN}
+          WHERE ${LIVE}
           ORDER BY d.created_at DESC`,
       );
 

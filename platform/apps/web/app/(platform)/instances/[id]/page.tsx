@@ -104,6 +104,8 @@ interface DeviceRow {
   telecaller_name: string | null;
   telecaller_id: string | null;
   telecaller_external_id: string | null;
+  /** Active status heard from inside the last 24h - see instances.controller.ts. */
+  connected: boolean;
 }
 
 interface Overview {
@@ -436,6 +438,10 @@ export default async function InstanceDetailPage({
   );
 
   const deviceTotal = details.reduce((n, d) => n + (d?.devices.length ?? 0), 0);
+  const connectedTotal = details.reduce(
+    (n, d) => n + (d?.devices.filter((x) => x.connected).length ?? 0),
+    0,
+  );
   const activeKeys = details.reduce(
     (n, d) => n + (d?.keys.filter((k) => k.status === "active").length ?? 0),
     0,
@@ -498,7 +504,11 @@ export default async function InstanceDetailPage({
         <Metric
           label="Devices"
           value={deviceTotal.toLocaleString()}
-          hint="Open fleet"
+          hint={
+            deviceTotal === 0
+              ? "Open fleet"
+              : `${connectedTotal.toLocaleString()} connected now`
+          }
           gotoTab="devices"
         />
         <Metric
@@ -663,6 +673,7 @@ export default async function InstanceDetailPage({
         // reading "3 need attention" over a table of five healthy handsets is
         // worse than no count at all.
         const instFlagged = devices.filter((d) => healthByDevice.get(d.id)?.needsAttention).length;
+        const instConnected = devices.filter((d) => d.connected).length;
         return (
           <div key={inst.id} className="space-y-5">
             {multi ? <InstanceHeading inst={inst} /> : null}
@@ -677,7 +688,7 @@ export default async function InstanceDetailPage({
                     (instFlagged > 0 ? "font-medium text-danger-text" : "text-text-muted")
                   }
                 >
-                  {devices.length} enrolled
+                  {instConnected} of {devices.length} connected
                   {instFlagged > 0 ? ` · ${instFlagged} need attention` : ""}
                 </span>
               }
@@ -699,8 +710,9 @@ export default async function InstanceDetailPage({
                     sideways scroll on every laptop. Status and health are one
                     stacked cell now (two chips, same glance) and the device id
                     is a copy target rather than 36 characters of column, which
-                    brings the table inside a 1440px viewport. */}
-                <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+                    brought the table inside a 1440px viewport - widened back to
+                    1040px for the Remove button the actions cell gained. */}
+                <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
                   <caption className="sr-only">Enrolled devices for {inst.name}</caption>
                   <TableHead>
                     <tr>
@@ -787,6 +799,7 @@ export default async function InstanceDetailPage({
                             <DeviceActions
                               orgId={orgId}
                               deviceId={device.id}
+                              label={device.label ?? "this device"}
                               status={device.status}
                             />
                           </TableCell>
