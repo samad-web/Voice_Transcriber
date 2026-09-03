@@ -8,21 +8,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { ASR_LANGUAGES, ASR_MODES } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { hashAppLockPassword } from "../../common/app-lock-hash";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
-
-/** Sarvam's BCP-47 set, plus the sentinel that forces auto-detect. Mirrors the
- *  CHECK constraint in migration 0016 - both are generated from the same list
- *  in the sense that they must be changed together. */
-const ASR_LANGUAGES = [
-  "unknown", "en-IN", "hi-IN", "bn-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN",
-  "pa-IN", "ta-IN", "te-IN", "gu-IN", "as-IN", "ur-IN", "ne-IN", "kok-IN",
-  "ks-IN", "sd-IN", "sa-IN", "sat-IN", "mni-IN", "brx-IN", "mai-IN", "doi-IN",
-] as const;
 
 /**
  * Per-tenant logo/colors (Kailash gap Milestone 4). One jsonb column
@@ -62,7 +54,7 @@ const PolicyBody = z.object({
    * Saaras output format. `codemix` is the one that keeps an English brand name
    * out of Indic script - "RD Interlock" instead of "ஆர்டி இன்டர்லாக்".
    */
-  asrMode: z.enum(["transcribe", "translate", "verbatim", "translit", "codemix"]).nullable().optional(),
+  asrMode: z.enum(ASR_MODES).nullable().optional(),
   /**
    * Proper nouns and domain terms in their correct spelling. Handed to the
    * analyse stages, not to ASR - the batch speech API takes no hotword list.

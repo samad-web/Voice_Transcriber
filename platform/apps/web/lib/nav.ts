@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   ListFilter,
   ListChecks,
+  Languages,
   Layers,
   Megaphone,
   MessageCircle,
@@ -372,6 +373,22 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
+    href: "/owner/transcription",
+    label: "Transcription",
+    icon: Languages,
+    title: "Transcription",
+    context: "Settings",
+    // Owner and manager, matching the persona check in the page's own server
+    // action - which is the real control here, because the API route behind it
+    // cannot tell one console persona from another (see that action's header).
+    //
+    // Marketing is deliberately out despite owning brand names elsewhere:
+    // changing the spoken LANGUAGE or the transcript style re-shapes every
+    // transcript the floor produces, and that is a decision about how the
+    // business runs, not about how it presents itself.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/team",
     label: "Team",
     icon: Users,
@@ -517,6 +534,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/projects": "workspace",
   "/owner/import": "workspace",
   "/owner/duplicates": "workspace",
+  "/owner/transcription": "workspace",
   "/owner/team": "workspace",
   "/owner/branding": "workspace",
   "/owner/connections": "workspace",

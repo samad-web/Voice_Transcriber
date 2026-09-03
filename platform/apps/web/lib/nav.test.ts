@@ -298,6 +298,18 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
+  it("shows Transcription to owner and manager alone", () => {
+    // The client's own glossary and language. Restricted to the two personas
+    // that run the business, matching updateTranscriptionAction's own check -
+    // which is load-bearing here, because /v1/org/policy sees every
+    // owner-console caller as platform_admin and cannot tell them apart.
+    expect(nav("owner")).toContain("/owner/transcription");
+    expect(nav("manager")).toContain("/owner/transcription");
+    for (const role of ["telecaller", "sales", "marketing"] as const) {
+      expect([role, nav(role).includes("/owner/transcription")]).toEqual([role, false]);
+    }
+  });
+
   it("shows the Team page only to the personas the API lets read it", () => {
     // owner-team.controller.ts: GET is owner-or-manager, PATCH is owner alone.
     // The rail must not offer the page to anybody the GET would refuse.

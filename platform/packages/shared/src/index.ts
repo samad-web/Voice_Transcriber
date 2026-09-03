@@ -6,6 +6,7 @@ export * from "./crm-template";
 export * from "./crm-providers";
 export * from "./leads";
 export * from "./roles";
+export * from "./asr";
 export * from "./pipelines";
 export * from "./custom-fields";
 export * from "./custom-field-values";
