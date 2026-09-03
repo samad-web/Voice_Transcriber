@@ -4,6 +4,7 @@ import { OwnerTeamController } from "./owner-team.controller";
 import { LeadsController } from "./leads.controller";
 import { OwnerController } from "./owner.controller";
 import { OwnersController } from "./owners.controller";
+import { OwnerAccountsService } from "./owner-accounts.service";
 import { SupabaseAdminService } from "./supabase-admin.service";
 
 /**
@@ -19,6 +20,6 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     OwnerController,
     OwnersController,
   ],
-  providers: [SupabaseAdminService],
+  providers: [OwnerAccountsService, SupabaseAdminService],
 })
 export class OwnerModule {}

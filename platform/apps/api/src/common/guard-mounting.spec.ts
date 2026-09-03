@@ -388,6 +388,14 @@ const OWNER_ROLE_ROUTES = [
   // wearing the clothes of an ordinary team edit.
   "GET /owner/team",
   "PATCH /owner/team/:userId",
+  // Provisioning, re-passwording and revoking a colleague's login - all OWNER
+  // only. Unlike most of the owner console these are real API-side
+  // enforcement rather than a nav restriction: OwnerRoleGuard resolves the
+  // persona from `memberships`, so a manager is refused here even though the
+  // admin key the console arrives on is minted as platform_admin.
+  "POST /owner/team",
+  "POST /owner/team/:userId/password",
+  "DELETE /owner/team/:userId",
   // The client's own call log. Unlike the three above it declares a real
   // `@RequireOwnerRole("owner", "manager")` at class level rather than
   // mounting the guard inertly: reading the whole floor's conversations is a
@@ -732,7 +740,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 302 routes, partitioned 256 tenant / 24 cross-tenant / 7 device / 15 unguarded", () => {
+  it("has 305 routes, partitioned 256 tenant / 24 cross-tenant / 7 device / 15 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -807,8 +815,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // Their `call_intel` module check is not a guard for the same reason the
     // leads one is not: the list answers normally without the module and the
     // detail refuses, which is a decision each route makes for itself.
-    expect(ROUTES).toHaveLength(302);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(302);
+    expect(ROUTES).toHaveLength(305);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(305);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -821,12 +829,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(256);
+    expect(tenantScoped).toHaveLength(259);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(302);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(305);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 272 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 275 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -834,7 +842,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(272);
+    expect(principalRoutes).toHaveLength(275);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

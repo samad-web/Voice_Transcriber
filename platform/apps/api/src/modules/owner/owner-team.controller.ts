@@ -2,22 +2,25 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { OwnerRole, resolveOwnerRole } from "@aura/shared";
+import { OwnerRole, resolveOwnerRole, tenantRoleForOwnerRole } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { OwnerAccountsService } from "./owner-accounts.service";
 
 const UpdateMemberBody = z.object({
   ownerRole: OwnerRole.optional(),
@@ -32,6 +35,27 @@ const UpdateMemberBody = z.object({
    * action is what makes the incomplete state hard to reach.
    */
   telecallerId: z.string().uuid().nullable().optional(),
+});
+
+const InviteBody = z.object({
+  email: z.string().email().max(200),
+  name: z.string().min(1).max(200).optional(),
+  /**
+   * Required, with no default. Defaulting would mean a mis-typed or omitted
+   * field silently provisions the WIDEST persona - the one failure this whole
+   * screen exists to make impossible. An owner choosing "Owner" must have
+   * chosen it.
+   */
+  ownerRole: OwnerRole,
+  /** Bind them to a telecaller identity in the same action - see update(). */
+  telecallerId: z.string().uuid().nullable().optional(),
+  /**
+   * Listening to a recording is a privacy event, so a new colleague gets it
+   * only if asked for - the opposite default to the operator path, which
+   * provisions account holders rather than staff.
+   */
+  recordingsListen: z.boolean().default(false),
+  recordingsExport: z.boolean().default(false),
 });
 
 /**
@@ -57,7 +81,10 @@ const UpdateMemberBody = z.object({
 @Controller("owner/team")
 @UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
 export class OwnerTeamController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly accounts: OwnerAccountsService,
+  ) {}
 
   /**
    * The roster. Owner and manager both read it - a manager needs to know who
@@ -182,29 +209,9 @@ export class OwnerTeamController {
       // user_id IS NOT NULL, so a person cannot be two telecallers in one org.
       // Moving a binding therefore has to clear the old row first, in the same
       // transaction, or the second statement trips the constraint.
+      // Shared with invite() - see bindTelecaller for the uniqueness handling.
       if (p.telecallerId !== undefined) {
-        await client.query(
-          `UPDATE telecallers SET user_id = NULL, updated_at = now()
-            WHERE org_id = $1 AND user_id = $2`,
-          [orgId, userId],
-        );
-        if (p.telecallerId) {
-          const { rowCount } = await client.query(
-            // `user_id IS NULL OR user_id = $3` refuses to steal an identity
-            // that already belongs to somebody else: two console logins
-            // resolving to one telecaller row would show each of them the
-            // other's leads, which is the exact failure this whole change
-            // exists to prevent.
-            `UPDATE telecallers SET user_id = $3, updated_at = now()
-              WHERE id = $1 AND org_id = $2 AND (user_id IS NULL OR user_id = $3)`,
-            [p.telecallerId, orgId, userId],
-          );
-          if (rowCount === 0) {
-            throw new BadRequestException(
-              "that telecaller identity does not exist here, or is already bound to someone else",
-            );
-          }
-        }
+        await this.bindTelecaller(orgId, userId, p.telecallerId);
       }
 
       await client.query(
@@ -235,6 +242,152 @@ export class OwnerTeamController {
       );
 
       return { member: { ...updated, ownerRole: resolveOwnerRole(updated?.ownerRole) } };
+    });
+  }
+
+  /**
+   * Provision a colleague's login.
+   *
+   * OWNER ONLY, and here `@RequireOwnerRole` is REAL enforcement rather than a
+   * courtesy: `OwnerRoleGuard` resolves the persona from `memberships` itself
+   * (`AuthService.ownerRoleFor`) rather than believing the `x-caller-owner-role`
+   * header, so a manager or telecaller reaching this route is refused by the
+   * API regardless of what the web tier sends. That is the difference from
+   * `/v1/org/policy`, which cannot tell console personas apart at all.
+   *
+   * NOTHING IS EMAILED. The generated password comes back in the response for
+   * the owner to hand over however they choose. That is deliberate: this
+   * platform does not put a message in a person's inbox because a form was
+   * submitted, and an invite email would be exactly that.
+   */
+  @Post()
+  @RequireOwnerRole("owner")
+  async invite(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+    const parsed = InviteBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const p = parsed.data;
+
+    const created = await this.accounts.createLogin(
+      orgId,
+      {
+        email: p.email,
+        name: p.name,
+        ownerRole: p.ownerRole,
+        // One rung below the console persona - see tenantRoleForOwnerRole for
+        // why a telecaller must not be minted as org_admin.
+        tenantRole: tenantRoleForOwnerRole(p.ownerRole),
+        recordingsListen: p.recordingsListen,
+        recordingsExport: p.recordingsExport,
+      },
+      { id: req.principal?.userId ?? "unknown", action: "owner.team.invite" },
+    );
+
+    // Bind the telecaller identity AFTER the membership exists, and only then:
+    // an own-scoped persona with no identity sees an empty console, so the
+    // invite and the binding belong to one action from the owner's point of
+    // view even though they are two writes.
+    if (p.telecallerId) {
+      await this.bindTelecaller(orgId, created.owner.userId as string, p.telecallerId);
+    }
+
+    return created;
+  }
+
+  /**
+   * Issue a fresh password for somebody who has forgotten theirs.
+   *
+   * Owner only, for the obvious reason: whoever can re-password an account can
+   * sign in as it. Shown once, like the original.
+   */
+  @Post(":userId/password")
+  @RequireOwnerRole("owner")
+  async resetPassword(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.accounts.resetPassword(orgId, userId, {
+      id: req.principal?.userId ?? "unknown",
+      action: "owner.team.password_reset",
+    });
+  }
+
+  /**
+   * Remove somebody's access to this workspace.
+   *
+   * Two refusals, and they protect different things. The LAST OWNER check
+   * stops the workspace being left with nobody who can administer it - the
+   * same guard the persona edit uses. The SELF check stops an owner removing
+   * their own access by misreading which row they were on; it is a usability
+   * guard rather than a security one, since an owner who genuinely wants out
+   * can promote a colleague and have them do it.
+   */
+  @Delete(":userId")
+  @RequireOwnerRole("owner")
+  async remove(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    if (req.principal?.userId === userId) {
+      throw new ForbiddenException(
+        "you cannot remove your own access - ask another Owner to do it",
+      );
+    }
+
+    const {
+      rows: [target],
+    } = await this.db.withOrg(orgId, (client) =>
+      client.query<{ owner_role: string | null }>(
+        `SELECT owner_role FROM memberships
+          WHERE user_id = $1 AND org_id = $2
+          ORDER BY (scope_type = 'org') DESC, id
+          LIMIT 1`,
+        [userId, orgId],
+      ),
+    );
+    if (!target) throw new NotFoundException("member not found in this org");
+
+    // Removing an owner is a demotion to nothing, so it has to clear the same
+    // bar as demoting one: `guardLastOwner` refuses when this is the last.
+    await this.db.withOrg(orgId, (client) =>
+      this.guardLastOwner(client, orgId, userId, target.owner_role, "telecaller"),
+    );
+
+    return this.accounts.revoke(orgId, userId, {
+      id: req.principal?.userId ?? "unknown",
+      action: "owner.team.remove",
+    });
+  }
+
+  /**
+   * Point a person at a telecaller identity, clearing whatever they had.
+   *
+   * Shared by `update()` and `invite()` so the uniqueness handling exists once
+   * - `telecallers_org_user` (0017) is UNIQUE per org, so moving a binding must
+   * clear the old row first or the second statement trips the constraint.
+   */
+  private async bindTelecaller(orgId: string, userId: string, telecallerId: string | null) {
+    return this.db.withOrg(orgId, async (client) => {
+      await client.query(
+        `UPDATE telecallers SET user_id = NULL, updated_at = now()
+          WHERE org_id = $1 AND user_id = $2`,
+        [orgId, userId],
+      );
+      if (!telecallerId) return;
+      const { rowCount } = await client.query(
+        // Refuses to steal an identity that belongs to somebody else: two
+        // logins resolving to one telecaller row would show each of them the
+        // other's leads.
+        `UPDATE telecallers SET user_id = $3, updated_at = now()
+          WHERE id = $1 AND org_id = $2 AND (user_id IS NULL OR user_id = $3)`,
+        [telecallerId, orgId, userId],
+      );
+      if (rowCount === 0) {
+        throw new BadRequestException(
+          "that telecaller identity does not exist here, or is already bound to someone else",
+        );
+      }
     });
   }
 

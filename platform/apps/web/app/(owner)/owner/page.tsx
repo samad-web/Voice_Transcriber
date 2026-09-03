@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } from "lucide-react";
+import Link from "next/link";
 import type { OwnerRole } from "@aura/shared";
 import { Card, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
@@ -7,6 +8,7 @@ import { crmShadowReadEnabled } from "@/lib/crm-cutover";
 import { getOwner, ownerGet } from "@/lib/owner-context";
 import {
   ActivityChart,
+  PANEL_LINK,
   CampaignTable,
   PipelineByStage,
   RecentActivity,
@@ -140,6 +142,34 @@ function winRate(leads: Overview["leads"]): number | null {
 }
 
 /**
+ * "How many people have a login, and what can they do?" - answered on the
+ * dashboard rather than only on the Team page, because the question is usually
+ * asked in passing rather than deliberately.
+ *
+ * A LINK, not a rendered headcount, and that is the whole design: the numbers
+ * live behind `GET /v1/owner/team`, which is owner/manager-only, and fetching
+ * them here would mean a second API call on the landing page of every persona
+ * that can already see this composition. The Team page is one click away and
+ * has the real answer, so this is a signpost - not a duplicate of it that could
+ * disagree.
+ */
+function TeamStrip() {
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2">
+        <Users className="h-4 w-4 text-text-muted" />
+        <span className="text-sm text-text">
+          People, roles and logins for this workspace
+        </span>
+      </div>
+      <Link href="/owner/team" className={PANEL_LINK}>
+        Manage team →
+      </Link>
+    </Card>
+  );
+}
+
+/**
  * THE OWNER — the whole business, unchanged from before personas existed.
  *
  * Deliberately identical to what shipped: an owner's dashboard was never the
@@ -185,6 +215,8 @@ function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
           footer={<span>{formatDuration(calls.total_seconds)} on the phone</span>}
         />
       </div>
+
+      <TeamStrip />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
         <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
@@ -245,6 +277,8 @@ function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
           footer={<span>{tasks.open} open in total</span>}
         />
       </div>
+
+      <TeamStrip />
 
       {/* The leaderboard leads. A manager opens this page to find out who needs
           help today, and that answer was previously three scrolls down. */}

@@ -127,3 +127,46 @@ export const OWNER_ROLE_ADMINS: OwnerRole[] = ["owner", "manager"];
 export function isWorkspaceAdminRole(role: OwnerRole): boolean {
   return OWNER_ROLE_ADMINS.includes(role);
 }
+
+/**
+ * The OPERATOR-side tenant role (`memberships.role`) a console persona should
+ * be created with.
+ *
+ * ── WHY THIS EXISTS ───────────────────────────────────────────────────────
+ *
+ * `owners.controller.ts` has always created console logins with the literal
+ * `org_admin`, which was right when the only console login WAS the owner. It
+ * stops being right the moment a customer can create a telecaller: `role` is
+ * what `OrgRoleGuard` reads, and `org_admin` is what passes it - so a
+ * telecaller login would carry the right to mint API keys, rewrite the org's
+ * consent policy and run a GDPR erasure, none of which any part of their
+ * console offers them.
+ *
+ * That is currently unreachable rather than exploitable: the owner console
+ * talks to the API on the admin key, which `admin-key.guard.ts` mints as
+ * `platform_admin`, so `memberships.role` never gates a console request today.
+ * It gates a BEARER SESSION (`/v1/auth/login`), which nothing in the console
+ * uses yet. Creating the rows correctly now is much cheaper than discovering
+ * later that every telecaller ever provisioned holds org_admin.
+ *
+ * The mapping is deliberately conservative - one rung below what the persona
+ * can already do through the console, never above:
+ *
+ *   owner              org_admin         the account holder
+ *   manager            workspace_admin   runs the floor, not the contract
+ *   telecaller/sales   workspace_member  works records, administers nothing
+ *   marketing          workspace_member  same - broad READ, no administration
+ *
+ * `memberships.role` also feeds `CrmPermissionsGuard`'s fallback join
+ * (`roles.key = m.role`), so these values decide the CRM grant a new login
+ * inherits when it has no explicit `role_id`. workspace_member's seeded grants
+ * are view/create/edit - and the persona intersection narrows the scope to
+ * `owned` on top of that, which is exactly what a telecaller should have.
+ */
+export function tenantRoleForOwnerRole(
+  role: OwnerRole,
+): "org_admin" | "workspace_admin" | "workspace_member" {
+  if (role === "owner") return "org_admin";
+  if (role === "manager") return "workspace_admin";
+  return "workspace_member";
+}

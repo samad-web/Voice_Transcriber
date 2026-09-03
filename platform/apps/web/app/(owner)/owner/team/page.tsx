@@ -4,6 +4,7 @@ import { OWNER_ROLE_DESCRIPTIONS, OWNER_ROLE_LABELS, OwnerRole } from "@aura/sha
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet } from "@/lib/owner-context";
+import { InviteForm, TeamCounts } from "./invite-form";
 import { TeamTable } from "./team-table";
 import type { TeamResponse } from "./types";
 
@@ -43,6 +44,14 @@ export default async function TeamPage() {
 
   const data = await ownerGet<TeamResponse>("/v1/owner/team");
 
+  // Headcount by persona - "how many users do we have" answered on the page
+  // that manages them, in the enum's own order so the list does not reshuffle
+  // as people are added.
+  const counts: Array<[OwnerRole, number]> = OwnerRole.options.map((r) => [
+    r,
+    (data?.members ?? []).filter((m) => m.ownerRole === r).length,
+  ]);
+
   return (
     <>
       <PageHeader title="Team" context="Settings" />
@@ -70,6 +79,10 @@ export default async function TeamPage() {
         </Card>
       ) : (
         <>
+          <TeamCounts counts={counts} />
+
+          {role === "owner" ? <InviteForm telecallers={data.telecallers} /> : null}
+
           <TeamTable
             members={data.members}
             telecallers={data.telecallers}
