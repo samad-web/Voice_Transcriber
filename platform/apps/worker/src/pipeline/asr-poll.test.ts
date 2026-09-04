@@ -12,11 +12,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * Complete, never once showing "Analysing". The status was not merely
  * imprecise; it named the wrong stage for 98% of the wait.
  *
- * The fix splits it in two, and the split is invisible to every other test in
- * this package: nothing here changes what is written, only WHEN it becomes
- * visible. That is exactly the kind of change that silently regresses when
- * someone later "tidies" the two transactions back into one, so it is pinned
- * here by transaction index rather than by outcome.
+ * The first fix split it in two. A2 went further and took the analysis out of
+ * this sweep altogether: the poller now commits the claim, the transcript and
+ * the advance in ONE transaction and publishes to `aura.analyze`, where a
+ * consumer picks the call up - possibly in another process. So the sweep is
+ * short again, and the reader still sees "Analysing" before a single provider
+ * request is made.
+ *
+ * Both properties regress silently if someone later "tidies" the analysis back
+ * inline, so they are pinned here by transaction index and by hand-off rather
+ * than by outcome.
  */
 
 const CALL_ID = "11111111-1111-4111-8111-111111111111";
@@ -98,13 +103,17 @@ vi.mock("./asr-sarvam", () => ({
 // every import, so a const declared here is still in its temporal dead zone
 // when the factory runs - "Cannot access before initialization", at module
 // load, before a single test starts.
-const { runPostAsrStages } = vi.hoisted(() => ({
+const { runPostAsrStages, publishAnalyze } = vi.hoisted(() => ({
   runPostAsrStages: vi.fn(async () => {}),
+  publishAnalyze: vi.fn(async () => {}),
 }));
 vi.mock("./pipeline", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./pipeline")>();
   return { ...actual, runPostAsrStages };
 });
+// The hand-off (A2). Recorded so the tests can assert the poller PUBLISHES
+// rather than analyses, and that it only does so once it owns the call.
+vi.mock("@aura/queue", () => ({ publishAnalyze }));
 
 // Safe despite the mocks above: vitest hoists every vi.mock over the imports,
 // so asr-poll.ts is loaded against the fakes. A static import rather than a
@@ -125,24 +134,29 @@ beforeEach(() => {
   claimWins = true;
   advanceWins = true;
   runPostAsrStages.mockClear();
+  publishAnalyze.mockClear();
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
 describe("pollAsrJobs - the status a reader can actually see", () => {
-  it("commits the ANALYZING advance BEFORE analyze runs, in its own transaction", async () => {
+  it("commits the advance and the transcript, then hands the call off", async () => {
     await pollAsrJobs();
 
-    // Two transactions, not one. This is the assertion that fails if the split
-    // is ever undone.
-    expect(txCount).toBe(2);
+    // ONE transaction now (A2): claim, transcript and advance together, and
+    // then the call is handed to the analyze queue rather than analysed here.
+    // The property this suite has always been about is unchanged - the advance
+    // is COMMITTED before any provider is called - it is just that the provider
+    // is now called in another process entirely.
+    expect(txCount).toBe(1);
 
     const moves = advances();
     expect(moves).toEqual([{ tx: 1, from: "TRANSCRIBING", to: "ANALYZING" }]);
 
-    // And the expensive half ran in the SECOND one, so by the time a single
-    // Sarvam request has been made the console already reads "Analysing".
-    expect(runPostAsrStages).toHaveBeenCalledTimes(1);
+    // The expensive half is no longer this sweep's job at all. Running it here
+    // is what capped the whole deployment at one call at a time.
+    expect(runPostAsrStages).not.toHaveBeenCalled();
+    expect(publishAnalyze).toHaveBeenCalledTimes(1);
   });
 
   it("writes the transcript in the same transaction as the advance", async () => {
@@ -155,23 +169,16 @@ describe("pollAsrJobs - the status a reader can actually see", () => {
     expect(transcriptWrite!.tx).toBe(1);
   });
 
-  it("tells runPostAsrStages the advance already happened", async () => {
+  it("hands the call to the analyze queue, addressed to its own tenant", async () => {
     await pollAsrJobs();
 
-    // Without this flag the stage re-attempts TRANSCRIBING → ANALYZING, finds
-    // the call already in ANALYZING, returns false and silently does NOTHING -
-    // the call would sit in ANALYZING until the stall sweeper failed it an hour
-    // later. The whole pipeline hangs on this argument being true.
-    expect(runPostAsrStages).toHaveBeenCalledWith(
-      expect.anything(),
-      ORG_ID,
-      CALL_ID,
-      expect.anything(),
-      true,
-    );
+    // The consumer re-enters the org's RLS context from this message, so an
+    // orgId that did not match the call would analyse it under the wrong
+    // tenant - or, more likely, find nothing and strand it.
+    expect(publishAnalyze).toHaveBeenCalledWith({ callId: CALL_ID, orgId: ORG_ID });
   });
 
-  it("does not open the second transaction when the claim is lost", async () => {
+  it("hands nothing off when the claim is lost", async () => {
     claimWins = false;
 
     await pollAsrJobs();
@@ -179,10 +186,10 @@ describe("pollAsrJobs - the status a reader can actually see", () => {
     // Losing the claim is the normal outcome for a second worker, not an
     // error - but analysing a call somebody else owns is not.
     expect(txCount).toBe(1);
-    expect(runPostAsrStages).not.toHaveBeenCalled();
+    expect(publishAnalyze).not.toHaveBeenCalled();
   });
 
-  it("does not analyse when the advance is lost to another writer", async () => {
+  it("hands nothing off when the advance is lost to another writer", async () => {
     advanceWins = false;
 
     await pollAsrJobs();
@@ -192,6 +199,6 @@ describe("pollAsrJobs - the status a reader can actually see", () => {
     // driving the rest of the pipeline from here would fight whoever now owns
     // the call.
     expect(txCount).toBe(1);
-    expect(runPostAsrStages).not.toHaveBeenCalled();
+    expect(publishAnalyze).not.toHaveBeenCalled();
   });
 });

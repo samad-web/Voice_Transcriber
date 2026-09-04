@@ -1,4 +1,4 @@
-import { GoogleGenAI, type ThinkingConfig } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import {
   compileToJsonSchema,
   ExtractionSchema,
@@ -6,6 +6,7 @@ import {
   validateExtraction,
 } from "@aura/shared";
 import { RetryableError, withProviderRetry } from "./retry";
+import { geminiAnalyzeModel, geminiThinking } from "./gemini-config";
 import { sarvamChat, sarvamChatConfigured, sarvamChatModel } from "./sarvam";
 
 export { RetryableError, withProviderRetry } from "./retry";
@@ -23,47 +24,11 @@ export {
  */
 export const withGeminiRetry = withProviderRetry;
 
-/**
- * Reasoning budget for every Gemini call in the pipeline.
- *
- * Gemini has thinking ON by default with a dynamic budget, and thinking tokens
- * bill at the OUTPUT rate - the most expensive line on the invoice. Neither of
- * our jobs needs reasoning: ASR is dictation, and analyze copies values out of
- * a transcript into a fixed schema. Left at the default, a call silently pays
- * for hundreds of hidden tokens per request.
- *
- * This asks for that with `thinkingLevel`, NOT `thinkingBudget: 0`. The budget
- * form is a 2.x-ism that Gemini 3 models reject outright with
- * `400 … INVALID_ARGUMENT`, and because GEMINI_ANALYZE_MODEL was pointed at the
- * floating `gemini-flash-lite-latest` alias, Google re-pointing it at
- * gemini-3.5-flash-lite failed every analyze call in production without a line
- * of our code changing. "minimal" is accepted by both generations and measures
- * thoughtsTokenCount = 0, so it costs what a 0 budget was meant to cost.
- *
- * Raise GEMINI_THINKING_LEVEL (minimal|low|medium|high) if a tenant's
- * extraction quality genuinely needs reasoning.
- */
-export function geminiThinking(): ThinkingConfig {
-  const level = process.env.GEMINI_THINKING_LEVEL?.trim() || "minimal";
-  return { thinkingLevel: level as ThinkingConfig["thinkingLevel"] };
-}
-
-/**
- * Gemini's analyze model, and the one place its default lives.
- *
- * The default is deliberately NOT gemini-2.5-flash: Google retired it for new
- * users and the API now answers `404 … no longer available`, which the analyze
- * stage swallowed as a non-blocking conversation-intelligence error - calls
- * completed with an empty summary and no failure recorded anywhere. A default
- * that 404s is worse than no default at all, so it tracks a live model.
- *
- * Set this to a PINNED id, never a `-latest` alias. An alias moves underneath a
- * running deployment: `gemini-flash-lite-latest` silently became
- * gemini-3.5-flash-lite mid-morning and took the analyze stage down with it.
- */
-export function geminiAnalyzeModel(): string {
-  return process.env.GEMINI_ANALYZE_MODEL ?? "gemini-3.5-flash";
-}
+// Both now live in gemini-config.ts, so qualify.ts can share them without an
+// import cycle through this file. Imported AND re-exported: this file still
+// calls them itself, and a bare `export ... from` creates no local binding -
+// every existing caller keeps importing them from @aura/llm unchanged.
+export { geminiAnalyzeModel, geminiThinking } from "./gemini-config";
 
 /**
  * Render an instance's vocabulary as a glossary the analyser must spell by.
@@ -259,9 +224,7 @@ function coerceRiskFlags(value: unknown): RiskFlag[] {
     .map((f) => ({
       category: typeof f.category === "string" ? f.category.slice(0, 60) : "other",
       snippet: typeof f.snippet === "string" ? f.snippet.slice(0, 300) : "",
-      severity: severities.has(String(f.severity))
-        ? (f.severity as RiskFlag["severity"])
-        : "low",
+      severity: severities.has(String(f.severity)) ? (f.severity as RiskFlag["severity"]) : "low",
     }));
 }
 
@@ -491,7 +454,13 @@ function normalizeDraft(raw: unknown): unknown {
       if (typeof f !== "object" || f === null) return f;
       const field = f as { key?: unknown };
       if (typeof field.key !== "string") return field;
-      return { ...field, key: field.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") };
+      return {
+        ...field,
+        key: field.key
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, "_"),
+      };
     }),
   };
 }
@@ -518,7 +487,11 @@ function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[
 
   if (errors.length > 0) return { errors };
   return {
-    data: { name, systemPrompt: systemPrompt.slice(0, 20000), fields: fieldsParsed.success ? fieldsParsed.data.fields : [] },
+    data: {
+      name,
+      systemPrompt: systemPrompt.slice(0, 20000),
+      fields: fieldsParsed.success ? fieldsParsed.data.fields : [],
+    },
   };
 }
 
@@ -529,15 +502,16 @@ function stubAgentDraft(input: {
   if (input.base) {
     return {
       name: `${input.base.name} (modified)`.slice(0, 120),
-      systemPrompt: `${input.base.systemPrompt}\n\nAdditional instruction: ${input.description}`.slice(
-        0,
-        20000,
-      ),
+      systemPrompt:
+        `${input.base.systemPrompt}\n\nAdditional instruction: ${input.description}`.slice(
+          0,
+          20000,
+        ),
       fields: input.base.fields,
     };
   }
   return {
-    name: (input.description.trim().slice(0, 60) || "Generated Agent"),
+    name: input.description.trim().slice(0, 60) || "Generated Agent",
     systemPrompt: `You are an expert call analyst. ${input.description}`.slice(0, 20000),
     fields: [
       {
@@ -605,7 +579,10 @@ export async function generateAgentDraft(input: {
           ai.models.generateContent({
             model,
             contents: [
-              { role: "user", parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote) }] },
+              {
+                role: "user",
+                parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote) }],
+              },
             ],
             config: {
               responseMimeType: "application/json",
@@ -625,7 +602,9 @@ export async function generateAgentDraft(input: {
   const second = parseAgentDraft(normalizeDraft(await run(first.errors.join("; "))));
   if ("data" in second) return second.data;
 
-  throw new Error(`generateAgentDraft: model output failed validation twice: ${second.errors.join("; ")}`);
+  throw new Error(
+    `generateAgentDraft: model output failed validation twice: ${second.errors.join("; ")}`,
+  );
 }
 
 /**
@@ -696,13 +675,13 @@ export async function analyzeConversation(
   }
 
   const roleRules =
-    "\"Agent\" is the telecaller/sales rep handling the call; \"Customer\" is the " +
+    '"Agent" is the telecaller/sales rep handling the call; "Customer" is the ' +
     "other party. Use cues: the Agent greets, pitches, and asks qualifying " +
     "questions; the Customer answers, asks about price/product, and raises " +
     "objections. Speaker roles must stay consistent for the whole call.\n";
   const intentRule =
-    "Give each turn a short 2-5 word intent (e.g. \"greeting\", \"price objection\", " +
-    "\"asking availability\", \"not interested\", \"schedule follow-up\").\n";
+    'Give each turn a short 2-5 word intent (e.g. "greeting", "price objection", ' +
+    '"asking availability", "not interested", "schedule follow-up").\n';
   const callRule =
     "Summarise the call and read the overall intent, sentiment and outcome. " +
     "Write the summary/intents in English regardless of the call's language.\n" +
@@ -983,9 +962,7 @@ export async function analyzeConversation(
     key_points: Array.isArray(raw.key_points) ? raw.key_points.map(String) : [],
     action_items: Array.isArray(raw.action_items) ? raw.action_items.map(String) : [],
     qualityScore: coerceQualityScore((raw as { qualityScore?: unknown }).qualityScore),
-    qualityCriteria: coerceQualityCriteria(
-      (raw as { qualityCriteria?: unknown }).qualityCriteria,
-    ),
+    qualityCriteria: coerceQualityCriteria((raw as { qualityCriteria?: unknown }).qualityCriteria),
     riskFlags: coerceRiskFlags((raw as { riskFlags?: unknown }).riskFlags),
     provider: usedProvider,
     model: usedModel,
@@ -1154,41 +1131,41 @@ async function sarvamConversation(
   const runLabels = () =>
     inPoolOf(SARVAM_LABEL_CONCURRENCY, chunkStarts, async (start) => {
       const slice = usable.slice(start, start + SARVAM_LABEL_CHUNK);
-    const prompt =
-      `You are labelling segments of ONE phone call for a telecalling team. ` +
-      `${roleRules}\n` +
-      `The speaker of each segment is already known and is given to you - do ` +
-      `NOT second-guess it. Return only a short 2-5 word intent for each index ` +
-      `(e.g. "greeting", "price objection", "asking availability", ` +
-      `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"intent":"greeting"}]}` +
-      `${glossary}\n\n${context}\n\n` +
-      `Label exactly these segments:\n${JSON.stringify(
-        slice.map((s, k) => ({ i: start + k, speaker: roleOf(s), text: s.text.trim() })),
-      )}`;
+      const prompt =
+        `You are labelling segments of ONE phone call for a telecalling team. ` +
+        `${roleRules}\n` +
+        `The speaker of each segment is already known and is given to you - do ` +
+        `NOT second-guess it. Return only a short 2-5 word intent for each index ` +
+        `(e.g. "greeting", "price objection", "asking availability", ` +
+        `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"intent":"greeting"}]}` +
+        `${glossary}\n\n${context}\n\n` +
+        `Label exactly these segments:\n${JSON.stringify(
+          slice.map((s, k) => ({ i: start + k, speaker: roleOf(s), text: s.text.trim() })),
+        )}`;
 
-    try {
-      const res = await sarvamChat({
-        prompt,
-        jsonSchema: labelSchema,
-        label: `analyzeConversation.labels[${start}-${start + slice.length - 1}]`,
-      });
-      tokensIn += res.tokensIn;
-      tokensOut += res.tokensOut;
-      const parsed = JSON.parse(res.text || "{}") as {
-        labels?: Array<{ i?: unknown; intent?: unknown }>;
-      };
-      for (const l of parsed.labels ?? []) {
-        const i = Number(l?.i);
-        if (!Number.isInteger(i) || i < 0 || i >= usable.length) continue;
-        decided.set(i, l.intent ? String(l.intent) : null);
+      try {
+        const res = await sarvamChat({
+          prompt,
+          jsonSchema: labelSchema,
+          label: `analyzeConversation.labels[${start}-${start + slice.length - 1}]`,
+        });
+        tokensIn += res.tokensIn;
+        tokensOut += res.tokensOut;
+        const parsed = JSON.parse(res.text || "{}") as {
+          labels?: Array<{ i?: unknown; intent?: unknown }>;
+        };
+        for (const l of parsed.labels ?? []) {
+          const i = Number(l?.i);
+          if (!Number.isInteger(i) || i < 0 || i >= usable.length) continue;
+          decided.set(i, l.intent ? String(l.intent) : null);
+        }
+      } catch (err) {
+        console.error(
+          `analyzeConversation: intent chunk ${start}-${start + slice.length - 1} failed, ` +
+            `those segments keep their role but lose their intent:`,
+          err,
+        );
       }
-    } catch (err) {
-      console.error(
-        `analyzeConversation: intent chunk ${start}-${start + slice.length - 1} failed, ` +
-          `those segments keep their role but lose their intent:`,
-        err,
-      );
-    }
     });
 
   // ── call-level reading: one small answer, so one request always suffices ──
@@ -1258,25 +1235,25 @@ async function sarvamConversation(
   const runSummary = async (): Promise<Partial<ConversationIntelligence>> => {
     try {
       const res = await sarvamChat({
-      prompt:
-        `Read ONE phone call for a telecalling / sales team and report on it. ` +
-        `${roleRules}\n` +
-        `Write the summary and intents in English regardless of the call's ` +
-        `language. Return ONLY JSON with keys: language (iso639-1), summary ` +
-        `(2-3 sentences), overall_intent, customer_intent, agent_intent, ` +
-        `sentiment, outcome, key_points, action_items, qualityScore (0-100), ` +
-        `qualityCriteria ({consentDisclosed: did the agent state this call may ` +
-        `be recorded, scriptAdherence 0-10, professionalism 0-10, ` +
-        `conversionSignal 0-10, rationale: one short sentence}), riskFlags ` +
-        `(up to 5, ONLY for things actually said - competitor mention, ` +
-        `cancellation/refund request, legal threat, broken promise, hostility; ` +
-        `empty array when there is nothing to flag).` +
-        `${glossary}\n\n${fullContext}`,
-      jsonSchema: summarySchema,
-      label: "analyzeConversation.summary",
-    });
-    tokensIn += res.tokensIn;
-    tokensOut += res.tokensOut;
+        prompt:
+          `Read ONE phone call for a telecalling / sales team and report on it. ` +
+          `${roleRules}\n` +
+          `Write the summary and intents in English regardless of the call's ` +
+          `language. Return ONLY JSON with keys: language (iso639-1), summary ` +
+          `(2-3 sentences), overall_intent, customer_intent, agent_intent, ` +
+          `sentiment, outcome, key_points, action_items, qualityScore (0-100), ` +
+          `qualityCriteria ({consentDisclosed: did the agent state this call may ` +
+          `be recorded, scriptAdherence 0-10, professionalism 0-10, ` +
+          `conversionSignal 0-10, rationale: one short sentence}), riskFlags ` +
+          `(up to 5, ONLY for things actually said - competitor mention, ` +
+          `cancellation/refund request, legal threat, broken promise, hostility; ` +
+          `empty array when there is nothing to flag).` +
+          `${glossary}\n\n${fullContext}`,
+        jsonSchema: summarySchema,
+        label: "analyzeConversation.summary",
+      });
+      tokensIn += res.tokensIn;
+      tokensOut += res.tokensOut;
       return JSON.parse(res.text || "{}") as Partial<ConversationIntelligence>;
     } catch (err) {
       // Labels may well have landed; returning them without a summary is better
@@ -1309,9 +1286,7 @@ async function sarvamConversation(
     customer_intent: raw.customer_intent || "",
     agent_intent: raw.agent_intent || "",
     sentiment:
-      raw.sentiment === "positive" || raw.sentiment === "negative"
-        ? raw.sentiment
-        : "neutral",
+      raw.sentiment === "positive" || raw.sentiment === "negative" ? raw.sentiment : "neutral",
     outcome: raw.outcome || "other",
     key_points: Array.isArray(raw.key_points) ? raw.key_points.map(String) : [],
     action_items: Array.isArray(raw.action_items) ? raw.action_items.map(String) : [],

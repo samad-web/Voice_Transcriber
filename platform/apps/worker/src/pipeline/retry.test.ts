@@ -100,7 +100,11 @@ beforeEach(() => {
 });
 
 describe("failStalledCalls", () => {
-  it("does nothing when no call has been sitting in a stage", async () => {
+  // 15s, not the 5s default: this is the first test to call loadSweeper(),
+  // which does vi.resetModules() and re-imports the module graph. That costs
+  // ~3s on its own, and under a full parallel run it tips past the default and
+  // fails a test that is doing nothing wrong.
+  it("does nothing when no call has been sitting in a stage", { timeout: 15_000 }, async () => {
     const { failStalledCalls } = await loadSweeper();
     expect(await failStalledCalls()).toBe(0);
     expect(issued).toHaveLength(0);

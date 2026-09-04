@@ -1,6 +1,7 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { publishAnalyze } from "@aura/queue";
 import { collectSarvamAsrJob, sarvamAsrConfigured } from "./asr-sarvam";
-import { persistTranscript, priorAttempts, runPostAsrStages, stageHelpers } from "./pipeline";
+import { persistTranscript, priorAttempts, stageHelpers } from "./pipeline";
 
 /**
  * Second half of the ASR stage for batch providers.
@@ -179,11 +180,27 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
     });
     if (!claimed) continue;
 
-    await withOrgContext(row.org_id, async (client) => {
-      const attempts = await priorAttempts(client, row.id);
-      const helpers = stageHelpers(client, row.id, attempts);
-      await runPostAsrStages(client, row.org_id, row.id, helpers, true);
-    });
+    /*
+     * HAND OFF, don't analyse (A2).
+     *
+     * This used to call runPostAsrStages inline, which made a tick of this
+     * sweep as long as the analysis of every call it collected - minutes each,
+     * strictly one after another, for the whole deployment. Three calls landing
+     * together meant the third waited for the first two, and the sweep's
+     * single-flight guard meant nothing else was collected in the meantime. It
+     * is the reason the pipeline topped out around 17 calls an hour.
+     *
+     * Now the sweep does what a poller should: it collects finished jobs and
+     * publishes. A tick is claims and publishes - seconds - and the analysis is
+     * done by consumers that scale with prefetch.
+     *
+     * The publish is a WAKE-UP, not the record. The transcript and the
+     * TRANSCRIBING → ANALYZING advance are already committed above, so a message
+     * lost between here and the broker costs latency - until failStalledCalls
+     * notices the call sitting in ANALYZING - and never the call itself. That is
+     * the same contract every other queue in this system has.
+     */
+    await publishAnalyze({ callId: row.id, orgId: row.org_id });
     finished++;
   }
 
@@ -205,16 +222,19 @@ export function startAsrPoller(): NodeJS.Timeout {
   /**
    * One sweep at a time.
    *
-   * A tick is not a quick status check - collecting a finished job runs the
-   * whole back half of the pipeline, which on a long call means a dozen chunked
-   * analyze requests and several minutes inside one transaction. A bare
-   * setInterval starts the next tick anyway, and the ticks then fight over the
-   * same row: the first holds its lock while it works, the rest block on it
-   * until Postgres kills them with `canceling statement due to statement
-   * timeout ... while locking tuple`. That failure rolls the claim back, so the
-   * job is picked up again on the next tick and the provider is paid twice for
-   * exactly the same work - which is what it did in production before this
-   * guard existed.
+   * A tick is now a short thing - claim, write the transcript, publish - because
+   * A2 moved the analysis onto its own queue. It was not always: a tick used to
+   * run the whole back half of the pipeline for every job it collected, several
+   * minutes each inside one transaction, which is what made the guard essential.
+   *
+   * It stays, for two reasons that outlived the original one. The provider round
+   * trip per outstanding job is still real work, so a slow provider can still
+   * make a tick outlast the interval. And overlapping ticks fight over the same
+   * row: the first holds its lock while it works, the rest block until Postgres
+   * kills them with `canceling statement due to statement timeout ... while
+   * locking tuple`. That failure rolls the claim back, so the job is collected
+   * again on the next tick and the provider is paid twice for exactly the same
+   * work - which is what it did in production before this guard existed.
    */
   let running = false;
   return setInterval(() => {

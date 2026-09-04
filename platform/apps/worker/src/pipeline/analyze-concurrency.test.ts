@@ -1,45 +1,50 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The two halves of the analyze stage, and the order they are allowed to fail in.
+ * The analyze stage after the lane split (A4), and what it is still on the hook
+ * for.
  *
- * Conversation intelligence and the tenant's own field extraction share
- * nothing - different inputs, neither reading the other's output, both pure
- * provider calls. They used to run one after the other anyway, which cost a
- * full request's latency (~95s against Sarvam with real token headroom) on
- * every single call for no reason at all.
+ * THIS SUITE USED TO BE ABOUT CONCURRENCY. Conversation intelligence and the
+ * tenant's field extraction both ran here, sharing nothing, so they were started
+ * together and the stage cost one provider round trip instead of two. That
+ * overlap is gone - not regressed, removed: intelligence moved to the enrichment
+ * lane entirely, because the lead never needed it and waiting for it delayed
+ * every lead by the difference between the two reads.
  *
- * Overlapping them is easy to get wrong in two specific ways, and both are
- * pinned here rather than left to review:
+ * What is left in this stage is the half that IS the call's purpose, and the
+ * properties worth pinning are about failure rather than timing:
  *
- *  1. A `Promise.all` over both would let a FAILED intelligence pass reject the
- *     pair, turning a deliberately non-blocking failure into a failed call.
- *  2. Awaiting the extraction before the intelligence WRITES would mean a call
- *     whose extraction throws loses the summary and analytics that used to
- *     survive it - a reader would see an empty AI panel where they previously
- *     saw the read, for as long as the retry took.
+ *  1. A failing extraction fails the CALL - unlike everything in the enrichment
+ *     lane, this one is not "non-blocking", and a call that silently reached
+ *     COMPLETE with no facts would produce no lead and no error to explain why.
+ *  2. A rejection that lands before anything awaits it must not crash the
+ *     process. The promise is still settled at the point it is created for this
+ *     reason, even though the window is now short.
+ *  3. The stage must NOT do the enrichment lane's work - no conversation read,
+ *     no dispatch. That is the split itself, and re-adding either here would put
+ *     the ninety seconds, or the empty-summary CRM send, straight back.
  */
 
 const CALL_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "00000000-0000-4000-8000-000000000001";
 
-const { analyzeConversation, analyzeTranscript } = vi.hoisted(() => ({
+const { analyzeConversation, analyzeTranscript, publishEnrich } = vi.hoisted(() => ({
   analyzeConversation: vi.fn(),
   analyzeTranscript: vi.fn(),
+  publishEnrich: vi.fn(async () => {}),
 }));
 
 vi.mock("@aura/llm", () => ({ analyzeConversation, analyzeTranscript }));
-vi.mock("@aura/db", () => ({ withOrgContext: vi.fn() }));
-vi.mock("./call-analytics", () => ({
-  computeTalkMetrics: () => ({}),
-  upsertCallAnalytics: vi.fn(async () => {}),
+vi.mock("@aura/queue", () => ({ publishEnrich }));
+// Hands every phase the same recording client, so `issued` stays one ordered
+// log of the whole run even though it spans several transactions (A1).
+vi.mock("@aura/db", () => ({
+  withOrgContext: (_orgId: string, fn: (client: unknown) => Promise<unknown>) => fn(fakeClient()),
 }));
 vi.mock("./crm-objects", () => ({ projectLeadToCrm: vi.fn(async () => ({ reason: "skipped" })) }));
 vi.mock("./leads", () => ({
   upsertLead: vi.fn(async () => ({ leadId: null, reason: "no facts" })),
 }));
-vi.mock("./outbox", () => ({ enqueueDispatch: vi.fn(async () => {}) }));
-vi.mock("./projects", () => ({ detectCallProjects: vi.fn(async () => {}) }));
 
 import { runPostAsrStages, stageHelpers } from "./pipeline";
 
@@ -84,25 +89,6 @@ function fakeClient() {
   };
 }
 
-const INTEL = {
-  turns: [],
-  language: "ta",
-  summary: "a call",
-  overall_intent: "",
-  customer_intent: "",
-  agent_intent: "",
-  sentiment: "neutral",
-  outcome: "follow_up",
-  key_points: [],
-  action_items: [],
-  qualityScore: 70,
-  qualityCriteria: null,
-  riskFlags: [],
-  model: "sarvam-105b",
-  tokensIn: 1,
-  tokensOut: 1,
-};
-
 const EXTRACTION = {
   output: { full_name: "Aakash" },
   validationStatus: "valid",
@@ -114,15 +100,8 @@ const EXTRACTION = {
 };
 
 function run() {
-  const client = fakeClient();
   // `alreadyAnalyzing` so the stage does not need the row to be in TRANSCRIBING.
-  return runPostAsrStages(
-    client as never,
-    ORG_ID,
-    CALL_ID,
-    stageHelpers(client as never, CALL_ID, 0),
-    true,
-  );
+  return runPostAsrStages(ORG_ID, CALL_ID, stageHelpers(fakeClient() as never, CALL_ID, 0), true);
 }
 
 /** Did any statement matching `re` run? */
@@ -130,68 +109,31 @@ function ran(re: RegExp): boolean {
   return issued.some((q) => re.test(q.text));
 }
 
-const WROTE_INTELLIGENCE = /SET intelligence = \$2::jsonb|SET segments = \$2::jsonb/;
 const WROTE_EXTRACTION = /INSERT INTO ai_outputs/;
+const WROTE_INTELLIGENCE = /SET intelligence = \$2::jsonb|SET segments = \$2::jsonb/;
 const FAILED = /pipeline_attempts = pipeline_attempts \+ 1/;
 
 beforeEach(() => {
   issued = [];
-  analyzeConversation.mockReset();
-  analyzeTranscript.mockReset();
+  vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.spyOn(console, "log").mockImplementation(() => undefined);
 });
 
-describe("analyze - the two provider calls overlap", () => {
-  it("starts the conversation read while the extraction is still in flight", async () => {
-    const events: string[] = [];
-    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-    // The extraction is started FIRST and awaited last, so it is the one still
-    // running when the conversation read begins.
-    analyzeTranscript.mockImplementation(async () => {
-      events.push("extraction:start");
-      await delay(40);
-      events.push("extraction:end");
-      return EXTRACTION;
-    });
-    analyzeConversation.mockImplementation(async () => {
-      events.push("conversation:start");
-      await delay(5);
-      events.push("conversation:end");
-      return INTEL;
-    });
-
-    await run();
-
-    // Run sequentially the log reads start,end,start,end and this fails. The
-    // assertion is deliberately about the INTERVALS overlapping rather than a
-    // fixed order, because which of the two finishes first depends on the
-    // provider, not on us.
-    expect(events.indexOf("conversation:start")).toBeLessThan(events.indexOf("extraction:end"));
-    expect(events).toContain("conversation:end");
-    expect(events).toContain("extraction:end");
-
-    expect(ran(WROTE_INTELLIGENCE)).toBe(true);
-    expect(ran(WROTE_EXTRACTION)).toBe(true);
-  });
-});
-
-describe("analyze - failure stays asymmetric", () => {
-  it("does not fail the call when conversation intelligence throws", async () => {
-    analyzeConversation.mockRejectedValue(new Error("sarvam: 503"));
+describe("analyze - the lead lane's own work", () => {
+  it("writes the extraction and reaches the end of the stage", async () => {
     analyzeTranscript.mockResolvedValue(EXTRACTION);
 
     await run();
 
-    // Non-blocking by design: the tenant's extraction is the call's purpose and
-    // still ran, so the call must not be marked failed.
-    expect(ran(FAILED)).toBe(false);
     expect(ran(WROTE_EXTRACTION)).toBe(true);
+    expect(ran(FAILED)).toBe(false);
   });
 
   it("fails the call when the tenant extraction throws", async () => {
-    analyzeConversation.mockResolvedValue(INTEL);
+    // Not "non-blocking" like everything in the enrichment lane: this half IS
+    // the call's purpose, and a silent COMPLETE with no facts would leave no
+    // lead and nothing anywhere to explain the absence.
     analyzeTranscript.mockRejectedValue(new Error("sarvam: 503"));
 
     await run();
@@ -201,35 +143,45 @@ describe("analyze - failure stays asymmetric", () => {
     expect(failed!.values[1]).toBe("FAILED_ANALYZE");
   });
 
-  it("keeps the intelligence it already wrote when the extraction throws", async () => {
-    analyzeConversation.mockResolvedValue(INTEL);
-    analyzeTranscript.mockRejectedValue(new Error("sarvam: 503"));
-
-    await run();
-
-    // The whole reason the extraction is awaited AFTER these writes rather than
-    // alongside them. Await it first and this is false: the reader loses the
-    // summary and the quality score for as long as the retry is pending, on a
-    // call where the analyser had actually answered.
-    expect(ran(WROTE_INTELLIGENCE)).toBe(true);
-    expect(issued.findIndex((q) => WROTE_INTELLIGENCE.test(q.text))).toBeLessThan(
-      issued.findIndex((q) => FAILED.test(q.text)),
-    );
-  });
-
-  it("survives a rejection that lands while intelligence is still running", async () => {
-    // The extraction is started first and can therefore reject minutes before
-    // anything awaits it. Unhandled for that long, this Node version turns the
-    // rejection into a process crash - which is why the promise is settled into
-    // a value at the point it is created rather than left bare.
+  it("survives a rejection that lands before anything awaits it", async () => {
+    // The promise is settled into a value at the point it is created rather
+    // than left bare: unhandled for even a moment, this Node version turns the
+    // rejection into a process crash.
     analyzeTranscript.mockRejectedValue(new Error("sarvam: 400 bad request"));
-    analyzeConversation.mockImplementation(async () => {
-      await new Promise((r) => setTimeout(r, 30));
-      return INTEL;
-    });
 
     await expect(run()).resolves.toBeUndefined();
 
     expect(issued.find((q) => FAILED.test(q.text))!.values[1]).toBe("FAILED_ANALYZE");
+  });
+});
+
+describe("analyze - the split itself", () => {
+  it("does not run the conversation read", async () => {
+    analyzeTranscript.mockResolvedValue(EXTRACTION);
+
+    await run();
+
+    // Re-adding this here is the regression the whole lane split exists to
+    // prevent: it puts ~90s back on the path to every lead.
+    expect(analyzeConversation).not.toHaveBeenCalled();
+    expect(ran(WROTE_INTELLIGENCE)).toBe(false);
+  });
+
+  it("hands the call to the enrichment lane once the lead is written", async () => {
+    analyzeTranscript.mockResolvedValue(EXTRACTION);
+
+    await run();
+
+    expect(publishEnrich).toHaveBeenCalledWith({ callId: CALL_ID, orgId: ORG_ID });
+  });
+
+  it("does not hand off a call that failed before producing a lead", async () => {
+    // Enriching it would pay for a conversation read on a call with no facts
+    // and no lead, and would release a CRM send for a record that is not there.
+    analyzeTranscript.mockRejectedValue(new Error("sarvam: 503"));
+
+    await run();
+
+    expect(publishEnrich).not.toHaveBeenCalled();
   });
 });

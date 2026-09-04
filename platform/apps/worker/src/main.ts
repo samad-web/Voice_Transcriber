@@ -1,10 +1,11 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { consumePipeline } from "@aura/queue";
+import { consumeAnalyze, consumeEnrich, consumePipeline } from "@aura/queue";
 import { warnIfSecretsUnencrypted } from "@aura/db";
 import { WorkerModule } from "./worker.module";
-import { processCall } from "./pipeline/pipeline";
+import { analyzeCall, processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
+import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
 import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
@@ -34,7 +35,24 @@ async function bootstrap() {
   app.enableShutdownHooks();
   warnIfSecretsUnencrypted("worker");
 
+  // Admission: transcode + the ASR submit. Ends at the submit with a batch
+  // provider, so it is short work that parallelises freely (PIPELINE_PREFETCH).
   await consumePipeline(processCall);
+  // Analysis: the two provider calls and everything downstream (A2). This is
+  // where throughput now comes from - it used to run one call at a time inside
+  // the ASR poller's sweep. Scale it with ANALYZE_PREFETCH, against the
+  // provider's rate limit rather than against CPU.
+  await consumeAnalyze(analyzeCall);
+  // Enrichment (A4): the conversation read, the coaching metrics, and the CRM
+  // send it releases. Off the lead's critical path by construction - a lead is
+  // on the board before a message reaches this queue - so it is the right lane
+  // to let fall behind under load.
+  await consumeEnrich(enrichCall);
+  // And its durable half, because a queue is only a wake-up signal: this finds
+  // calls whose enrichment message was lost, whose worker died mid-read, or
+  // whose retry is now due. Without it a lost message would hold that call's
+  // CRM delivery forever.
+  startEnrichmentSweep();
   startReaper();
   // A6's shadow-read burn-in check: does a lead's dual-written deal/contact
   // still agree with it? Off unless CRM_RECONCILE_ENABLED=true - see the
@@ -159,7 +177,10 @@ async function bootstrap() {
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
   console.log(
-    `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
+    `Aura worker consuming aura.pipeline x${process.env.PIPELINE_PREFETCH ?? 8} ` +
+      `(transcode → asr[${asr}]) + aura.analyze x${process.env.ANALYZE_PREFETCH ?? 8} ` +
+      `(extract → lead) + aura.enrich x${process.env.ENRICH_PREFETCH ?? 4} ` +
+      "(intelligence → crm) " +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
       "+ booking confirmations + call reminders + form nudges" +
       (metaMcp ? " + meta-mcp lead pull" : "") +

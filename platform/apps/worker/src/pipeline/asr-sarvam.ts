@@ -59,6 +59,16 @@ export interface SarvamAsrOptions {
   language?: string | null;
   /** Saaras output mode from the instance's settings. */
   mode?: string | null;
+  /**
+   * Acoustic speaker separation, from the instance's `asr_diarization` (0083).
+   *
+   * Priced separately - ₹45/audio-hour against ₹30 without - and only the
+   * enrichment half of the pipeline consumes it. Defaults to false here rather
+   * than true so a caller that forgets to pass it gets the CHEAP tier: the
+   * failure mode of a missed flag should be a call with weaker speaker labels,
+   * not a silent 50% surcharge on every call in the deployment.
+   */
+  diarize?: boolean;
 }
 
 export async function startSarvamAsrJob(
@@ -77,9 +87,7 @@ export async function startSarvamAsrJob(
           // Instance setting wins over the deployment default: output format is
           // a property of the customer's calls, not of the environment.
           // `codemix` is what keeps an English brand name out of Tamil script.
-          mode: (opts.mode ??
-            process.env.SARVAM_STT_MODE ??
-            "transcribe") as SarvamAI.Mode,
+          mode: (opts.mode ?? process.env.SARVAM_STT_MODE ?? "transcribe") as SarvamAI.Mode,
           // "unknown" lets Saaras detect the language, which is right only when
           // we genuinely don't know - auto-detect has mislabelled a Tamil call
           // as Spanish before now. An instance that knows what its agents speak
@@ -87,11 +95,19 @@ export async function startSarvamAsrJob(
           languageCode: (opts.language ??
             process.env.SARVAM_STT_LANGUAGE ??
             "unknown") as SarvamAI.SpeechToTextLanguage,
-          withDiarization: true,
+          // ₹45/audio-hour when true, ₹30 when false (0083). The instance
+          // decides; see SarvamAsrOptions.diarize for why the default is off.
+          withDiarization: opts.diarize === true,
+          // Kept on either way: without diarization the `timestamps.chunks`
+          // fallback in toAsrResult is the only thing that gives the console a
+          // segmented transcript rather than one undifferentiated blob.
           withTimestamps: true,
           // A phone call is two parties. Saying so is a hint, not a cap - it
           // stops the diarizer inventing a third speaker out of line noise.
-          numSpeakers: Number(process.env.SARVAM_STT_SPEAKERS ?? 2),
+          // Meaningless without diarization, so it is not sent then.
+          ...(opts.diarize === true
+            ? { numSpeakers: Number(process.env.SARVAM_STT_SPEAKERS ?? 2) }
+            : {}),
         }),
       "sarvamAsr.createJob",
     );
@@ -123,9 +139,7 @@ interface SarvamAsrOutput {
 }
 
 export type CollectResult =
-  | { state: "pending" }
-  | { state: "done"; result: AsrResult }
-  | { state: "failed"; reason: string };
+  { state: "pending" } | { state: "done"; result: AsrResult } | { state: "failed"; reason: string };
 
 /**
  * Check a submitted job and, when it has finished, fetch and map its output.
