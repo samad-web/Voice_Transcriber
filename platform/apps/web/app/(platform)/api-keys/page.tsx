@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
@@ -22,6 +23,17 @@ export default async function ApiKeysPage({
   return (
     <>
       <PageHeader title="API Keys" />
+
+      {/* Public reference for whoever this key is handed to - it needs no
+          console login, so it's linked out rather than embedded. */}
+      <Link
+        href="/docs/api"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="-mt-3 inline-block text-xs font-medium text-accent-text hover:underline"
+      >
+        View developer docs ↗
+      </Link>
 
       <TenantSwitcher tenants={tenants} activeOrgId={orgId} basePath="/api-keys" />
 

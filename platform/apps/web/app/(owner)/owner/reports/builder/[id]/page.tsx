@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Card, MonoLabel } from "@aura/ui";
 import type { BindingIssue, ColumnMeta, Palette, ReportDoc } from "@aura/shared";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet } from "@/lib/owner-context";
 import { ReportEditor } from "./report-editor";
 import type { Member, ScheduleRow, ShareRow } from "./share-panel";
 
@@ -61,7 +61,11 @@ export default async function ReportBuilderDetailPage({
   const { token } = await searchParams;
 
   const query = token ? `?token=${encodeURIComponent(token)}` : "";
-  const [detail, datasetList, palettes, shares, schedules, members] = await Promise.all([
+  // `getPrincipal` is React-cached, so this rides along with the fetches below
+  // rather than costing a second resolution. Only the org's NAME is wanted -
+  // it goes in the PDF's running header, which the editor now produces itself.
+  const [owner, detail, datasetList, palettes, shares, schedules, members] = await Promise.all([
+    getOwner(),
     ownerGet<DetailResponse>(`/v1/report-builder/${id}${query}`),
     ownerGet<DatasetListResponse>("/v1/report-datasets"),
     ownerGet<{ palettes: Palette[] }>("/v1/report-builder/palettes"),
@@ -111,6 +115,16 @@ export default async function ReportBuilderDetailPage({
         <Link href="/owner/reports/builder/data" className="text-accent-text hover:underline">
           Data sources
         </Link>
+        {/* Opens outside this console entirely (no sidebar, own route group) -
+            new tab, since the point is to run it on a second screen. */}
+        <Link
+          href={`/owner/reports/builder/${id}/dashboard`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent-text hover:underline"
+        >
+          Open as dashboard ↗
+        </Link>
       </div>
 
       {datasets.length === 0 ? (
@@ -137,6 +151,7 @@ export default async function ReportBuilderDetailPage({
         shares={shares?.shares ?? []}
         schedules={schedules?.schedules ?? []}
         members={(members?.members ?? []) as Member[]}
+        orgName={owner?.membership.orgName ?? ""}
       />
     </>
   );

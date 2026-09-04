@@ -3,6 +3,28 @@
 /* The Aura UI kit lives outside the app dir - include its classes. */
 @source "../../../packages/ui/src";
 
+/* ── printing ──────────────────────────────────────────────────────────────
+   Two classes rather than Tailwind's `print:hidden` / `hidden print:block`,
+   and both with !important, because these have to beat a display utility on
+   the same element (the sidebar is `hidden md:flex`) - and which of two
+   equal-specificity display utilities wins is decided by Tailwind's emission
+   order, not by the order they appear in a class string. `.print-hide` is the
+   name printable-report.tsx's own stylesheet already uses for exactly this.
+
+   Console chrome carries `print-hide` because a rail of navigation links is
+   not part of a document somebody is sending to a client. */
+.print-only {
+  display: none;
+}
+@media print {
+  .print-hide {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
+
 /* The design-system v2 token contract (doc 16 §1), defined once in @aura/ui.
    REQUIRED, not optional: @source above only tells Tailwind where to SCAN for
    class names, it does not define anything. Without this import every

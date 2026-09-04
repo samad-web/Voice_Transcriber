@@ -55,7 +55,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
       <main className="flex-1 min-w-0 flex flex-col p-4 sm:p-5 md:p-8 space-y-5 sm:space-y-6">
         {/* The bell sits in the layout rather than on a page, so an assignment
             reaches somebody wherever they happen to be in the console. */}
-        <div className="flex justify-end">
+        <div className="print-hide flex justify-end">
           <NotificationBell />
         </div>
         {children}

@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
   BarChart3,
   Hash,
+  Maximize,
+  Minimize,
   Minus,
   Plus,
   Printer,
@@ -15,7 +16,7 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { Button, Card, MonoLabel, Select, StatusChip } from "@aura/ui";
+import { Button, Card, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
 import {
   AUTOSAVE_DEBOUNCE_MS,
   BUILT_IN_PALETTES,
@@ -31,11 +32,13 @@ import {
   type Widget,
   type WidgetType,
 } from "@aura/shared";
+import { useFullscreen } from "@/lib/use-fullscreen";
 import { CanvasGrid, nextFreeLayout, type GridItem } from "../canvas-grid";
 import { ChartSurface, type WidgetResult } from "../chart-surface";
 import { WidgetInspector, type DatasetOption } from "../widget-inspector";
-import { runWidgetQueryAction, saveReportAction } from "../actions";
+import { renderReportAction, runWidgetQueryAction, saveReportAction } from "../actions";
 import { SharePanel, type Member, type ScheduleRow, type ShareRow } from "./share-panel";
+import { PrintableReport } from "./print/printable-report";
 
 /**
  * The canvas editor.
@@ -75,6 +78,8 @@ interface ReportEditorProps {
   shares: ShareRow[];
   schedules: ScheduleRow[];
   members: Member[];
+  /** Printed in the PDF's running header. */
+  orgName: string;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error" | "conflict";
@@ -89,8 +94,10 @@ export function ReportEditor({
   shares,
   schedules,
   members,
+  orgName,
 }: ReportEditorProps) {
   const readOnly = initial.role === "viewer";
+  const alert = useAlert();
 
   const [doc, setDocState] = useState<ReportDoc>(initialDoc);
   const [past, setPast] = useState<ReportDoc[]>([]);
@@ -104,6 +111,31 @@ export function ReportEditor({
 
   /** Live click-filters. NOT part of the document - see design doc D3. */
   const [pageFilters, setPageFilters] = useState<PageFilter[]>([]);
+
+  /**
+   * Present mode: the report with every piece of editing furniture gone.
+   *
+   * Paired with, but not the same as, fullscreen - a webview that refuses
+   * `requestFullscreen()` still gets the chrome-free reading view, which is
+   * most of the value. `enteredFullscreen` exists so leaving fullscreen by
+   * Escape (which no click handler of ours sees) also leaves present mode,
+   * WITHOUT the first render after the click - where the request is in flight
+   * and `isFullscreen` is still false - immediately cancelling itself.
+   */
+  const [presenting, setPresenting] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const enteredFullscreen = useRef(false);
+  const { isFullscreen, supported: fullscreenSupported, toggle: toggleFullscreen } =
+    useFullscreen(rootRef);
+
+  /** The whole-report snapshot, held only while the print dialog is open. */
+  const [printSnapshot, setPrintSnapshot] = useState<{
+    doc: ReportDoc;
+    widgets: Record<string, WidgetResult>;
+    generatedAt: string;
+    failures: string[];
+  } | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   const page = doc.pages[Math.min(pageIndex, doc.pages.length - 1)];
   const palette = paletteById(doc.theme.paletteId, customPalettes);
@@ -337,14 +369,106 @@ export function ReportEditor({
     setPageIndex((i) => Math.max(0, Math.min(i, doc.pages.length - 2)));
   };
 
+  // ── present mode ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (isFullscreen) {
+      enteredFullscreen.current = true;
+      return;
+    }
+    if (enteredFullscreen.current) {
+      enteredFullscreen.current = false;
+      setPresenting(false);
+    }
+  }, [isFullscreen]);
+
+  const togglePresent = () => {
+    if (presenting) {
+      if (document.fullscreenElement) toggleFullscreen();
+      else setPresenting(false);
+      return;
+    }
+    setPresenting(true);
+    if (fullscreenSupported) toggleFullscreen();
+  };
+
+  // ── printing, without leaving the page ──────────────────────────────────
+  //
+  // `/print` still exists (it is the only route a share-link viewer can
+  // print from), but the button here no longer sends anyone to it. One
+  // `/render` call returns every widget's rows at once, the printable layout
+  // is mounted hidden, and the browser's own dialog opens over the editor -
+  // so nothing is lost by cancelling, and there is no tab to come back from.
+
+  const printReport = async () => {
+    setPrinting(true);
+    const result = await renderReportAction(reportId);
+    setPrinting(false);
+    if (result.error || !result.data) {
+      await alert({
+        title: "Could not build the PDF",
+        body: result.error ?? "The report could not be rendered just now.",
+        tone: "danger",
+      });
+      return;
+    }
+    setPrintSnapshot({
+      doc: result.data.snapshot.doc,
+      widgets: result.data.snapshot.widgets as Record<string, WidgetResult>,
+      generatedAt: result.data.snapshot.generatedAt,
+      failures: result.data.failures,
+    });
+  };
+
+  useEffect(() => {
+    if (!printSnapshot) return;
+
+    // Cleared on `afterprint`, NOT on the line after `window.print()`.
+    // `print()` blocks until the dialog closes in Chrome on the desktop and
+    // does not in several other engines, where unmounting immediately would
+    // pull the content out from under a dialog that is still open and print a
+    // blank sheet. If `afterprint` never arrives the snapshot simply stays
+    // mounted - invisible, since `.print-only` is `display: none` on screen -
+    // and the next print replaces it.
+    const clear = () => setPrintSnapshot(null);
+    window.addEventListener("afterprint", clear);
+
+    // Two frames, for the reason print/page.tsx documents: the first fires
+    // before the browser has laid the SVGs out, and printing then captures
+    // empty chart boxes.
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+
+    return () => {
+      window.removeEventListener("afterprint", clear);
+      cancelAnimationFrame(frame);
+    };
+  }, [printSnapshot]);
+
   // ── render ──────────────────────────────────────────────────────────────
 
-  const gridItems: GridItem[] = page.widgets.map((w) => ({ id: w.id, layout: w.layout }));
+  // Present mode drops notes and dividers: the ask was to see the metrics.
+  // Positions are NOT re-flowed to close the gaps they leave - the author
+  // arranged this page, and silently rearranging it in the one view meant for
+  // an audience is how a report stops matching the screenshot of itself.
+  const visibleWidgets = presenting
+    ? page.widgets.filter((w) => w.type !== "text" && w.type !== "divider")
+    : page.widgets;
+
+  const gridItems: GridItem[] = visibleWidgets.map((w) => ({ id: w.id, layout: w.layout }));
 
   return (
-    <div className="space-y-3">
+    <>
+      {/* `print-hide`, not `print:hidden`: this competes with no other display
+          utility here, but the class is the one printable-report.tsx's own
+          stylesheet already names, and keeping one convention for "not on
+          paper" beats having two. */}
+      <div ref={rootRef} className="print-hide space-y-3">
       {/* ── toolbar ─────────────────────────────────────────────────────── */}
-      <Card className="sticky top-0 z-20">
+      {/* Class strings are SWAPPED rather than appended when presenting.
+          Appending `hidden` to a string that already carries `flex` leaves the
+          winner to Tailwind's emission order, which is not something a layout
+          should depend on. */}
+      <Card className={presenting ? "hidden" : "sticky top-0 z-20"}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <input
@@ -410,12 +534,29 @@ export function ReportEditor({
               ))}
             </Select>
 
-            <Link href={`/owner/reports/builder/${reportId}/print`} target="_blank">
-              <Button variant="secondary" size="sm">
-                <Printer className="size-3.5" aria-hidden="true" />
-                PDF
-              </Button>
-            </Link>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void printReport()}
+              loading={printing}
+            >
+              <Printer className="size-3.5" aria-hidden="true" />
+              PDF
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={togglePresent}
+              title={
+                fullscreenSupported
+                  ? "Show the metrics only, full screen"
+                  : "Show the metrics only (fullscreen is unavailable in this browser)"
+              }
+            >
+              <Maximize className="size-3.5" aria-hidden="true" />
+              Fullscreen
+            </Button>
 
             {initial.role === "owner" ? (
               <Button variant="secondary" size="sm" onClick={() => setShowShare(true)}>
@@ -442,7 +583,7 @@ export function ReportEditor({
         </div>
       </Card>
 
-      {issues.length > 0 ? (
+      {issues.length > 0 && !presenting ? (
         <Card className="border-warning-text/30 bg-warning-subtle">
           <MonoLabel>{issues.length} widget{issues.length === 1 ? "" : "s"} need attention</MonoLabel>
           <p className="mt-1 text-xs text-warning-text">
@@ -460,7 +601,7 @@ export function ReportEditor({
       ) : null}
 
       {/* ── page tabs ───────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className={presenting ? "hidden" : "flex flex-wrap items-center gap-1.5"}>
         {doc.pages.map((p, i) => (
           <span key={p.id} className="flex items-center">
             <button
@@ -498,7 +639,7 @@ export function ReportEditor({
       </div>
 
       {/* ── the live filter bus (design doc D3) ─────────────────────────── */}
-      {pageFilters.length > 0 ? (
+      {pageFilters.length > 0 && !presenting ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent/40 bg-accent-subtle px-3 py-2">
           <span className="text-xs font-medium text-accent-text">Filtering this page:</span>
           {pageFilters.map((filter, i) => (
@@ -525,7 +666,7 @@ export function ReportEditor({
       <div className="flex gap-3">
         {/* ── canvas ───────────────────────────────────────────────────── */}
         <div className="min-w-0 flex-1">
-          {readOnly ? null : (
+          {readOnly || presenting ? null : (
             <div className="mb-2 flex flex-wrap gap-1.5">
               <AddButton icon={BarChart3} label="Chart" onClick={() => addWidget("chart")} />
               <AddButton icon={Hash} label="Metric" onClick={() => addWidget("kpi")} />
@@ -540,18 +681,20 @@ export function ReportEditor({
             </div>
           )}
 
-          {page.widgets.length === 0 ? (
+          {visibleWidgets.length === 0 ? (
             <Card>
               <p className="py-8 text-center text-sm text-text-muted">
-                Nothing on this page yet. Add a chart, a metric or a table above.
+                {presenting
+                  ? "Nothing to show on this page - it has no charts, metrics or tables."
+                  : "Nothing on this page yet. Add a chart, a metric or a table above."}
               </p>
             </Card>
           ) : (
             <CanvasGrid
               items={gridItems}
-              selectedId={selectedId}
+              selectedId={presenting ? null : selectedId}
               onSelect={setSelectedId}
-              frozen={readOnly}
+              frozen={readOnly || presenting}
               onChange={(id, layout) => patchWidget(id, { layout })}
             >
               {(item) => {
@@ -597,7 +740,7 @@ export function ReportEditor({
         </div>
 
         {/* ── inspector ────────────────────────────────────────────────── */}
-        {selected && !readOnly ? (
+        {selected && !readOnly && !presenting ? (
           <aside className="w-80 shrink-0">
             <Card className="sticky top-32 max-h-[calc(100vh-10rem)] overflow-y-auto">
               <WidgetInspector
@@ -625,7 +768,40 @@ export function ReportEditor({
           members={members}
         />
       ) : null}
-    </div>
+
+      {/* The only control in present mode. Escape leaves too (the browser's
+          own fullscreen exit, which the effect above listens for), but a
+          visible way out matters for the case where fullscreen was refused
+          and Escape therefore does nothing. */}
+      {presenting ? (
+        <button
+          type="button"
+          onClick={togglePresent}
+          className="fixed top-4 right-4 z-50 flex items-center gap-1.5 rounded-full border border-border bg-surface/90 px-3 py-1.5 text-xs font-medium text-text-muted shadow-sm backdrop-blur transition-colors hover:bg-surface hover:text-text"
+        >
+          <Minimize className="size-3.5" aria-hidden="true" />
+          Exit fullscreen
+        </button>
+      ) : null}
+      </div>
+
+      {/* Mounted only while the dialog is open, and only on paper. The editor
+          above carries `print-hide`, so what the browser prints is this and
+          the console chrome is gone from the sheet. */}
+      {printSnapshot ? (
+        <div className="print-only">
+          <PrintableReport
+            name={initial.name}
+            doc={printSnapshot.doc}
+            widgets={printSnapshot.widgets}
+            generatedAt={printSnapshot.generatedAt}
+            failures={printSnapshot.failures}
+            orgName={orgName}
+            autoPrint={false}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

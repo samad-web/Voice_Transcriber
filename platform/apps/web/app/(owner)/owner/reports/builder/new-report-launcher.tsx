@@ -3,7 +3,17 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, LayoutTemplate, Plus } from "lucide-react";
-import { Button, Card, Dialog, FormField, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  Button,
+  Card,
+  Dialog,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+} from "@aura/ui";
 import { createDatasetAction, createReportAction } from "./actions";
 import type { CatalogueEntry, DatasetRow, TemplateRow } from "./types";
 
@@ -30,6 +40,45 @@ import type { CatalogueEntry, DatasetRow, TemplateRow } from "./types";
  * row, so choosing one the tenant has not saved yet creates it on the way
  * through - the user should not have to understand that distinction.
  */
+/**
+ * The gallery's headings, in render order.
+ *
+ * Grouping arrived with the templates of migration 0087: four cards read fine
+ * as one row, ten do not - and the thing a person is choosing between is not
+ * ten equivalent reports, it is "the call-floor ones" or "the money ones".
+ * An unknown category is appended rather than dropped, for the same reason
+ * nav.ts files an unknown page into the last group: a template nobody can see
+ * is worse than one under an imperfect heading.
+ */
+const CATEGORY_LABELS: Record<string, string> = {
+  "call-floor": "Call floor",
+  pipeline: "Pipeline",
+  marketing: "Marketing",
+  finance: "Finance",
+  custom: "Saved by your team",
+  blank: "Start from scratch",
+};
+
+const CATEGORY_ORDER = ["call-floor", "pipeline", "marketing", "finance", "custom", "blank"];
+
+function groupByCategory(templates: TemplateRow[]): Array<{ label: string; items: TemplateRow[] }> {
+  const buckets = new Map<string, TemplateRow[]>();
+  for (const template of templates) {
+    const key = template.category ?? "custom";
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(template);
+    else buckets.set(key, [template]);
+  }
+  const ordered = [
+    ...CATEGORY_ORDER.filter((key) => buckets.has(key)),
+    ...[...buckets.keys()].filter((key) => !CATEGORY_ORDER.includes(key)),
+  ];
+  return ordered.map((key) => ({
+    label: CATEGORY_LABELS[key] ?? key,
+    items: buckets.get(key) ?? [],
+  }));
+}
+
 export function NewReportLauncher({
   templates,
   datasets,
@@ -43,15 +92,14 @@ export function NewReportLauncher({
   const [picked, setPicked] = useState<TemplateRow | null>(null);
   const [name, setName] = useState("");
   const [bindings, setBindings] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   /** A saved dataset for this CRM source key, if the tenant already has one. */
   const existingFor = (sourceKey: string) =>
     datasets.find((d) => d.kind === "crm" && d.source_key === sourceKey);
 
   const open = (template: TemplateRow) => {
-    setError(null);
     setPicked(template);
     setName(template.name);
     // Pre-fill each role with a dataset the tenant already has, or with the
@@ -68,10 +116,13 @@ export function NewReportLauncher({
   const create = () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("Give the report a name");
+      void alert({
+        title: "Couldn't create the report",
+        body: "Give the report a name",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
 
     startTransition(async () => {
       // Resolve any `crm:<key>` placeholder into a real dataset first. Done
@@ -88,7 +139,11 @@ export function NewReportLauncher({
         const sourceKey = value.slice(4);
         const created = await createDatasetAction({ kind: "crm", sourceKey });
         if (created.error || !created.data) {
-          setError(created.error ?? "Could not connect that data source");
+          await alert({
+            title: "Couldn't connect that data source",
+            body: created.error ?? "Could not connect that data source",
+            tone: "danger",
+          });
           return;
         }
         resolved[role] = created.data.dataset.id;
@@ -100,7 +155,11 @@ export function NewReportLauncher({
         datasetByRole: resolved,
       });
       if (result.error || !result.data) {
-        setError(result.error ?? "Could not create the report");
+        await alert({
+          title: "Couldn't create the report",
+          body: result.error ?? "Could not create the report",
+          tone: "danger",
+        });
         return;
       }
       setPicked(null);
@@ -119,36 +178,45 @@ export function NewReportLauncher({
           want. Pick the closest fit and change it - that is faster than starting from nothing.
         </p>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {templates.map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => open(template)}
-              className="group flex h-full flex-col rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-border-strong hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              <span className="flex items-center gap-2">
-                {template.key === "blank" ? (
-                  <Plus className="size-4 text-text-muted" aria-hidden="true" />
-                ) : (
-                  <LayoutTemplate className="size-4 text-accent-text" aria-hidden="true" />
-                )}
-                <span className="text-sm font-medium text-text">{template.name}</span>
-              </span>
-              {template.description ? (
-                <span className="mt-1 flex-1 text-xs leading-snug text-text-muted">
-                  {template.description}
-                </span>
-              ) : null}
-              <span className="mt-2 flex flex-wrap gap-1">
-                {template.is_global ? null : <StatusChip tone="muted">yours</StatusChip>}
-                {(template.dataset_roles ?? []).map((role) => (
-                  <StatusChip key={role.role} tone="outline">
-                    {role.label}
-                  </StatusChip>
+        <div className="mt-4 space-y-5">
+          {groupByCategory(templates).map((group) => (
+            <div key={group.label}>
+              <h3 className="text-[11px] font-semibold tracking-wide text-text-subtle uppercase">
+                {group.label}
+              </h3>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {group.items.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => open(template)}
+                    className="group flex h-full flex-col rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-border-strong hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <span className="flex items-center gap-2">
+                      {template.key === "blank" ? (
+                        <Plus className="size-4 text-text-muted" aria-hidden="true" />
+                      ) : (
+                        <LayoutTemplate className="size-4 text-accent-text" aria-hidden="true" />
+                      )}
+                      <span className="text-sm font-medium text-text">{template.name}</span>
+                    </span>
+                    {template.description ? (
+                      <span className="mt-1 flex-1 text-xs leading-snug text-text-muted">
+                        {template.description}
+                      </span>
+                    ) : null}
+                    <span className="mt-2 flex flex-wrap gap-1">
+                      {template.is_global ? null : <StatusChip tone="muted">yours</StatusChip>}
+                      {(template.dataset_roles ?? []).map((role) => (
+                        <StatusChip key={role.role} tone="outline">
+                          {role.label}
+                        </StatusChip>
+                      ))}
+                    </span>
+                  </button>
                 ))}
-              </span>
-            </button>
+              </div>
+            </div>
           ))}
         </div>
       </Card>
@@ -223,8 +291,6 @@ export function NewReportLauncher({
               </span>
             </p>
           ) : null}
-
-          {error ? <p className="text-xs text-danger-text">{error}</p> : null}
         </div>
       </Dialog>
     </>

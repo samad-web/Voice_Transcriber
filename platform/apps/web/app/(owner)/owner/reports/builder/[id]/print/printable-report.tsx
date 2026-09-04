@@ -28,6 +28,7 @@ export function PrintableReport({
   generatedAt,
   failures,
   orgName,
+  autoPrint = true,
 }: {
   name: string;
   doc: ReportDoc;
@@ -35,14 +36,22 @@ export function PrintableReport({
   generatedAt: string;
   failures: string[];
   orgName: string;
+  /**
+   * Whether mounting opens the print dialog. True for the standalone `/print`
+   * route, whose entire purpose is that; false when the editor mounts this
+   * hidden and drives the dialog itself, where a second `window.print()` from
+   * in here would open two.
+   */
+  autoPrint?: boolean;
 }) {
   // Opens the print dialog once, after paint. `requestAnimationFrame` twice:
   // the first fires before the browser has laid the SVGs out, and printing
   // then captures empty chart boxes.
   useEffect(() => {
+    if (!autoPrint) return;
     const id = requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [autoPrint]);
 
   const palette = paletteById(doc.theme.paletteId);
 

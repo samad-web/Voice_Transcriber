@@ -53,7 +53,7 @@ export function Sidebar({
   const active = navItemFor(pathname, items);
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-surface p-4 md:flex lg:w-64">
+    <aside className="print-hide sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-surface p-4 md:flex lg:w-64">
       <div className="space-y-8">
         <div className="flex items-center gap-3 px-2">
           {/* Brand-register pass: the console now carries the real mark, matching

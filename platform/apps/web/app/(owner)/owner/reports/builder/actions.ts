@@ -170,6 +170,38 @@ export async function runNowAction(id: string): Promise<ActionResult<{ run: { id
   return result;
 }
 
+/**
+ * Render every widget live, without persisting anything - what the print
+ * route and the standalone dashboard view both poll. `token` carries the
+ * report's read-only share link when the caller isn't its owner/editor/viewer.
+ */
+export async function renderReportAction(
+  id: string,
+  token?: string,
+): Promise<
+  ActionResult<{
+    name: string;
+    failures: string[];
+    snapshot: {
+      doc: ReportDoc;
+      widgets: Record<
+        string,
+        {
+          rows: Array<Record<string, string | number | null>>;
+          dimensionKeys: string[];
+          measureKeys: string[];
+          truncated: boolean;
+          error?: string;
+        }
+      >;
+      generatedAt: string;
+    };
+  }>
+> {
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
+  return call(`/v1/report-builder/${id}/render${query}`, { method: "POST", body: {} });
+}
+
 // ── data ──────────────────────────────────────────────────────────────────
 
 /**
