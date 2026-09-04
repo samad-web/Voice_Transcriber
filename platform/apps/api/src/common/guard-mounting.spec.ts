@@ -62,6 +62,7 @@ import { TasksController } from "../modules/tasks/tasks.controller";
 import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
 import { CustomFieldsController } from "../modules/custom-fields/custom-fields.controller";
 import { CustomFieldValuesController } from "../modules/custom-fields/custom-field-values.controller";
+import { AppDownloadController } from "../modules/devices/app-download.controller";
 import { DeviceTelemetryController } from "../modules/devices/device-telemetry.controller";
 import { DevicesController } from "../modules/devices/devices.controller";
 import { InstancesController } from "../modules/devices/instances.controller";
@@ -128,6 +129,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   CallsController,
   NotesController,
   CrmController,
+  AppDownloadController,
   DevicesController,
   DeviceTelemetryController,
   InstancesController,
@@ -279,7 +281,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
 
 /**
- * §1.2 - the seven routes with no `@UseGuards` metadata at all.
+ * §1.2 - the routes with no `@UseGuards` metadata at all.
  *
  * The messaging webhook is the newest member and the only one that is
  * unguarded while still writing tenant data. It is admissible because the
@@ -319,6 +321,18 @@ const UNGUARDED = [
   // LinkedIn's OAuth redirect lands here with no Aura credentials - verifies
   // itself via the signed `state` param, exactly like Meta's.
   "GET /linkedin/oauth/callback",
+  // The handset app's public download. Unlike every other member of this list
+  // it carries no token at all, and that is the point: the caller is a person
+  // holding a NEW phone, who has no console login and no device token, because
+  // the app they are here to install is the thing that would issue one.
+  //
+  // Admissible because it discloses only the CLIENT BINARY. It reads
+  // `app_releases`, which is fleet-wide and holds no tenant data; a fresh
+  // install is inert until somebody types an activation key into it; and the
+  // bucket stays private - both routes presign per request and the signature
+  // expires in fifteen minutes, so this publishes a link, never the object.
+  "GET /app/latest",
+  "GET /app/download",
 ];
 
 /** §1.1 rows 22, 23, 44, 48-50 - the handset fleet's entire surface. */
@@ -819,8 +833,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(306);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(306);
+    expect(ROUTES).toHaveLength(308);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(308);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -835,7 +849,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
     expect(tenantScoped).toHaveLength(260);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(306);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(308);
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 276 principal routes", () => {
@@ -1013,7 +1027,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     ]);
   });
 
-  it("pins the fifteen unguarded routes as an explicit allowlist", () => {
+  it("pins the seventeen unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
     // `POST /auth/logout` is a known finding - an anonymous DELETE on the
