@@ -2,8 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { AUTH_ENABLED, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 
-/** Paths reachable without a session. Everything else requires sign-in. */
-const PUBLIC_PREFIXES = ["/login", "/auth"];
+/** Paths reachable without a session. Everything else requires sign-in.
+ *
+ *  `/docs` is the API reference. Its audience is a tenant's own developer,
+ *  who typically has no console login at all - gating it behind one would
+ *  shut out the only people it is written for, and it discloses nothing:
+ *  the credential that matters is the API key, never a session. */
+const PUBLIC_PREFIXES = ["/login", "/auth", "/docs"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
