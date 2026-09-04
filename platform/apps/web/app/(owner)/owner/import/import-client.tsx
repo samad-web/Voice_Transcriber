@@ -17,6 +17,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
 } from "@aura/ui";
 import {
   IMPORT_FIELDS,
@@ -112,11 +113,11 @@ function downloadCsv(filename: string, csv: string) {
 export function ImportWizard() {
   const [step, setStep] = useState<Step>("entity");
   const [entity, setEntity] = useState<ImportEntity | null>(null);
+  const alert = useAlert();
 
   // ── parsed CSV (step: upload) ────────────────────────────────────────
   const [fields, setFields] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [parseError, setParseError] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState("");
   /** How many parsed rows still look like the template's own sample rows. */
   const [sampleRowCount, setSampleRowCount] = useState(0);
@@ -125,7 +126,6 @@ export function ImportWizard() {
   // ── column mapping (step: mapping) ──────────────────────────────────
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [apiRequiredFields, setApiRequiredFields] = useState<string[]>([]);
-  const [mappingError, setMappingError] = useState<string | null>(null);
   const [mappingPending, startMapping] = useTransition();
 
   // ── dedupe strategy (step: strategy) ────────────────────────────────
@@ -134,8 +134,6 @@ export function ImportWizard() {
   // ── run + results (step: running / results) ─────────────────────────
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rowErrors, setRowErrors] = useState<ImportRowError[] | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [, startRun] = useTransition();
 
   function reset() {
@@ -143,17 +141,13 @@ export function ImportWizard() {
     setEntity(null);
     setFields([]);
     setRows([]);
-    setParseError(null);
     setPasteText("");
     setSampleRowCount(0);
     setMapping({});
     setApiRequiredFields([]);
-    setMappingError(null);
     setDedupeStrategy("skip");
     setJob(null);
     setRowErrors(null);
-    setRunError(null);
-    setDownloadError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -162,20 +156,26 @@ export function ImportWizard() {
       setFields([]);
       setRows([]);
       setSampleRowCount(0);
-      setParseError("No rows found in that file.");
+      void alert({
+        title: "Couldn't read that file",
+        body: "No rows found in that file.",
+        tone: "danger",
+      });
       return;
     }
     if (data.length > MAX_ROWS) {
       setFields(parsedFields);
       setRows([]);
       setSampleRowCount(0);
-      setParseError(
-        `That file has ${data.length.toLocaleString()} rows - this wizard imports up to ` +
+      void alert({
+        title: "That file has too many rows",
+        body:
+          `That file has ${data.length.toLocaleString()} rows - this wizard imports up to ` +
           `${MAX_ROWS.toLocaleString()} at a time. Split the file and import it in batches.`,
-      );
+        tone: "danger",
+      });
       return;
     }
-    setParseError(null);
     setFields(parsedFields);
     setRows(data);
 
@@ -195,7 +195,19 @@ export function ImportWizard() {
       header: true,
       skipEmptyLines: true,
       complete: (results) => applyParsed(results.data, results.meta.fields ?? []),
-      error: (err) => setParseError(err.message || "Could not parse that file."),
+      // Clear whatever a previous upload left behind before complaining: the
+      // Continue button is gated on there being rows, so a file that failed to
+      // parse must not leave the last file's rows sitting there looking ready.
+      error: (err) => {
+        setFields([]);
+        setRows([]);
+        setSampleRowCount(0);
+        void alert({
+          title: "Couldn't read that file",
+          body: err.message || "Could not parse that file.",
+          tone: "danger",
+        });
+      },
     });
   }
 
@@ -211,11 +223,14 @@ export function ImportWizard() {
   function goToMapping() {
     if (!entity) return;
     setStep("mapping");
-    setMappingError(null);
     startMapping(async () => {
       const res = await previewImportAction(entity, fields);
       if (res.error) {
-        setMappingError(res.error);
+        await alert({
+          title: "Couldn't read your columns",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       setMapping(res.mapping ?? {});
@@ -228,24 +243,28 @@ export function ImportWizard() {
     const required = requiredFieldsFor(entity, apiRequiredFields);
     const missing = IMPORT_FIELDS[entity].filter((f) => required.includes(f.field) && !mapping[f.field]);
     if (missing.length > 0) {
-      setMappingError(
-        `Map every required field before continuing - still missing: ${missing.map((f) => f.label).join(", ")}.`,
-      );
+      void alert({
+        title: "Map every required field before continuing",
+        body: `Still missing: ${missing.map((f) => f.label).join(", ")}.`,
+        tone: "danger",
+      });
       return;
     }
-    setMappingError(null);
     setStep("strategy");
   }
 
   function runImport() {
     if (!entity) return;
     setStep("running");
-    setRunError(null);
     startRun(async () => {
       const res = await runImportAction(entity, mapping, dedupeStrategy, rows);
       if (res.error || !res.job) {
-        setRunError(res.error ?? "Import failed with no reason given.");
         setStep("strategy");
+        await alert({
+          title: "Couldn't run the import",
+          body: res.error ?? "Import failed with no reason given.",
+          tone: "danger",
+        });
         return;
       }
       setJob(res.job);
@@ -259,10 +278,13 @@ export function ImportWizard() {
 
   async function downloadErrorsCsv() {
     if (!job) return;
-    setDownloadError(null);
     const res = await fetchImportErrorsCsvAction(job.id);
     if (!res.csv) {
-      setDownloadError(res.error ?? "Could not download the error rows.");
+      await alert({
+        title: "Couldn't download the error rows",
+        body: res.error ?? "Could not download the error rows.",
+        tone: "danger",
+      });
       return;
     }
     downloadCsv(`import-${job.id}-errors.csv`, res.csv);
@@ -290,7 +312,6 @@ export function ImportWizard() {
           fields={fields}
           rows={rows}
           previewRows={previewRows}
-          parseError={parseError}
           pasteText={pasteText}
           onPasteTextChange={setPasteText}
           onParsePaste={handlePaste}
@@ -310,7 +331,6 @@ export function ImportWizard() {
           mapping={mapping}
           apiRequiredFields={apiRequiredFields}
           loading={mappingPending}
-          error={mappingError}
           onChange={(field, value) => setMapping((prev) => ({ ...prev, [field]: value }))}
           onBack={() => setStep("upload")}
           onNext={goToStrategy}
@@ -321,7 +341,6 @@ export function ImportWizard() {
         <StrategyStep
           value={dedupeStrategy}
           onChange={setDedupeStrategy}
-          error={runError}
           onBack={() => setStep("mapping")}
           onNext={runImport}
         />
@@ -333,8 +352,7 @@ export function ImportWizard() {
         <ResultsStep
           job={job}
           rowErrors={rowErrors}
-          downloadError={downloadError}
-          onDownloadErrors={downloadErrorsCsv}
+          onDownloadErrors={() => void downloadErrorsCsv()}
           onRestart={reset}
         />
       ) : null}
@@ -425,7 +443,6 @@ function UploadStep({
   fields,
   rows,
   previewRows,
-  parseError,
   pasteText,
   onPasteTextChange,
   onParsePaste,
@@ -440,7 +457,6 @@ function UploadStep({
   fields: string[];
   rows: Record<string, string>[];
   previewRows: Record<string, string>[];
-  parseError: string | null;
   pasteText: string;
   onPasteTextChange: (value: string) => void;
   onParsePaste: () => void;
@@ -451,7 +467,7 @@ function UploadStep({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const canContinue = rows.length > 0 && !parseError;
+  const canContinue = rows.length > 0;
   const entityLabel = ENTITY_OPTIONS.find((o) => o.value === entity)?.label.toLowerCase() ?? entity;
   const columns = IMPORT_FIELDS[entity];
 
@@ -500,8 +516,6 @@ function UploadStep({
           </Button>
         </div>
       </div>
-
-      {parseError ? <p className="mt-3 text-sm text-danger-text">{parseError}</p> : null}
 
       {sampleRowCount > 0 ? (
         <p className="mt-3 rounded-md border border-warning-text/30 bg-warning-subtle px-3 py-2 text-sm text-warning-text">
@@ -624,7 +638,6 @@ function MappingStep({
   mapping,
   apiRequiredFields,
   loading,
-  error,
   onChange,
   onBack,
   onNext,
@@ -634,7 +647,6 @@ function MappingStep({
   mapping: Record<string, string | null>;
   apiRequiredFields: string[];
   loading: boolean;
-  error: string | null;
   onChange: (field: string, value: string | null) => void;
   onBack: () => void;
   onNext: () => void;
@@ -677,8 +689,6 @@ function MappingStep({
         </div>
       )}
 
-      {error ? <p className="mt-3 text-sm text-danger-text">{error}</p> : null}
-
       <div className="mt-6 flex items-center justify-between">
         <Button type="button" variant="ghost" onClick={onBack}>
           Back
@@ -694,13 +704,11 @@ function MappingStep({
 function StrategyStep({
   value,
   onChange,
-  error,
   onBack,
   onNext,
 }: {
   value: DedupeStrategy;
   onChange: (value: DedupeStrategy) => void;
-  error: string | null;
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -723,8 +731,6 @@ function StrategyStep({
           />
         ))}
       </RadioGroup>
-
-      {error ? <p className="mt-3 text-sm text-danger-text">{error}</p> : null}
 
       <div className="mt-6 flex items-center justify-between">
         <Button type="button" variant="ghost" onClick={onBack}>
@@ -761,13 +767,11 @@ function RunningStep({ rowCount }: { rowCount: number }) {
 function ResultsStep({
   job,
   rowErrors,
-  downloadError,
   onDownloadErrors,
   onRestart,
 }: {
   job: ImportJob;
   rowErrors: ImportRowError[] | null;
-  downloadError: string | null;
   onDownloadErrors: () => void;
   onRestart: () => void;
 }) {
@@ -809,9 +813,6 @@ function ResultsStep({
               Download error rows as CSV
             </Button>
           </div>
-          {downloadError ? (
-            <p className="mt-2 text-sm text-danger-text">{downloadError}</p>
-          ) : null}
           {rowErrors === null ? (
             <p className="mt-2 text-sm text-text-muted">Loading…</p>
           ) : (

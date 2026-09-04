@@ -51,6 +51,8 @@ export { Dialog } from "./dialog";
 export type { DialogProps } from "./dialog";
 export { ConfirmProvider, useConfirm } from "./confirm";
 export type { ConfirmOptions } from "./confirm";
+export { FeedbackProvider, useAlert, useToast } from "./feedback";
+export type { AlertOptions, ToastOptions } from "./feedback";
 export { Tooltip } from "./tooltip";
 export type { TooltipProps } from "./tooltip";
 

@@ -8,7 +8,7 @@ import {
   OwnerRole,
   ownerRoleSeesAllRecords,
 } from "@aura/shared";
-import { Button, Card, MonoLabel, Select, StatusChip } from "@aura/ui";
+import { Button, Card, MonoLabel, Select, StatusChip, useAlert, useToast } from "@aura/ui";
 import { removeTeamMemberAction, resetTeamPasswordAction, setTeamMemberAction } from "./actions";
 import type { TeamMember, TeamTelecaller } from "./types";
 
@@ -84,26 +84,28 @@ function Row({
 }) {
   const [role, setRole] = useState<OwnerRole>(member.ownerRole);
   const [telecallerId, setTelecallerId] = useState(member.telecallerId ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const save = (update: { ownerRole?: OwnerRole; telecallerId?: string | null }) => {
-    setError(null);
-    setSaved(false);
     startTransition(async () => {
       const result = await setTeamMemberAction(member.userId, update);
       if (result.error) {
-        setError(result.error);
         // Put the control back where it was. A picker that keeps showing the
         // value the server refused is how somebody walks away believing a
         // change landed - the row would read "Telecaller" while the person
         // still has the whole console.
         setRole(member.ownerRole);
         setTelecallerId(member.telecallerId ?? "");
+        await alert({
+          title: `Couldn't update ${member.email}`,
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
-      setSaved(true);
+      toast("Saved");
     });
   };
 
@@ -202,10 +204,6 @@ function Row({
 
       <td className="px-4 py-3 whitespace-nowrap">
         {pending ? <MonoLabel>Saving…</MonoLabel> : null}
-        {!pending && saved ? <StatusChip tone="solid">Saved</StatusChip> : null}
-        {!pending && error ? (
-          <span className="block max-w-xs text-xs leading-relaxed text-danger-text">{error}</span>
-        ) : null}
       </td>
 
       <td className="px-4 py-3 align-top whitespace-nowrap">
@@ -232,15 +230,21 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [password, setPassword] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const alert = useAlert();
 
   const reset = () => {
-    setError(null);
     setPassword(null);
     startTransition(async () => {
       const res = await resetTeamPasswordAction(member.userId);
-      if (res.error) setError(res.error);
-      else setPassword(res.password ?? null);
+      if (res.error) {
+        await alert({
+          title: `Couldn't reset ${member.email}'s password`,
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setPassword(res.password ?? null);
     });
   };
 
@@ -252,11 +256,17 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
     ) {
       return;
     }
-    setError(null);
     startTransition(async () => {
       const res = await removeTeamMemberAction(member.userId);
-      if (res.error) setError(res.error);
-      else router.refresh();
+      if (res.error) {
+        await alert({
+          title: `Couldn't remove ${member.email}`,
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      router.refresh();
     });
   };
 
@@ -283,9 +293,6 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
             Shown once. Nothing was emailed.
           </span>
         </div>
-      ) : null}
-      {error ? (
-        <span className="block max-w-xs text-xs leading-relaxed text-danger-text">{error}</span>
       ) : null}
     </div>
   );

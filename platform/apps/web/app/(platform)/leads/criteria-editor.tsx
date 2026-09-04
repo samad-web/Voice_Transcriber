@@ -10,7 +10,7 @@ import {
   type CriteriaRule,
   type FunnelCriteria,
 } from "@aura/shared";
-import { Card, Select, StatusChip } from "@aura/ui";
+import { Card, Select, StatusChip, useAlert, useToast } from "@aura/ui";
 import { saveFunnelCriteriaAction } from "./actions";
 
 /**
@@ -66,16 +66,14 @@ export function CriteriaEditor({
 }) {
   const [criteria, setCriteria] = useState<FunnelCriteria>(initial);
   const [dirty, setDirty] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const update = (next: FunnelCriteria) => {
     setCriteria(next);
     setDirty(true);
     onDirtyChange?.(true);
-    setNote(null);
-    setError(null);
   };
 
   const patchRule = (id: string, patch: Partial<CriteriaRule>) =>
@@ -87,11 +85,17 @@ export function CriteriaEditor({
   const save = () =>
     start(async () => {
       const res = await saveFunnelCriteriaAction(criteria);
-      if (res.error) return setError(res.error);
+      if (res.error) {
+        await alert({
+          title: "Couldn't save the qualification rules",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
       setDirty(false);
       onDirtyChange?.(false);
-      setError(null);
-      setNote("Saved. New enquiries are judged by these rules within a minute.");
+      toast("Saved. New enquiries are judged by these rules within a minute.");
     });
 
   if (loadError) {
@@ -262,16 +266,6 @@ export function CriteriaEditor({
         ) : null}
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger-text">
-          {error}
-        </p>
-      ) : null}
-      {note ? (
-        <p role="status" className="text-xs text-text-muted">
-          {note}
-        </p>
-      ) : null}
       {updatedAt ? (
         <p className="text-xs text-text-muted">
           Last changed {new Date(updatedAt).toLocaleString()}

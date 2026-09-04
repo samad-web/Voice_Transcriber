@@ -3,7 +3,16 @@
 import { useMemo, useState, useTransition } from "react";
 import { ArrowLeft, ExternalLink, Plug, Search } from "lucide-react";
 import type { CrmProviderSpec } from "@aura/shared";
-import { Button, Card, FormField, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+} from "@aura/ui";
 import { connectProviderAction } from "./actions";
 
 /**
@@ -165,8 +174,8 @@ function ConnectForm({
   const [config, setConfig] = useState<Record<string, string>>(() =>
     Object.fromEntries(provider.config.map((f) => [f.key, f.defaultValue ?? ""])),
   );
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const target = provider.targets.find((t) => t.id === targetId) ?? provider.targets[0];
   const needsSecret = provider.auth.scheme !== "none";
@@ -176,7 +185,6 @@ function ConnectForm({
 
   const submit = () =>
     startTransition(async () => {
-      setError(null);
       const res = await connectProviderAction({
         workspaceId,
         orgId,
@@ -186,8 +194,15 @@ function ConnectForm({
         config,
         secret: secret.trim() || undefined,
       });
-      if (res.error) setError(res.error);
-      else onConnected();
+      if (res.error) {
+        await alert({
+          title: `Couldn't connect ${provider.label}`,
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      onConnected();
     });
 
   return (
@@ -326,12 +341,6 @@ function ConnectForm({
       {missingConfig.length > 0 ? (
         <p aria-live="polite" className="text-sm text-text-muted">
           Required: {missingConfig.map((f) => f.label).join(", ")}
-        </p>
-      ) : null}
-
-      {error ? (
-        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-          {error}
         </p>
       ) : null}
 

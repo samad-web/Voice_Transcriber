@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, LogIn } from "lucide-react";
-import { BrutalButton, Card, MonoLabel } from "@aura/ui";
+import { Copy, LogIn } from "lucide-react";
+import { BrutalButton, Card, MonoLabel, useAlert, useToast } from "@aura/ui";
 
 /**
  * The one address a customer signs in at: `<this origin>/login`.
@@ -39,7 +39,8 @@ export function useSignInUrl(): string | null {
 /** The URL in a copyable box plus its copy button. No card, no heading. */
 export function SignInLink() {
   const url = useSignInUrl();
-  const [copied, setCopied] = useState(false);
+  const alert = useAlert();
+  const toast = useToast();
 
   return (
     <>
@@ -58,12 +59,18 @@ export function SignInLink() {
           if (!url) return;
           void navigator.clipboard
             .writeText(url)
-            .then(() => setCopied(true))
-            .catch(() => setCopied(false));
+            .then(() => toast("Copied"))
+            .catch(() =>
+              alert({
+                title: "Couldn't copy the sign-in link",
+                body: "Select the address above and copy it by hand.",
+                tone: "danger",
+              }),
+            );
         }}
       >
-        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-        {copied ? "COPIED" : "COPY SIGN-IN LINK"}
+        <Copy className="h-4 w-4" />
+        COPY SIGN-IN LINK
       </BrutalButton>
     </>
   );

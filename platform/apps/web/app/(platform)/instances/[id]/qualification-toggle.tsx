@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ScanSearch, ShieldOff } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { setWhatsAppQualificationAction } from "./actions";
 
 /**
@@ -33,16 +33,19 @@ export function QualificationToggle({
   instanceName: string;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
 
   const set = (next: boolean) => {
-    setError(null);
     startTransition(async () => {
       const res = await setWhatsAppQualificationAction({ orgId, enabled: next });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: "Couldn't change WhatsApp lead qualification",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       router.refresh();
@@ -99,12 +102,6 @@ export function QualificationToggle({
         {enabled ? <ShieldOff className="h-4 w-4" /> : <ScanSearch className="h-4 w-4" />}
         {pending ? "SAVING…" : enabled ? "TURN OFF QUALIFICATION" : "TURN ON QUALIFICATION"}
       </BrutalButton>
-
-      {error ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-          {error}
-        </p>
-      ) : null}
     </Card>
   );
 }

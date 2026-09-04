@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { CalendarClock, Mail, MessageSquare, Phone, StickyNote } from "lucide-react";
-import { Button, MonoLabel } from "@aura/ui";
+import { Button, MonoLabel, useAlert } from "@aura/ui";
 import {
   fetchInteractionsAction,
   logInteractionAction,
@@ -55,21 +55,24 @@ export function InteractionTimeline({
   title?: string;
 }) {
   const [rows, setRows] = useState<Interaction[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Why the list is empty, not how a save went - it takes the place of the
+  // timeline rather than reporting an event, so it stays on the page.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState<{ type: LogInteractionInput["type"]; body: string }>({
     type: "note",
     body: "",
   });
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const load = useCallback(() => {
     let cancelled = false;
-    setError(null);
+    setLoadError(null);
     void fetchInteractionsAction(parent, parentId).then((result) => {
       if (cancelled) return;
       if (result.error) {
-        setError(result.error);
+        setLoadError(result.error);
         setRows([]);
         return;
       }
@@ -87,17 +90,24 @@ export function InteractionTimeline({
 
   const submit = () => {
     if (!draft.body.trim()) {
-      setError("Write something first");
+      void alert({
+        title: "Nothing to log yet",
+        body: "Write what happened before saving it to the timeline.",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
     startTransition(async () => {
       const result = await logInteractionAction(parent, parentId, {
         type: draft.type,
         body: draft.body.trim(),
       });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't save to the timeline",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       // Prepend locally instead of refetching: the new row is always the most
@@ -151,12 +161,12 @@ export function InteractionTimeline({
         </div>
       ) : null}
 
-      {error ? (
+      {loadError ? (
         <p
           role="alert"
           className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
         >
-          {error}
+          {loadError}
         </p>
       ) : null}
 

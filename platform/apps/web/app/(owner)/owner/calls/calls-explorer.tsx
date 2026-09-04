@@ -14,7 +14,9 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
   useConfirm,
+  useToast,
 } from "@aura/ui";
 import { CallReadChips, TranscriptBody, humanize } from "../call-intel";
 import {
@@ -378,13 +380,14 @@ function FilterChip({
  */
 function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => void }) {
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
   const [detail, setDetail] = useState<OwnerCallDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<CallNote[] | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteBusy, setNoteBusy] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -392,11 +395,9 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
     setError(null);
     setNotes(null);
     setNoteDraft("");
-    // Audio and the last action's message are per-call: leaving either behind
-    // would have the next call opened play the previous one's recording, or
-    // claim a reprocess that was never asked for on it.
+    // Audio is per-call: leaving it behind would have the next call opened play
+    // the previous one's recording.
     setAudioUrl(null);
-    setActionMsg(null);
     if (!call) return;
     let cancelled = false;
     void fetchOwnerCallAction(call.id).then((result) => {
@@ -423,7 +424,7 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
     const result = await addOwnerCallNoteAction(call.id, noteDraft);
     setNoteBusy(false);
     if (result.error) {
-      setActionMsg(result.error);
+      await alert({ title: "Couldn't add the note", body: result.error, tone: "danger" });
       return;
     }
     if (result.note) {
@@ -437,11 +438,13 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
   async function loadAudio() {
     if (!call) return;
     setPending(true);
-    setActionMsg(null);
     const result = await fetchOwnerCallAudioAction(call.id);
     setPending(false);
-    if (result.error) setActionMsg(result.error);
-    else setAudioUrl(result.url ?? null);
+    if (result.error) {
+      await alert({ title: "Couldn't load the recording", body: result.error, tone: "danger" });
+      return;
+    }
+    setAudioUrl(result.url ?? null);
   }
 
   async function reprocess() {
@@ -459,12 +462,13 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
     if (!ok) return;
 
     setPending(true);
-    setActionMsg(null);
     const result = await reprocessOwnerCallAction(call.id);
     setPending(false);
-    setActionMsg(
-      result.error ?? "Queued - this call will update as the pipeline works through it.",
-    );
+    if (result.error) {
+      await alert({ title: "Couldn't reprocess the call", body: result.error, tone: "danger" });
+      return;
+    }
+    toast("Queued - this call will update as the pipeline works through it.");
   }
 
   if (!call) return null;
@@ -742,12 +746,6 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
                 </Button>
               ) : null}
             </div>
-
-            {actionMsg ? (
-              <p role="status" className="text-xs text-text-muted">
-                {actionMsg}
-              </p>
-            ) : null}
           </div>
         </div>
       </aside>

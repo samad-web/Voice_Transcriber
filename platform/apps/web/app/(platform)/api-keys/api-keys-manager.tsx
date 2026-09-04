@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm, useToast } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
 import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./actions";
@@ -44,24 +44,22 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<string[]>([]);
   const [created, setCreated] = useState<CreatedKey | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
 
   const create = () =>
     startTransition(async () => {
-      setError(null);
-      setCopied(false);
       const res = await createApiKeyAction(name.trim(), scopes, orgId);
       if (res.error) {
-        setError(res.error);
         setCreated(null);
-      } else {
-        setCreated(res);
-        setName("");
-        setScopes([]);
+        await alert({ title: "Couldn't create the API key", body: res.error, tone: "danger" });
+        return;
       }
+      setCreated(res);
+      setName("");
+      setScopes([]);
     });
 
   const toggleScope = (value: string) =>
@@ -81,7 +79,10 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
     });
     if (!ok) return;
     startTransition(async () => {
-      await revokeApiKeyAction(id, orgId);
+      const res = await revokeApiKeyAction(id, orgId);
+      if (res.error) {
+        await alert({ title: "Couldn't revoke the API key", body: res.error, tone: "danger" });
+      }
     });
   };
 
@@ -89,16 +90,22 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
   // an async onClick hands it a promise nobody owns and a rejected clipboard
   // write (insecure origin, permission denied - both real for a console reached
   // over plain http or inside an iframe) surfaces only as an unhandled
-  // rejection. Resolve it here instead, and on failure clear `copied` rather
-  // than leave the button claiming COPIED from an earlier successful click -
-  // this secret is shown exactly once, so a false "copied" loses it.
+  // rejection. Resolve it here instead, and say so loudly when it fails - this
+  // secret is shown exactly once, so a copy the person believes happened and
+  // did not is how the key is lost.
   const copyKey = () => {
     const key = created?.key;
     if (!key) return;
     void navigator.clipboard
       .writeText(key)
-      .then(() => setCopied(true))
-      .catch(() => setCopied(false));
+      .then(() => toast("API key copied"))
+      .catch(() =>
+        alert({
+          title: "Couldn't copy the API key",
+          body: "Select it from the box above and copy it by hand - it is shown only once.",
+          tone: "danger",
+        }),
+      );
   };
 
   return (
@@ -251,12 +258,6 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
             <Plus className="h-4 w-4" />
             {pending ? "GENERATING…" : "CREATE KEY"}
           </BrutalButton>
-
-          {error ? (
-            <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-              {error}
-            </p>
-          ) : null}
         </Card>
 
         {created?.key ? (
@@ -276,8 +277,8 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
                 {created.key}
               </div>
               <BrutalButton variant="secondary" className="w-full" onClick={copyKey}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copied ? "COPIED" : "COPY KEY"}
+                <Copy className="h-4 w-4" />
+                COPY KEY
               </BrutalButton>
             </div>
 

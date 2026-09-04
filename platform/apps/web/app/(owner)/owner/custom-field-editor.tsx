@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Sparkles } from "lucide-react";
-import { Button, Checkbox, Input, MonoLabel, Select } from "@aura/ui";
+import { Button, Checkbox, Input, MonoLabel, Select, useAlert, useToast } from "@aura/ui";
 import {
   fetchCustomFieldsAction,
   saveCustomFieldsAction,
@@ -39,19 +39,23 @@ export function CustomFieldEditor({
 }) {
   const [fields, setFields] = useState<RecordCustomField[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  // Why the panel is empty, not how a save went - it takes the place of the
+  // field list rather than reporting an event, so it stays on the page.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const load = useCallback(() => {
     let cancelled = false;
     void fetchCustomFieldsAction(parent, parentId).then((result) => {
       if (cancelled) return;
       if (result.error) {
-        setError(result.error);
+        setLoadError(result.error);
         setFields([]);
         return;
       }
+      setLoadError(null);
       setFields(result.fields ?? []);
       setDrafts({});
     });
@@ -66,14 +70,12 @@ export function CustomFieldEditor({
   }, [load]);
 
   const edit = (key: string, value: unknown) => {
-    setSaved(false);
     setDrafts((prev) => ({ ...prev, [key]: value }));
   };
 
   const save = () => {
     const keys = Object.keys(drafts);
     if (keys.length === 0) return;
-    setError(null);
     startTransition(async () => {
       // "" means the person emptied the box, which is a request to clear the
       // field - sent as an explicit null so the API deletes the row rather
@@ -85,14 +87,14 @@ export function CustomFieldEditor({
       }
       const result = await saveCustomFieldsAction(parent, parentId, payload);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't save the fields", body: result.error, tone: "danger" });
         return;
       }
       // The API returns the re-read record, so provenance and timestamps
       // update in place without a second round trip.
       setFields(result.fields ?? []);
       setDrafts({});
-      setSaved(true);
+      toast("Saved");
     });
   };
 
@@ -110,7 +112,7 @@ export function CustomFieldEditor({
       <div className="space-y-3">
         <MonoLabel>{title}</MonoLabel>
         <p className="py-2 text-xs text-text-muted">
-          {error ?? "No custom fields defined for this object yet."}
+          {loadError ?? "No custom fields defined for this object yet."}
         </p>
       </div>
     );
@@ -126,19 +128,8 @@ export function CustomFieldEditor({
           <Button type="button" size="sm" onClick={save} loading={pending}>
             Save
           </Button>
-        ) : saved ? (
-          <span className="text-xs text-text-muted">Saved</span>
         ) : null}
       </div>
-
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
 
       <dl className="space-y-3">
         {fields.map((field) => {

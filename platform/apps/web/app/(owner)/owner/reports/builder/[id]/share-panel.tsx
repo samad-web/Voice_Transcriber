@@ -2,7 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { CalendarClock, Link2, Users } from "lucide-react";
-import { Button, Checkbox, Dialog, FormField, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  FormField,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+  useToast,
+} from "@aura/ui";
 import {
   createScheduleAction,
   deleteScheduleAction,
@@ -71,9 +81,9 @@ export function SharePanel({
   members: Member[];
 }) {
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const alert = useAlert();
+  const toast = useToast();
 
   const [roles, setRoles] = useState<Record<string, ShareRow["role"] | "">>(() => {
     const initial: Record<string, ShareRow["role"] | ""> = {};
@@ -89,13 +99,14 @@ export function SharePanel({
   const [hourUtc, setHourUtc] = useState(6);
   const [recipients, setRecipients] = useState<string[]>([]);
 
-  const act = (fn: () => Promise<{ error?: string }>, success: string) => {
-    setError(null);
-    setNotice(null);
+  const act = (fn: () => Promise<{ error?: string }>, success: string, failureTitle: string) => {
     startTransition(async () => {
       const result = await fn();
-      if (result.error) setError(result.error);
-      else setNotice(success);
+      if (result.error) {
+        await alert({ title: failureTitle, body: result.error, tone: "danger" });
+        return;
+      }
+      toast(success);
     });
   };
 
@@ -124,7 +135,13 @@ export function SharePanel({
             <Button
               size="sm"
               disabled={pending}
-              onClick={() => act(() => publishReportAction(reportId), "Published.")}
+              onClick={() =>
+                act(
+                  () => publishReportAction(reportId),
+                  "Published",
+                  "Couldn't publish the report",
+                )
+              }
             >
               {status === "published" ? "Publish changes" : "Publish"}
             </Button>
@@ -186,7 +203,8 @@ export function SharePanel({
                         role: role as ShareRow["role"],
                       })),
                   ),
-                "Access updated.",
+                "Access updated",
+                "Couldn't update access",
               )
             }
           >
@@ -222,8 +240,15 @@ export function SharePanel({
               onClick={() =>
                 startTransition(async () => {
                   const result = await setLinkAction(reportId, true);
-                  if (result.error) setError(result.error);
-                  else setLinkToken(result.data?.token ?? null);
+                  if (result.error) {
+                    await alert({
+                      title: "Couldn't create the read-only link",
+                      body: result.error,
+                      tone: "danger",
+                    });
+                    return;
+                  }
+                  setLinkToken(result.data?.token ?? null);
                 })
               }
             >
@@ -237,11 +262,16 @@ export function SharePanel({
                 onClick={() =>
                   startTransition(async () => {
                     const result = await setLinkAction(reportId, false);
-                    if (result.error) setError(result.error);
-                    else {
-                      setLinkToken(null);
-                      setNotice("Link revoked. The old URL will no longer open.");
+                    if (result.error) {
+                      await alert({
+                        title: "Couldn't revoke the read-only link",
+                        body: result.error,
+                        tone: "danger",
+                      });
+                      return;
                     }
+                    setLinkToken(null);
+                    toast("Link revoked. The old URL will no longer open.");
                   })
                 }
               >
@@ -296,7 +326,11 @@ export function SharePanel({
                     variant="ghost"
                     disabled={pending}
                     onClick={() =>
-                      act(() => deleteScheduleAction(reportId, schedule.id), "Schedule removed.")
+                      act(
+                        () => deleteScheduleAction(reportId, schedule.id),
+                        "Schedule removed",
+                        "Couldn't remove the schedule",
+                      )
                     }
                   >
                     Remove
@@ -391,7 +425,8 @@ export function SharePanel({
                       hourUtc,
                       recipients,
                     }),
-                  "Schedule created.",
+                  "Schedule created",
+                  "Couldn't create the schedule",
                 )
               }
             >
@@ -401,7 +436,13 @@ export function SharePanel({
               size="sm"
               variant="secondary"
               disabled={pending}
-              onClick={() => act(() => runNowAction(reportId), "Report run - see Runs.")}
+              onClick={() =>
+                act(
+                  () => runNowAction(reportId),
+                  "Report run - see Runs",
+                  "Couldn't run the report",
+                )
+              }
             >
               Run now
             </Button>
@@ -412,9 +453,6 @@ export function SharePanel({
             </p>
           ) : null}
         </section>
-
-        {error ? <p className="text-xs text-danger-text">{error}</p> : null}
-        {notice ? <p className="text-xs text-success-text">{notice}</p> : null}
       </div>
     </Dialog>
   );

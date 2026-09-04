@@ -13,6 +13,7 @@ import {
   Input,
   MonoLabel,
   Select,
+  useAlert,
 } from "@aura/ui";
 import { connectCustomAction } from "./actions";
 import { IntegrationCard, type Integration } from "./integration-card";
@@ -246,15 +247,14 @@ function CustomWebhookForm({
   const [authPrefix, setAuthPrefix] = useState("");
   const [secret, setSecret] = useState("");
   const [onlyQualified, setOnlyQualified] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const needsHeaderName = authType === "header" || authType === "header_prefix" || authType === "query";
   const needsSecret = authType !== "none";
 
   const submit = () =>
     startTransition(async () => {
-      setError(null);
       const res = await connectCustomAction({
         workspaceId,
         orgId,
@@ -266,8 +266,15 @@ function CustomWebhookForm({
         authSecret: secret.trim() || undefined,
         onlyQualified,
       });
-      if (res.error) setError(res.error);
-      else onDone();
+      if (res.error) {
+        await alert({
+          title: "Couldn't connect the endpoint",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      onDone();
     });
 
   return (
@@ -351,12 +358,6 @@ function CustomWebhookForm({
           onChange={(e) => setOnlyQualified(e.target.checked)}
         />
       </div>
-
-      {error ? (
-        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-          {error}
-        </p>
-      ) : null}
 
       <Button
         type="button"

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { FileText, Search } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
 import { searchTranscriptsAction, type SearchResult } from "./actions";
@@ -41,21 +41,24 @@ export function SearchExplorer({
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const run = () =>
     startTransition(async () => {
-      setError(null);
       const res = await searchTranscriptsAction(q, orgId);
       setSearched(true);
       if (res.error) {
-        setError(res.error);
         setResults(null);
-      } else {
-        setResults(res.results ?? []);
+        await alert({
+          title: "Couldn't run the search",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      setResults(res.results ?? []);
     });
 
   return (
@@ -91,12 +94,6 @@ export function SearchExplorer({
             {pending ? "SEARCHING…" : "SEARCH"}
           </BrutalButton>
         </form>
-
-        {error ? (
-          <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-            {error}
-          </p>
-        ) : null}
       </Card>
 
       {results !== null ? (

@@ -23,6 +23,8 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
+  useToast,
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import {
@@ -187,11 +189,11 @@ export function CallsExplorer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [reprocessMsg, setReprocessMsg] = useState<string | null>(null);
   const [notes, setNotes] = useState<CallNote[] | null>(null);
   const [noteBody, setNoteBody] = useState("");
-  const [noteError, setNoteError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const openDrawer = useCallback(
     (callId: string) => {
@@ -200,10 +202,8 @@ export function CallsExplorer({
       setDetail(null);
       setError(null);
       setAudioUrl(null);
-      setReprocessMsg(null);
       setNotes(null);
       setNoteBody("");
-      setNoteError(null);
       pollsRef.current = 0;
       setLoading(true);
       startTransition(async () => {
@@ -277,14 +277,14 @@ export function CallsExplorer({
 
   const addNote = () => {
     if (!openId || !noteBody.trim()) return;
-    setNoteError(null);
     startTransition(async () => {
       const res = await addCallNoteAction(openId, noteBody.trim(), orgId);
       if (res.error) {
-        setNoteError(res.error);
+        await alert({ title: "Couldn't add the note", body: res.error, tone: "danger" });
         return;
       }
       setNoteBody("");
+      toast("Note added");
       const refreshed = await getCallNotesAction(openId, orgId);
       setNotes(refreshed.error ? notes : refreshed.notes ?? []);
     });
@@ -297,11 +297,17 @@ export function CallsExplorer({
 
   const reprocess = () => {
     if (!openId) return;
-    setReprocessMsg(null);
     startTransition(async () => {
       const res = await reprocessCallAction(openId, orgId);
-      setReprocessMsg(res.error ? res.error : `Reprocess ${res.status ?? "queued"}`);
-      if (res.error) return;
+      if (res.error) {
+        await alert({
+          title: "Couldn't reprocess the call",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      toast(`Reprocess ${res.status ?? "queued"}`);
       pollsRef.current = 0;
       // Re-read immediately: the call leaves COMPLETE for a pipeline state, which
       // is what arms the poll above. Without this the drawer keeps showing the
@@ -316,8 +322,15 @@ export function CallsExplorer({
     setAudioUrl(null);
     startTransition(async () => {
       const res = await getCallAudioAction(openId, orgId);
-      if (res.error) setError(res.error);
-      else setAudioUrl(res.url ?? null);
+      if (res.error) {
+        await alert({
+          title: "Couldn't load the recording",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setAudioUrl(res.url ?? null);
     });
   };
 
@@ -912,11 +925,6 @@ export function CallsExplorer({
                           <MessageSquarePlus aria-hidden="true" className="h-4 w-4" />
                           {pending ? "Saving…" : "Add note"}
                         </Button>
-                        {noteError ? (
-                          <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-                            {noteError}
-                          </p>
-                        ) : null}
                       </div>
                     </section>
 
@@ -937,14 +945,6 @@ export function CallsExplorer({
                           {audioUrl ? "Reload audio" : "Load audio"}
                         </Button>
                       </div>
-                      {/* aria-live: the reprocess result is the only feedback
-                          this button gives, and it appears after the click
-                          rather than on it. */}
-                      {reprocessMsg ? (
-                        <p aria-live="polite" className="text-sm text-text-muted">
-                          {reprocessMsg}
-                        </p>
-                      ) : null}
                       {audioUrl ? (
                         <div className="space-y-2">
                           <MonoLabel>Recording playback</MonoLabel>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { StatusChip } from "@aura/ui";
+import { StatusChip, useAlert, useToast } from "@aura/ui";
 import {
   approveQualificationAction,
   listQualificationsAction,
@@ -50,10 +50,11 @@ export function QualificationQueue() {
   const [items, setItems] = useState<Qualification[]>([]);
   const [includeJunk, setIncludeJunk] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, Edits>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const load = useCallback(() => {
     startTransition(async () => {
@@ -92,10 +93,10 @@ export function QualificationQueue() {
     });
     setBusyId(null);
     if (res.error) {
-      setError(res.error);
+      await alert({ title: "Couldn't create the lead", body: res.error, tone: "danger" });
       return;
     }
-    setNotice(`Lead created from ${q.peer_address}.`);
+    toast(`Lead created from ${q.peer_address}`);
     setItems((prev) => prev.filter((i) => i.id !== q.id));
   };
 
@@ -104,7 +105,11 @@ export function QualificationQueue() {
     const res = await rejectQualificationAction(q.id);
     setBusyId(null);
     if (res.error) {
-      setError(res.error);
+      await alert({
+        title: "Couldn't reject this thread",
+        body: res.error,
+        tone: "danger",
+      });
       return;
     }
     setItems((prev) => prev.filter((i) => i.id !== q.id));
@@ -131,7 +136,6 @@ export function QualificationQueue() {
       </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {notice ? <p className="text-sm text-text-muted">{notice}</p> : null}
 
       {items.length === 0 ? (
         <p className="text-sm text-text-muted">

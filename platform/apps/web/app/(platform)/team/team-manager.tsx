@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Plus, Trash2, UserPlus, Users } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass, selectClass } from "@/lib/form";
 import {
@@ -75,15 +75,13 @@ export function TeamManager({
   const [role, setRole] = useState<string>("workspace_member");
   const [listen, setListen] = useState(true);
   const [exportPerm, setExportPerm] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [wsName, setWsName] = useState("");
-  const [wsError, setWsError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
 
   const addMember = () =>
     startTransition(async () => {
-      setError(null);
       const res = await addMemberAction({
         email: email.trim(),
         name: name.trim(),
@@ -91,29 +89,44 @@ export function TeamManager({
         recordingsListen: listen,
         recordingsExport: exportPerm,
       }, orgId);
-      if (res.error) setError(res.error);
-      else {
-        setEmail("");
-        setName("");
+      if (res.error) {
+        await alert({
+          title: "Couldn't add the member",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      setEmail("");
+      setName("");
     });
 
   const changeRole = (userId: string, nextRole: string) =>
     startTransition(async () => {
-      setError(null);
       const res = await updateMemberAction({ userId, role: nextRole }, orgId);
-      if (res.error) setError(res.error);
+      if (res.error) {
+        await alert({
+          title: "Couldn't change the role",
+          body: res.error,
+          tone: "danger",
+        });
+      }
     });
 
   /** Assign a CRM role (0039). Sent alone, so the legacy `role` above is untouched. */
   const changeCrmRole = (userId: string, nextRoleId: string) =>
     startTransition(async () => {
-      setError(null);
       const res = await updateMemberAction(
         { userId, roleId: nextRoleId === "" ? null : nextRoleId },
         orgId,
       );
-      if (res.error) setError(res.error);
+      if (res.error) {
+        await alert({
+          title: "Couldn't change the CRM role",
+          body: res.error,
+          tone: "danger",
+        });
+      }
     });
 
   const togglePerm = (m: Member, key: "recordingsListen" | "recordingsExport") =>
@@ -136,10 +149,16 @@ export function TeamManager({
 
   const createWorkspace = () =>
     startTransition(async () => {
-      setWsError(null);
       const res = await createWorkspaceAction(wsName.trim(), orgId);
-      if (res.error) setWsError(res.error);
-      else setWsName("");
+      if (res.error) {
+        await alert({
+          title: "Couldn't create the workspace",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setWsName("");
     });
 
   return (
@@ -334,12 +353,6 @@ export function TeamManager({
               {pending ? "SAVING…" : "ADD MEMBER"}
             </BrutalButton>
           </div>
-
-          {error ? (
-            <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-              {error}
-            </p>
-          ) : null}
         </Card>
       </div>
 
@@ -388,11 +401,6 @@ export function TeamManager({
               <Plus className="h-4 w-4" />
               {pending ? "CREATING…" : "CREATE WORKSPACE"}
             </BrutalButton>
-            {wsError ? (
-              <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-                {wsError}
-              </p>
-            ) : null}
           </div>
         </Card>
       </div>

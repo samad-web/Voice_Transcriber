@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Card, FormField, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+} from "@aura/ui";
 import { createTargetAction, deleteTargetAction, type SalesTarget } from "./actions";
 
 export interface TeamMember {
@@ -69,18 +78,21 @@ export function TargetsManager({
     metric: "won_value" as "won_value" | "won_count",
     targetValue: "",
   });
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const byTarget = new Map(attainment.map((a) => [a.targetId, a]));
 
   const submit = () => {
     const value = Number(draft.targetValue);
     if (!Number.isFinite(value) || value <= 0) {
-      setError("Give the target a number greater than zero");
+      void alert({
+        title: "The target needs a number",
+        body: "Give it a number greater than zero.",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
     startTransition(async () => {
       const result = await createTargetAction({
         orgId,
@@ -91,7 +103,11 @@ export function TargetsManager({
         targetValue: value,
       });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't set the target",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setDraft({ ...draft, targetValue: "" });
@@ -101,7 +117,13 @@ export function TargetsManager({
   const remove = (id: string) => {
     startTransition(async () => {
       const result = await deleteTargetAction(id, orgId);
-      if (result.error) setError(result.error);
+      if (result.error) {
+        await alert({
+          title: "Couldn't delete the target",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
@@ -180,15 +202,6 @@ export function TargetsManager({
             </Button>
           </div>
         </div>
-
-        {error ? (
-          <p
-            role="alert"
-            className="mt-3 rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-          >
-            {error}
-          </p>
-        ) : null}
 
         <div className="mt-3">
           <Button type="button" onClick={submit} loading={pending}>

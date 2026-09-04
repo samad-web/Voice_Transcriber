@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { resolveCallIntegrityFlagAction, type CallIntegrityFlag } from "./actions";
 
 const FLAG_LABEL: Record<CallIntegrityFlag["flag_type"], string> = {
@@ -31,14 +31,13 @@ function detailLine(flag: CallIntegrityFlag): string {
 /** Review queue for /v1/call-integrity-flags - dismiss what's fine, resolve what got fixed. */
 export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }) {
   const [flags, setFlags] = useState(initial);
-  const [error, setError] = useState<string | null>(null);
   // Which single flag is mid-action, not a workspace-wide flag - acting on one
   // card must not disable the buttons on every other open flag.
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const alert = useAlert();
 
   const act = (flag: CallIntegrityFlag, status: "dismissed" | "resolved") => {
-    setError(null);
     setPendingId(flag.id);
     // Optimistic: drop it from the queue immediately, then roll back on
     // failure - the same contract task-list.tsx's complete() uses for acting
@@ -46,11 +45,18 @@ export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }
     setFlags((prev) => prev.filter((f) => f.id !== flag.id));
     startTransition(async () => {
       const result = await resolveCallIntegrityFlagAction(flag.id, status);
-      if (result.error) {
-        setError(result.error);
-        setFlags((prev) => [flag, ...prev]);
-      }
+      // Cleared before the dialog, not after: the card is back in the queue and
+      // its buttons must not stay dead behind a modal nobody has dismissed yet.
       setPendingId(null);
+      if (result.error) {
+        setFlags((prev) => [flag, ...prev]);
+        await alert({
+          title:
+            status === "dismissed" ? "Couldn't dismiss the flag" : "Couldn't mark the flag fixed",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
@@ -65,15 +71,6 @@ export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }
 
   return (
     <div className="space-y-4">
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
       <div className="space-y-3">
         {flags.map((flag) => (
           <Card key={flag.id}>

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Copy, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { inputClass, selectClass } from "@/lib/form";
 import {
   activateAgentAction,
@@ -46,15 +46,14 @@ export function AgentStudio({
     { key: "intent", type: "enum", description: "Buyer intent", required: true, enumValues: ["hot", "warm", "cold"] },
   ]);
   const [activate, setActivate] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   // "Start from" (clone) and "Describe with AI" (generate) both just
   // prefill name/systemPrompt/fields above - the create flow below is
   // unchanged regardless of how the form got filled in.
   const [baseKey, setBaseKey] = useState("");
   const [description, setDescription] = useState("");
-  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const updateField = (i: number, patch: Partial<AgentFieldInput>) =>
     setFields((prev) => prev.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
@@ -70,8 +69,6 @@ export function AgentStudio({
 
   const generate = () => {
     if (!description.trim()) return;
-    setGenerateError(null);
-    setError(null);
     startTransition(async () => {
       const base = agents.find((a) => `${a.id}-${a.version}` === baseKey);
       const res = await generateAgentAction({
@@ -81,7 +78,11 @@ export function AgentStudio({
         orgId,
       });
       if (res.error) {
-        setGenerateError(res.error);
+        await alert({
+          title: "Couldn't generate the agent",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       if (res.name) setName(res.name);
@@ -107,12 +108,17 @@ export function AgentStudio({
         workspaceId,
         orgId,
       });
-      setError(res.error ?? null);
-      if (!res.error) {
-        setName("");
-        setBaseKey("");
-        setDescription("");
+      if (res.error) {
+        await alert({
+          title: "Couldn't create the agent",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      setName("");
+      setBaseKey("");
+      setDescription("");
     });
 
   const compiled = compileToJsonSchema({
@@ -198,11 +204,6 @@ export function AgentStudio({
             <Wand2 className="h-3.5 w-3.5" />
             {pending ? "GENERATING…" : "GENERATE"}
           </BrutalButton>
-          {generateError ? (
-            <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-              {generateError}
-            </p>
-          ) : null}
         </Card>
 
         <Card elevated className="space-y-4">
@@ -348,12 +349,6 @@ export function AgentStudio({
               {pending ? "CREATING..." : "CREATE AGENT V1"}
             </BrutalButton>
           </div>
-
-          {error ? (
-            <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-              {error}
-            </p>
-          ) : null}
         </Card>
 
         <Card elevated>

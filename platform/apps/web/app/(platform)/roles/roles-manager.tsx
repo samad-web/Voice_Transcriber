@@ -1,7 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Card, FormField, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+  useToast,
+} from "@aura/ui";
 import {
   createRoleAction,
   fetchRolePermissionsAction,
@@ -47,20 +57,22 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
   const [loadingGrid, setLoadingGrid] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [newName, setNewName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const selectRole = (role: Role) => {
     setSelected(role);
-    setSaved(false);
-    setError(null);
     setLoadingGrid(true);
     startTransition(async () => {
       const result = await fetchRolePermissionsAction(role.id, orgId);
       setLoadingGrid(false);
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: `Couldn't load what ${role.name} can do`,
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       const grants = result.grants ?? [];
@@ -78,7 +90,6 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
   };
 
   const toggle = (o: PermissionObjectType, a: PermissionAction) => {
-    setSaved(false);
     setGranted((prev) => {
       const next = new Set(prev);
       const key = grantKey(o, a);
@@ -90,7 +101,6 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
 
   const savePermissions = () => {
     if (!selected) return;
-    setError(null);
     startTransition(async () => {
       const grants = Array.from(granted).map((key) => {
         const [objectType, action] = key.split(":") as [PermissionObjectType, PermissionAction];
@@ -103,27 +113,42 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
       });
       const result = await saveRolePermissionsAction(selected.id, grants, orgId);
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't save the permissions",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
-      setSaved(true);
+      toast("Permissions saved");
     });
   };
 
   const createRole = () => {
-    setError(null);
     if (!/^[a-z][a-z0-9_]*$/.test(newKey)) {
-      setError('Key must be snake_case, starting with a letter (e.g. "sales_rep")');
+      void alert({
+        title: "That key won't work",
+        body: 'Keys must be snake_case, starting with a letter (e.g. "sales_rep").',
+        tone: "danger",
+      });
       return;
     }
     if (!newName.trim()) {
-      setError("Name is required");
+      void alert({
+        title: "The role needs a name",
+        body: "The name is what the role is called everywhere in the console.",
+        tone: "danger",
+      });
       return;
     }
     startTransition(async () => {
       const result = await createRoleAction({ key: newKey, name: newName, orgId });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't add the role",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setNewKey("");
@@ -231,13 +256,12 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
                           <Select
                             aria-label={`Which ${objectType} records`}
                             value={scopes[objectType] ?? "all"}
-                            onChange={(e) => {
-                              setSaved(false);
+                            onChange={(e) =>
                               setScopes((prev) => ({
                                 ...prev,
                                 [objectType]: e.target.value as PermissionScope,
-                              }));
-                            }}
+                              }))
+                            }
                             className="min-w-[9rem] text-xs"
                           >
                             <option value="all">Everyone&rsquo;s</option>
@@ -251,24 +275,10 @@ export function RolesManager({ roles, orgId }: { roles: Role[]; orgId: string })
               </div>
             )}
 
-            {error ? (
-              <p
-                role="alert"
-                className="mt-3 rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-              >
-                {error}
-              </p>
-            ) : null}
-
             <div className="mt-4 flex items-center gap-3">
               <Button type="button" onClick={savePermissions} loading={pending} disabled={loadingGrid}>
                 Save permissions
               </Button>
-              {saved && !pending ? (
-                <span role="status" className="text-xs text-text-muted">
-                  Saved
-                </span>
-              ) : null}
             </div>
           </>
         )}

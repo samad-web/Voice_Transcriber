@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import { Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { listBookingsAction, markAttendanceAction, type Booking } from "./actions";
 
 /**
@@ -32,12 +32,10 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
   const [days, setDays] = useState(14);
   /** false = what's coming up. true = what has already run, for marking. */
   const [past, setPast] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-
-  /** Per-row result, keyed by booking id so it can never render under another. */
-  const [note, setNote] = useState<{ id: string; text: string; bad?: boolean } | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
+  const alert = useAlert();
+  const toast = useToast();
 
   // Skipped on first render - the server already fetched 14 upcoming days.
   const [mounted, setMounted] = useState(false);
@@ -48,23 +46,34 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
     }
     start(async () => {
       const res = await listBookingsAction(days, past);
-      if (res.error) setError(res.error);
-      else {
-        setError(null);
-        setBookings(res.bookings ?? []);
+      if (res.error) {
+        await alert({
+          title: "Couldn't load the bookings",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      setBookings(res.bookings ?? []);
     });
-    // `days` and `past` are the triggers; `mounted` guards the first pass.
-  }, [days, past]); // eslint-disable-line react-hooks/exhaustive-deps
+    // `days` and `past` are the triggers; `mounted` guards the first pass -
+    // deliberately not in the dependency list, or setting it would re-run this
+    // and refetch on mount, which is the fetch the server already did.
+  }, [days, past]);
 
   function mark(booking: Booking, outcome: "attended" | "no_show") {
-    setNote(null);
     setMarking(booking.id);
     start(async () => {
       const res = await markAttendanceAction(booking.id, outcome);
       setMarking(null);
       if (res.error) {
-        setNote({ id: booking.id, text: res.error, bad: true });
+        await alert({
+          title: outcome === "attended"
+            ? "Couldn't mark the call as attended"
+            : "Couldn't mark the call as missed",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       // Update in place rather than relying on revalidatePath alone: this is a
@@ -74,9 +83,8 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
       setBookings((bs) =>
         bs.map((b) => (b.id === booking.id ? { ...b, attendance: outcome } : b)),
       );
-      setNote({
-        id: booking.id,
-        text: !res.hasEnquirer
+      toast(
+        !res.hasEnquirer
           ? "Marked. No message was sent - this enquirer's details were erased."
           : outcome === "attended"
             ? "Marked as attended. A thank-you message is queued."
@@ -87,7 +95,7 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
               `Marked as missed. A "sorry we missed you" message is queued, and the ` +
               `three follow-ups are queued behind it - they only send if you have ` +
               `switched those templates on.`,
-      });
+      );
     });
   }
 
@@ -150,12 +158,6 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
           </div>
         </div>
       </div>
-
-      {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-danger/30 bg-danger/5 p-2.5 text-xs text-danger-text">
-          {error}
-        </p>
-      ) : null}
 
       {pending ? <p className="mt-3 text-xs text-text-muted">Loading…</p> : null}
 
@@ -294,18 +296,6 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
                     ) : null}
                   </div>
                 </div>
-
-                {note?.id === b.id ? (
-                  <p
-                    role="status"
-                    className={
-                      "mt-2.5 border-t border-border pt-2 text-xs " +
-                      (note.bad ? "text-danger-text" : "text-text-muted")
-                    }
-                  >
-                    {note.text}
-                  </p>
-                ) : null}
 
                 {b.attendance && b.attendance_recorded_by ? (
                   <p className="mt-2.5 border-t border-border pt-2 text-xs text-text-muted">

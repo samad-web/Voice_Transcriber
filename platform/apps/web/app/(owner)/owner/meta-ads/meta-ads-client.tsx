@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button } from "@aura/ui";
+import { Button, useAlert } from "@aura/ui";
 import { startOAuthRedirect } from "../lib/oauth-redirect";
 import { startMetaConnectAction } from "./actions";
 
@@ -16,12 +16,11 @@ import { startMetaConnectAction } from "./actions";
  * to build here.
  */
 export function MetaAdsConnect() {
-  const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const connect = () => {
-    setError(null);
     startTransition(async () => {
       const result = await startMetaConnectAction();
       if (result.notConfigured) {
@@ -29,7 +28,9 @@ export function MetaAdsConnect() {
         return;
       }
       const failure = startOAuthRedirect(result, "Could not start Facebook sign-in");
-      if (failure) setError(failure);
+      if (failure) {
+        await alert({ title: "Couldn't connect Meta", body: failure, tone: "danger" });
+      }
     });
   };
 
@@ -43,14 +44,6 @@ export function MetaAdsConnect() {
 
   return (
     <div className="space-y-3">
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
       <Button type="button" loading={pending} onClick={connect}>
         Connect Facebook Page
       </Button>

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import {
   dismissDuplicateAction,
   mergeRecordsAction,
@@ -21,29 +21,31 @@ import type { DuplicateMatch } from "../types";
 export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
   const router = useRouter();
   const [duplicates, setDuplicates] = useState(initial);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const scan = (objectType: "contact" | "account") => {
-    setError(null);
-    setNotice(null);
     startTransition(async () => {
       const result = await scanDuplicatesAction(objectType);
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: `Couldn't scan ${objectType === "contact" ? "contacts" : "accounts"}`,
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
 
       // "Found nothing" and "could not look" are different answers, and a
       // queue that stays empty looks identical either way. Say which.
       if (result.fuzzy === "unavailable") {
-        setNotice(
+        toast(
           "Scanned exact matches only - fuzzy name matching needs the pg_trgm extension, " +
             "which is not installed on this database.",
         );
       } else if (result.newCandidates === 0) {
-        setNotice(`No new duplicates found (name similarity ≥ ${result.threshold ?? ""}).`);
+        toast(`No new duplicates found (name similarity ≥ ${result.threshold ?? ""}).`);
       }
 
       // The action already revalidates the path; nothing more to do here if
@@ -55,11 +57,10 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
   };
 
   const keep = (dup: DuplicateMatch, survivorId: string, victimId: string) => {
-    setError(null);
     startTransition(async () => {
       const result = await mergeRecordsAction(dup.object_type, survivorId, victimId);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't merge the records", body: result.error, tone: "danger" });
         return;
       }
       setDuplicates((prev) => prev.filter((d) => d.id !== dup.id));
@@ -67,11 +68,10 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
   };
 
   const dismiss = (dup: DuplicateMatch) => {
-    setError(null);
     startTransition(async () => {
       const result = await dismissDuplicateAction(dup.id);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't dismiss the pair", body: result.error, tone: "danger" });
         return;
       }
       setDuplicates((prev) => prev.filter((d) => d.id !== dup.id));
@@ -88,24 +88,6 @@ export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
           Scan accounts
         </Button>
       </div>
-
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
-      {notice ? (
-        <p
-          role="status"
-          className="rounded-md border border-border bg-surface-hover p-3 text-sm text-text-muted"
-        >
-          {notice}
-        </p>
-      ) : null}
 
       {duplicates.length === 0 ? (
         <EmptyState

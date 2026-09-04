@@ -11,6 +11,7 @@ import {
   MonoLabel,
   Select,
   StatusChip,
+  useAlert,
 } from "@aura/ui";
 import type { CustomFieldDefinition } from "@/app/(owner)/owner/types";
 import { archiveFieldAction, createFieldAction } from "./actions";
@@ -56,17 +57,24 @@ export function CustomFieldsManager({
   const [required, setRequired] = useState(false);
   const [optionsText, setOptionsText] = useState("");
   const [lookupObjectType, setLookupObjectType] = useState<"contact" | "account" | "deal">("contact");
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const submit = () => {
-    setError(null);
     if (!/^[a-z][a-z0-9_]*$/.test(key)) {
-      setError('Key must be snake_case, starting with a letter (e.g. "industry")');
+      void alert({
+        title: "That key won't work",
+        body: 'Keys must be snake_case, starting with a letter (e.g. "industry").',
+        tone: "danger",
+      });
       return;
     }
     if (!label.trim()) {
-      setError("Label is required");
+      void alert({
+        title: "The field needs a label",
+        body: "The label is what the field is called in the console.",
+        tone: "danger",
+      });
       return;
     }
     const options = NEEDS_OPTIONS.has(type)
@@ -77,7 +85,11 @@ export function CustomFieldsManager({
           .map((v) => ({ value: v.toLowerCase().replace(/\s+/g, "_"), label: v }))
       : undefined;
     if (NEEDS_OPTIONS.has(type) && (!options || options.length === 0)) {
-      setError("List at least one option, comma-separated");
+      void alert({
+        title: "This field needs its choices",
+        body: "List at least one option, comma-separated.",
+        tone: "danger",
+      });
       return;
     }
 
@@ -93,7 +105,11 @@ export function CustomFieldsManager({
         orgId,
       });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't add the field",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setKey("");
@@ -106,7 +122,13 @@ export function CustomFieldsManager({
   const archive = (id: string) => {
     startTransition(async () => {
       const result = await archiveFieldAction(id, orgId);
-      if (result.error) setError(result.error);
+      if (result.error) {
+        await alert({
+          title: "Couldn't archive the field",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
@@ -167,14 +189,6 @@ export function CustomFieldsManager({
             onChange={(e) => setRequired(e.target.checked)}
             label="Required"
           />
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-            >
-              {error}
-            </p>
-          ) : null}
           <Button type="button" onClick={submit} loading={pending}>
             Add field
           </Button>

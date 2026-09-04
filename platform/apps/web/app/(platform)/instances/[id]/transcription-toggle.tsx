@@ -3,7 +3,15 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import {
+  BrutalButton,
+  Card,
+  MonoLabel,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { reprocessBacklogAction, setTranscriptionEnabledAction } from "./actions";
 
 /**
@@ -38,11 +46,11 @@ export function TranscriptionToggle({
   instanceName: string;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
 
   const disable = async () => {
     const ok = await confirm({
@@ -54,14 +62,17 @@ export function TranscriptionToggle({
       tone: "danger",
     });
     if (!ok) return;
-    setError(null);
-    setNote(null);
     startTransition(async () => {
       const res = await setTranscriptionEnabledAction({ orgId, enabled: false });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: "Couldn't stop transcription",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
+      toast("Transcription is off for this instance.");
       router.refresh();
     });
   };
@@ -72,17 +83,19 @@ export function TranscriptionToggle({
    * which is the more important half - and the backlog can be retried.
    */
   const enable = (days: number | null) => {
-    setError(null);
-    setNote(null);
     setAsking(false);
     startTransition(async () => {
       const on = await setTranscriptionEnabledAction({ orgId, enabled: true });
       if (on.error) {
-        setError(on.error);
+        await alert({
+          title: "Couldn't turn transcription on",
+          body: on.error,
+          tone: "danger",
+        });
         return;
       }
       if (days === 0) {
-        setNote("Transcription on. Backlog left as it was.");
+        toast("Transcription on. Backlog left as it was.");
         router.refresh();
         return;
       }
@@ -92,10 +105,14 @@ export function TranscriptionToggle({
         sinceDays: days,
       });
       if (res.error) {
-        setError(`Transcription is on, but the backlog could not be queued: ${res.error}`);
+        await alert({
+          title: "Couldn't queue the backlog",
+          body: `Transcription is on and new calls are being transcribed, but the backlog could not be queued: ${res.error}`,
+          tone: "danger",
+        });
         return;
       }
-      setNote(
+      toast(
         res.requeued === 0
           ? "Transcription on. No untranscribed calls in that window."
           : `Transcription on. ${res.requeued} call${res.requeued === 1 ? "" : "s"} queued - they'll appear as they finish.`,
@@ -155,17 +172,6 @@ export function TranscriptionToggle({
           {pending ? "SAVING…" : enabled ? "DISABLE TRANSCRIPTION" : "ENABLE TRANSCRIPTION"}
         </BrutalButton>
       )}
-
-      {note ? (
-        <p className="text-xs text-neutral-700 font-sans font-bold border-2 border-black bg-neutral-50 p-3">
-          {note}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-          {error}
-        </p>
-      ) : null}
     </Card>
   );
 }

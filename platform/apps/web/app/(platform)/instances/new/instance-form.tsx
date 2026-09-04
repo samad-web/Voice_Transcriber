@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Building2 } from "lucide-react";
-import { BrutalButton, Card, MonoLabel } from "@aura/ui";
+import { ArrowRight, Building2 } from "lucide-react";
+import { BrutalButton, Card, MonoLabel, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import { EnrollmentCredentials } from "../enrollment-credentials";
 import { createTenantAction, type ProvisionResult } from "./actions";
@@ -25,19 +25,27 @@ export function InstanceForm() {
   const [enableCrm, setEnableCrm] = useState(false);
   const [result, setResult] = useState<ProvisionResult | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const submit = () => {
     startTransition(async () => {
-      setResult(
-        await createTenantAction({
-          name,
-          consentPolicy,
-          retentionDays,
-          ttlMinutes,
-          maxUses,
-          enableCrm,
-        }),
-      );
+      const provisioned = await createTenantAction({
+        name,
+        consentPolicy,
+        retentionDays,
+        ttlMinutes,
+        maxUses,
+        enableCrm,
+      });
+      if (provisioned.error) {
+        await alert({
+          title: "Couldn't create the instance",
+          body: provisioned.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setResult(provisioned);
     });
   };
 
@@ -167,13 +175,6 @@ export function InstanceForm() {
           <Building2 className="h-4 w-4" />
           {pending ? "PROVISIONING..." : "CREATE INSTANCE"}
         </BrutalButton>
-
-        {result?.error ? (
-          <div className="border-2 border-red-600 bg-red-50 p-3.5 flex gap-2.5 items-start">
-            <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700 font-sans font-bold">{result.error}</p>
-          </div>
-        ) : null}
       </Card>
 
       {result?.adminKey ? (

@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Button, Card, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { useEffect, useState, useTransition } from "react";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  StatusChip,
+  useAlert,
+  useToast,
+} from "@aura/ui";
 import { startOAuthRedirect } from "../lib/oauth-redirect";
 import { connectBasicAction, disconnectAction, startOAuthAction } from "./actions";
 
@@ -65,24 +74,36 @@ export function ConnectionsManager({
   const [openForm, setOpenForm] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [accountEmail, setAccountEmail] = useState("");
-  const [error, setError] = useState<string | null>(initialError);
-  const [connectedEmail, setConnectedEmail] = useState<string | null>(initialConnected);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
+
+  // The OAuth round trip ends on this page with ?connected= or ?error= in the
+  // query. That is still the answer to a button somebody pressed here a moment
+  // ago, so it is reported the same way as an attempt that never left the page
+  // - the redirect is an implementation detail, not a different kind of event.
+  // Both props are read from the URL by the server component and never change
+  // while this stays mounted, so this announces once.
+  useEffect(() => {
+    if (initialConnected) toast(`Connected ${initialConnected}`);
+    if (initialError) {
+      void alert({ title: "Couldn't finish connecting", body: initialError, tone: "danger" });
+    }
+  }, [initialConnected, initialError, alert, toast]);
 
   const byProvider = new Map(providers.map((p) => [p.id, p]));
 
   const beginOAuth = (provider: string) => {
-    setError(null);
-    setConnectedEmail(null);
     startTransition(async () => {
       const result = await startOAuthAction(provider);
       const failure = startOAuthRedirect(result, "Could not start sign-in");
-      if (failure) setError(failure);
+      if (failure) {
+        await alert({ title: "Couldn't start sign-in", body: failure, tone: "danger" });
+      }
     });
   };
 
   const openBasic = (provider: ProviderView) => {
-    setError(null);
     setOpenForm(provider.id);
     setAccountEmail("");
     setDraft(
@@ -91,7 +112,6 @@ export function ConnectionsManager({
   };
 
   const submitBasic = (provider: ProviderView) => {
-    setError(null);
     startTransition(async () => {
       const result = await connectBasicAction({
         provider: provider.id,
@@ -99,7 +119,11 @@ export function ConnectionsManager({
         config: draft,
       });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: `Couldn't connect ${provider.label}`,
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setOpenForm(null);
@@ -107,32 +131,20 @@ export function ConnectionsManager({
   };
 
   const disconnect = (id: string) => {
-    setError(null);
     startTransition(async () => {
       const result = await disconnectAction(id);
-      if (result.error) setError(result.error);
+      if (result.error) {
+        await alert({
+          title: "Couldn't disconnect the account",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
   return (
     <div className="space-y-6">
-      {connectedEmail ? (
-        <p
-          role="status"
-          className="rounded-md border border-success bg-success-subtle p-3 text-sm font-medium text-success-text"
-        >
-          Connected {connectedEmail}.
-        </p>
-      ) : null}
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
       <Card>
         <MonoLabel>Your connected accounts</MonoLabel>
         {connections.length === 0 ? (

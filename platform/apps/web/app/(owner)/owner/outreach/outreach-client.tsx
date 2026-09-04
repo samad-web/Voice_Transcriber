@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { StatusChip } from "@aura/ui";
+import { StatusChip, useAlert } from "@aura/ui";
 import {
   actOnStepAction,
   fetchDueAction,
@@ -32,6 +32,7 @@ export function Outreach() {
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
+  const alert = useAlert();
 
   const load = useCallback(() => {
     start(async () => {
@@ -54,8 +55,14 @@ export function Outreach() {
   function act(step: DueStep, status: "done" | "skipped") {
     start(async () => {
       const res = await actOnStepAction(step.id, status, noteFor === step.id ? note : undefined);
-      if (res.error) return setError(res.error);
-      setError(null);
+      if (res.error) {
+        await alert({
+          title: "Couldn't update the follow-up step",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
       setNoteFor(null);
       setNote("");
       // Drop it from the list rather than refetching everything: a rep works
@@ -221,7 +228,14 @@ export function Outreach() {
                     onClick={() =>
                       start(async () => {
                         const res = await stopJourneyAction(j.id, "stopped by hand");
-                        if (res.error) return setError(res.error);
+                        if (res.error) {
+                          await alert({
+                            title: "Couldn't stop chasing this contact",
+                            body: res.error,
+                            tone: "danger",
+                          });
+                          return;
+                        }
                         load();
                       })
                     }

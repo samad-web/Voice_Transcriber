@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, FormField, Input } from "@aura/ui";
+import { Button, FormField, Input, useAlert, useToast } from "@aura/ui";
 import { updateBrandingAction, type BrandingPatch } from "./actions";
 
 export interface BrandingView {
@@ -33,14 +33,11 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
   const [browserTitle, setBrowserTitle] = useState(initial.browserTitle);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const save = () => {
-    setError(null);
-    setSaved(false);
-
     const errors: Record<string, string> = {};
     if (primaryColor.trim() && !HEX_COLOR.test(primaryColor.trim())) {
       errors.primaryColor = "Enter a hex color like #2563eb.";
@@ -59,38 +56,26 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
     if (browserTitle.trim() !== initial.browserTitle) patch.browserTitle = browserTitle.trim();
 
     if (Object.keys(patch).length === 0) {
-      setSaved(true);
+      toast("Saved");
       return;
     }
 
     startTransition(async () => {
       const result = await updateBrandingAction(patch);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't save your branding", body: result.error, tone: "danger" });
         return;
       }
-      setSaved(true);
+      toast("Saved");
     });
   };
 
   return (
     <div className="max-w-lg space-y-4">
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
       <FormField label="Logo URL" name="logoUrl" hint="A link to an already-hosted image - there's no upload here.">
         <Input
           value={logoUrl}
-          onChange={(e) => {
-            setSaved(false);
-            setLogoUrl(e.target.value);
-          }}
+          onChange={(e) => setLogoUrl(e.target.value)}
           placeholder="https://example.com/logo.png"
           type="url"
         />
@@ -99,10 +84,7 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
       <FormField label="Browser title" name="browserTitle" hint="Shown in the browser tab in place of the default title.">
         <Input
           value={browserTitle}
-          onChange={(e) => {
-            setSaved(false);
-            setBrowserTitle(e.target.value);
-          }}
+          onChange={(e) => setBrowserTitle(e.target.value)}
           placeholder="Acme CRM"
           maxLength={120}
         />
@@ -117,10 +99,7 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
         >
           <Input
             value={primaryColor}
-            onChange={(e) => {
-              setSaved(false);
-              setPrimaryColor(e.target.value);
-            }}
+            onChange={(e) => setPrimaryColor(e.target.value)}
             placeholder="#2563eb"
           />
         </FormField>
@@ -133,10 +112,7 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
         >
           <Input
             value={secondaryColor}
-            onChange={(e) => {
-              setSaved(false);
-              setSecondaryColor(e.target.value);
-            }}
+            onChange={(e) => setSecondaryColor(e.target.value)}
             placeholder="#0f172a"
           />
         </FormField>
@@ -158,12 +134,9 @@ export function BrandingForm({ initial }: { initial: BrandingView }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button type="button" loading={pending} onClick={save}>
-          Save
-        </Button>
-        {saved ? <span className="text-xs text-text-muted">Saved.</span> : null}
-      </div>
+      <Button type="button" loading={pending} onClick={save}>
+        Save
+      </Button>
     </div>
   );
 }

@@ -14,7 +14,17 @@ import {
   Zap,
 } from "lucide-react";
 import type { CrmProviderSpec } from "@aura/shared";
-import { Button, Card, ConsolePanel, Input, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import {
+  Button,
+  Card,
+  ConsolePanel,
+  Input,
+  MonoLabel,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import {
   deleteIntegrationAction,
@@ -69,9 +79,9 @@ export function IntegrationCard({
 }) {
   const [open, setOpen] = useState<"none" | "map" | "log" | "secret">("none");
   const [test, setTest] = useState<TestResult | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
 
   const dead = integration.dead ?? 0;
   const queued = integration.queued ?? 0;
@@ -84,14 +94,20 @@ export function IntegrationCard({
 
   const runTest = (dryRun: boolean) =>
     startTransition(async () => {
-      setTestError(null);
       setTest(null);
       const res = await testIntegrationAction(integration.id, dryRun, orgId);
-      if (res.error) setTestError(res.error);
-      else setTest(res.result ?? null);
+      if (res.error) {
+        await alert({
+          title: dryRun ? "Couldn't build the payload preview" : "Couldn't send the test",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setTest(res.result ?? null);
     });
 
-  // Both reuse `testError`'s banner below - same "something failed silently
+  // Both report through the same modal - same "something failed silently
   // otherwise" reasoning as runTest: a disconnect or pause/resume that fails
   // (network error, stale id, 500) used to just stop spinning with no sign
   // anything went wrong.
@@ -104,22 +120,36 @@ export function IntegrationCard({
     });
     if (!ok) return;
     startTransition(async () => {
-      setTestError(null);
       const res = await deleteIntegrationAction(integration.id, orgId);
-      if (res.error) setTestError(res.error);
+      if (res.error) {
+        await alert({
+          title: "Couldn't disconnect the integration",
+          body: res.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
-  const toggleStatus = () =>
+  const toggleStatus = () => {
+    const pausing = integration.status === "connected";
     startTransition(async () => {
-      setTestError(null);
       const res = await updateIntegrationAction({
         id: integration.id,
         orgId,
-        status: integration.status === "connected" ? "disconnected" : "connected",
+        status: pausing ? "disconnected" : "connected",
       });
-      if (res.error) setTestError(res.error);
+      if (res.error) {
+        await alert({
+          title: pausing
+            ? "Couldn't pause the integration"
+            : "Couldn't resume the integration",
+          body: res.error,
+          tone: "danger",
+        });
+      }
     });
+  };
 
   return (
     <Card elevated className="space-y-4">
@@ -248,11 +278,6 @@ export function IntegrationCard({
         </button>
       </div>
 
-      {testError ? (
-        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-          {testError}
-        </p>
-      ) : null}
       {test ? <TestPanel result={test} /> : null}
 
       {open === "map" ? (
@@ -363,26 +388,28 @@ function FieldMapEditor({
     value,
   }));
   const [pairs, setPairs] = useState(initial.length > 0 ? initial : [{ key: "", value: "" }]);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const update = (i: number, patch: Partial<{ key: string; value: string }>) =>
     setPairs((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
 
   const save = () =>
     startTransition(async () => {
-      setError(null);
-      setSaved(false);
       const fieldMap = Object.fromEntries(
         pairs.filter((p) => p.key.trim()).map((p) => [p.key.trim(), p.value.trim()]),
       );
       const res = await updateIntegrationAction({ id: integration.id, orgId, fieldMap });
-      if (res.error) setError(res.error);
-      else {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+      if (res.error) {
+        await alert({
+          title: "Couldn't save the field map",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      toast("Field map saved");
     });
 
   return (
@@ -443,14 +470,6 @@ function FieldMapEditor({
         <Button type="button" size="sm" disabled={pending} onClick={save}>
           {pending ? "Saving…" : "Save field map"}
         </Button>
-        {/* role="status": the confirmation self-clears after 2s, so a keyboard
-            or screen-reader user who does not happen to be looking at this spot
-            would otherwise never learn the save succeeded. */}
-        {saved ? (
-          <span role="status" className="text-sm font-medium text-success-text">
-            Saved
-          </span>
-        ) : null}
       </div>
 
       <p className="text-xs leading-snug text-text-muted">
@@ -460,12 +479,6 @@ function FieldMapEditor({
         <code className="font-mono">meta.recordingUrl</code> and the{" "}
         <code className="font-mono">call.*</code> fields. An empty map sends the full envelope.
       </p>
-
-      {error ? (
-        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -482,24 +495,27 @@ function SecretRotator({
   orgId?: string;
 }) {
   const [secret, setSecret] = useState("");
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const save = () =>
     startTransition(async () => {
-      setError(null);
       const res = await updateIntegrationAction({
         id: integration.id,
         orgId,
         authSecret: secret.trim(),
       });
-      if (res.error) setError(res.error);
-      else {
-        setSecret("");
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+      if (res.error) {
+        await alert({
+          title: "Couldn't replace the credential",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      setSecret("");
+      toast("Credential replaced");
     });
 
   return (
@@ -529,16 +545,6 @@ function SecretRotator({
           {pending ? "Saving…" : "Rotate"}
         </Button>
       </div>
-      {saved ? (
-        <span role="status" className="text-sm font-medium text-success-text">
-          Credential replaced
-        </span>
-      ) : null}
-      {error ? (
-        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -555,19 +561,25 @@ function DeliveryLog({
   orgId?: string;
 }) {
   const [rows, setRows] = useState<Delivery[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const load = useCallback(
     () =>
       startTransition(async () => {
-        setError(null);
         const res = await listDeliveriesAction(integrationId, orgId);
-        if (res.error) setError(res.error);
-        else setRows(res.deliveries ?? []);
+        if (res.error) {
+          await alert({
+            title: "Couldn't load the delivery log",
+            body: res.error,
+            tone: "danger",
+          });
+          return;
+        }
+        setRows(res.deliveries ?? []);
       }),
-    [integrationId, orgId],
+    [integrationId, orgId, alert],
   );
 
   // Fetch when the panel opens rather than with the page: an operator expands
@@ -610,12 +622,6 @@ function DeliveryLog({
           </Button>
         </div>
       </div>
-
-      {error ? (
-        <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
-          {error}
-        </p>
-      ) : null}
 
       {rows === null ? (
         <p className="py-4 text-center text-sm text-text-muted">Loading…</p>

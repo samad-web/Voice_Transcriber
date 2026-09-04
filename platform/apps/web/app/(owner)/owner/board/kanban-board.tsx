@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { GripVertical, Phone } from "lucide-react";
-import { EmptyState, MonoLabel } from "@aura/ui";
+import { EmptyState, MonoLabel, useAlert } from "@aura/ui";
 import { formatValue, num, relativeTime } from "../types";
 
 /**
@@ -17,8 +17,9 @@ import { formatValue, num, relativeTime } from "../types";
  * Drag-and-drop is the browser's own HTML5 API rather than a library: a card
  * carries its record id, a column accepts the drop and the move is applied
  * optimistically, then confirmed by the server action. If the API rejects it
- * the card returns to where it was and the error is shown - a card that
- * silently snaps back with no explanation is the worst version of this.
+ * the card returns to where it was and the reason is raised in a dialog - a
+ * card that silently snaps back with no explanation is the worst version of
+ * this, and text below the fold is barely better.
  *
  * Every card is also a button that opens the drawer, where the same move can
  * be made by tapping a stage. That is the path on touch devices, where HTML5
@@ -78,7 +79,7 @@ export function KanbanBoard<T extends { stage: string }>({
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [open, setOpen] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const alert = useAlert();
 
   const {
     getId,
@@ -136,14 +137,13 @@ export function KanbanBoard<T extends { stage: string }>({
   };
 
   const move = async (id: string, toStage: string) => {
-    setError(null);
     const from = applyLocal(id, toStage);
     if (!from) return;
 
     const result = await moveOnServer(id, toStage);
     if (result.error) {
       applyLocal(id, from);
-      setError(result.error);
+      await alert({ title: "Couldn't move the card", body: result.error, tone: "danger" });
       return;
     }
     // The server decides won/lost from the stage; reflect it on the card.
@@ -181,18 +181,6 @@ export function KanbanBoard<T extends { stage: string }>({
 
   return (
     <>
-      {/* role=alert: a rejected drop has already snapped the card back, so this
-          text is the only account of why - it has to be announced, not just
-          shown. The danger border is a second channel on top of the words. */}
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
       {total === 0 ? (
         <EmptyState title={emptyState.title} description={emptyState.description} />
       ) : null}

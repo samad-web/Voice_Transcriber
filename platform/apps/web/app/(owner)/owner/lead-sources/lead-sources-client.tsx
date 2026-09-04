@@ -16,6 +16,8 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
+  useToast,
 } from "@aura/ui";
 import type { LeadSourceKind } from "@aura/shared";
 import { startOAuthRedirect } from "../lib/oauth-redirect";
@@ -108,26 +110,30 @@ function SourceCard({
   onToggleEvents: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const [token, setToken] = useState(source.intake_token);
   const [path, setPath] = useState(source.endpointPath);
+  const alert = useAlert();
   const channel = channels.find((c) => c.id === source.kind);
   const url = path ? `${origin}/v1${path}` : null;
 
   const setStatus = (status: "active" | "paused") => {
-    setError(null);
     startTransition(async () => {
       const result = await updateLeadSourceAction(source.id, { status });
-      if (result.error) setError(result.error);
+      if (result.error) {
+        await alert({
+          title: status === "paused" ? "Couldn't pause the source" : "Couldn't resume the source",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
   const rotate = () => {
-    setError(null);
     startTransition(async () => {
       const result = await rotateLeadSourceTokenAction(source.id);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't rotate the token", body: result.error, tone: "danger" });
         return;
       }
       if (result.data) {
@@ -177,12 +183,6 @@ function SourceCard({
         </div>
       </div>
 
-      {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm text-danger-text">
-          {error}
-        </p>
-      ) : null}
-
       {source.last_error ? (
         <p className="mt-3 rounded-md border border-border bg-surface-hover p-3 text-sm text-text-muted">
           <span className="font-medium text-text">Last error:</span> {source.last_error}
@@ -230,19 +230,16 @@ function SourceCard({
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const toast = useToast();
   return (
     <Button
       type="button"
       variant="secondary"
       onClick={() => {
-        void navigator.clipboard.writeText(value).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        });
+        void navigator.clipboard.writeText(value).then(() => toast("Copied"));
       }}
     >
-      {copied ? "Copied" : label}
+      {label}
     </Button>
   );
 }
@@ -361,8 +358,11 @@ const OUTCOME_TONE = {
 
 function EventLog({ sourceId }: { sourceId: string }) {
   const [events, setEvents] = useState<IntakeEvent[] | null>(null);
+  // Why the log could not be read - it stands in for the table rather than
+  // reporting an action, so it stays on the page.
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const load = useCallback(async () => {
     const result = await listIntakeEventsAction(sourceId);
@@ -389,7 +389,9 @@ function EventLog({ sourceId }: { sourceId: string }) {
     startTransition(async () => {
       const result = await replayIntakeEventAction(eventId);
       if (result.error) {
-        setError(result.error);
+        // A failed retry must not take the log down with it: the row that was
+        // retried is the thing being read, and it is still there.
+        await alert({ title: "Couldn't retry that arrival", body: result.error, tone: "danger" });
         return;
       }
       await load();
@@ -488,14 +490,13 @@ function NewSourceForm({
   const [name, setName] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [created, setCreated] = useState<{ url: string | null } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const channel = channels.find((c) => c.id === kind);
   const providers = channel?.providers ?? [];
 
   const submit = () => {
-    setError(null);
     startTransition(async () => {
       const result = await createLeadSourceAction({
         kind,
@@ -505,7 +506,11 @@ function NewSourceForm({
         config: kind === "web_form" ? { honeypotField: "_hp" } : {},
       });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't create the lead source",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setCreated({
@@ -533,11 +538,6 @@ function NewSourceForm({
   return (
     <Card>
       <MonoLabel>New lead source</MonoLabel>
-      {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm text-danger-text">
-          {error}
-        </p>
-      ) : null}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <FormField label="Channel" name="kind" hint={channel?.blurb}>
           <Select
@@ -614,22 +614,31 @@ function NewSourceForm({
  * API, so leads are polled from a connected ad account.
  */
 function LinkedInPanel({ status }: { status: LinkedInStatus }) {
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const connect = () => {
-    setError(null);
     startTransition(async () => {
       const result = await startLinkedInConnectAction();
       if ("notConfigured" in result) {
-        setError("LinkedIn isn't set up on this deployment yet - ask your platform admin.");
+        await alert({
+          title: "LinkedIn isn't set up yet",
+          body: "This deployment has no LinkedIn app registered - ask your platform admin.",
+          tone: "danger",
+        });
         return;
       }
       const failure = startOAuthRedirect(
         result.data ?? { error: result.error },
         "Could not start LinkedIn sign-in",
       );
-      if (failure) setError(failure);
+      if (failure) {
+        await alert({
+          title: "Couldn't start LinkedIn sign-in",
+          body: failure,
+          tone: "danger",
+        });
+      }
     });
   };
 
@@ -649,12 +658,6 @@ function LinkedInPanel({ status }: { status: LinkedInStatus }) {
           </Button>
         ) : null}
       </div>
-
-      {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm text-danger-text">
-          {error}
-        </p>
-      ) : null}
 
       {!status.configured ? (
         <p className="mt-3 rounded-md border border-border bg-surface-hover p-3 text-sm text-text-muted">

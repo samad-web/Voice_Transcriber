@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Check, Copy, QrCode } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { Copy, QrCode } from "lucide-react";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 
 export interface Credentials {
   instanceId?: string;
@@ -28,7 +28,8 @@ export function EnrollmentCredentials({
   title?: string;
 }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const alert = useAlert();
+  const toast = useToast();
 
   useEffect(() => {
     if (!result.instanceId || !result.adminKey) return;
@@ -46,20 +47,25 @@ export function EnrollmentCredentials({
     void QRCode.toDataURL(payload, { margin: 1, width: 240 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(null));
-    setCopied(false);
   }, [result.instanceId, result.adminKey, serverUrl]);
 
   // Sync, not `async` - see api-keys-manager.tsx: an async onClick hands React a
   // promise it discards, so a rejected clipboard write would only ever appear as
-  // an unhandled rejection. The admin key is shown once; a button still saying
-  // COPIED after a failed re-copy is how it gets lost.
+  // an unhandled rejection. The admin key is shown once, so a failed copy has to
+  // say so rather than pass for a successful one.
   const copyKey = () => {
     const key = result.adminKey;
     if (!key) return;
     void navigator.clipboard
       .writeText(key)
-      .then(() => setCopied(true))
-      .catch(() => setCopied(false));
+      .then(() => toast("Copied"))
+      .catch(() =>
+        alert({
+          title: "Couldn't copy the admin key",
+          body: "Select it above and copy it by hand - it is not shown again.",
+          tone: "danger",
+        }),
+      );
   };
 
   return (
@@ -89,8 +95,8 @@ export function EnrollmentCredentials({
           {result.adminKey}
         </div>
         <BrutalButton variant="secondary" className="w-full" onClick={copyKey}>
-          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          {copied ? "COPIED" : "COPY ADMIN KEY"}
+          <Copy className="h-4 w-4" />
+          COPY ADMIN KEY
         </BrutalButton>
       </div>
 

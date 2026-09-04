@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { StatusChip } from "@aura/ui";
+import { StatusChip, useAlert, useToast } from "@aura/ui";
 import { RecordPicker } from "../record-picker";
 import {
   fetchChannelTemplatesAction,
@@ -46,6 +46,8 @@ export function Inbox() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   // Out-of-order-response guards: a rapid double-click (two threads, or the
   // same filter clicked twice) can let an older fetchThreadAction /
@@ -60,8 +62,6 @@ export function Inbox() {
   const [composerText, setComposerText] = useState("");
   const [templates, setTemplates] = useState<WasiTemplate[] | null>(null);
   const [templateName, setTemplateName] = useState("");
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [sendOk, setSendOk] = useState(false);
   const [sending, startSend] = useTransition();
 
   function loadTemplates(channelId: string) {
@@ -69,14 +69,18 @@ export function Inbox() {
     startSend(async () => {
       const res = await fetchChannelTemplatesAction(channelId);
       setTemplates(res.templates ?? []);
-      if (res.error) setSendError(res.error);
+      if (res.error) {
+        await alert({
+          title: "Couldn't load the message templates",
+          body: res.error,
+          tone: "danger",
+        });
+      }
     });
   }
 
   function send() {
     if (!thread) return;
-    setSendError(null);
-    setSendOk(false);
     startSend(async () => {
       const res = await sendWhatsAppMessageAction(
         thread.conversation.id,
@@ -85,10 +89,10 @@ export function Inbox() {
           : { type: "template", template: templateName, params: {} },
       );
       if (res.error) {
-        setSendError(res.error);
+        await alert({ title: "Couldn't send the message", body: res.error, tone: "danger" });
         return;
       }
-      setSendOk(true);
+      toast("Sent");
       setComposerText("");
       const refreshed = await fetchThreadAction(thread.conversation.id);
       if (refreshed.conversation) {
@@ -128,8 +132,6 @@ export function Inbox() {
     setComposerText("");
     setTemplates(null);
     setTemplateName("");
-    setSendError(null);
-    setSendOk(false);
     start(async () => {
       const res = await fetchThreadAction(id);
       // A newer click already moved selection on - this response lost the
@@ -364,7 +366,6 @@ export function Inbox() {
                       type="button"
                       onClick={() => {
                         setComposerMode(mode);
-                        setSendError(null);
                         if (mode === "template") loadTemplates(thread.conversation.messaging_channel_id!);
                       }}
                       aria-pressed={composerMode === mode}
@@ -410,7 +411,7 @@ export function Inbox() {
                   </select>
                 )}
 
-                <div className="mt-2 flex items-center gap-3">
+                <div className="mt-2">
                   <button
                     type="button"
                     disabled={
@@ -421,8 +422,6 @@ export function Inbox() {
                   >
                     {sending ? "Sending…" : "Send"}
                   </button>
-                  {sendOk ? <span className="text-xs text-text-muted">Sent.</span> : null}
-                  {sendError ? <span className="text-xs text-danger-text">{sendError}</span> : null}
                 </div>
                 <p className="mt-2 text-xs text-text-muted">
                   A person composes and sends every message here, one at a time - there is no

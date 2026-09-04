@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlertTriangle, Check, Copy, Trash2, UserPlus } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { AlertTriangle, Copy, Trash2, UserPlus } from "lucide-react";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import {
   createOwnerAction,
@@ -44,6 +44,8 @@ export function OwnerAccounts({
   const [result, setResult] = useState<(OwnerResult & { forEmail?: string }) | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const create = () =>
     startTransition(async () => {
@@ -53,23 +55,47 @@ export function OwnerAccounts({
         name,
         recordingsListen: canListen,
       });
-      setResult({ ...created, forEmail: email.trim() });
-      if (!created.error) {
-        setEmail("");
-        setName("");
+      if (created.error) {
+        await alert({
+          title: "Couldn't create the owner login",
+          body: created.error,
+          tone: "danger",
+        });
+        return;
       }
+      setResult({ ...created, forEmail: email.trim() });
+      setEmail("");
+      setName("");
     });
 
   const reset = (userId: string, forEmail: string) =>
     startTransition(async () => {
-      setResult({ ...(await resetOwnerPasswordAction(orgId, userId)), forEmail });
+      const outcome = await resetOwnerPasswordAction(orgId, userId);
+      if (outcome.error) {
+        await alert({
+          title: "Couldn't reset the password",
+          body: outcome.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setResult({ ...outcome, forEmail });
     });
 
   const revoke = (userId: string) =>
     startTransition(async () => {
       const outcome = await revokeOwnerAction(orgId, userId);
+      if (outcome.error) {
+        await alert({
+          title: "Couldn't revoke the owner",
+          body: outcome.error,
+          tone: "danger",
+        });
+        return;
+      }
       setConfirming(null);
-      setResult(outcome.error ? { error: outcome.error } : null);
+      setResult(null);
+      toast("Owner revoked");
     });
 
   return (
@@ -203,18 +229,11 @@ export function OwnerAccounts({
         </BrutalButton>
       </div>
 
-      {result?.error ? (
-        <div className="border-2 border-red-600 bg-red-50 p-3.5 flex gap-2.5 items-start">
-          <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-          <p className="text-xs text-red-700 font-sans font-bold">{result.error}</p>
-        </div>
-      ) : null}
-
-      {result && !result.error && result.password ? (
+      {result?.password ? (
         <PasswordReveal email={result.forEmail ?? result.email ?? ""} password={result.password} />
       ) : null}
 
-      {result && !result.error && result.linkedExisting ? (
+      {result?.linkedExisting ? (
         <p className="text-xs font-mono font-bold uppercase text-neutral-500 border-2 border-black p-3">
           {result.forEmail} already had an Aura login - it was linked to this
           instance and keeps its existing password.
@@ -226,7 +245,8 @@ export function OwnerAccounts({
 
 /** Same one-time contract as the enrollment key: copy it now or reset it later. */
 function PasswordReveal({ email, password }: { email: string; password: string }) {
-  const [copied, setCopied] = useState(false);
+  const alert = useAlert();
+  const toast = useToast();
 
   return (
     <div className="border-2 border-black bg-white p-3.5 space-y-2.5">
@@ -245,16 +265,22 @@ function PasswordReveal({ email, password }: { email: string; password: string }
         // handler's return value, so an async onClick turns a rejected
         // clipboard write (insecure origin, denied permission) into an
         // unhandled rejection. This password is shown once and never
-        // recovered, so a failed copy must un-claim COPIED, not keep it.
+        // recovered, so a failed copy must SAY so rather than pass silently.
         onClick={() => {
           void navigator.clipboard
             .writeText(password)
-            .then(() => setCopied(true))
-            .catch(() => setCopied(false));
+            .then(() => toast("Copied"))
+            .catch(() =>
+              alert({
+                title: "Couldn't copy the password",
+                body: "Select it above and copy it by hand - it is not shown again.",
+                tone: "danger",
+              }),
+            );
         }}
       >
-        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-        {copied ? "COPIED" : "COPY PASSWORD"}
+        <Copy className="h-4 w-4" />
+        COPY PASSWORD
       </BrutalButton>
       <p className="text-[10px] font-mono text-neutral-500 leading-relaxed">
         Send it over a channel the customer trusts and have them change it after

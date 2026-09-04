@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ShieldCheck } from "lucide-react";
-import { BrutalButton, Card } from "@aura/ui";
+import { BrutalButton, Card, useAlert, useToast } from "@aura/ui";
 import { selectClass } from "@/lib/form";
 import { updatePolicyAction } from "./actions";
 
@@ -22,13 +22,12 @@ export function PolicyForm({
   const [onConsentFailure, setOnConsentFailure] = useState(initial.on_consent_failure);
   const [retentionDays, setRetentionDays] = useState(String(initial.retention_days));
   const [storeFullNumber, setStoreFullNumber] = useState(initial.store_full_number ?? false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const save = () =>
     startTransition(async () => {
-      setError(null);
       const res = await updatePolicyAction({
         orgId,
         consentPolicy,
@@ -37,11 +36,14 @@ export function PolicyForm({
         storeFullNumber,
       });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: "Couldn't apply the policy",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      toast("Policy applied - devices bumped.");
     });
 
   return (
@@ -121,14 +123,6 @@ export function PolicyForm({
         <BrutalButton shadow disabled={pending} onClick={save}>
           {pending ? "APPLYING..." : "APPLY POLICY"}
         </BrutalButton>
-        {saved ? (
-          <span className="text-xs font-mono font-bold uppercase text-black">
-            Applied · devices bumped
-          </span>
-        ) : null}
-        {error ? (
-          <span className="text-xs font-mono font-bold uppercase text-red-700">{error}</span>
-        ) : null}
       </div>
     </Card>
   );

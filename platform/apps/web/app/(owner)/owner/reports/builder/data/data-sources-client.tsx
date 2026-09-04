@@ -4,7 +4,16 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { Database, Trash2, Upload } from "lucide-react";
-import { Button, Card, EmptyState, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import {
+  Button,
+  Card,
+  EmptyState,
+  MonoLabel,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { inferSchema, MAX_UPLOAD_ROWS, type ColumnMeta } from "@aura/shared";
 import { LocalTime } from "@/components/local-time";
 import {
@@ -39,9 +48,9 @@ export function DataSourcesClient({
 }) {
   const router = useRouter();
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     name: string;
     headers: string[];
@@ -62,8 +71,6 @@ export function DataSourcesClient({
   );
 
   const readFile = (file: File) => {
-    setError(null);
-    setNotice(null);
     setDrift([]);
 
     Papa.parse<Record<string, unknown>>(file, {
@@ -76,19 +83,29 @@ export function DataSourcesClient({
       complete: (result) => {
         const headers = (result.meta.fields ?? []).filter(Boolean);
         if (headers.length === 0) {
-          setError("That file has no header row. The first row must name the columns.");
+          void alert({
+            title: "Couldn't read that CSV",
+            body: "That file has no header row. The first row must name the columns.",
+            tone: "danger",
+          });
           return;
         }
         if (result.data.length === 0) {
-          setError("That file has a header row but no data.");
+          void alert({
+            title: "Couldn't read that CSV",
+            body: "That file has a header row but no data.",
+            tone: "danger",
+          });
           return;
         }
         if (result.data.length > MAX_UPLOAD_ROWS) {
           // Named, not truncated. A report built on a silently shortened file
           // is wrong in a way nobody can see.
-          setError(
-            `That file has ${result.data.length.toLocaleString()} rows; the limit is ${MAX_UPLOAD_ROWS.toLocaleString()}. Aggregate it before uploading, or chart it from the CRM instead.`,
-          );
+          void alert({
+            title: "That CSV is too big",
+            body: `That file has ${result.data.length.toLocaleString()} rows; the limit is ${MAX_UPLOAD_ROWS.toLocaleString()}. Aggregate it before uploading, or chart it from the CRM instead.`,
+            tone: "danger",
+          });
           return;
         }
 
@@ -101,13 +118,17 @@ export function DataSourcesClient({
         });
         replaceTarget.current = null;
       },
-      error: () => setError("That file could not be read as CSV."),
+      error: () =>
+        void alert({
+          title: "Couldn't read that CSV",
+          body: "That file could not be read as CSV.",
+          tone: "danger",
+        }),
     });
   };
 
   const save = () => {
     if (!preview) return;
-    setError(null);
 
     startTransition(async () => {
       if (preview.replacing) {
@@ -116,11 +137,15 @@ export function DataSourcesClient({
           rows: preview.rows,
         });
         if (result.error || !result.data) {
-          setError(result.error ?? "Could not refresh that data source");
+          await alert({
+            title: "Couldn't refresh that data source",
+            body: result.error ?? "Could not refresh that data source",
+            tone: "danger",
+          });
           return;
         }
         setDrift(result.data.issues);
-        setNotice(
+        toast(
           result.data.drifted
             ? `Refreshed with ${result.data.dataset.rowCount.toLocaleString()} rows. The columns changed - see below.`
             : `Refreshed with ${result.data.dataset.rowCount.toLocaleString()} rows. The columns are unchanged, so nothing broke.`,
@@ -133,10 +158,14 @@ export function DataSourcesClient({
           rows: preview.rows,
         });
         if (result.error || !result.data) {
-          setError(result.error ?? "Could not create that data source");
+          await alert({
+            title: "Couldn't add that data source",
+            body: result.error ?? "Could not create that data source",
+            tone: "danger",
+          });
           return;
         }
-        setNotice(`Added "${result.data.dataset.name}".`);
+        toast(`Added "${result.data.dataset.name}"`);
       }
       setPreview(null);
       router.refresh();
@@ -145,13 +174,17 @@ export function DataSourcesClient({
 
   const connect = (sourceKey: string) =>
     startTransition(async () => {
-      setError(null);
       const result = await createDatasetAction({ kind: "crm", sourceKey });
-      if (result.error) setError(result.error);
-      else {
-        setNotice("Connected. It is now available to every report in this workspace.");
-        router.refresh();
+      if (result.error) {
+        await alert({
+          title: "Couldn't connect that CRM source",
+          body: result.error,
+          tone: "danger",
+        });
+        return;
       }
+      toast("Connected. It is now available to every report in this workspace.");
+      router.refresh();
     });
 
   const remove = async (dataset: DatasetRow) => {
@@ -168,24 +201,20 @@ export function DataSourcesClient({
 
     startTransition(async () => {
       const result = await deleteDatasetAction(dataset.id);
-      if (result.error) setError(result.error);
-      else router.refresh();
+      if (result.error) {
+        await alert({
+          title: "Couldn't remove the data source",
+          body: result.error,
+          tone: "danger",
+        });
+        return;
+      }
+      router.refresh();
     });
   };
 
   return (
     <>
-      {error ? (
-        <Card className="border-danger-text/30 bg-danger-subtle">
-          <p className="text-sm text-danger-text">{error}</p>
-        </Card>
-      ) : null}
-      {notice ? (
-        <Card className="border-success-text/30 bg-success-subtle">
-          <p className="text-sm text-success-text">{notice}</p>
-        </Card>
-      ) : null}
-
       {/* ── the drift report (prompt 3.2, AC 7) ────────────────────────── */}
       {drift.length > 0 ? (
         <Card className="border-warning-text/30 bg-warning-subtle">

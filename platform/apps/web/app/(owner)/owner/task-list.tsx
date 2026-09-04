@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { Button, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { createTaskAction, fetchTasksAction, updateTaskAction } from "./crm-actions";
 import type { Task } from "./types";
 
@@ -46,6 +46,7 @@ export function TaskList({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ title: "", dueOn: "" });
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -70,10 +71,13 @@ export function TaskList({
 
   const add = () => {
     if (!draft.title.trim()) {
-      setError("Give the task a title");
+      void alert({
+        title: "Couldn't add the task",
+        body: "Give the task a title",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
     startTransition(async () => {
       const result = await createTaskAction({
         title: draft.title.trim(),
@@ -83,7 +87,7 @@ export function TaskList({
         accountId: accountId ?? null,
       });
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't add the task", body: result.error, tone: "danger" });
         return;
       }
       if (result.task) setTasks((prev) => sortByDue([result.task!, ...(prev ?? [])]));
@@ -92,14 +96,17 @@ export function TaskList({
   };
 
   const complete = (task: Task) => {
-    setError(null);
     // Optimistic: drop it from the open list immediately.
     setTasks((prev) => (prev ?? []).filter((t) => t.id !== task.id));
     startTransition(async () => {
       const result = await updateTaskAction(task.id, { status: "done" });
       if (result.error) {
-        setError(result.error);
         setTasks((prev) => sortByDue([task, ...(prev ?? [])]));
+        await alert({
+          title: "Couldn't mark that task done",
+          body: result.error,
+          tone: "danger",
+        });
       }
     });
   };

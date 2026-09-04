@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, TriangleAlert } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, useConfirm } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, useAlert, useConfirm } from "@aura/ui";
 import { monoInputClass as inputClass } from "@/lib/form";
 import { deleteInstanceAction, type DeleteInstanceResult } from "./actions";
 
@@ -27,6 +27,7 @@ export function DeleteInstance({
   const [typed, setTyped] = useState("");
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
 
   const blocked = result?.blockedByCalls;
   const confirmed = typed.trim() === instanceName;
@@ -35,7 +36,20 @@ export function DeleteInstance({
     startTransition(async () => {
       const res = await deleteInstanceAction(orgId, instanceId, purgeCalls);
       setResult(res);
-      if (res.deleted) router.refresh();
+      if (res.deleted) {
+        router.refresh();
+        return;
+      }
+      // `blockedByCalls` is NOT a failure to report - it escalates this panel
+      // into the type-the-name confirmation below, which is a state change the
+      // person can see. Only a real error is an event worth a popup.
+      if (res.error && !res.blockedByCalls) {
+        await alert({
+          title: "Couldn't delete the instance",
+          body: res.error,
+          tone: "danger",
+        });
+      }
     });
 
   const safeDelete = async () => {
@@ -114,12 +128,6 @@ export function DeleteInstance({
           </BrutalButton>
         </div>
       )}
-
-      {result?.error && !blocked ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-          {result.error}
-        </p>
-      ) : null}
     </Card>
   );
 }

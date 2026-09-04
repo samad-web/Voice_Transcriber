@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
-import { Button } from "@aura/ui";
+import { Button, useToast } from "@aura/ui";
 import {
   fetchNotificationsAction,
   markAllNotificationsReadAction,
@@ -35,6 +35,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const panel = useRef<HTMLDivElement>(null);
+  const toast = useToast();
 
   const load = useCallback(() => {
     void fetchNotificationsAction().then((result) => {
@@ -76,8 +77,13 @@ export function NotificationBell() {
       const res = await markNotificationReadAction(id);
       // On failure the optimistic update above is wrong and would otherwise
       // sit there un-reconciled until the next 60s poll - resync now, same
-      // as markAll already does.
-      if (res.error) load();
+      // as markAll already does. A toast rather than a modal: this often fires
+      // as the person is already following the link away from here, and the
+      // badge coming back is the correction that matters.
+      if (res.error) {
+        toast("Couldn't mark that as read");
+        load();
+      }
     });
   };
 
@@ -85,7 +91,8 @@ export function NotificationBell() {
     setRows((prev) => prev.map((r) => ({ ...r, read_at: r.read_at ?? new Date().toISOString() })));
     setUnread(0);
     startTransition(async () => {
-      await markAllNotificationsReadAction();
+      const res = await markAllNotificationsReadAction();
+      if (res.error) toast("Couldn't mark them all as read");
       load();
     });
   };

@@ -16,7 +16,9 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
   useConfirm,
+  useToast,
 } from "@aura/ui";
 import {
   createPaymentLinkAction,
@@ -57,11 +59,12 @@ export function InvoiceDetail({
   const [invoice, setInvoice] = useState(initialInvoice);
   const [status, setStatus] = useState<InvoiceStatus>(initialInvoice.status);
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
   const [dueDate, setDueDate] = useState(initialInvoice.due_date ? initialInvoice.due_date.slice(0, 10) : "");
   const [notes, setNotes] = useState(initialInvoice.notes ?? "");
   const [customerGstin, setCustomerGstin] = useState(initialInvoice.customer_gstin ?? "");
   const [placeOfSupply, setPlaceOfSupply] = useState(initialInvoice.place_of_supply ?? "");
-  const [headerError, setHeaderError] = useState<string | null>(null);
   const [headerPending, startHeader] = useTransition();
 
   const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
@@ -71,16 +74,12 @@ export function InvoiceDetail({
   const [discountValue, setDiscountValue] = useState(
     initialInvoice.discount_value ? String(Number(initialInvoice.discount_value)) : "0",
   );
-  const [itemsError, setItemsError] = useState<string | null>(null);
   const [itemsPending, startItems] = useTransition();
 
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentPending, startPayment] = useTransition();
-  const [copied, setCopied] = useState(false);
 
   const saveHeader = () => {
-    setHeaderError(null);
     startHeader(async () => {
       const result = await updateInvoiceAction(invoice.id, {
         status,
@@ -90,7 +89,11 @@ export function InvoiceDetail({
         placeOfSupply: placeOfSupply.trim() || null,
       });
       if (result.error || !result.invoice) {
-        setHeaderError(result.error ?? "Could not save");
+        await alert({
+          title: "Couldn't save the invoice details",
+          body: result.error ?? "The server did not return the updated invoice.",
+          tone: "danger",
+        });
         return;
       }
       setInvoice(result.invoice);
@@ -103,18 +106,24 @@ export function InvoiceDetail({
   };
 
   const saveItems = () => {
-    setItemsError(null);
-
     const parsed = parse("An invoice needs at least one line item");
     if (parsed.items === null) {
-      setItemsError(parsed.error);
+      void alert({
+        title: "Couldn't save the line items",
+        body: parsed.error,
+        tone: "danger",
+      });
       return;
     }
 
     const trimmedDiscount = discountValue.trim();
     const discountNum = trimmedDiscount === "" ? 0 : Number(trimmedDiscount);
     if (trimmedDiscount !== "" && (!Number.isFinite(discountNum) || discountNum < 0)) {
-      setItemsError("Enter a valid discount value");
+      void alert({
+        title: "Enter a valid discount value",
+        body: "The discount has to be a number, and not a negative one.",
+        tone: "danger",
+      });
       return;
     }
 
@@ -127,7 +136,11 @@ export function InvoiceDetail({
         },
       });
       if (result.error || !result.invoice) {
-        setItemsError(result.error ?? "Could not save items");
+        await alert({
+          title: "Couldn't save the line items",
+          body: result.error ?? "The server did not return the updated invoice.",
+          tone: "danger",
+        });
         return;
       }
       setInvoice(result.invoice);
@@ -140,12 +153,14 @@ export function InvoiceDetail({
   };
 
   const collectPayment = () => {
-    setPaymentError(null);
-    setCopied(false);
     startPayment(async () => {
       const result = await createPaymentLinkAction(invoice.id);
       if (result.error || !result.paymentLinkUrl) {
-        setPaymentError(result.error ?? "Could not create a payment link");
+        await alert({
+          title: "Couldn't create a payment link",
+          body: result.error ?? "The provider did not return a link.",
+          tone: "danger",
+        });
         return;
       }
       setPaymentUrl(result.paymentLinkUrl);
@@ -156,9 +171,13 @@ export function InvoiceDetail({
     if (!paymentUrl) return;
     try {
       await navigator.clipboard.writeText(paymentUrl);
-      setCopied(true);
+      toast("Copied");
     } catch {
-      setCopied(false);
+      await alert({
+        title: "Couldn't copy the link",
+        body: "Your browser blocked the clipboard. Select the link and copy it by hand.",
+        tone: "danger",
+      });
     }
   };
 
@@ -187,14 +206,6 @@ export function InvoiceDetail({
       <div className="space-y-6">
         <Card>
           <MonoLabel>Line items</MonoLabel>
-          {itemsError ? (
-            <p
-              role="alert"
-              className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-            >
-              {itemsError}
-            </p>
-          ) : null}
 
           <div className="mt-3">
             <Table caption="Invoice line items">
@@ -362,14 +373,6 @@ export function InvoiceDetail({
       <div className="space-y-4">
         <Card>
           <MonoLabel>Details</MonoLabel>
-          {headerError ? (
-            <p
-              role="alert"
-              className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-            >
-              {headerError}
-            </p>
-          ) : null}
           <div className="mt-3 space-y-3">
             <FormField label="Status" name="status">
               <Select
@@ -511,11 +514,6 @@ export function InvoiceDetail({
             Generates a Razorpay payment link. Nothing is emailed or texted automatically - copy the
             link and share it yourself.
           </p>
-          {paymentError ? (
-            <p role="alert" className="mt-2 text-xs font-medium text-danger-text">
-              {paymentError}
-            </p>
-          ) : null}
           {paymentUrl ? (
             <div className="mt-3 flex items-center gap-2">
               <Input
@@ -524,8 +522,13 @@ export function InvoiceDetail({
                 value={paymentUrl}
                 onFocus={(e) => e.currentTarget.select()}
               />
-              <Button type="button" variant="secondary" size="sm" onClick={copyLink}>
-                {copied ? "Copied" : "Copy"}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void copyLink()}
+              >
+                Copy
               </Button>
             </div>
           ) : (

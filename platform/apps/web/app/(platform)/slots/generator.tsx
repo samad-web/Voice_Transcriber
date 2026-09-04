@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { BrutalButton, Input, Select } from "@aura/ui";
+import { BrutalButton, Input, Select, useAlert, useToast } from "@aura/ui";
 import { generateSlotsAction } from "./actions";
 
 /**
@@ -41,9 +41,9 @@ export function Generator({
   const [dayEnd, setDayEnd] = useState("18:00");
   const [duration, setDuration] = useState(30);
   const [buffer, setBuffer] = useState(10);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   /**
    * The count, or WHY there is no count.
@@ -113,16 +113,6 @@ export function Generator({
           Close
         </button>
       </div>
-
-      {err ? (
-        <p
-          role="alert"
-          className="mb-3 rounded-md border border-danger/30 bg-danger/5 p-2.5 text-xs text-danger-text"
-        >
-          {err}
-        </p>
-      ) : null}
-      {msg ? <p className="mb-3 text-xs text-text-muted">{msg}</p> : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs font-medium text-text">
@@ -212,8 +202,6 @@ export function Generator({
         disabled={pending || !from || !to || days.length === 0 || perDay === 0}
         onClick={() =>
           start(async () => {
-            setErr(null);
-            setMsg(null);
             const res = await generateSlotsAction({
               fromDate: from,
               toDate: to,
@@ -225,15 +213,17 @@ export function Generator({
               timeZone,
             });
             if (res.error) {
-              setErr(res.error);
+              await alert({
+                title: "Couldn't generate the slots",
+                body: res.error,
+                tone: "danger",
+              });
               return;
             }
             // Reports skipped as well as created. Re-running over a range that
             // already has slots is a no-op per row, and a bare "created 0"
             // would read as a failure when it actually means "already done".
-            setMsg(
-              `Created ${res.created}.${res.skipped ? ` ${res.skipped} already existed.` : ""}`,
-            );
+            toast(`Created ${res.created}.${res.skipped ? ` ${res.skipped} already existed.` : ""}`);
             onDone();
           })
         }
