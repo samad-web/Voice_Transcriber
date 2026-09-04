@@ -39,6 +39,7 @@ import { RequestMethod, type Type } from "@nestjs/common";
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { HealthController } from "../health/health.controller";
 import { AdminController } from "../modules/admin/admin.controller";
+import { OperatorsController } from "../modules/admin/operators.controller";
 import { AgentsController } from "../modules/agents/agents.controller";
 import { AnalyticsController } from "../modules/analytics/analytics.controller";
 import { SearchController } from "../modules/analytics/search.controller";
@@ -122,6 +123,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   AuthController,
   ApiKeysController,
   AdminController,
+  OperatorsController,
   AgentsController,
   AnalyticsController,
   SearchController,
@@ -357,6 +359,17 @@ const CROSS_TENANT = [
   "GET /admin/tenants",
   "PATCH /admin/tenants/:orgId/modules",
   "GET /admin/health",
+  // The platform's own staff list (migration 0089). Cross-tenant for the same
+  // reason /admin/tenants is: a platform operator belongs to no org, so there
+  // is nothing for TenantGuard to scope to. WHICH operator is asking cannot be
+  // decided here - every console request arrives on the one shared admin key -
+  // so "only the root may change this list" is enforced in the web tier's
+  // requireMax(). What this layer holds is the invariant that needs no
+  // identity: the root address is configured in the environment, and can be
+  // neither added nor deleted as a row.
+  "GET /admin/operators",
+  "POST /admin/operators",
+  "DELETE /admin/operators/:email",
   "GET /analytics/fleet",
   // The marketing funnel. Cross-tenant by nature rather than by exception: an
   // enquiry has no org yet - that is what makes it an enquiry - so there is no
@@ -755,7 +768,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 306 routes, partitioned 260 tenant / 24 cross-tenant / 7 device / 15 unguarded", () => {
+  it("has 311 routes, partitioned 260 tenant / 27 cross-tenant / 7 device / 17 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -833,8 +846,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(308);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(308);
+    expect(ROUTES).toHaveLength(311);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(311);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -849,10 +862,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
     expect(tenantScoped).toHaveLength(260);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(308);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(311);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 276 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 279 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -860,7 +873,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(276);
+    expect(principalRoutes).toHaveLength(279);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

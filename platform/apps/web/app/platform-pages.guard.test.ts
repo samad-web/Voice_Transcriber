@@ -53,6 +53,12 @@ const KNOWN_DIRECT_CALL_PAGES = [
   "(platform)/dashboard/page.tsx",
   "(platform)/instances/[id]/calls/page.tsx",
   "(platform)/instances/[id]/page.tsx",
+  // The superadmin list (migration 0089). It reaches /v1/admin/operators with a
+  // bare `fetch` rather than apiGetAs, because the route is cross-tenant -
+  // there is no org to scope it to - so DIRECT_API_CALL below does not match
+  // it. Listed here so its `operatorGate()` reads as deliberate rather than as
+  // the inconsistency this suite is looking for.
+  "(platform)/operators/page.tsx",
   "(platform)/roles/page.tsx",
   "(platform)/targets/page.tsx",
   "(platform)/team/page.tsx",

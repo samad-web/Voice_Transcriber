@@ -1,4 +1,4 @@
-import { getPrincipal, isOperator, type Principal } from "@/lib/owner-context";
+import { getPrincipal, isMax, isOperator, type Principal } from "@/lib/owner-context";
 
 /**
  * The authorization check every Server Action in the `(platform)` group must run
@@ -66,5 +66,25 @@ export async function requireOperator(): Promise<Principal> {
   if (!isOperator(principal)) throw new NotAuthorizedError();
   // `isOperator` is a type-narrowing-free predicate over `Principal | null`, but
   // it returns false for null, so this is sound.
+  return principal as Principal;
+}
+
+/**
+ * Assert the caller is the ROOT operator - "max" (migration 0089).
+ *
+ * The only thing this gates is deciding who else is a superadmin. Everything
+ * else in the operator console stays open to every operator.
+ *
+ * It is a SECOND check, never a replacement. The actions that use it still open
+ * with `requireOperator()`, both because the source-scan test requires that
+ * exact line as the first statement of every action in this group, and because
+ * the two questions are genuinely different: "may you be here at all" and "may
+ * you change who else may".
+ *
+ * Same throw-rather-than-redirect reasoning as `requireOperator`.
+ */
+export async function requireMax(): Promise<Principal> {
+  const principal = await getPrincipal();
+  if (!isOperator(principal) || !isMax(principal)) throw new NotAuthorizedError();
   return principal as Principal;
 }

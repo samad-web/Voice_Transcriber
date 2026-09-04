@@ -496,6 +496,12 @@ describe("getPrincipal", () => {
         userId: null,
         kind: "operator",
         membership: null,
+        // 0089, and false for the same reason the session is unbound: this
+        // address is not the configured root, and the /admin/operators lookup
+        // that could have appointed it failed along with everything else. An
+        // API outage must not hand anybody the console.
+        operatorListed: false,
+        isRoot: false,
       });
       // THE property: an unbound session is not an operator.
       expect(isOperator(principal)).toBe(false);

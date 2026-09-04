@@ -87,6 +87,12 @@ const NON_TENANT_TABLES = new Set([
   "schema_migrations",
   "payment_webhook_events",
   "app_releases",
+  // platform_operators  0089. Who may administer the platform - which by
+  //                     definition belongs to no tenant, so an org_id here
+  //                     would be a fiction rather than a boundary. Reached only
+  //                     through the admin pool; `aura_app` is revoked outright,
+  //                     and so are the Supabase API roles.
+  "platform_operators",
 ]);
 
 /**

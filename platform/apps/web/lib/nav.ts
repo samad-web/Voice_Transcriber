@@ -114,6 +114,11 @@ export const NAV_ITEMS: NavItem[] = [
     context: "Platform",
   },
   { href: "/team", label: "Team", icon: Users, title: "Team Management" },
+  // Visible to every operator, writable only by the root (migration 0089).
+  // Deliberately not hidden from the rest: knowing who else administers the
+  // platform is not a privilege, and a list nobody can see is a list nobody
+  // audits.
+  { href: "/operators", label: "Superadmins", icon: ShieldCheck, title: "Superadmins" },
   { href: "/api-keys", label: "API Keys", icon: KeyRound, title: "API Keys" },
   { href: "/usage", label: "Usage", icon: BarChart3, title: "Usage & Billing" },
 ];
