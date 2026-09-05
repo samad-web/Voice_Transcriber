@@ -47,7 +47,9 @@ export default async function OperatorsPage() {
         </p>
         <p className="mt-2 text-sm text-text-muted">
           The root lives in the deployment&rsquo;s environment, not in this list, so it cannot be
-          removed from here by anyone - including itself.
+          removed from here by anyone - including itself. It can still be given a new password
+          below, which is the only recovery this console has: sign-in is email and password, with no
+          magic link and no forgotten-password mail.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {rootEmail ? (
@@ -72,7 +74,7 @@ export default async function OperatorsPage() {
           </p>
         </Card>
       ) : (
-        <OperatorsManager operators={operators} canManage={root} />
+        <OperatorsManager operators={operators} canManage={root} rootEmail={rootEmail} />
       )}
     </>
   );

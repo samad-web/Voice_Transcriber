@@ -370,6 +370,13 @@ const CROSS_TENANT = [
   "GET /admin/operators",
   "POST /admin/operators",
   "DELETE /admin/operators/:email",
+  // Minting and resetting a superadmin's Supabase password. Cross-tenant for
+  // the same reason as the three above - platform staff belong to no org - and
+  // fenced by the one invariant this layer CAN check without knowing the
+  // caller: the address must already be the root or a `platform_operators`
+  // row, so the admin key cannot mint a confirmed login for a stranger.
+  "POST /admin/operators/:email/login",
+  "POST /admin/operators/:email/password",
   "GET /analytics/fleet",
   // The marketing funnel. Cross-tenant by nature rather than by exception: an
   // enquiry has no org yet - that is what makes it an enquiry - so there is no
@@ -768,7 +775,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 311 routes, partitioned 260 tenant / 27 cross-tenant / 7 device / 17 unguarded", () => {
+  it("has 313 routes, partitioned 260 tenant / 29 cross-tenant / 7 device / 17 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -846,8 +853,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(311);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(311);
+    expect(ROUTES).toHaveLength(313);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(313);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -862,10 +869,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
     expect(tenantScoped).toHaveLength(260);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(311);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(313);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 279 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 281 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -873,7 +880,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(279);
+    expect(principalRoutes).toHaveLength(281);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

@@ -100,6 +100,43 @@ export class SupabaseAdminService {
     return { id };
   }
 
+  /**
+   * The auth user for an address, or null.
+   *
+   * GoTrue publishes no "get user by email" endpoint - only a paginated admin
+   * list - so this walks it. `filter` is sent because recent GoTrue honours it
+   * as a server-side email search, which collapses the walk to a single page;
+   * older builds ignore the parameter and hand back page one of everything.
+   *
+   * BOTH behaviours are correct here, and neither is detected. The match is
+   * re-checked exactly on our side, and the loop keeps paging until a short
+   * page proves there is nothing left to read - so a `filter` that silently
+   * does nothing costs latency and never an answer. That is the property worth
+   * having, because the wrong answer is "this address has no login" and the
+   * step taken next on that answer is to create a second one.
+   */
+  async findUserByEmail(email: string): Promise<{ id: string } | null> {
+    const target = email.trim().toLowerCase();
+    const perPage = 200;
+    // A cap, not a belief about scale: a GoTrue that ignored `page` as well
+    // would otherwise spin forever re-reading page one.
+    for (let page = 1; page <= 100; page++) {
+      const body = await this.call(
+        `/admin/users?page=${page}&per_page=${perPage}&filter=${encodeURIComponent(target)}`,
+        { method: "GET" },
+      );
+      const users = Array.isArray(body.users) ? (body.users as Array<Record<string, unknown>>) : [];
+      const hit = users.find((u) => String(u.email ?? "").trim().toLowerCase() === target);
+      if (hit?.id) return { id: hit.id as string };
+      // A page that is not full is the last page - stop rather than ask for one
+      // past the end, which some builds answer with page one all over again.
+      if (users.length < perPage) return null;
+    }
+    throw new Error(
+      "supabase auth: too many accounts to search for that address - look it up in the Supabase dashboard",
+    );
+  }
+
   async setPassword(userId: string, password: string): Promise<void> {
     await this.call(`/admin/users/${userId}`, { method: "PUT", body: { password } });
   }
