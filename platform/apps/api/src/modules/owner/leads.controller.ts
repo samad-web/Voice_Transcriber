@@ -48,6 +48,20 @@ const ListQuery = z.object({
    * and an owner reconciling their numbers needs to be able to see them.
    */
   sourceChannel: z.union([LeadSourceChannel, z.literal("none")]).optional(),
+  /**
+   * Age filters, in whole days since the lead arrived - the click-through the
+   * dashboard's aging tiles need (gap G3).
+   *
+   * Inclusive at both ends, matching the bucket definitions in
+   * reports/sla.ts: "4-7 days" means minAgeDays=4&maxAgeDays=7 and no lead
+   * falls between two tiles. Whole days and not hours, because that is what
+   * the tile says and a filter that disagreed with the number it was reached
+   * from would be worse than no filter.
+   */
+  minAgeDays: z.coerce.number().int().min(0).max(3650).optional(),
+  maxAgeDays: z.coerce.number().int().min(0).max(3650).optional(),
+  /** Nobody has touched it yet (0093's first_responded_at). */
+  unresponded: z.coerce.boolean().optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
   sort: z.enum(["activity", "created", "value", "title"]).default("activity"),
@@ -250,8 +264,20 @@ export class LeadsController {
   ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { stage, status, telecallerId, projectId, sourceChannel, q, sort, limit, offset } =
-      parsed.data;
+    const {
+      stage,
+      status,
+      telecallerId,
+      projectId,
+      sourceChannel,
+      minAgeDays,
+      maxAgeDays,
+      unresponded,
+      q,
+      sort,
+      limit,
+      offset,
+    } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const intel = await orgHasModule(client, "call_intel");
@@ -290,6 +316,18 @@ export class LeadsController {
       else if (projectId) add("l.project_id = $?", projectId);
       if (sourceChannel === "none") where.push("l.source_channel IS NULL");
       else if (sourceChannel) add("l.source_channel = $?", sourceChannel);
+      // Age, expressed as a date bound rather than as arithmetic on every
+      // row: `created_at <= now() - N days` can use leads_org_created_at
+      // (0093), while `age(created_at) >= N` cannot.
+      if (minAgeDays !== undefined) {
+        add("l.created_at <= now() - make_interval(days => $?::int)", minAgeDays);
+      }
+      if (maxAgeDays !== undefined) {
+        // +1 because the bucket is inclusive: "at most 7 days old" includes
+        // everything up to the instant it turns 8.
+        add("l.created_at > now() - make_interval(days => $?::int + 1)", maxAgeDays);
+      }
+      if (unresponded) where.push("l.first_responded_at IS NULL");
       if (q) {
         // One param, three columns - pushed once so the placeholder numbering
         // stays in step with `params`.

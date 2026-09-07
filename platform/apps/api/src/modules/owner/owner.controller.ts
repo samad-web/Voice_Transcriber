@@ -17,6 +17,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OwnerScope, type OwnerRecordScope, ownerScopeAnd } from "../../common/owner-scope";
 import { OwnerScopeGuard } from "../../common/owner-scope.guard";
+import { agingBucketFilters } from "../reports/sla";
 import { DbService } from "../../db/db.service";
 
 /**
@@ -80,12 +81,51 @@ function campaignBreakdownSql(days: number, scopeAnd: string): string {
  * today is due, not late.
  */
 function taskLoadSql(scopeAnd: string): string {
+  // org_reporting_today() and not CURRENT_DATE (migration 0095). CURRENT_DATE
+  // is the DATABASE's date - UTC on this deployment - so on an Indian floor a
+  // follow-up that went late at midnight was not counted overdue until half
+  // past five in the morning, and "due today" meant "due today in London".
   return `SELECT count(*)::int AS open,
-                 count(*) FILTER (WHERE t.due_on < CURRENT_DATE)::int AS overdue,
-                 count(*) FILTER (WHERE t.due_on = CURRENT_DATE)::int AS due_today,
+                 count(*) FILTER (WHERE t.due_on < org_reporting_today())::int AS overdue,
+                 count(*) FILTER (WHERE t.due_on = org_reporting_today())::int AS due_today,
+                 count(*) FILTER (WHERE t.due_on > org_reporting_today())::int AS upcoming,
                  count(*) FILTER (WHERE t.due_on IS NULL)::int AS undated
             FROM tasks t
            WHERE t.status = 'open'${scopeAnd}`;
+}
+
+/**
+ * The triage block: how old the open leads are, and how many nobody has
+ * answered at all.
+ *
+ * ── WHY THIS IS ON THE DASHBOARD AND NOT ONLY IN A REPORT ───────────────────
+ *
+ * The aging report already computes these (reports.service.ts leadAging), and
+ * a second query for the same numbers is normally the wrong instinct. It is
+ * right here for one reason: the dashboard is the page people open, and the
+ * report is the page people open when they already suspect something. A number
+ * that appears only where you go to confirm a suspicion cannot create one.
+ *
+ * The BOUNDARIES are not duplicated. `agingBucketFilters` generates this SQL
+ * from the same frozen array the report and its tests use, so a tile and the
+ * report it links to can never draw the line in different places.
+ *
+ * ── NOT WINDOWED BY `days` ──────────────────────────────────────────────────
+ *
+ * Same reasoning as taskLoadSql, and it matters more here: the entire point of
+ * an aging bucket is the leads that fell out of the reporting window months
+ * ago and are still open. Applying `days` would empty the 30+ bucket, which is
+ * the one that is always largest and always the problem.
+ */
+function leadTriageSql(scopeAnd: string): string {
+  // Whole days, floored, so this agrees with agingBucket()'s Math.floor - a
+  // lead that is 3.9 days old is in the 0-3 bucket on both sides.
+  const ageDays = "floor(EXTRACT(epoch FROM (now() - l.created_at)) / 86400.0)";
+  return `SELECT count(*)::int AS open_total,
+                 count(*) FILTER (WHERE l.first_responded_at IS NULL)::int AS never_responded,
+                 ${agingBucketFilters(ageDays)}
+            FROM leads l
+           WHERE l.status = 'open'${scopeAnd}`;
 }
 
 const WindowQuery = z.object({
@@ -273,6 +313,10 @@ export class OwnerController {
           sourceBreakdownSql(days, leadAndL),
           campaignBreakdownSql(days, leadAndL),
           taskLoadSql(taskAnd),
+          // Rides in the same batch as everything else, so making the
+          // dashboard a triage surface costs zero extra round trips - which
+          // is the entire reason this query is one multi-statement flight.
+          leadTriageSql(leadAndL),
         ].join(";\n"),
       )) as unknown as { rows: Record<string, unknown>[] }[];
 
@@ -287,6 +331,7 @@ export class OwnerController {
         sourceRes,
         campaignRes,
         taskRes,
+        triageRes,
       ] = batch;
 
       const org = orgRes.rows[0];
@@ -322,7 +367,16 @@ export class OwnerController {
         // gets forgotten.
         bySource: sourceRes.rows,
         byCampaign: campaignRes.rows,
-        tasks: taskRes.rows[0] ?? { open: 0, overdue: 0, due_today: 0, undated: 0 },
+        tasks: taskRes.rows[0] ?? {
+          open: 0,
+          overdue: 0,
+          due_today: 0,
+          upcoming: 0,
+          undated: 0,
+        },
+        // Nullable rather than zero-filled: "no open leads" and "the query did
+        // not run" must not render as the same clean dashboard.
+        triage: triageRes.rows[0] ?? null,
       };
     });
   }
@@ -526,7 +580,21 @@ export class OwnerController {
         // was read from.
         bySource: sourceRes.rows,
         byCampaign: campaignRes.rows,
-        tasks: taskRes.rows[0] ?? { open: 0, overdue: 0, due_today: 0, undated: 0 },
+        tasks: taskRes.rows[0] ?? {
+          open: 0,
+          overdue: 0,
+          due_today: 0,
+          upcoming: 0,
+          undated: 0,
+        },
+        // Explicitly absent, not omitted. The CRM read is over deals and
+        // contacts, which carry no first_responded_at - so "how long has this
+        // been sitting unanswered" has no honest answer here. Returning the
+        // key as null keeps the response shape identical to overview()'s,
+        // which is the contract this endpoint exists to hold; computing an
+        // approximation from deal.created_at would put a number on the page
+        // that means something different from the one beside it.
+        triage: null,
       };
     });
   }

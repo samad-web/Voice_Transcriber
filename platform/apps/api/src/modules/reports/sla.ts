@@ -79,6 +79,30 @@ export const AGING_BUCKETS = [
 
 export type AgingBucketKey = (typeof AGING_BUCKETS)[number]["key"];
 
+/**
+ * The same buckets as SQL `FILTER` clauses, generated from the array above.
+ *
+ * Exists so the dashboard's aging tiles and the aging report cannot disagree
+ * about where a bucket ends. reports.service.ts states the rule this follows -
+ * the boundaries live here with tests, and a second copy in a GROUP BY would
+ * be a second definition - but the dashboard aggregates in SQL rather than in
+ * TypeScript, because it counts every open lead in one multi-statement batch
+ * and cannot afford to ship the rows back to be tallied.
+ *
+ * `ageExpr` must be whole days as a number. The bounds are integers from a
+ * frozen const, never caller input, so interpolating them is safe by
+ * construction - there is no path from a request to this string.
+ */
+export function agingBucketFilters(ageExpr: string): string {
+  return AGING_BUCKETS.map((b) => {
+    const bound =
+      b.maxDays === null
+        ? `${ageExpr} >= ${b.minDays}`
+        : `${ageExpr} BETWEEN ${b.minDays} AND ${b.maxDays}`;
+    return `count(*) FILTER (WHERE ${bound})::int AS ${b.key}`;
+  }).join(", ");
+}
+
 export function agingBucket(days: number): AgingBucketKey {
   const d = Math.max(0, Math.floor(days));
   for (const b of AGING_BUCKETS) {

@@ -13,6 +13,7 @@ import {
   PipelineByStage,
   RecentActivity,
   SourceBreakdown,
+  LeadTriage,
   TaskLoad,
   TelecallerTable,
   WindowPicker,
@@ -178,7 +179,7 @@ function TeamStrip() {
  * people who did not ask for it.
  */
 function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, calls, funnel, telecallers, byDay, stages, recent } = data;
+  const { leads, calls, funnel, telecallers, byDay, stages, recent, triage } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
 
@@ -216,6 +217,12 @@ function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
         />
       </div>
 
+      {/* Directly under the KPI row, above everything descriptive. The four
+          cards above say how the business is doing; this says what is going
+          wrong right now, and burying it under two charts would make it a
+          thing people find rather than a thing people see. */}
+      {triage ? <LeadTriage triage={triage} /> : null}
+
       <TeamStrip />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
@@ -240,7 +247,7 @@ function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
  * about this afternoon.
  */
 function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, calls, funnel, telecallers, byDay, stages, recent, tasks } = data;
+  const { leads, calls, funnel, telecallers, byDay, stages, recent, tasks, triage } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
   const active = telecallers.filter((t) => t.calls > 0).length;
@@ -278,10 +285,18 @@ function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
         />
       </div>
 
+      {/* Ahead of the leaderboard, because "who needs help today" is a better
+          question once you can see what is actually unattended. */}
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <TaskLoad tasks={tasks} />
+        {triage ? <LeadTriage triage={triage} /> : null}
+      </div>
+
       <TeamStrip />
 
-      {/* The leaderboard leads. A manager opens this page to find out who needs
-          help today, and that answer was previously three scrolls down. */}
+      {/* The leaderboard follows. A manager opens this page to find out who
+          needs help today, and that answer was previously three scrolls
+          down. */}
       <TelecallerTable telecallers={telecallers} days={days} title="Who is working what" />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
@@ -309,7 +324,7 @@ function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
  * number they set.
  */
 function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, calls, funnel, byDay, stages, recent, tasks } = data;
+  const { leads, calls, funnel, byDay, stages, recent, tasks, triage } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
 
@@ -349,15 +364,21 @@ function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
         <TaskLoad tasks={tasks} />
-        <PipelineByStage
-          funnel={funnel}
-          total={leads.total}
-          crmPrimary={crmPrimary}
-          scoped
-          {...l}
-          label="Your leads by stage"
-        />
+        {/* Their OWN ageing, already narrowed by the API - the same panel the
+            manager sees, over a smaller set of rows. A rep is entitled to know
+            which of their leads have gone cold; it is the manager's version of
+            the number that needed a persona decision, not this one. */}
+        {triage ? <LeadTriage triage={triage} /> : null}
       </div>
+
+      <PipelineByStage
+        funnel={funnel}
+        total={leads.total}
+        crmPrimary={crmPrimary}
+        scoped
+        {...l}
+        label="Your leads by stage"
+      />
 
       <ActivityChart
         byDay={byDay}
@@ -386,7 +407,7 @@ function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
  * separates them is which of their own numbers matter.
  */
 function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, funnel, byDay, stages, recent, tasks } = data;
+  const { leads, funnel, byDay, stages, recent, tasks, triage } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
   const noun = crmPrimary ? "deals" : "leads";
@@ -440,6 +461,8 @@ function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
         />
         <TaskLoad tasks={tasks} />
       </div>
+
+      {triage ? <LeadTriage triage={triage} /> : null}
 
       <ActivityChart
         byDay={byDay}

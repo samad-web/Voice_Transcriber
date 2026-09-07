@@ -34,8 +34,23 @@ export default async function LeadsPage({
     return Array.isArray(value) ? value[0] : value;
   };
 
+  // `minAgeDays`/`maxAgeDays`/`unresponded` are the dashboard's triage
+  // click-through (gap G3): a tile that says "119 leads, 8-15 days old" has to
+  // land on exactly those 119 rows, or the number on the dashboard was a
+  // decoration. Passed straight through to the API, which owns the arithmetic
+  // and the bucket bounds - this page never computes an age.
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
-  for (const key of ["stage", "status", "q", "sort", "telecallerId", "projectId"]) {
+  for (const key of [
+    "stage",
+    "status",
+    "q",
+    "sort",
+    "telecallerId",
+    "projectId",
+    "minAgeDays",
+    "maxAgeDays",
+    "unresponded",
+  ]) {
     const value = one(key);
     if (value) query.set(key, value);
   }

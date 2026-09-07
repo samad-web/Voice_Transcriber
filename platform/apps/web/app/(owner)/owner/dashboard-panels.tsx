@@ -518,10 +518,29 @@ export function TaskLoad({ tasks }: { tasks: Overview["tasks"] }) {
       {tasks.open === 0 ? (
         <p className="py-6 text-center text-sm text-text-muted">Nothing outstanding - you are clear</p>
       ) : (
+        // Every tile is a link to the tab that holds exactly the rows it
+        // counts. That is the whole difference between a dashboard and a
+        // triage surface: a number you can act on without first working out
+        // where the rows behind it live.
         <div className="grid grid-cols-3 gap-3">
-          <TaskCount label="Overdue" value={tasks.overdue} tone={tasks.overdue > 0 ? "warn" : "plain"} />
-          <TaskCount label="Due today" value={tasks.due_today} tone="plain" />
-          <TaskCount label="Open" value={tasks.open} tone="plain" />
+          <TaskCount
+            label="Overdue"
+            value={tasks.overdue}
+            tone={tasks.overdue > 0 ? "warn" : "plain"}
+            href="/owner/tasks?bucket=overdue"
+          />
+          <TaskCount
+            label="Due today"
+            value={tasks.due_today}
+            tone="plain"
+            href="/owner/tasks?bucket=today"
+          />
+          <TaskCount
+            label="Upcoming"
+            value={tasks.upcoming}
+            tone="plain"
+            href="/owner/tasks?bucket=upcoming"
+          />
         </div>
       )}
     </Card>
@@ -532,21 +551,127 @@ function TaskCount({
   label,
   value,
   tone,
+  href,
 }: {
   label: string;
   value: number;
   tone: "warn" | "plain";
+  href?: string;
 }) {
-  return (
-    <div className="rounded-lg border border-border bg-bg-subtle px-3 py-3 text-center">
+  const body = (
+    <>
       <span
         className={`block text-2xl font-semibold tabular-nums ${
           tone === "warn" ? "text-danger-text" : "text-text"
         }`}
       >
-        {value}
+        {value.toLocaleString()}
       </span>
       <span className="mt-0.5 block text-xs text-text-muted">{label}</span>
-    </div>
+    </>
+  );
+  const shell = "rounded-lg border border-border bg-bg-subtle px-3 py-3 text-center";
+  // A plain div when there is nowhere to go, rather than a link to a page that
+  // cannot honour the filter. A tile that navigates to a list showing
+  // something other than the number that was clicked is worse than one that
+  // does not navigate at all.
+  return href ? (
+    <Link href={href} className={`${shell} block transition-colors hover:border-border-strong`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={shell}>{body}</div>
+  );
+}
+
+/**
+ * Lead ageing, and the leads nobody has answered at all.
+ *
+ * ── EVERY NUMBER HERE IS A FILTER ───────────────────────────────────────────
+ *
+ * The bucket bounds come from the server (reports/sla.ts's AGING_BUCKETS,
+ * rendered into SQL by agingBucketFilters) and the links carry those same
+ * bounds as `minAgeDays`/`maxAgeDays` into the leads list. Tile and
+ * destination therefore agree by construction: there is one definition of
+ * "4-7 days" and both ends read it.
+ *
+ * ── AND IT DOES NOT SOFTEN THE NUMBER ───────────────────────────────────────
+ *
+ * "Nobody has answered 3,639 of these" renders exactly like that, in the
+ * warning tone, with no encouraging framing. The reference tenant this was
+ * modelled on displayed 969 overdue at 99% without flinching, and that honesty
+ * is the reason anyone believed the rest of the page.
+ */
+export function LeadTriage({ triage }: { triage: NonNullable<Overview["triage"]> }) {
+  const buckets = [
+    { key: "d0_3", label: "0-3 days", value: triage.d0_3, min: 0, max: 3 },
+    { key: "d4_7", label: "4-7 days", value: triage.d4_7, min: 4, max: 7 },
+    { key: "d8_15", label: "8-15 days", value: triage.d8_15, min: 8, max: 15 },
+    { key: "d16_30", label: "16-30 days", value: triage.d16_30, min: 16, max: 30 },
+    { key: "d30_plus", label: "30+ days", value: triage.d30_plus, min: 31, max: null },
+  ] as const;
+
+  const neverPct =
+    triage.open_total === 0 ? null : Math.round((triage.never_responded / triage.open_total) * 100);
+
+  return (
+    <Card elevated className="space-y-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <MonoLabel>Needs attention</MonoLabel>
+        <Link href="/owner/reports/sla" className={PANEL_LINK}>
+          Response &amp; follow-ups →
+        </Link>
+      </div>
+
+      {triage.open_total === 0 ? (
+        <p className="py-6 text-center text-sm text-text-muted">No open leads</p>
+      ) : (
+        <>
+          <Link
+            href="/owner/leads?unresponded=1&status=open"
+            className="block rounded-lg border border-border bg-bg-subtle px-3 py-3 transition-colors hover:border-border-strong"
+          >
+            <span className="flex items-baseline gap-2">
+              <span
+                className={`text-2xl font-semibold tabular-nums ${
+                  triage.never_responded > 0 ? "text-danger-text" : "text-text"
+                }`}
+              >
+                {triage.never_responded.toLocaleString()}
+              </span>
+              <span className="text-sm text-text-muted">
+                never answered{neverPct === null ? "" : ` · ${neverPct}% of open leads`}
+              </span>
+            </span>
+          </Link>
+
+          <div>
+            <p className="mb-1.5 text-xs text-text-muted">Open leads, by how long they have sat</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {buckets.map((b) => (
+                <Link
+                  key={b.key}
+                  href={`/owner/leads?status=open&minAgeDays=${b.min}${
+                    b.max === null ? "" : `&maxAgeDays=${b.max}`
+                  }`}
+                  className="rounded-lg border border-border bg-bg-subtle px-1.5 py-2.5 text-center transition-colors hover:border-border-strong"
+                >
+                  <span
+                    className={`block text-lg font-semibold tabular-nums ${
+                      b.key === "d30_plus" && b.value > 0 ? "text-danger-text" : "text-text"
+                    }`}
+                  >
+                    {b.value.toLocaleString()}
+                  </span>
+                  <span className="mt-0.5 block text-[0.6875rem] leading-tight text-text-muted">
+                    {b.label}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }

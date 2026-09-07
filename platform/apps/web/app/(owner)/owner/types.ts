@@ -348,7 +348,31 @@ export interface Overview {
    * three months overdue is more urgent than one due tomorrow, so the API
    * deliberately ignores the reporting window here.
    */
-  tasks: { open: number; overdue: number; due_today: number; undated: number };
+  tasks: {
+    open: number;
+    overdue: number;
+    due_today: number;
+    upcoming: number;
+    undated: number;
+  };
+  /**
+   * The triage block: open leads by age, and how many have never been
+   * answered. Also not windowed - the whole point of the 30+ bucket is the
+   * leads that fell out of the reporting window and are still sitting there.
+   *
+   * NULL on the CRM read (`/v1/owner/crm-overview`), which is over deals and
+   * contacts and has no first_responded_at. Absent means "this view cannot
+   * answer that", which is why it is null rather than zeroes.
+   */
+  triage: {
+    open_total: number;
+    never_responded: number;
+    d0_3: number;
+    d4_7: number;
+    d8_15: number;
+    d16_30: number;
+    d30_plus: number;
+  } | null;
 }
 
 /** numeric columns arrive from pg as strings; one place to make them numbers. */

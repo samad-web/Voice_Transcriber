@@ -169,3 +169,39 @@ describe("tally", () => {
     expect(tally(defs, []).every((r) => r.pct === null)).toBe(true);
   });
 });
+
+describe("agingBucketFilters", () => {
+  it("emits one aliased count per bucket, in the same order", async () => {
+    const { AGING_BUCKETS, agingBucketFilters } = await import("./sla");
+    const sql = agingBucketFilters("age_days");
+    for (const b of AGING_BUCKETS) {
+      expect(sql).toContain(`AS ${b.key}`);
+    }
+    // The dashboard reads these aliases positionally into its own tile list;
+    // a reordering here would relabel every tile silently.
+    const order = AGING_BUCKETS.map((b) => sql.indexOf(`AS ${b.key}`));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("draws the boundaries where agingBucket() draws them", async () => {
+    const { AGING_BUCKETS, agingBucketFilters } = await import("./sla");
+    const sql = agingBucketFilters("age_days");
+    // The whole reason this generator exists: one definition, so a dashboard
+    // tile and the report it links to cannot disagree about where "8-15 days"
+    // ends. If somebody edits AGING_BUCKETS, both move together or this fails.
+    for (const b of AGING_BUCKETS) {
+      if (b.maxDays === null) expect(sql).toContain(`age_days >= ${b.minDays}`);
+      else expect(sql).toContain(`age_days BETWEEN ${b.minDays} AND ${b.maxDays}`);
+    }
+  });
+
+  it("leaves no gap and no overlap between consecutive buckets", async () => {
+    const { AGING_BUCKETS } = await import("./sla");
+    for (let i = 1; i < AGING_BUCKETS.length; i++) {
+      const previous = AGING_BUCKETS[i - 1];
+      // A gap means a lead counted nowhere; an overlap means one counted
+      // twice. Either makes the tiles stop summing to the total beside them.
+      expect(AGING_BUCKETS[i].minDays).toBe((previous.maxDays ?? 0) + 1);
+    }
+  });
+});
