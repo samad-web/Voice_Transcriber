@@ -19,6 +19,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { listWasiTemplates } from "./wasi-client";
+import { listWabaTemplates } from "./meta-send";
 
 /**
  * Per-org messaging identities (migration 0056).
@@ -198,6 +199,126 @@ export class MessagingChannelsController {
       });
       return { templates };
     });
+  }
+
+  /**
+   * Pull a WABA's approved templates into `message_templates` (0098).
+   *
+   * ── WHY THEY ARE CACHED AND NOT FETCHED PER COMPOSE ─────────────────────
+   *
+   * The composer needs them to RENDER - a dropdown that waits on a Graph round
+   * trip, and empties when Meta is slow, makes the reply box feel broken - and
+   * approval state changes underneath us. A template approved yesterday can be
+   * paused by Meta today, and a send against a paused one fails with an error
+   * the rep cannot interpret. Cached, the console can grey it out and say why.
+   *
+   * ── A PULL, NEVER A PUSH ────────────────────────────────────────────────
+   *
+   * Aura does not submit templates for approval. Writing copy that Meta will
+   * review and attach to the tenant's business account affects the standing of
+   * their number, and that belongs in Meta's own tooling where the review state
+   * is authoritative rather than mirrored.
+   *
+   * A template that has disappeared from Meta is marked `disabled` rather than
+   * deleted: calls and messages already reference the ones that were sent, and
+   * a settings sync must not rewrite what was sent last month.
+   */
+  @Post(":id/templates/sync")
+  async syncTemplates(@OrgId() orgId: string, @Param("id", new ParseUUIDPipe()) id: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [channel],
+      } = await client.query<{
+        provider: string;
+        api_key: string | null;
+        config: { businessAccountId?: string };
+      }>(`SELECT provider, api_key, config FROM messaging_channels WHERE id = $1`, [id]);
+      if (!channel) throw new NotFoundException("channel not found");
+      if (channel.provider !== "waba" || !channel.api_key || !channel.config?.businessAccountId) {
+        throw new BadRequestException(
+          "templates come from a WhatsApp Business API channel with a business account id",
+        );
+      }
+
+      const templates = await listWabaTemplates(
+        decryptSecret(channel.api_key) ?? "",
+        channel.config.businessAccountId,
+      );
+
+      for (const template of templates) {
+        // The body component carries the text and the {{n}} placeholders; the
+        // rest (header, footer, buttons) is kept as Meta returned it so the
+        // composer can render exactly what the customer will see.
+        const body =
+          (template.components as Array<{ type?: string; text?: string }>).find(
+            (c) => c.type?.toUpperCase() === "BODY",
+          )?.text ?? "";
+        const variables = [...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]);
+
+        await client.query(
+          `INSERT INTO message_templates
+             (org_id, channel_id, channel, name, language, category, status, body,
+              buttons, variables, meta_template_id, synced_at)
+           VALUES ($1, $2, 'whatsapp', $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, now())
+           ON CONFLICT (org_id, channel_id, name, language)
+           DO UPDATE SET status = EXCLUDED.status,
+                         body = EXCLUDED.body,
+                         category = EXCLUDED.category,
+                         buttons = EXCLUDED.buttons,
+                         variables = EXCLUDED.variables,
+                         meta_template_id = EXCLUDED.meta_template_id,
+                         synced_at = now(),
+                         updated_at = now()`,
+          [
+            orgId,
+            id,
+            template.name,
+            template.language,
+            template.category,
+            metaStatus(template.status),
+            body,
+            JSON.stringify(template.components),
+            JSON.stringify(variables),
+            template.id,
+          ],
+        );
+      }
+
+      // Anything we hold that Meta no longer lists. Disabled, not deleted -
+      // see the header.
+      await client.query(
+        `UPDATE message_templates
+            SET status = 'disabled', updated_at = now()
+          WHERE channel_id = $1 AND synced_at < now() - interval '1 minute'
+            AND status <> 'disabled'`,
+        [id],
+      );
+
+      return { synced: templates.length };
+    });
+  }
+}
+
+/**
+ * Meta's approval vocabulary, mapped onto ours.
+ *
+ * Anything unrecognised becomes `disabled` rather than `approved`: a state we
+ * do not understand must not be the one that lets a rep send.
+ */
+function metaStatus(status: string): string {
+  switch (status.toUpperCase()) {
+    case "APPROVED":
+      return "approved";
+    case "PENDING":
+    case "IN_APPEAL":
+    case "PENDING_DELETION":
+      return "pending";
+    case "REJECTED":
+      return "rejected";
+    case "PAUSED":
+      return "paused";
+    default:
+      return "disabled";
   }
 }
 

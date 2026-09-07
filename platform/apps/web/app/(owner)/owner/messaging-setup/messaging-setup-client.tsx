@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import { MetaChannelDialog } from "./meta-channel-dialog";
 import {
   createWasiChannelAction,
   listChannelsAction,
@@ -19,6 +20,7 @@ import {
 export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
   const [channels, setChannels] = useState(initial);
   const [createOpen, setCreateOpen] = useState(false);
+  const [metaOpen, setMetaOpen] = useState(false);
   const [secretDialogFor, setSecretDialogFor] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const alert = useAlert();
@@ -32,18 +34,27 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
 
   return (
     <div className="space-y-4">
-      {channels.length === 0 ? (
-        <Card>
-          <MonoLabel>No WhatsApp channel yet</MonoLabel>
-          <p className="mt-2 max-w-lg text-sm text-text-muted">
-            Connect this org's WhatsApp number through Wasi. You'll need the Hub API key and
-            client id Wasi issued for this org (from Wasi's admin panel), and its host URL.
-          </p>
-          <div className="mt-3">
-            <Button onClick={() => setCreateOpen(true)}>Connect WhatsApp via Wasi</Button>
-          </div>
-        </Card>
-      ) : (
+      {/* Two routes to WhatsApp, and the difference is worth stating rather
+          than leaving somebody to work it out from two similar buttons. Meta's
+          own API needs an approved business number and gives templates and a
+          24-hour reply window; a BSP-relayed personal number needs neither and
+          has neither. Instagram and Messenger exist only on the Meta side. */}
+      <Card>
+        <MonoLabel>{channels.length === 0 ? "No channel yet" : "Add a channel"}</MonoLabel>
+        <p className="mt-2 max-w-prose text-sm leading-relaxed text-text-muted">
+          Connect a WhatsApp Business number, an Instagram account or a Facebook Page directly
+          through Meta — or relay an ordinary WhatsApp number through Wasi, which needs no Meta
+          approval and has no templates.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button onClick={() => setMetaOpen(true)}>Connect through Meta</Button>
+          <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+            Connect WhatsApp via Wasi
+          </Button>
+        </div>
+      </Card>
+
+      {channels.length === 0 ? null : (
         channels.map((c) => (
           <Card key={c.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -103,6 +114,15 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
           </Card>
         ))
       )}
+
+      <MetaChannelDialog
+        open={metaOpen}
+        onClose={() => setMetaOpen(false)}
+        onCreated={() => {
+          setMetaOpen(false);
+          refresh();
+        }}
+      />
 
       <CreateDialog
         open={createOpen}

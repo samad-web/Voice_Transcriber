@@ -118,3 +118,91 @@ export async function setChannelStatusAction(
     return { error: "API unreachable" };
   }
 }
+
+/**
+ * Connect one of Meta's three surfaces (migration 0098).
+ *
+ * ── WHY THIS IS ONE ACTION AND NOT THREE ────────────────────────────────────
+ *
+ * WABA, Instagram and Messenger differ in exactly two fields - which id
+ * identifies the sender, and which channel the messages are filed under - and
+ * are identical in everything else: the same access token, the same webhook,
+ * the same signature. Three near-copies would drift on the shared nine tenths.
+ *
+ * The `verifyToken` is generated here rather than typed. It is a value the
+ * tenant has to paste into Meta and never needs to remember, and asking a
+ * person to invent a secret produces "test123" often enough to matter.
+ */
+export async function createMetaChannelAction(input: {
+  kind: "waba" | "instagram" | "facebook";
+  inboundAddress: string;
+  displayName: string;
+  accessToken: string;
+  /** WABA: the phone number id. Instagram/Messenger: the page id. */
+  senderId: string;
+  /** WABA only: the business account id, for reading approved templates. */
+  businessAccountId?: string;
+  verifyToken: string;
+}): Promise<{ ok?: true; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  const channel = input.kind === "waba" ? "whatsapp" : input.kind;
+  // `waba` and `meta` as providers, not one name: they are different APIs with
+  // different payload shapes on the send side, and the webhook handler
+  // branches on exactly this.
+  const provider = input.kind === "waba" ? "waba" : "meta";
+  const config =
+    input.kind === "waba"
+      ? {
+          phoneNumberId: input.senderId,
+          businessAccountId: input.businessAccountId,
+          verifyToken: input.verifyToken,
+        }
+      : input.kind === "instagram"
+        ? { igUserId: input.senderId, pageId: input.senderId, verifyToken: input.verifyToken }
+        : { pageId: input.senderId, verifyToken: input.verifyToken };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/channels`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({
+        channel,
+        provider,
+        inboundAddress: input.inboundAddress,
+        displayName: input.displayName,
+        apiKey: input.accessToken,
+        config,
+      }),
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    revalidatePath("/owner/messaging-setup");
+    revalidatePath("/owner/integrations");
+    return { ok: true };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** Pull the approved template list off Meta into `message_templates`. */
+export async function syncWabaTemplatesAction(
+  channelId: string,
+): Promise<{ synced?: number; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/channels/${channelId}/templates/sync`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const body = (await res.json()) as { synced?: number };
+    revalidatePath("/owner/messaging-setup");
+    return { synced: body.synced ?? 0 };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}

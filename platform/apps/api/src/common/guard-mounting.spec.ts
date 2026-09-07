@@ -862,7 +862,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 337 routes, partitioned 282 tenant / 29 cross-tenant / 7 device / 19 unguarded", () => {
+  it("has 338 routes, partitioned 283 tenant / 29 cross-tenant / 7 device / 19 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -943,8 +943,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(337);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(337);
+    expect(ROUTES).toHaveLength(338);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(338);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -957,12 +957,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(282);
+    expect(tenantScoped).toHaveLength(283);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(337);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(338);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 303 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 304 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -970,7 +970,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(303);
+    expect(principalRoutes).toHaveLength(304);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
