@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet } from "@/lib/owner-context";
 import type { OwnerCall, Telecaller } from "../types";
 import { CallsExplorer } from "./calls-explorer";
+import type { Disposition } from "./actions";
 
 export const metadata: Metadata = { title: "Calls - Aura" };
 
@@ -69,9 +70,12 @@ export default async function CallsPage({
   // Concurrent, and the telecaller list is optional: it only supplies the
   // handset filter, so an outage there should cost that one chip row rather
   // than the log itself.
-  const [data, overview] = await Promise.all([
+  const [data, overview, dispositions] = await Promise.all([
     ownerGet<ListResponse>(`/v1/owner/calls?${query}`),
     ownerGet<{ telecallers: Telecaller[] }>("/v1/owner/overview?days=30"),
+    // Optional in the same way: with no vocabulary the drawer simply shows no
+    // outcome buttons, rather than the log failing to render.
+    ownerGet<{ dispositions: Disposition[] }>("/v1/owner/call-dispositions"),
   ]);
 
   if (!data) {
@@ -96,6 +100,7 @@ export default async function CallsPage({
         conversation.
       </p>
       <CallsExplorer
+        dispositions={dispositions?.dispositions ?? []}
         calls={data.calls}
         telecallers={overview?.telecallers ?? []}
         total={data.total}

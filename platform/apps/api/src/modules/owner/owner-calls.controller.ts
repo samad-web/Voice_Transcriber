@@ -103,6 +103,9 @@ const LEAD_JOIN = `
  * conversations; a telecaller's console stays their own leads and follow-ups
  * (design doc §9), the same restriction Call Quality carries.
  */
+/** `null` clears the verdict; a key sets it. */
+const DispositionBody = z.object({ key: z.string().max(40).nullable() });
+
 @Controller("owner/calls")
 @UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
 @RequireOwnerRole("owner", "manager")
@@ -148,6 +151,7 @@ export class OwnerCallsController {
       const { rows } = await client.query(
         `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
                 c.remote_name, c.remote_number_prefix, c.remote_number_last3,
+                c.device_id, c.disposition_key,
                 c.device_id, COALESCE(d.telecaller_name, d.label) AS telecaller,
                 ci.intent, ci.sentiment, ci.outcome, ci.summary, ci.has_transcript,
                 ca.quality_score,
@@ -210,6 +214,7 @@ export class OwnerCallsController {
       } = await client.query(
         `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
                 c.remote_name, c.remote_number_prefix, c.remote_number_last3,
+                c.device_id, c.disposition_key,
                 c.device_id, COALESCE(d.telecaller_name, d.label) AS telecaller,
                 ci.intent, ci.sentiment, ci.outcome, ci.summary, ci.has_transcript,
                 ca.quality_score,
@@ -432,6 +437,100 @@ export class OwnerCallsController {
    * holding it, and a 409 naming the current status is what tells the console to
    * stop offering the button rather than to retry.
    */
+  /**
+   * Record what a PERSON says this call was (migration 0097).
+   *
+   * ── WHY THE AI READ IS NOT THIS ─────────────────────────────────────────
+   *
+   * `transcripts.intelligence->>'outcome'` is already on the row and the
+   * console already shows it. It is a machine's reading, in a vocabulary we
+   * chose, and it is right often enough to be useful and wrong often enough
+   * that nobody should be measured on it. This column is what somebody agreed
+   * to, in the tenant's own words - the same split SOP scoring and WhatsApp
+   * qualification already make.
+   *
+   * ── AND WHY IT MOVES THE LEAD'S TEMPERATURE ─────────────────────────────
+   *
+   * A disposition that only coloured a chip would be a filing exercise. The
+   * point of `lead_quality` is that judging the call re-rates the lead, which
+   * is the one thing a telecaller knows and the board does not.
+   *
+   * It writes `temperature_source = 'user'` because a person chose it, and
+   * 0083's rule then makes that permanent against the pipeline - a later call's
+   * automatic read cannot overwrite a human's verdict. Dispositions with no
+   * `lead_quality` touch the lead at all, which is why most of the seeded set
+   * has none: "no answer" is the most-pressed button on any floor, and a floor
+   * that re-rated its whole board every time somebody did not pick up would
+   * have a rating that measures reachability.
+   */
+  @Post(":id/disposition")
+  async disposition(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) callId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = DispositionBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { key } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      if (!(await orgHasModule(client, "call_intel"))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+
+      // Clearing is its own path: it removes the verdict but deliberately does
+      // NOT put the lead's temperature back. There is nothing to put it back
+      // to - the previous value may have come from another call entirely - and
+      // silently re-rating a lead because somebody undid a chip would be a
+      // change nobody asked for.
+      if (key === null) {
+        const { rowCount } = await client.query(
+          `UPDATE calls SET disposition_key = NULL, disposition_by = NULL, disposition_at = NULL
+            WHERE id = $1`,
+          [callId],
+        );
+        if (!rowCount) throw new NotFoundException("call not found");
+        return { ok: true, disposition: null, leadRerated: false };
+      }
+
+      const {
+        rows: [disposition],
+      } = await client.query<{ key: string; label: string; lead_quality: string | null }>(
+        `SELECT key, label, lead_quality FROM call_dispositions
+          WHERE key = $1 AND is_active`,
+        [key],
+      );
+      if (!disposition) throw new BadRequestException("no active disposition with that name");
+
+      const {
+        rows: [call],
+      } = await client.query<{ lead_id: string | null }>(
+        `UPDATE calls
+            SET disposition_key = $2, disposition_by = $3, disposition_at = now()
+          WHERE id = $1
+         RETURNING lead_id`,
+        [callId, disposition.key, req.principal?.userId ?? null],
+      );
+      if (!call) throw new NotFoundException("call not found");
+
+      let leadRerated = false;
+      if (disposition.lead_quality && call.lead_id) {
+        const { rowCount } = await client.query(
+          `UPDATE leads
+              SET temperature = $2, temperature_source = 'user'
+            WHERE id = $1 AND status = 'open'`,
+          [call.lead_id, disposition.lead_quality],
+        );
+        // Only open leads. Re-rating a lead somebody already marked won or lost
+        // would overwrite a conclusion with an observation.
+        leadRerated = Boolean(rowCount);
+      }
+
+      return { ok: true, disposition: disposition.key, leadRerated };
+    });
+  }
+
   @Post(":id/reprocess")
   @RequireOwnerRole("owner")
   async reprocess(

@@ -35,6 +35,8 @@ import {
   fetchOwnerCallNotesAction,
   reprocessOwnerCallAction,
 } from "./actions";
+import type { Disposition } from "./actions";
+import { DispositionPicker } from "./disposition-picker";
 
 const STATES = [
   { key: "complete", label: "Done" },
@@ -71,6 +73,7 @@ export function CallsExplorer({
   total,
   limit,
   offset,
+  dispositions,
 }: {
   calls: OwnerCall[];
   /** For the handset filter. Empty simply drops that chip row. */
@@ -78,6 +81,8 @@ export function CallsExplorer({
   total: number;
   limit: number;
   offset: number;
+  /** The tenant's outcome vocabulary (0097). Empty hides the picker entirely. */
+  dispositions: Disposition[];
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -339,7 +344,7 @@ export function CallsExplorer({
         ) : null}
       </div>
 
-      <CallDrawer call={open} onClose={() => setOpen(null)} />
+      <CallDrawer call={open} onClose={() => setOpen(null)} dispositions={dispositions} />
     </>
   );
 }
@@ -378,7 +383,15 @@ function FilterChip({
  * that immediately and only the transcript, analytics and facts are fetched -
  * the parts no list can afford to carry for every row.
  */
-function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => void }) {
+function CallDrawer({
+  call,
+  onClose,
+  dispositions,
+}: {
+  call: OwnerCall | null;
+  onClose: () => void;
+  dispositions: Disposition[];
+}) {
   const confirm = useConfirm();
   const alert = useAlert();
   const toast = useToast();
@@ -527,6 +540,17 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
             sentiment={call.sentiment}
             outcome={call.outcome}
             qualityScore={call.quality_score}
+          />
+
+          {/* The tenant's own verdict (0097), beside the machine's rather than
+              instead of it. Seeing both is what tells a manager whether the
+              model's read can be trusted on the nine hundred calls nobody has
+              opened. */}
+          <DispositionPicker
+            key={call.id}
+            callId={call.id}
+            dispositions={dispositions}
+            current={call.disposition_key ?? null}
           />
 
           {call.lead_id ? (

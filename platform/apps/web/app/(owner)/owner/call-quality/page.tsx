@@ -3,7 +3,9 @@ import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { CallQualityManager } from "./call-quality-manager";
+import { DispositionsEditor } from "./dispositions-editor";
 import type { CallIntegrityFlag } from "./actions";
+import type { Disposition } from "./disposition-actions";
 
 export const metadata: Metadata = { title: "Call Quality - Aura" };
 
@@ -18,7 +20,12 @@ interface ListResponse {
  * is where an owner/manager works through them.
  */
 export default async function CallQualityPage() {
-  const data = await ownerGet<ListResponse>("/v1/call-integrity-flags?status=open&limit=50");
+  // Concurrent, and the vocabulary is optional: an outage there costs the
+  // outcome editor, not the review queue this page exists for.
+  const [data, dispositions] = await Promise.all([
+    ownerGet<ListResponse>("/v1/call-integrity-flags?status=open&limit=50"),
+    ownerGet<{ dispositions: Disposition[] }>("/v1/owner/call-dispositions"),
+  ]);
 
   if (!data) {
     return (
@@ -44,6 +51,11 @@ export default async function CallQualityPage() {
         out to be fine, resolve what you fixed.
       </p>
       <CallQualityManager initial={data.flags} />
+
+      {/* The vocabulary the queue above is worked in. It lives on this page
+          rather than in its own because the two are one job: reviewing calls,
+          and deciding what the words for "reviewed" are. */}
+      {dispositions ? <DispositionsEditor initial={dispositions.dispositions} /> : null}
     </>
   );
 }

@@ -39,6 +39,7 @@ export * from "./meta-mcp";
 export * from "./api-scopes";
 export * from "./report-builder";
 export * from "./lead-intake";
+export * from "./call-dispositions";
 export * from "./linkedin";
 export * from "./whatsapp-qualification";
 export * from "./call-sops";

@@ -107,6 +107,7 @@ import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnerTeamController } from "../modules/owner/owner-team.controller";
 import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
 import { CallTriageController } from "../modules/owner/call-triage.controller";
+import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
 import { TelecallerProductivityController } from "../modules/owner/telecaller-productivity.controller";
 import { CallSopsController } from "../modules/owner/call-sops.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
@@ -141,6 +142,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   LeadsController,
   OwnerCallsController,
   CallTriageController,
+  CallDispositionsController,
   TelecallerProductivityController,
   CallSopsController,
   OwnerController,
@@ -474,7 +476,20 @@ const OWNER_ROLE_ROUTES = [
   // decorator, via `getAllAndOverride`. A reprocess re-runs ASR and analyze
   // against the paid providers, so it is a spending decision and belongs with
   // the account holder rather than with everyone who can read the log.
+  // What a PERSON said the call was (0097), in the tenant's own vocabulary,
+  // as opposed to the AI's reading already on the row. Class-level
+  // owner/manager like the rest of the log: it re-rates the lead behind the
+  // call, which is a decision about somebody else's pipeline.
+  "POST /owner/calls/:id/disposition",
   "POST /owner/calls/:id/reprocess",
+  // The vocabulary itself. GET carries no @RequireOwnerRole - every
+  // surface showing a call needs the labels to render a chip, and a
+  // telecaller reading a bare key helps nobody. Defining the list is
+  // owner/manager, because a disposition carries a lead-quality mapping:
+  // whoever controls it controls how the board gets rated.
+  "GET /owner/call-dispositions",
+  "POST /owner/call-dispositions",
+  "PATCH /owner/call-dispositions/:id",
   // The unmatched-call queue (migration 0094). Same class-level
   // @RequireOwnerRole("owner", "manager") and the same `call_intel`
   // entitlement as the log it hangs off, for the same reason: the queue is
@@ -825,7 +840,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 330 routes, partitioned 277 tenant / 29 cross-tenant / 7 device / 17 unguarded", () => {
+  it("has 334 routes, partitioned 281 tenant / 29 cross-tenant / 7 device / 17 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -906,8 +921,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(330);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(330);
+    expect(ROUTES).toHaveLength(334);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(334);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -920,12 +935,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(277);
+    expect(tenantScoped).toHaveLength(281);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(330);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(334);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 298 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 302 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -933,7 +948,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(298);
+    expect(principalRoutes).toHaveLength(302);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

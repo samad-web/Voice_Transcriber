@@ -223,6 +223,8 @@ export interface LeadCallDetail {
  * what the call was about and which lead it produced.
  */
 export interface OwnerCall {
+  /** What a PERSON said this call was (0097), or null if nobody has. */
+  disposition_key?: string | null;
   id: string;
   direction: string;
   started_at: string;

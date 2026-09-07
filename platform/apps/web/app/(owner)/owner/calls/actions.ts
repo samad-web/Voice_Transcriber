@@ -1,6 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
+import { apiErrorMessage } from "../lib/api-error";
 import { ownerHeaders } from "../actions";
 import type { CallNote, OwnerCallDetail } from "../types";
 
@@ -147,6 +149,48 @@ export async function reprocessOwnerCallAction(
     }
     if (!res.ok) return { error: `API ${res.status}` };
     return { status: ((await res.json()) as { status: string }).status };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+// ── Dispositions (migration 0097) ───────────────────────────────────────────
+
+export interface Disposition {
+  id: string;
+  key: string;
+  label: string;
+  lead_quality: "hot" | "medium" | "cold" | null;
+  color: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+/**
+ * Record what a person says this call was.
+ *
+ * The response says whether the lead was re-rated, and the console shows it -
+ * because a chip that silently changed a lead's temperature would be a side
+ * effect nobody consented to. `null` clears the verdict, and deliberately does
+ * NOT put the temperature back: there is nothing to put it back to.
+ */
+export async function setCallDispositionAction(
+  callId: string,
+  key: string | null,
+): Promise<{ error?: string; leadRerated?: boolean }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/calls/${callId}/disposition`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({ key }),
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const body = (await res.json()) as { leadRerated?: boolean };
+    revalidatePath("/owner/calls");
+    return { leadRerated: body.leadRerated };
   } catch {
     return { error: "API unreachable" };
   }
