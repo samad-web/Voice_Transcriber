@@ -724,13 +724,24 @@ export class ReportsService {
         assignee_user_id: string | null;
         assignee: string | null;
         completed_on: string | null;
+        completed_by_other: boolean;
+        reminders_sent: number;
       }>(
         `SELECT t.id, t.title, to_char(t.due_on, 'YYYY-MM-DD') AS due_on, t.status,
                 t.assignee_user_id,
                 COALESCE(u.name, u.email)                          AS assignee,
                 CASE WHEN t.completed_at IS NULL THEN NULL
                      ELSE to_char(t.completed_at AT TIME ZONE $3, 'YYYY-MM-DD')
-                END                                                AS completed_on
+                END                                                AS completed_on,
+                -- Somebody else cleared it (0095). Not a failure - a manager
+                -- tidying a rep's list is ordinary - but it is the difference
+                -- between "they kept the promise" and "the promise got kept",
+                -- and a scorecard that cannot tell them apart credits the
+                -- wrong person. NULL completed_by (every row before 0095)
+                -- reads as false rather than as a guess.
+                (t.completed_by IS NOT NULL
+                   AND t.completed_by IS DISTINCT FROM t.assignee_user_id) AS completed_by_other,
+                t.reminders_sent
            FROM tasks t
            LEFT JOIN users u ON u.id = t.assignee_user_id
           WHERE t.due_on >= $1::date AND t.due_on <= $2::date
@@ -756,6 +767,9 @@ export class ReportsService {
       // the difference between "they closed it" and "they closed it in time".
       const completedLate = rows.filter(
         (r) => r.status === "done" && r.completed_on !== null && r.completed_on > r.due_on,
+      ).length;
+      const completedBySomeoneElse = rows.filter(
+        (r) => r.status === "done" && r.completed_by_other,
       ).length;
 
       const byUser = groupBy(rows, (r) => r.assignee_user_id ?? "unassigned").map((group) => {
@@ -788,6 +802,7 @@ export class ReportsService {
           ...counts,
           completedLate,
           completedOnTime: counts.completed - completedLate,
+          completedBySomeoneElse,
           compliancePct: compliancePct(counts),
         },
         byUser,
@@ -800,6 +815,11 @@ export class ReportsService {
             dueOn: r.due_on,
             assignee: r.assignee ?? "(unassigned)",
             overdueDays: overdueDays(r.due_on, today),
+            // How many times the ladder has already said so (0095). "Eleven
+            // days late" and "eleven days late, chased four times" are
+            // different problems: the first may be a queue nobody reads, the
+            // second is a person who has read it and not acted.
+            remindersSent: Number(r.reminders_sent ?? 0),
           }))
           .sort((a, b) => b.overdueDays - a.overdueDays)
           .slice(0, 100),

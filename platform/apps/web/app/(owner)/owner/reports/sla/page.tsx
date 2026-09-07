@@ -51,6 +51,7 @@ interface ComplianceReport {
     pending: number;
     completedLate: number;
     completedOnTime: number;
+    completedBySomeoneElse: number;
     compliancePct: number | null;
   };
   byUser: Array<{
@@ -68,6 +69,7 @@ interface ComplianceReport {
     dueOn: string;
     assignee: string;
     overdueDays: number;
+    remindersSent: number;
   }>;
 }
 
@@ -292,7 +294,11 @@ export default async function SlaReportsPage() {
             <Stat
               label="Completed on time"
               value={String(compliance.kpi.completedOnTime)}
-              hint={`${compliance.kpi.completedLate} completed late`}
+              hint={
+                compliance.kpi.completedBySomeoneElse > 0
+                  ? `${compliance.kpi.completedLate} completed late · ${compliance.kpi.completedBySomeoneElse} closed by someone else`
+                  : `${compliance.kpi.completedLate} completed late`
+              }
             />
             <Stat label="Follow-ups in window" value={String(compliance.kpi.total)} />
           </div>
@@ -345,6 +351,7 @@ export default async function SlaReportsPage() {
                       <Th>Assignee</Th>
                       <Th>Was due</Th>
                       <Th right>Days late</Th>
+                      <Th right>Chased</Th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -354,6 +361,11 @@ export default async function SlaReportsPage() {
                         <Td>{task.assignee}</Td>
                         <Td>{task.dueOn}</Td>
                         <Td right>{task.overdueDays}</Td>
+                        {/* Eleven days late and eleven days late having been
+                            chased four times are different problems: the first
+                            may be a queue nobody reads, the second is somebody
+                            who has read it and not acted. */}
+                        <Td right>{task.remindersSent > 0 ? `${task.remindersSent}×` : "—"}</Td>
                       </tr>
                     ))}
                   </tbody>

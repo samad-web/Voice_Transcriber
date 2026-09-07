@@ -204,10 +204,15 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/tasks",
-    label: "Tasks",
+    label: "Follow-ups",
     icon: ListChecks,
-    title: "Tasks",
+    title: "Follow-ups",
     context: "Pipeline",
+    // Renamed, not moved (migration 0095). The URL stays /owner/tasks because
+    // every bookmark, notification link_path and deal-page link points at it -
+    // and because the table really is `tasks`. What changed is what the page
+    // is FOR: a queue of promises with a due date and an overdue count, rather
+    // than a list of open work.
     // No persona restriction, unlike the boards: a telecaller's own follow-ups
     // are exactly the thing they need this console for.
   },

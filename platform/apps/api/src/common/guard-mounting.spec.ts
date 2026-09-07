@@ -569,6 +569,10 @@ const CRM_PERMISSION_ROUTES = [
   // also seeds every system role's task grants - so these are enforced from
   // the moment they ship, rather than being a retrofit later.
   "GET /tasks",
+  // The follow-up queue's five tab counts (migration 0095), one statement.
+  // Declared above GET /tasks/:id in the controller so Nest does not read
+  // "counts" as a task id - the ordering matters there, not here.
+  "GET /tasks/counts",
   "GET /tasks/:id",
   "POST /tasks",
   "PATCH /tasks/:id",
@@ -821,7 +825,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 328 routes, partitioned 275 tenant / 29 cross-tenant / 7 device / 17 unguarded", () => {
+  it("has 329 routes, partitioned 276 tenant / 29 cross-tenant / 7 device / 17 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -899,8 +903,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(328);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(328);
+    expect(ROUTES).toHaveLength(329);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(329);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -913,12 +917,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(275);
+    expect(tenantScoped).toHaveLength(276);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(328);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(329);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 296 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 297 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -926,7 +930,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(296);
+    expect(principalRoutes).toHaveLength(297);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

@@ -27,6 +27,7 @@ import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
 import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
 import { startCallLeadLinkSweep } from "./pipeline/call-lead-link";
+import { startFollowupReminderSweep } from "./pipeline/followup-reminders";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
 import { startLinkedInSweep } from "./pipeline/linkedin-sync";
@@ -172,6 +173,14 @@ async function bootstrap() {
   // Sweep rather than trigger because neither side arrives first: a cold call
   // precedes its lead, a Meta lead precedes its calls. See the module header.
   startCallLeadLinkSweep();
+  // The follow-up escalation ladder (migration 0095). A missed promise used to
+  // be silent - the row sat in `tasks` with a past date and the only way to
+  // find out was to look. This raises an IN-APP notice to the person who owes
+  // it, once per task per day, and counts the times it has had to.
+  //
+  // It nags the REP and never the customer: safety rule 3 holds, and 0048's
+  // table cannot reach anybody who has not already signed in.
+  startFollowupReminderSweep();
   // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
   // threads and writes a scored PROPOSAL a person then approves - it creates no
   // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only

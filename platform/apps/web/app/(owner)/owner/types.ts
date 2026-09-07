@@ -485,15 +485,34 @@ export interface Task {
   contact_id: string | null;
   account_id: string | null;
   deal_id: string | null;
+  /** The lead this is a promise about (0095). What makes a task a follow-up. */
+  lead_id: string | null;
+  lead_title?: string | null;
+  lead_stage?: string | null;
   assignee_user_id: string | null;
   assignee_name?: string | null;
   deal_name?: string | null;
   contact_name?: string | null;
   due_on: string | null;
+  /** The promised TIME, when the promise has one. Null means the day is all. */
+  due_at: string | null;
   status: "open" | "done" | "cancelled";
   priority: "low" | "normal" | "high";
   completed_at: string | null;
+  /** Who ticked it off - not always who owed it. Null on pre-0095 rows. */
+  completed_by: string | null;
+  /** How many times the ladder has had to say it is late (0095). */
+  reminders_sent: number;
   created_at: string;
+}
+
+/** The five tab counts on the follow-up queue, from `GET /v1/tasks/counts`. */
+export interface FollowupCounts {
+  all: number;
+  overdue: number;
+  today: number;
+  upcoming: number;
+  completed: number;
 }
 
 /**
