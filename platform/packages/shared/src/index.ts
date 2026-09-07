@@ -40,6 +40,7 @@ export * from "./api-scopes";
 export * from "./report-builder";
 export * from "./lead-intake";
 export * from "./call-dispositions";
+export * from "./integrations";
 export * from "./linkedin";
 export * from "./whatsapp-qualification";
 export * from "./call-sops";

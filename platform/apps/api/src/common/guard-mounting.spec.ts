@@ -108,6 +108,7 @@ import { OwnerTeamController } from "../modules/owner/owner-team.controller";
 import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
 import { CallTriageController } from "../modules/owner/call-triage.controller";
 import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
+import { IntegrationsController } from "../modules/owner/integrations.controller";
 import { TelecallerProductivityController } from "../modules/owner/telecaller-productivity.controller";
 import { CallSopsController } from "../modules/owner/call-sops.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
@@ -143,6 +144,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   OwnerCallsController,
   CallTriageController,
   CallDispositionsController,
+  IntegrationsController,
   TelecallerProductivityController,
   CallSopsController,
   OwnerController,
@@ -307,6 +309,13 @@ const UNGUARDED = [
   "POST /devices/register",
   "POST /devices/challenge",
   "POST /devices/authenticate",
+  // Meta's subscription handshake (0098) - a GET on the SAME url, because that
+  // is what Meta requires: it calls once with hub.mode=subscribe and expects
+  // the challenge echoed as a bare body. Unguarded for the identical reason the
+  // POST is: Meta presents no credential of ours, and the token in the path is
+  // what both authenticates and names the tenant. It discloses nothing - a bad
+  // verify token and an unknown channel both 403 with no body.
+  "GET /messaging/webhook/:token",
   "POST /messaging/webhook/:token",
   // Razorpay's payment-link webhook (migration 0060). See razorpay-webhook.controller.ts's
   // header for the resolve-org-then-verify-signature ordering that makes this
@@ -487,6 +496,10 @@ const OWNER_ROLE_ROUTES = [
   // telecaller reading a bare key helps nobody. Defining the list is
   // owner/manager, because a disposition carries a lead-quality mapping:
   // whoever controls it controls how the board gets rated.
+  // The integration hub (0098): what this tenant can connect to, and what is
+  // connected. Owner/manager - it names the tenant's outside accounts and what
+  // has been failing on them, which is administration.
+  "GET /owner/integrations",
   "GET /owner/call-dispositions",
   "POST /owner/call-dispositions",
   "PATCH /owner/call-dispositions/:id",
@@ -840,7 +853,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 334 routes, partitioned 281 tenant / 29 cross-tenant / 7 device / 17 unguarded", () => {
+  it("has 336 routes, partitioned 282 tenant / 29 cross-tenant / 7 device / 18 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -921,8 +934,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(334);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(334);
+    expect(ROUTES).toHaveLength(336);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(336);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -935,12 +948,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(281);
+    expect(tenantScoped).toHaveLength(282);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(334);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(336);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 302 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 303 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -948,7 +961,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(302);
+    expect(principalRoutes).toHaveLength(303);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -1115,7 +1128,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     ]);
   });
 
-  it("pins the seventeen unguarded routes as an explicit allowlist", () => {
+  it("pins the eighteen unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
     // `POST /auth/logout` is a known finding - an anonymous DELETE on the

@@ -21,9 +21,22 @@ import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { sendWasiMessage, WasiSendError } from "./wasi-client";
+import { MetaSendError, sendMetaDirect, sendWhatsAppCloud } from "./meta-send";
+import { replyWindow } from "./meta-messaging";
 
 const SendBody = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("template"), template: z.string().min(1), params: z.record(z.string(), z.string()).default({}) }),
+  z.object({
+    type: z.literal("template"),
+    template: z.string().min(1),
+    /**
+     * The language the template was APPROVED in. Part of its identity to Meta -
+     * the same name in two languages is two templates - so it travels with the
+     * send. Optional, defaulting to `en`, which is what message_templates
+     * defaults to as well.
+     */
+    language: z.string().min(2).max(10).optional(),
+    params: z.record(z.string(), z.string()).default({}),
+  }),
   z.object({ type: z.literal("text"), body: z.string().min(1).max(4096) }),
 ]);
 
@@ -83,14 +96,22 @@ export class WhatsAppSendController {
         id: string;
         peer_address: string;
         messaging_channel_id: string | null;
+        channel: "whatsapp" | "instagram" | "facebook";
+        last_inbound_at: Date | null;
       }>(
-        `SELECT id, peer_address, messaging_channel_id FROM conversations
-          WHERE id = $1 AND channel = 'whatsapp' ${scoped ? `AND ${scoped}` : ""}`,
+        // Four channels now, not one (0098). Instagram and Messenger reach the
+        // same inbox and the same reply box, and the gate chain above - human
+        // caller, permission, record scope, daily cap - is identical for all of
+        // them. What differs is only which API carries the message.
+        `SELECT id, peer_address, messaging_channel_id, channel, last_inbound_at
+           FROM conversations
+          WHERE id = $1 AND channel IN ('whatsapp', 'instagram', 'facebook')
+            ${scoped ? `AND ${scoped}` : ""}`,
         scoped ? [conversationId, recordScope.userId] : [conversationId],
       );
       if (!convo) throw new NotFoundException("conversation not found");
       if (!convo.messaging_channel_id) {
-        throw new BadRequestException("this conversation has no WhatsApp channel attached");
+        throw new BadRequestException("this conversation has no messaging channel attached");
       }
 
       const {
@@ -101,17 +122,49 @@ export class WhatsAppSendController {
         status: string;
         api_key: string | null;
         api_base_url: string | null;
-        config: { wasiClientId?: string };
+        config: {
+          wasiClientId?: string;
+          phoneNumberId?: string;
+          pageId?: string;
+          igUserId?: string;
+        };
       }>(
         `SELECT id, provider, status, api_key, api_base_url, config
            FROM messaging_channels WHERE id = $1`,
         [convo.messaging_channel_id],
       );
-      if (!channel || channel.provider !== "wasi" || channel.status !== "active") {
-        throw new BadRequestException("this org's WhatsApp channel is not configured or not active");
+      if (!channel || channel.status !== "active") {
+        throw new BadRequestException("this org's messaging channel is not configured or not active");
       }
-      if (!channel.api_key || !channel.api_base_url || !channel.config?.wasiClientId) {
+      const isMeta = channel.provider === "waba" || channel.provider === "meta";
+      if (!isMeta && channel.provider !== "wasi") {
+        throw new BadRequestException(`sending through ${channel.provider} is not supported`);
+      }
+      if (!isMeta && (!channel.api_key || !channel.api_base_url || !channel.config?.wasiClientId)) {
         throw new BadRequestException("this org's WhatsApp channel is missing its Wasi credentials");
+      }
+
+      // ── The 24-hour window ────────────────────────────────────────────────
+      //
+      // Meta refuses a free-form message more than 24 hours after the
+      // customer's last one; WhatsApp then needs an approved template and
+      // Instagram/Messenger need a permitted tag, which Aura does not send
+      // (see meta-send.ts). Checked HERE rather than left to Meta because its
+      // own refusal arrives after the message is composed and reads as a
+      // failure rather than as a rule - and because a rep who is told first
+      // can pick a template instead of retyping.
+      if (isMeta) {
+        const window = replyWindow(convo.last_inbound_at);
+        if (!window.open && message.type !== "template") {
+          throw new BadRequestException(
+            convo.channel === "whatsapp"
+              ? "more than 24 hours have passed since they last replied - send an approved template instead"
+              : "more than 24 hours have passed since they last replied, so Meta will not deliver this",
+          );
+        }
+        if (convo.channel !== "whatsapp" && message.type === "template") {
+          throw new BadRequestException("templates are a WhatsApp feature - send a plain reply");
+        }
       }
 
       const {
@@ -138,21 +191,80 @@ export class WhatsAppSendController {
         );
       }
 
-      let result;
+      // ── One send, three transports ────────────────────────────────────────
+      //
+      // The result is normalised to `{ externalId, status }` here rather than
+      // downstream, so the INSERT below is written once. `status` is what the
+      // provider said at the moment of acceptance; the webhook corrects it to
+      // delivered/read later, which is why it is stored rather than assumed.
+      let outcome: { externalId: string | null; status: string };
       try {
-        result = await sendWasiMessage(
-          {
-            apiBaseUrl: channel.api_base_url,
-            apiKey: decryptSecret(channel.api_key) ?? "",
-            wasiClientId: channel.config.wasiClientId,
-          },
-          message.type === "template"
-            ? { type: "template", to: convo.peer_address, template: message.template, params: message.params }
-            : { type: "text", to: convo.peer_address, body: message.body },
-        );
+        if (isMeta && convo.channel === "whatsapp") {
+          const senderId = channel.config.phoneNumberId;
+          if (!senderId || !channel.api_key) {
+            throw new BadRequestException(
+              "this WhatsApp channel is missing its Cloud API phone number or token",
+            );
+          }
+          const out = await sendWhatsAppCloud(
+            { accessToken: decryptSecret(channel.api_key) ?? "", senderId },
+            message.type === "template"
+              ? {
+                  type: "template",
+                  to: convo.peer_address,
+                  template: message.template,
+                  // The language a template was approved IN is part of its
+                  // identity to Meta - the same name in two languages is two
+                  // templates - so it travels with the send rather than being
+                  // assumed. `en` matches message_templates' own default.
+                  language: message.language ?? "en",
+                  // Positional, in {{1}}, {{2}} order. The body arrives as a
+                  // map because that is what a form produces; Meta wants a
+                  // sequence, and sorting numerically here is what stops
+                  // "{{10}}" landing between "{{1}}" and "{{2}}".
+                  params: Object.entries(message.params)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([, value]) => value),
+                }
+              : { type: "text", to: convo.peer_address, body: message.body },
+          );
+          outcome = { externalId: out.externalId, status: "sent" };
+        } else if (isMeta) {
+          const senderId = channel.config.pageId ?? channel.config.igUserId;
+          if (!senderId || !channel.api_key) {
+            throw new BadRequestException("this channel is missing its Meta page id or token");
+          }
+          if (message.type === "template") {
+            throw new BadRequestException("templates are a WhatsApp feature");
+          }
+          const out = await sendMetaDirect(
+            { accessToken: decryptSecret(channel.api_key) ?? "", senderId },
+            convo.peer_address,
+            message.body,
+          );
+          outcome = { externalId: out.externalId, status: "sent" };
+        } else {
+          const result = await sendWasiMessage(
+            {
+              apiBaseUrl: channel.api_base_url ?? "",
+              apiKey: decryptSecret(channel.api_key) ?? "",
+              wasiClientId: channel.config.wasiClientId ?? "",
+            },
+            message.type === "template"
+              ? { type: "template", to: convo.peer_address, template: message.template, params: message.params }
+              : { type: "text", to: convo.peer_address, body: message.body },
+          );
+          outcome = { externalId: result.metaMessageId, status: mapWasiStatus(result.status) };
+        }
       } catch (err) {
         if (err instanceof WasiSendError) {
           throw new BadRequestException(`Wasi refused the send: ${err.message}`);
+        }
+        // Meta's own words - "more than 24 hours have passed since the customer
+        // last replied", "Template name does not exist in the translation" -
+        // are what a person can act on. See meta-send.ts.
+        if (err instanceof MetaSendError) {
+          throw new BadRequestException(`Meta refused the send: ${err.message}`);
         }
         throw err;
       }
@@ -163,17 +275,19 @@ export class WhatsAppSendController {
         `INSERT INTO conversation_messages
            (org_id, conversation_id, direction, channel, status, from_address, to_address,
             body, provider, external_id, sent_by_user_id, occurred_at)
-         VALUES ($1, $2, 'outgoing', 'whatsapp', $3, $4, $5, $6, 'wasi', $7, $8, now())
+         VALUES ($1, $2, 'outgoing', $9, $3, $4, $5, $6, $10, $7, $8, now())
          RETURNING id, status, occurred_at`,
         [
           orgId,
           conversationId,
-          mapWasiStatus(result.status),
+          outcome.status,
           null,
           convo.peer_address,
           message.type === "template" ? `[template: ${message.template}]` : message.body,
-          result.metaMessageId,
+          outcome.externalId,
           userId.data,
+          convo.channel,
+          channel.provider,
         ],
       );
       await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId]);

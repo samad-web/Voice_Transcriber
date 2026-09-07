@@ -292,6 +292,36 @@ export const TELEPHONY_PROVIDERS: IntakeProviderSpec[] = [
     inboundDirections: [...INBOUND_WORDS, "incoming", "call-attempt"],
   },
   {
+    id: "superfone",
+    label: "Superfone",
+    blurb: "Superfone call logs - every inbound, missed and outbound call on your virtual numbers.",
+    signature: "none",
+    fieldMap: {
+      ...GENERIC_TELEPHONY_MAP,
+      externalId: ["call_id", "callId", "cdr_id", "id"],
+      // `caller_phone` is Superfone's own name for the counterparty, and it
+      // means the CUSTOMER on an inbound call and the person dialled on an
+      // outbound one - which is the same "who is the other party" this map
+      // wants everywhere else. Falling back to `from` covers the older payload
+      // shape, which some accounts still emit.
+      phone: ["caller_phone", "customer_number", "from", "caller"],
+      // The virtual number the call arrived on. Worth keeping: a tenant with a
+      // number per campaign reads attribution straight off it.
+      recipient: ["superfone_number", "virtual_number", "to", "did"],
+      direction: ["direction", "call_type", "type"],
+      recordingUrl: ["recording_url", "recording", "recordingUrl"],
+      agent: ["staff_name", "agent_name", "answered_by", "agent"],
+      occurredAt: ["started_at", "start_time", "call_time", "created_at"],
+      // Outcome AND disposition, in that order: Superfone reports a system
+      // outcome (answered / missed / busy) and, separately, whatever the rep
+      // marked it as. The rep's word is the more informative of the two and is
+      // therefore not what lands in `notes` - it lands in the raw payload and
+      // reaches `leads.facts`, where nothing overwrites it.
+      notes: ["outcome", "status", "call_status"],
+    },
+    inboundDirections: [...INBOUND_WORDS, "incoming", "missed", "inbound_call"],
+  },
+  {
     id: "knowlarity",
     label: "Knowlarity",
     blurb: "Knowlarity SR / SuperReceptionist inbound and missed-call notifications.",

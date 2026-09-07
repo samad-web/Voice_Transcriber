@@ -14,10 +14,18 @@ export interface ResolvedChannel {
   id: string;
   orgId: string;
   workspaceId: string | null;
-  channel: "whatsapp" | "sms" | "email";
+  channel: "whatsapp" | "sms" | "email" | "instagram" | "facebook";
   provider: string;
   /** Still encrypted - decrypt at the point of use, same discipline as api_key elsewhere. */
   forwardSecret: string | null;
+  /**
+   * Per-provider settings (0056's jsonb). Carried on the resolved channel
+   * because Meta's subscription handshake needs `verifyToken` BEFORE any org
+   * context exists - the whole point of the token lookup is that it is what
+   * names the tenant. Never contains a credential: those live in `api_key`,
+   * encrypted.
+   */
+  config: Record<string, unknown>;
 }
 
 export interface IngestResult {
@@ -73,8 +81,9 @@ export class ConversationsService {
       channel: ResolvedChannel["channel"];
       provider: string;
       forward_secret: string | null;
+      config: Record<string, unknown> | null;
     }>(
-      `SELECT id, org_id, workspace_id, channel, provider, forward_secret
+      `SELECT id, org_id, workspace_id, channel, provider, forward_secret, config
          FROM messaging_channels
         WHERE webhook_token = $1 AND status = 'active'`,
       [token],
@@ -88,6 +97,7 @@ export class ConversationsService {
       channel: row.channel,
       provider: row.provider,
       forwardSecret: row.forward_secret,
+      config: row.config ?? {},
     };
   }
 

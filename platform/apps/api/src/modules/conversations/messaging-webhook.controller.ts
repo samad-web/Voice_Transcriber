@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { Body, Controller, NotFoundException, Param, Post, Req } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req } from "@nestjs/common";
 import type { RawBodyRequest } from "@nestjs/common";
 import type { Request } from "express";
 import { decryptSecret } from "@aura/db";
@@ -12,6 +12,12 @@ import {
 } from "@aura/shared";
 import { DbService } from "../../db/db.service";
 import { ConversationsService, type ResolvedChannel } from "./conversations.service";
+import {
+  parseMetaInbound,
+  parseMetaStatuses,
+  verifyMetaSignature,
+  verifySubscription,
+} from "./meta-messaging";
 
 /**
  * Inbound provider webhooks - the receive half of messaging (0055/0056).
@@ -37,12 +43,43 @@ import { ConversationsService, type ResolvedChannel } from "./conversations.serv
  * `stored: false`, which ends the retry and leaves the failure visible in the
  * response rather than in a retry loop.
  */
+/** The delivery states `messages.status` models. Meta emits more than these. */
+const MESSAGE_STATUSES = ["sent", "delivered", "read", "failed"] as const;
+
 @Controller("messaging/webhook")
 export class MessagingWebhookController {
   constructor(
     private readonly conversations: ConversationsService,
     private readonly db: DbService,
   ) {}
+
+  /**
+   * Meta's subscription handshake.
+   *
+   * A GET on the same URL, because that is what Meta requires: it calls the
+   * webhook once with `hub.mode=subscribe` and expects the challenge echoed as
+   * a bare body. Unguarded for the same reason the POST is - Meta presents no
+   * credential of ours - and it discloses nothing: a bad token and an unknown
+   * channel both 403 with no body.
+   *
+   * Returning the challenge as a plain string and not JSON is not a style
+   * choice. Meta compares the response body byte-for-byte with what it sent,
+   * and a quoted JSON string fails that comparison, which presents as "the
+   * webhook could not be verified" with nothing in any log to explain it.
+   */
+  @Get(":token")
+  async verify(@Param("token") token: string, @Query() query: Record<string, unknown>) {
+    if (typeof token !== "string" || token.length < 16 || token.length > 200) {
+      throw new ForbiddenException();
+    }
+    const channel = await this.conversations.resolveChannel(token);
+    const expected = (channel?.config as { verifyToken?: string } | undefined)?.verifyToken;
+    if (!channel || !expected) throw new ForbiddenException();
+
+    const challenge = verifySubscription(query, expected);
+    if (challenge === null) throw new ForbiddenException();
+    return challenge;
+  }
 
   @Post(":token")
   async receive(
@@ -65,6 +102,14 @@ export class MessagingWebhookController {
     // byte-differ.
     if (channel.provider === "wasi") {
       return this.receiveWasi(channel, body, req);
+    }
+
+    // Meta's own APIs: WhatsApp Cloud (`waba`), Instagram Direct and Facebook
+    // Messenger. One provider name because it is one webhook, one signature
+    // scheme and one envelope - what differs is a layer down, and
+    // meta-messaging.ts explains why that is the right seam.
+    if (channel.provider === "waba" || channel.provider === "meta") {
+      return this.receiveMeta(channel, body, req);
     }
 
     // Evolution (or any other relay) has no fixed signature contract Aura can
@@ -102,6 +147,74 @@ export class MessagingWebhookController {
 
     const result = await this.conversations.ingestInbound(channel, adapted);
     return { stored: !result.deduped, ...result };
+  }
+
+  /**
+   * A Meta delivery: verify, then ingest every message in the batch.
+   *
+   * ── THE SECRET IS THE APP SECRET, NOT A PER-CHANNEL ONE ─────────────────
+   *
+   * Meta signs with the APP secret - one value for the whole Meta app, shared
+   * by every Page and number subscribed to it - so unlike Wasi there is
+   * nothing per-channel to configure. `forward_secret` is still checked first
+   * so a tenant running against their own Meta app can override the
+   * deployment's, which is the same tenant-then-env precedence the Razorpay
+   * credentials and the CRM connectors already use.
+   *
+   * No secret at all means REFUSE, not "accept unsigned". An unsigned Meta
+   * webhook is an open endpoint that writes into a customer's inbox, and the
+   * token in the URL is not enough for a payload that names its own sender.
+   */
+  private async receiveMeta(channel: ResolvedChannel, body: unknown, req: RawBodyRequest<Request>) {
+    const secret =
+      decryptSecret(channel.forwardSecret) ?? process.env.META_APP_SECRET ?? null;
+    const header = req.headers["x-hub-signature-256"] as string | undefined;
+    if (!secret || !req.rawBody || !verifyMetaSignature(req.rawBody, header, secret)) {
+      return { stored: false, reason: "signature verification failed" };
+    }
+
+    // Statuses first and separately: a delivery receipt is not a message, and
+    // running it through the ingest path would create an empty inbound thread
+    // for every message we ever sent.
+    const statuses = parseMetaStatuses(body);
+    for (const status of statuses) {
+      // Meta's vocabulary is a superset of ours - it also emits `deleted` and
+      // `warning` - so anything outside the four we model is skipped rather
+      // than coerced. A status we do not understand written as "sent" would be
+      // worse than no update at all.
+      if (!MESSAGE_STATUSES.includes(status.status as (typeof MESSAGE_STATUSES)[number])) continue;
+      await this.conversations.updateMessageStatus(
+        channel.orgId,
+        channel.provider,
+        status.externalId,
+        status.status as (typeof MESSAGE_STATUSES)[number],
+        status.error,
+      );
+    }
+
+    const inbound = parseMetaInbound(body);
+    let stored = 0;
+    for (const message of inbound) {
+      const peerAddress = normalizePeerAddress(message.channel, message.peerAddress);
+      if (!peerAddress) continue;
+      const result = await this.conversations.ingestInbound(channel, {
+        channel: message.channel,
+        peerAddress,
+        peerLabel: message.peerLabel ?? undefined,
+        toAddress: message.recipient ?? undefined,
+        body: message.body,
+        provider: channel.provider,
+        externalId: message.externalId,
+        occurredAt: message.occurredAt,
+      });
+      if (!result.deduped) stored++;
+    }
+
+    // A batch that parsed to nothing is still a 2xx - see the class header.
+    // Meta retries hard on a non-2xx, and the payloads it sends that we do not
+    // handle (template status changes, account updates) would otherwise be
+    // replayed for hours.
+    return { stored: stored > 0, messages: inbound.length, statuses: statuses.length };
   }
 
   private async receiveWasi(channel: ResolvedChannel, body: unknown, req: RawBodyRequest<Request>) {

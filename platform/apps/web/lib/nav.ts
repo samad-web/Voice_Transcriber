@@ -26,6 +26,7 @@ import {
   Package,
   Palette,
   Phone,
+  PhoneForwarded,
   PieChart,
   Plug,
   Receipt,
@@ -467,6 +468,35 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/integrations",
+    label: "Integrations",
+    icon: Plug,
+    title: "Integrations",
+    context: "Workspace",
+    // Owner/manager, matching the API. This page names which of the tenant's
+    // outside accounts are joined up and which are failing, which is
+    // administration rather than day-to-day work - and it is a directory of
+    // Connections and Messaging setup, both of which carry the same tier.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/superfone",
+    label: "Superfone calls",
+    icon: PhoneForwarded,
+    title: "Superfone",
+    context: "Superfone",
+    // ── ITS OWN SECTION, DELIBERATELY ────────────────────────────────────
+    //
+    // Superfone is one telephony provider among several and could have been a
+    // filter on the call log. It is separated because the two logs answer
+    // different questions and have different data behind them: the call log is
+    // recordings the handsets uploaded, with transcripts and AI reads;
+    // Superfone is a CDR feed from a cloud PBX, with no audio of ours and no
+    // transcript. Merging them would produce a list where half the rows have
+    // no "open the conversation" and no explanation of why.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/branding",
     label: "Branding",
     icon: Palette,
@@ -565,6 +595,11 @@ export const OWNER_NAV_SECTIONS = [
   { key: "sales", label: "Sales" },
   { key: "insights", label: "Insights" },
   { key: "connectors", label: "Lead connectors" },
+  // Superfone gets a heading of its own rather than a row under Conversations.
+  // A section with one entry looks odd until the second one lands, and the
+  // reason it exists is that this is a SEPARATE telephony product with its own
+  // numbers, its own log and no audio of ours - not a view of the call log.
+  { key: "superfone", label: "Superfone" },
   { key: "workspace", label: "Workspace" },
 ] as const;
 
@@ -612,6 +647,8 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/reports/builder": "insights",
   "/owner/reports/sla": "insights",
 
+  "/owner/superfone": "superfone",
+
   "/owner/lead-sources": "connectors",
   "/owner/meta-ads": "connectors",
   "/owner/messaging-setup": "connectors",
@@ -623,6 +660,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/team": "workspace",
   "/owner/branding": "workspace",
   "/owner/connections": "workspace",
+  "/owner/integrations": "workspace",
 };
 
 /** Sections carrying the CRM object model - what `crmPrimary` promotes. */

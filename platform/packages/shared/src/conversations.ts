@@ -16,7 +16,23 @@ import { z } from "zod";
  * call, a meeting or a note, none of which are two-way threads you can reply
  * into. This enum is only the conversational subset.
  */
-export const ConversationChannel = z.enum(["whatsapp", "sms", "email"]);
+/**
+ * Instagram and Messenger joined WhatsApp, SMS and email in 0098.
+ *
+ * They are separate CHANNELS rather than WhatsApp providers, and the
+ * distinction is load-bearing: the counterparty on Instagram is a page-scoped
+ * id, not a phone number, so it cannot dedupe against a contact's mobile and a
+ * thread starts unmatched by design. WABA and a paired handset ARE the same
+ * channel - a WhatsApp message from a number - and differ only in how we reach
+ * the network, which is what `provider` is for.
+ */
+export const ConversationChannel = z.enum([
+  "whatsapp",
+  "sms",
+  "email",
+  "instagram",
+  "facebook",
+]);
 export type ConversationChannel = z.infer<typeof ConversationChannel>;
 
 /**
@@ -61,6 +77,14 @@ export type MessageStatus = z.infer<typeof MessageStatus>;
 export function normalizePeerAddress(channel: ConversationChannel, raw: string): string {
   const trimmed = raw.trim();
   if (channel === "email") return trimmed.toLowerCase();
+  // Instagram and Messenger identify people by a PAGE-SCOPED ID (0098) - an
+  // opaque numeric string that is not a phone number and means nothing outside
+  // that Page. Stripping it to digits and prefixing "+" would turn it into
+  // something that LOOKS like a phone number, and the contact matcher would
+  // then happily dedupe a stranger's DM against whoever owns the number it
+  // resembles. Kept verbatim, which also makes it obviously not a number to
+  // anyone reading the row.
+  if (channel === "instagram" || channel === "facebook") return trimmed;
   const digits = trimmed.replace(/\D+/gu, "");
   return digits.length > 0 ? `+${digits}` : "";
 }

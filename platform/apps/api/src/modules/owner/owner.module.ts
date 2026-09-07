@@ -3,6 +3,7 @@ import { CallSopsController } from "./call-sops.controller";
 import { OwnerCallsController } from "./owner-calls.controller";
 import { CallTriageController } from "./call-triage.controller";
 import { CallDispositionsController } from "./call-dispositions.controller";
+import { IntegrationsController } from "./integrations.controller";
 import { TelecallerProductivityController } from "./telecaller-productivity.controller";
 import { OwnerTeamController } from "./owner-team.controller";
 import { LeadsController } from "./leads.controller";
@@ -23,6 +24,7 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     OwnerCallsController,
     CallTriageController,
     CallDispositionsController,
+    IntegrationsController,
     OwnerTeamController,
     LeadsController,
     OwnerController,
