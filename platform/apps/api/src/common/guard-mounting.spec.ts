@@ -97,6 +97,7 @@ import { QuotationsController } from "../modules/quotations/quotations.controlle
 import { InvoicesController } from "../modules/invoices/invoices.controller";
 import { PaymentsController } from "../modules/invoices/payments.controller";
 import { RazorpayWebhookController } from "../modules/invoices/razorpay-webhook.controller";
+import { StripeWebhookController } from "../modules/invoices/stripe-webhook.controller";
 import { ImportController } from "../modules/import/import.controller";
 import { MetaOAuthController } from "../modules/meta-ads/meta-oauth.controller";
 import { MetaWebhookController } from "../modules/meta-ads/meta-webhook.controller";
@@ -248,6 +249,7 @@ const CONTROLLERS: Array<Type<unknown>> = [
   InvoicesController,
   PaymentsController,
   RazorpayWebhookController,
+  StripeWebhookController,
   // Kailash gap Milestone 2: bulk CSV import (migration 0062). AdminKeyGuard+
   // TenantGuard only - a bulk operation over a caller-chosen entity type,
   // the same administrative tier scripts/backfill-crm-objects.js already
@@ -321,6 +323,13 @@ const UNGUARDED = [
   // header for the resolve-org-then-verify-signature ordering that makes this
   // safe to leave unguarded.
   "POST /webhooks/razorpay",
+  // Stripe (0099), on the same terms and for the same reason: a gateway cannot
+  // present an admin key, the signature over the raw bytes is the credential,
+  // and the org is resolved from the session id BEFORE its secret is used to
+  // verify - because which secret to use is exactly what is unknown until the
+  // org is known. Always 200, so an ignored delivery is not retried for three
+  // days.
+  "POST /webhooks/stripe",
   // Meta's own OAuth redirect lands here with no Aura credentials - verifies
   // itself via the signed `state` param instead (meta-client.ts).
   "GET /meta/oauth/callback",
@@ -853,7 +862,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 336 routes, partitioned 282 tenant / 29 cross-tenant / 7 device / 18 unguarded", () => {
+  it("has 337 routes, partitioned 282 tenant / 29 cross-tenant / 7 device / 19 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -934,8 +943,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(336);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(336);
+    expect(ROUTES).toHaveLength(337);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(337);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -950,7 +959,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
     expect(tenantScoped).toHaveLength(282);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(336);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(337);
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 303 principal routes", () => {
@@ -1128,7 +1137,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     ]);
   });
 
-  it("pins the eighteen unguarded routes as an explicit allowlist", () => {
+  it("pins the nineteen unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
     // `POST /auth/logout` is a known finding - an anonymous DELETE on the
