@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { TriageQueue } from "./triage-queue";
 import type { TriageCounts, UnmatchedCall } from "./actions";
 
@@ -39,6 +39,8 @@ export default async function CallTriagePage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/calls/triage");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
 

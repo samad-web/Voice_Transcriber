@@ -36,13 +36,19 @@ import {
   Smartphone,
   Sparkles,
   Target,
+  ToggleLeft,
   Unlink,
   Upload,
   Users,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import type { OwnerRole } from "@aura/shared";
+import {
+  type FeatureOverrides,
+  type OwnerRole,
+  enabledFeatures,
+  featureForHref,
+} from "@aura/shared";
 
 /** The two consoles: the platform operator's, and one customer's own. */
 export type NavArea = "platform" | "owner";
@@ -456,15 +462,31 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
-    href: "/owner/team",
-    label: "Team",
+    href: "/owner/staff",
+    label: "Staff",
     icon: Users,
-    title: "Team",
-    context: "Settings",
+    title: "Staff",
+    context: "Workspace",
+    // Was /owner/team, and that URL still resolves - it redirects here (see
+    // that page). Renamed because the section now answers three questions
+    // rather than one: who is here, what may they do, and how are they doing.
+    //
     // Owner and manager, matching what the API allows: a manager reads the
-    // roster, only an owner changes a persona (owner-team.controller.ts). The
-    // page renders read-only for a manager rather than being hidden from
-    // them - knowing who sits where is part of running the floor.
+    // roster, the permission grid and the scorecard, and only an owner changes
+    // any of them. Every tab renders read-only for a manager rather than being
+    // hidden - knowing who sits where is part of running the floor.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/features",
+    label: "Features",
+    icon: ToggleLeft,
+    title: "Features",
+    context: "Workspace",
+    // Owner and manager, and deliberately NOT in the feature catalogue itself:
+    // a switchboard that could be switched off is one click from a workspace
+    // that needs an operator with a SQL prompt to recover. Same reasoning as
+    // the locked entries in features.ts.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -530,44 +552,21 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
 ];
 
 /**
- * The CRM-object nav items - hidden entirely (not just reordered) when the
- * org's `enabled_modules` (migration 0072) doesn't include 'crm'. Matched
- * against what `CrmPermissionsGuard`'s `@RequireCrmPermission` actually
- * gates on the API side (contact/account/deal/task/conversation/product/
- * quotation/invoice - see the crm-objects, tasks, conversations, products,
- * quotations and invoices controllers), plus Duplicates and Import, which
- * are pure-CRM features not yet backend-gated
- * but meaningless without CRM data. `/owner/board` and `/owner/leads` (the
- * legacy `leads`-table pages) are deliberately NOT here - those are core
- * Aura, independent of the CRM toggle.
+ * ── MODULE GATING MOVED TO THE FEATURE CATALOGUE ───────────────────────────
+ *
+ * `CRM_GATED_HREFS` and `CALL_INTEL_GATED_HREFS` used to live here: two hand-
+ * maintained lists of pages to hide when the org lacked a module (0072). They
+ * are gone, and the same answers now come from `FEATURES` in @aura/shared,
+ * where each page's module sits beside the page.
+ *
+ * Not a tidy-up - a correctness change. Those lists and the client's own
+ * feature switches (0101) would otherwise be two independent reasons to hide
+ * the same row, and the first time they disagreed the sidebar would show a
+ * link the API refuses. One catalogue answers both, and the API, the worker
+ * and this file all read it.
+ *
+ * `nav.test.ts` pins the module behaviour unchanged across the move.
  */
-/**
- * Hidden without the `call_intel` module, the way CRM_GATED_HREFS is hidden
- * without CRM. Separate list because it is a separate entitlement: a tenant
- * can have the whole CRM and still not have bought the right to read its own
- * call transcripts, and the page 403s rather than rendering empty.
- */
-const CALL_INTEL_GATED_HREFS = ["/owner/calls", "/owner/calls/triage"];
-
-const CRM_GATED_HREFS = [
-  "/owner/deals",
-  "/owner/contacts",
-  "/owner/accounts",
-  "/owner/tasks",
-  "/owner/inbox",
-  "/owner/whatsapp-leads",
-  "/owner/products",
-  "/owner/quotations",
-  "/owner/invoices",
-  "/owner/reports",
-  // The Report Builder (migration 0077) reads the same records - it is gated
-  // on `deal:view` server-side, so a tenant without the CRM module would get a
-  // page of 403s.
-  "/owner/reports/builder",
-  "/owner/reports/sla",
-  "/owner/duplicates",
-  "/owner/import",
-];
 
 /**
  * The owner console's sidebar groups, in render order.
@@ -657,7 +656,8 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/import": "workspace",
   "/owner/duplicates": "workspace",
   "/owner/transcription": "workspace",
-  "/owner/team": "workspace",
+  "/owner/staff": "workspace",
+  "/owner/features": "workspace",
   "/owner/branding": "workspace",
   "/owner/connections": "workspace",
   "/owner/integrations": "workspace",
@@ -691,16 +691,35 @@ export function ownerNavSectionsFor(
   role: OwnerRole,
   crmPrimary = false,
   crmEnabled = true,
+  // Defaults OFF, unlike crmEnabled: call intelligence is an opt-in disclosure
+  // of what was said on a customer's phone call, so a caller that forgets to
+  // pass it must hide the page, not reveal it.
   callIntelEnabled = false,
+  /**
+   * The org's own feature switches (migration 0101), sparse. Absent means the
+   * catalogue's defaults, which are every feature on - so an existing caller
+   * that has not been updated renders exactly the rail it rendered before.
+   */
+  featureOverrides: FeatureOverrides = {},
 ): NavGroup[] {
+  // The two module booleans become a module LIST, which is what they always
+  // were, and the catalogue answers both questions at once: is the tenant
+  // entitled to this page, and has the client switched it off. Deriving them
+  // separately is what would let the sidebar and the API disagree.
+  const modules = ["aura"];
+  if (crmEnabled) modules.push("crm");
+  if (callIntelEnabled) modules.push("call_intel");
+  const on = enabledFeatures(modules, featureOverrides);
+
   const visible = OWNER_NAV_ITEMS.filter(
     (item) => !item.ownerRoles || item.ownerRoles.includes(role),
-  )
-    .filter((item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href))
-    // Defaults OFF, unlike crmEnabled: call intelligence is an opt-in
-    // disclosure of what was said on a customer's phone call, so a caller that
-    // forgets to pass it must hide the page, not reveal it.
-    .filter((item) => callIntelEnabled || !CALL_INTEL_GATED_HREFS.includes(item.href));
+  ).filter((item) => {
+    // A page with no catalogue entry is always shown. That is deliberate and
+    // it is what keeps the switchboard itself, and the dashboard, reachable
+    // from a console whose owner has switched off everything they can.
+    const feature = featureForHref(item.href);
+    return !feature || on.has(feature);
+  });
 
   const ungrouped = visible.filter((item) => !OWNER_SECTION_OF[item.href]);
   const order = crmPrimary
@@ -755,10 +774,15 @@ export function ownerNavItemsFor(
   crmPrimary = false,
   crmEnabled = true,
   callIntelEnabled = false,
+  featureOverrides: FeatureOverrides = {},
 ): NavItem[] {
-  return ownerNavSectionsFor(role, crmPrimary, crmEnabled, callIntelEnabled).flatMap(
-    (g) => g.items,
-  );
+  return ownerNavSectionsFor(
+    role,
+    crmPrimary,
+    crmEnabled,
+    callIntelEnabled,
+    featureOverrides,
+  ).flatMap((g) => g.items);
 }
 
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */

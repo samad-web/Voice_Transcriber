@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { ImportWizard } from "./import-client";
+import { requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "Bulk Import - Aura" };
 
@@ -10,7 +11,9 @@ export const metadata: Metadata = { title: "Bulk Import - Aura" };
  * round-trip the parsed rows through the three server actions in
  * ./actions.ts - so there is nothing for this page to fetch server-side.
  */
-export default function ImportPage() {
+export default async function ImportPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/import");
   return (
     <>
       <PageHeader title="Bulk Import" context="Pipeline" />

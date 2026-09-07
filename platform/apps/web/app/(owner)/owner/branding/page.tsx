@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { BrandingForm, type BrandingView } from "./branding-client";
 
 export const metadata: Metadata = { title: "Branding - Aura" };
@@ -20,6 +20,8 @@ export const metadata: Metadata = { title: "Branding - Aura" };
  * tenant who configured branding before they existed reads them as "".
  */
 export default async function BrandingPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/branding");
   const org = await ownerGet<{ id: string; branding?: Record<string, string> | null }>("/v1/org");
 
   if (!org) {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { McpConnection } from "./actions";
 import { MetaAdsConnect } from "./meta-ads-client";
 import { McpConnect } from "./mcp-connect";
@@ -17,6 +17,8 @@ export const metadata: Metadata = { title: "Meta Lead Ads - Aura" };
  * blocked on app review is not blocked on getting its leads in.
  */
 export default async function MetaAdsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/meta-ads");
   const data = await ownerGet<{ connections: McpConnection[] }>("/v1/mcp/connections");
   const meta = data?.connections.find((c) => c.provider === "meta") ?? null;
 
@@ -25,14 +27,14 @@ export default async function MetaAdsPage() {
       <PageHeader title="Meta Lead Ads" context="Settings" />
       <p className="max-w-2xl text-sm text-text-muted">
         Connect a Facebook Page so leads submitted through its Lead Ads forms land here
-        automatically. You&rsquo;ll be sent to Facebook to sign in and grant access, then
-        redirected back once it&rsquo;s done.
+        automatically. You&rsquo;ll be sent to Facebook to sign in and grant access, then redirected
+        back once it&rsquo;s done.
       </p>
       <p className="max-w-2xl text-sm text-text-muted">
-        There is no page picker yet: the <strong>first</strong> Facebook Page this account
-        manages is the one that gets connected. If the account you sign in with manages more than
-        one Page, this will not let you choose which - ask your platform admin if you need a
-        different Page connected.
+        There is no page picker yet: the <strong>first</strong> Facebook Page this account manages
+        is the one that gets connected. If the account you sign in with manages more than one Page,
+        this will not let you choose which - ask your platform admin if you need a different Page
+        connected.
       </p>
       <MetaAdsConnect />
 

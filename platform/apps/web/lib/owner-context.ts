@@ -1,5 +1,13 @@
 import { cache } from "react";
-import { type OwnerRole, resolveOwnerRole } from "@aura/shared";
+import { redirect } from "next/navigation";
+import {
+  type FeatureKey,
+  type FeatureOverrides,
+  type OwnerRole,
+  enabledFeatures,
+  featureForPath,
+  resolveOwnerRole,
+} from "@aura/shared";
 import {
   API_URL,
   DEV_ORG_ID,
@@ -43,8 +51,18 @@ export interface OwnerMembership {
   recordingsExport: boolean;
   workspaceId: string | null;
   /** organizations.enabled_modules (migration 0072) - which product modules
-   *  this org has. 'crm' gates the CRM-object nav items - see nav.ts. */
+   *  this org has. The PROVIDER's entitlement, and the ceiling for everything
+   *  below. */
   enabledModules: string[];
+  /**
+   * The org's own feature switches (migration 0101), sparse and raw.
+   *
+   * Raw rather than resolved, because `resolveFeatures` has to run in exactly
+   * one place for the API and the web tier to agree - and that place is
+   * @aura/shared, not here. `requireFeature` and the sidebar both call it with
+   * these two fields.
+   */
+  featureOverrides: FeatureOverrides;
 }
 
 export interface Principal {
@@ -172,6 +190,9 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
         workspaceId: DEV_WORKSPACE_ID,
         // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally - 0072's backfill.
         enabledModules: ["aura", "crm"],
+        // No overrides locally: the catalogue's defaults are every feature on,
+        // so a laptop with no database rows renders the whole console.
+        featureOverrides: {},
       },
     };
   }
@@ -325,4 +346,49 @@ export async function ownerGet<T>(path: string): Promise<T | null> {
     ownerRole: owner.membership.ownerRole,
     userId: owner.userId,
   });
+}
+
+/**
+ * The features this owner's workspace actually has, resolved.
+ *
+ * Entitlement intersected with the client's own switches and with every
+ * feature's dependencies - see `resolveFeatures`, which is shared with the API
+ * and the worker so all three answer the same question the same way.
+ */
+export function ownerFeatures(owner: Principal & { membership: OwnerMembership }): Set<FeatureKey> {
+  return enabledFeatures(owner.membership.enabledModules, owner.membership.featureOverrides);
+}
+
+/**
+ * Refuse a page whose feature this workspace has switched off.
+ *
+ * ── WHY A PAGE GUARD AND NOT ONLY A HIDDEN NAV ENTRY ──────────────────────
+ *
+ * Hiding a sidebar row leaves the page reachable by bookmark, by a link in an
+ * older notification, and by a colleague pasting a URL into chat. A switch
+ * that only tidies the rail is a switch that does not mean anything, and the
+ * first person to discover that will be looking at a page their business
+ * decided it was not using.
+ *
+ * ── AND WHY IT REDIRECTS RATHER THAN EXPLAINS ─────────────────────────────
+ *
+ * Same reasoning the persona redirects already use: arriving here means a
+ * stale link, and a console that explains a feature the reader was never told
+ * about is worse than one that takes them home. The Features page names every
+ * switch and why it is in the state it is in - that is where the explanation
+ * belongs.
+ *
+ * ── NOT A SECURITY BOUNDARY, AND SAYING SO MATTERS ────────────────────────
+ *
+ * The same people who can reach the page can switch the feature back on. What
+ * protects a record is the persona and the permission grid, both enforced by
+ * the API; this only makes "off" mean off. Do not move an authorization check
+ * behind it.
+ */
+export async function requireFeature(pathname: string): Promise<void> {
+  const feature = featureForPath(pathname);
+  if (!feature) return;
+  const owner = await getOwner();
+  if (!owner) return redirect("/dashboard");
+  if (!ownerFeatures(owner).has(feature)) redirect("/owner");
 }

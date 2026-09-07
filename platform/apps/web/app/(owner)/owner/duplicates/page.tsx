@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { DuplicateMatch } from "../types";
 import { DuplicatesManager } from "./duplicates-manager";
 
@@ -18,6 +18,8 @@ interface ListResponse {
  * attempted here).
  */
 export default async function DuplicatesPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/duplicates");
   const data = await ownerGet<ListResponse>("/v1/merge/duplicates?status=pending");
 
   if (!data) {
@@ -38,9 +40,8 @@ export default async function DuplicatesPage() {
     <>
       <PageHeader title="Duplicates" context="Pipeline" />
       <p className="-mt-2 text-sm text-text-muted">
-        Contacts and accounts that share the same external system id. Pick which
-        record to keep - the other's history merges into it and can be undone for
-        30 days.
+        Contacts and accounts that share the same external system id. Pick which record to keep -
+        the other's history merges into it and can be undone for 30 days.
       </p>
       <DuplicatesManager initial={data.duplicates} />
     </>

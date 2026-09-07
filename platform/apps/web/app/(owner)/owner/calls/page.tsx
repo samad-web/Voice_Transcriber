@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import type { OwnerCall, Telecaller } from "../types";
 import { CallsExplorer } from "./calls-explorer";
 import type { Disposition } from "./actions";
@@ -34,6 +34,8 @@ export default async function CallsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/calls");
   const owner = await getOwner();
   const entitled = owner?.membership.enabledModules.includes("call_intel") ?? false;
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { Inbox } from "./inbox-client";
 import type { Conversation } from "./actions";
 
@@ -16,6 +16,8 @@ export const metadata: Metadata = { title: "Inbox - Aura" };
  * waiting" - which here means an enquiry nobody has claimed.
  */
 export default async function InboxPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/inbox");
   const unmatched = await ownerGet<{ conversations: Conversation[]; total: number }>(
     "/v1/conversations?unmatchedOnly=true&limit=1",
   );

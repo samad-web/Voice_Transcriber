@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import type { LeadSourceKind } from "@aura/shared";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
 import { LeadSourcesClient } from "./lead-sources-client";
 import { SheetsPanel } from "./sheets-panel";
@@ -65,6 +65,8 @@ export interface LinkedInStatus {
 }
 
 export default async function LeadSourcesPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/lead-sources");
   const [sources, catalogue, linkedin] = await Promise.all([
     ownerGet<{ sources: LeadSourceRow[] }>("/v1/lead-sources"),
     ownerGet<{ channels: CatalogueChannel[] }>("/v1/lead-sources/catalogue"),
@@ -89,11 +91,10 @@ export default async function LeadSourcesPage() {
     <>
       <PageHeader title="Lead sources" context="Pipeline" />
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
-        Every way a lead can reach you. A form on your website, your enquiry
-        inbox, your phone system, and your Facebook and LinkedIn ads all land on
-        the same board as your calls - deduplicated against the people you
-        already know, and labelled with where they came from so you can tell
-        which channel is worth the money.
+        Every way a lead can reach you. A form on your website, your enquiry inbox, your phone
+        system, and your Facebook and LinkedIn ads all land on the same board as your calls -
+        deduplicated against the people you already know, and labelled with where they came from so
+        you can tell which channel is worth the money.
       </p>
       {/* Above the channel list, not inside it. Every other channel is created
           by naming it - the endpoint URL is the whole configuration - whereas a

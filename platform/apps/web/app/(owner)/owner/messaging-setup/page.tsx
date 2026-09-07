@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { MessagingSetup } from "./messaging-setup-client";
 import type { MessagingChannel } from "./actions";
 
 export const metadata: Metadata = { title: "WhatsApp Setup - Aura" };
 
 export default async function MessagingSetupPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/messaging-setup");
   const data = await ownerGet<{ channels: MessagingChannel[] }>("/v1/messaging/channels");
 
   if (!data) {

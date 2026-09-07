@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, EmptyState, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import type { ProductivityResponse, TelecallerProductivityRow } from "./types";
 
 export const metadata: Metadata = { title: "Productivity - Aura" };
@@ -75,6 +75,8 @@ export default async function ProductivityPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/productivity");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
 

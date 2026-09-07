@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { DealBoardColumn, Stage } from "../types";
 import { DealsBoard } from "./deals-board";
 
@@ -20,6 +20,8 @@ interface DealBoardResponse {
  * call, null -> fallback card, else pass straight to the client board.
  */
 export default async function DealsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/deals");
   const data = await ownerGet<DealBoardResponse>("/v1/deals/board?perStage=50");
 
   if (!data) {
@@ -40,8 +42,7 @@ export default async function DealsPage() {
     <>
       <PageHeader title="Deals" context="Pipeline" />
       <p className="-mt-2 text-sm text-text-muted">
-        Drag a card to move it, or open one to edit. On a phone, tap a card and
-        pick a stage.
+        Drag a card to move it, or open one to edit. On a phone, tap a card and pick a stage.
       </p>
       <DealsBoard columns={data.columns} stages={data.stages} />
     </>

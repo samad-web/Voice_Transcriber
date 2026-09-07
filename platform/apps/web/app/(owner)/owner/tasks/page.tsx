@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { FollowupCounts, Task } from "../types";
 import { FollowupQueue, type Bucket } from "./followup-queue";
 
@@ -36,6 +36,8 @@ export default async function TasksPage({
 }: {
   searchParams: Promise<{ bucket?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/tasks");
   const { bucket: bucketParam } = await searchParams;
   const bucket: Bucket = BUCKETS.includes(bucketParam as Bucket)
     ? (bucketParam as Bucket)

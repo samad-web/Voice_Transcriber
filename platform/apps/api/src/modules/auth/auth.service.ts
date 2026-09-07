@@ -1,9 +1,4 @@
-import {
-  createHash,
-  randomBytes,
-  scryptSync,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { OwnerRole } from "@aura/shared";
 import { DbService } from "../../db/db.service";
@@ -62,7 +57,11 @@ export class AuthService {
       `SELECT u.id AS user_id, u.password_hash, u.status,
               m.org_id, m.role, m.owner_role, m.recordings_listen, m.recordings_export
          FROM users u
-         JOIN memberships m ON m.user_id = u.id
+         -- Suspended memberships (0102) are not memberships for the purposes of
+         -- signing in. A user whose only membership is suspended has no row
+         -- here and the login fails as though the account did not exist, which
+         -- is the same outcome contextFor produces for the console.
+         JOIN memberships m ON m.user_id = u.id AND m.status = 'active'
         WHERE lower(u.email) = lower($1)
         -- The requested org sorts first when the caller supplied one AND the
         -- user actually belongs to it; ties (no hint, or a hint that doesn't
@@ -117,6 +116,14 @@ export class AuthService {
       recordingsExport: boolean;
       workspaceId: string | null;
       enabledModules: string[];
+      /**
+       * The org's sparse feature overrides (migration 0101), raw. Resolved by
+       * the caller through `resolveFeatures` rather than here, so the API and
+       * the web tier run the SAME entitlement-and-dependency logic - two
+       * resolutions of one catalogue is exactly how a sidebar ends up offering
+       * a page the API refuses.
+       */
+      featureOverrides: Record<string, boolean>;
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
@@ -147,9 +154,29 @@ export class AuthService {
               m.recordings_export AS "recordingsExport",
               (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
                 ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
-              o.enabled_modules AS "enabledModules"
+              o.enabled_modules AS "enabledModules",
+              -- The client's own switchboard (0101), aggregated in the same
+              -- exchange. This query runs on every navigation in the console;
+              -- a second lookup would cost ~125ms of Mumbai->Seoul flight time
+              -- per page, which is the whole reason this is one CTE already.
+              COALESCE(
+                (SELECT jsonb_object_agg(f.feature_key, f.enabled)
+                   FROM org_feature_settings f WHERE f.org_id = m.org_id),
+                '{}'::jsonb) AS "featureOverrides"
          FROM u
-         LEFT JOIN memberships m ON m.user_id = u.id
+         LEFT JOIN memberships m
+           -- Suspended memberships (0102) are dropped HERE, which is what makes
+           -- suspension real rather than decorative. This is how a Supabase
+           -- session becomes an org, so a membership that does not come back is
+           -- a console the person cannot open at all - not a page they are
+           -- refused on, the whole thing. One predicate, in the one place every
+           -- console request already passes through, and it cannot be forgotten
+           -- by a route added later.
+           --
+           -- The precedent is directly below: userStatus <> 'active' already
+           -- empties this response for a platform-disabled account. This is the
+           -- same rule one level down, where a customer is allowed to apply it.
+           ON m.user_id = u.id AND m.status = 'active'
          LEFT JOIN organizations o ON o.id = m.org_id
         ORDER BY m.created_at ASC`,
       [identity.subject ?? null, identity.email ?? null],
@@ -180,6 +207,7 @@ export class AuthService {
         recordingsExport: r.recordingsExport,
         workspaceId: r.workspaceId,
         enabledModules: r.enabledModules,
+        featureOverrides: (r.featureOverrides ?? {}) as Record<string, boolean>,
       }));
 
     return { memberships, user };
@@ -207,7 +235,12 @@ export class AuthService {
     const {
       rows: [row],
     } = await this.db.adminPool().query<{ owner_role: string | null }>(
-      `SELECT owner_role FROM memberships WHERE user_id = $1 AND org_id = $2`,
+      // `status = 'active'` (0102) makes a suspended membership indistinguishable
+      // from no membership, so every `@RequireOwnerRole` route denies. Belt and
+      // braces beside `contextFor`'s filter: that one closes the console, this
+      // one closes the API, and neither depends on the other being right.
+      `SELECT owner_role FROM memberships
+        WHERE user_id = $1 AND org_id = $2 AND status = 'active'`,
       [userId, orgId],
     );
     if (!row) return undefined;
@@ -221,7 +254,12 @@ export class AuthService {
     } = await this.db.adminPool().query(
       `SELECT s.user_id, s.org_id, m.role, m.owner_role, m.recordings_listen, m.recordings_export
          FROM sessions s
-         JOIN memberships m ON m.user_id = s.user_id AND m.org_id = s.org_id
+         -- Suspension takes effect on the NEXT request, not at the next login:
+         -- a bearer token issued before somebody was suspended stops resolving
+         -- here. Without this the person would keep working until their session
+         -- expired, which is exactly the window suspension exists to close.
+         JOIN memberships m
+           ON m.user_id = s.user_id AND m.org_id = s.org_id AND m.status = 'active'
         WHERE s.token_hash = $1 AND s.expires_at > now()
         LIMIT 1`,
       [AuthService.tokenHash(token)],
@@ -239,8 +277,8 @@ export class AuthService {
   }
 
   async logout(token: string): Promise<void> {
-    await this.db.adminPool().query("DELETE FROM sessions WHERE token_hash = $1", [
-      AuthService.tokenHash(token),
-    ]);
+    await this.db
+      .adminPool()
+      .query("DELETE FROM sessions WHERE token_hash = $1", [AuthService.tokenHash(token)]);
   }
 }

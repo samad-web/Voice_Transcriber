@@ -14,7 +14,7 @@ import {
 } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
 import { NewQuotationDialog } from "./new-quotation-dialog";
 import type { Quotation, QuotationStatus } from "./actions";
@@ -51,6 +51,8 @@ export default async function QuotationsPage({
 }: {
   searchParams: Promise<{ status?: string; offset?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/quotations");
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
   const status = sp.status ?? "";
@@ -108,10 +110,7 @@ export default async function QuotationsPage({
       </div>
 
       {data.quotations.length === 0 ? (
-        <EmptyState
-          title="No quotations yet"
-          description="Start one with New Quotation above."
-        />
+        <EmptyState title="No quotations yet" description="Start one with New Quotation above." />
       ) : (
         <>
           <Table caption="Quotations">

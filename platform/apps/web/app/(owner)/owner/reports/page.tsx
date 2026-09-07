@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { formatValue } from "../types";
 import { CommissionPlansClient } from "./commission-plans-client";
 import type { CommissionPlan } from "./commission-actions";
@@ -32,8 +32,19 @@ interface ConversionReport {
   pipeline: { id: string; name: string } | null;
   from: string;
   to: string;
-  rows: Array<{ stage: string; label: string; reached: number; conversionFromPrevious: number | null }>;
-  summary: { created: number; won: number; lost: number; open: number; winRate: number | null } | null;
+  rows: Array<{
+    stage: string;
+    label: string;
+    reached: number;
+    conversionFromPrevious: number | null;
+  }>;
+  summary: {
+    created: number;
+    won: number;
+    lost: number;
+    open: number;
+    winRate: number | null;
+  } | null;
 }
 
 interface PerformanceReport {
@@ -100,6 +111,8 @@ const pct = (value: number | null): string =>
  * role that may not read one still gets the others rather than an empty page.
  */
 export default async function ReportsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/reports");
   const [pipeline, conversion, performance, attainment, commission, commissionPlans] =
     await Promise.all([
       ownerGet<PipelineReport>("/v1/reports/pipeline"),
@@ -139,7 +152,9 @@ export default async function ReportsPage() {
           <Stat label="Open deals" value={String(pipeline.totals.deals)} />
           <Stat
             label="Avg days to win"
-            value={pipeline.totals.avgDaysToWin === null ? "-" : String(pipeline.totals.avgDaysToWin)}
+            value={
+              pipeline.totals.avgDaysToWin === null ? "-" : String(pipeline.totals.avgDaysToWin)
+            }
             hint={`${pipeline.totals.wonDeals} won so far`}
           />
         </div>
@@ -305,7 +320,10 @@ export default async function ReportsPage() {
         {!performance ? (
           <NotPermitted />
         ) : performance.reps.length === 0 ? (
-          <EmptyState title="Nothing in this window" description="No deals were created since the window opened." />
+          <EmptyState
+            title="Nothing in this window"
+            description="No deals were created since the window opened."
+          />
         ) : (
           <>
             <div className="mt-3 overflow-x-auto">
@@ -438,9 +456,7 @@ function ExportLink({ report }: { report: string }) {
 }
 
 function NotPermitted() {
-  return (
-    <p className="mt-2 text-sm text-text-muted">Not visible with your permissions.</p>
-  );
+  return <p className="mt-2 text-sm text-text-muted">Not visible with your permissions.</p>;
 }
 
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {

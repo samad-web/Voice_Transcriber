@@ -227,6 +227,7 @@ describe("isOperator", () => {
             recordingsExport: true,
             workspaceId: WORKSPACE_B,
             enabledModules: ["aura", "crm"],
+            featureOverrides: {},
           },
         }),
       ),
@@ -298,6 +299,10 @@ describe("getPrincipal", () => {
         recordingsExport: true,
         workspaceId: DEV_WORKSPACE_ID,
         enabledModules: ["aura", "crm"],
+        // No client feature switches on a laptop with no database rows. The
+        // catalogue's defaults are every feature on, so local dev renders the
+        // whole console - which is what this mode is for.
+        featureOverrides: {},
       },
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -339,7 +344,10 @@ describe("getPrincipal", () => {
       session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
       devUserId: DEV_USER_ID,
     });
-    contextOk(withUser.fetchMock, { memberships: [], user: { id: USER_B, email: OWNER_EMAIL, name: null } });
+    contextOk(withUser.fetchMock, {
+      memberships: [],
+      user: { id: USER_B, email: OWNER_EMAIL, name: null },
+    });
     expect((await withUser.getPrincipal())?.userId).toBe(USER_B);
 
     const withoutUser = await load({

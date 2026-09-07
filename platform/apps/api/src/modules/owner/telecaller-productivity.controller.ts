@@ -1,6 +1,7 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard } from "../../common/owner-role.guard";
 import { OwnerScope, type OwnerRecordScope, ownerScopeClause } from "../../common/owner-scope";
 import { OwnerScopeGuard } from "../../common/owner-scope.guard";
@@ -122,7 +123,8 @@ const SUMMARY_SQL = (scopeAnd: string) => `
 // Same four guards, same order, mounted on the class rather than per-handler -
 // a new endpoint added below is scoped by default and has to opt out
 // deliberately.
-@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OwnerScopeGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OwnerScopeGuard, OrgFeatureGuard)
+@RequireFeature("productivity")
 export class TelecallerProductivityController {
   constructor(private readonly db: DbService) {}
 

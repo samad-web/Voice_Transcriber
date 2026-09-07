@@ -14,7 +14,7 @@ import {
 } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
 import type { Invoice, InvoiceStatus } from "./actions";
 
@@ -56,6 +56,8 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<{ status?: string; offset?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/invoices");
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
   const status = sp.status ?? "";

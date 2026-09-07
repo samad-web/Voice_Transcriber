@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { CallQualityManager } from "./call-quality-manager";
 import { DispositionsEditor } from "./dispositions-editor";
 import type { CallIntegrityFlag } from "./actions";
@@ -20,6 +20,8 @@ interface ListResponse {
  * is where an owner/manager works through them.
  */
 export default async function CallQualityPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/call-quality");
   // Concurrent, and the vocabulary is optional: an outage there costs the
   // outcome editor, not the review queue this page exists for.
   const [data, dispositions] = await Promise.all([
@@ -45,10 +47,9 @@ export default async function CallQualityPage() {
     <>
       <PageHeader title="Call Quality" context="Pipeline" />
       <p className="-mt-2 text-sm text-text-muted">
-        Calls where the AI read and the CRM disagree - a promising call with no
-        deal, an outcome that contradicts the deal&rsquo;s status, or a deal
-        that&rsquo;s gone quiet since a strong first call. Dismiss what turns
-        out to be fine, resolve what you fixed.
+        Calls where the AI read and the CRM disagree - a promising call with no deal, an outcome
+        that contradicts the deal&rsquo;s status, or a deal that&rsquo;s gone quiet since a strong
+        first call. Dismiss what turns out to be fine, resolve what you fixed.
       </p>
       <CallQualityManager initial={data.flags} />
 

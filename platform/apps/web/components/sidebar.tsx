@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock, User } from "lucide-react";
 import { Logo } from "@aura/ui";
-import type { OwnerRole } from "@aura/shared";
+import type { FeatureOverrides, OwnerRole } from "@aura/shared";
 import { NAV_ITEMS, navItemFor, ownerNavSectionsFor, type NavArea, type NavGroup } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -19,11 +19,15 @@ export function Sidebar({
    *  the owner layout - a client component cannot read that env var itself. */
   crmPrimary = false,
   /** Whether this org has the CRM module (enabled_modules, migration 0072),
-   *  resolved server-side by the owner layout. Hides CRM-object nav items
-   *  entirely when false - see nav.ts's CRM_GATED_HREFS. */
+   *  resolved server-side by the owner layout. Hides the CRM-object nav items
+   *  entirely when false - see features.ts, which now holds the mapping. */
   crmEnabled = true,
   /** Whether this org has the call-intelligence module - hides the call log. */
   callIntelEnabled = false,
+  /** The org's own feature switches (migration 0101), raw. Resolved inside
+   *  `ownerNavSectionsFor` so the API, the worker and this rail all run the
+   *  one `resolveFeatures`. */
+  featureOverrides = {},
   /** Rail heading. The owner console shows their company name here. */
   title = "Aura Platform",
   subtitle = "Call Intelligence",
@@ -34,6 +38,7 @@ export function Sidebar({
   crmPrimary?: boolean;
   crmEnabled?: boolean;
   callIntelEnabled?: boolean;
+  featureOverrides?: FeatureOverrides;
   title?: string;
   subtitle?: string;
 }) {
@@ -43,7 +48,13 @@ export function Sidebar({
   // with a single unlabelled group.
   const groups: NavGroup[] =
     area === "owner"
-      ? ownerNavSectionsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled)
+      ? ownerNavSectionsFor(
+          ownerRole ?? "owner",
+          crmPrimary,
+          crmEnabled,
+          callIntelEnabled,
+          featureOverrides,
+        )
       : [{ key: null, label: null, items: NAV_ITEMS }];
   const items = groups.flatMap((group) => group.items);
   // Longest-prefix match against every item at once, not each item tested

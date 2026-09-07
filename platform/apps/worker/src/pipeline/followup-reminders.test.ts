@@ -104,6 +104,40 @@ describe("runFollowupReminders - what it raises", () => {
   });
 });
 
+describe("runFollowupReminders - the client's own switch (migration 0101)", () => {
+  const orgSql = () => String(adminQuery.mock.calls[0]?.[0] ?? "").replace(/\s+/g, " ");
+  const orgParams = () => adminQuery.mock.calls[0]?.[1] as unknown[];
+
+  it("asks the database whether the workspace still wants follow-ups", async () => {
+    // The gate that matters. Hiding the Follow-ups page would leave this sweep
+    // raising a notification every morning about a feature the business
+    // switched off - the most visible possible way for a toggle to be a lie.
+    const { runFollowupReminders } = await load();
+    await runFollowupReminders();
+    expect(orgSql()).toContain("org_feature_enabled(o.id, $1, $2, $3)");
+  });
+
+  it("passes the key, module and default from the catalogue, not from here", async () => {
+    // A default written into the SQL would be a second copy of features.ts,
+    // and the first time somebody changed the catalogue the worker would keep
+    // the old answer - silently, for every tenant with no stored override.
+    const { runFollowupReminders } = await load();
+    await runFollowupReminders();
+    expect(orgParams()).toEqual(["followups", "crm", true]);
+  });
+
+  it("binds exactly the parameters the org query uses", async () => {
+    // MAX_DAYS_OVERDUE belongs to the sweep, not to this statement. An unused
+    // $1 makes Postgres refuse the whole query ("could not determine data type
+    // of parameter"), which no unit test would catch without this.
+    const { runFollowupReminders } = await load();
+    await runFollowupReminders();
+    const used = new Set(orgSql().match(/\$\d+/g) ?? []);
+    expect(used).toEqual(new Set(["$1", "$2", "$3"]));
+    expect(orgParams()).toHaveLength(used.size);
+  });
+});
+
 describe("runFollowupReminders - which orgs", () => {
   it("skips an org with no dated open follow-ups", async () => {
     adminQuery.mockResolvedValue({ rows: [] });

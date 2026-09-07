@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { QualificationQueue } from "./queue-client";
+import { requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "WhatsApp leads - Aura" };
 
@@ -13,7 +14,9 @@ export const metadata: Metadata = { title: "WhatsApp leads - Aura" };
  * now reads those threads and proposes a lead; this is where a person accepts
  * or refuses one. Nothing reaches the CRM without that click.
  */
-export default function WhatsAppLeadsPage() {
+export default async function WhatsAppLeadsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/whatsapp-leads");
   return (
     <>
       <PageHeader title="WhatsApp leads" context="Pipeline" />

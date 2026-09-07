@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { LocalTime } from "@/components/local-time";
 import { NewReportLauncher } from "./new-report-launcher";
 import type { CatalogueEntry, DatasetRow, ReportRow, TemplateRow } from "./types";
@@ -18,6 +18,8 @@ export const metadata: Metadata = { title: "Report builder - Aura" };
  * four reports.
  */
 export default async function ReportBuilderPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/reports/builder");
   const [reports, templates, datasets] = await Promise.all([
     ownerGet<{ reports: ReportRow[] }>("/v1/report-builder"),
     ownerGet<{ templates: TemplateRow[] }>("/v1/report-builder/templates"),

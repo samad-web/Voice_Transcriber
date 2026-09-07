@@ -1,4 +1,5 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { featureSpec } from "@aura/shared";
 
 /**
  * The follow-up escalation ladder (migration 0095).
@@ -43,6 +44,9 @@ import { getAdminPool, withOrgContext } from "@aura/db";
  */
 
 /** How far past due to keep nagging. */
+/** The catalogue entry this sweep is gated on - see the org query below. */
+const FOLLOWUPS_FEATURE = featureSpec("followups");
+
 const MAX_DAYS_OVERDUE = Number(process.env.FOLLOWUP_REMINDER_MAX_DAYS ?? 30);
 
 interface OrgRow {
@@ -116,11 +120,24 @@ export async function runFollowupReminders(): Promise<number> {
     `SELECT o.id
        FROM organizations o
       WHERE o.status = 'active'
+        -- The client's own switch (0101). Switching Follow-ups off must stop
+        -- the daily nag, not just hide the page - a notification arriving each
+        -- morning about a feature somebody switched off is the most visible
+        -- possible way for a toggle to be a lie.
+        --
+        -- Nothing is lost by it: the ladder RAISES rather than accumulates, so
+        -- turning the feature back on resumes chasing whatever is still
+        -- overdue rather than delivering a backlog of missed reminders.
+        AND org_feature_enabled(o.id, $1, $2, $3)
         AND EXISTS (
           SELECT 1 FROM tasks t
            WHERE t.org_id = o.id AND t.status = 'open'
              AND t.due_on IS NOT NULL AND t.assignee_user_id IS NOT NULL
         )`,
+    // MAX_DAYS_OVERDUE is not one of these - it belongs to SWEEP_SQL below.
+    // An unused $1 would make Postgres refuse the statement outright ("could
+    // not determine data type of parameter"), so the numbering starts here.
+    [FOLLOWUPS_FEATURE.key, FOLLOWUPS_FEATURE.module, FOLLOWUPS_FEATURE.defaultEnabled],
   );
   if (orgs.length === 0) return 0;
 

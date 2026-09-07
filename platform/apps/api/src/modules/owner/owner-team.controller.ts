@@ -10,17 +10,33 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { OwnerRole, resolveOwnerRole, tenantRoleForOwnerRole } from "@aura/shared";
+import {
+  OwnerRole,
+  StaffProfileInput,
+  resolveOwnerRole,
+  tenantRoleForOwnerRole,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { OwnerAccountsService } from "./owner-accounts.service";
+
+/**
+ * Which permission role this person holds. `null` clears it, returning them to
+ * the legacy `roles.key = memberships.role` fallback that
+ * `CrmPermissionsGuard` has always applied to a membership with no role_id -
+ * i.e. back to their tenant tier's seeded grants, never to no access at all.
+ */
+const AssignRoleBody = z.object({
+  roleId: z.string().uuid().nullable(),
+});
 
 const UpdateMemberBody = z.object({
   ownerRole: OwnerRole.optional(),
@@ -105,9 +121,18 @@ export class OwnerTeamController {
                 m.role, m.owner_role AS "ownerRole",
                 m.recordings_listen AS "recordingsListen",
                 m.recordings_export AS "recordingsExport",
+                -- The staff record (0102). Suspension in particular belongs on
+                -- the roster rather than being inferred from an absence: a
+                -- suspended colleague still holds every lead they were working,
+                -- and a page that simply stopped listing them would read as
+                -- "removed" and prompt somebody to create a second login.
+                m.status, m.staff_code AS "staffCode", m.phone, m.job_title AS "jobTitle",
+                m.suspended_at AS "suspendedAt",
+                m.role_id AS "roleId", r.name AS "roleName", r.key AS "roleKey",
                 t.id AS "telecallerId", t.display_name AS "telecallerName"
            FROM memberships m
            JOIN users u ON u.id = m.user_id
+           LEFT JOIN roles r ON r.id = m.role_id
            LEFT JOIN telecallers t
              ON t.org_id = m.org_id AND t.user_id = m.user_id AND t.status = 'active'
           WHERE m.org_id = $1
@@ -128,9 +153,20 @@ export class OwnerTeamController {
         [orgId],
       );
 
+      // The permission roles a member can be moved to (0039), for the same
+      // reason and at the same cost as the telecaller identities above. Active
+      // only: an archived role is one the business has retired, and offering it
+      // in a picker is how it gets un-retired by accident.
+      const { rows: roles } = await client.query(
+        `SELECT id, key, name, is_system AS "isSystem"
+           FROM roles WHERE status = 'active'
+          ORDER BY is_system DESC, name ASC`,
+      );
+
       return {
         members: members.map((m) => ({ ...m, ownerRole: resolveOwnerRole(m.ownerRole) })),
         telecallers,
+        roles,
       };
     });
   }
@@ -357,6 +393,261 @@ export class OwnerTeamController {
     return this.accounts.revoke(orgId, userId, {
       id: req.principal?.userId ?? "unknown",
       action: "owner.team.remove",
+    });
+  }
+
+  /**
+   * The employment record: staff code, phone, job title (migration 0102).
+   *
+   * Separate from `update()` above, which changes what somebody may SEE. These
+   * three fields grant nothing at all, and keeping them on their own route is
+   * what lets that be true by inspection rather than by reading a body parser -
+   * a `jobTitle` that quietly widened access would be the worst possible way to
+   * widen it.
+   *
+   * Owner only even so. It is the staff register of a business, and a manager
+   * editing colleagues' employee codes is a decision to make deliberately
+   * rather than to inherit from "manager sounds senior".
+   */
+  @Patch(":userId/profile")
+  @RequireOwnerRole("owner")
+  async updateProfile(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
+    const parsed = StaffProfileInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const p = parsed.data;
+    if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
+
+    return this.db.withOrg(orgId, async (client) => {
+      // Empty string means CLEAR, not "store a blank". `memberships_org_staff_code`
+      // is unique per org over non-null values, so a blank code stored as ''
+      // would let exactly one person hold it and refuse the second with a
+      // constraint error nobody could act on.
+      const blank = (value: string | null | undefined) =>
+        value === undefined ? null : value === null || value.trim() === "" ? null : value.trim();
+
+      const { rowCount } = await client.query(
+        `UPDATE memberships SET
+           staff_code = CASE WHEN $3::boolean THEN $4 ELSE staff_code END,
+           phone      = CASE WHEN $5::boolean THEN $6 ELSE phone END,
+           job_title  = CASE WHEN $7::boolean THEN $8 ELSE job_title END,
+           updated_at = now()
+         WHERE user_id = $1 AND org_id = $2`,
+        [
+          userId,
+          orgId,
+          p.staffCode !== undefined,
+          blank(p.staffCode),
+          p.phone !== undefined,
+          blank(p.phone),
+          p.jobTitle !== undefined,
+          blank(p.jobTitle),
+        ],
+      );
+      if (rowCount === 0) throw new NotFoundException("member not found in this org");
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'owner.team.profile', 'user', $3, $4::jsonb)`,
+        [orgId, req.principal?.userId ?? "unknown", userId, JSON.stringify(p)],
+      );
+
+      return { updated: true };
+    });
+  }
+
+  /**
+   * Suspend or reinstate somebody's access (migration 0102).
+   *
+   * ── WHY THIS EXISTS BESIDE `remove` ─────────────────────────────────────
+   *
+   * Until now the only way to stop a person signing in was DELETE, which
+   * deletes their login outright. A rep who has resigned, is on notice, or is
+   * on three months' leave needs the opposite of that: stop the access, keep
+   * the person. Deleting them detaches nothing - every lead, call and follow-up
+   * stays exactly where it was - but it does leave all of that attributed to an
+   * account that no longer exists, and it cannot be undone.
+   *
+   * Suspension is one column and it is fully reversible.
+   *
+   * ── WHERE IT ACTUALLY BITES ─────────────────────────────────────────────
+   *
+   * `AuthService.contextFor` drops a suspended membership, so the console
+   * cannot resolve an org for that session at all - which is the whole console,
+   * because every page under /owner goes through `getOwner()`. `ownerRoleFor`
+   * denies as well, so every `@RequireOwnerRole` route refuses even if a
+   * request somehow got past the first gate. Two independent places, both
+   * fail-closed.
+   *
+   * ── THE LAST-OWNER GUARD APPLIES ────────────────────────────────────────
+   *
+   * Suspending the last owner is demoting the last owner with extra steps: the
+   * workspace is left with nobody who can reach this endpoint to undo it.
+   * Reinstating is never guarded - it only ever widens.
+   */
+  @Post(":userId/suspend")
+  @RequireOwnerRole("owner")
+  async suspend(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    if (req.principal?.userId === userId) {
+      throw new ForbiddenException(
+        "you cannot suspend your own access - ask another Owner to do it",
+      );
+    }
+    return this.setStatus(orgId, userId, "suspended", req);
+  }
+
+  @Post(":userId/reinstate")
+  @RequireOwnerRole("owner")
+  async reinstate(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.setStatus(orgId, userId, "active", req);
+  }
+
+  /**
+   * Assign the permission role whose grid applies to this person (0039's
+   * `memberships.role_id`, finally written).
+   *
+   * ── WHAT THIS DOES NOT TOUCH ────────────────────────────────────────────
+   *
+   * `memberships.role` - the five-value tenant tier - stays exactly as it was.
+   * That column is what `OrgRoleGuard` reads for API keys, the consent policy
+   * and GDPR erasure, and it is the reason 0039 deferred assignment in the
+   * first place: widening its CHECK to hold custom slugs would have put every
+   * authorization call site in the blast radius.
+   *
+   * It never needed to. `CrmPermissionsGuard` joins
+   * `r.id = m.role_id OR (m.role_id IS NULL AND r.key = m.role)`, so writing
+   * `role_id` alone redefines what this person may do with CRM records and
+   * changes nothing about the tenant tier. A custom role can narrow or reshape
+   * object access; it cannot mint an API key.
+   *
+   * ── THE PERSONA STILL NARROWS ON TOP ────────────────────────────────────
+   *
+   * A telecaller given a role granting `deal:view` with scope `all` still reads
+   * `owned`, because `CrmPermissionsGuard` intersects the grid with the
+   * console persona and that composition only ever narrows. So this endpoint
+   * cannot be used to hand somebody the whole floor's records by the back door.
+   *
+   * ── AND WHY THERE IS NO LOCKOUT ─────────────────────────────────────────
+   *
+   * An owner given a role with an empty grid loses the CRM object pages. They
+   * do NOT lose this endpoint or the Roles page, because both are gated on the
+   * persona rather than on the grid - see owner-roles.controller.ts. The repair
+   * is always reachable from inside the console.
+   */
+  @Put(":userId/role")
+  @RequireOwnerRole("owner")
+  async assignRole(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
+    const parsed = AssignRoleBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const roleId = parsed.data.roleId;
+
+    return this.db.withOrg(orgId, async (client) => {
+      if (roleId) {
+        const {
+          rows: [role],
+        } = await client.query<{ status: string }>(`SELECT status FROM roles WHERE id = $1`, [
+          roleId,
+        ]);
+        // RLS already pins `roles` to this org, so a role from another tenant
+        // simply is not here - this refusal is about an ARCHIVED role, which is
+        // one the business has retired and must not be assigned back into use.
+        if (!role) throw new NotFoundException("role not found in this workspace");
+        if (role.status !== "active") {
+          throw new BadRequestException("that role is archived - reactivate it first");
+        }
+      }
+
+      const { rowCount } = await client.query(
+        // Every membership row this person holds in this org, for the same
+        // reason `update()` writes the persona to all of them: "this person
+        // holds this role here" is a statement about the person, and leaving
+        // the workspace-scope rows behind would make the answer depend on which
+        // row a guard's ORDER BY happened to pick.
+        `UPDATE memberships SET role_id = $3, updated_at = now()
+          WHERE user_id = $1 AND org_id = $2`,
+        [userId, orgId, roleId],
+      );
+      if (rowCount === 0) throw new NotFoundException("member not found in this org");
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'owner.team.role_assign', 'user', $3, $4::jsonb)`,
+        [orgId, req.principal?.userId ?? "unknown", userId, JSON.stringify({ roleId })],
+      );
+
+      return { roleId };
+    });
+  }
+
+  /** Shared by suspend/reinstate - one write, one audit entry, one guard. */
+  private async setStatus(
+    orgId: string,
+    userId: string,
+    status: "active" | "suspended",
+    req: PrincipalRequest,
+  ) {
+    const actorId = req.principal?.userId ?? null;
+
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [target],
+      } = await client.query<{ owner_role: string | null; status: string }>(
+        `SELECT owner_role, status FROM memberships
+          WHERE user_id = $1 AND org_id = $2
+          ORDER BY (scope_type = 'org') DESC, id
+          LIMIT 1`,
+        [userId, orgId],
+      );
+      if (!target) throw new NotFoundException("member not found in this org");
+      if (target.status === status) return { status };
+
+      if (status === "suspended") {
+        // Demoting to a persona that is not `owner` is exactly the check
+        // `guardLastOwner` performs; "telecaller" here is a stand-in for "no
+        // longer an owner", not a role anyone is being given.
+        await this.guardLastOwner(client, orgId, userId, target.owner_role, "telecaller");
+      }
+
+      await client.query(
+        `UPDATE memberships SET
+           status = $3,
+           suspended_at = CASE WHEN $3 = 'suspended' THEN now() ELSE NULL END,
+           suspended_by = CASE WHEN $3 = 'suspended' THEN $4::uuid ELSE NULL END,
+           updated_at = now()
+         WHERE user_id = $1 AND org_id = $2`,
+        [userId, orgId, status, actorId],
+      );
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, $3, 'user', $4, $5::jsonb)`,
+        [
+          orgId,
+          actorId ?? "unknown",
+          status === "suspended" ? "owner.team.suspend" : "owner.team.reinstate",
+          userId,
+          JSON.stringify({ previousStatus: target.status }),
+        ],
+      );
+
+      return { status };
     });
   }
 

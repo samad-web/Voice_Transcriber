@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import type { SopStep } from "@aura/shared";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { SopEditor } from "./sop-editor";
 
 export const metadata: Metadata = { title: "Call procedure - Aura" };
@@ -35,6 +35,8 @@ interface SopsResponse {
  * Same reasoning as the team page next door.
  */
 export default async function SopsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/sops");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
 

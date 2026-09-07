@@ -15,7 +15,7 @@ import {
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "Handsets - Aura" };
 
@@ -76,6 +76,8 @@ const HEALTH_LABEL = {
  * own server-side check for the same underlying reason (see that route).
  */
 export default async function HandsetsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/handsets");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
 
@@ -112,8 +114,8 @@ export default async function HandsetsPage() {
     <>
       <PageHeader title="Handsets" context="Settings" />
       <p className="max-w-2xl text-sm text-text-muted">
-        Every phone enrolled to record your calls, and whether it is reachable right now. To
-        enroll a new one, remote-wipe, or take a phone out of the fleet, ask your provider.
+        Every phone enrolled to record your calls, and whether it is reachable right now. To enroll
+        a new one, remote-wipe, or take a phone out of the fleet, ask your provider.
       </p>
 
       {devices.length === 0 ? (

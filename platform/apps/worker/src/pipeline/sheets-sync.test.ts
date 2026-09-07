@@ -15,8 +15,9 @@ vi.mock("./lead-intake", () => ({
   ingestIntakeLead: (...args: unknown[]) => ingestIntakeLead(...args),
 }));
 
+const adminQuery = vi.fn().mockResolvedValue({ rows: [] });
 vi.mock("@aura/db", () => ({
-  getAdminPool: () => ({ query: vi.fn().mockResolvedValue({ rows: [] }) }),
+  getAdminPool: () => ({ query: adminQuery }),
   withOrgContext: (_o: string, fn: (c: unknown) => unknown) => fn({ query: vi.fn() }),
   decryptSecret: (v: string | null) => v,
   encryptSecret: (v: string) => v,
@@ -99,7 +100,13 @@ describe("first sync", () => {
     const created = await syncSheetSource(
       client as never,
       { ...SOURCE, sync_state: null } as never,
-      makeFetch(["Name", "Mobile"], [["Priya", "900"], ["Ravi", "901"]]) as never,
+      makeFetch(
+        ["Name", "Mobile"],
+        [
+          ["Priya", "900"],
+          ["Ravi", "901"],
+        ],
+      ) as never,
     );
 
     // Connecting a sheet must not retroactively create the leads that were
@@ -122,7 +129,13 @@ describe("first sync", () => {
         sync_state: null,
         config: { ...SOURCE.config, importExisting: true },
       } as never,
-      makeFetch(["Name", "Mobile"], [["Priya", "900"], ["Ravi", "901"]]) as never,
+      makeFetch(
+        ["Name", "Mobile"],
+        [
+          ["Priya", "900"],
+          ["Ravi", "901"],
+        ],
+      ) as never,
     );
     expect(created).toBe(2);
   });
@@ -255,7 +268,14 @@ describe("reading rows", () => {
     await syncSheetSource(
       client as never,
       { ...SOURCE, sync_state: { lastRowSynced: 10 } } as never,
-      makeFetch(["Name", "Mobile"], [["A", "1"], ["B", "2"], ["C", "3"]]) as never,
+      makeFetch(
+        ["Name", "Mobile"],
+        [
+          ["A", "1"],
+          ["B", "2"],
+          ["C", "3"],
+        ],
+      ) as never,
     );
     const cursor = client.writes.filter((w) => w.sql.includes("lastRowSynced")).at(-1);
     expect(cursor?.params[1]).toBe(13);
@@ -274,5 +294,25 @@ describe("configuration", () => {
     expect(created).toBe(0);
     const error = client.writes.find((w) => w.sql.includes("last_error"));
     expect(String(error?.params[1])).toContain("not finished being set up");
+  });
+});
+describe("the client's own switch (migration 0101)", () => {
+  it("stops polling when the workspace switches Google Sheets off", async () => {
+    // THE gate that could not be done in the console. Hiding the panel would
+    // leave this sweep importing rows every ten minutes into a page that no
+    // longer shows where they came from - "I turned Google Sheets off and
+    // leads kept appearing" is the bug report a nav filter cannot prevent.
+    adminQuery.mockClear();
+    const { runSheetsSync } = await import("./sheets-sync");
+    await runSheetsSync();
+
+    const sql = String(adminQuery.mock.calls[0]?.[0] ?? "").replace(/\s+/g, " ");
+    expect(sql).toContain("org_feature_enabled(o.id, $2, $3, $4)");
+
+    // The key, module and default come from the catalogue rather than being
+    // written here, so the worker and the console can never disagree about
+    // what "off" means.
+    const params = adminQuery.mock.calls[0]?.[1] as unknown[];
+    expect(params.slice(1)).toEqual(["sheets_sync", "aura", true]);
   });
 });

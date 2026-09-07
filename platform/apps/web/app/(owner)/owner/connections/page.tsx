@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { ConnectionsManager, type ConnectionView, type ProviderView } from "./connections-manager";
 
 export const metadata: Metadata = { title: "Connections - Aura" };
@@ -19,6 +19,8 @@ export default async function ConnectionsPage({
 }: {
   searchParams: Promise<{ connected?: string; error?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/connections");
   const { connected, error } = await searchParams;
   const [catalogue, mine] = await Promise.all([
     ownerGet<{ providers: ProviderView[] }>("/v1/connections/providers"),

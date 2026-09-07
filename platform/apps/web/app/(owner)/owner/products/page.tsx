@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { ProductsClient } from "./products-client";
 import type { Product } from "./actions";
 
@@ -29,6 +29,8 @@ export default async function ProductsPage({
 }: {
   searchParams: Promise<{ q?: string; offset?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/products");
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
 

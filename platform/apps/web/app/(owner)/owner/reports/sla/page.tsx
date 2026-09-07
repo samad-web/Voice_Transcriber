@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "Response & Follow-ups - Aura" };
 
@@ -108,6 +108,8 @@ interface AgingReport {
  * the worst number in it.
  */
 export default async function SlaReportsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/reports/sla");
   const [response, compliance, aging] = await Promise.all([
     ownerGet<ResponseTimeReport>("/v1/reports/response-time"),
     ownerGet<ComplianceReport>("/v1/reports/followup-compliance"),
@@ -196,8 +198,8 @@ export default async function SlaReportsPage() {
               <MonoLabel>By telecaller</MonoLabel>
               <p className="mt-1 text-xs text-text-muted">
                 A lead is assigned to a telecaller, so this breaks down by telecaller. Follow-ups
-                below break down by console user - the two are different people and are never
-                added together.
+                below break down by console user - the two are different people and are never added
+                together.
               </p>
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[560px] border-collapse text-left text-sm">
@@ -231,8 +233,8 @@ export default async function SlaReportsPage() {
           <Card>
             <MonoLabel>Waiting for a first response</MonoLabel>
             <p className="mt-1 text-xs text-text-muted">
-              Open leads nobody has touched, oldest first. Not limited to the window above - a
-              lead ignored six weeks ago is still ignored.
+              Open leads nobody has touched, oldest first. Not limited to the window above - a lead
+              ignored six weeks ago is still ignored.
             </p>
             {response.awaitingFirstResponse.length === 0 ? (
               <div className="mt-3">
@@ -271,11 +273,7 @@ export default async function SlaReportsPage() {
       {/* ── Follow-up compliance ──────────────────────────────────────── */}
       <SectionHeading
         title="Follow-up compliance"
-        note={
-          compliance
-            ? `Follow-ups due ${compliance.from} to ${compliance.to}`
-            : undefined
-        }
+        note={compliance ? `Follow-ups due ${compliance.from} to ${compliance.to}` : undefined}
       />
 
       {compliance ? (

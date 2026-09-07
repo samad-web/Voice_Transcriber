@@ -178,6 +178,89 @@ describe("ownerNavItemsFor - callIntelEnabled", () => {
  * here is that nothing falls out of it, not the exact taxonomy, which is a
  * product decision that will keep moving.
  */
+/**
+ * The client's own feature switches (migration 0101), on top of the two module
+ * entitlements above.
+ *
+ * The module tests in this file are the important half of the pair: they are
+ * unchanged from before the switchboard existed, and they still pass, which is
+ * what says the move from two hand-maintained href lists to the shared
+ * catalogue changed no behaviour.
+ */
+describe("ownerNavItemsFor - the client's feature switches", () => {
+  const withOverrides = (
+    role: Parameters<typeof ownerNavItemsFor>[0],
+    overrides: Record<string, boolean>,
+  ) => ownerNavItemsFor(role, false, true, true, overrides).map((i) => i.href);
+
+  it("changes nothing when the client has expressed no preference", () => {
+    // The deploy-day property, checked where it is actually observable: an
+    // empty override map renders the rail this console rendered yesterday.
+    expect(withOverrides("owner", {})).toEqual(hrefs("owner", false, true, true));
+  });
+
+  it("removes a page the workspace switched off, and the ones hanging off it", () => {
+    const items = withOverrides("owner", { quotations: false });
+    expect(items).not.toContain("/owner/quotations");
+    // Invoices goes too, and that is the catalogue working rather than an
+    // over-reach: an invoice is raised FROM a quotation, so a workspace with no
+    // quotations has an Invoices page with nothing to bill from. The dependency
+    // is declared once in features.ts and every tier reads it.
+    expect(items).not.toContain("/owner/invoices");
+    // What Quotations depends on is untouched - dependencies run one way.
+    expect(items).toContain("/owner/products");
+    expect(items).toContain("/owner/deals");
+  });
+
+  it("takes a dependant down with the thing it depends on", () => {
+    // Products off means Quotations has no catalogue to quote from and Invoices
+    // has no quote to bill. Hiding only the one that was clicked would leave two
+    // pages that 403 or render nothing.
+    const items = withOverrides("owner", { products: false });
+    expect(items).not.toContain("/owner/products");
+    expect(items).not.toContain("/owner/quotations");
+    expect(items).not.toContain("/owner/invoices");
+  });
+
+  it("cannot switch off the pages that administer the workspace", () => {
+    // `leads` and `staff` are locked in the catalogue. An owner who could hide
+    // Staff would lose the page that unhides it.
+    const items = withOverrides("owner", { leads: false, staff: false });
+    expect(items).toContain("/owner/leads");
+    expect(items).toContain("/owner/board");
+    expect(items).toContain("/owner/staff");
+  });
+
+  it("never hides the switchboard itself", () => {
+    // /owner/features has no catalogue entry, deliberately - see features.ts.
+    const everythingOff = Object.fromEntries(
+      ["deals", "contacts", "reports", "call_log", "integrations", "branding"].map((k) => [
+        k,
+        false,
+      ]),
+    );
+    expect(withOverrides("owner", everythingOff)).toContain("/owner/features");
+  });
+
+  it("cannot switch a page ON that the org has no module for", () => {
+    // The invariant the whole feature rests on. A stored `true` for a CRM page
+    // is ignored by an org that only has `aura`.
+    const items = ownerNavItemsFor("owner", false, false, false, {
+      deals: true,
+      call_log: true,
+    }).map((i) => i.href);
+    expect(items).not.toContain("/owner/deals");
+    expect(items).not.toContain("/owner/calls");
+  });
+
+  it("drops a heading whose every page was switched off", () => {
+    // Sales is Products, Quotations and Invoices. With Products off the whole
+    // group goes, rather than leaving a heading over nothing.
+    const groups = ownerNavSectionsFor("owner", false, true, true, { products: false });
+    expect(groups.map((g) => g.key)).not.toContain("sales");
+  });
+});
+
 describe("ownerNavSectionsFor", () => {
   const groups = (
     role: Parameters<typeof ownerNavSectionsFor>[0],
@@ -336,13 +419,13 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
-  it("shows the Team page only to the personas the API lets read it", () => {
+  it("shows the Staff section only to the personas the API lets read it", () => {
     // owner-team.controller.ts: GET is owner-or-manager, PATCH is owner alone.
     // The rail must not offer the page to anybody the GET would refuse.
-    expect(nav("owner")).toContain("/owner/team");
-    expect(nav("manager")).toContain("/owner/team");
+    expect(nav("owner")).toContain("/owner/staff");
+    expect(nav("manager")).toContain("/owner/staff");
     for (const role of ["telecaller", "sales", "marketing"] as const) {
-      expect([role, nav(role).includes("/owner/team")]).toEqual([role, false]);
+      expect([role, nav(role).includes("/owner/staff")]).toEqual([role, false]);
     }
   });
 

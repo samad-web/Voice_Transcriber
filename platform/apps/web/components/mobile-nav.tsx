@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Lock, Menu, User, X } from "lucide-react";
 import { Logo } from "@aura/ui";
-import type { OwnerRole } from "@aura/shared";
+import type { FeatureOverrides, OwnerRole } from "@aura/shared";
 import { NAV_ITEMS, navItemFor, ownerNavSectionsFor, type NavArea, type NavGroup } from "@/lib/nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -27,6 +27,10 @@ export function MobileNav({
   crmEnabled = true,
   /** Whether this org has the call-intelligence module - hides the call log. */
   callIntelEnabled = false,
+  /** The org's own feature switches (migration 0101), raw. Resolved inside
+   *  `ownerNavSectionsFor` so the API, the worker and this rail all run the
+   *  one `resolveFeatures`. */
+  featureOverrides = {},
   title = "Aura Platform",
   subtitle = "Call Intelligence",
 }: {
@@ -36,6 +40,7 @@ export function MobileNav({
   crmPrimary?: boolean;
   crmEnabled?: boolean;
   callIntelEnabled?: boolean;
+  featureOverrides?: FeatureOverrides;
   title?: string;
   subtitle?: string;
 }) {
@@ -45,7 +50,13 @@ export function MobileNav({
   // rails render the same rail; only the breakpoint differs.
   const groups: NavGroup[] =
     area === "owner"
-      ? ownerNavSectionsFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled)
+      ? ownerNavSectionsFor(
+          ownerRole ?? "owner",
+          crmPrimary,
+          crmEnabled,
+          callIntelEnabled,
+          featureOverrides,
+        )
       : [{ key: null, label: null, items: NAV_ITEMS }];
   const items = groups.flatMap((group) => group.items);
   const current = navItemFor(pathname, items);

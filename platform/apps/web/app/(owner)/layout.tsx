@@ -29,6 +29,12 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // Same column, separate entitlement: whether this client may read the AI
   // read of their own calls, and the transcripts behind it (org-modules.ts).
   const callIntelEnabled = owner.membership.enabledModules.includes("call_intel");
+  // The client's OWN switches (migration 0101), on top of those two
+  // entitlements. Passed raw and resolved inside `ownerNavSectionsFor`, which
+  // calls the same `resolveFeatures` the API and the worker use - one
+  // resolution, three tiers, no way for the rail to offer a page the API
+  // refuses.
+  const featureOverrides = owner.membership.featureOverrides;
 
   return (
     <div className="min-h-dvh flex flex-col md:flex-row">
@@ -39,6 +45,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         crmPrimary={crmPrimary}
         crmEnabled={crmEnabled}
         callIntelEnabled={callIntelEnabled}
+        featureOverrides={featureOverrides}
         title={company}
         subtitle="Sales Pipeline"
       />
@@ -49,6 +56,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         crmPrimary={crmPrimary}
         crmEnabled={crmEnabled}
         callIntelEnabled={callIntelEnabled}
+        featureOverrides={featureOverrides}
         title={company}
         subtitle="Sales Pipeline"
       />

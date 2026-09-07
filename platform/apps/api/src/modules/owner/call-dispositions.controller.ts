@@ -10,12 +10,9 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
-import {
-  CallDispositionInput,
-  CallDispositionUpdate,
-  dispositionKeyFor,
-} from "@aura/shared";
+import { CallDispositionInput, CallDispositionUpdate, dispositionKeyFor } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -41,7 +38,8 @@ const COLUMNS = `id, key, label, lead_quality, color, icon, sort_order, is_activ
  * silently rewrite history. Same reasoning as the SOP versions next door.
  */
 @Controller("owner/call-dispositions")
-@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OrgFeatureGuard)
+@RequireFeature("call_quality")
 export class CallDispositionsController {
   constructor(private readonly db: DbService) {}
 

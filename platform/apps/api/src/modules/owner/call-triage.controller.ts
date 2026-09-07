@@ -15,6 +15,7 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { orgHasModule } from "../../common/org-modules";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -74,7 +75,8 @@ const CreateLeadBody = z.object({
  * than assumed from the nav. This reads what calls were about.
  */
 @Controller("owner/call-triage")
-@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OrgFeatureGuard)
+@RequireFeature("call_triage")
 @RequireOwnerRole("owner", "manager")
 export class CallTriageController {
   constructor(private readonly db: DbService) {}

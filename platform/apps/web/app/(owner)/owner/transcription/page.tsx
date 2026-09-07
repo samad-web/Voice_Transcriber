@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { TranscriptionClient } from "./transcription-client";
 
 export const metadata: Metadata = { title: "Transcription - Aura" };
@@ -36,6 +36,8 @@ interface OrgTranscription {
  * that action's header before moving either check.
  */
 export default async function TranscriptionPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/transcription");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
 
@@ -64,9 +66,8 @@ export default async function TranscriptionPage() {
             <Card className="space-y-2">
               <MonoLabel>Transcription is off for this instance</MonoLabel>
               <p className="text-sm leading-relaxed text-text-muted">
-                Calls are still recorded and stored, but they are not transcribed
-                or analysed, so nothing below takes effect yet. Ask your provider
-                to turn transcription on.
+                Calls are still recorded and stored, but they are not transcribed or analysed, so
+                nothing below takes effect yet. Ask your provider to turn transcription on.
               </p>
             </Card>
           ) : null}

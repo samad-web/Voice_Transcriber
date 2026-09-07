@@ -1,6 +1,7 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
 import { INTEGRATIONS, type IntegrationStatus } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -37,7 +38,8 @@ import { DbService } from "../../db/db.service";
  * reconnect something that was never available to them.
  */
 @Controller("owner/integrations")
-@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OrgFeatureGuard)
+@RequireFeature("integrations")
 // Owner and manager: the hub names which of the tenant's outside accounts are
 // joined up and what has been failing, which is administration rather than
 // day-to-day work. Same tier as Connections and Messaging setup, which it is
@@ -141,44 +143,42 @@ export class IntegrationsController {
           ),
         );
 
-      const partial: Record<string, { count: number; connected: boolean; lastError: string | null }> =
-        {
-          whatsapp_waba: byChannel("whatsapp", ["waba"]),
-          whatsapp_personal: byChannel("whatsapp", ["wasi", "evolution"]),
-          instagram: byChannel("instagram"),
-          facebook_messenger: byChannel("facebook"),
+      const partial: Record<
+        string,
+        { count: number; connected: boolean; lastError: string | null }
+      > = {
+        whatsapp_waba: byChannel("whatsapp", ["waba"]),
+        whatsapp_personal: byChannel("whatsapp", ["wasi", "evolution"]),
+        instagram: byChannel("instagram"),
+        facebook_messenger: byChannel("facebook"),
 
-          meta_lead_ads: roll(
-            metaRes.rows as Array<{ n: number; active: number; last_error: string | null }>,
-          ),
-          google_sheets: roll(sources.filter((s) => s.kind === "sheets")),
-          linkedin_ads: roll(
-            linkedinRes.rows as Array<{ n: number; active: number; last_error: string | null }>,
-          ),
-          web_forms: roll(
-            sources.filter((s) => ["web_form", "email", "api"].includes(s.kind)),
-          ),
+        meta_lead_ads: roll(
+          metaRes.rows as Array<{ n: number; active: number; last_error: string | null }>,
+        ),
+        google_sheets: roll(sources.filter((s) => s.kind === "sheets")),
+        linkedin_ads: roll(
+          linkedinRes.rows as Array<{ n: number; active: number; last_error: string | null }>,
+        ),
+        web_forms: roll(sources.filter((s) => ["web_form", "email", "api"].includes(s.kind))),
 
-          // A gateway counts as connected only when it is enabled AND has a key
-          // on it. `enabled` alone is the default for a row that exists with no
-          // credentials, which would otherwise read as connected and then fail
-          // on the first payment link.
-          razorpay: gatewayStatus(gateways, "razorpay"),
-          stripe: gatewayStatus(gateways, "stripe"),
+        // A gateway counts as connected only when it is enabled AND has a key
+        // on it. `enabled` alone is the default for a row that exists with no
+        // credentials, which would otherwise read as connected and then fail
+        // on the first payment link.
+        razorpay: gatewayStatus(gateways, "razorpay"),
+        stripe: gatewayStatus(gateways, "stripe"),
 
-          // Superfone is one telephony provider among several and gets its own
-          // row, because it gets its own section of the console - see nav.ts.
-          superfone: roll(
-            sources.filter((s) => s.kind === "telephony" && s.provider === "superfone"),
-          ),
-          cti: roll(
-            sources.filter((s) => s.kind === "telephony" && s.provider !== "superfone"),
-          ),
+        // Superfone is one telephony provider among several and gets its own
+        // row, because it gets its own section of the console - see nav.ts.
+        superfone: roll(
+          sources.filter((s) => s.kind === "telephony" && s.provider === "superfone"),
+        ),
+        cti: roll(sources.filter((s) => s.kind === "telephony" && s.provider !== "superfone")),
 
-          google_workspace: roll(accounts.filter((a) => a.provider === "google")),
-          microsoft_365: roll(accounts.filter((a) => a.provider === "microsoft")),
-          smtp: roll(accounts.filter((a) => a.provider === "imap")),
-        };
+        google_workspace: roll(accounts.filter((a) => a.provider === "google")),
+        microsoft_365: roll(accounts.filter((a) => a.provider === "microsoft")),
+        smtp: roll(accounts.filter((a) => a.provider === "imap")),
+      };
 
       const statuses: IntegrationStatus[] = INTEGRATIONS.map((spec) => {
         const state = partial[spec.id] ?? { count: 0, connected: false, lastError: null };

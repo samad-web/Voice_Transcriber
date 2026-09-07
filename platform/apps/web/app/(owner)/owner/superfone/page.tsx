@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { intakeEndpointPath } from "@aura/shared";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
 import { SuperfoneConnect } from "./superfone-connect";
 
@@ -62,6 +62,8 @@ interface EventRow {
  * the call log - a second copy would be a second thing to keep in step.
  */
 export default async function SuperfonePage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/superfone");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
   const role = owner.membership.ownerRole;
@@ -99,15 +101,13 @@ export default async function SuperfonePage() {
         <p className="text-sm text-text-muted">
           <span className="text-text">{Number(source.event_count).toLocaleString()}</span> calls
           received ·{" "}
-          <span className="text-text">{Number(source.lead_count ?? 0).toLocaleString()}</span> became
-          leads
+          <span className="text-text">{Number(source.lead_count ?? 0).toLocaleString()}</span>{" "}
+          became leads
           {source.last_event_at
             ? ` · last one ${new Date(source.last_event_at).toLocaleString()}`
             : " · none yet"}
         </p>
-        {source.last_error ? (
-          <p className="text-sm text-danger-text">{source.last_error}</p>
-        ) : null}
+        {source.last_error ? <p className="text-sm text-danger-text">{source.last_error}</p> : null}
         {endpoint ? (
           <p className="pt-1 font-mono text-xs break-all text-text-muted">
             {publicApiOrigin()}/v1{endpoint}

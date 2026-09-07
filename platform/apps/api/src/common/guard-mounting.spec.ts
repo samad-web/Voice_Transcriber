@@ -106,6 +106,9 @@ import { ReportDatasetsController } from "../modules/report-builder/report-datas
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnerTeamController } from "../modules/owner/owner-team.controller";
+import { OwnerRolesController } from "../modules/owner/owner-roles.controller";
+import { OrgFeaturesController } from "../modules/owner/org-features.controller";
+import { StaffPerformanceController } from "../modules/owner/staff-performance.controller";
 import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
 import { CallTriageController } from "../modules/owner/call-triage.controller";
 import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
@@ -150,6 +153,9 @@ const CONTROLLERS: Array<Type<unknown>> = [
   CallSopsController,
   OwnerController,
   OwnerTeamController,
+  OwnerRolesController,
+  OrgFeaturesController,
+  StaffPerformanceController,
   OwnersController,
   ErasureController,
   MembersController,
@@ -472,6 +478,57 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/team",
   "POST /owner/team/:userId/password",
   "DELETE /owner/team/:userId",
+  // The staff record (migration 0102). All owner-only, and each is a different
+  // kind of write on the same row:
+  //
+  //   /profile    employment details - a staff code, a job title, a phone.
+  //               They grant nothing, which is exactly why they are a separate
+  //               route from the persona edit above rather than more fields on
+  //               it: "this endpoint cannot change access" should be true by
+  //               inspection.
+  //   /suspend    stops somebody signing in without deleting their login. It
+  //               goes through the same last-owner guard as a demotion,
+  //               because leaving a workspace with no owner is the same
+  //               lockout either way.
+  //   /reinstate  the inverse. Never guarded - it only ever widens.
+  //   /role       the permission role whose grid applies (0039's
+  //               `memberships.role_id`, which nothing wrote until now). It
+  //               does NOT touch `memberships.role`, the five-value tier
+  //               OrgRoleGuard reads - see the handler.
+  "PATCH /owner/team/:userId/profile",
+  "POST /owner/team/:userId/suspend",
+  "POST /owner/team/:userId/reinstate",
+  "PUT /owner/team/:userId/role",
+  // Roles & permissions, the CLIENT's half (0039's grid, owner console).
+  // Mounted with OwnerRoleGuard rather than the OrgRoleGuard that gates
+  // `/v1/roles`, and that is the entire reason it is a second controller:
+  // OrgRoleGuard reads `memberships.role`, and every owner-console request
+  // arrives on an admin key minted as `platform_admin`, so it would pass for a
+  // telecaller. Reading is owner-or-manager; every write is owner alone.
+  //
+  // Deliberately NO CrmPermissionsGuard anywhere here. An owner who saves a
+  // grid that revokes their own CRM access must still be able to reach this
+  // surface to undo it - a repair behind the thing being repaired is not a
+  // repair.
+  "GET /owner/roles",
+  "POST /owner/roles",
+  "PATCH /owner/roles/:id",
+  "PUT /owner/roles/:id/permissions",
+  "DELETE /owner/roles/:id",
+  // The feature switchboard (migration 0101). Owner-or-manager read,
+  // owner-only write - the same split as the roster, because a manager has to
+  // be able to answer "why is Invoices missing" before raising it as a bug.
+  //
+  // What it writes is the CLIENT's choice, never the entitlement:
+  // `organizations.enabled_modules` stays an operator-only column, and
+  // `resolveFeatures` keeps a switched-on feature `unavailable` without its
+  // module. That separation is why this is safe to expose to a customer at all.
+  "GET /owner/features",
+  "PUT /owner/features",
+  // The staff scorecard. Owner-or-manager, narrower than the Productivity page
+  // next door: that one narrows to the reader's OWN rows and is open to every
+  // persona, while this is a league table naming colleagues.
+  "GET /owner/staff/performance",
   // The client's own call log. Unlike the three above it declares a real
   // `@RequireOwnerRole("owner", "manager")` at class level rather than
   // mounting the guard inertly: reading the whole floor's conversations is a
@@ -862,7 +919,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 338 routes, partitioned 283 tenant / 29 cross-tenant / 7 device / 19 unguarded", () => {
+  it("has 350 routes, partitioned 295 tenant / 29 cross-tenant / 7 device / 19 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -931,7 +988,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // from `organizations`, and `recordings_listen` REDACTS part of the
     // response rather than refusing it - the same shape `GET /calls/:id`
     // already has.
-        // - and the client's own call log's six (`GET /owner/calls`,
+    // - and the client's own call log's six (`GET /owner/calls`,
     // `GET /owner/calls/:id`, its notes pair, `/audio` and `/reprocess`):
     // tenant-scoped, and the only routes outside OwnerController carrying
     // OwnerRoleGuard at class level - a call log is a manager's view of the
@@ -943,8 +1000,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 306: adds DELETE /devices/:id (0087) - taking a handset out of the
     // fleet, the third device action alongside logout/wipe. Tenant-scoped,
     // OrgRoleGuard-gated like its two siblings (see ORG_ROLE_ROUTES below).
-    expect(ROUTES).toHaveLength(338);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(338);
+    // - and the Staff section's twelve (0101/0102): four staff-record writes on
+    // the existing team controller, five for the client's own roles &
+    // permissions grid, two for the feature switchboard, and the scorecard.
+    // All tenant-scoped and all OwnerRoleGuard'd; see OWNER_ROLE_ROUTES, which
+    // says what each one is for.
+    expect(ROUTES).toHaveLength(350);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(350);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -957,12 +1019,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(283);
+    expect(tenantScoped).toHaveLength(295);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(338);
+    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(350);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 304 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 316 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -970,7 +1032,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(304);
+    expect(principalRoutes).toHaveLength(316);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -1102,9 +1164,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(sorted(withCrm.map((r) => r.route))).toEqual(sorted(CRM_PERMISSION_ROUTES));
 
     for (const { route, guards } of withCrm) {
-      expect([route, guards.indexOf("CrmPermissionsGuard") > guards.indexOf("TenantGuard")]).toEqual(
-        [route, true],
-      );
+      expect([
+        route,
+        guards.indexOf("CrmPermissionsGuard") > guards.indexOf("TenantGuard"),
+      ]).toEqual([route, true]);
     }
   });
 

@@ -128,7 +128,8 @@ function links(crmPrimary: boolean) {
     // The board/leads pages don't accept a ?stage=/?focus= query yet, so the
     // CRM-primary links point at the plain page rather than a param it would
     // silently ignore - see CRM_STATUS.md, A6 Milestone 4.
-    stageHref: (stageKey: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`),
+    stageHref: (stageKey: string) =>
+      crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`,
     allHref: crmPrimary ? "/owner/deals" : "/owner/leads",
     allLinkLabel: crmPrimary ? "All deals →" : "All leads →",
     recordHref: (id: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?focus=${id}`),
@@ -159,11 +160,9 @@ function TeamStrip() {
     <Card className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2">
         <Users className="h-4 w-4 text-text-muted" />
-        <span className="text-sm text-text">
-          People, roles and logins for this workspace
-        </span>
+        <span className="text-sm text-text">People, roles and logins for this workspace</span>
       </div>
-      <Link href="/owner/team" className={PANEL_LINK}>
+      <Link href="/owner/staff" className={PANEL_LINK}>
         Manage team →
       </Link>
     </Card>
@@ -190,7 +189,11 @@ function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
           label="Open leads"
           value={String(leads.open)}
           icon={<Target className="h-5 w-5" />}
-          footer={<span>{leads.created_in_window} new in {days}d</span>}
+          footer={
+            <span>
+              {leads.created_in_window} new in {days}d
+            </span>
+          }
         />
         <StatCard
           label="Pipeline value"
@@ -259,13 +262,21 @@ function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
           label="Open leads"
           value={String(leads.open)}
           icon={<Target className="h-5 w-5" />}
-          footer={<span>{leads.created_in_window} new in {days}d</span>}
+          footer={
+            <span>
+              {leads.created_in_window} new in {days}d
+            </span>
+          }
         />
         <StatCard
           label="Team on the phone"
           value={`${active}/${telecallers.length}`}
           icon={<Users className="h-5 w-5" />}
-          footer={<span>{formatDuration(calls.total_seconds)} across {calls.total} calls</span>}
+          footer={
+            <span>
+              {formatDuration(calls.total_seconds)} across {calls.total} calls
+            </span>
+          }
         />
         <StatCard
           label="Win rate"
@@ -335,7 +346,11 @@ function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
           label="Your open leads"
           value={String(leads.open)}
           icon={<Target className="h-5 w-5" />}
-          footer={<span>{leads.created_in_window} new in {days}d</span>}
+          footer={
+            <span>
+              {leads.created_in_window} new in {days}d
+            </span>
+          }
         />
         <StatCard
           label="Your calls"
@@ -419,7 +434,11 @@ function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
           label="Your pipeline"
           value={formatValue(leads.pipeline_value)}
           icon={<Banknote className="h-5 w-5" />}
-          footer={<span>across {leads.open} open {noun}</span>}
+          footer={
+            <span>
+              across {leads.open} open {noun}
+            </span>
+          }
         />
         <StatCard
           label="You won"
@@ -510,13 +529,21 @@ function MarketingDashboard({ data, days, crmPrimary }: ViewProps) {
           label={`New leads in ${days}d`}
           value={String(leads.created_in_window)}
           icon={<Megaphone className="h-5 w-5" />}
-          footer={<span>{channels} {channels === 1 ? "channel" : "channels"} attributed</span>}
+          footer={
+            <span>
+              {channels} {channels === 1 ? "channel" : "channels"} attributed
+            </span>
+          }
         />
         <StatCard
           label="Converted"
           value={rate === null ? "-" : `${rate}%`}
           icon={<Target className="h-5 w-5" />}
-          footer={<span>{leads.won} won · {leads.lost} lost</span>}
+          footer={
+            <span>
+              {leads.won} won · {leads.lost} lost
+            </span>
+          }
         />
         <StatCard
           label="Revenue won"

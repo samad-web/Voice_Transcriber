@@ -93,14 +93,14 @@ export function InviteForm({ telecallers }: { telecallers: TeamTelecaller[] }) {
                 {result.password}
               </code>
               <p className="text-xs leading-relaxed text-text-muted">
-                Nothing was emailed - pass this on yourself, and ask them to change
-                it after signing in. If it is lost, use Reset password on their row.
+                Nothing was emailed - pass this on yourself, and ask them to change it after signing
+                in. If it is lost, use Reset password on their row.
               </p>
             </>
           ) : (
             <p className="text-sm leading-relaxed text-text">
-              They already had a login, so it was linked to this workspace rather
-              than recreated. Their existing password still works.
+              They already had a login, so it was linked to this workspace rather than recreated.
+              Their existing password still works.
             </p>
           )}
           <Button type="button" variant="secondary" onClick={() => setResult(null)}>
@@ -171,8 +171,8 @@ export function InviteForm({ telecallers }: { telecallers: TeamTelecaller[] }) {
             </Select>
             {needsIdentity ? (
               <p className="text-xs leading-relaxed text-danger-text">
-                {OWNER_ROLE_LABELS[role]} only sees records assigned to them. Without
-                a telecaller identity their console will be empty.
+                {OWNER_ROLE_LABELS[role]} only sees records assigned to them. Without a telecaller
+                identity their console will be empty.
                 {free.length === 0
                   ? " None are free - name a handset's holder on the dashboard first."
                   : ""}
@@ -206,7 +206,13 @@ export function InviteForm({ telecallers }: { telecallers: TeamTelecaller[] }) {
 }
 
 /** Headcount by persona - the "how many users" question, answered in place. */
-export function TeamCounts({ counts }: { counts: Array<[OwnerRole, number]> }) {
+export function TeamCounts({
+  counts,
+  suspended = 0,
+}: {
+  counts: Array<[OwnerRole, number]>;
+  suspended?: number;
+}) {
   const total = counts.reduce((n, [, c]) => n + c, 0);
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -220,6 +226,11 @@ export function TeamCounts({ counts }: { counts: Array<[OwnerRole, number]> }) {
             {n} {OWNER_ROLE_LABELS[role]}
           </StatusChip>
         ))}
+      {/* Outside the persona counts and styled differently, because it answers
+          a different question. A suspended colleague is not a smaller kind of
+          telecaller - they are somebody who cannot sign in, and the number is
+          here so that fact is visible without scrolling the table. */}
+      {suspended > 0 ? <StatusChip tone="outline">{suspended} suspended</StatusChip> : null}
     </div>
   );
 }

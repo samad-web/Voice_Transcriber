@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 import { DEFAULT_SOP_STEPS, MAX_SOP_STEPS, SopSteps } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OwnerScopeGuard } from "../../common/owner-scope.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -51,7 +52,8 @@ const SopBody = z.object({
 });
 
 @Controller("owner/sops")
-@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OwnerScopeGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OwnerScopeGuard, OrgFeatureGuard)
+@RequireFeature("call_sops")
 export class CallSopsController {
   constructor(private readonly db: DbService) {}
 

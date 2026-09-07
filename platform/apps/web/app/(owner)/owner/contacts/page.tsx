@@ -13,7 +13,7 @@ import {
 } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { relativeTime, type Contact } from "../types";
 
 export const metadata: Metadata = { title: "Contacts - Aura" };
@@ -38,6 +38,8 @@ export default async function ContactsPage({
 }: {
   searchParams: Promise<{ q?: string; offset?: string }>;
 }) {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/contacts");
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
 

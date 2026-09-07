@@ -71,7 +71,7 @@ export async function setTeamMemberAction(
   // what the person who made it can see. Revalidating the layout's own path
   // rather than only this page is what makes that take effect immediately
   // instead of on the next hard navigation.
-  revalidatePath("/owner/team");
+  revalidatePath("/owner/staff");
   revalidatePath("/owner");
   return {};
 }
@@ -127,7 +127,7 @@ export async function inviteTeamMemberAction(input: {
     });
     if (!res.ok) return { error: await errorText(res) };
     const body = (await res.json()) as { password?: string | null; linkedExisting?: boolean };
-    revalidatePath("/owner/team");
+    revalidatePath("/owner/staff");
     revalidatePath("/owner");
     return { password: body.password ?? null, linkedExisting: body.linkedExisting ?? false };
   } catch {
@@ -190,7 +190,7 @@ export async function removeTeamMemberAction(userId: string): Promise<ActionResu
     return { error: "The platform API did not answer." };
   }
 
-  revalidatePath("/owner/team");
+  revalidatePath("/owner/staff");
   revalidatePath("/owner");
   return {};
 }

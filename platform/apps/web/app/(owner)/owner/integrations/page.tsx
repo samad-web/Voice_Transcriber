@@ -1,14 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import {
-  INTEGRATIONS,
-  integrationsByCategory,
-  type IntegrationStatus,
-} from "@aura/shared";
+import { INTEGRATIONS, integrationsByCategory, type IntegrationStatus } from "@aura/shared";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "Integrations - Aura" };
 
@@ -39,6 +35,8 @@ export const metadata: Metadata = { title: "Integrations - Aura" };
  * being told to reconnect something that was never available to them.
  */
 export default async function IntegrationsPage() {
+  // Off means off, not merely hidden - see requireFeature.
+  await requireFeature("/owner/integrations");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
   const role = owner.membership.ownerRole;
