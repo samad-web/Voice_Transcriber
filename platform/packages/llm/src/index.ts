@@ -3,6 +3,8 @@ import {
   compileToJsonSchema,
   ExtractionSchema,
   type ExtractionField,
+  type SopStep,
+  type SopStepResult,
   validateExtraction,
 } from "@aura/shared";
 import { RetryableError, withProviderRetry } from "./retry";
@@ -177,6 +179,114 @@ export interface QualityCriteria {
   rationale: string;
 }
 
+/**
+ * The SOP block appended to the conversation prompt, and the reply schema for
+ * it. Built once and used by BOTH provider paths - the Gemini single-request
+ * path and Sarvam's separate call-level pass - because two copies of a prompt
+ * that must produce the same shape is how they stop producing the same shape.
+ *
+ * Returns null for an org with no SOP, and every caller checks that: the steps
+ * only reach the model when a tenant has actually defined them, so an org
+ * without one pays nothing at all - no extra input tokens, no extra output.
+ */
+export function sopPromptBlock(steps: SopStep[] | null | undefined): string | null {
+  if (!steps || steps.length === 0) return null;
+  const lines = steps.map((s) => `- ${s.key}: ${s.description}`).join("\n");
+  return (
+    "\n\nSOP CHECK. The team has a call procedure. For EACH step below decide " +
+    "whether the AGENT did it on this call, and return one entry per step in " +
+    '"sopResults" as {"key": the step key, "met": "yes"|"no"|"unclear", ' +
+    '\"evidence\": a VERBATIM quote from the call, or null}.\n' +
+    "RULES, and they matter more than the verdict:\n" +
+    '· "met": "yes" REQUIRES an "evidence" quote copied word-for-word from ' +
+    "the call. If you cannot quote it, you did not see it - answer unclear.\n" +
+    '· Answer "unclear" when the call does not settle the step - it ended ' +
+    "early, only one side was recorded, or the situation never arose. " +
+    "unclear is the correct answer far more often than no.\n" +
+    '· Answer "no" only when the step clearly SHOULD have happened and ' +
+    "demonstrably did not.\n" +
+    "· Judge only the Agent's words. The customer mentioning something does " +
+    "not mean the agent did it.\n" +
+    `STEPS:\n${lines}`
+  );
+}
+
+/** The `sopResults` half of a reply schema. Null when the org has no SOP. */
+export function sopReplySchema(
+  steps: SopStep[] | null | undefined,
+): Record<string, unknown> | null {
+  if (!steps || steps.length === 0) return null;
+  return {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        key: { type: "string", enum: steps.map((s) => s.key) },
+        // Deliberately NOT `{ type: "boolean" }`: a boolean schema cannot
+        // express "undecided", and a model forced to choose between true and
+        // false on a call that settled neither will pick one. The three-valued
+        // answer is the whole point, so it rides as a string the coercion maps.
+        met: { type: "string", enum: ["yes", "no", "unclear"] },
+        evidence: { type: "string" },
+      },
+      required: ["key", "met"],
+    },
+  };
+}
+
+/**
+ * Coerce the model's SOP verdicts, and enforce the one rule that makes them
+ * trustworthy: a step claimed as met WITHOUT a verbatim quote is downgraded to
+ * inconclusive.
+ *
+ * That downgrade is the feature, not defensive plumbing. A "met" with no
+ * evidence is indistinguishable from a hallucination, and this score is read in
+ * performance conversations - so the only "met" that survives is one a person
+ * can go and check against the transcript. The cost is that a genuinely
+ * followed step whose quote the model forgot reads as unclear, which is the
+ * right direction to be wrong in.
+ *
+ * Unknown keys are dropped rather than stored: they cannot be rendered against
+ * any step the tenant defined, and keeping them would let a model invent
+ * criteria nobody agreed to.
+ */
+function coerceSopResults(value: unknown, steps: SopStep[] | null | undefined): SopStepResult[] {
+  if (!steps || steps.length === 0 || !Array.isArray(value)) return [];
+  const known = new Map(steps.map((s) => [s.key, s]));
+  const seen = new Set<string>();
+  const out: SopStepResult[] = [];
+
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const key = typeof r.key === "string" ? r.key : "";
+    if (!known.has(key) || seen.has(key)) continue;
+    seen.add(key);
+
+    const evidenceRaw = typeof r.evidence === "string" ? r.evidence.trim() : "";
+    const evidence = evidenceRaw.length > 0 ? evidenceRaw.slice(0, 500) : null;
+
+    let met: boolean | null;
+    const verdict = typeof r.met === "string" ? r.met.trim().toLowerCase() : r.met;
+    if (verdict === "yes" || verdict === true) met = true;
+    else if (verdict === "no" || verdict === false) met = false;
+    else met = null;
+
+    // The rule. No quote, no "met".
+    if (met === true && !evidence) met = null;
+
+    out.push({ key, met, evidence: met === null && !evidence ? null : evidence });
+  }
+
+  // A step the model skipped entirely is inconclusive, not absent: the console
+  // renders a checklist of the tenant's steps, and a missing row would read as
+  // the step having been removed from the SOP rather than unjudged.
+  for (const step of steps) {
+    if (!seen.has(step.key)) out.push({ key: step.key, met: null, evidence: null });
+  }
+  return out;
+}
+
 /** One compliance/escalation-worthy moment the model noticed in the call. */
 export interface RiskFlag {
   /** e.g. "competitor_mention", "cancellation_request", "legal_threat". Free text - the automation-rule condition matches on severity, not category. */
@@ -251,6 +361,12 @@ export interface ConversationIntelligence {
   qualityCriteria: QualityCriteria | null;
   /** Capped at 5 - this is a spotter, not a transcript re-derivation. */
   riskFlags: RiskFlag[];
+  /**
+   * Per-step verdicts against the tenant's own SOP (migration 0091), or an
+   * empty array when the org has no active SOP - the normal case, and it costs
+   * nothing because the steps only enter the prompt when they exist.
+   */
+  sopResults: SopStepResult[];
   provider: string;
   model: string;
   tokensIn: number;
@@ -624,6 +740,8 @@ export async function analyzeConversation(
   vocabulary?: string[] | null,
   /** "incoming" | "outgoing". A real prior on which voice is the Agent. */
   direction?: string | null,
+  /** The tenant's active SOP steps (migration 0091), or null for an org without one. */
+  sopSteps?: SopStep[] | null,
 ): Promise<ConversationIntelligence> {
   const base: ConversationIntelligence = {
     language: "und",
@@ -639,6 +757,7 @@ export async function analyzeConversation(
     qualityScore: null,
     qualityCriteria: null,
     riskFlags: [],
+    sopResults: [],
     provider: "none",
     model: "none",
     tokensIn: 0,
@@ -671,7 +790,7 @@ export async function analyzeConversation(
   // cannot hold a whole call's labels in one reply. Gemini has no such limit and
   // keeps the single-request path below, which is cheaper and needs no stitching.
   if (sarvamChatConfigured() && label) {
-    return sarvamConversation(text, usable, vocabulary, base, direction);
+    return sarvamConversation(text, usable, vocabulary, base, direction, sopSteps);
   }
 
   const roleRules =
@@ -745,7 +864,10 @@ export async function analyzeConversation(
       ).slice(0, 24000)}`
     : `Call transcript:\n${text.slice(0, 12000)}`;
 
-  const prompt = `${system}${glossaryBlock(vocabulary)}\n\nJSON shape:\n${shape}\n\n${userContent}`;
+  // The SOP block rides after the JSON shape and before the transcript, so the
+  // step descriptions are the last thing read before the content to judge.
+  const sopBlock = sopPromptBlock(sopSteps) ?? "";
+  const prompt = `${system}${glossaryBlock(vocabulary)}\n\nJSON shape:\n${shape}${sopBlock}\n\n${userContent}`;
 
   /**
    * The reply shape as a schema, not just as prose in the prompt.
@@ -791,7 +913,13 @@ export async function analyzeConversation(
       required: ["category", "snippet", "severity"],
     },
   };
+  const sopSchema = sopReplySchema(sopSteps);
   const callFieldSchema = {
+    // Only when the org has an SOP: an empty `sopResults` property would ask
+    // every tenant to fill a field none of them have steps for, and
+    // structured-output generation honours the schema far more literally
+    // than it honours the prompt.
+    ...(sopSchema ? { sopResults: sopSchema } : {}),
     summary: str,
     overall_intent: str,
     customer_intent: str,
@@ -964,6 +1092,7 @@ export async function analyzeConversation(
     qualityScore: coerceQualityScore((raw as { qualityScore?: unknown }).qualityScore),
     qualityCriteria: coerceQualityCriteria((raw as { qualityCriteria?: unknown }).qualityCriteria),
     riskFlags: coerceRiskFlags((raw as { riskFlags?: unknown }).riskFlags),
+    sopResults: coerceSopResults((raw as { sopResults?: unknown }).sopResults, sopSteps),
     provider: usedProvider,
     model: usedModel,
     tokensIn,
@@ -1007,6 +1136,7 @@ async function sarvamConversation(
   vocabulary: string[] | null | undefined,
   base: ConversationIntelligence,
   direction?: string | null,
+  sopSteps?: SopStep[] | null,
 ): Promise<ConversationIntelligence> {
   const model = sarvamChatModel();
   const glossary = glossaryBlock(vocabulary);
@@ -1169,6 +1299,7 @@ async function sarvamConversation(
     });
 
   // ── call-level reading: one small answer, so one request always suffices ──
+  const sarvamSopSchema = sopReplySchema(sopSteps);
   const summarySchema = {
     type: "object",
     properties: {
@@ -1193,6 +1324,7 @@ async function sarvamConversation(
       key_points: { type: "array", items: { type: "string" } },
       action_items: { type: "array", items: { type: "string" } },
       qualityScore: { type: "integer" },
+      ...(sarvamSopSchema ? { sopResults: sarvamSopSchema } : {}),
       qualityCriteria: {
         type: "object",
         properties: {
@@ -1248,6 +1380,7 @@ async function sarvamConversation(
           `(up to 5, ONLY for things actually said - competitor mention, ` +
           `cancellation/refund request, legal threat, broken promise, hostility; ` +
           `empty array when there is nothing to flag).` +
+          `${sopPromptBlock(sopSteps) ?? ""}` +
           `${glossary}\n\n${fullContext}`,
         jsonSchema: summarySchema,
         label: "analyzeConversation.summary",
@@ -1293,6 +1426,7 @@ async function sarvamConversation(
     qualityScore: coerceQualityScore(raw.qualityScore),
     qualityCriteria: coerceQualityCriteria(raw.qualityCriteria),
     riskFlags: coerceRiskFlags(raw.riskFlags),
+    sopResults: coerceSopResults((raw as { sopResults?: unknown }).sopResults, sopSteps),
     provider: "sarvam",
     model,
     tokensIn: tokensIn || base.tokensIn,

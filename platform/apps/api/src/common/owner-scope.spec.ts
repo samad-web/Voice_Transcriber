@@ -54,9 +54,16 @@ describe("ownerScopeFilter", () => {
   it("returns null for an unscoped persona, so the query is untouched", () => {
     // Not "returns a predicate that is always true" - null, so an owner's
     // query is byte-for-byte the query it was before personas existed.
-    for (const object of ["lead", "call", "deal", "task"] as const) {
+    for (const object of ["lead", "call", "deal", "task", "telecaller_stats"] as const) {
       expect([object, ownerScopeFilter(object, OWNER_UNSCOPED)]).toEqual([object, null]);
     }
+  });
+
+  it("scopes the productivity rollup on the telecaller identity", () => {
+    // Migration 0090. A telecaller opening the productivity page must see their
+    // own row and nobody else's - the same defect shape as
+    // 13_ROUTE_AND_GUARD_INVENTORY.md finding 3, one table over.
+    expect(ownerScopeFilter("telecaller_stats", own(), "s")?.sql).toBe("s.telecaller_id = $?");
   });
 
   it("scopes a lead on assignment OR attribution, and binds one value to both", () => {

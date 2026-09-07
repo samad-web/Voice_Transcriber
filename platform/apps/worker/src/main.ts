@@ -25,6 +25,7 @@ import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
+import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
 import { startLinkedInSweep } from "./pipeline/linkedin-sync";
@@ -152,6 +153,16 @@ async function bootstrap() {
   // off replies/meetings/inactivity that already exist. Pure computation, no
   // sends - see the module header for the safety-rule reasoning.
   startLeadScoringSweep();
+  // The telecaller productivity rollup (migration 0090). Recomputes the last
+  // couple of days from `calls` and `call_analytics` rather than accumulating,
+  // so a late upload or a reprocessed call corrects itself on the next tick
+  // instead of leaving a total nobody can explain. Pure computation, no sends.
+  //
+  // Belongs to the SWEEP half of the worker: it is a whole-tenant aggregate on
+  // a timer, so a second worker replica would do the same work twice. Harmless
+  // today because the upsert is idempotent, but it is the reason this must stay
+  // on the single-replica side when the process is split.
+  startTelecallerStatsSweep();
   // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
   // threads and writes a scored PROPOSAL a person then approves - it creates no
   // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only

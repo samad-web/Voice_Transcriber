@@ -244,6 +244,33 @@ export interface OwnerCall {
   lead_title: string | null;
 }
 
+/**
+ * How one call scored against the tenant's SOP (migration 0091).
+ *
+ * `sop_steps` is the step list from the VERSION that judged this call, not the
+ * active one - so a step renamed since is still shown under the wording it was
+ * scored against.
+ */
+export interface CallSopResult {
+  sop_id: string;
+  sop_version: number;
+  sop_name: string | null;
+  /** Null when that SOP version has since been deleted; the checklist then renders by key. */
+  sop_steps: Array<{ key: string; label: string; description: string; required: boolean }> | null;
+  step_results: Array<{
+    key: string;
+    /** true / false / null - null is "the call did not settle it", never a miss. */
+    met: boolean | null;
+    /** A verbatim quote. Null when absent, or withheld - see evidence_redacted. */
+    evidence: string | null;
+  }>;
+  steps_met: number | null;
+  steps_total: number | null;
+  adherence_pct: number | null;
+  /** True when the quotes were stripped because this reader may not read the transcript. */
+  evidence_redacted?: boolean;
+}
+
 /** `GET /v1/owner/calls/:id` - see LeadCallDetail for `transcriptRedacted`. */
 export interface OwnerCallDetail {
   call: OwnerCall;
@@ -263,6 +290,8 @@ export interface OwnerCallDetail {
     value_num: string | number | null;
     value_bool: boolean | null;
   }>;
+  /** Null when no SOP is active, or the call had no speaker separation to score from. */
+  sop: CallSopResult | null;
   transcriptRedacted: boolean;
 }
 

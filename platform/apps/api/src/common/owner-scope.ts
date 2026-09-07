@@ -93,7 +93,17 @@ const MATCHES_NOTHING = "00000000-0000-0000-0000-000000000000";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The owner-console objects a persona scope can narrow. */
-export type OwnerScopedObject = "lead" | "call" | "deal" | "task";
+/**
+ * `telecaller_stats` (migration 0090) is the daily productivity rollup. It
+ * scopes exactly like `call` - on the telecaller identity - and is named
+ * separately rather than reusing "call" because the two will not always agree:
+ * a rollup row is about a PERSON on a DAY.
+ *
+ * Getting this one wrong is how a telecaller reads the whole floor's
+ * productivity numbers - the exact defect 13_ROUTE_AND_GUARD_INVENTORY.md
+ * finding 3 recorded against /v1/owner/overview.
+ */
+export type OwnerScopedObject = "lead" | "call" | "deal" | "task" | "telecaller_stats";
 
 /**
  * A SQL predicate restricting rows to the caller's own, or null when nothing
@@ -176,6 +186,11 @@ export function ownerScopeFilter(
   // `calls` has only the write-once snapshot (0068) - there is no assignment
   // concept for a recording, and there should not be: who spoke on a call is a
   // fact, not an allocation somebody can change afterwards.
+  // Falls through for "call" and "telecaller_stats", which scope identically.
+  // A `telecaller_daily_stats` row (0090) is an aggregate of the same facts and
+  // inherits the reasoning unchanged. The exhaustiveness test in
+  // owner-scope.spec.ts is what forces a new object added to the union to be
+  // considered here rather than silently landing on this predicate.
   return { sql: `${prefix}telecaller_id = $?`, value: telecallerId };
 }
 

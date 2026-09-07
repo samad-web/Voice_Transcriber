@@ -474,6 +474,7 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
   if (!call) return null;
 
   const analytics = detail?.analytics ?? null;
+  const sop = detail?.sop ?? null;
   const talkRatio = num(analytics?.talk_ratio ?? null);
   // The detail's score, falling back to the row's - the list already carries
   // one, and the drawer opening should not blank a chip that was on screen a
@@ -629,6 +630,99 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
                     </div>
                   ))}
                 </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {/*
+            SOP adherence (migration 0091).
+            
+            A checklist with the QUOTE under each step, not a percentage with a
+            breakdown behind a click. The number is the least useful thing here:
+            a manager coaching a rep needs the sentence, and a rep disagreeing
+            with a verdict needs to see what it was based on. The panel is built
+            around the evidence and the percentage rides along at the top.
+          */}
+          {sop ? (
+            <section className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between gap-2">
+                <MonoLabel>Call procedure</MonoLabel>
+                {sop.adherence_pct !== null ? (
+                  <StatusChip
+                    tone={
+                      sop.adherence_pct >= 80
+                        ? "solid"
+                        : sop.adherence_pct >= 50
+                          ? "muted"
+                          : "danger"
+                    }
+                  >
+                    {sop.adherence_pct}% followed
+                  </StatusChip>
+                ) : (
+                  // Not 0%. Nothing was settled, which is not the same as
+                  // nothing was done - see 0091.
+                  <StatusChip tone="outline">Not scored</StatusChip>
+                )}
+              </div>
+
+              <p className="text-xs text-text-muted">
+                {sop.sop_name ?? "Procedure"} v{sop.sop_version}
+                {sop.steps_total !== null && sop.steps_total > 0
+                  ? ` · ${sop.steps_met ?? 0} of ${sop.steps_total} required steps`
+                  : ""}
+              </p>
+
+              <div className="space-y-1.5">
+                {sop.step_results.map((r) => {
+                  const step = sop.sop_steps?.find((x) => x.key === r.key);
+                  return (
+                    <div
+                      key={r.key}
+                      className="rounded-md border border-border bg-bg-subtle p-2.5 text-xs"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          aria-hidden="true"
+                          className={
+                            r.met === true
+                              ? "mt-0.5 shrink-0 text-success-text"
+                              : r.met === false
+                                ? "mt-0.5 shrink-0 text-danger-text"
+                                : "mt-0.5 shrink-0 text-text-muted"
+                          }
+                        >
+                          {r.met === true ? "✓" : r.met === false ? "✗" : "–"}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium text-text">
+                            {step?.label ?? humanize(r.key)}
+                          </span>
+                          <span className="text-text-muted">
+                            {r.met === true
+                              ? "Followed"
+                              : r.met === false
+                                ? "Not followed"
+                                : "The recording did not settle this"}
+                            {step && !step.required ? " · optional" : ""}
+                          </span>
+                          {r.evidence ? (
+                            <span className="mt-1 block break-words text-text">
+                              &ldquo;{r.evidence}&rdquo;
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {sop.evidence_redacted ? (
+                <p className="text-xs text-text-muted">
+                  The supporting quotes are hidden because your role cannot read call transcripts.
+                  The verdicts above are unaffected.
+                </p>
               ) : null}
             </section>
           ) : null}

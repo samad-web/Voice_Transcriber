@@ -2,6 +2,7 @@ import { getAdminPool, type PoolClient, withOrgContext } from "@aura/db";
 import { analyzeConversation } from "@aura/llm";
 import type { PipelineMessage } from "@aura/queue";
 import { computeTalkMetrics, upsertCallAnalytics } from "./call-analytics";
+import { loadActiveSop, upsertSopResult, type ActiveSop } from "./call-sop";
 import { enqueueDispatch } from "./outbox";
 import { detectCallProjects } from "./projects";
 
@@ -60,6 +61,10 @@ const CLAIM_SQL = `
   RETURNING enrichment_attempts`;
 
 interface EnrichInputs {
+  /** Write-once attribution (0068), copied onto the SOP result so the per-person aggregate needs no join. */
+  telecallerId: string | null;
+  /** Copied onto the SOP result for the same reason - see 0091's call_started_at. */
+  startedAt: Date | null;
   text: string | null;
   segments: unknown;
   diarized: boolean | null;
@@ -152,13 +157,14 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
   });
   if (attempt === null) return;
 
-  let input: EnrichInputs | undefined;
+  let loaded: { row: EnrichInputs | undefined; sop: ActiveSop | null } | undefined;
   try {
-    input = await withOrgContext(orgId, async (client) => {
+    loaded = await withOrgContext(orgId, async (client) => {
       const {
         rows: [row],
       } = await client.query<EnrichInputs>(
-        `SELECT t.text, t.segments, t.diarized, c.direction, o.vocabulary,
+        `SELECT t.text, t.segments, t.diarized, c.direction,
+                c.telecaller_id AS "telecallerId", c.started_at AS "startedAt", o.vocabulary,
                 (SELECT l.id FROM leads l
                   WHERE l.first_call_id = c.id OR l.last_call_id = c.id LIMIT 1) AS "leadId"
            FROM calls c
@@ -167,12 +173,28 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
           WHERE c.id = $1`,
         [callId],
       );
-      return row;
+      /*
+       * The SOP rides out of the SAME transaction as the inputs, and only when
+       * ASR reported real acoustic separation.
+       *
+       * Gated for exactly the reason the talk metrics are (0083, and
+       * talk-metrics-gate.test.ts): without diarization every segment maps to
+       * the Agent, so a model asked "did the AGENT disclose recording" reads a
+       * transcript in which the agent apparently said everything - including
+       * the customer's words. That over-credits the agent, and it does so on
+       * `consent_disclosure`, the one step with legal weight rather than
+       * commercial weight. A false pass there is worse than no score.
+       */
+      const sop = row?.diarized === true ? await loadActiveSop(client, orgId) : null;
+      return { row, sop };
     });
   } catch (err) {
     await failEnrichment(orgId, callId, attempt, err);
     return;
   }
+
+  const input = loaded?.row;
+  const sop = loaded?.sop ?? null;
 
   // No transcript means the call was gated as too short, transcription is off,
   // or ASR genuinely heard nothing. There is nothing to read, and running the
@@ -192,6 +214,9 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
       asrSegments,
       input.vocabulary ?? [],
       input.direction,
+          // null for an org with no SOP, or a call with no real speaker
+      // separation - in both cases the steps never enter the prompt.
+      sop?.steps ?? null,
     );
   } catch (err) {
     await failEnrichment(orgId, callId, attempt, err);
@@ -299,6 +324,33 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
         });
       } catch (err) {
         console.error(`call ${callId}: call-analytics error (non-blocking):`, err);
+      }
+
+      /*
+       * SOP adherence (0091). Non-blocking, like the analytics above: the lead
+       * is already on the board by the time this lane runs, so a scoring
+       * failure must not cost the call its enrichment.
+       *
+       * `sop` is null whenever the steps never went into the prompt - no active
+       * SOP, or no acoustic separation - so this writes nothing rather than a
+       * row of nulls. The console tells those two cases apart; a checklist of
+       * inconclusive steps would look like a rep who failed every one.
+       */
+      if (sop) {
+        try {
+          await upsertSopResult(
+            client,
+            orgId,
+            callId,
+            input.telecallerId,
+            sop,
+            intel.sopResults,
+            intel.model,
+            input.startedAt,
+          );
+        } catch (err) {
+          console.error(`call ${callId}: sop scoring error (non-blocking):`, err);
+        }
       }
 
       // Which of the tenant's own projects this call was about (migration

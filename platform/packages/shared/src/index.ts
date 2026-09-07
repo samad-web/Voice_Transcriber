@@ -41,3 +41,4 @@ export * from "./report-builder";
 export * from "./lead-intake";
 export * from "./linkedin";
 export * from "./whatsapp-qualification";
+export * from "./call-sops";

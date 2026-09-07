@@ -252,10 +252,51 @@ export class OwnerCallsController {
         [callId],
       );
 
+      /*
+       * SOP adherence (migration 0091), joined to the SOP VERSION that judged
+       * this call rather than to whichever version is active now. That join
+       * condition is the whole reason `call_sops` is versioned: joining on
+       * `is_active` would relabel February's verdicts with March's wording.
+       */
+      const {
+        rows: [sop],
+      } = await client.query(
+        `SELECT r.step_results, r.steps_met, r.steps_total, r.adherence_pct,
+                r.sop_id, r.sop_version, s.name AS sop_name, s.steps AS sop_steps
+           FROM call_sop_results r
+           LEFT JOIN call_sops s ON s.id = r.sop_id AND s.version = r.sop_version
+          WHERE r.call_id = $1
+          LIMIT 1`,
+        [callId],
+      );
+
       const canRead = await this.canReadTranscript(client, req.principal, orgId);
       if (!canRead && transcript) {
         transcript.text = null;
         transcript.segments = null;
+      }
+
+      /*
+       * SOP EVIDENCE IS VERBATIM TRANSCRIPT TEXT, so it is redacted by exactly
+       * the same permission that redacts the transcript above.
+       *
+       * Easy to miss: the field is called `evidence` and lives on a scoring row
+       * rather than on `transcripts`. It is a word-for-word quote of what
+       * somebody said on a customer's phone call, and a reviewer without
+       * `recordings_listen` reading several per call would be reading the
+       * transcript in instalments - the same reasoning that keeps `q` search
+       * off the transcript body.
+       *
+       * The VERDICTS stay. Whether a step was met is a judgement about the
+       * agent's conduct, which this reader is entitled to; the customer's words
+       * are not.
+       */
+      if (!canRead && sop && Array.isArray(sop.step_results)) {
+        sop.step_results = (sop.step_results as Array<Record<string, unknown>>).map((r) => ({
+          ...r,
+          evidence: null,
+        }));
+        sop.evidence_redacted = true;
       }
 
       return {
@@ -263,6 +304,7 @@ export class OwnerCallsController {
         transcript: transcript ?? null,
         analytics: analytics ?? null,
         facts,
+        sop: sop ?? null,
         transcriptRedacted: !canRead,
       };
     });

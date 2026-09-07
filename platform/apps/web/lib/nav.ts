@@ -32,6 +32,8 @@ import {
   Smartphone,
   SlidersHorizontal,
   Sparkles,
+  Gauge,
+  ClipboardCheck,
   Target,
   Upload,
   Users,
@@ -291,6 +293,30 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/sops",
+    label: "Call procedure",
+    icon: ClipboardCheck,
+    title: "Call procedure",
+    context: "Team",
+    // Owner and manager only, unlike Productivity below. That page shows a
+    // person their own numbers, which every persona is entitled to; this one
+    // DEFINES the measure, and a telecaller editing the rules they are scored
+    // against is the one shape of access with no defensible reading. The API
+    // enforces it (call-sops.controller.ts) - this just stops offering it.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/productivity",
+    label: "Productivity",
+    icon: Gauge,
+    title: "Productivity",
+    context: "Team",
+    // No `ownerRoles`, deliberately - every persona may open this, including a
+    // telecaller. The route narrows the ROWS rather than refusing the page, so
+    // a rep sees their own talk time and idle gaps and nobody else's.
+    // Restricting the nav item would hide a rep's own numbers from the rep.
+  },
+  {
     href: "/owner/reports",
     label: "Reports",
     icon: PieChart,
@@ -538,6 +564,11 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
 
   "/owner/calls": "conversations",
   "/owner/call-quality": "conversations",
+  // Beside the call log, NOT under Insights: that section is CRM-gated,
+  // and productivity is computed from `calls`, belongs to the `aura`
+  // module, and must stay visible to a recording-only tenant with no CRM.
+  "/owner/productivity": "conversations",
+  "/owner/sops": "conversations",
   "/owner/inbox": "conversations",
   "/owner/whatsapp-leads": "conversations",
 

@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
+import { CallSopsController } from "./call-sops.controller";
 import { OwnerCallsController } from "./owner-calls.controller";
+import { TelecallerProductivityController } from "./telecaller-productivity.controller";
 import { OwnerTeamController } from "./owner-team.controller";
 import { LeadsController } from "./leads.controller";
 import { OwnerController } from "./owner.controller";
@@ -14,6 +16,8 @@ import { SupabaseAdminService } from "./supabase-admin.service";
  */
 @Module({
   controllers: [
+    TelecallerProductivityController,
+    CallSopsController,
     OwnerCallsController,
     OwnerTeamController,
     LeadsController,
