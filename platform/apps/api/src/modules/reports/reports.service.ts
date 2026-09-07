@@ -1,8 +1,22 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import { parsePipelineStages, type PipelineStage } from "@aura/shared";
 import { DbService } from "../../db/db.service";
 import { furthestOpenStage } from "../crm-objects/stage-history";
 import { UNSCOPED, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import {
+  AGING_BUCKETS,
+  RESPONSE_BUCKETS,
+  agingBucket,
+  compliancePct,
+  mean,
+  median,
+  overdueDays,
+  pctOf,
+  responseBucket,
+  round1,
+  tally,
+  type ComplianceCounts,
+} from "./sla";
 
 /**
  * The three Layer 3 reports, as data. Split out of the controller because
@@ -549,6 +563,360 @@ export class ReportsService {
       };
     });
   }
+
+  /**
+   * Lead response time (gap G2) - how long the floor took to touch a lead
+   * after it arrived, and how many it has not touched at all.
+   *
+   * Windowed on when the lead ARRIVED, not on when it was answered. Windowing
+   * on the response would silently exclude every lead nobody answered, which
+   * is the population this report exists to find.
+   */
+  async responseTime(
+    orgId: string,
+    from: string,
+    to: string,
+    recordScope: CrmRecordScope = UNSCOPED,
+  ) {
+    refuseUnexpressibleScope(recordScope, "lead response time");
+    return this.db.withOrg(orgId, async (client) => {
+      const tz = await orgTimezone(client);
+
+      const { rows } = await client.query<{
+        telecaller_id: string | null;
+        telecaller: string;
+        minutes: string | null;
+        day: string;
+      }>(
+        `SELECT l.assigned_telecaller_id                       AS telecaller_id,
+                COALESCE(tc.display_name, '(unassigned)')      AS telecaller,
+                CASE WHEN l.first_responded_at IS NULL THEN NULL
+                     ELSE EXTRACT(EPOCH FROM (l.first_responded_at - l.created_at)) / 60.0
+                END                                            AS minutes,
+                to_char(l.created_at AT TIME ZONE $3, 'YYYY-MM-DD') AS day
+           FROM leads l
+           LEFT JOIN telecallers tc ON tc.id = l.assigned_telecaller_id
+          WHERE l.created_at >= ($1::date)::timestamp AT TIME ZONE $3
+            AND l.created_at <  (($2::date) + 1)::timestamp AT TIME ZONE $3`,
+        [from, to, tz],
+      );
+
+      // Aggregated here rather than in SQL on purpose: the bucket boundaries
+      // are the contested part of this report, and they live in sla.ts with
+      // tests. A second copy in a GROUP BY would be a second definition.
+      // The cost is one numeric per lead in the window, which is cheap.
+      const minutes = rows.map((r) => (r.minutes === null ? null : Number(r.minutes)));
+      const answered = minutes.filter((m): m is number => m !== null);
+      const buckets = tally(
+        RESPONSE_BUCKETS,
+        minutes.map((m) => responseBucket(m)),
+      );
+      const within = (limit: number) => answered.filter((m) => m <= limit).length;
+
+      const byTelecaller = groupBy(rows, (r) => r.telecaller_id ?? "unassigned").map((group) => {
+        const mins = group.rows
+          .map((r) => (r.minutes === null ? null : Number(r.minutes)))
+          .filter((m): m is number => m !== null);
+        return {
+          telecallerId: group.rows[0].telecaller_id,
+          telecaller: group.rows[0].telecaller,
+          leads: group.rows.length,
+          responded: mins.length,
+          unresponded: group.rows.length - mins.length,
+          medianMinutes: median(mins),
+          within1hPct: pctOf(mins.filter((m) => m <= 60).length, group.rows.length),
+        };
+      });
+      byTelecaller.sort((a, b) => b.leads - a.leads);
+
+      const daily = groupBy(rows, (r) => r.day)
+        .map((group) => ({
+          date: group.key,
+          leads: group.rows.length,
+          medianMinutes: median(
+            group.rows
+              .map((r) => (r.minutes === null ? null : Number(r.minutes)))
+              .filter((m): m is number => m !== null),
+          ),
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      // The work queue, and the reason this page exists. Not windowed: a lead
+      // from six weeks ago that nobody ever answered is still unanswered, and
+      // filtering it out of its own report would be the bug.
+      const { rows: waiting } = await client.query<{
+        id: string;
+        title: string;
+        contact_name: string | null;
+        stage: string;
+        created_at: string;
+        hours_waiting: string;
+      }>(
+        `SELECT id, title, contact_name, stage, created_at,
+                EXTRACT(EPOCH FROM (now() - created_at)) / 3600.0 AS hours_waiting
+           FROM leads
+          WHERE first_responded_at IS NULL AND status = 'open'
+          ORDER BY created_at ASC
+          LIMIT 50`,
+      );
+
+      return {
+        from,
+        to,
+        timezone: tz,
+        kpi: {
+          leads: rows.length,
+          responded: answered.length,
+          unresponded: rows.length - answered.length,
+          medianMinutes: median(answered),
+          avgMinutes: mean(answered),
+          within5min: within(5),
+          within30min: within(30),
+          within1hr: within(60),
+          within1hrPct: pctOf(within(60), rows.length),
+        },
+        buckets,
+        byTelecaller,
+        daily,
+        awaitingFirstResponse: waiting.map((w) => ({
+          id: w.id,
+          title: w.title,
+          contactName: w.contact_name,
+          stage: w.stage,
+          createdAt: w.created_at,
+          hoursWaiting: round1(Number(w.hours_waiting)),
+        })),
+      };
+    });
+  }
+
+  /**
+   * Follow-up compliance (gap G1) - of the promises that came due, how many
+   * were kept.
+   *
+   * Broken down by USER, because a task is assigned to one. Response time
+   * above breaks down by TELECALLER. The two are never merged into a single
+   * scorecard row: see this file's PerformanceRow comment for why.
+   *
+   * Cancelled tasks are excluded entirely. Somebody deciding a follow-up is no
+   * longer needed is not a missed follow-up, and counting it as one would
+   * punish tidying up the list.
+   */
+  async followupCompliance(
+    orgId: string,
+    from: string,
+    to: string,
+    recordScope: CrmRecordScope = UNSCOPED,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      const tz = await orgTimezone(client);
+      const { rows: nowRows } = await client.query<{ today: string }>(
+        `SELECT to_char((now() AT TIME ZONE $1)::date, 'YYYY-MM-DD') AS today`,
+        [tz],
+      );
+      const today = nowRows[0].today;
+
+      const { rows } = await client.query<{
+        id: string;
+        title: string;
+        due_on: string;
+        status: string;
+        assignee_user_id: string | null;
+        assignee: string | null;
+        completed_on: string | null;
+      }>(
+        `SELECT t.id, t.title, to_char(t.due_on, 'YYYY-MM-DD') AS due_on, t.status,
+                t.assignee_user_id,
+                COALESCE(u.name, u.email)                          AS assignee,
+                CASE WHEN t.completed_at IS NULL THEN NULL
+                     ELSE to_char(t.completed_at AT TIME ZONE $3, 'YYYY-MM-DD')
+                END                                                AS completed_on
+           FROM tasks t
+           LEFT JOIN users u ON u.id = t.assignee_user_id
+          WHERE t.due_on >= $1::date AND t.due_on <= $2::date
+            AND t.status <> 'cancelled'
+            ${ownedTasks(recordScope, 4)}
+          ORDER BY t.due_on ASC`,
+        scopedParams([from, to, tz], recordScope),
+      );
+
+      const classify = (r: (typeof rows)[number]) => {
+        if (r.status === "done") return "completed" as const;
+        return r.due_on < today ? ("overdue" as const) : ("pending" as const);
+      };
+      const countsOf = (subset: typeof rows): ComplianceCounts => ({
+        completed: subset.filter((r) => classify(r) === "completed").length,
+        overdue: subset.filter((r) => classify(r) === "overdue").length,
+        pending: subset.filter((r) => classify(r) === "pending").length,
+      });
+
+      const counts = countsOf(rows);
+      // Completed, but after the date it was promised for. Aura can answer
+      // this because `tasks` records completed_at; Hawcus cannot, and it is
+      // the difference between "they closed it" and "they closed it in time".
+      const completedLate = rows.filter(
+        (r) => r.status === "done" && r.completed_on !== null && r.completed_on > r.due_on,
+      ).length;
+
+      const byUser = groupBy(rows, (r) => r.assignee_user_id ?? "unassigned").map((group) => {
+        const c = countsOf(group.rows);
+        return {
+          userId: group.rows[0].assignee_user_id,
+          assignee: group.rows[0].assignee ?? "(unassigned)",
+          total: group.rows.length,
+          ...c,
+          compliancePct: compliancePct(c),
+        };
+      });
+      byUser.sort((a, b) => (a.compliancePct ?? 101) - (b.compliancePct ?? 101));
+
+      const daily = groupBy(rows, (r) => r.due_on)
+        .map((group) => ({
+          date: group.key,
+          due: group.rows.length,
+          completed: group.rows.filter((r) => r.status === "done").length,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      return {
+        from,
+        to,
+        timezone: tz,
+        today,
+        kpi: {
+          total: rows.length,
+          ...counts,
+          completedLate,
+          completedOnTime: counts.completed - completedLate,
+          compliancePct: compliancePct(counts),
+        },
+        byUser,
+        daily,
+        overdueList: rows
+          .filter((r) => classify(r) === "overdue")
+          .map((r) => ({
+            id: r.id,
+            title: r.title,
+            dueOn: r.due_on,
+            assignee: r.assignee ?? "(unassigned)",
+            overdueDays: overdueDays(r.due_on, today),
+          }))
+          .sort((a, b) => b.overdueDays - a.overdueDays)
+          .slice(0, 100),
+      };
+    });
+  }
+
+  /**
+   * Lead aging (gap G3) - how long the open leads have been sitting.
+   *
+   * A snapshot of now, like `pipeline` and for the same reason: "aging over
+   * the last 30 days" is not a question anyone asks. Every bucket carries the
+   * day bounds it was built from so the tile and the list it links to cannot
+   * drift apart.
+   */
+  async leadAging(orgId: string, recordScope: CrmRecordScope = UNSCOPED) {
+    refuseUnexpressibleScope(recordScope, "lead aging");
+    return this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query<{
+        id: string;
+        title: string;
+        contact_name: string | null;
+        stage: string;
+        age_days: string;
+        never_responded: boolean;
+      }>(
+        `SELECT id, title, contact_name, stage,
+                EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0 AS age_days,
+                (first_responded_at IS NULL)                       AS never_responded
+           FROM leads
+          WHERE status = 'open'`,
+      );
+
+      const buckets = tally(
+        AGING_BUCKETS,
+        rows.map((r) => agingBucket(Number(r.age_days))),
+      ).map((b) => {
+        const def = AGING_BUCKETS.find((d) => d.key === b.key)!;
+        // The click-through. §3.7 of the gap analysis: every number on this
+        // surface is a filter into a work queue, not a statistic.
+        return { ...b, minDays: def.minDays, maxDays: def.maxDays };
+      });
+
+      const stale = rows
+        .map((r) => ({
+          id: r.id,
+          title: r.title,
+          contactName: r.contact_name,
+          stage: r.stage,
+          ageDays: Math.floor(Number(r.age_days)),
+          neverResponded: r.never_responded,
+        }))
+        .sort((a, b) => b.ageDays - a.ageDays)
+        .slice(0, 50);
+
+      return {
+        total: rows.length,
+        neverResponded: rows.filter((r) => r.never_responded).length,
+        buckets,
+        stale,
+      };
+    });
+  }
+}
+
+/**
+ * The org's reporting timezone, which every day boundary on these three
+ * reports depends on.
+ *
+ * Migration 0090 introduced the column and states the reason: computed in UTC,
+ * an Indian floor's 21:30 call lands on tomorrow and Monday looks empty. The
+ * same is true of a follow-up due date and a lead's arrival day.
+ */
+async function orgTimezone(client: {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: { reporting_timezone: string }[] }>;
+}): Promise<string> {
+  const { rows } = await client.query(`SELECT reporting_timezone FROM organizations LIMIT 1`);
+  return rows[0]?.reporting_timezone ?? "Asia/Kolkata";
+}
+
+/**
+ * Refuse an `owned` scope this report cannot express, rather than widening it.
+ *
+ * `leads` has no owner_user_id - it carries `assigned_telecaller_id`, and a
+ * telecaller is not a user (telecallers.user_id is nullable and mostly null).
+ * So for a role restricted to its own records there is no honest filter to
+ * apply, and the two available wrong answers are to show them everything or to
+ * show them nothing while implying it is everything.
+ *
+ * This is the rule query-compiler.ts already follows for report-builder
+ * sources that cannot express `owned`, quoted in guard-mounting.spec.ts: "A
+ * source that cannot express `owned` is REFUSED rather than silently widened."
+ */
+function refuseUnexpressibleScope(scope: CrmRecordScope, report: string): void {
+  if (scope.scope !== "owned") return;
+  throw new ForbiddenException(
+    `${report} cannot be scoped to your own records: leads are assigned to a telecaller, ` +
+      `not to a console user. Ask an admin for the org-wide 'all' scope on deals to view it.`,
+  );
+}
+
+/** `owned` for tasks - assignee or creator, per crm-scope.ts. */
+function ownedTasks(scope: CrmRecordScope, paramIndex: number, alias = "t"): string {
+  const clause = scopeClause("task", scope, paramIndex, alias);
+  return clause ? `AND ${clause}` : "";
+}
+
+/** Stable, order-preserving group-by. First-seen order, so callers can sort. */
+function groupBy<T, K extends string>(rows: T[], key: (row: T) => K): { key: K; rows: T[] }[] {
+  const out = new Map<K, T[]>();
+  for (const row of rows) {
+    const k = key(row);
+    const bucket = out.get(k);
+    if (bucket) bucket.push(row);
+    else out.set(k, [row]);
+  }
+  return [...out.entries()].map(([k, rs]) => ({ key: k, rows: rs }));
 }
 
 function emptyTotals() {

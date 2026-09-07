@@ -334,6 +334,19 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
+    href: "/owner/reports/sla",
+    label: "Response & Follow-ups",
+    icon: Gauge,
+    title: "Response & Follow-ups",
+    context: "Pipeline",
+    // Owner/manager only, and narrower than Reports on purpose. This is a
+    // supervision surface: it names who answered slowly and who missed a
+    // follow-up. Marketing has no floor to supervise, and a telecaller
+    // reading the league table they are bottom of is a management decision,
+    // not a default (same reasoning as Call Quality).
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/reports/builder",
     label: "Report Builder",
     icon: LineChart,
@@ -504,6 +517,7 @@ const CRM_GATED_HREFS = [
   // on `deal:view` server-side, so a tenant without the CRM module would get a
   // page of 403s.
   "/owner/reports/builder",
+  "/owner/reports/sla",
   "/owner/duplicates",
   "/owner/import",
 ];
@@ -578,6 +592,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
 
   "/owner/reports": "insights",
   "/owner/reports/builder": "insights",
+  "/owner/reports/sla": "insights",
 
   "/owner/lead-sources": "connectors",
   "/owner/meta-ads": "connectors",

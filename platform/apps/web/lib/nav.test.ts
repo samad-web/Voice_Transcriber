@@ -83,6 +83,7 @@ describe("ownerNavItemsFor - crmEnabled", () => {
       "/owner/invoices",
       "/owner/reports",
       "/owner/reports/builder",
+      "/owner/reports/sla",
       "/owner/duplicates",
       "/owner/import",
     ]) {

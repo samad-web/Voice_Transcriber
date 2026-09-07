@@ -32,6 +32,12 @@ const WindowQuery = z.object({
   pipelineId: z.string().uuid().optional(),
 });
 
+/** A window with no pipeline: the SLA reports are org-wide by construction. */
+const DateWindowQuery = z.object({
+  from: DateOnly.optional(),
+  to: DateOnly.optional(),
+});
+
 const ReportName = z.enum(["pipeline", "performance", "conversion", "commission"]);
 type ReportName = z.infer<typeof ReportName>;
 
@@ -112,6 +118,50 @@ export class ReportsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
     return this.reports.commission(orgId, from, to, recordScope);
+  }
+
+  /**
+   * ── The three Tier-1 reports from the Hawcus gap analysis ────────────────
+   *
+   * Same `deal:view` gate as the four above, and deliberately NOT added to
+   * `ReportName`/`:report/export`: those four share one CSV shape (flat rows
+   * with a stable header), and these three do not - each returns a KPI block,
+   * a breakdown and a work queue. Forcing them through the same exporter
+   * would either flatten away the part people need or quietly export only one
+   * section of the page. A CSV for these is its own piece of work.
+   */
+
+  @Get("response-time")
+  @RequireCrmPermission("deal", "view")
+  async responseTime(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    const parsed = DateWindowQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    return this.reports.responseTime(orgId, from, to, recordScope);
+  }
+
+  @Get("followup-compliance")
+  @RequireCrmPermission("deal", "view")
+  async followupCompliance(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    const parsed = DateWindowQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    return this.reports.followupCompliance(orgId, from, to, recordScope);
+  }
+
+  /** A snapshot of now, so it takes no window - see the service comment. */
+  @Get("lead-aging")
+  @RequireCrmPermission("deal", "view")
+  async leadAging(@OrgId() orgId: string, @RecordScope() recordScope: CrmRecordScope) {
+    return this.reports.leadAging(orgId, recordScope);
   }
 
   /**
