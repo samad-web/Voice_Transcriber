@@ -120,7 +120,12 @@ function taskLoadSql(scopeAnd: string): string {
 function leadTriageSql(scopeAnd: string): string {
   // Whole days, floored, so this agrees with agingBucket()'s Math.floor - a
   // lead that is 3.9 days old is in the 0-3 bucket on both sides.
-  const ageDays = "floor(EXTRACT(epoch FROM (now() - l.created_at)) / 86400.0)";
+  // COALESCE(source_created_at, created_at) (0100), matching the aging report
+  // exactly. The dashboard tile links INTO that report, and two numbers that
+  // disagreed because one measured the import clock would be worse than
+  // either being absent.
+  const ageDays =
+    "floor(EXTRACT(epoch FROM (now() - COALESCE(l.source_created_at, l.created_at))) / 86400.0)";
   return `SELECT count(*)::int AS open_total,
                  count(*) FILTER (WHERE l.first_responded_at IS NULL)::int AS never_responded,
                  ${agingBucketFilters(ageDays)}

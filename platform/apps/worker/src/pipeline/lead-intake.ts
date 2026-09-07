@@ -168,11 +168,12 @@ export async function ingestIntakeLead(
     `INSERT INTO leads
        (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
         contact_number_last3, title, stage, status, summary, facts, last_activity_at, call_count,
-        source_channel, lead_source_id, marketing_source_id, assigned_telecaller_id)
+        source_channel, lead_source_id, marketing_source_id, assigned_telecaller_id,
+        source_created_at, source_ref)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12,
              -- An ad lead has had no calls. Starting at 0 rather than the
              -- column default of 1 keeps "calls" on the board honest.
-             0, $13, $14, $15, $16)
+             0, $13, $14, $15, $16, $17, $18)
      ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
      DO UPDATE SET
        -- Same contract as upsertLead and the API's writeLead: stage and status
@@ -206,6 +207,16 @@ export async function ingestIntakeLead(
       source.id,
       source.marketing_source_id,
       source.assigned_telecaller_id,
+      // The SOURCE's own clock (0100), where the payload carried one.
+      //
+      // `activityAt` above falls back to now() because a lead has to have an
+      // activity time; this one does NOT, and the difference is the whole
+      // point. Null here means "the source did not say", and the response-time
+      // report then falls back to created_at - whereas a now() default would
+      // assert that the enquiry happened at import time, which is exactly the
+      // claim that made the metric wrong.
+      lead.occurredAt ?? null,
+      lead.externalId,
     ],
   );
 

@@ -253,6 +253,13 @@ export class LeadIntakeService {
       leadSourceId: source.id,
       marketingSourceId,
       assignedTelecallerId: source.assignedTelecallerId,
+      // The provider's own timestamp, where it sent one (0100). A webhook
+      // delivery is usually seconds old and this changes nothing; a delivery
+      // Meta retried for two hours, or a form whose submission time is in the
+      // payload, is measured from when the customer acted rather than from
+      // when we finally heard.
+      sourceCreatedAt: normalized.occurredAt ?? null,
+      sourceRef: normalized.externalId ?? null,
       workspaceId: source.workspaceId,
     });
 
@@ -425,6 +432,11 @@ export class LeadIntakeService {
         marketingSourceId,
         assignedTelecallerId: source.assignedTelecallerId,
         workspaceId: source.workspaceId,
+        // Same as the sibling path above - see its comment. Both call sites
+        // pass it, because a replayed event and a live one must produce the
+        // same lead.
+        sourceCreatedAt: normalized.occurredAt ?? null,
+        sourceRef: normalized.externalId ?? null,
       });
       const outcome: IntakeOutcome = lead.created ? "created" : "updated";
       await client.query(

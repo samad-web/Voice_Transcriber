@@ -74,6 +74,22 @@ export interface CreateLeadInput {
   workspaceId?: string | null;
   /** Recorded as a fact; accounts are not auto-created from an integration. */
   company?: string | null;
+
+  // ── The source's own clock (migration 0100) ─────────────────────────────
+  //
+  // When the enquiry happened according to WHOEVER SENT IT, which for anything
+  // that is not a live webhook is not when this row gets written. Response
+  // time and lead ageing both measure from COALESCE(source_created_at,
+  // created_at), so a lead imported today that the customer sent last Tuesday
+  // is measured from Tuesday.
+  //
+  // Null is the correct and common answer - it means the source did not say -
+  // and the reports fall back. Never defaulted to now(): that would ASSERT the
+  // enquiry happened at import time, which is the claim that made the metric
+  // wrong in the first place.
+  sourceCreatedAt?: Date | string | null;
+  /** The source's own id for it, for tracing back without the intake ledger. */
+  sourceRef?: string | null;
 }
 
 /** Any open transaction. Both the pool client and a test double satisfy it. */
@@ -262,9 +278,9 @@ export class CrmIngestService {
                               contact_number_prefix, contact_number_last3, title, stage, status,
                               summary, facts, value_num, call_count, last_activity_at,
                               source_channel, lead_source_id, marketing_source_id,
-                              assigned_telecaller_id)
+                              assigned_telecaller_id, source_created_at, source_ref)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now(),
-                   $13, $14, $15, $16)
+                   $13, $14, $15, $16, $17, $18)
            ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
            DO UPDATE SET
              -- Stage and status are the owner's, never an integration's: a
@@ -282,6 +298,12 @@ export class CrmIngestService {
              marketing_source_id = COALESCE(leads.marketing_source_id, EXCLUDED.marketing_source_id),
              assigned_telecaller_id =
                COALESCE(leads.assigned_telecaller_id, EXCLUDED.assigned_telecaller_id),
+             -- First touch here too, and for a sharper reason than the others:
+             -- a lead that re-submits in June must keep the March enquiry time,
+             -- or its response time silently resets and a lead nobody answered
+             -- for three months reads as fresh.
+             source_created_at = COALESCE(leads.source_created_at, EXCLUDED.source_created_at),
+             source_ref        = COALESCE(leads.source_ref, EXCLUDED.source_ref),
              last_activity_at = now()
            RETURNING id, (xmax = 0) AS created`,
           [
@@ -301,6 +323,8 @@ export class CrmIngestService {
             input.leadSourceId ?? null,
             input.marketingSourceId ?? null,
             input.assignedTelecallerId ?? null,
+            input.sourceCreatedAt ?? null,
+            input.sourceRef ?? null,
           ],
         ));
       } else {
@@ -313,8 +337,9 @@ export class CrmIngestService {
           `INSERT INTO leads (org_id, workspace_id, contact_name, title, stage, status,
                               summary, facts, value_num, call_count, last_activity_at,
                               source_channel, lead_source_id, marketing_source_id,
-                              assigned_telecaller_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 0, now(), $10, $11, $12, $13)
+                              assigned_telecaller_id, source_created_at, source_ref)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 0, now(), $10, $11, $12, $13,
+                   $14, $15)
            RETURNING id, true AS created`,
           [
             orgId,
@@ -330,6 +355,8 @@ export class CrmIngestService {
             input.leadSourceId ?? null,
             input.marketingSourceId ?? null,
             input.assignedTelecallerId ?? null,
+            input.sourceCreatedAt ?? null,
+            input.sourceRef ?? null,
           ],
         ));
       }

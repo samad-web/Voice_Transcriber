@@ -588,16 +588,35 @@ export class ReportsService {
         minutes: string | null;
         day: string;
       }>(
+        // ── Measured from the SOURCE's clock where there is one (0100) ──
+        //
+        // `created_at` is when Aura wrote the row, which for a webhook lead is
+        // the same instant the enquiry happened and for everything else is
+        // not. A sheet connected on Monday imports rows typed last Tuesday,
+        // all stamped Monday; a CSV of three hundred leads stamps every one
+        // with the upload minute. Measured from those, a rep who worked an
+        // imported lead five minutes later - and three days after the customer
+        // actually asked - reads as instant.
+        //
+        // COALESCE and not a replacement: most leads have no source clock, and
+        // for them created_at IS the arrival. The window filters on the same
+        // expression, so a lead cannot fall out of its own report by having a
+        // source time in an earlier month than its import.
         `SELECT l.assigned_telecaller_id                       AS telecaller_id,
                 COALESCE(tc.display_name, '(unassigned)')      AS telecaller,
                 CASE WHEN l.first_responded_at IS NULL THEN NULL
-                     ELSE EXTRACT(EPOCH FROM (l.first_responded_at - l.created_at)) / 60.0
+                     ELSE EXTRACT(EPOCH FROM (
+                            l.first_responded_at
+                              - COALESCE(l.source_created_at, l.created_at))) / 60.0
                 END                                            AS minutes,
-                to_char(l.created_at AT TIME ZONE $3, 'YYYY-MM-DD') AS day
+                to_char(COALESCE(l.source_created_at, l.created_at) AT TIME ZONE $3,
+                        'YYYY-MM-DD')                          AS day
            FROM leads l
            LEFT JOIN telecallers tc ON tc.id = l.assigned_telecaller_id
-          WHERE l.created_at >= ($1::date)::timestamp AT TIME ZONE $3
-            AND l.created_at <  (($2::date) + 1)::timestamp AT TIME ZONE $3`,
+          WHERE COALESCE(l.source_created_at, l.created_at)
+                  >= ($1::date)::timestamp AT TIME ZONE $3
+            AND COALESCE(l.source_created_at, l.created_at)
+                  <  (($2::date) + 1)::timestamp AT TIME ZONE $3`,
         [from, to, tz],
       );
 
@@ -652,11 +671,15 @@ export class ReportsService {
         created_at: string;
         hours_waiting: string;
       }>(
-        `SELECT id, title, contact_name, stage, created_at,
-                EXTRACT(EPOCH FROM (now() - created_at)) / 3600.0 AS hours_waiting
+        // Same clock as the metric above, so "waiting 62 hours" on this list
+        // and the median beside it are measuring the same thing.
+        `SELECT id, title, contact_name, stage,
+                COALESCE(source_created_at, created_at) AS created_at,
+                EXTRACT(EPOCH FROM (now() - COALESCE(source_created_at, created_at)))
+                  / 3600.0 AS hours_waiting
            FROM leads
           WHERE first_responded_at IS NULL AND status = 'open'
-          ORDER BY created_at ASC
+          ORDER BY COALESCE(source_created_at, created_at) ASC
           LIMIT 50`,
       );
 
@@ -846,8 +869,12 @@ export class ReportsService {
         age_days: string;
         never_responded: boolean;
       }>(
+        // Ageing too: a lead imported yesterday that the customer sent three
+        // weeks ago has been waiting three weeks, and the 30+ bucket exists to
+        // find exactly that.
         `SELECT id, title, contact_name, stage,
-                EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0 AS age_days,
+                EXTRACT(EPOCH FROM (now() - COALESCE(source_created_at, created_at)))
+                  / 86400.0                                        AS age_days,
                 (first_responded_at IS NULL)                       AS never_responded
            FROM leads
           WHERE status = 'open'`,
