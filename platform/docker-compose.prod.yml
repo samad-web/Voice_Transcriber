@@ -207,9 +207,17 @@ services:
       SCHEDULER_WEEKDAYS: ${SCHEDULER_WEEKDAYS:-}
       SCHEDULER_MIN_NOTICE_MINUTES: ${SCHEDULER_MIN_NOTICE_MINUTES:-}
       SCHEDULER_MAX_SLOTS: ${SCHEDULER_MAX_SLOTS:-}
-    # No `depends_on`. The marketing site does not call the API, and a content
-    # page that will not start because a worker is unhealthy is a marketing
-    # outage caused by something the visitor cannot see.
+      # The /app install page reads GET /v1/app/latest so it can show which
+      # build the download button is about to hand over. Over the compose
+      # network rather than the public hostname, which would depend on this box
+      # hairpinning its own address. Unauthenticated endpoint - no credential is
+      # involved, so this does not touch the allowlist rule above.
+      APP_API_ORIGIN: http://api:4000
+    # Still no `depends_on`. The one call this site makes to the API - the build
+    # number on /app - already falls back to nothing, so a slow or missing API
+    # costs a version line and never a page. Refusing to start the marketing
+    # site because a worker is unhealthy would be an outage caused by something
+    # the visitor cannot see.
 
   # One-shot: applies packages/db/migrations to Supabase, sets the runtime
   # role's password from APP_DB_PASSWORD, then fails the deploy - loudly, here,

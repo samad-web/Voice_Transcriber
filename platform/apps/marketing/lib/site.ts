@@ -150,3 +150,24 @@ export const FUNNEL_LIVE = false;
  * an id in components/landing.tsx.
  */
 export const NAV: ReadonlyArray<{ href: string; label: string }> = [];
+
+/* ────────────────────────────────────────────────────────────────────────────
+   The handset app.
+
+   Hardcoded for the same reason CONSOLE_URL is: this is where the API lives,
+   nginx has routed `/v1/*` there since before this site existed, and enrolled
+   handsets carry that hostname in their activation payload - so it is the most
+   permanent fact in the deployment, not a value worth making configurable.
+
+   Absolute rather than relative even though this site is served from the SAME
+   origin today. A relative `/v1/...` would silently 404 the day the marketing
+   site is also served from the apex, where nginx has no /v1 block - and it
+   would fail as a broken download rather than as a broken page, which is the
+   kind of breakage nobody reports.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+export const API_ORIGIN = "https://aura.sirahagents.com";
+
+/** The public APK. 302s to a presigned URL that expires in fifteen minutes,
+ *  so this link is the shareable one - never the address it redirects to. */
+export const APP_DOWNLOAD_URL = `${API_ORIGIN}/v1/app/download`;
