@@ -26,6 +26,7 @@ import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
 import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
+import { startCallLeadLinkSweep } from "./pipeline/call-lead-link";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
 import { startLinkedInSweep } from "./pipeline/linkedin-sync";
@@ -163,6 +164,14 @@ async function bootstrap() {
   // today because the upsert is idempotent, but it is the reason this must stay
   // on the single-replica side when the process is split.
   startTelecallerStatsSweep();
+  // Attaches calls to the leads they were about (migration 0094), by exact
+  // number hash. Two things depend on it that nothing else can supply: a
+  // lead's own call history, and an honest response time - an outbound call is
+  // a response, and until this ran, only a stage move counted as one.
+  //
+  // Sweep rather than trigger because neither side arrives first: a cold call
+  // precedes its lead, a Meta lead precedes its calls. See the module header.
+  startCallLeadLinkSweep();
   // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
   // threads and writes a scored PROPOSAL a person then approves - it creates no
   // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only

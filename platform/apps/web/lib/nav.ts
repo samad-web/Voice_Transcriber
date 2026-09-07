@@ -1,40 +1,41 @@
 import {
   Activity,
   AlertTriangle,
-  CalendarDays,
   BarChart3,
   Building2,
+  CalendarDays,
+  ClipboardCheck,
   Contact,
   Copy,
   FileText,
+  Gauge,
   Handshake,
   Inbox,
   KeyRound,
-  LayoutGrid,
-  ListFilter,
-  ListChecks,
   Languages,
   Layers,
+  LayoutGrid,
+  LineChart,
+  Link2,
+  ListChecks,
+  ListFilter,
   Megaphone,
   MessageCircle,
   MessagesSquare,
   Milestone,
-  PieChart,
-  LineChart,
-  Link2,
   Package,
   Palette,
   Phone,
+  PieChart,
   Plug,
   Receipt,
   Search,
   ShieldCheck,
-  Smartphone,
   SlidersHorizontal,
+  Smartphone,
   Sparkles,
-  Gauge,
-  ClipboardCheck,
   Target,
+  Unlink,
   Upload,
   Users,
   Workflow,
@@ -471,6 +472,17 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
+    href: "/owner/calls/triage",
+    label: "Unmatched calls",
+    icon: Unlink,
+    title: "Unmatched calls",
+    context: "Conversations",
+    // Owner/manager only, matching the call log it hangs off: the queue is
+    // every unmatched call on the floor and working it creates leads across
+    // the whole team. Same `call_intel` entitlement, checked per request.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/call-quality",
     label: "Call Quality",
     icon: AlertTriangle,
@@ -500,7 +512,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
  * can have the whole CRM and still not have bought the right to read its own
  * call transcripts, and the page 403s rather than rendering empty.
  */
-const CALL_INTEL_GATED_HREFS = ["/owner/calls"];
+const CALL_INTEL_GATED_HREFS = ["/owner/calls", "/owner/calls/triage"];
 
 const CRM_GATED_HREFS = [
   "/owner/deals",
@@ -577,6 +589,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/accounts": "crm",
 
   "/owner/calls": "conversations",
+  "/owner/calls/triage": "conversations",
   "/owner/call-quality": "conversations",
   // Beside the call log, NOT under Insights: that section is CRM-gated,
   // and productivity is computed from `calls`, belongs to the `aura`

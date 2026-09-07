@@ -69,18 +69,17 @@ const READ_JOIN = `
   ) ca ON true`;
 
 /**
- * The lead this call produced or advanced, so a row can be followed back into
- * the pipeline. LATERAL because several leads can share a contact over time and
- * a plain join would emit the call once per lead.
+ * The lead this call was about.
+ *
+ * A plain join on `calls.lead_id` since migration 0094. It used to be a
+ * LATERAL over first_call_id/last_call_id, which could only ever find the
+ * lead a call CREATED - so a call to a lead that arrived from a web form, a
+ * Meta ad or an import showed no lead at all, however many times it was rung.
+ * 0094 links by number hash instead, and the column it fills is authoritative:
+ * one lead per call, or none, with no ordering rule to pick between candidates.
  */
 const LEAD_JOIN = `
-  LEFT JOIN LATERAL (
-    SELECT l.id, l.title
-      FROM leads l
-     WHERE l.last_call_id = c.id OR l.first_call_id = c.id
-     ORDER BY l.last_activity_at DESC
-     LIMIT 1
-  ) lead ON true`;
+  LEFT JOIN leads lead ON lead.id = c.lead_id`;
 
 /**
  * The client's own call log (`call_intel` module, org-modules.ts).

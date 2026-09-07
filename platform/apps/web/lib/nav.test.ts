@@ -144,6 +144,15 @@ describe("ownerNavItemsFor - callIntelEnabled", () => {
     expect(hrefs("telecaller", false, true, true)).not.toContain("/owner/calls");
   });
 
+  it("gates the unmatched-call queue on the same module as the log", () => {
+    // They are one surface split across two pages - a tenant that can read its
+    // call log can work the queue behind it, and a tenant with neither sees
+    // no trace of either.
+    expect(hrefs("owner", false, true, true)).toContain("/owner/calls/triage");
+    expect(hrefs("owner", false, true, false)).not.toContain("/owner/calls/triage");
+    expect(hrefs("telecaller", false, true, true)).not.toContain("/owner/calls/triage");
+  });
+
   it("is independent of the CRM module", () => {
     // A tenant can have call intelligence without the CRM, and the reverse.
     // Neither gate may quietly stand in for the other.
@@ -152,7 +161,13 @@ describe("ownerNavItemsFor - callIntelEnabled", () => {
   });
 
   it("changes nothing else about the list", () => {
-    const withIt = hrefs("owner", false, true, true).filter((h) => h !== "/owner/calls");
+    // Both call-intel pages, not just the log: the unmatched-call queue reads
+    // what calls were about and is gated on the same module. Listed here
+    // explicitly rather than imported from nav.ts, so adding a page to the
+    // gate has to be a deliberate edit in two places instead of a filter that
+    // silently absorbs it.
+    const callIntel = ["/owner/calls", "/owner/calls/triage"];
+    const withIt = hrefs("owner", false, true, true).filter((h) => !callIntel.includes(h));
     expect(withIt).toEqual(hrefs("owner", false, true, false));
   });
 });
