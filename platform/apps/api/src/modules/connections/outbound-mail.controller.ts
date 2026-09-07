@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import type { SmtpConfig } from "./smtp";
 import { connectionProvider } from "@aura/shared";
 import { decryptSecret, encryptSecret } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
@@ -124,9 +125,11 @@ export class OutboundMailController {
         access_token: string | null;
         refresh_token: string | null;
         token_expires_at: Date | null;
+        config: Record<string, string> | null;
+        secret: string | null;
       }>(
         `SELECT id, provider, account_email, display_name, access_token, refresh_token,
-                token_expires_at
+                token_expires_at, config, secret
            FROM connected_accounts
           WHERE user_id = $2 AND status = 'active' AND 'email' = ANY(capabilities)
             AND ($1::uuid IS NULL OR id = $1::uuid)
@@ -162,15 +165,28 @@ export class OutboundMailController {
         );
       }
 
-      const accessToken = await this.usableToken(client, connection);
+      // ── The two credential shapes ─────────────────────────────────────────
+      //
+      // An OAuth mailbox carries a bearer token that may need refreshing. An
+      // IMAP/SMTP one carries a password in `secret` and its host settings in
+      // `config`, and has nothing to refresh - so `usableToken` is not on its
+      // path at all rather than being taught to return a password.
+      const smtp = connection.provider === "imap" ? smtpSettings(connection) : undefined;
+      const accessToken = smtp ? "" : await this.usableToken(client, connection);
 
-      const result = await sendMessage(connection.provider, accessToken, {
-        to: contact.email,
-        subject: message.subject,
-        body: message.body,
-        fromEmail: connection.account_email,
-        fromName: connection.display_name,
-      });
+      const result = await sendMessage(
+        connection.provider,
+        accessToken,
+        {
+          to: contact.email,
+          subject: message.subject,
+          body: message.body,
+          fromEmail: connection.account_email,
+          fromName: connection.display_name,
+        },
+        fetch,
+        smtp,
+      );
 
       const {
         rows: [deal],
@@ -270,4 +286,44 @@ export class OutboundMailController {
     );
     return refreshed.accessToken;
   }
+}
+
+/**
+ * The SMTP settings off an `imap` connection.
+ *
+ * ── PORT DECIDES THE ENCRYPTION, NOT A SEPARATE TOGGLE ──────────────────────
+ *
+ * 465 is implicit TLS; everything else is a plain connection that must be
+ * upgraded with STARTTLS. That is the universal convention and it is what the
+ * connection form's own defaults describe, so inferring it removes a question
+ * nobody outside the mail world can answer - and, more usefully, removes the
+ * chance of somebody answering it wrong and having the send fail with a TLS
+ * error instead of a readable one.
+ *
+ * There is no unencrypted option at any port. smtp.ts refuses to authenticate
+ * over a socket it could not upgrade, so the worst case is a clear error
+ * rather than a password on the wire.
+ */
+function smtpSettings(connection: {
+  account_email: string;
+  config: Record<string, string> | null;
+  secret: string | null;
+}): SmtpConfig {
+  const config = connection.config ?? {};
+  const host = config.smtp_host;
+  const password = decryptSecret(connection.secret);
+  if (!host || !password) {
+    throw new BadRequestException("this mailbox has no SMTP settings saved - reconnect it");
+  }
+  const port = Number(config.smtp_port ?? 465) || 465;
+  return {
+    host,
+    port,
+    // The mailbox address is the username on almost every provider, and the
+    // connection form does not ask for a separate one. `smtp_user` is honoured
+    // where a tenant has set it, for the servers that want a bare login name.
+    user: config.smtp_user || connection.account_email,
+    password,
+    secure: port === 465,
+  };
 }

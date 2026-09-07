@@ -1,4 +1,5 @@
 import { connectionProvider, type ConnectionProviderSpec } from "@aura/shared";
+import { sendSmtpMessage, type SmtpConfig } from "./smtp";
 import { oauthClient } from "./oauth";
 
 /**
@@ -68,8 +69,15 @@ export function dailySendLimit(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /** Which providers this module can actually send through. */
+/**
+ * `imap` joined the OAuth two once SMTP was implemented (smtp.ts).
+ *
+ * It was excluded before not as a policy but as a gap: the IMAP connection
+ * could READ a tenant's mail onto the customer timeline and could not reply
+ * from the console, which is half a feature and the half people notice.
+ */
 export function canSend(provider: string): boolean {
-  return provider === "google" || provider === "microsoft";
+  return provider === "google" || provider === "microsoft" || provider === "imap";
 }
 
 /**
@@ -108,10 +116,34 @@ export async function sendMessage(
   accessToken: string,
   message: OutgoingMessage,
   fetchImpl: typeof fetch = fetch,
+  /**
+   * SMTP settings, for the `imap` provider. Absent for the OAuth two, which
+   * carry everything they need in the access token - which is why this is a
+   * trailing optional rather than a field on `OutgoingMessage`: a Gmail send
+   * has no host, port or password and should not have to pass nulls for them.
+   */
+  smtp?: SmtpConfig,
 ): Promise<SendResult> {
   const spec = connectionProvider(provider);
   if (!spec || !canSend(provider)) {
     throw new Error(`${provider} cannot send mail from this deployment`);
+  }
+
+  if (provider === "imap") {
+    if (!smtp) throw new Error("this mailbox has no SMTP settings saved - reconnect it");
+    // The SAME buildMime as the Gmail path, so a reply looks identical
+    // whichever mailbox it left from - and so the header-injection guard that
+    // function applies is not something the SMTP path could forget.
+    await sendSmtpMessage(smtp, {
+      from: message.fromEmail,
+      to: message.to,
+      mime: buildMime(message),
+    });
+    // SMTP returns a queue id in its 250 response, which is the server's own
+    // and means nothing to us. Null, like the Microsoft path, and for the same
+    // reason: the mail sync picks the message up from the Sent folder and
+    // dedupes against the interaction row.
+    return { externalId: null };
   }
 
   if (provider === "google") {

@@ -51,10 +51,19 @@ describe("canSend", () => {
   });
 
   it("refuses providers whose send path does not exist", () => {
-    // IMAP would need an SMTP client, and 'stub' must never be a live sender.
-    for (const provider of ["imap", "caldav", "stub", "", "GOOGLE"]) {
+    // `caldav` is a calendar and has no mail path at all; 'stub' must never be
+    // a live sender; the empty string and a miscased name are the two ways a
+    // caller reaches this with something that is not a provider.
+    for (const provider of ["caldav", "stub", "", "GOOGLE"]) {
       expect([provider, canSend(provider)]).toEqual([provider, false]);
     }
+  });
+
+  it("allows imap now that there is an SMTP client behind it", () => {
+    // It was excluded as a GAP, not a policy: the connection could read a
+    // tenant's mail onto the timeline and could not reply from the console.
+    // smtp.ts is the missing half - see its header.
+    expect(canSend("imap")).toBe(true);
   });
 });
 
