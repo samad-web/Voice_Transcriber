@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
 import { LeadSourcesClient } from "./lead-sources-client";
+import { SheetsPanel } from "./sheets-panel";
 
 export const metadata: Metadata = { title: "Lead sources - Aura" };
 
@@ -94,6 +95,12 @@ export default async function LeadSourcesPage() {
         already know, and labelled with where they came from so you can tell
         which channel is worth the money.
       </p>
+      {/* Above the channel list, not inside it. Every other channel is created
+          by naming it - the endpoint URL is the whole configuration - whereas a
+          sheet has to be opened and read before it can be mapped, which is a
+          different interaction and does not fit that dialog. */}
+      <SheetsPanel sources={sources.sources} />
+
       <LeadSourcesClient
         sources={sources.sources}
         channels={catalogue.channels}

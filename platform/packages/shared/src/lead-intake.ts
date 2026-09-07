@@ -40,6 +40,13 @@ export const LeadSourceKind = z.enum([
   "telephony",
   "meta_ads",
   "linkedin_ads",
+  // A Google Sheet, polled. On the Indian SMB tenants this product sells to,
+  // a spreadsheet is routinely the HIGHEST-volume lead channel - ahead of Meta
+  // and ahead of the website - because it is where the sales team already
+  // keeps the list somebody is phoning through. Treating it as a first-class
+  // source rather than an import is the difference between leads arriving and
+  // somebody remembering to upload a CSV on Monday.
+  "sheets",
   "api",
 ]);
 export type LeadSourceKind = z.infer<typeof LeadSourceKind>;
@@ -58,6 +65,7 @@ export const LeadSourceChannel = z.enum([
   "telephony",
   "meta_ads",
   "linkedin_ads",
+  "sheets",
   // Not a LeadSourceKind: an approved WhatsApp qualification (0080), which
   // arrives through the messaging webhook rather than an intake endpoint and
   // so has no `lead_sources` row - the same way 'call' and 'manual' do not.
@@ -88,26 +96,35 @@ export type IntakeDelivery =
 // ── field maps ────────────────────────────────────────────────────────────
 
 /** The normalised fields every channel resolves to. */
-export type IntakeField =
-  | "externalId"
-  | "name"
-  | "email"
-  | "phone"
-  | "company"
-  | "notes"
-  | "value"
-  | "subject"
-  | "recipient"
-  | "direction"
-  | "recordingUrl"
-  | "agent"
-  | "occurredAt"
-  | "projectKey"
-  | "utmSource"
-  | "utmMedium"
-  | "utmCampaign"
-  | "utmTerm"
-  | "utmContent";
+/**
+ * A zod enum rather than a bare union, because the Sheets connector lets a
+ * PERSON choose these: a column mapping is `{"Mobile": "phone"}` typed into
+ * the console, so the field name arrives as caller input and has to be
+ * validated, not merely declared. Every other channel's map is written by us
+ * in this file, which is why the union was enough until now.
+ */
+export const IntakeFieldName = z.enum([
+  "externalId",
+  "name",
+  "email",
+  "phone",
+  "company",
+  "notes",
+  "value",
+  "subject",
+  "recipient",
+  "direction",
+  "recordingUrl",
+  "agent",
+  "occurredAt",
+  "projectKey",
+  "utmSource",
+  "utmMedium",
+  "utmCampaign",
+  "utmTerm",
+  "utmContent",
+]);
+export type IntakeField = z.infer<typeof IntakeFieldName>;
 
 /**
  * Candidate paths per field, best first. A path is dotted with optional array
@@ -484,6 +501,28 @@ export const LEAD_INTAKE_CHANNELS: LeadIntakeChannelSpec[] = [
     ],
   },
   {
+    id: "sheets",
+    label: "Google Sheet",
+    blurb:
+      "A tab in one of your own spreadsheets. Aura reads new rows and turns each one into a lead.",
+    delivery: "poll",
+    providers: [
+      {
+        id: "google",
+        label: "Google Sheets",
+        blurb: "Read through a Google account you connect - the sheet stays private.",
+        signature: "none",
+        // Deliberately empty. Every other provider here ships a field map
+        // because we know the payload's shape; a spreadsheet's shape is
+        // whatever the customer typed at the top of their own columns, so the
+        // map is per-source configuration and lives in
+        // `config.columnMapping`. A default map would be a guess about
+        // somebody else's column headings.
+        fieldMap: {},
+      },
+    ],
+  },
+  {
     id: "linkedin_ads",
     label: "LinkedIn Lead Gen Forms",
     blurb: "LinkedIn has no lead webhook, so Aura polls your ad account for new responses.",
@@ -555,6 +594,56 @@ export const LeadSourceConfig = z
     inboundOnly: z.boolean().optional(),
     /** Free-text note the console shows next to the endpoint. */
     notes: z.string().max(500).optional(),
+
+    // ── Google Sheets sources ──────────────────────────────────────────────
+    /**
+     * The spreadsheet, the tab inside it, and which column means what.
+     *
+     * All optional at this level rather than a discriminated union on `kind`,
+     * matching every other channel's settings here: `LeadSourceConfig` is one
+     * open bag whose fields are meaningful per kind, and the alternative -
+     * five mutually exclusive shapes - would make a source that changes kind
+     * (which nothing supports anyway) a type-level problem instead of a
+     * product decision. `sheetsConfigured()` is the honest check.
+     */
+    spreadsheetId: z.string().min(10).max(120).optional(),
+    /** The tab, by name. Names survive a tab being dragged; gids survive a rename. */
+    sheetName: z.string().max(120).optional(),
+    /** As pasted, so the console can link straight back to it. */
+    spreadsheetUrl: z.string().max(500).optional(),
+    /**
+     * Which Google account reads it (connected_accounts.id).
+     *
+     * A per-user OAuth connection and not a service account, because the sheet
+     * is a private document belonging to the tenant: the only party who can
+     * grant access to it is somebody who already has it. A service account
+     * would need the customer to share the sheet with an address we made up,
+     * which is a support conversation on every single onboarding.
+     */
+    connectedAccountId: z.string().uuid().optional(),
+    /**
+     * Sheet column header -> intake field. `{"Mobile": "phone"}`.
+     *
+     * Keyed on the HEADER TEXT rather than the column index, because inserting
+     * a column in a spreadsheet is a thing people do on a Tuesday afternoon
+     * without telling anybody, and an index map would silently start reading
+     * the wrong column instead of failing.
+     */
+    columnMapping: z.record(z.string().max(120), IntakeFieldName).optional(),
+    /** 1-based row holding the headers. Everything after it is data. */
+    headerRow: z.number().int().min(1).max(50).optional(),
+    /**
+     * Import the rows that were already in the sheet when it was connected.
+     *
+     * OFF by default, and this is a product decision rather than a
+     * performance one. Connecting a sheet that has held three thousand rows
+     * since last year would otherwise create three thousand leads dated today,
+     * fill the board, and put every one of them in front of somebody as new
+     * work. The safe default is to start watching from the bottom: new rows
+     * become leads, history stays history. A person who genuinely wants the
+     * backfill can say so, once, knowing what it will do.
+     */
+    importExisting: z.boolean().optional(),
   })
   .strict();
 export type LeadSourceConfig = z.infer<typeof LeadSourceConfig>;
@@ -928,4 +1017,124 @@ export function intakeRejectionReason(intake: NormalizedIntake): string | null {
 export function intakeEndpointPath(kind: LeadSourceKind, token: string): string | null {
   const segment = intakeChannel(kind)?.path;
   return segment ? `/intake/${segment}/${token}` : null;
+}
+
+// ── Google Sheets ───────────────────────────────────────────────────────────
+
+/**
+ * Pull the spreadsheet id out of anything a person is likely to paste.
+ *
+ * They paste the browser URL, because that is what is in front of them - not
+ * the id, which is not displayed anywhere in the Google Sheets interface. A
+ * bare id is accepted too, so somebody who does know can type it.
+ *
+ * Returns null rather than guessing. A wrong id fails on the first sync with
+ * a 404 from Google, which is a worse error than "that does not look like a
+ * spreadsheet link" at the moment of pasting.
+ */
+export function parseSpreadsheetId(input: string): string | null {
+  const text = input.trim();
+  if (!text) return null;
+  const fromUrl = /\/spreadsheets\/d\/([a-zA-Z0-9-_]{10,})/.exec(text);
+  if (fromUrl) return fromUrl[1];
+  // A bare id: Google's are long, alphanumeric with dashes and underscores.
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(text)) return text;
+  return null;
+}
+
+/** The tab name from a `#gid=` URL is not recoverable - only the gid is. */
+export function parseSheetGid(input: string): string | null {
+  const match = /[#&?]gid=([0-9]+)/.exec(input);
+  return match ? match[1] : null;
+}
+
+/**
+ * Turn the console's header→field mapping into the field→paths map the
+ * normaliser already speaks.
+ *
+ * The two are inverses, and the console's direction is the one a person can
+ * fill in: they are looking at their own column headings and saying what each
+ * one means. Storing it that way round also makes an unmapped column obvious -
+ * it is simply absent - whereas the normaliser's direction would represent the
+ * same fact as a field with no candidates, which reads like a bug.
+ *
+ * Two headers mapped to the same field is allowed and ordered by appearance:
+ * "Mobile" and "Alt phone" both meaning `phone` is a real spreadsheet, and the
+ * normaliser takes the first path that yields a value - so the leftmost
+ * populated column wins, which is what somebody scanning the sheet would
+ * expect.
+ */
+export function sheetFieldMap(
+  columnMapping: Record<string, IntakeField>,
+  headerOrder: string[] = [],
+): IntakeFieldMap {
+  const rank = new Map(headerOrder.map((h, i) => [h, i]));
+  const entries = Object.entries(columnMapping).sort(
+    ([a], [b]) => (rank.get(a) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b) ?? Number.MAX_SAFE_INTEGER),
+  );
+  const map: IntakeFieldMap = {};
+  for (const [header, field] of entries) {
+    const existing = map[field];
+    if (existing) existing.push(header);
+    else map[field] = [header];
+  }
+  return map;
+}
+
+/**
+ * One spreadsheet row as the object the normaliser reads.
+ *
+ * Keyed by header text, so `config.columnMapping` and this agree without an
+ * index ever being involved - inserting a column shifts nothing.
+ *
+ * Trailing empty cells are omitted by Google's API, so a row is routinely
+ * SHORTER than the header list. Missing cells become absent keys rather than
+ * empty strings: absent means "the normaliser should try the next candidate
+ * path", while "" would satisfy it and produce a lead with an empty name.
+ *
+ * A duplicate header keeps the FIRST column. Google allows two columns called
+ * "Phone" and there is no correct answer, but first is the one a person points
+ * at when you ask them which they meant.
+ */
+export function sheetRowToPayload(headers: string[], row: string[]): Record<string, string> {
+  const payload: Record<string, string> = {};
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i]?.trim();
+    if (!header || header in payload) continue;
+    const cell = row[i];
+    if (cell === undefined || cell === null) continue;
+    const value = String(cell).trim();
+    if (value === "") continue;
+    payload[header] = value;
+  }
+  return payload;
+}
+
+/** Enough configuration to sync? Named so callers do not re-derive the rule. */
+export function sheetsConfigured(config: LeadSourceConfig): boolean {
+  return Boolean(
+    config.spreadsheetId &&
+      config.connectedAccountId &&
+      config.columnMapping &&
+      Object.keys(config.columnMapping).length > 0,
+  );
+}
+
+/**
+ * The A1 range to read, one tab, from the header row down.
+ *
+ * Unbounded on rows (`A1:ZZ` with no end row) because Google returns only the
+ * populated ones anyway, and a bound would need re-deriving every time the
+ * sheet grew. Bounded on COLUMNS at ZZ, which is 702 - a spreadsheet wider
+ * than that is not a lead list.
+ *
+ * The tab name is single-quoted and its own quotes doubled, which is the
+ * escaping A1 notation actually uses: a tab called `Q1 'hot' leads` is legal
+ * in Sheets and would otherwise truncate the range and silently read the
+ * wrong tab.
+ */
+export function sheetRange(sheetName: string | undefined, headerRow = 1): string {
+  const start = Math.max(1, headerRow);
+  if (!sheetName) return `A${start}:ZZ`;
+  return `'${sheetName.replace(/'/g, "''")}'!A${start}:ZZ`;
 }

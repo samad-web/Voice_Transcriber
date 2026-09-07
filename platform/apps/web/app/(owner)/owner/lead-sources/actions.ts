@@ -136,3 +136,67 @@ export async function startLinkedInConnectAction() {
   if (result.error?.includes("not configured")) return { notConfigured: true as const };
   return result;
 }
+
+// ── Google Sheets (migration 0096) ──────────────────────────────────────────
+
+export interface SheetPreview {
+  spreadsheetId: string;
+  title: string | null;
+  tabs: string[];
+  headers: string[];
+  sampleRows: string[][];
+}
+
+/**
+ * Look inside a spreadsheet so the console can offer a column mapping.
+ *
+ * The API's own error text is surfaced verbatim, because every failure here is
+ * something the person can fix and only the API knows which: the link is not a
+ * sheet, that Google account cannot open it, there is no tab by that name, or
+ * the connection was never authorised to read spreadsheets. "API 400" would
+ * hide all four behind one another.
+ */
+export async function previewSheetAction(input: {
+  connectedAccountId: string;
+  spreadsheetUrl: string;
+  sheetName?: string;
+  headerRow?: number;
+}): Promise<{ preview?: SheetPreview; error?: string }> {
+  const result = await call<SheetPreview>("/v1/lead-sources/sheets/preview", {
+    method: "POST",
+    body: input,
+  });
+  return { preview: result.data, error: result.error };
+}
+
+/** Connected accounts that can actually read a sheet. */
+export async function listSheetAccountsAction(): Promise<{
+  accounts: Array<{ id: string; account_email: string; provider: string }>;
+}> {
+  const headers = await ownerHeaders();
+  if (!headers) return { accounts: [] };
+  try {
+    const res = await fetch(`${API_URL}/v1/connections`, { headers, cache: "no-store" });
+    if (!res.ok) return { accounts: [] };
+    const body = (await res.json()) as {
+      connections: Array<{
+        id: string;
+        account_email: string;
+        provider: string;
+        status: string;
+        capabilities: string[];
+      }>;
+    };
+    // Filtered on the CAPABILITY rather than on the provider, because a Google
+    // account connected before this connector existed has no spreadsheets
+    // scope and would fail on its first sync. Offering it would be offering a
+    // choice that cannot work.
+    return {
+      accounts: body.connections
+        .filter((c) => c.status === "active" && c.capabilities?.includes("sheets"))
+        .map((c) => ({ id: c.id, account_email: c.account_email, provider: c.provider })),
+    };
+  } catch {
+    return { accounts: [] };
+  }
+}

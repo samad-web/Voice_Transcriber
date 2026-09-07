@@ -28,6 +28,7 @@ import { startLeadScoringSweep } from "./pipeline/lead-scoring";
 import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
 import { startCallLeadLinkSweep } from "./pipeline/call-lead-link";
 import { startFollowupReminderSweep } from "./pipeline/followup-reminders";
+import { startSheetsSync } from "./pipeline/sheets-sync";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
 import { startLinkedInSweep } from "./pipeline/linkedin-sync";
@@ -201,6 +202,16 @@ async function bootstrap() {
   // webhook to receive, so it is polled. Does not start at all unless an
   // approved LinkedIn app's credentials are configured - it says so once at
   // boot rather than failing per sweep. Also ages out the intake ledger.
+  // Google Sheets as a lead source (migration 0096). On the SMB tenants this
+  // sells to, a spreadsheet is routinely the highest-volume lead channel -
+  // ahead of Meta and ahead of the website - because it is where the team
+  // already keeps the list somebody is phoning through.
+  //
+  // Reads only, through a Google account the tenant connects themselves, and
+  // does not import a sheet's history unless somebody asks: connecting a sheet
+  // must not retroactively create three thousand leads dated today. Off with
+  // no Google OAuth app configured.
+  const sheets = startSheetsSync();
   const linkedin = startLinkedInSweep();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
@@ -213,7 +224,8 @@ async function bootstrap() {
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
       "+ booking confirmations + call reminders + form nudges" +
       (metaMcp ? " + meta-mcp lead pull" : "") +
-      (linkedin ? " + linkedin lead pull" : ""),
+      (linkedin ? " + linkedin lead pull" : "") +
+      (sheets ? " + google sheets lead pull" : ""),
   );
 }
 

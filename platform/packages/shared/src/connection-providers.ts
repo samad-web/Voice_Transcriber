@@ -15,7 +15,15 @@ import { z } from "zod";
  * so "any email and any calendar" does not depend on this list growing.
  */
 
-export const ConnectionCapability = z.enum(["email", "calendar"]);
+/**
+ * `sheets` joined email and calendar for the Google Sheets lead connector
+ * (migration 0096). It is a separate capability rather than a flag on the
+ * provider because a capability here means "this GRANT actually covered that
+ * scope" - a Google account connected before the connector existed has no
+ * spreadsheets scope, and treating the provider's support as the account's
+ * authorisation would produce a 403 on every sync with no way to explain it.
+ */
+export const ConnectionCapability = z.enum(["email", "calendar", "sheets"]);
 export type ConnectionCapability = z.infer<typeof ConnectionCapability>;
 
 /** How a provider is authenticated. Drives which connect flow the UI offers. */
@@ -74,7 +82,7 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
     id: "google",
     label: "Google",
     blurb: "Gmail and Google Calendar, via your own Google account.",
-    capabilities: ["email", "calendar"],
+    capabilities: ["email", "calendar", "sheets"],
     auth: "oauth2",
     oauth: {
       authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -84,6 +92,12 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
         "email",
         "https://www.googleapis.com/auth/gmail.modify",
         "https://www.googleapis.com/auth/calendar",
+        // READONLY, and it is the whole point. Aura reads rows out of a sheet
+        // and never writes one back: a lead list is the customer's working
+        // document, often edited live by the people phoning through it, and a
+        // connector with write access to it is a class of accident there is no
+        // reason to be exposed to. Google shows the user which of these it is.
+        "https://www.googleapis.com/auth/spreadsheets.readonly",
       ],
       // `offline` + `consent` are what make Google return a refresh_token.
       // Without them the connection silently stops working in an hour and the

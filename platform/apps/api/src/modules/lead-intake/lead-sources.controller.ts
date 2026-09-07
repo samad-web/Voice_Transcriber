@@ -21,11 +21,13 @@ import {
   LeadSourceConfig,
   LeadSourceKind,
   LeadSourceStatus,
+  parseSpreadsheetId,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { generateIntakeToken, LeadIntakeService } from "./lead-intake.service";
+import { previewSheet } from "./sheets-preview";
 
 const CreateSource = z.object({
   kind: LeadSourceKind,
@@ -50,6 +52,22 @@ const PatchSource = z.object({
   projectId: z.string().uuid().nullish(),
   assignedTelecallerId: z.string().uuid().nullish(),
   workspaceId: z.string().uuid().nullish(),
+});
+
+/**
+ * What the console needs to offer a column mapping: the sheet's tabs, its
+ * header row, and a few rows under it.
+ *
+ * Takes the URL as pasted rather than an id, because nothing in the Google
+ * Sheets interface displays the id - the browser address bar is what a person
+ * has. `parseSpreadsheetId` is shared with the console's own client-side
+ * check, so the two agree about what counts as a spreadsheet link.
+ */
+const SheetPreviewBody = z.object({
+  connectedAccountId: z.string().uuid(),
+  spreadsheetUrl: z.string().min(1).max(600),
+  sheetName: z.string().max(120).optional(),
+  headerRow: z.coerce.number().int().min(1).max(50).optional(),
 });
 
 const EventQuery = z.object({
@@ -109,6 +127,41 @@ export class LeadSourcesController {
         })),
       })),
     };
+  }
+
+  /**
+   * Look inside a spreadsheet before committing to it.
+   *
+   * A read, but a POST: it takes a URL and a connection id in the body, and it
+   * WRITES - a refreshed access token goes back to `connected_accounts` when
+   * the stored one has expired. A GET that rotates a credential is a GET that
+   * cannot be retried or cached honestly.
+   *
+   * Same tier as the rest of this controller (AdminKeyGuard + TenantGuard, no
+   * CRM permission): configuring a lead source is org configuration. The
+   * connection it reads through is resolved inside the org's RLS context, so a
+   * caller cannot preview a sheet through another tenant's Google account.
+   */
+  @Post("sheets/preview")
+  async sheetsPreview(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = SheetPreviewBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    const spreadsheetId = parseSpreadsheetId(parsed.data.spreadsheetUrl);
+    if (!spreadsheetId) {
+      throw new BadRequestException(
+        "that does not look like a Google Sheets link - copy the address from the browser bar",
+      );
+    }
+
+    return this.db.withOrg(orgId, (client) =>
+      previewSheet(client, {
+        connectedAccountId: parsed.data.connectedAccountId,
+        spreadsheetId,
+        sheetName: parsed.data.sheetName,
+        headerRow: parsed.data.headerRow,
+      }),
+    );
   }
 
   @Get()
