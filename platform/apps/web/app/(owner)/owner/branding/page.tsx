@@ -10,9 +10,14 @@ export const metadata: Metadata = { title: "Branding - Aura" };
  * Org logo/colors (Kailash gap Milestone 4, migration 0065).
  *
  * GET /org returns the whole org row - `branding` is one jsonb column on it,
- * any subset of {logoUrl, primaryColor, secondaryColor, browserTitle} may be
- * present, `{}` if never configured. Defaulted to "" here so the form below
- * can stay a set of plain controlled inputs.
+ * and any subset of the eight keys may be present, `{}` if never configured.
+ * Defaulted to "" here so the form below can stay a set of plain controlled
+ * inputs.
+ *
+ * The four white-label keys (faviconUrl, bannerUrl, loginBackgroundUrl,
+ * appBackgroundColor) were added to match the set the Hawcus gap analysis
+ * §3.8 records. Because `branding` is jsonb they needed no migration, and a
+ * tenant who configured branding before they existed reads them as "".
  */
 export default async function BrandingPage() {
   const org = await ownerGet<{ id: string; branding?: Record<string, string> | null }>("/v1/org");
@@ -34,8 +39,12 @@ export default async function BrandingPage() {
   const branding = org.branding ?? {};
   const initial: BrandingView = {
     logoUrl: branding.logoUrl ?? "",
+    faviconUrl: branding.faviconUrl ?? "",
+    bannerUrl: branding.bannerUrl ?? "",
+    loginBackgroundUrl: branding.loginBackgroundUrl ?? "",
     primaryColor: branding.primaryColor ?? "",
     secondaryColor: branding.secondaryColor ?? "",
+    appBackgroundColor: branding.appBackgroundColor ?? "",
     browserTitle: branding.browserTitle ?? "",
   };
 
@@ -43,9 +52,9 @@ export default async function BrandingPage() {
     <>
       <PageHeader title="Branding" context="Settings" />
       <p className="max-w-2xl text-sm text-text-muted">
-        Set the logo and colors shown across this org&rsquo;s console, plus the title shown in the
-        browser tab. Only the fields you change are sent - anything you leave alone keeps its
-        current value.
+        The images, colours and tab title used across this org&rsquo;s console and its sign-in
+        screen. Images are links to files you already host &mdash; there is no upload here. Only the
+        fields you change are sent, so anything you leave alone keeps its current value.
       </p>
       <BrandingForm initial={initial} />
     </>

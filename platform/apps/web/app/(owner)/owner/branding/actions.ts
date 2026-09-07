@@ -15,6 +15,13 @@ export interface BrandingPatch {
   primaryColor?: string;
   secondaryColor?: string;
   browserTitle?: string;
+  /* The white-label fields (Hawcus gap analysis §3.8). Nullable like `logoUrl`
+     rather than string-only like the colours, because clearing an image means
+     "go back to the default asset" and the API reads null as exactly that. */
+  faviconUrl?: string | null;
+  bannerUrl?: string | null;
+  loginBackgroundUrl?: string | null;
+  appBackgroundColor?: string;
 }
 
 export interface BrandingActionResult {

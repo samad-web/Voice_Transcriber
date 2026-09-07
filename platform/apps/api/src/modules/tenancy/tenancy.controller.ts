@@ -26,6 +26,25 @@ const BrandingBody = z.object({
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
   secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
   browserTitle: z.string().max(120).nullish(),
+
+  /*
+   * The four below complete the white-label surface (Hawcus gap analysis §3.8,
+   * which lists logo, favicon, banner, brand colour, login background, tab
+   * title, app background and accent). The first four map onto the fields
+   * above - `secondaryColor` IS the accent - and these are what was missing.
+   *
+   * URLs rather than uploads, consistent with `logoUrl`: there is no asset
+   * pipeline here and inventing one for a favicon would be the tail wagging
+   * the dog. The console says so next to each field rather than presenting a
+   * file picker that would not work.
+   *
+   * Every one is optional and merged into the existing jsonb, so a tenant that
+   * set only a logo is unaffected by their existence.
+   */
+  faviconUrl: z.string().url().max(500).nullish(),
+  bannerUrl: z.string().url().max(500).nullish(),
+  loginBackgroundUrl: z.string().url().max(500).nullish(),
+  appBackgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
 });
 
 const PolicyBody = z.object({
