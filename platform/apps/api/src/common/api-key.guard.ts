@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type CanActivate,
   type ExecutionContext,
@@ -7,10 +8,9 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { createHash } from "node:crypto";
 import { type ApiScope, hasScope } from "@aura/shared";
-import type { PrincipalRequest } from "./auth-principal";
 import { DbService } from "../db/db.service";
+import type { PrincipalRequest } from "./auth-principal";
 
 export const API_SCOPE_KEY = "api_scope";
 

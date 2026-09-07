@@ -1,6 +1,5 @@
 "use client";
 
-import { KanbanBoard, type KanbanColumn } from "./kanban-board";
 import { LeadDrawer } from "../lead-drawer";
 import { ProjectChip } from "../project-chip";
 import { TemperatureChip } from "../temperature-chip";
@@ -12,6 +11,7 @@ import {
   type Project,
   type Stage,
 } from "../types";
+import { KanbanBoard, type KanbanColumn } from "./kanban-board";
 
 /**
  * The lead pipeline board - a thin config over the generic ./kanban-board.tsx,

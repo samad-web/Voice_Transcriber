@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
-import { FollowupQueue, type Bucket } from "./followup-queue";
 import type { FollowupCounts, Task } from "../types";
+import { FollowupQueue, type Bucket } from "./followup-queue";
 
 export const metadata: Metadata = { title: "Follow-ups - Aura" };
 

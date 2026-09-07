@@ -57,7 +57,21 @@ COMMENT ON COLUMN payment_gateway_config.key_id IS
 -- to both gateways' reports.
 ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_provider_check;
 ALTER TABLE payments ADD CONSTRAINT payments_provider_check
-  CHECK (provider IN ('razorpay', 'stripe', 'manual'));
+  CHECK (provider IN ('razorpay', 'stripe', 'manual')) NOT VALID;
+
+-- NOT VALID then validated, the same shape 0095 used. `payments.provider` has
+-- been free text with a default since 0060, so a row carrying something else -
+-- a hand-inserted reconciliation, a value from a branch that never shipped -
+-- would abort this whole migration at the worst possible moment. Validating
+-- separately means such a row raises a warning naming the count, the migration
+-- completes, and somebody looks at it. The constraint stays NOT VALID until
+-- they do, which still constrains every future write.
+DO $do$ BEGIN
+  ALTER TABLE payments VALIDATE CONSTRAINT payments_provider_check;
+EXCEPTION WHEN check_violation THEN
+  RAISE WARNING 'payments: % row(s) carry an unexpected provider; constraint left NOT VALID',
+    (SELECT count(*) FROM payments WHERE provider NOT IN ('razorpay', 'stripe', 'manual'));
+END $do$;
 
 -- Stripe's own identifiers, beside Razorpay's rather than reusing them. A
 -- column called razorpay_payment_id holding a Stripe session id is the kind of
@@ -84,3 +98,22 @@ ALTER TABLE invoices
 ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_payment_provider_check;
 ALTER TABLE invoices ADD CONSTRAINT invoices_payment_provider_check
   CHECK (payment_provider IS NULL OR payment_provider IN ('razorpay', 'stripe'));
+
+-- Backfill from the payments that already exist.
+--
+-- Without it, every invoice that already has a live Razorpay link reads as
+-- having no gateway, and the "this invoice already has a link" guard would
+-- happily issue a Stripe one beside it - handing the customer two ways to pay
+-- the same money on the day this ships. DISTINCT ON because an invoice can
+-- carry several payment attempts; the earliest is the one whose link is out
+-- in the world.
+UPDATE invoices i
+   SET payment_provider = p.provider
+  FROM (
+    SELECT DISTINCT ON (invoice_id) invoice_id, provider
+      FROM payments
+     WHERE provider IN ('razorpay', 'stripe')
+     ORDER BY invoice_id, created_at ASC
+  ) p
+ WHERE i.id = p.invoice_id
+   AND i.payment_provider IS NULL;

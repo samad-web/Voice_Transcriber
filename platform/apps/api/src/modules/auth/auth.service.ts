@@ -1,10 +1,10 @@
-import { Injectable } from "@nestjs/common";
 import {
   createHash,
   randomBytes,
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
+import { Injectable } from "@nestjs/common";
 import { OwnerRole } from "@aura/shared";
 import { DbService } from "../../db/db.service";
 import type { Principal } from "../../common/auth-principal";

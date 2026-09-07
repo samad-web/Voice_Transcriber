@@ -19,8 +19,8 @@
  */
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { OwnerRoleGuard, RequireOwnerRole } from "./owner-role.guard";
 import { AuthService } from "../modules/auth/auth.service";
+import { OwnerRoleGuard, RequireOwnerRole } from "./owner-role.guard";
 import {
   ORG_A,
   USER_A,

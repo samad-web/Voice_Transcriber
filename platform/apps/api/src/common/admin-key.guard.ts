@@ -7,10 +7,10 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { OwnerRole } from "@aura/shared";
+import { AuthService } from "../modules/auth/auth.service";
 import type { Principal, PrincipalRequest } from "./auth-principal";
 import { OrgRegistryService } from "./org-registry.service";
 import { timingSafeStringEqual } from "./timing-safe-equal";
-import { AuthService } from "../modules/auth/auth.service";
 
 /**
  * The admin key this process will accept, or null when there is none.

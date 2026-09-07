@@ -13,9 +13,9 @@
  */
 import { NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { AuthService } from "../modules/auth/auth.service";
 import { AdminKeyGuard, resolveAdminKey } from "./admin-key.guard";
 import { OrgRegistryService } from "./org-registry.service";
-import { AuthService } from "../modules/auth/auth.service";
 import {
   ORG_A,
   ORG_B,

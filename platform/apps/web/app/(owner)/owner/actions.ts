@@ -1,7 +1,7 @@
 "use server";
 
-import type { LeadTemperature } from "@aura/shared";
 import { revalidatePath } from "next/cache";
+import type { LeadTemperature } from "@aura/shared";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
 import type { Lead, LeadCall, LeadCallDetail, Stage } from "./types";

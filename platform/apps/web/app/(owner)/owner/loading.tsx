@@ -1,5 +1,5 @@
-import { PageHeaderSkeleton, StatGridSkeleton } from "@/components/skeletons";
 import { Card, Skeleton } from "@aura/ui";
+import { PageHeaderSkeleton, StatGridSkeleton } from "@/components/skeletons";
 
 // Literal Tailwind classes, not a computed percentage - Tailwind v4 only
 // generates CSS for class names it can see statically in source.

@@ -1,6 +1,6 @@
+import { Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { KanbanSkeleton } from "@/components/skeletons";
-import { Skeleton } from "@aura/ui";
 
 /** Mirrors board/page.tsx: helper line, then the drag-and-drop stage columns. */
 export default function BoardLoading() {

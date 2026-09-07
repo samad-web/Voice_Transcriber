@@ -1,7 +1,7 @@
 import { parsePipelineStages } from "@aura/shared";
-import { ReportsService, stageProbability } from "./reports.service";
 import { furthestOpenStage } from "../crm-objects/stage-history";
 import type { DbService } from "../../db/db.service";
+import { ReportsService, stageProbability } from "./reports.service";
 
 /**
  * The arithmetic in these reports is the product - a wrong conversion rate is

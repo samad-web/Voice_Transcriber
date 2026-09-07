@@ -1,6 +1,6 @@
 import { ForbiddenException } from "@nestjs/common";
-import { ReportsService } from "./reports.service";
 import type { CrmRecordScope } from "../../common/crm-scope";
+import { ReportsService } from "./reports.service";
 
 /**
  * The scope contract for the three Tier-1 reports (migration 0090).

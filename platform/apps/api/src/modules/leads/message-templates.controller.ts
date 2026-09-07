@@ -9,6 +9,7 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import {
   EMAIL_BODY_MAX,
   EMAIL_SUBJECT_MAX,
@@ -21,7 +22,6 @@ import {
   validateTemplateSubject,
   type MessageChannel,
 } from "@aura/shared";
-import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";

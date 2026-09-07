@@ -3,8 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
-import { QuotationDetail } from "./quotation-detail-client";
 import type { Quotation, QuotationItem } from "../actions";
+import { QuotationDetail } from "./quotation-detail-client";
 
 export const metadata: Metadata = { title: "Quotation - Aura" };
 

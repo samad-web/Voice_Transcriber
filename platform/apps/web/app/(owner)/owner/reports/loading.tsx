@@ -1,6 +1,6 @@
+import { Card, Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { StatGridSkeleton, TableBlockSkeleton } from "@/components/skeletons";
-import { Card, Skeleton } from "@aura/ui";
 
 /**
  * Mirrors reports/page.tsx: the 4-stat summary row, an against-target card of

@@ -1,6 +1,6 @@
+import { Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { FormCardSkeleton } from "@/components/skeletons";
-import { Skeleton } from "@aura/ui";
 
 /** Mirrors messaging-setup/page.tsx: intro copy, then the Wasi channel form. */
 export default function MessagingSetupLoading() {

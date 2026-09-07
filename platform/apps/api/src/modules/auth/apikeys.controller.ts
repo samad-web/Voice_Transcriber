@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import {
   BadRequestException,
   Body,
@@ -11,7 +12,6 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { ApiScope } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";

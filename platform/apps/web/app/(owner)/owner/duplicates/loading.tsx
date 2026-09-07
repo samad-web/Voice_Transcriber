@@ -1,6 +1,6 @@
+import { Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { MatchListSkeleton } from "@/components/skeletons";
-import { Skeleton } from "@aura/ui";
 
 /** Mirrors duplicates/page.tsx: helper line, scan buttons, then the pending-match queue. */
 export default function DuplicatesLoading() {

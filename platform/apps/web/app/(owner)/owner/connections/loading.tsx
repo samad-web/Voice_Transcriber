@@ -1,5 +1,5 @@
-import { PageHeader } from "@/components/page-header";
 import { Card, Skeleton } from "@aura/ui";
+import { PageHeader } from "@/components/page-header";
 
 /** Mirrors connections/page.tsx: intro copy, then a grid of provider cards (Google/Microsoft/IMAP/CalDAV). */
 export default function ConnectionsLoading() {

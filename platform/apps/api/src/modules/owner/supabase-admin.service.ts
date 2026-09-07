@@ -1,5 +1,5 @@
-import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
+import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 
 /**
  * Supabase Auth admin operations, over plain fetch.

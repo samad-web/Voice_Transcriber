@@ -12,7 +12,6 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import type { SmtpConfig } from "./smtp";
 import { connectionProvider } from "@aura/shared";
 import { decryptSecret, encryptSecret } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
@@ -21,6 +20,7 @@ import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-perm
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import type { SmtpConfig } from "./smtp";
 import {
   canSend,
   dailySendLimit,

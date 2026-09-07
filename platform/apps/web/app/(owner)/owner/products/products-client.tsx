@@ -17,8 +17,8 @@ import {
   TableRow,
   useAlert,
 } from "@aura/ui";
-import { createProductAction, updateProductAction, type Product } from "./actions";
 import { formatMoney } from "../lib/format-money";
+import { createProductAction, updateProductAction, type Product } from "./actions";
 
 interface Draft {
   name: string;

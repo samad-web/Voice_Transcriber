@@ -1,6 +1,6 @@
+import { Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { MatchListSkeleton } from "@/components/skeletons";
-import { Skeleton } from "@aura/ui";
 
 /** Mirrors call-quality/page.tsx: helper line, then the flag review queue. */
 export default function CallQualityLoading() {

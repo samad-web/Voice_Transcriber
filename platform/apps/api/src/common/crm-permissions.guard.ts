@@ -14,8 +14,8 @@ import {
   ownerRoleSeesAllRecords,
   resolveOwnerRole,
 } from "@aura/shared";
-import type { PrincipalRequest } from "./auth-principal";
 import { DbService } from "../db/db.service";
+import type { PrincipalRequest } from "./auth-principal";
 
 export const CRM_PERMISSION_KEY = "required_crm_permission";
 

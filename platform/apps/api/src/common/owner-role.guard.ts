@@ -8,8 +8,8 @@ import {
 import { Reflector } from "@nestjs/core";
 import { z } from "zod";
 import { type OwnerRole, resolveOwnerRole } from "@aura/shared";
-import type { PrincipalRequest } from "./auth-principal";
 import { AuthService } from "../modules/auth/auth.service";
+import type { PrincipalRequest } from "./auth-principal";
 
 export const OWNER_ROLE_KEY = "required_owner_role";
 
