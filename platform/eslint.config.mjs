@@ -80,6 +80,24 @@ export default tseslint.config(
   },
 
   // ---------------------------------------------------------------------------
+  // Browser-automation scripts. These run under `node`, but the callbacks they
+  // hand to `page.evaluate()` are serialised and executed INSIDE the page - so
+  // `document` and `window` are real there and undefined in the surrounding
+  // file. eslint cannot tell the two contexts apart, and reported seven
+  // `no-undef` errors for code that is correct.
+  //
+  // Scoped to the automation directory rather than relaxing `no-undef`
+  // globally: everywhere else in this repository a bare `document` in a Node
+  // file IS the bug the rule exists to catch.
+  // ---------------------------------------------------------------------------
+  {
+    files: ["apps/marketing/scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // TypeScript, everywhere. Syntax-only rules: no type information required, so
   // this block also covers any future file that is not in a tsconfig yet.
   // ---------------------------------------------------------------------------

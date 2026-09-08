@@ -175,7 +175,12 @@ export async function syncExternalBusy(): Promise<BusySyncResult> {
 
   // Every open slot in the horizon, flagged or not, because this recomputes
   // rather than accumulates.
-  const { rows } = await pool.query<{ id: string; starts_at: Date; ends_at: Date; blocked: boolean }>(
+  const { rows } = await pool.query<{
+    id: string;
+    starts_at: Date;
+    ends_at: Date;
+    blocked: boolean;
+  }>(
     `SELECT id, starts_at, ends_at, (external_busy_at IS NOT NULL) AS blocked
        FROM marketing.booking_slots
       WHERE status = 'open'
@@ -249,7 +254,12 @@ export function startCalendarBusySync(): NodeJS.Timeout | null {
 
   console.log("calendar busy sync: ON - Google busy times close matching slots every 10 minutes");
   void run();
-  const timer = setInterval(run, INTERVAL_MS);
+  // `void run()` rather than passing `run` itself: setInterval expects a
+  // void-returning callback, and handing it an async function makes the
+  // returned promise floating. `run` already swallows everything in its own
+  // try/catch so nothing can reject today - this keeps that true by
+  // construction rather than by the callee's good behaviour.
+  const timer = setInterval(() => void run(), INTERVAL_MS);
   timer.unref?.();
   return timer;
 }

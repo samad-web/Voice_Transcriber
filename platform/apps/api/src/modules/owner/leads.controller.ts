@@ -21,6 +21,7 @@ import {
   statusForStage,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { orgHasModule } from "../../common/org-modules";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OwnerScope, type OwnerRecordScope, ownerScopeFilter } from "../../common/owner-scope";
@@ -194,11 +195,31 @@ const CALL_INTEL_JOIN = `
  * rather than a CHECK constraint, so a customer can rename or add a column
  * without a migration and the API still rejects a stage that doesn't exist.
  */
+/**
+ * ── THE GRID REACHES THIS CONTROLLER AS OF 0103 ────────────────────────────
+ *
+ * Until then the console's Roles & permissions screen governed the CRM half of
+ * the product and nothing else, and this - the lead board and the full lead
+ * list, the pages an Aura tenant actually spends the day in - was gated by the
+ * console PERSONA alone. An owner could rearrange forty checkboxes and change
+ * nothing about them.
+ *
+ * TWO SCOPES NOW RIDE ON THE REQUEST, AND ONLY ONE IS READ HERE.
+ * `CrmPermissionsGuard` writes `req.crmScope`, keyed on `owner_user_id`;
+ * `OwnerScopeGuard` writes `req.ownerScope`, keyed on the caller's
+ * `telecallers` row. Leads carry no `owner_user_id` at all, so every handler
+ * below keeps reading `@OwnerScope()` exactly as it did - the grid decides
+ * WHETHER, the persona decides WHOSE. Mixing them would be the bug: a lead is
+ * assigned to a telecaller identity, which the CRM grid has no concept of.
+ *
+ * `lead` is filed under the `aura` module in `PERMISSION_OBJECT_MODULE`, not
+ * `crm`. A recording-only tenant must keep their board.
+ */
 @Controller("leads")
 // OwnerScopeGuard on the class - see OwnerController for why it is mounted
 // here rather than per-handler. It never denies; it only resolves whose
 // records these are.
-@UseGuards(AdminKeyGuard, TenantGuard, OwnerScopeGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerScopeGuard, CrmPermissionsGuard)
 export class LeadsController {
   constructor(private readonly db: DbService) {}
 
@@ -257,6 +278,7 @@ export class LeadsController {
 
   /** List view: filtered, sorted, paginated. */
   @Get()
+  @RequireCrmPermission("lead", "view")
   async list(
     @OrgId() orgId: string,
     @Query() query: unknown,
@@ -333,9 +355,7 @@ export class LeadsController {
         // stays in step with `params`.
         params.push(`%${q}%`);
         const p = `$${params.length}`;
-        where.push(
-          `(l.title ILIKE ${p} OR l.contact_name ILIKE ${p} OR l.summary ILIKE ${p})`,
-        );
+        where.push(`(l.title ILIKE ${p} OR l.contact_name ILIKE ${p} OR l.summary ILIKE ${p})`);
       }
 
       const ORDER = {
@@ -370,6 +390,7 @@ export class LeadsController {
 
   /** Board view: every column, with its true count and the top N cards. */
   @Get("board")
+  @RequireCrmPermission("lead", "view")
   async board(
     @OrgId() orgId: string,
     @Query() query: unknown,
@@ -448,6 +469,7 @@ export class LeadsController {
 
   /** Detail: the lead plus every call from that contact. */
   @Get(":id")
+  @RequireCrmPermission("lead", "view")
   async detail(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) leadId: string,
@@ -538,6 +560,7 @@ export class LeadsController {
    * someone's phone call is the privileged part.
    */
   @Get(":id/calls/:callId")
+  @RequireCrmPermission("lead", "view")
   async callDetail(
     @Req() req: PrincipalRequest,
     @OrgId() orgId: string,
@@ -619,6 +642,7 @@ export class LeadsController {
    * is called, and stage_changed_at is stamped for time-in-stage reporting.
    */
   @Patch(":id")
+  @RequireCrmPermission("lead", "edit")
   async update(
     @Req() req: PrincipalRequest,
     @OrgId() orgId: string,
@@ -735,7 +759,8 @@ export class LeadsController {
       // propagating it onto the linked deal is this endpoint's job, not the
       // worker's. Own non-blocking try/catch inside - a bug here must never
       // break the lead PATCH itself.
-      if (p.stage) await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
+      if (p.stage)
+        await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
@@ -758,7 +783,10 @@ export class LeadsController {
    */
   private async propagateStageToDeal(
     client: {
-      query: <R = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
+      query: <R = Record<string, unknown>>(
+        sql: string,
+        params?: unknown[],
+      ) => Promise<{ rows: R[] }>;
     },
     orgId: string,
     leadId: string,
@@ -776,9 +804,10 @@ export class LeadsController {
 
       const {
         rows: [pipeline],
-      } = await client.query<{ stages: unknown }>(`SELECT stages FROM deal_pipelines WHERE id = $1`, [
-        deal.pipeline_id,
-      ]);
+      } = await client.query<{ stages: unknown }>(
+        `SELECT stages FROM deal_pipelines WHERE id = $1`,
+        [deal.pipeline_id],
+      );
       const stages = parsePipelineStages(pipeline?.stages);
       if (!stages.some((s) => s.key === newStage)) {
         console.error(

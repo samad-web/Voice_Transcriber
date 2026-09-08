@@ -127,7 +127,13 @@ import { WorkspacesController } from "../modules/tenancy/workspaces.controller";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
 /** Every controller in `app.module.ts`'s module graph, in inventory 13 §1.1 order. */
-const CONTROLLERS: Array<Type<unknown>> = [
+/**
+ * Exported so `permissions-inventory.spec.ts` reflects over the SAME list.
+ * Two copies would defeat the point of the exhaustiveness check below: a
+ * controller added to one and not the other is a controller whose declarations
+ * one of the two suites silently misses.
+ */
+export const CONTROLLERS: Array<Type<unknown>> = [
   HealthController,
   AuthController,
   ApiKeysController,
@@ -624,11 +630,31 @@ const ORG_ROLE_ROUTES = [
  * Pinned as an exhaustive list for the same reason PERMISSION_ROUTES is: a
  * route that quietly LOSES its guard is a silent authorization hole, and a
  * route that gains one unexpectedly is a silent lockout. `pipelines`,
- * `custom-field-definitions` and `merge` are deliberately absent -
- * `PermissionObjectType` is contact|account|deal only, so there is no grant
- * for them to check yet; they remain AdminKeyGuard+TenantGuard as before.
+ * `custom-field-definitions` and `merge` are deliberately absent - they are
+ * org-configuration surfaces rather than records and have no grant to check;
+ * they remain AdminKeyGuard+TenantGuard as before.
+ *
+ * NO LONGER "the contact/account/deal routes". Migration 0103 added `lead` and
+ * mounted the guard on the owner console's leads controller, which is the
+ * point at which this grid started governing the page an Aura tenant actually
+ * spends the day in rather than only the CRM half of the product.
  */
 const CRM_PERMISSION_ROUTES = [
+  // ── The lead board and list (0103) ──
+  //
+  // `lead` is filed under the `aura` module in PERMISSION_OBJECT_MODULE, NOT
+  // `crm` - a recording-only tenant must keep its board, and this is the one
+  // object in the enum for which the guard's module predicate is not 'crm'.
+  //
+  // Four reads and one write. There is deliberately no create/delete/export
+  // cell for leads: this controller has no such route, rows are written by the
+  // worker's projection, and a checkbox gating nothing is the defect the
+  // enforced-permission inventory exists to prevent.
+  "GET /leads",
+  "GET /leads/board",
+  "GET /leads/:id",
+  "GET /leads/:id/calls/:callId",
+  "PATCH /leads/:id",
   "GET /accounts",
   "GET /accounts/:id",
   "POST /accounts",
@@ -1156,7 +1182,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
-  it("mounts CrmPermissionsGuard on exactly the contact/account/deal routes, after TenantGuard", () => {
+  it("mounts CrmPermissionsGuard on exactly the record routes, after TenantGuard", () => {
     // The guard reads `req.principal` (AdminKeyGuard) and `req.tenantOrgId`
     // (TenantGuard), so like the other two metadata guards its position in the
     // chain is a correctness requirement - it 401s if it runs first.

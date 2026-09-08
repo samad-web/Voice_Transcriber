@@ -2,12 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { isPermissionEnforced } from "@aura/shared";
 import { Button, Card, Input, MonoLabel, Select, StatusChip, useAlert, useToast } from "@aura/ui";
 import { createRoleAction, deleteRoleAction, saveRolePermissionsAction } from "./roles-actions";
 import type { RoleRow } from "./types";
 
-/** Object keys are API vocabulary; these are what a person calls them. */
+/** Object keys are API vocabulary; these are what a person calls them, and
+ *  they are the sidebar's own words so a reader can find the page each row is
+ *  about. */
 const OBJECT_LABELS: Record<string, string> = {
+  lead: "Leads",
   contact: "Contacts",
   account: "Accounts",
   deal: "Deals",
@@ -60,6 +64,28 @@ function gridFor(role: RoleRow, objectTypes: string[], actions: string[]): Grid 
  * a thing, and a reader would have to work out which of the four combinations
  * are real. One control with three positions cannot express a state that does
  * not exist.
+ *
+ * ── AND "OWN" MEANS SOMETHING DIFFERENT HERE THAN ON THE TEAM TAB ──────────
+ *
+ * Two scoping systems exist and they key on different columns:
+ *
+ *   here          `owner_user_id` - the record is assigned to your LOGIN.
+ *   the Team tab  `telecallers.user_id` - the record is attributed to your
+ *                 HANDSET IDENTITY.
+ *
+ * They compose by intersection and the persona can only narrow, never widen -
+ * so a telecaller given "All records" here still reads only their own. The
+ * page says so out loud rather than leaving two identical words meaning two
+ * things one tab apart.
+ *
+ * ── INERT CELLS ARE SHOWN AS INERT ────────────────────────────────────────
+ *
+ * The grid is a full cross product; the API mounts a guard on rather less than
+ * all of it. A screen that silently ignored half of what somebody set would be
+ * worse than one offering less - remove Delete from a role, tell the team the
+ * records are safe, and they are not. `isPermissionEnforced` comes from the
+ * inventory that `permissions-inventory.spec.ts` pins against the controllers'
+ * real metadata, so this cannot drift into over-promising.
  */
 export function RolesGrid({
   roles,
@@ -137,8 +163,12 @@ function RoleEditor({
   };
 
   const save = () => {
+    // Inert cells are never written. The API would happily store the row and
+    // no route would ever read it, which is the state this screen exists to
+    // stop pretending is a permission.
     const grants = objectTypes.flatMap((object) =>
       actions
+        .filter((action) => isPermissionEnforced(object, action))
         .filter((action) => grid[object][action] !== "none")
         .map((action) => ({
           objectType: object,
@@ -233,39 +263,68 @@ function RoleEditor({
                 <th scope="row" className="px-3 py-2 text-left font-medium text-text">
                   {OBJECT_LABELS[object] ?? object}
                 </th>
-                {actions.map((action) => (
-                  <td key={action} className="px-3 py-2">
-                    {canEdit ? (
-                      <Select
-                        aria-label={`${ACTION_LABELS[action] ?? action} ${
-                          OBJECT_LABELS[object] ?? object
-                        } for ${role.name}`}
-                        value={grid[object][action]}
-                        disabled={pending}
-                        onChange={(e) =>
-                          set(object, action, e.target.value as "none" | "all" | "owned")
-                        }
-                      >
-                        <option value="none">No</option>
-                        <option value="all">All records</option>
-                        <option value="owned">Own records</option>
-                      </Select>
-                    ) : (
-                      <StatusChip tone={grid[object][action] === "none" ? "outline" : "muted"}>
-                        {grid[object][action] === "none"
-                          ? "No"
-                          : grid[object][action] === "owned"
-                            ? "Own"
-                            : "All"}
-                      </StatusChip>
-                    )}
-                  </td>
-                ))}
+                {actions.map((action) => {
+                  const enforced = isPermissionEnforced(object, action);
+                  if (!enforced) {
+                    // Not a disabled control - no control. A greyed-out picker
+                    // still reads as "a setting I could have", and the honest
+                    // statement is that this combination is not something the
+                    // product checks at all.
+                    return (
+                      <td key={action} className="px-3 py-2">
+                        <span
+                          className="text-xs text-text-muted"
+                          title={`Aura does not check ${
+                            ACTION_LABELS[action] ?? action
+                          } on ${OBJECT_LABELS[object] ?? object}, so this cannot be restricted.`}
+                        >
+                          not checked
+                        </span>
+                      </td>
+                    );
+                  }
+                  return (
+                    <td key={action} className="px-3 py-2">
+                      {canEdit ? (
+                        <Select
+                          aria-label={`${ACTION_LABELS[action] ?? action} ${
+                            OBJECT_LABELS[object] ?? object
+                          } for ${role.name}`}
+                          value={grid[object][action]}
+                          disabled={pending}
+                          onChange={(e) =>
+                            set(object, action, e.target.value as "none" | "all" | "owned")
+                          }
+                        >
+                          <option value="none">No</option>
+                          <option value="all">All records</option>
+                          <option value="owned">Own records</option>
+                        </Select>
+                      ) : (
+                        <StatusChip tone={grid[object][action] === "none" ? "outline" : "muted"}>
+                          {grid[object][action] === "none"
+                            ? "No"
+                            : grid[object][action] === "owned"
+                              ? "Own"
+                              : "All"}
+                        </StatusChip>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <p className="max-w-prose text-xs leading-relaxed text-text-muted">
+        <strong className="font-medium text-text">Own records</strong> here means assigned to that
+        person&rsquo;s login. On the Team tab, a Telecaller or Sales role is narrowed to records
+        attributed to their handset identity instead &mdash; both apply, and the narrower one wins.
+        Cells marked <em>not checked</em> are combinations Aura does not enforce anywhere, so
+        setting them would change nothing.
+      </p>
 
       {dirty ? (
         <p className="text-xs text-text-muted">

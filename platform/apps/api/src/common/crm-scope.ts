@@ -49,7 +49,9 @@ export const UNSCOPED: CrmRecordScope = { scope: "all", userId: null };
  */
 export const RecordScope = createParamDecorator(
   (_data: unknown, context: ExecutionContext): CrmRecordScope => {
-    const req = context.switchToHttp().getRequest<PrincipalRequest & { crmScope?: CrmRecordScope }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<PrincipalRequest & { crmScope?: CrmRecordScope }>();
     return req.crmScope ?? UNSCOPED;
   },
 );
@@ -72,6 +74,20 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   product: null,
   quotation: "owner_user_id",
   invoice: "owner_user_id",
+  // ── `lead` HAS NO OWNER COLUMN, AND MUST NOT BE SCOPED FROM HERE ────────
+  //
+  // A lead belongs to a `telecallers` row, not to a user: `assigned_telecaller_id`
+  // with a fallback to the write-once `telecaller_id` (owner-scope.ts explains
+  // why that union is necessary). The CRM grid has no concept of a telecaller
+  // identity, so there is no column here to point at.
+  //
+  // The leads controller therefore reads `@OwnerScope()` and NOT
+  // `@RecordScope()`, even though `CrmPermissionsGuard` now runs on it (0103):
+  // the grid decides WHETHER somebody may read leads, the persona decides
+  // WHOSE. Do not "fix" this by wiring `scopeFilter("lead", ...)` into that
+  // controller - the fallthrough below returns null, meaning no narrowing, so
+  // a role granted `owned` would silently read the whole floor's leads.
+  lead: null,
 };
 
 /**

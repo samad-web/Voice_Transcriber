@@ -37,6 +37,9 @@ class FixtureController {
   @RequireCrmPermission("contact", "create")
   createContact(): void {}
 
+  @RequireCrmPermission("lead", "view")
+  viewLead(): void {}
+
   @RequireCrmPermission("deal", "delete")
   deleteDeal(): void {}
 
@@ -139,7 +142,11 @@ describe("CrmPermissionsGuard", () => {
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(calls).toHaveLength(1);
-    expect(calls[0].params).toEqual([USER_B, ORG_A, "contact", "create"]);
+    // $5 is the object's own module (0103). It was the literal 'crm' until
+    // `lead` joined the enum on the `aura` module - see
+    // PERMISSION_OBJECT_MODULE for why a hard-coded literal would have taken
+    // the lead board away from every recording-only tenant.
+    expect(calls[0].params).toEqual([USER_B, ORG_A, "contact", "create", "crm"]);
   });
 
   it("C4 denies when the grid has no matching grant", async () => {
@@ -167,7 +174,10 @@ describe("CrmPermissionsGuard", () => {
     );
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(calls[0]).toEqual({ orgId: ORG_A, params: [USER_A, ORG_A, "contact", "view"] });
+    expect(calls[0]).toEqual({
+      orgId: ORG_A,
+      params: [USER_A, ORG_A, "contact", "view", "crm"],
+    });
   });
 
   it("C6 scopes the lookup to the tenant the request was pinned to, not the principal's own field", async () => {
@@ -331,11 +341,13 @@ describe("CrmPermissionsGuard", () => {
 
   it("C15 includes the enabled_modules check in the same query as the grant lookup", async () => {
     const queries: string[] = [];
+    const params: unknown[][] = [];
     const db = {
       withOrg: async (_orgId: string, fn: (client: unknown) => Promise<unknown>) => {
         const client = {
-          query: async (sql: string) => {
+          query: async (sql: string, args: unknown[]) => {
             queries.push(sql);
+            params.push(args);
             return { rows: [{ scope: "all" }] };
           },
         };
@@ -350,7 +362,38 @@ describe("CrmPermissionsGuard", () => {
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(queries).toHaveLength(1);
-    expect(queries[0]).toContain("'crm' = ANY(o.enabled_modules)");
+    // The module rides as a PARAMETER now, not a literal (0103). Same property
+    // being asserted - one query, entitlement and grant checked together, so
+    // there is no window in which a grant is honoured for a module the org has
+    // lost - but the value comes from the object rather than being hard-coded.
+    expect(queries[0]).toContain("$5 = ANY(o.enabled_modules)");
+    expect(params[0][4]).toBe("crm");
+  });
+
+  it("C16 asks for the OBJECT'S module, so a lead is not gated on the CRM", async () => {
+    // The regression this parameterisation exists to prevent, asserted rather
+    // than described: `lead` is core Aura, and a recording-only tenant with no
+    // CRM module must keep the lead board.
+    const params: unknown[][] = [];
+    const db = {
+      withOrg: async (_orgId: string, fn: (client: unknown) => Promise<unknown>) => {
+        const client = {
+          query: async (_sql: string, args: unknown[]) => {
+            params.push(args);
+            return { rows: [{ scope: "all" }] };
+          },
+        };
+        return fn(client);
+      },
+    } as unknown as DbService;
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context } = contextFor(
+      FixtureController.prototype.viewLead,
+      sessionPrincipal({ userId: USER_A }),
+    );
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(params[0]).toEqual([USER_A, ORG_A, "lead", "view", "aura"]);
   });
 });
 

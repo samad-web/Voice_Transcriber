@@ -9,6 +9,7 @@ import {
 import { Reflector } from "@nestjs/core";
 import { z } from "zod";
 import {
+  PERMISSION_OBJECT_MODULE,
   type PermissionAction,
   type PermissionObjectType,
   ownerRoleSeesAllRecords,
@@ -71,12 +72,20 @@ export const RequireCrmPermission = (objectType: PermissionObjectType, action: P
  * controller. It only ever narrows: no persona can widen a grant, so an org
  * that has never assigned a persona sees exactly what it saw before.
  *
- * MODULE GATE. The query also requires `'crm' = ANY(organizations.enabled_modules)`
- * (migration 0072). CRM being off for an org denies exactly like a missing
- * grant does - zero rows, same 403 - which matters once a tenant that
- * previously had CRM (and so still has its `roles`/`role_permissions` rows)
- * gets it toggled off: without this join those rows would keep granting
- * access even though the module is supposed to be off.
+ * MODULE GATE. The query also requires the OBJECT'S OWN module to be present in
+ * `organizations.enabled_modules` (migration 0072). The module being off denies
+ * exactly like a missing grant does - zero rows, same 403 - which matters once
+ * a tenant that previously had CRM (and so still has its `roles`/
+ * `role_permissions` rows) gets it toggled off: without this join those rows
+ * would keep granting access even though the module is supposed to be off.
+ *
+ * The module comes from `PERMISSION_OBJECT_MODULE`, not from a literal 'crm'.
+ * It WAS a literal, and that was correct while every object in the enum was a
+ * CRM object. `lead` (0103) is core Aura, and a hard-coded 'crm' would have
+ * taken the lead board away from every recording-only tenant the moment this
+ * guard was mounted on the leads controller - the single most damaging
+ * regression that change could have shipped. Reading the module off the object
+ * makes it unrepresentable rather than merely avoided.
  */
 @Injectable()
 export class CrmPermissionsGuard implements CanActivate {
@@ -124,7 +133,7 @@ export class CrmPermissionsGuard implements CanActivate {
         `SELECT rp.scope, m.owner_role
            FROM memberships m
            JOIN organizations o
-             ON o.id = m.org_id AND 'crm' = ANY(o.enabled_modules)
+             ON o.id = m.org_id AND $5 = ANY(o.enabled_modules)
            JOIN roles r
              ON r.org_id = m.org_id
             AND (r.id = m.role_id OR (m.role_id IS NULL AND r.key = m.role))
@@ -133,7 +142,13 @@ export class CrmPermissionsGuard implements CanActivate {
           WHERE m.user_id = $1 AND m.org_id = $2
           ORDER BY rp.scope
           LIMIT 1`,
-        [userId.data, orgId, required.objectType, required.action],
+        [
+          userId.data,
+          orgId,
+          required.objectType,
+          required.action,
+          PERMISSION_OBJECT_MODULE[required.objectType],
+        ],
       ),
     );
 

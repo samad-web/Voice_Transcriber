@@ -25,7 +25,11 @@ import {
   validateName,
   validatePhone,
 } from "@aura/shared";
-import { CONSENT_SUPPORTING_TEXT, CONTACT_CONSENT_TEXT, WHATSAPP_SAME_QUESTION } from "@/lib/funnel/consent";
+import {
+  CONSENT_SUPPORTING_TEXT,
+  CONTACT_CONSENT_TEXT,
+  WHATSAPP_SAME_QUESTION,
+} from "@/lib/funnel/consent";
 import { slotBookedMessage, whatsappHref } from "@/lib/site";
 import { trackLead } from "@/components/meta-pixel";
 import {
@@ -877,7 +881,10 @@ function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
         aria-hidden="true"
       />
       <h2 className="mk-display text-2xl">{copy.h}</h2>
-      <p className="mx-auto mt-4 max-w-md text-[0.9375rem] leading-relaxed" style={{ color: "var(--mk-muted)" }}>
+      <p
+        className="mx-auto mt-4 max-w-md text-[0.9375rem] leading-relaxed"
+        style={{ color: "var(--mk-muted)" }}
+      >
         {copy.p}
       </p>
 
@@ -926,7 +933,10 @@ function SlotPicker({ name }: { name: string }) {
 
   useEffect(() => {
     let live = true;
-    listOpenSlotsAction().then((r) => {
+    // `void`: the result is applied through the `live` flag and there is no
+    // caller to await it. Unmarked, an eventual rejection would be an
+    // unhandled promise rather than a slot list that simply did not refresh.
+    void listOpenSlotsAction().then((r) => {
       if (live) setSlots(r.slots);
     });
     return () => {
@@ -936,7 +946,10 @@ function SlotPicker({ name }: { name: string }) {
 
   if (booked) {
     return (
-      <div className="mt-7 rounded-2xl p-5" style={{ background: "var(--mk-ground)", border: "1px solid var(--mk-line)" }}>
+      <div
+        className="mt-7 rounded-2xl p-5"
+        style={{ background: "var(--mk-ground)", border: "1px solid var(--mk-line)" }}
+      >
         <p className="text-sm font-semibold">
           You&rsquo;re booked for {booked.dayLabel} at {booked.timeLabel}.
         </p>
@@ -999,10 +1012,13 @@ function SlotPicker({ name }: { name: string }) {
           are already saved - step 1 and step 2 both landed - so starting again
           costs them the form, not the enquiry, and somebody will still see it.*/}
       {expired ? (
-        <div className="mt-4 rounded-xl border p-4 text-sm" style={{ borderColor: "var(--mk-line)" }}>
+        <div
+          className="mt-4 rounded-xl border p-4 text-sm"
+          style={{ borderColor: "var(--mk-line)" }}
+        >
           <p style={{ color: "var(--mk-ink)" }}>
-            Your session expired before we could book that time. Your details are saved and the
-            team can still see your enquiry.
+            Your session expired before we could book that time. Your details are saved and the team
+            can still see your enquiry.
           </p>
           <a href="/start" className="mk-cta mk-cta-sm mt-3 inline-flex">
             Start again to pick a time
@@ -1010,70 +1026,74 @@ function SlotPicker({ name }: { name: string }) {
         </div>
       ) : null}
 
-      {!expired && days.map((day) => (
-        <div key={day} className="mb-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--mk-muted)" }}>
-            {day}
-          </p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {slots
-              .filter((s) => s.dayLabel === day)
-              .map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    start(async () => {
-                      const res = await bookSlotAction(s.id);
-                      if (res.ok) {
-                        setError(null);
-                        const dayLabel = res.dayLabel!;
-                        const timeLabel = res.timeLabel!;
-                        const wa = whatsappHref(slotBookedMessage(name, dayLabel, timeLabel));
-                        setBooked({
-                          dayLabel,
-                          timeLabel,
-                          meetingUrl: res.meetingUrl ?? null,
-                          waHref: wa,
-                        });
-                        // The conversion, fired only once the slot is actually
-                        // claimed. Not on reaching the picker and not on the
-                        // /booked page: the first only means somebody
-                        // qualified, and the second is reachable by typing the
-                        // URL. Counting either would teach the ad account to
-                        // buy near-misses. Safe to call when the pixel is
-                        // unconfigured - it is a no-op.
-                        trackLead();
-                        // Same tab, not window.open: a popup that did not come
-                        // from a click is blocked by every mobile browser, and
-                        // this click is one render removed from the one that
-                        // triggered it (the state update above runs first).
-                        if (wa) window.location.href = wa;
-                      } else if (res.sessionExpired) {
-                        // Terminal for this page: the cookie that ties a booking
-                        // to their details is gone, so EVERY slot here will fail
-                        // the same way. Re-fetching the list would only offer a
-                        // fresh set of buttons that cannot work either.
-                        setExpired(true);
-                        setError(res.error ?? "Your session expired.");
-                      } else {
-                        setError(res.error ?? "That time is no longer available.");
-                        // Re-fetch: whatever went is gone, and showing it again
-                        // invites a second failure on the same button.
-                        listOpenSlotsAction().then((r) => setSlots(r.slots));
-                      }
-                    })
-                  }
-                  className="flex min-h-11 w-full items-center justify-center rounded-xl border text-sm font-medium transition-colors disabled:opacity-60"
-                  style={{ borderColor: "var(--mk-line)", color: "var(--brand-mid)" }}
-                >
-                  {s.timeLabel}
-                </button>
-              ))}
+      {!expired &&
+        days.map((day) => (
+          <div key={day} className="mb-4">
+            <p
+              className="mb-2 text-xs font-semibold uppercase tracking-widest"
+              style={{ color: "var(--mk-muted)" }}
+            >
+              {day}
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {slots
+                .filter((s) => s.dayLabel === day)
+                .map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      start(async () => {
+                        const res = await bookSlotAction(s.id);
+                        if (res.ok) {
+                          setError(null);
+                          const dayLabel = res.dayLabel!;
+                          const timeLabel = res.timeLabel!;
+                          const wa = whatsappHref(slotBookedMessage(name, dayLabel, timeLabel));
+                          setBooked({
+                            dayLabel,
+                            timeLabel,
+                            meetingUrl: res.meetingUrl ?? null,
+                            waHref: wa,
+                          });
+                          // The conversion, fired only once the slot is actually
+                          // claimed. Not on reaching the picker and not on the
+                          // /booked page: the first only means somebody
+                          // qualified, and the second is reachable by typing the
+                          // URL. Counting either would teach the ad account to
+                          // buy near-misses. Safe to call when the pixel is
+                          // unconfigured - it is a no-op.
+                          trackLead();
+                          // Same tab, not window.open: a popup that did not come
+                          // from a click is blocked by every mobile browser, and
+                          // this click is one render removed from the one that
+                          // triggered it (the state update above runs first).
+                          if (wa) window.location.href = wa;
+                        } else if (res.sessionExpired) {
+                          // Terminal for this page: the cookie that ties a booking
+                          // to their details is gone, so EVERY slot here will fail
+                          // the same way. Re-fetching the list would only offer a
+                          // fresh set of buttons that cannot work either.
+                          setExpired(true);
+                          setError(res.error ?? "Your session expired.");
+                        } else {
+                          setError(res.error ?? "That time is no longer available.");
+                          // Re-fetch: whatever went is gone, and showing it again
+                          // invites a second failure on the same button.
+                          void listOpenSlotsAction().then((r) => setSlots(r.slots));
+                        }
+                      })
+                    }
+                    className="flex min-h-11 w-full items-center justify-center rounded-xl border text-sm font-medium transition-colors disabled:opacity-60"
+                    style={{ borderColor: "var(--mk-line)", color: "var(--brand-mid)" }}
+                  >
+                    {s.timeLabel}
+                  </button>
+                ))}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
 
       <p className="mt-1 text-xs" style={{ color: "var(--mk-muted)" }}>
         {slots[0]!.durationMinutes} minutes. Times shown in India Standard Time.
@@ -1097,7 +1117,11 @@ function Progress({ step }: { step: Step }) {
               style={
                 active || done
                   ? { background: "var(--brand-gradient)", color: "#fff" }
-                  : { background: "var(--mk-ground)", color: "var(--mk-muted)", border: "1px solid var(--mk-line)" }
+                  : {
+                      background: "var(--mk-ground)",
+                      color: "var(--mk-muted)",
+                      border: "1px solid var(--mk-line)",
+                    }
               }
             >
               {i + 1}
@@ -1106,7 +1130,10 @@ function Progress({ step }: { step: Step }) {
           </div>
         );
       })}
-      <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--mk-muted)" }}>
+      <span
+        className="text-xs font-semibold uppercase tracking-widest"
+        style={{ color: "var(--mk-muted)" }}
+      >
         Step {step === "contact" ? 1 : 2} of 2
       </span>
     </div>
@@ -1301,7 +1328,9 @@ function DropdownControl({
   // Keep the highlighted option inside the scroll panel.
   useEffect(() => {
     if (!open) return;
-    listRef.current?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-i="${active}"]`)
+      ?.scrollIntoView({ block: "nearest" });
   }, [open, active]);
 
   function choose(i: number) {
@@ -1343,85 +1372,87 @@ function DropdownControl({
 
   return (
     <div ref={rootRef} className="relative" style={widthStyle} onKeyDown={onKeyDown}>
-        {/* The value the form actually submits. `readOnly` is implicit on a
+      {/* The value the form actually submits. `readOnly` is implicit on a
             hidden input, but React warns without onChange on a valued input in
             some versions - hidden inputs are exempt, and this one is driven
             entirely by the parent's state. */}
-        <input type="hidden" name={name} value={value} />
+      <input type="hidden" name={name} value={value} />
 
-        <button
-          ref={buttonRef}
-          id={name}
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-label={ariaLabel}
-          aria-invalid={error ? true : undefined}
-          style={{
-            ...selectStyle,
-            textAlign: "left",
-            ...(widthStyle ?? null),
-            ...(error ? { borderColor: "var(--mk-danger, #dc2626)" } : null),
-          }}
-          className="flex items-center"
-        >
-          {/* Placeholder until chosen, never a pre-selected first option: a
+      <button
+        ref={buttonRef}
+        id={name}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        aria-invalid={error ? true : undefined}
+        style={{
+          ...selectStyle,
+          textAlign: "left",
+          ...(widthStyle ?? null),
+          ...(error ? { borderColor: "var(--mk-danger, #dc2626)" } : null),
+        }}
+        className="flex items-center"
+      >
+        {/* Placeholder until chosen, never a pre-selected first option: a
               dropdown that opens already showing "Real estate / property"
               collects that answer from everyone who does not touch it, and the
               funnel reports an industry split that is mostly default. */}
-          <span style={{ color: selected ? "var(--mk-ink)" : "var(--mk-muted)" }}>
-            {selected ? selected.label : placeholder}
-          </span>
-        </button>
+        <span style={{ color: selected ? "var(--mk-ink)" : "var(--mk-muted)" }}>
+          {selected ? selected.label : placeholder}
+        </span>
+      </button>
 
-        {open ? (
-          <ul
-            ref={listRef}
-            role="listbox"
-            aria-label={ariaLabel}
-            aria-activedescendant={`${name}-opt-${active}`}
-            tabIndex={-1}
-            // `min-w-full` rather than `right-0`, so a NARROW trigger (the
-            // salutation, at 6.5rem) still gets a panel wide enough to read its
-            // own options, while a full-width one is unchanged.
-            className="absolute left-0 z-30 mt-1 w-max min-w-full overflow-y-auto py-1"
-            style={{
-              // The scrolling this component exists to provide. 16rem shows
-              // about six options - enough to see there are more without the
-              // panel covering the whole form.
-              maxHeight: "16rem",
-              background: "var(--mk-surface)",
-              border: "1px solid var(--mk-line)",
-              borderRadius: "12px",
-              boxShadow: "var(--mk-shadow)",
-            }}
-          >
-            {options.map((o, i) => {
-              const isSel = o.value === value;
-              const isActive = i === active;
-              return (
-                <li
-                  key={o.value}
-                  id={`${name}-opt-${i}`}
-                  data-i={i}
-                  role="option"
-                  aria-selected={isSel}
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => choose(i)}
-                  className="cursor-pointer px-4 py-2.5 text-[0.9375rem]"
-                  style={{
-                    background: isActive ? "color-mix(in srgb, var(--brand-mid) 10%, transparent)" : "transparent",
-                    color: "var(--mk-ink)",
-                    fontWeight: isSel ? 600 : 400,
-                  }}
-                >
-                  {o.label}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+      {open ? (
+        <ul
+          ref={listRef}
+          role="listbox"
+          aria-label={ariaLabel}
+          aria-activedescendant={`${name}-opt-${active}`}
+          tabIndex={-1}
+          // `min-w-full` rather than `right-0`, so a NARROW trigger (the
+          // salutation, at 6.5rem) still gets a panel wide enough to read its
+          // own options, while a full-width one is unchanged.
+          className="absolute left-0 z-30 mt-1 w-max min-w-full overflow-y-auto py-1"
+          style={{
+            // The scrolling this component exists to provide. 16rem shows
+            // about six options - enough to see there are more without the
+            // panel covering the whole form.
+            maxHeight: "16rem",
+            background: "var(--mk-surface)",
+            border: "1px solid var(--mk-line)",
+            borderRadius: "12px",
+            boxShadow: "var(--mk-shadow)",
+          }}
+        >
+          {options.map((o, i) => {
+            const isSel = o.value === value;
+            const isActive = i === active;
+            return (
+              <li
+                key={o.value}
+                id={`${name}-opt-${i}`}
+                data-i={i}
+                role="option"
+                aria-selected={isSel}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+                className="cursor-pointer px-4 py-2.5 text-[0.9375rem]"
+                style={{
+                  background: isActive
+                    ? "color-mix(in srgb, var(--brand-mid) 10%, transparent)"
+                    : "transparent",
+                  color: "var(--mk-ink)",
+                  fontWeight: isSel ? 600 : 400,
+                }}
+              >
+                {o.label}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }

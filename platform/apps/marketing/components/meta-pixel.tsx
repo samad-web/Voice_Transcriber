@@ -73,7 +73,10 @@ fbq('init', '${PIXEL_ID}');
 fbq('track', 'PageView');`}
       </Script>
       <noscript>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* A raw <img>, deliberately: this is Meta's tracking pixel inside a
+            <noscript>, so next/image - which needs JavaScript - cannot render
+            it. The eslint-disable that used to sit here named a rule this
+            config does not load, which eslint reports as an error of its own. */}
         <img
           height="1"
           width="1"
