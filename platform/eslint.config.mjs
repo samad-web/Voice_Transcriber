@@ -80,6 +80,25 @@ export default tseslint.config(
   },
 
   // ---------------------------------------------------------------------------
+  // Build scripts that drive a headless browser (apps/marketing/scripts/*.mjs,
+  // Playwright). These run in Node, but the callbacks handed to `page.evaluate`
+  // are serialised and executed in the PAGE - so `document` and `window` are
+  // genuinely defined at the only place they appear, and the Node-globals-only
+  // block above was reporting seven `no-undef` ERRORS for correct code.
+  //
+  // Scoped to this one directory rather than loosened globally: `document` being
+  // undefined is a real error everywhere else in the workspace, and that is the
+  // reading worth keeping. ESLint cannot tell which side of the boundary a
+  // callback lands on, so the directory is the only honest granularity here.
+  // ---------------------------------------------------------------------------
+  {
+    files: ["apps/marketing/scripts/**/*.mjs", "scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // TypeScript, everywhere. Syntax-only rules: no type information required, so
   // this block also covers any future file that is not in a tsconfig yet.
   // ---------------------------------------------------------------------------

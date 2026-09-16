@@ -1,0 +1,186 @@
+# Aura's overlay on the stock Supabase self-hosting stack.
+#
+#   docker compose --env-file .env.selfhost \
+#     -f upstream/docker-compose.yml -f docker-compose.aura.yml up -d
+#
+# ── READ THIS BEFORE EDITING ─────────────────────────────────────────────────
+#
+# `upstream/docker-compose.yml` is VENDORED, UNMODIFIED, at the commit recorded
+# in UPSTREAM.md. Every Aura-specific change belongs in THIS file, so that
+# refreshing upstream is a re-download rather than a merge. If you find yourself
+# editing anything under upstream/, stop and add an override here instead.
+#
+# ── WHY THIS IS A SEPARATE COMPOSE PROJECT ───────────────────────────────────
+#
+# The obvious alternative - folding these services into docker-compose.prod.yml
+# as another overlay - puts the production database inside the blast radius of
+# `./deploy.sh`. That script runs `up -d --build`, and an unscoped run has
+# already taken this platform down once (2026-08-10, see the header of
+# docker-compose.prod.yml). The same mistake with Postgres in the project
+# recreates the database container.
+#
+# So: two projects, `aura` and `aura-supabase`. deploy.sh cannot touch the
+# database no matter how it is invoked, and the two are wired together by a
+# shared Docker network rather than by compose.
+#
+# Requires Docker Compose >= 2.24 for the `!override` tag below.
+
+name: aura-supabase
+
+networks:
+  # This project's own network, where the Supabase services talk to each other
+  # under their upstream names (db, rest, imgproxy, ...).
+  default:
+
+  # The `aura` project's default network, created by docker-compose.prod.yml.
+  # Joining it is what lets api/worker/web/marketing/migrate reach Postgres and
+  # lets the edge reach the gateway. `external: true` means compose will NOT
+  # create it: bring the aura stack up first, or this fails with a clear error
+  # rather than silently building a second, empty network.
+  aura:
+    external: true
+    name: aura_default
+
+services:
+
+  # ── Postgres ───────────────────────────────────────────────────────────────
+  db:
+    networks:
+      default:
+      aura:
+        aliases:
+          # THE NAME AURA CONNECTS TO, and it is deliberately not `db`.
+          #
+          # packages/db/verify-rls.js treats the hostnames `db` and `postgres`
+          # as disposable throwaway databases and will run its DESTRUCTIVE
+          # cross-tenant write suite against them without asking. Until now the
+          # only thing standing between that script and production was that
+          # Supabase Cloud is a remote host, so the guard refused.
+          #
+          # Self-hosting removes that accident. `supabase-db` is not in the
+          # guard's local-host set, so it still refuses. (verify-rls.js also now
+          # refuses outright under NODE_ENV=production - belt and braces, since
+          # compose adds the service name `db` as an alias here regardless of
+          # what we ask for.)
+          - supabase-db
+    volumes:
+      # A NAMED VOLUME, replacing upstream's `./volumes/db/data` bind mount.
+      #
+      # Compose merges service volumes by container path, so this entry replaces
+      # upstream's without disturbing the read-only config mounts beside it.
+      #
+      # This matters more than it looks. The bind mount would put the live
+      # production database inside the git working tree, one `git clean -xfd`
+      # away from deletion, and `git pull` on the VPS is a routine step in the
+      # deploy runbook. A named volume lives under /var/lib/docker/volumes and
+      # no git operation can reach it.
+      - supabase-db-data:/var/lib/postgresql/data:Z
+    # Postgres is the one service here that must not be starved. The default is
+    # unbounded; this is a ceiling, not a reservation.
+    mem_limit: 4g
+    shm_size: 1g
+
+  # ── API gateway (Envoy) ────────────────────────────────────────────────────
+  api-gw:
+    networks:
+      default:
+        # Preserved from upstream: internal configs reference both names.
+        aliases:
+          - envoy
+          - kong
+      aura:
+        aliases:
+          - supabase-gateway
+    # `!override` REPLACES upstream's port list instead of appending to it.
+    #
+    # This is load-bearing, not tidiness. Upstream publishes `8000:8000`, which
+    # on a VPS means 0.0.0.0 - the Supabase API, including the Studio dashboard,
+    # reachable from the open internet on a bare port with no TLS. The edge
+    # (Caddy, or the host nginx) is the only thing that should face outward, so
+    # this binds to loopback and nginx proxies to it.
+    #
+    # bin/verify-selfhost.sh asserts no published port is on 0.0.0.0, because a
+    # silently-appended merge here is invisible until someone scans the box.
+    ports: !override
+      - "127.0.0.1:${API_GW_HTTP_PORT:-18084}:8000"
+    mem_limit: 512m
+
+  # ── Auth (GoTrue) ──────────────────────────────────────────────────────────
+  # The console signs in against this, and apps/api provisions owner logins
+  # through its /auth/v1/admin/users endpoint with the service-role key.
+  auth:
+    mem_limit: 512m
+
+  # ── Data API (PostgREST) ───────────────────────────────────────────────────
+  rest:
+    environment:
+      # UPSTREAM DEFAULT IS `public,graphql_public`. THIS DATABASE HOLDS EVERY
+      # TENANT'S CALL TRANSCRIPTS, and the anon key that reaches this service is
+      # published in the browser bundle by design.
+      #
+      # Aura does not use the Data API at all - tenancy is our own RLS keyed on
+      # current_setting('app.org_id'), enforced through the non-superuser
+      # aura_app role, which anon can never set. So `public` is removed here and
+      # nothing is lost.
+      #
+      # This is the SECOND lock, not the only one: 0007_supabase_hardening.sql
+      # revokes every privilege anon/authenticated hold on schema public and
+      # stops future tables inheriting them. Two independent mechanisms, because
+      # the failure mode is a silent full-database read.
+      #
+      # To expose a schema deliberately, add it here - never `public`.
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-graphql_public}
+    mem_limit: 512m
+
+  # ── Everything below is part of the stack but unused by Aura ───────────────
+  #
+  # Kept running because this is the full upstream stack, capped because a
+  # service nothing calls should never be the reason the API gets OOM-killed.
+  # Recordings live in the platform's own MinIO (see docker-compose.prod.yml),
+  # not in Supabase Storage.
+
+  realtime:
+    mem_limit: 512m
+
+  storage:
+    volumes:
+      # Named volume for the same reason as the database: keep state out of the
+      # git tree. Must match imgproxy's mount below - they share the directory.
+      - supabase-storage-data:/var/lib/storage:z
+    mem_limit: 512m
+
+  imgproxy:
+    volumes:
+      - supabase-storage-data:/var/lib/storage:z
+    mem_limit: 256m
+
+  meta:
+    mem_limit: 256m
+
+  functions:
+    mem_limit: 512m
+
+  studio:
+    mem_limit: 1g
+
+  # ── Connection pooler (Supavisor) ──────────────────────────────────────────
+  supavisor:
+    # Same reasoning as api-gw, and worse if left alone: upstream publishes
+    # `${POSTGRES_PORT}:5432`, putting Postgres itself on 0.0.0.0:5432.
+    #
+    # Aura connects DIRECTLY to supabase-db:5432 over the compose network, not
+    # through this pooler - the app runs its own pg pools and the extra hop buys
+    # nothing on the same box. These loopback publishes exist only so an
+    # operator can reach the database with psql over an SSH tunnel.
+    #
+    # Check `ss -ltnp` before first start: if the VPS already runs a native
+    # Postgres, 5432 is taken and POOLER_SESSION_HOST_PORT needs a different
+    # value here.
+    ports: !override
+      - "127.0.0.1:${POOLER_SESSION_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION:-6543}:6543"
+    mem_limit: 512m
+
+volumes:
+  supabase-db-data:
+  supabase-storage-data:

@@ -24,7 +24,16 @@
 # plain .env). Omit it and APP_DOMAIN et al resolve empty and the stack refuses
 # to start.
 #
-# Postgres is NOT here - the database is Supabase (see DEPLOYMENT.md §2).
+# Postgres is NOT here, and that is deliberate even now that it runs on this
+# same box. The self-hosted Supabase stack is its OWN compose project,
+# `aura-supabase` (supabase/selfhost/), joined to this one by a shared network.
+#
+# The reason is this file's own header: ./deploy.sh runs `up -d --build`, and an
+# unscoped run already took the platform down once (2026-08-10). Keeping the
+# database in a separate project means no invocation of deploy.sh - scoped,
+# unscoped, or mistaken - can recreate the database container.
+#
+# See supabase/selfhost/README.md for the stack and DEPLOYMENT.md §2 for setup.
 # Redis, RabbitMQ and MinIO stay local to the box and are never published.
 
 name: aura
@@ -50,6 +59,17 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env.production}
       STORAGE_DOMAIN: ${STORAGE_DOMAIN:?set STORAGE_DOMAIN in .env.production}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.production}
+      # The self-hosted Supabase vhost. Required for the same reason as the two
+      # above: the console cannot sign anyone in without it, and a blank site
+      # address would make Caddy refuse to start with a far less obvious error
+      # than this one.
+      #
+      # NOTE: compose interpolates this file BEFORE it looks at profiles, so
+      # this is required even on a host-nginx box where caddy never starts, and
+      # even for `run --rm migrate`. Set it as soon as the DNS record exists —
+      # before the cutover rehearsal, not during it. Same as APP_DOMAIN and
+      # STORAGE_DOMAIN, which have always behaved this way.
+      SUPABASE_DOMAIN: ${SUPABASE_DOMAIN:?set SUPABASE_DOMAIN in .env.production (required even on nginx hosts - compose interpolates before profiles)}
     volumes:
       - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data       # certificates - losing this re-issues (rate limits!)
