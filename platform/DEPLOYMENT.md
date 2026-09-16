@@ -1,18 +1,25 @@
 # Deployment runbook
 
-Target: **one VPS running Docker Compose, with Supabase as the database.**
-Nothing here needs a CI system or a Kubernetes cluster.
+Target: **one VPS running Docker Compose, with a self-hosted Supabase as the
+database.** Nothing here needs a CI system or a Kubernetes cluster.
 
 ```
-                    ┌──────────────────────── your VPS ────────────────────────┐
-  phones  ──────►   │  Caddy :443  ──/v1/*──►  api    ───┐                      │
-  browser ──────►   │              ──else───►  web      │                      │
-                    │                          worker ◄─┴─ rabbitmq, redis     │
-  phones  ──────►   │  Caddy :443 (storage.…) ►  minio  (call audio)           │
-                    └────────────────────────────┬─────────────────────────────┘
-                                                 │ TLS
-                                          Supabase Postgres
+                ┌──────────────────────────── your VPS ────────────────────────────┐
+  phones  ────► │  Caddy :443  ──/v1/*──►  api    ───┐                              │
+  browser ────► │              ──else───►  web      │                               │
+                │                          worker ◄─┴─ rabbitmq, redis              │
+  phones  ────► │  Caddy :443 (storage.…) ►  minio  (call audio)                    │
+                │                                                                   │
+                │  ── compose project `aura`  ───────────────────────────────────    │
+                │  ── compose project `aura-supabase` ───────────────────────────    │
+  browser ────► │  Caddy :443 (supabase.…) ►  api-gw ──► auth, rest, studio, …      │
+                │                             supabase-db  (Postgres)               │
+                └───────────────────────────────────────────────────────────────────┘
 ```
+
+The database is **two compose projects away from `deploy.sh`** on purpose — see
+`supabase/selfhost/README.md`. That directory is the runbook for everything
+Supabase-shaped: first start, the cutover from Supabase Cloud, and backups.
 
 * `docker-compose.prod.yml` — the stack. Caddy is the only container that binds a host port.
 * `docker/node.Dockerfile` — one image for **api**, **worker**, and the one-shot **migrate** job.
@@ -23,48 +30,69 @@ Nothing here needs a CI system or a Kubernetes cluster.
 
 ## 1. Prerequisites
 
-* A VPS with a public IPv4 (2 vCPU / 4 GB is comfortable), Docker Engine + Compose v2.
-* Two DNS records pointing at it — **both must resolve before the first start**, or Caddy's
+* A VPS with a public IPv4, Docker Engine + **Compose v2.24 or newer** (the self-hosted
+  Supabase overlay uses `ports: !override`; older Compose silently ignores it and leaves
+  Postgres published on `0.0.0.0`). 2 vCPU / 4 GB was comfortable with a managed database;
+  running Postgres and the full Supabase stack here too wants **4 vCPU / 16 GB**.
+* Three DNS records pointing at it — **all must resolve before the first start**, or Caddy's
   ACME challenge fails and you burn Let's Encrypt rate limits:
   * `app.example.com` → console + API
   * `storage.example.com` → MinIO (device uploads)
-* Ports 80 and 443 open. Nothing else needs to be reachable from the internet.
-* A Supabase project (free tier is enough to start).
+  * `supabase.example.com` → the self-hosted Supabase gateway (console sign-in)
+* Ports 80 and 443 open. Nothing else needs to be reachable from the internet — in
+  particular Postgres is published on loopback only, and `verify-selfhost.sh` checks it.
 * A Gemini API key (see §6).
 
 ---
 
-## 2. Supabase
+## 2. Supabase (self-hosted)
 
-The schema is plain Postgres with our own RLS; Supabase Auth, PostgREST, Realtime and
-Storage are **not used**. Tenant isolation comes from `current_setting('app.org_id')`
-policies enforced against the non-superuser `aura_app` role.
+The schema is plain Postgres with our own RLS. Of the whole Supabase product this platform
+uses exactly two things — **Postgres** and **Auth** — and nothing else is on any request path:
+`supabase/config.toml` disables the Data API, Realtime and Storage,
+`0007_supabase_hardening.sql` revokes the `anon`/`authenticated` grants, and recordings live in
+MinIO. Tenant isolation comes from `current_setting('app.org_id')` policies enforced against
+the non-superuser `aura_app` role.
 
-1. Create the project. Note the region — put the VPS in the same one, every query pays that
-   round-trip.
-2. **Project Settings → Database** gives two things you need: the connection string and the
-   `postgres` password.
-3. In `.env.production` set:
-   * `DATABASE_URL` — the `postgres` user. Owner connection: migrations and the few
-     pre-tenant admin flows.
-   * `APP_DATABASE_URL` — the `aura_app` user. Everything tenant-scoped. Over the pooler the
-     username is `aura_app.<project-ref>`.
-   * `APP_DB_PASSWORD` — a fresh secret, ≥24 chars, matching the one inside `APP_DATABASE_URL`.
-4. **Project Settings → API → Exposed schemas**: remove `public`. `0007_supabase_hardening.sql`
-   already revokes `anon`/`authenticated` access, but switching the Data API off entirely means
-   a future migration can't accidentally re-grant it.
+**The setup and cutover runbook is `supabase/selfhost/README.md`.** In short:
 
-Three things bite everyone once, all confirmed against this project:
+```bash
+cd supabase/selfhost
+cp .env.selfhost.example .env.selfhost
+node bin/generate-keys.js --write .env.selfhost      # every secret the stack needs
+# edit SUPABASE_PUBLIC_URL / API_EXTERNAL_URL / SITE_URL to your domains
+docker compose --env-file .env.selfhost \
+  -f upstream/docker-compose.yml -f docker-compose.aura.yml up -d
+bash bin/verify-selfhost.sh                          # must pass before going further
+```
 
-* **`db.<ref>.supabase.co` does not resolve** on IPv4-only networks — new projects reach the
-  direct connection over IPv6 only. Use the pooler host from the dashboard.
-* **The pooler's region prefix is not always `aws-0`.** Guessing gives
-  `tenant/user postgres.<ref> not found`, which reads like a credentials failure but is a
-  wrong-host failure. Copy the host from the dashboard.
-* **Percent-encode the password in the URL.** A password containing `@`, `/`, `:` or `#`
-  silently breaks host parsing — a password like `p@ssw0rd#1` must be written `p%40ssw0rd%231`.
-  Over the pooler the username is `<role>.<project-ref>`, so the runtime user is
-  `aura_app.<project-ref>`, not `aura_app`.
+Then in `.env.production`:
+
+* `DATABASE_URL` — `postgres` on `supabase-db:5432`. Owner connection: migrations and the few
+  pre-tenant admin flows. Unlike Supabase Cloud's restricted `postgres`, this one is a real
+  superuser — which is why `0042` can finally install `pg_trgm`.
+* `APP_DATABASE_URL` — the `aura_app` user. Everything tenant-scoped.
+* `APP_DB_PASSWORD` — matching the one inside `APP_DATABASE_URL`.
+* `DB_SSL=0` — **required**, see below.
+* `SUPABASE_DOMAIN`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — from `.env.selfhost`.
+
+Things that bite once, all specific to this arrangement:
+
+* **`DB_SSL=0` is not optional.** `packages/db/ssl.js` infers TLS from the hostname, and
+  `supabase-db` is deliberately not in its local-host set. Worse, the marketing container is
+  pinned to `DB_SSL: ${DB_SSL:-1}`, so leaving it unset turns TLS *on* for that container
+  alone and the funnel cannot reach its database while everything else looks healthy.
+* **The username is the plain role name.** On Supabase Cloud the pooler required
+  `aura_app.<project-ref>`; that was a pooler convention, not a Postgres one. Keep the suffix
+  and the login fails.
+* **`NEXT_PUBLIC_SUPABASE_*` are build args.** Changing them needs `./deploy.sh web` (a
+  rebuild), not a restart — see §7. This is the most common way a cutover appears to work and
+  then fails at the first sign-in.
+* **The database service is reachable as `db` too, and must not be used that way.** Compose
+  adds the service name as a network alias whatever we ask for; `verify-rls.js` treats `db` as
+  a disposable database. Use `supabase-db`. (`verify-rls.js` now also refuses under
+  `NODE_ENV=production` unless the database is empty — see below.)
 
 Apply the schema:
 
@@ -89,14 +117,22 @@ structural check above cannot see, because right policies can still not bind:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml \
-  --profile setup run --rm migrate node packages/db/verify-rls.js
+  --profile setup run --rm -e RLS_TEST_ALLOW_PRODUCTION=1 \
+  migrate node packages/db/verify-rls.js
 ```
 
 Six assertions; all must say PASS. If `no org context sees zero workspaces` fails, `APP_DATABASE_URL`
 is pointing at an over-privileged role — stop and fix it before any customer data lands.
 
-The script writes: it creates two `rls-test-*` organizations and deletes them again at both ends
-of the run. Harmless, but run it *before* onboarding, not as a routine health check.
+**This is a one-time, pre-onboarding step and the script enforces that.** It writes: two
+`rls-test-*` organizations, created and deleted at both ends of the run, and the delete cascades
+across every tenant table. So under `NODE_ENV=production` (which `docker/node.Dockerfile` bakes
+into this image) it refuses without `RLS_TEST_ALLOW_PRODUCTION=1`, and it refuses *even with*
+that flag once the database holds a single non-test organization. The flag states intent; the
+row count is what actually decides.
+
+Once customers exist, run these checks against a restored copy instead —
+`supabase/selfhost/bin/restore-test.sh` stands one up in a throwaway container.
 
 <details>
 <summary>Using the Supabase CLI instead</summary>
@@ -395,6 +431,62 @@ tests and disastrous in production.
 
 ---
 
+## 6b. Device push (FCM)
+
+Push is what makes remote **logout**, **wipe** and **ping** reach a handset in seconds. Without it
+none of those break — they fall back to the handset's ~1h `ConfigRefreshWorker` poll — but "I
+wiped that phone" then means "within the hour", which is not what the console's wording implies.
+
+**Requires migration 0098** (`devices.fcm_token`). It is the newest migration in the repo, so it
+is the one most likely to be missing on a stack that was deployed before it landed; without the
+column the app's token registration 500s and the handset stays unreachable by push.
+
+Two things must line up, and they are easy to get half-right:
+
+1. **The server needs an Admin SDK credential.** Firebase Console → Project Settings → Service
+   Accounts → Generate New Private Key, then base64 it into `FIREBASE_SERVICE_ACCOUNT_B64` in
+   `.env.production` (see `.env.production.example` for the exact commands). It must be for the
+   **same** Firebase project as the Android app's `google-services.json` — `auratel-9ddbd`. A key
+   from another project initialises perfectly and then fails every single send.
+
+   Base64, not a path: the `api` container has no volume mount, so `FIREBASE_SERVICE_ACCOUNT_PATH`
+   set here names a file that does not exist inside the container. That form is for local dev only.
+
+2. **The handsets need to be on a build that registers a token** — `versionCode` 6 / `1.1.2` or
+   newer. Earlier APKs have no FCM at all, so their `devices.fcm_token` stays null forever and
+   `ping` returns `{"pinged": false}` for them. See §5.
+
+Neither half announces itself when it is missing: devices keep recording and uploading normally,
+and a console operator sees no error. Check explicitly, after every deploy that touches this:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml logs api | grep -i "FCM push"
+# "FCM push enabled (project auratel-9ddbd)"  -> credential loaded, right project
+# "No Firebase credential ..."                -> step 1 not done; push disabled
+```
+
+Then prove the round trip against one real handset — `POST /v1/devices/:id/ping` is there for
+exactly this and changes no device state:
+
+```bash
+curl -X POST https://<api-host>/v1/devices/<device-uuid>/ping -H "x-admin-key: <key>"
+# {"pinged": true}  -> credential, token and delivery all working
+# {"pinged": false} -> no stored token (old APK, or step 2), or no credential (step 1)
+```
+
+`FIREBASE_SERVICE_ACCOUNT_B64` is a secret on the level of `JWT_SECRET`. It is read once at boot,
+and it arrives via `env_file` — which compose resolves when it *creates* a container. So picking up
+a new value needs `up -d` (which recreates `api` because its config changed), **not** `restart`,
+which hands the existing container back its existing environment and will have you re-checking a
+correct `.env.production` wondering why the log line has not changed. No `--build`: the image is
+unaffected.
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d api
+```
+
+---
+
 ## 7. Known gaps — read before onboarding a real customer
 
 These are honest limitations of the current build, not deployment steps. Stage 0 closed several
@@ -492,13 +584,25 @@ git pull && docker compose --env-file .env.production -f docker-compose.prod.yml
 
 # apply a new migration
 docker compose --env-file .env.production -f docker-compose.prod.yml --profile setup run --rm migrate
+
+# is device push actually live? (silent when it is not — see §6b)
+docker compose --env-file .env.production -f docker-compose.prod.yml logs api | grep -i "FCM push"
 ```
 
-**Backups.** Two things hold state, and Supabase only covers one of them:
+**Backups.** Two things hold state, and **nothing backs up either of them for you.** That is
+the bill for leaving managed Postgres: Supabase's automatic backups used to cover the database,
+and self-hosting cancelled them.
 
-* Postgres — Supabase's own backups (Settings → Database → Backups). Verify the schedule
-  matches the retention you promised the customer.
-* Recordings — the `miniodata` volume. Nothing backs it up for you:
+* Postgres — `supabase/selfhost/bin/backup.sh`, on a cron. On-box to MinIO plus an encrypted
+  offsite copy; `bin/restore-test.sh` restores into a throwaway container and checks the row
+  counts and RLS survived. **A backup nobody has restored is a belief, not a backup** — run
+  the restore test before you need it, and on a schedule after.
+
+  ```cron
+  15 2 * * * cd /opt/aura/platform/supabase/selfhost && bash bin/backup.sh >> /var/log/aura-backup.log 2>&1
+  ```
+
+* Recordings — the `miniodata` volume. Nothing backs it up for you either:
 
   ```bash
   docker run --rm -v aura_miniodata:/data -v "$PWD:/backup" alpine \

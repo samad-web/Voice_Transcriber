@@ -46,17 +46,60 @@ and something came back filled", which rejects wrong numbers without any tenant
 setup. Board columns are tenant data too (`organizations.lead_stages`), so
 renaming or adding a stage is a row edit, not a migration.
 
+## Live updates
+
+Both consoles refresh themselves as data arrives. Nobody reloads a page to find
+out whether a call finished transcribing, a lead ad converted or a WhatsApp
+message came in.
+
+| Piece | Where |
+|---|---|
+| The event vocabulary | `packages/shared/src/realtime.ts` |
+| The bus (RabbitMQ fanout, `aura.events`) | `packages/queue/src/events.ts` |
+| The API's hub, its SSE feed and the global emit interceptor | `apps/api/src/modules/realtime/` |
+| The web tier's one upstream connection + per-session fanout | `apps/web/lib/realtime/`, `apps/web/app/events/` |
+| The browser client and its status indicator | `apps/web/components/realtime-provider.tsx` |
+
+**How a number on screen changes.** A write publishes a signal; the browser's
+stream receives it and calls `router.refresh()`, which re-runs the current
+route's server components and reconciles the new payload into the live DOM.
+Every server-rendered figure on the page updates at once, scroll position holds
+and nothing reloads — which is why almost no page needed changing for this.
+Components holding their own fetched state (the inbox, the notification bell)
+subscribe with `useRealtime` instead, because a refresh cannot reach into their
+`useState`.
+
+**A signal carries no data.** Only `{ orgId, topic, action, id, at }`. The
+console re-reads through the same authorised path it always used, so the
+persona scoping in `owner-scope.ts` still decides what anybody sees; a push
+channel that carried rows would be a second copy of those rules, free to
+disagree with the one that matters.
+
+**Nothing needs wiring up for a new route.** A global interceptor announces
+every successful mutation and derives the topic from the path, so a controller
+written next month is live by default and has to opt *out*. The exception is an
+unauthenticated webhook — no guard resolved its tenant, so it publishes for
+itself once the write commits (Meta lead ads, the intake endpoints, inbound
+WhatsApp, Razorpay).
+
+**When it cannot connect** the client falls back to polling on the same cursor,
+and the indicator beside the notification bell says so rather than showing a
+green dot over stale data. `REALTIME_DISABLED=1` turns the whole thing off with
+a restart; the consoles then behave exactly as they did before it existed.
+
 ## Deploying
 
 See **[DEPLOYMENT.md](DEPLOYMENT.md)** — single VPS, Docker Compose, Caddy for
-TLS, Supabase for Postgres, plus the signed Android release build.
+TLS, a self-hosted Supabase for Postgres and auth, plus the signed Android
+release build.
 
 | Path | What it is |
 |---|---|
-| `docker-compose.prod.yml` | The production stack (no local Postgres — that's Supabase) |
+| `docker-compose.prod.yml` | The production stack (no Postgres here — it is a separate compose project, deliberately) |
+| `supabase/selfhost/` | The self-hosted Supabase stack: setup, cutover and backup runbook |
 | `docker/node.Dockerfile` | One image for api + worker + the migrate job |
 | `docker/web.Dockerfile` | Next.js console, standalone output |
-| `docker/Caddyfile` | TLS termination and routing for both public domains |
+| `docker/Caddyfile` | TLS termination and routing for all three public domains |
 | `.env.production.example` | Every production variable, annotated |
 | `supabase/migrations/` | Generated from `packages/db/migrations` (`pnpm db:supabase:sync`) |
 
@@ -93,7 +136,14 @@ integration per minute. Credentials are sealed at rest with `CRM_SECRET_KEY`.
 
 ## Design system
 
-The web app follows the "Aura" prototype in `../ui-design/`: Space Grotesk /
-Inter / JetBrains Mono, monochrome palette, zero border radius, 2–4px black
-borders, offset hard shadows. No component library — shared pieces live in
-`packages/ui`.
+`packages/ui` (`@aura/ui`) ships a modern-minimal token system (Inter +
+JetBrains Mono, neutral-led palette with one accent, light/dark, WCAG AA
+verified) — a full rewrite of the original neo-brutalist `ui-design/`
+prototype, which was retired once the rewrite landed (read it out of git
+history if you need it). The primitives have migrated; most console pages
+haven't yet, so v1 (`Card`, `StatusChip`, `MonoLabel`, …) and v2 (`Button`, `Input`,
+`FormField`, …) currently coexist. See
+**[`../Build docs/22_DESIGN_SYSTEM.md`](../Build%20docs/22_DESIGN_SYSTEM.md)**
+for the full current-state reference: tokens, the functional colour system,
+the `className`-merge trap and its fix, component inventory, and what's left
+of the migration.
