@@ -177,3 +177,52 @@ export async function createPaymentLinkAction(
     return { error: "API unreachable" };
   }
 }
+
+// ── The client's own payment gateway (migration 0060, console added with 0095) ──
+
+export interface PaymentSettings {
+  keyId: string | null;
+  hasSecret: boolean;
+  hasWebhookSecret: boolean;
+  enabled: boolean;
+  /** True while payments still route through the platform's own Razorpay. */
+  usingPlatformGateway: boolean;
+}
+
+export interface PaymentSettingsDraft {
+  keyId: string;
+  /** Omitted keeps the stored secret - the API never returns it to be re-sent. */
+  keySecret?: string;
+  webhookSecret?: string;
+  enabled: boolean;
+}
+
+/**
+ * Owner-only on the API (`@RequireOwnerRole("owner")`): these keys decide which
+ * bank account this business's money lands in.
+ *
+ * Revalidates the OWNER LAYOUT, not just this page, because connecting a
+ * gateway completes a required setup step - and the checklist banner lives in
+ * the layout. Without this the client would save their keys and still be told
+ * to connect a payment account until they next signed in.
+ */
+export async function savePaymentSettingsAction(
+  draft: PaymentSettingsDraft,
+): Promise<{ error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/payment-settings`, {
+      method: "PUT",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(draft),
+    });
+    if (!res.ok) return { error: await message(res) };
+    revalidatePath("/owner", "layout");
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}

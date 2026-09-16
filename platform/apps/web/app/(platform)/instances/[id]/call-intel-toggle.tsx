@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileText } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import { Button, Card, MonoLabel, RowHint, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { setModuleEnabledAction } from "./actions";
 import type { OwnerRow } from "./owner-accounts";
 
@@ -46,9 +46,10 @@ export function CallIntelToggle({
   modules: string[];
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const hintId = useId();
   const confirm = useConfirm();
+  const alert = useAlert();
 
   // Only accounts that can sign in are counted: a revoked member with the flag
   // still set is not somebody who can read anything.
@@ -68,7 +69,6 @@ export function CallIntelToggle({
       });
       if (!ok) return;
     }
-    setError(null);
     startTransition(async () => {
       const res = await setModuleEnabledAction({
         orgId,
@@ -77,7 +77,13 @@ export function CallIntelToggle({
         current: modules,
       });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: next
+            ? "Couldn't turn on Call Intelligence"
+            : "Couldn't turn off Call Intelligence",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       router.refresh();
@@ -94,41 +100,38 @@ export function CallIntelToggle({
         <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
       </div>
 
-      <p className="text-xs text-neutral-500 font-sans font-medium leading-relaxed">
+      <RowHint kind="toggle" id={`${hintId}-state`}>
         {enabled
-          ? "This client sees each call's intent, sentiment and outcome on their leads, and can open the transcript."
-          : "This client sees only the lead a call produced - no transcript, no intent or sentiment labels."}
-      </p>
+          ? "On: this client sees each call's intent, sentiment and outcome on their leads, and can open the transcript."
+          : "Off: this client sees only the lead a call produced - no transcript, no intent or sentiment labels."}
+      </RowHint>
 
       {enabled ? (
-        <div className="border-2 border-black bg-white p-3 space-y-1.5">
+        <div className="space-y-1.5 rounded-md border border-border-strong bg-bg-subtle p-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <MonoLabel>Who can open a transcript</MonoLabel>
             <StatusChip tone={canRead.length > 0 ? "solid" : "muted"}>
               {canRead.length} of {active.length}
             </StatusChip>
           </div>
-          <p className="text-[10px] font-mono text-neutral-500 leading-relaxed">
+          <RowHint kind="blocked">
             {canRead.length === 0
               ? "Nobody. Their team sees the intent and sentiment labels, but every transcript stays withheld until an account is given recordings access in Owner accounts above."
               : "The rest of their team still sees the intent and sentiment labels - only the verbatim text is withheld. Recordings access is per account, in Owner accounts above."}
-          </p>
+          </RowHint>
         </div>
       ) : null}
 
-      <BrutalButton
+      <Button
+        type="button"
         variant={enabled ? "secondary" : "primary"}
         disabled={pending}
+        loading={pending}
+        aria-describedby={`${hintId}-state`}
         onClick={() => void toggle(!enabled)}
       >
-        {pending ? "SAVING…" : enabled ? "TURN OFF" : "TURN ON"}
-      </BrutalButton>
-
-      {error ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-          {error}
-        </p>
-      ) : null}
+        {enabled ? "Turn off" : "Turn on"}
+      </Button>
     </Card>
   );
 }

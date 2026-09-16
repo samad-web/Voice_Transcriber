@@ -15,11 +15,12 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { ownerGet } from "@/lib/owner-context";
-import { NewQuotationDialog } from "./new-quotation-dialog";
+import { requireOwnerFeature } from "@/lib/owner-features";
 import { formatMoney } from "../lib/format-money";
+import { NewQuotationDialog } from "./new-quotation-dialog";
 import type { Quotation, QuotationStatus } from "./actions";
 
-export const metadata: Metadata = { title: "Quotations - Aura" };
+export const metadata: Metadata = { title: "Quotations" };
 
 const PAGE_SIZE = 50;
 
@@ -51,6 +52,11 @@ export default async function QuotationsPage({
 }: {
   searchParams: Promise<{ status?: string; offset?: string }>;
 }) {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("quotations");
+
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
   const status = sp.status ?? "";
@@ -91,11 +97,10 @@ export default async function QuotationsPage({
                 key={s.value || "all"}
                 href={href}
                 aria-current={active ? "page" : undefined}
-                style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
                 className={
                   "inline-flex h-8 items-center rounded-full px-3 text-xs font-medium transition-colors duration-150 ease-out " +
                   (active
-                    ? "text-white"
+                    ? "bg-text text-bg"
                     : "border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text")
                 }
               >

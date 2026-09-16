@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
-import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, FormField, Input, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { updateDealAction } from "./crm-actions";
 import { CustomFieldEditor } from "./custom-field-editor";
 import { InteractionTimeline } from "./interaction-timeline";
@@ -39,14 +39,12 @@ export function DealDrawer({
   onChanged?: (dealId: string, update: Partial<Deal>) => void;
 }) {
   const [draft, setDraft] = useState({ nextAction: "", notes: "", amount: "" });
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   useEffect(() => {
     if (!deal) return;
-    setError(null);
-    setSaved(false);
     setDraft({
       nextAction: deal.next_action ?? "",
       notes: deal.notes ?? "",
@@ -69,15 +67,13 @@ export function DealDrawer({
   if (!deal) return null;
 
   const apply = (update: Parameters<typeof updateDealAction>[1]) => {
-    setError(null);
-    setSaved(false);
     startTransition(async () => {
       const result = await updateDealAction(deal.id, update);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't save the deal", body: result.error, tone: "danger" });
         return;
       }
-      setSaved(true);
+      toast("Saved");
       onChanged?.(deal.id, result.deal ?? {});
     });
   };
@@ -85,7 +81,11 @@ export function DealDrawer({
   const saveDetails = () => {
     const parsedAmount = draft.amount.trim() === "" ? null : Number(draft.amount);
     if (parsedAmount !== null && !Number.isFinite(parsedAmount)) {
-      setError("Amount must be a number");
+      void alert({
+        title: "Enter a valid deal amount",
+        body: "The amount has to be a number - leave it empty if there isn't one yet.",
+        tone: "danger",
+      });
       return;
     }
     apply({
@@ -213,24 +213,9 @@ export function DealDrawer({
                 className={TEXTAREA_CLASS}
               />
             </FormField>
-            <div className="flex items-center gap-3">
-              <Button type="button" onClick={saveDetails} loading={pending}>
-                Save
-              </Button>
-              {saved && !pending ? (
-                <span role="status" className="text-xs text-text-muted">
-                  Saved
-                </span>
-              ) : null}
-            </div>
-            {error ? (
-              <p
-                role="alert"
-                className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-              >
-                {error}
-              </p>
-            ) : null}
+            <Button type="button" onClick={saveDetails} loading={pending}>
+              Save
+            </Button>
           </div>
 
           <div className="border-t border-border pt-4">

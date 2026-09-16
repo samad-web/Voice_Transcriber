@@ -16,6 +16,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
 } from "@aura/ui";
 import {
   createCommissionPlanAction,
@@ -64,13 +65,12 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
   const [editing, setEditing] = useState<CommissionPlan | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const openCreate = () => {
     setEditing(null);
     setDraft(EMPTY_DRAFT);
-    setError(null);
     setOpen(true);
   };
 
@@ -83,19 +83,25 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
       rate: String(Number(plan.rate)),
       active: plan.active,
     });
-    setError(null);
     setOpen(true);
   };
 
   const save = () => {
-    setError(null);
     if (!draft.name.trim()) {
-      setError("Name is required");
+      void alert({
+        title: "Couldn't save the commission plan",
+        body: "Name is required",
+        tone: "danger",
+      });
       return;
     }
     const rate = Number(draft.rate);
     if (!Number.isFinite(rate) || rate <= 0) {
-      setError("Enter a rate greater than zero");
+      void alert({
+        title: "Couldn't save the commission plan",
+        body: "Enter a rate greater than zero",
+        tone: "danger",
+      });
       return;
     }
 
@@ -116,7 +122,11 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
             active: draft.active,
           });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't save the commission plan",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setOpen(false);
@@ -128,7 +138,11 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
     startTransition(async () => {
       const result = await deleteCommissionPlanAction(editing.id);
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't delete the commission plan",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setOpen(false);
@@ -218,15 +232,6 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
         }
       >
         <div className="space-y-4">
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-            >
-              {error}
-            </p>
-          ) : null}
-
           <FormField label="Name" name="name" required>
             <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           </FormField>

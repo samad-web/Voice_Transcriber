@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
-import { ConfirmProvider } from "@aura/ui";
+import { ConfirmProvider, FeedbackProvider } from "@aura/ui";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -29,8 +29,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh bg-[#F9F9F9] text-[#1A1A1A] font-sans antialiased overflow-x-hidden">
         {/* At the ROOT, not in (owner)/ and (platform)/ separately: both route
             groups have destructive actions, and one provider means one dialog
-            in the DOM rather than two that could ever both be open. */}
-        <ConfirmProvider>{children}</ConfirmProvider>
+            in the DOM rather than two that could ever both be open. Feedback
+            sits inside for the same reason - one toast stack for the app, and
+            one live region that exists before anything is announced into it. */}
+        <ConfirmProvider>
+          <FeedbackProvider>{children}</FeedbackProvider>
+        </ConfirmProvider>
       </body>
     </html>
   );

@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import type { BoardColumn, Project, Stage } from "../types";
+import { FilterLink } from "../filter-link";
 import { Board } from "./board";
 
-export const metadata: Metadata = { title: "Lead Board - Aura" };
+export const metadata: Metadata = { title: "Lead Board" };
 
 interface BoardResponse {
   columns: BoardColumn[];
@@ -65,54 +65,28 @@ export default async function BoardPage({
         <div>
           <MonoLabel>Project</MonoLabel>
           <nav aria-label="Filter by project" className="mt-1.5 flex flex-wrap gap-1.5">
-            <BoardFilterLink active={!projectId} href="/owner/board">
+            <FilterLink active={!projectId} href="/owner/board">
               All
-            </BoardFilterLink>
+            </FilterLink>
             {catalogue
               .filter((p) => p.active)
               .map((p) => (
-                <BoardFilterLink
+                <FilterLink
                   key={p.id}
                   active={projectId === p.id}
                   href={`/owner/board?projectId=${p.id}`}
                 >
                   {p.name}
-                </BoardFilterLink>
+                </FilterLink>
               ))}
-            <BoardFilterLink active={projectId === "none"} href="/owner/board?projectId=none">
+            <FilterLink active={projectId === "none"} href="/owner/board?projectId=none">
               Unlabelled
-            </BoardFilterLink>
+            </FilterLink>
           </nav>
         </div>
       ) : null}
 
       <Board columns={data.columns} stages={data.stages} projects={catalogue} />
     </>
-  );
-}
-
-/** Same "you are here" gradient the sidebar, page header and list filters use. */
-function BoardFilterLink({
-  active,
-  href,
-  children,
-}: {
-  active: boolean;
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "true" : undefined}
-      style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
-      className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
-        active
-          ? "border-transparent text-white"
-          : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
-      }`}
-    >
-      {children}
-    </Link>
   );
 }

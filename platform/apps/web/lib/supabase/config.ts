@@ -4,8 +4,13 @@
  * (RLS + the auth server enforce everything), unlike ADMIN_API_KEY in
  * lib/server-api.ts which stays server-side.
  *
- * Supabase is already this platform's Postgres host (see .env.production);
- * these two values come from the same project → Project Settings → API.
+ * Supabase is already this platform's Postgres host (see .env.production).
+ * Both values come from the SELF-HOSTED stack's .env.selfhost - the URL is
+ * SUPABASE_PUBLIC_URL, the key is ANON_KEY. See supabase/selfhost/README.md.
+ *
+ * They are inlined into the browser bundle at BUILD time (docker/web.Dockerfile
+ * declares them as build args), so changing either needs a rebuild of the web
+ * image, not a restart.
  */
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
 import type { McpConnection } from "./actions";
 import { MetaAdsConnect } from "./meta-ads-client";
 import { McpConnect } from "./mcp-connect";
 
-export const metadata: Metadata = { title: "Meta Lead Ads - Aura" };
+export const metadata: Metadata = { title: "Meta Lead Ads" };
 
 /**
  * Connect Meta (Facebook) Lead Ads so leads submitted through a Page's
@@ -17,6 +18,11 @@ export const metadata: Metadata = { title: "Meta Lead Ads - Aura" };
  * blocked on app review is not blocked on getting its leads in.
  */
 export default async function MetaAdsPage() {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("meta_ads");
+
   const data = await ownerGet<{ connections: McpConnection[] }>("/v1/mcp/connections");
   const meta = data?.connections.find((c) => c.provider === "meta") ?? null;
 

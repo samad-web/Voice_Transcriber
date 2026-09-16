@@ -926,9 +926,22 @@ function SlotPicker({ name }: { name: string }) {
 
   useEffect(() => {
     let live = true;
-    listOpenSlotsAction().then((r) => {
-      if (live) setSlots(r.slots);
-    });
+    listOpenSlotsAction()
+      .then((r) => {
+        if (live) setSlots(r.slots);
+      })
+      .catch((err: unknown) => {
+        // An empty list is the RIGHT outcome for the visitor - this component
+        // renders nothing without slots, so they fall back to "we'll be in
+        // touch", which is the honest default this file's header argues for.
+        //
+        // What was wrong was getting there by accident. An unhandled rejection
+        // left `slots` null with no record anywhere, so a server action failing
+        // in production was indistinguishable from a genuinely empty calendar.
+        // Same screen, completely different problem.
+        if (live) setSlots([]);
+        console.error("[funnel] could not load open slots", err);
+      });
     return () => {
       live = false;
     };
@@ -1061,7 +1074,18 @@ function SlotPicker({ name }: { name: string }) {
                         setError(res.error ?? "That time is no longer available.");
                         // Re-fetch: whatever went is gone, and showing it again
                         // invites a second failure on the same button.
-                        listOpenSlotsAction().then((r) => setSlots(r.slots));
+                        //
+                        // A failed re-fetch KEEPS the current list rather than
+                        // clearing it. They have just been told that one time
+                        // is taken; wiping every remaining button on top of
+                        // that turns a small correction into a dead end, and
+                        // the other times are probably still bookable.
+                        try {
+                          const refreshed = await listOpenSlotsAction();
+                          setSlots(refreshed.slots);
+                        } catch (err) {
+                          console.error("[funnel] could not refresh open slots", err);
+                        }
                       }
                     })
                   }

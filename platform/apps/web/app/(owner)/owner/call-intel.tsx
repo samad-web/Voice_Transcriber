@@ -165,6 +165,41 @@ export function TranscriptBody({
         </div>
       ) : null}
 
+      {/*
+        The two lists the operator drawer shows under the summary. They live
+        here, in the shared body, rather than in the call log's own drawer:
+        this component is also what renders a call on a LEAD, and "what was
+        agreed" is the half a manager reading a contact's history most needs.
+        Rendered independently of each other - a call can produce points worth
+        keeping without anyone committing to a next step, and an empty heading
+        reads as a failure rather than as silence.
+      */}
+      {intel?.key_points && intel.key_points.length > 0 ? (
+        <div className="space-y-1 border-t border-border pt-2">
+          <MonoLabel>Key points</MonoLabel>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {intel.key_points.map((point, i) => (
+              <li key={i} className="text-xs leading-relaxed text-text">
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {intel?.action_items && intel.action_items.length > 0 ? (
+        <div className="space-y-1 border-t border-border pt-2">
+          <MonoLabel>Action items</MonoLabel>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {intel.action_items.map((item, i) => (
+              <li key={i} className="text-xs leading-relaxed text-text">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {intel && (intel.customer_intent || intel.agent_intent) ? (
         <div className="space-y-1 border-t border-border pt-2">
           {(
@@ -208,12 +243,26 @@ export function TranscriptBody({
         ) : segments && segments.length > 0 ? (
           <div className="max-h-72 space-y-1.5 overflow-y-auto">
             {segments.map((seg, i) => (
-              <p key={i} className="text-xs leading-relaxed text-text">
-                {seg.speaker ? (
-                  <span className="mr-1.5 font-medium text-text-muted">{seg.speaker}:</span>
+              <div key={i}>
+                <p className="text-xs leading-relaxed text-text">
+                  {seg.speaker ? (
+                    <span className="mr-1.5 font-medium text-text-muted">{seg.speaker}:</span>
+                  ) : null}
+                  {seg.text}
+                </p>
+                {/*
+                  The analyzer labels each turn, and losing that on the client
+                  side threw away the most scannable thing in a long call - it
+                  is how you find the objection in an 80-turn conversation
+                  without reading all eighty. Absent on any turn whose intent
+                  chunk failed, which is normal rather than an error.
+                */}
+                {seg.intent ? (
+                  <span className="mt-0.5 block text-[10px] text-text-subtle">
+                    Intent: {seg.intent}
+                  </span>
                 ) : null}
-                {seg.text}
-              </p>
+              </div>
             ))}
           </div>
         ) : text ? (

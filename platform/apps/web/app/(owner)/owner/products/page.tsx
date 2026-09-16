@@ -3,10 +3,11 @@ import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
 import { ProductsClient } from "./products-client";
 import type { Product } from "./actions";
 
-export const metadata: Metadata = { title: "Products - Aura" };
+export const metadata: Metadata = { title: "Products" };
 
 const PAGE_SIZE = 50;
 
@@ -29,6 +30,11 @@ export default async function ProductsPage({
 }: {
   searchParams: Promise<{ q?: string; offset?: string }>;
 }) {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("products");
+
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
 

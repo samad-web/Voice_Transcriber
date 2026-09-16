@@ -85,6 +85,29 @@ export async function setTranscriptionEnabledAction(input: {
 }
 
 /**
+ * Turn WhatsApp lead qualification on or off for an instance (0080/0082).
+ *
+ * Rides the same org policy endpoint as transcription, and for the same reason:
+ * it is one more org-level setting, so reusing it means the change is audited
+ * like every other policy edit. It bumps no device config - handsets know
+ * nothing about this - so unlike transcription it revalidates only this page.
+ */
+export async function setWhatsAppQualificationAction(input: {
+  orgId: string;
+  enabled: boolean;
+}): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await patchOrgPolicy(input.orgId, { whatsappQualificationEnabled: input.enabled });
+  if (res.error) return res;
+  revalidatePath(`/instances/${input.orgId}`);
+  return {};
+}
+
+/**
  * Turn ONE module on or off for a tenant (org-modules.ts), leaving the rest of
  * its entitlement exactly as it was.
  *
@@ -247,6 +270,38 @@ export async function wipeDeviceAction(
     return { error: "Not authorized" };
   }
   return deviceAction(orgId, deviceId, "wipe");
+}
+
+/**
+ * Delete an unpaired device row outright - the tidying action neither logout
+ * nor wipe provides.
+ *
+ * The API refuses with 409 if the device has any call or lead history, so
+ * "unpaired" is decided there against the data rather than here against
+ * whatever the table happened to render. That matters because this console
+ * shows a fleet list that can be minutes stale: a handset that uploaded its
+ * first call while an operator was reading the page must not be removable
+ * because the page still says it has none.
+ *
+ * The API's message is passed through verbatim - it names the counts, which is
+ * exactly what the operator needs in order to understand the refusal.
+ */
+export async function removeDeviceAction(
+  orgId: string,
+  deviceId: string,
+): Promise<{ removed?: boolean; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await call<{ removed: boolean }>(`/v1/devices/${deviceId}`, {
+    method: "DELETE",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  return { removed: true };
 }
 
 /**

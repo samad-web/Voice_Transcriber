@@ -23,6 +23,7 @@
  * functions under test are the real ones.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ORG_FEATURES } from "@aura/shared";
 import type { Principal } from "./owner-context";
 
 // Hoisted by vitest above the imports. The factory re-runs after every
@@ -30,6 +31,13 @@ import type { Principal } from "./owner-context";
 // which is why `load()` returns it rather than closing over one.
 vi.mock("@/lib/supabase/server", () => ({
   getSessionUser: vi.fn(),
+}));
+
+// The tenant switcher's cookie. Its real body reads `next/headers` cookies,
+// which only exist inside a request; the default here is "no preference",
+// which is what every case written before the switcher expects.
+vi.mock("@/lib/active-org", () => ({
+  readActiveOrgPreference: vi.fn(async () => null),
 }));
 
 // ── fixtures (inventory 13 §5.0) ─────────────────────────────────────────────
@@ -133,6 +141,7 @@ describe("isOperator", () => {
     userId: DEV_USER_ID,
     kind: "operator",
     membership: null,
+    memberships: [],
     ...over,
   });
 
@@ -227,6 +236,13 @@ describe("isOperator", () => {
             recordingsExport: true,
             workspaceId: WORKSPACE_B,
             enabledModules: ["aura", "crm"],
+            enabledFeatures: [],
+            whatsappProvider: "none",
+            branding: {},
+            // Irrelevant to this assertion - it is about `kind`, not about
+            // onboarding - but the membership shape is exact, so a fixture
+            // that omits a field stops compiling when one is added.
+            setupCompletedAt: null,
           },
         }),
       ),
@@ -283,11 +299,13 @@ describe("getPrincipal", () => {
     });
 
     const principal = await getPrincipal();
+    expect(principal?.memberships).toEqual([principal?.membership]);
     expect(principal).toEqual({
       email: "",
       subject: "",
       userId: null,
       kind: "operator",
+      memberships: expect.any(Array),
       membership: {
         orgId: DEV_ORG_ID,
         orgName: "",
@@ -298,6 +316,22 @@ describe("getPrincipal", () => {
         recordingsExport: true,
         workspaceId: DEV_WORKSPACE_ID,
         enabledModules: ["aura", "crm"],
+        // Every feature, including the opt-in ones (migration 0093). Local dev
+        // exists so the console is usable without a Supabase project, and a
+        // developer who cannot reach a page because of a flag they never set
+        // would be debugging the wrong thing. Read off the catalogue rather
+        // than pinned, so adding a feature does not fail this test for a
+        // reason that has nothing to do with what it checks.
+        enabledFeatures: ORG_FEATURES.map((f) => f.id),
+        whatsappProvider: "wasi",
+        // Local dev is unbranded on purpose - the console renders in the stock
+        // palette, which is what you want when checking a change against the
+        // design system.
+        branding: {},
+        // Epoch, not null: local dev is not an onboarding tenant, and a
+        // developer opening any page to check an unrelated change should not
+        // be met by the setup modal (migration 0095).
+        setupCompletedAt: "1970-01-01T00:00:00.000Z",
       },
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -448,6 +482,60 @@ describe("getPrincipal", () => {
     expect(principal?.kind).toBe("owner");
   });
 
+  // ── the header's tenant switcher (lib/active-org.ts) ───────────────────────
+  //
+  // The cookie is a preference over the session's OWN memberships and nothing
+  // more. The third case is the security property: a cookie naming a tenant
+  // this session does not belong to must change nothing at all.
+  async function loadWithPreference(preferred: string | null) {
+    const loaded = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    const activeOrg = await import("@/lib/active-org");
+    vi.mocked(activeOrg.readActiveOrgPreference).mockResolvedValue(preferred);
+    return loaded;
+  }
+
+  it("honours the switcher's choice when it names one of the session's memberships", async () => {
+    const { getPrincipal, fetchMock } = await loadWithPreference(ORG_B);
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ orgId: DEV_ORG_ID }), rawMembership({ orgId: ORG_B })],
+      user: { id: USER_B },
+    });
+
+    const principal = await getPrincipal();
+    expect(principal?.membership?.orgId).toBe(ORG_B);
+    expect(principal?.memberships.map((m) => m.orgId)).toEqual([DEV_ORG_ID, ORG_B]);
+  });
+
+  it("ignores a choice pointing at a suspended membership", async () => {
+    const { getPrincipal, fetchMock } = await loadWithPreference(ORG_B);
+    contextOk(fetchMock, {
+      memberships: [
+        rawMembership({ orgId: DEV_ORG_ID }),
+        rawMembership({ orgId: ORG_B, orgStatus: "suspended" }),
+      ],
+      user: { id: USER_B },
+    });
+
+    expect((await getPrincipal())?.membership?.orgId).toBe(DEV_ORG_ID);
+  });
+
+  it("ignores a choice naming a tenant the session does NOT belong to", async () => {
+    const STRANGER_ORG = "00000000-0000-4000-8000-0000000000c1";
+    const { getPrincipal, fetchMock } = await loadWithPreference(STRANGER_ORG);
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ orgId: DEV_ORG_ID }), rawMembership({ orgId: ORG_B })],
+      user: { id: USER_B },
+    });
+
+    const principal = await getPrincipal();
+    expect(principal?.membership?.orgId).toBe(DEV_ORG_ID);
+    expect(principal?.memberships.map((m) => m.orgId)).not.toContain(STRANGER_ORG);
+  });
+
   it("carries each legal persona through unchanged", async () => {
     for (const persona of ["owner", "manager", "telecaller"] as const) {
       const { getPrincipal, fetchMock } = await load({
@@ -496,6 +584,7 @@ describe("getPrincipal", () => {
         userId: null,
         kind: "operator",
         membership: null,
+        memberships: [],
       });
       // THE property: an unbound session is not an operator.
       expect(isOperator(principal)).toBe(false);
@@ -578,5 +667,84 @@ describe("getOwner", () => {
       session: null,
     });
     await expect(getOwner()).resolves.toBeNull();
+  });
+});
+
+/**
+ * Branding (migration 0065) rides the session lookup.
+ *
+ * The owner console applies branding in its LAYOUT, so this is read on every
+ * page. These pin the property that makes that affordable: it arrives on the
+ * org row `contextFor` already reads, and resolving it costs NO second request.
+ * A regression here is not a wrong colour, it is ~125ms added to every
+ * navigation in the product (see AuthService.contextFor's own note on the
+ * Mumbai/Seoul split).
+ */
+describe("getOwnerBranding", () => {
+  it("comes off the context response without a further request", async () => {
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ branding: { primaryColor: "#84cc16", browserTitle: "Acme" } })],
+      user: { id: USER_B },
+    });
+
+    await expect(getOwnerBranding()).resolves.toEqual({
+      primaryColor: "#84cc16",
+      browserTitle: "Acme",
+    });
+    // One call - the session lookup. Not two.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a stored value the schema no longer accepts", async () => {
+    // `loginBackgroundUrl` was retired: every tenant signs in at the same URL,
+    // so it could never be applied. Tenants who set it still have the key.
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    contextOk(fetchMock, {
+      memberships: [
+        rawMembership({
+          branding: { logoUrl: "https://cdn.example.com/l.png", loginBackgroundUrl: "https://x/y" },
+        }),
+      ],
+      user: { id: USER_B },
+    });
+
+    await expect(getOwnerBranding()).resolves.toEqual({
+      logoUrl: "https://cdn.example.com/l.png",
+    });
+  });
+
+  it("degrades a malformed blob to unbranded rather than throwing", async () => {
+    // A bad colour must cost a tenant their branding, not their console.
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ branding: { primaryColor: "puce" } })],
+      user: { id: USER_B },
+    });
+
+    await expect(getOwnerBranding()).resolves.toEqual({});
+  });
+
+  it("is empty for a session with no membership to brand", async () => {
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: "stranger@example.com" },
+    });
+    contextOk(fetchMock, { memberships: [], user: { id: USER_B } });
+
+    await expect(getOwnerBranding()).resolves.toEqual({});
   });
 });

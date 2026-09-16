@@ -3,7 +3,17 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, Unlock } from "lucide-react";
-import { Button, Card, FormField, Input, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { setAppLockPasswordAction } from "./actions";
 
 /**
@@ -15,27 +25,33 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
 
   const save = () => {
     if (password.trim().length < 4) {
-      setError("Password must be at least 4 characters.");
+      void alert({
+        title: "That password is too short",
+        body: "Use at least 4 characters.",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
-    setNote(null);
     startTransition(async () => {
       const res = await setAppLockPasswordAction({ orgId, password: password.trim() });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: enabled ? "Couldn't change the password" : "Couldn't turn on the app lock",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       setPassword("");
       setEditing(false);
-      setNote(enabled ? "Password changed." : "App lock turned on.");
+      toast(enabled ? "Password changed." : "App lock turned on.");
       router.refresh();
     });
   };
@@ -46,17 +62,23 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
       body: "Every enrolled handset will open straight to the recordings list again, with no password.",
       confirmLabel: "Turn off lock",
       tone: "danger",
+      // A reversible switch - setting a password again restores it - so no
+      // type-DELETE gate. See ConfirmOptions.requireTyped for where the line
+      // is drawn.
+      requireTyped: false,
     });
     if (!ok) return;
-    setError(null);
-    setNote(null);
     startTransition(async () => {
       const res = await setAppLockPasswordAction({ orgId, password: null });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: "Couldn't turn off the app lock",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
-      setNote("App lock turned off.");
+      toast("App lock turned off.");
       router.refresh();
     });
   };
@@ -105,7 +127,6 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
               onClick={() => {
                 setEditing(false);
                 setPassword("");
-                setError(null);
               }}
             >
               Cancel
@@ -119,27 +140,18 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
             {enabled ? "Change password" : "Set password"}
           </Button>
           {enabled ? (
-            <Button type="button" variant="secondary" disabled={pending} onClick={clear}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => void clear()}
+            >
               <Unlock className="h-4 w-4" />
               Turn off
             </Button>
           ) : null}
         </div>
       )}
-
-      {note ? (
-        <p role="status" className="rounded-md border border-border bg-bg-subtle p-3 text-sm text-text">
-          {note}
-        </p>
-      ) : null}
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
     </Card>
   );
 }

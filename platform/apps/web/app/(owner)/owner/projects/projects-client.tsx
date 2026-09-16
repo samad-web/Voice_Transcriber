@@ -13,6 +13,7 @@ import {
   MonoLabel,
   Select,
   StatusChip,
+  useAlert,
 } from "@aura/ui";
 import { ProjectChip, PROJECT_COLORS } from "../project-chip";
 import { formatValue } from "../types";
@@ -34,13 +35,12 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
   const [projects, setProjects] = useState(initial);
   const [editing, setEditing] = useState<Project | "new" | null>(null);
   const [draft, setDraft] = useState(BLANK);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   useEffect(() => setProjects(initial), [initial]);
 
   const open = (project: Project | "new") => {
-    setError(null);
     setEditing(project);
     setDraft(
       project === "new"
@@ -59,7 +59,11 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
   const save = () => {
     const name = draft.name.trim();
     if (!name) {
-      setError("A project needs a name");
+      void alert({
+        title: "Couldn't save the project",
+        body: "A project needs a name",
+        tone: "danger",
+      });
       return;
     }
     const payload = {
@@ -69,7 +73,6 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
       aliases: draft.aliases.map((a) => a.trim()).filter(Boolean),
     };
 
-    setError(null);
     startTransition(async () => {
       const result =
         editing === "new"
@@ -77,7 +80,11 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
           : await updateProjectAction((editing as Project).id, payload);
 
       if (result.error || !result.project) {
-        setError(result.error ?? "Save failed");
+        await alert({
+          title: "Couldn't save the project",
+          body: result.error ?? "Save failed",
+          tone: "danger",
+        });
         return;
       }
       const saved = result.project;
@@ -103,11 +110,16 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
   };
 
   const toggleActive = (project: Project) => {
-    setError(null);
     startTransition(async () => {
       const result = await updateProjectAction(project.id, { active: !project.active });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: project.active
+            ? "Couldn't archive the project"
+            : "Couldn't restore the project",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setProjects((prev) =>
@@ -136,15 +148,6 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
           New project
         </Button>
       </div>
-
-      {error && !editing ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
 
       {projects.length === 0 ? (
         <EmptyState
@@ -305,15 +308,6 @@ export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
               </div>
             ))}
           </div>
-
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-            >
-              {error}
-            </p>
-          ) : null}
         </div>
       </Dialog>
     </>

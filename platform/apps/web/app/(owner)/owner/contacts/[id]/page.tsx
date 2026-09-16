@@ -1,23 +1,39 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BreadcrumbLeaf } from "@/components/breadcrumbs";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { activitySourceFor } from "@/lib/crm-activity";
+import { getOwner, ownerGet } from "@/lib/owner-context";
+import { ContactActivity } from "../../contact-activity";
+import { ContactDetails } from "../../contact-details";
 import { CustomFieldEditor } from "../../custom-field-editor";
 import { EmailComposer } from "../../email-composer";
-import { InteractionTimeline } from "../../interaction-timeline";
+import { dealHref, LinkedRecords } from "../../linked-records";
+import { SourceChannelTag } from "../../source-channel-tag";
 import { TaskList } from "../../task-list";
-import { formatValue, relativeTime, type Contact, type Deal } from "../../types";
+import { formatValue, type Contact, type Deal } from "../../types";
 
-export const metadata: Metadata = { title: "Contact - Aura" };
+export const metadata: Metadata = { title: "Contact" };
 
 /**
- * One contact, with the unified timeline (Track A2) as the centrepiece.
+ * One person, everything about them, one scrolling page (the 360° record).
  *
  * A page rather than a drawer, unlike deals: a contact is a thing you link
  * someone to ("see Priya's history"), and the deal board's drawer pattern
- * exists because a card must stay in its column behind it. Nothing about a
- * contact list needs that.
+ * exists because a card must stay in its column behind it.
+ *
+ * ── WHAT IS ON IT, AND WHY NOTHING IS BEHIND A TAB ──────────────────────────
+ *
+ * Who they are (edited in place), where they came from, what has happened
+ * with them across every channel, what is owed next, and what they are buying.
+ * Tabs would make "did anyone reply to her WhatsApp before we called?" a
+ * question you answer by clicking between panels; one feed answers it by
+ * reading down. The feed's filters narrow that same list in place.
+ *
+ * The activity feed is rendered on the server with the page, from the same
+ * composed source the client refreshes from (lib/crm-activity.ts), so the core
+ * of the record never arrives as a loading placeholder.
  */
 export default async function ContactDetailPage({
   params,
@@ -26,21 +42,21 @@ export default async function ContactDetailPage({
 }) {
   const { id } = await params;
 
-  // Two round-trips rather than one: `GET /contacts/:id` and `GET
-  // /contacts/:id/deals` are separately permission-gated (contact:view vs
+  // Separate round trips on purpose: `GET /contacts/:id` and
+  // `GET /contacts/:id/deals` are separately permission-gated (contact:view vs
   // deal:view), so a role that may see people but not pipeline still gets a
   // working page instead of a blanket 403.
-  const [detail, dealsResponse] = await Promise.all([
+  const [detail, dealsResponse, owner] = await Promise.all([
     ownerGet<{ contact: Contact }>(`/v1/contacts/${id}`),
     ownerGet<{ deals: Deal[] }>(`/v1/contacts/${id}/deals`),
+    getOwner(),
   ]);
 
   // ownerGet collapses every failure - network error, 404, 500 - to `null`
   // with no way to tell them apart (see api-result.ts's `unwrap`), so this
-  // mirrors every list page in this area (leads, contacts, deals, accounts,
-  // board, duplicates) rather than reaching for `notFound()`, which would
-  // misreport a transient API outage as "this contact does not exist".
-  if (!detail) {
+  // mirrors every list page in this area rather than reaching for `notFound()`,
+  // which would misreport a transient API outage as "this contact does not exist".
+  if (!detail || !owner) {
     return (
       <>
         <PageHeader title="Contact" context="Contact" />
@@ -56,22 +72,55 @@ export default async function ContactDetailPage({
   const { contact } = detail;
   const deals = dealsResponse?.deals ?? [];
 
-  const phone = contact.phone_prefix
-    ? `${contact.phone_prefix}…`
-    : contact.phone_last3
-      ? `…${contact.phone_last3}`
-      : null;
+  const [activity, lead] = await Promise.all([
+    activitySourceFor(owner.membership).forContact(
+      { id: contact.id, displayName: contact.display_name },
+      owner,
+    ),
+    // The lead this person arrived as, for the source's NAME and campaign -
+    // the contact row carries only the channel. Lead reads are persona-scoped,
+    // so a refusal just means the tag shows the channel alone.
+    contact.source_lead_id
+      ? ownerGet<{
+          lead: { source_channel: string | null; source_name: string | null; campaign_name: string | null };
+        }>(`/v1/leads/${contact.source_lead_id}`)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <>
+      <BreadcrumbLeaf label={contact.display_name} />
       <PageHeader title={contact.display_name} context="Contact" />
 
-      <Link href="/owner/contacts" className="text-xs text-text-muted hover:text-text">
-        ← All contacts
-      </Link>
+      <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <SourceChannelTag
+          channel={contact.source_channel ?? lead?.lead.source_channel}
+          sourceName={lead?.lead.source_name}
+          campaignName={lead?.lead.campaign_name}
+        />
+        {contact.source_lead_id ? (
+          // The lead this person was first created from, opened on the Lead
+          // Board (doc 23, H2).
+          <Link
+            href={`/owner/board?focus=${contact.source_lead_id}`}
+            className="text-xs font-medium text-accent-text hover:underline"
+          >
+            Open the original lead
+          </Link>
+        ) : null}
+        <Link href="/owner/contacts" className="ml-auto text-xs text-text-muted hover:text-text">
+          ← All contacts
+        </Link>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
+          <Card>
+            <ContactActivity contactId={contact.id} contactName={contact.display_name} initial={activity} />
+          </Card>
+          <Card>
+            <TaskList contactId={contact.id} title="Follow-ups" />
+          </Card>
           <Card>
             <EmailComposer
               contactId={contact.id}
@@ -79,45 +128,11 @@ export default async function ContactDetailPage({
               contactName={contact.display_name}
             />
           </Card>
-          <Card>
-            <TaskList contactId={contact.id} title="Follow-ups" />
-          </Card>
-          <Card>
-            <InteractionTimeline parent="contacts" parentId={contact.id} title="Timeline" />
-          </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <Card>
-            <MonoLabel>Details</MonoLabel>
-            <dl className="mt-3 space-y-2.5 text-xs">
-              <div>
-                <dt className="text-text-muted">Email</dt>
-                <dd className="mt-0.5 font-medium break-words text-text">{contact.email ?? "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-text-muted">Phone</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">{phone ?? "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-text-muted">Title</dt>
-                <dd className="mt-0.5 font-medium break-words text-text">{contact.title ?? "-"}</dd>
-              </div>
-              <div>
-                <dt className="text-text-muted">Calls</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">{contact.call_count}</dd>
-              </div>
-              <div>
-                <dt className="text-text-muted">Last activity</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">
-                  {relativeTime(contact.last_activity_at)}
-                </dd>
-              </div>
-            </dl>
-          </Card>
-
-          <Card>
-            <CustomFieldEditor parent="contacts" parentId={contact.id} />
+            <ContactDetails contact={contact} />
           </Card>
 
           <Card>
@@ -132,22 +147,32 @@ export default async function ContactDetailPage({
             ) : (
               <ul className="mt-3 divide-y divide-border rounded-md border border-border">
                 {deals.map((deal) => (
-                  <li key={deal.id} className="px-3 py-2">
-                    <span className="block truncate text-xs font-medium text-text">
-                      {deal.name}
-                    </span>
-                    <span className="mt-0.5 flex items-center gap-2">
-                      <StatusChip tone={deal.status === "won" ? "solid" : "muted"}>
-                        {deal.stage}
-                      </StatusChip>
-                      <span className="text-xs text-text-muted tabular-nums">
-                        {formatValue(deal.amount)}
+                  <li key={deal.id}>
+                    {/* The deal opens in its own pipeline's board with its
+                        drawer open (doc 23, H2). */}
+                    <Link href={dealHref(deal)} className="block px-3 py-2 hover:bg-surface-hover">
+                      <span className="block truncate text-xs font-medium text-text">
+                        {deal.name}
                       </span>
-                    </span>
+                      <span className="mt-0.5 flex items-center gap-2">
+                        <StatusChip tone={deal.status === "won" ? "solid" : "muted"}>
+                          {deal.stage}
+                        </StatusChip>
+                        <span className="text-xs text-text-muted tabular-nums">
+                          {formatValue(deal.amount)}
+                        </span>
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>
             )}
+          </Card>
+
+          <LinkedRecords parent={{ contactId: contact.id }} showConversations />
+
+          <Card>
+            <CustomFieldEditor parent="contacts" parentId={contact.id} />
           </Card>
         </div>
       </div>

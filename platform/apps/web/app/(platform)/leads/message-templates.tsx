@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { BrutalButton, Card, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, StatusChip, useAlert, useToast } from "@aura/ui";
 import {
   PLACEHOLDER_HELP,
   fillTemplate,
@@ -180,10 +180,10 @@ function VariantEditor({
     updatedAt: variant.updatedAt,
     updatedBy: variant.updatedBy,
   });
-  const [saved, setSaved] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const alert = useAlert();
+  const toast = useToast();
 
   const dirty =
     body !== stored.body || enabled !== stored.enabled || (isEmail && subject !== stored.subject);
@@ -249,11 +249,7 @@ function VariantEditor({
           <span className="text-xs font-medium text-text-muted">Subject</span>
           <input
             value={subject}
-            onChange={(e) => {
-              setSubject(e.target.value);
-              setSaved(null);
-              setError(null);
-            }}
+            onChange={(e) => setSubject(e.target.value)}
             className={
               "mt-1 w-full rounded-sm border bg-surface px-3 py-2 text-sm text-text " +
               "transition-colors duration-150 ease-out " +
@@ -268,11 +264,7 @@ function VariantEditor({
       <textarea
         ref={textarea}
         value={body}
-        onChange={(e) => {
-          setBody(e.target.value);
-          setSaved(null);
-          setError(null);
-        }}
+        onChange={(e) => setBody(e.target.value)}
         rows={isEmail ? 12 : 4}
         maxLength={variant.maxLength}
         className={
@@ -320,21 +312,11 @@ function VariantEditor({
         </p>
       </div>
 
-      {error ? (
-        <p
-          role="alert"
-          className="mt-3 rounded-md border border-danger/30 bg-danger/5 p-2.5 text-xs text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <BrutalButton
           disabled={pending || !dirty || Boolean(invalid)}
           onClick={() =>
             start(async () => {
-              setError(null);
               const res = await saveMessageTemplateAction({
                 key: templateKey,
                 channel: variant.channel,
@@ -342,22 +324,27 @@ function VariantEditor({
                 body,
                 enabled,
               });
-              if (res.error) setError(res.error);
-              else {
-                // "Live within a minute", not "sent": the worker caches
-                // templates for 60 seconds, so a message queued in the next few
-                // moments may still go out in the old wording. Saying so is
-                // cheaper than explaining it after the fact.
-                setSaved("Saved - live within a minute.");
-                setStored({
-                  subject,
-                  body,
-                  enabled,
-                  customised: body !== variant.defaultBody,
-                  updatedAt: new Date().toISOString(),
-                  updatedBy: null,
+              if (res.error) {
+                await alert({
+                  title: "Couldn't save the message",
+                  body: res.error,
+                  tone: "danger",
                 });
+                return;
               }
+              // "Live within a minute", not "sent": the worker caches
+              // templates for 60 seconds, so a message queued in the next few
+              // moments may still go out in the old wording. Saying so is
+              // cheaper than explaining it after the fact.
+              toast("Saved - live within a minute.");
+              setStored({
+                subject,
+                body,
+                enabled,
+                customised: body !== variant.defaultBody,
+                updatedAt: new Date().toISOString(),
+                updatedBy: null,
+              });
             })
           }
         >
@@ -370,26 +357,30 @@ function VariantEditor({
             disabled={pending}
             onClick={() =>
               start(async () => {
-                setError(null);
                 const res = await resetMessageTemplateAction({
                   key: templateKey,
                   channel: variant.channel,
                 });
-                if (res.error) setError(res.error);
-                else {
-                  setSubject(variant.defaultSubject ?? "");
-                  setBody(variant.defaultBody);
-                  setEnabled(true);
-                  setStored({
-                    subject: variant.defaultSubject ?? "",
-                    body: variant.defaultBody,
-                    enabled: true,
-                    customised: false,
-                    updatedAt: null,
-                    updatedBy: null,
+                if (res.error) {
+                  await alert({
+                    title: "Couldn't restore the original wording",
+                    body: res.error,
+                    tone: "danger",
                   });
-                  setSaved("Back to the original wording.");
+                  return;
                 }
+                setSubject(variant.defaultSubject ?? "");
+                setBody(variant.defaultBody);
+                setEnabled(true);
+                setStored({
+                  subject: variant.defaultSubject ?? "",
+                  body: variant.defaultBody,
+                  enabled: true,
+                  customised: false,
+                  updatedAt: null,
+                  updatedBy: null,
+                });
+                toast("Back to the original wording.");
               })
             }
             className="h-10 rounded-md border border-border px-3 text-sm font-medium text-text-muted hover:bg-surface-hover hover:text-text"
@@ -398,18 +389,14 @@ function VariantEditor({
           </button>
         ) : null}
 
-        {saved ? <span className="text-xs font-medium text-text">{saved}</span> : null}
-
-        {!saved && stored.updatedAt ? (
+        {stored.updatedAt ? (
           <span className="text-xs text-text-muted">
             Edited {new Date(stored.updatedAt).toLocaleDateString()}
             {stored.updatedBy ? ` by ${stored.updatedBy}` : ""}
           </span>
-        ) : null}
-
-        {!saved && !stored.updatedAt ? (
+        ) : (
           <span className="text-xs text-text-muted">Using the original wording.</span>
-        ) : null}
+        )}
       </div>
     </>
   );

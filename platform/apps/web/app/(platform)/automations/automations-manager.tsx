@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Card, FormField, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  Button,
+  Card,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+} from "@aura/ui";
 import {
   createAutomationAction,
   deleteAutomationAction,
@@ -78,17 +87,20 @@ export function AutomationsManager({
   runs: AutomationRun[];
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const isSweep = sweepTriggers.includes(draft.trigger);
 
   const submit = () => {
     if (!draft.name.trim() || !draft.actionText.trim()) {
-      setError("A name and something for the rule to do, please");
+      void alert({
+        title: "The rule needs a name and an action",
+        body: "Give it a name, and say what it should do when the trigger fires.",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
 
     const conditions: Record<string, unknown> = {};
     if (draft.trigger === "deal.stage_changed" && draft.toStage.trim()) {
@@ -117,7 +129,11 @@ export function AutomationsManager({
         actions: [action],
       });
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't create the rule",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setDraft(EMPTY);
@@ -125,19 +141,32 @@ export function AutomationsManager({
   };
 
   const toggle = (rule: AutomationRule) => {
+    const paused = rule.status === "active";
     startTransition(async () => {
       const result = await updateAutomationAction(rule.id, {
         orgId,
-        status: rule.status === "active" ? "paused" : "active",
+        status: paused ? "paused" : "active",
       });
-      if (result.error) setError(result.error);
+      if (result.error) {
+        await alert({
+          title: paused ? "Couldn't pause the rule" : "Couldn't resume the rule",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
   const remove = (rule: AutomationRule) => {
     startTransition(async () => {
       const result = await deleteAutomationAction(rule.id, orgId);
-      if (result.error) setError(result.error);
+      if (result.error) {
+        await alert({
+          title: "Couldn't delete the rule",
+          body: result.error,
+          tone: "danger",
+        });
+      }
     });
   };
 
@@ -238,15 +267,6 @@ export function AutomationsManager({
         <p className="mt-3 text-xs text-text-muted">
           Rules cannot send email. Everything they do stays inside the console and can be undone.
         </p>
-
-        {error ? (
-          <p
-            role="alert"
-            className="mt-3 rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-          >
-            {error}
-          </p>
-        ) : null}
 
         <div className="mt-3">
           <Button type="button" onClick={submit} loading={pending}>

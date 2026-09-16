@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
-import { Button, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, FormField, Input, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { fetchLeadAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
 import { ProjectChip } from "./project-chip";
@@ -55,17 +55,15 @@ export function LeadDrawer({
 }) {
   const [calls, setCalls] = useState<LeadCall[] | null>(null);
   const [draft, setDraft] = useState({ nextAction: "", notes: "", value: "" });
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   const leadId = lead?.id ?? null;
 
   useEffect(() => {
     if (!lead) return;
     setCalls(null);
-    setError(null);
-    setSaved(false);
     setDraft({
       nextAction: lead.next_action ?? "",
       notes: lead.notes ?? "",
@@ -100,15 +98,13 @@ export function LeadDrawer({
   if (!lead) return null;
 
   const apply = (update: Parameters<typeof updateLeadAction>[1]) => {
-    setError(null);
-    setSaved(false);
     startTransition(async () => {
       const result = await updateLeadAction(lead.id, update);
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't save the lead", body: result.error, tone: "danger" });
         return;
       }
-      setSaved(true);
+      toast("Saved");
       onChanged?.(lead.id, result.lead ?? {});
     });
   };
@@ -116,7 +112,11 @@ export function LeadDrawer({
   const saveDetails = () => {
     const parsedValue = draft.value.trim() === "" ? null : Number(draft.value);
     if (parsedValue !== null && !Number.isFinite(parsedValue)) {
-      setError("Value must be a number");
+      void alert({
+        title: "Enter a valid deal value",
+        body: "The value has to be a number - leave it empty if there isn't one yet.",
+        tone: "danger",
+      });
       return;
     }
     apply({
@@ -134,15 +134,13 @@ export function LeadDrawer({
    */
   const setProject = (projectId: string | null) => {
     const picked = projects.find((p) => p.id === projectId) ?? null;
-    setError(null);
-    setSaved(false);
     startTransition(async () => {
       const result = await updateLeadAction(lead.id, { projectId });
       if (result.error) {
-        setError(result.error);
+        await alert({ title: "Couldn't set the project", body: result.error, tone: "danger" });
         return;
       }
-      setSaved(true);
+      toast("Saved");
       onChanged?.(lead.id, {
         ...(result.lead ?? {}),
         project_id: picked?.id ?? null,
@@ -323,26 +321,9 @@ export function LeadDrawer({
                 className={TEXTAREA_CLASS}
               />
             </FormField>
-            <div className="flex items-center gap-3">
-              <Button type="button" onClick={saveDetails} loading={pending}>
-                Save
-              </Button>
-              {saved && !pending ? (
-                // role=status, not a silent span: the only confirmation that a
-                // save landed is this word appearing.
-                <span role="status" className="text-xs text-text-muted">
-                  Saved
-                </span>
-              ) : null}
-            </div>
-            {error ? (
-              <p
-                role="alert"
-                className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-              >
-                {error}
-              </p>
-            ) : null}
+            <Button type="button" onClick={saveDetails} loading={pending}>
+              Save
+            </Button>
           </div>
 
           <div className="space-y-2">

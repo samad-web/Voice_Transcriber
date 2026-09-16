@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Handshake } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import { Button, Card, MonoLabel, RowHint, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { SignInLink } from "../sign-in-link";
 import { setModuleEnabledAction } from "./actions";
 import type { OwnerRow } from "./owner-accounts";
@@ -34,9 +34,10 @@ export function CrmModuleToggle({
   modules: string[];
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const hintId = useId();
   const confirm = useConfirm();
+  const alert = useAlert();
 
   const toggle = async (next: boolean) => {
     if (!next) {
@@ -47,10 +48,12 @@ export function CrmModuleToggle({
           "team just loses access to them until you switch this back on.",
         confirmLabel: "Turn off CRM",
         tone: "danger",
+        // Nothing is deleted - the body above says so explicitly - and the
+        // switch goes back on. No gate.
+        requireTyped: false,
       });
       if (!ok) return;
     }
-    setError(null);
     startTransition(async () => {
       const res = await setModuleEnabledAction({
         orgId,
@@ -59,7 +62,11 @@ export function CrmModuleToggle({
         current: modules,
       });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: next ? "Couldn't turn on the CRM" : "Couldn't turn off the CRM",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       router.refresh();
@@ -76,27 +83,24 @@ export function CrmModuleToggle({
         <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
       </div>
 
-      <p className="text-xs text-neutral-500 font-sans font-medium leading-relaxed">
+      <RowHint kind="toggle" id={`${hintId}-state`}>
         {enabled
-          ? "This client's team has Contacts, Accounts, Deals, Tasks and the rest of the CRM."
-          : "Not part of this client's plan yet. Calls are still recorded and transcribed as usual."}
-      </p>
+          ? "On: this client's team has Contacts, Accounts, Deals, Tasks and the rest of the CRM."
+          : "Off: not part of this client's plan yet. Calls are still recorded and transcribed as usual, and any CRM records already stored stay stored."}
+      </RowHint>
 
       {enabled ? <SignInDetails instanceName={instanceName} owners={owners} /> : null}
 
-      <BrutalButton
+      <Button
+        type="button"
         variant={enabled ? "secondary" : "primary"}
         disabled={pending}
+        loading={pending}
+        aria-describedby={`${hintId}-state`}
         onClick={() => void toggle(!enabled)}
       >
-        {pending ? "SAVING…" : enabled ? "DISABLE CRM" : "ENABLE CRM"}
-      </BrutalButton>
-
-      {error ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-          {error}
-        </p>
-      ) : null}
+        {enabled ? "Disable CRM" : "Enable CRM"}
+      </Button>
     </Card>
   );
 }
@@ -119,7 +123,7 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
   const canSignIn = owners.filter((o) => o.hasLogin && o.status === "active");
 
   return (
-    <div className="border-2 border-black bg-white p-3.5 space-y-2.5">
+    <div className="space-y-2.5 rounded-md border border-border-strong bg-bg-subtle p-3.5">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <MonoLabel>Where {instanceName} signs in</MonoLabel>
         <StatusChip tone={canSignIn.length > 0 ? "solid" : "danger"}>
@@ -131,26 +135,30 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
 
       {canSignIn.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-[10px] font-mono uppercase tracking-wide text-neutral-500">
-            Accounts that can sign in
-          </p>
+          <MonoLabel>Accounts that can sign in</MonoLabel>
           <ul className="space-y-0.5">
             {canSignIn.map((o) => (
-              <li key={o.userId} className="font-mono text-[11px] text-neutral-700 break-all">
+              <li key={o.userId} className="font-mono text-xs break-all text-text">
                 {o.email}
               </li>
             ))}
           </ul>
         </div>
       ) : (
-        <p className="text-xs text-red-700 font-sans font-medium border-2 border-red-600 bg-red-50 p-2.5 leading-relaxed">
-          Nobody can sign in yet. Create one in <strong>Owner accounts</strong> above - that makes
-          the login and grants access to this instance in a single step, and shows a temporary
-          password once.
-        </p>
+        // Was a red-bordered, red-filled panel. Red means MISSED now, and this
+        // is neither a missed call nor - strictly - an error: it is a setup step
+        // nobody has done yet. Neutral chrome plus a hint that says what to do
+        // carries it, and leaves the palette for the four things that need it.
+        <div className="rounded-md border border-border-strong bg-surface p-2.5">
+          <RowHint kind="action">
+            Nobody can sign in yet. Create an account in <strong>Owner accounts</strong> above -
+            that makes the login and grants access to this instance in a single step, and shows a
+            temporary password once.
+          </RowHint>
+        </div>
       )}
 
-      <p className="text-[10px] font-mono text-neutral-500 leading-relaxed">
+      <p className="text-xs leading-relaxed text-text-muted">
         They sign in with their email and password and land straight on this instance. The
         instance is resolved from the sign-in itself, so there is nothing for them to pick and no
         address that reaches another client&rsquo;s data.

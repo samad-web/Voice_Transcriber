@@ -2,7 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { CheckCircle2, Plug, TriangleAlert } from "lucide-react";
-import { Button, Card, FormField, Input, MonoLabel, StatusChip, useConfirm } from "@aura/ui";
+import {
+  Button,
+  Card,
+  ErrorBanner,
+  FormField,
+  Input,
+  MonoLabel,
+  STATE_TONE,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import {
   connectMetaMcpAction,
   disconnectMcpAction,
@@ -24,45 +36,54 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
   const [capabilities, setCapabilities] = useState<McpCapabilities | null>(null);
   const [serverUrl, setServerUrl] = useState(initial?.server_url ?? "");
   const [token, setToken] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
 
   const connect = () => {
     const url = serverUrl.trim();
     if (!url) {
-      setError("Enter the MCP server URL");
+      void alert({
+        title: "Couldn't connect the MCP server",
+        body: "Enter the MCP server URL first.",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
-    setNotice(null);
     startTransition(async () => {
       const result = await connectMetaMcpAction({
         serverUrl: url,
         accessToken: token.trim() || null,
       });
       if (result.error || !result.connection) {
-        setError(result.error ?? "Could not connect");
+        await alert({
+          title: "Couldn't connect the MCP server",
+          body: result.error ?? "Could not connect",
+          tone: "danger",
+        });
         return;
       }
       setConnection(result.connection);
       setCapabilities(result.capabilities ?? null);
       setToken("");
-      setNotice("Connected.");
+      toast("Connected");
     });
   };
 
   const test = () => {
     if (!connection) return;
-    setError(null);
-    setNotice(null);
     startTransition(async () => {
       const result = await testMcpConnectionAction(connection.id);
       if (result.connection) setConnection(result.connection);
       setCapabilities(result.capabilities ?? null);
-      if (result.ok) setNotice("The server answered and the handshake succeeded.");
-      else setError(result.error ?? "The server did not answer");
+      if (result.ok) toast("The server answered and the handshake succeeded");
+      else
+        await alert({
+          title: "Couldn't reach the MCP server",
+          body: result.error ?? "The server did not answer",
+          tone: "danger",
+        });
     });
   };
 
@@ -75,17 +96,20 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
       tone: "danger",
     });
     if (!ok) return;
-    setError(null);
     startTransition(async () => {
       const result = await disconnectMcpAction(connection.id);
       if (result.error) {
-        setError(result.error);
+        await alert({
+          title: "Couldn't disconnect the MCP server",
+          body: result.error,
+          tone: "danger",
+        });
         return;
       }
       setConnection(null);
       setCapabilities(null);
       setToken("");
-      setNotice("Disconnected.");
+      toast("Disconnected");
     });
   };
 
@@ -162,9 +186,15 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
       {capabilities ? (
         <div
           className={`flex items-start gap-2 rounded-md border p-3 text-xs ${
+            // "It works" is not one of the four states and gets no colour -
+            // the tick and the sentence say it. "It handshakes but advertises
+            // no lead tool" IS an error: the integration looks connected and
+            // will never produce a lead, which is the failure this panel was
+            // written to catch. So only the bad branch is coloured, and it
+            // takes the error tone rather than the old amber.
             capabilities.canFetchLeads
-              ? "border-success bg-success-subtle text-success-text"
-              : "border-warning bg-warning-subtle text-warning-text"
+              ? "border-border bg-bg-subtle text-text-muted"
+              : STATE_TONE.error.chip
           }`}
         >
           {capabilities.canFetchLeads ? (
@@ -190,12 +220,7 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
       ) : null}
 
       {connection?.status === "error" && connection.last_error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-xs font-medium text-danger-text"
-        >
-          Last attempt failed: {connection.last_error}
-        </p>
+        <ErrorBanner>Last attempt failed: {connection.last_error}</ErrorBanner>
       ) : null}
 
       {connection ? (
@@ -216,20 +241,6 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
             </dd>
           </div>
         </dl>
-      ) : null}
-
-      {notice ? (
-        <p role="status" className="text-xs text-text-muted">
-          {notice}
-        </p>
-      ) : null}
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-xs font-medium text-danger-text"
-        >
-          {error}
-        </p>
       ) : null}
     </Card>
   );

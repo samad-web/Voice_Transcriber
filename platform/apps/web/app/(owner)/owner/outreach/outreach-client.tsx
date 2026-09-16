@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { StatusChip } from "@aura/ui";
+import { ErrorBanner, StatusChip, useAlert } from "@aura/ui";
 import {
   actOnStepAction,
   fetchDueAction,
@@ -32,6 +32,7 @@ export function Outreach() {
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
+  const alert = useAlert();
 
   const load = useCallback(() => {
     start(async () => {
@@ -54,8 +55,14 @@ export function Outreach() {
   function act(step: DueStep, status: "done" | "skipped") {
     start(async () => {
       const res = await actOnStepAction(step.id, status, noteFor === step.id ? note : undefined);
-      if (res.error) return setError(res.error);
-      setError(null);
+      if (res.error) {
+        await alert({
+          title: "Couldn't update the follow-up step",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
       setNoteFor(null);
       setNote("");
       // Drop it from the list rather than refetching everything: a rep works
@@ -80,11 +87,11 @@ export function Outreach() {
               type="button"
               onClick={() => setTab(key)}
               aria-pressed={tab === key}
-              style={tab === key ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+              // Neutral fill for the selected tab - see @aura/ui's state.tsx.
               className={
                 "h-9 rounded-full px-3 text-sm font-medium transition-colors " +
                 (tab === key
-                  ? "text-white"
+                  ? "bg-text text-bg"
                   : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
               }
             >
@@ -105,14 +112,7 @@ export function Outreach() {
         ) : null}
       </div>
 
-      {error ? (
-        <p
-          role="alert"
-          className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorBanner className="mt-3">{error}</ErrorBanner> : null}
 
       {tab === "due" ? (
         <ul className="mt-4 space-y-2">
@@ -221,7 +221,14 @@ export function Outreach() {
                     onClick={() =>
                       start(async () => {
                         const res = await stopJourneyAction(j.id, "stopped by hand");
-                        if (res.error) return setError(res.error);
+                        if (res.error) {
+                          await alert({
+                            title: "Couldn't stop chasing this contact",
+                            body: res.error,
+                            tone: "danger",
+                          });
+                          return;
+                        }
                         load();
                       })
                     }

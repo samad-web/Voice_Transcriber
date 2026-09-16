@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { BrutalButton, Card, Input, MonoLabel, Select } from "@aura/ui";
+import { BrutalButton, Card, Input, MonoLabel, Select, useAlert, useToast } from "@aura/ui";
 import { cancelSlotAction, createSlotsAction, listSlotsAction, type Slot } from "./actions";
 import { Generator } from "./generator";
 
@@ -55,9 +55,9 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
   const [cursor, setCursor] = useState({ y: today.y, m: today.m });
   const [selected, setSelected] = useState<string>(iso(today.y, today.m, today.d));
   const [slots, setSlots] = useState<Slot[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   // New-slot controls
   const [time, setTime] = useState("10:00");
@@ -69,13 +69,17 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
   const refresh = useCallback(() => {
     start(async () => {
       const res = await listSlotsAction(monthFrom, monthTo, timeZone);
-      if (res.error) setError(res.error);
-      else {
-        setError(null);
-        setSlots(res.slots ?? []);
+      if (res.error) {
+        await alert({
+          title: "Couldn't load this month's slots",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      setSlots(res.slots ?? []);
     });
-  }, [monthFrom, monthTo, timeZone]);
+  }, [monthFrom, monthTo, timeZone, alert]);
 
   useEffect(refresh, [refresh]);
 
@@ -107,12 +111,16 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
         durationMinutes: duration,
         timeZone,
       });
-      if (res.error) setError(res.error);
-      else {
-        setError(null);
-        setNotice(res.created ? `Added ${time}.` : `${time} already exists on this day.`);
-        refresh();
+      if (res.error) {
+        await alert({
+          title: "Couldn't add the slot",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
       }
+      toast(res.created ? `Added ${time}.` : `${time} already exists on this day.`);
+      refresh();
     });
   }
 
@@ -159,10 +167,7 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
               <button
                 key={date}
                 type="button"
-                onClick={() => {
-                  setSelected(date);
-                  setNotice(null);
-                }}
+                onClick={() => setSelected(date)}
                 aria-pressed={isSel}
                 aria-label={`${date}${count ? `, ${count} slots` : ""}`}
                 className={[
@@ -202,13 +207,6 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
       <Card>
         <MonoLabel>{selected}</MonoLabel>
 
-        {error ? (
-          <p role="alert" className="mt-3 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger-text">
-            {error}
-          </p>
-        ) : null}
-        {notice ? <p className="mt-3 text-xs text-text-muted">{notice}</p> : null}
-
         <div className="mt-4 flex flex-col gap-2">
           {daySlots.length === 0 ? (
             <p className="text-sm text-text-muted">No slots on this day yet.</p>
@@ -242,8 +240,15 @@ export function SlotCalendar({ timeZone }: { timeZone: string }) {
                   onClick={() =>
                     start(async () => {
                       const res = await cancelSlotAction(s.id);
-                      if (res.error) setError(res.error);
-                      else refresh();
+                      if (res.error) {
+                        await alert({
+                          title: `Couldn't cancel the ${s.local_time} slot`,
+                          body: res.error,
+                          tone: "danger",
+                        });
+                        return;
+                      }
+                      refresh();
                     })
                   }
                   className="shrink-0 rounded-md px-2 py-1 text-xs text-text-muted hover:text-danger-text"

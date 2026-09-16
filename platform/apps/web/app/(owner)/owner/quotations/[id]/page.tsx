@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BreadcrumbLeaf } from "@/components/breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
-import { QuotationDetail } from "./quotation-detail-client";
 import type { Quotation, QuotationItem } from "../actions";
+import { QuotationDetail } from "./quotation-detail-client";
 
-export const metadata: Metadata = { title: "Quotation - Aura" };
+export const metadata: Metadata = { title: "Quotation" };
 
 export default async function QuotationDetailPage({
   params,
@@ -23,6 +24,7 @@ export default async function QuotationDetailPage({
 
   return (
     <>
+      <BreadcrumbLeaf label={quotation.quotation_number} />
       <PageHeader title={quotation.quotation_number} context="Pipeline" />
 
       <Link href="/owner/quotations" className="text-xs text-text-muted hover:text-text">

@@ -20,6 +20,18 @@ export interface Conversation {
   last_message_at: string | null;
   last_inbound_at: string | null;
   unread_count: number;
+  /**
+   * The provider behind `messaging_channel_id`, for the 24-hour window notice.
+   * Null on a thread with no channel attached. It is the PROVIDER's rule, not
+   * the medium's, which is why the channel alone cannot answer it.
+   */
+  channel_provider: string | null;
+  /**
+   * This person asked to stop being messaged and nobody has released it
+   * (migration 0100). The send route refuses, so the composer must not offer a
+   * Send button that is going to 403.
+   */
+  opted_out: boolean;
 }
 
 export interface ConversationMessage {
@@ -177,6 +189,34 @@ export async function sendWhatsAppMessageAction(
     if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/inbox");
     return { ok: true };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Release an opt-out, because the customer said otherwise (migration 0100).
+ *
+ * Owner/manager only, enforced by OwnerRoleGuard on the API. The console still
+ * gates the button on the viewer's role rather than letting them press it and
+ * read a 403 - the same split SetupGate's `canDismiss` uses.
+ */
+export async function releaseOptOutAction(
+  conversationId: string,
+): Promise<{ released?: boolean; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/conversations/${conversationId}/opt-out/release`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const data = (await res.json()) as { released: boolean };
+    revalidatePath("/owner/inbox");
+    return { released: data.released };
   } catch {
     return { error: "API unreachable" };
   }

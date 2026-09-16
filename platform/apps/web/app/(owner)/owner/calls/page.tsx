@@ -5,7 +5,7 @@ import { getOwner, ownerGet } from "@/lib/owner-context";
 import type { OwnerCall, Telecaller } from "../types";
 import { CallsExplorer } from "./calls-explorer";
 
-export const metadata: Metadata = { title: "Calls - Aura" };
+export const metadata: Metadata = { title: "Calls" };
 
 const PAGE_SIZE = 50;
 

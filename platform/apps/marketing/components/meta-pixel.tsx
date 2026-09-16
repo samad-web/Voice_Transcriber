@@ -73,7 +73,14 @@ fbq('init', '${PIXEL_ID}');
 fbq('track', 'PageView');`}
       </Script>
       <noscript>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* No eslint-disable here, deliberately. `@next/next/no-img-element` is
+            not registered in eslint.config.mjs - there is no eslint-config-next
+            in this workspace - and ESLint treats a disable comment naming an
+            unresolvable rule as a hard ERROR, not a no-op. That config's own
+            header records two of these breaking the build in apps/web; this was
+            the third. The rule is not running, so the `<img>` below needs no
+            suppression: a tracking pixel is exactly the case `next/image` does
+            not cover anyway. */}
         <img
           height="1"
           width="1"

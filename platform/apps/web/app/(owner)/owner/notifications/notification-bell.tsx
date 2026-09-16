@@ -2,8 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Bell } from "lucide-react";
-import { Button } from "@aura/ui";
+import {
+  AlarmClock,
+  ArrowRightLeft,
+  Ban,
+  Bell,
+  ClipboardCheck,
+  Clock,
+  FileText,
+  Hourglass,
+  Inbox,
+  Plug,
+  UserPlus,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import { Button, useToast } from "@aura/ui";
+import { useRealtime } from "@/components/realtime-provider";
+import { describeDelivery, notificationKindSpec, type NotificationKindSpec } from "@/lib/notification-kinds";
 import {
   fetchNotificationsAction,
   markAllNotificationsReadAction,
@@ -11,35 +27,74 @@ import {
   type NotificationRow,
 } from "./actions";
 
-/** How often to look for new ones. */
-const POLL_MS = 60_000;
+/**
+ * The backstop, not the mechanism.
+ *
+ * New notifications arrive over the live stream now, so this exists only for
+ * the case where the stream and its polling fallback are both unavailable -
+ * and for the things neither can deliver, which are rows written by a worker
+ * sweep against a clock rather than in response to anything: `task_due`, and
+ * digest rows (0109) becoming visible at their hour. Five minutes rather than
+ * one: a poll that fires while a push channel is working is pure waste.
+ */
+const POLL_MS = 300_000;
+
+const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
+  "user-plus": UserPlus,
+  clock: Clock,
+  "arrow-right-left": ArrowRightLeft,
+  hourglass: Hourglass,
+  zap: Zap,
+  "file-text": FileText,
+  inbox: Inbox,
+  ban: Ban,
+  plug: Plug,
+  alarm: AlarmClock,
+  "clipboard-check": ClipboardCheck,
+};
+
+type Tab = "all" | "action";
 
 /**
  * The unread bell.
  *
- * Polls rather than holding a socket: one small query a minute per open tab
- * costs almost nothing, and a websocket would mean a connection-management
- * problem, a reconnect story and a deployment concern for a feature whose
- * entire value is "the number went up within a minute". That trade can be
- * revisited when something here is genuinely time-critical; nothing is.
+ * This used to poll once a minute, on the argument that a socket per tab was
+ * too much machinery for "the number went up within a minute". That argument
+ * was right at the time and is now moot: the console holds ONE live connection
+ * for the whole page (components/realtime-provider.tsx), so subscribing here
+ * costs a callback rather than a connection. The poll survives as a backstop,
+ * five times slower - see POLL_MS.
  *
  * Opening the panel does NOT mark everything read. A person who glances at
  * the list and closes it has not dealt with anything, and silently clearing
  * the badge would lose the one signal telling them there is work outstanding.
  * Clicking a specific notification marks that one, because that IS the act of
  * dealing with it; "Mark all read" is there for when the list is stale.
+ *
+ * "Needs action" (Phase 7) narrows the panel to unread rows of the kinds where
+ * somebody has to DO something - a lead routed to you, a missed response time,
+ * a proposal waiting for review, a possible opt-out, a broken channel. Rows a
+ * person chose to get as a digest (0109) are not listed until their hour; the
+ * panel says how many are held and when they arrive, so a quiet bell is never
+ * mistaken for nothing having happened.
  */
 export function NotificationBell() {
   const [rows, setRows] = useState<NotificationRow[]>([]);
   const [unread, setUnread] = useState(0);
+  const [held, setHeld] = useState(0);
+  const [nextDeliveryAt, setNextDeliveryAt] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("all");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const panel = useRef<HTMLDivElement>(null);
+  const toast = useToast();
 
   const load = useCallback(() => {
     void fetchNotificationsAction().then((result) => {
       setRows(result.notifications);
       setUnread(result.unread);
+      setHeld(result.held);
+      setNextDeliveryAt(result.nextDeliveryAt);
     });
   }, []);
 
@@ -48,6 +103,20 @@ export function NotificationBell() {
     const timer = setInterval(load, POLL_MS);
     return () => clearInterval(timer);
   }, [load]);
+
+  /*
+   * This component is the reason `useRealtime` exists.
+   *
+   * `router.refresh()` re-renders every server component on the page, which is
+   * how the rest of the console updates - but the rows and the count here live
+   * in this component's own `useState`, fetched by a Server Action, and a
+   * refresh cannot reach into that. Without this subscription the badge would
+   * be the one thing on a live page still a poll behind.
+   *
+   * Subscribed to `task` as well as `notification`: assigning a task is what
+   * WRITES the notification (migration 0048), and the two land together.
+   */
+  useRealtime(["notification", "task"], load);
 
   // Click-away and Escape, because a panel that only closes via its own
   // button is a panel people end up trapped under on a phone.
@@ -75,9 +144,16 @@ export function NotificationBell() {
     startTransition(async () => {
       const res = await markNotificationReadAction(id);
       // On failure the optimistic update above is wrong and would otherwise
-      // sit there un-reconciled until the next 60s poll - resync now, same
-      // as markAll already does.
-      if (res.error) load();
+      // sit there un-reconciled until the next backstop poll - which is now
+      // five minutes away, and nothing will push a signal for a write that did
+      // not happen. Resync now, same as markAll already does. A toast rather
+      // than a modal: this often fires
+      // as the person is already following the link away from here, and the
+      // badge coming back is the correction that matters.
+      if (res.error) {
+        toast("Couldn't mark that as read");
+        load();
+      }
     });
   };
 
@@ -85,10 +161,18 @@ export function NotificationBell() {
     setRows((prev) => prev.map((r) => ({ ...r, read_at: r.read_at ?? new Date().toISOString() })));
     setUnread(0);
     startTransition(async () => {
-      await markAllNotificationsReadAction();
+      const res = await markAllNotificationsReadAction();
+      if (res.error) toast("Couldn't mark them all as read");
       load();
     });
   };
+
+  const actionable = rows.filter((r) => r.read_at === null && notificationKindSpec(r.kind).needsAction);
+  const shown = tab === "action" ? actionable : rows;
+  const tabs: Array<[Tab, string]> = [
+    ["all", "All"],
+    ["action", actionable.length > 0 ? `Needs action · ${actionable.length}` : "Needs action"],
+  ];
 
   return (
     <div className="relative" ref={panel}>
@@ -118,34 +202,50 @@ export function NotificationBell() {
             ) : null}
           </div>
 
-          {rows.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-text-muted">Nothing new</p>
+          <div role="tablist" aria-label="Filter notifications" className="flex gap-1 border-b border-border px-2 py-1.5">
+            {tabs.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors duration-150 ease-out ${
+                  tab === key ? "bg-text text-bg" : "text-text-muted hover:bg-surface-hover hover:text-text"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {shown.length === 0 ? (
+            <p className="px-3 py-6 text-center text-xs text-text-muted">
+              {tab === "action" ? "Nothing needs you right now" : "Nothing new"}
+            </p>
           ) : (
             <ul className="max-h-96 divide-y divide-border overflow-y-auto">
-              {rows.map((row) => {
+              {shown.map((row) => {
+                const spec = notificationKindSpec(row.kind);
+                const Icon = ICONS[spec.icon];
                 const content = (
-                  <>
-                    <span className="flex items-start gap-2">
-                      {row.read_at === null ? (
-                        <span
-                          aria-hidden="true"
-                          className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                        />
-                      ) : (
-                        <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0" />
-                      )}
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium break-words text-text">
-                          {row.title}
-                        </span>
-                        {row.body ? (
-                          <span className="mt-0.5 block text-xs break-words text-text-muted">
-                            {row.body}
-                          </span>
-                        ) : null}
+                  <span className="flex items-start gap-2">
+                    {row.read_at === null ? (
+                      <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                    ) : (
+                      <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0" />
+                    )}
+                    <Icon aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" />
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-medium tracking-wide text-text-muted uppercase">
+                        {spec.label}
                       </span>
+                      <span className="block text-xs font-medium break-words text-text">{row.title}</span>
+                      {row.body ? (
+                        <span className="mt-0.5 block text-xs break-words text-text-muted">{row.body}</span>
+                      ) : null}
                     </span>
-                  </>
+                  </span>
                 );
 
                 return (
@@ -175,6 +275,29 @@ export function NotificationBell() {
               })}
             </ul>
           )}
+
+          {held > 0 && nextDeliveryAt ? (
+            <p className="border-t border-border px-3 py-2 text-xs text-text-muted">
+              {held} more held for your digest, arriving {describeDelivery(nextDeliveryAt, new Date())}.
+            </p>
+          ) : null}
+
+          <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs">
+            <Link
+              href="/owner/review"
+              onClick={() => setOpen(false)}
+              className="text-text-muted underline hover:text-text"
+            >
+              Review queue
+            </Link>
+            <Link
+              href="/owner/notifications"
+              onClick={() => setOpen(false)}
+              className="text-text-muted underline hover:text-text"
+            >
+              Notification settings
+            </Link>
+          </div>
         </div>
       ) : null}
     </div>

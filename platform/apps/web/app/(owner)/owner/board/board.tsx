@@ -1,9 +1,8 @@
 "use client";
 
-import { KanbanBoard, type KanbanColumn } from "./kanban-board";
 import { LeadDrawer } from "../lead-drawer";
 import { ProjectChip } from "../project-chip";
-import { updateLeadAction } from "../actions";
+import { fetchLeadAction, updateLeadAction } from "../actions";
 import {
   contactLabel,
   type BoardColumn,
@@ -11,6 +10,7 @@ import {
   type Project,
   type Stage,
 } from "../types";
+import { KanbanBoard, type KanbanColumn } from "./kanban-board";
 
 /**
  * The lead pipeline board - a thin config over the generic ./kanban-board.tsx,
@@ -49,6 +49,10 @@ export function Board({
         getCallCount: (lead) => lead.call_count,
         getLastActivityAt: (lead) => lead.last_activity_at,
         dragDataKey: "text/lead-id",
+        // `/owner/board?focus=<leadId>` opens that lead's drawer, the same deep
+        // link the Deals board has - used by a contact page's "Open the lead"
+        // (doc 23, H2).
+        loadFocused: async (id) => (await fetchLeadAction(id)).lead ?? null,
         renderBadge: (lead) =>
           lead.project_name ? (
             <ProjectChip

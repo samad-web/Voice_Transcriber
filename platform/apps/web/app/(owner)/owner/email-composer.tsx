@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, FormField, Input, MonoLabel } from "@aura/ui";
+import { Button, FormField, Input, MonoLabel, useAlert, useToast } from "@aura/ui";
 import { sendContactEmailAction } from "./crm-actions";
 
 /** Same hand-copied textarea chrome as lead-drawer.tsx - see that file's note. */
@@ -38,9 +38,9 @@ export function EmailComposer({
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState({ subject: "", body: "" });
-  const [error, setError] = useState<string | null>(null);
-  const [sentTo, setSentTo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   if (!contactEmail) {
     return (
@@ -54,21 +54,20 @@ export function EmailComposer({
   }
 
   const send = () => {
-    setError(null);
     startTransition(async () => {
       const result = await sendContactEmailAction(contactId, {
         subject: draft.subject.trim(),
         body: draft.body.trim(),
       });
       if (result.error) {
-        setError(result.error);
         setConfirming(false);
+        await alert({ title: "Couldn't send the email", body: result.error, tone: "danger" });
         return;
       }
-      setSentTo(result.to ?? contactEmail);
       setDraft({ subject: "", body: "" });
       setConfirming(false);
       setOpen(false);
+      toast(`Sent to ${result.to ?? contactEmail}. It is on the timeline below.`);
     });
   };
 
@@ -83,27 +82,11 @@ export function EmailComposer({
           onClick={() => {
             setOpen((v) => !v);
             setConfirming(false);
-            setSentTo(null);
           }}
         >
           {open ? "Cancel" : "Write an email"}
         </Button>
       </div>
-
-      {sentTo ? (
-        <p role="status" className="text-xs text-text-muted">
-          Sent to {sentTo}. It is on the timeline below.
-        </p>
-      ) : null}
-
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
 
       {open ? (
         <div className="space-y-3 rounded-md border border-border p-3">
@@ -160,10 +143,13 @@ export function EmailComposer({
               size="sm"
               onClick={() => {
                 if (!draft.subject.trim() || !draft.body.trim()) {
-                  setError("A subject and a message, please");
+                  void alert({
+                    title: "This email needs a subject and a message",
+                    body: "Fill both in before reviewing it.",
+                    tone: "danger",
+                  });
                   return;
                 }
-                setError(null);
                 setConfirming(true);
               }}
             >

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { Card, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
+import { ChannelBar } from "../channel-bar";
 import { Outreach } from "./outreach-client";
 import type { DueStep } from "./actions";
 
-export const metadata: Metadata = { title: "Outreach - Aura" };
+export const metadata: Metadata = { title: "Outreach" };
 
 /**
  * The follow-up ladder (migration 0058).
@@ -15,11 +17,17 @@ export const metadata: Metadata = { title: "Outreach - Aura" };
  * scan for, and one that arrives late reads as "nothing to do".
  */
 export default async function OutreachPage() {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("outreach");
+
   const due = await ownerGet<{ due: DueStep[] }>("/v1/outreach/due?limit=100");
 
   return (
     <>
       <PageHeader title="Outreach" context="Pipeline" />
+      <ChannelBar />
 
       {due === null ? (
         <Card>
@@ -30,15 +38,17 @@ export default async function OutreachPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          <Card>
-            <MonoLabel>Due now</MonoLabel>
-            <p className="mt-2 text-3xl font-semibold text-text tabular-nums">{due.due.length}</p>
-            <p className="mt-1 text-xs text-text-muted">
-              {due.due.length === 0
-                ? "Nothing is owed. Steps appear as their hour arrives."
-                : "Follow-ups whose hour has come. Oldest first."}
-            </p>
-          </Card>
+          <div className="grid gap-4 sm:max-w-xs">
+            <StatCard
+              label="Due now"
+              value={due.due.length}
+              context={
+                due.due.length === 0
+                  ? "nothing owed - steps appear as their hour arrives"
+                  : "follow-ups whose hour has come, oldest first"
+              }
+            />
+          </div>
 
           <Card>
             <Outreach />

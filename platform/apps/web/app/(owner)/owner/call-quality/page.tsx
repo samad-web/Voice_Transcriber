@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
 import { CallQualityManager } from "./call-quality-manager";
 import type { CallIntegrityFlag } from "./actions";
 
-export const metadata: Metadata = { title: "Call Quality - Aura" };
+export const metadata: Metadata = { title: "Call Quality" };
 
 interface ListResponse {
   flags: CallIntegrityFlag[];
@@ -18,6 +19,11 @@ interface ListResponse {
  * is where an owner/manager works through them.
  */
 export default async function CallQualityPage() {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("call_quality");
+
   const data = await ownerGet<ListResponse>("/v1/call-integrity-flags?status=open&limit=50");
 
   if (!data) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { BrutalButton, Input } from "@aura/ui";
+import { BrutalButton, Input, useAlert } from "@aura/ui";
 import { rejectLeadAction, type Lead } from "./actions";
 
 /**
@@ -44,8 +44,8 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
     cancelledCalendarEvents?: string[];
     orphanedCalendarEvents?: Array<{ eventId: string; error: string }>;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
 
   // Digits only: wa.me rejects a leading + and any spacing.
   const waNumber = (lead.whatsapp_e164 || lead.phone_e164 || "").replace(/\D/g, "");
@@ -186,29 +186,27 @@ export function RejectPanel({ lead, onDone }: { lead: Lead; onDone: () => void }
         EVOLUTION_API_KEY set; until then it is logged, not sent. The link below always works.
       </p>
 
-      {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-danger/30 bg-danger/5 p-2.5 text-xs text-danger-text">
-          {error}
-        </p>
-      ) : null}
-
       <BrutalButton
         className="mt-3"
         disabled={pending}
         onClick={() =>
           start(async () => {
-            setError(null);
             const res = await rejectLeadAction({ leadId: lead.id, reason, notify, notifyWhatsapp });
-            if (res.error) setError(res.error);
-            else {
-              setResult({
-                queuedEmail: res.queuedEmail,
-                queuedWhatsapp: res.queuedWhatsapp,
-                releasedSlots: res.releasedSlots,
-                orphanedCalendarEvents: res.orphanedCalendarEvents,
+            if (res.error) {
+              await alert({
+                title: "Couldn't reject the lead",
+                body: res.error,
+                tone: "danger",
               });
-              onDone();
+              return;
             }
+            setResult({
+              queuedEmail: res.queuedEmail,
+              queuedWhatsapp: res.queuedWhatsapp,
+              releasedSlots: res.releasedSlots,
+              orphanedCalendarEvents: res.orphanedCalendarEvents,
+            });
+            onDone();
           })
         }
       >

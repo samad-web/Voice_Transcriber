@@ -18,12 +18,20 @@ export function Pager({
   page,
   hrefFor,
   pageSize = PAGE_SIZE,
+  noun = "call",
+  previousLabel = "← Newer",
+  nextLabel = "Older →",
 }: {
   total: number;
   page: number;
   /** Builds the URL for a page, preserving whatever filters the page carries. */
   hrefFor: (page: number) => string;
   pageSize?: number;
+  /** Singular, for the "12 calls" line. The defaults are the call explorers'. */
+  noun?: string;
+  /** "Newer/Older" is only true of a list sorted by time - a deals table sorted by value is not. */
+  previousLabel?: string;
+  nextLabel?: string;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const current = Math.min(Math.max(1, page), pages);
@@ -33,7 +41,8 @@ export function Pager({
   if (total <= pageSize) {
     return (
       <p className="text-xs text-text-muted tabular-nums">
-        {total} call{total === 1 ? "" : "s"}
+        {total} {noun}
+        {total === 1 ? "" : "s"}
       </p>
     );
   }
@@ -67,8 +76,8 @@ export function Pager({
         {first}-{last} of {total} · page {current}/{pages}
       </p>
       <div className="flex items-center gap-2">
-        {step("← Newer", current - 1, current > 1)}
-        {step("Older →", current + 1, current < pages)}
+        {step(previousLabel, current - 1, current > 1)}
+        {step(nextLabel, current + 1, current < pages)}
       </div>
     </div>
   );

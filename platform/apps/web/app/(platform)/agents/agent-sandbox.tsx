@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { FlaskConical, Play } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import { testAgentAction, type AgentTestResult } from "./actions";
 import type { AgentRow } from "./agent-studio";
@@ -13,6 +13,7 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
   const [version, setVersion] = useState("");
   const [result, setResult] = useState<AgentTestResult | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const run = () =>
     startTransition(async () => {
@@ -23,6 +24,12 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
         version: version.trim() ? Number(version) : undefined,
         orgId,
       });
+      // The RUN OUTPUT below is the artefact this panel exists to produce and
+      // stays on screen; a run that never happened is an event.
+      if (res.error) {
+        await alert({ title: "The test run failed", body: res.error, tone: "danger" });
+        return;
+      }
       setResult(res);
     });
 
@@ -94,13 +101,7 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
         {pending ? "RUNNING AGENT…" : "RUN TEST"}
       </BrutalButton>
 
-      {result?.error ? (
-        <p className="text-xs text-red-700 font-sans font-bold border-2 border-red-600 bg-red-50 p-3">
-          {result.error}
-        </p>
-      ) : null}
-
-      {result && !result.error ? (
+      {result ? (
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2 items-center">
             {result.validationStatus ? (

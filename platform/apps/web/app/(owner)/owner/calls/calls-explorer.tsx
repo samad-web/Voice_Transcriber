@@ -3,27 +3,44 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, X } from "lucide-react";
+import { AlertTriangle, Play, RefreshCw, Search, X } from "lucide-react";
 import {
   Button,
   Input,
   MonoLabel,
+  RowHint,
+  StateChip,
+  StateRule,
+  StatusChip,
+  SyncingHint,
   TableBody,
   TableCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  callState,
+  pipelineStage,
+  useAlert,
+  useConfirm,
+  useToast,
 } from "@aura/ui";
 import { CallReadChips, TranscriptBody, humanize } from "../call-intel";
 import {
   formatDuration,
   num,
   relativeTime,
+  type CallNote,
   type OwnerCall,
   type OwnerCallDetail,
   type Telecaller,
 } from "../types";
-import { fetchOwnerCallAction } from "./actions";
+import {
+  addOwnerCallNoteAction,
+  fetchOwnerCallAction,
+  fetchOwnerCallAudioAction,
+  fetchOwnerCallNotesAction,
+  reprocessOwnerCallAction,
+} from "./actions";
 
 const STATES = [
   { key: "complete", label: "Done" },
@@ -40,7 +57,8 @@ const SENTIMENTS = [
 /** Who was on the other end, in the order a person would recognise them. */
 function contact(call: OwnerCall): string {
   if (call.remote_name) return call.remote_name;
-  if (call.remote_number_prefix) return `${call.remote_number_prefix}…${call.remote_number_last3 ?? ""}`;
+  if (call.remote_number_prefix)
+    return `${call.remote_number_prefix}…${call.remote_number_last3 ?? ""}`;
   if (call.remote_number_last3) return `…${call.remote_number_last3}`;
   return "Unknown caller";
 }
@@ -218,9 +236,7 @@ export function CallsExplorer({
         </div>
 
         {calls.length === 0 ? (
-          <p className="py-12 text-center text-sm text-text-muted">
-            No calls match these filters.
-          </p>
+          <p className="py-12 text-center text-sm text-text-muted">No calls match these filters.</p>
         ) : (
           <div tabIndex={0} role="region" aria-label="Calls" className="overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-left text-sm">
@@ -252,7 +268,14 @@ export function CallsExplorer({
                     }}
                     className="cursor-pointer"
                   >
-                    <TableCell>
+                    {/* `relative` so the state rule can pin itself to the
+                        row's leading edge. On a <td> rather than the <tr>:
+                        `position: relative` on a table ROW is not reliably
+                        honoured as a containing block across browsers, and
+                        the first cell's box is flush with the row's edge
+                        anyway. */}
+                    <TableCell className="relative">
+                      <StateRule state={callState(call)} />
                       <span className="block text-text">{relativeTime(call.started_at)}</span>
                       <span className="text-xs text-text-muted">
                         {new Date(call.started_at).toLocaleString()}
@@ -260,12 +283,19 @@ export function CallsExplorer({
                     </TableCell>
                     <TableCell>
                       <span className="block font-medium text-text">{contact(call)}</span>
-                      <span className="text-xs text-text-muted">{humanize(call.direction)}</span>
+                      {/* The state, in the row, in words - not just as the
+                          coloured rule at the row's left edge. The rule is an
+                          accelerator for scanning a hundred rows; this is what
+                          the state actually IS, and it is what a screen reader
+                          and a greyscale printout get. */}
+                      <StateChip state={callState(call)} className="mt-1" />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatDuration(call.duration_s)}
                     </TableCell>
-                    <TableCell>{call.telecaller ?? <span className="text-text-subtle">-</span>}</TableCell>
+                    <TableCell>
+                      {call.telecaller ?? <span className="text-text-subtle">-</span>}
+                    </TableCell>
                     <TableCell>
                       {call.sentiment || call.outcome || call.quality_score !== null ? (
                         <CallReadChips
@@ -274,12 +304,15 @@ export function CallsExplorer({
                           qualityScore={call.quality_score}
                         />
                       ) : (
-                        // Why there is nothing to show, in the row itself: a
-                        // bare dash here reads as a fault, and the commonest
-                        // reason by far is a call too short to be transcribed.
-                        <span className="text-xs text-text-subtle">
-                          {call.status === "COMPLETE" ? "Not analysed" : humanize(call.status)}
-                        </span>
+                        // Why there is nothing to show, in the row itself. A
+                        // bare dash reads as a fault, and "Transcribing" on its
+                        // own reads as one too - it is a word the reader did
+                        // not ask for, in a column where they expected an
+                        // answer. pipelineStage() turns each of the eleven
+                        // statuses into a sentence saying what is happening and
+                        // whether it is theirs to fix; the spinner says it is
+                        // still moving.
+                        <ReadPending status={call.status} />
                       )}
                     </TableCell>
                     <TableCell>
@@ -334,6 +367,48 @@ export function CallsExplorer({
 }
 
 /** Selected filter = the gradient fill, the same "you are here" the sidebar uses. */
+/**
+ * What the "AI read" column says when there is nothing to read yet.
+ *
+ * ── WHY A SENTENCE AND NOT A WORD ───────────────────────────────────────────
+ *
+ * This column used to print the raw status - "Transcribing", "Syncing",
+ * "Failed asr" - and a status word is only meaningful to somebody who already
+ * knows the pipeline. The reader is a business owner looking for what the call
+ * was about; "Transcribing" does not tell them whether to wait, refresh, call
+ * support, or give up on this row entirely, which are the only four things
+ * they might do.
+ *
+ * So each state gets one plain sentence saying what is happening and whose
+ * problem it is. The copy lives in @aura/ui's `pipelineStage`, beside the
+ * status table it describes, so this component cannot fall out of step with a
+ * status that gets added later.
+ *
+ * The three-quarter ring spins only for the phases that are genuinely still
+ * moving. A settled row gets no spinner - an animation that never stops is a
+ * promise the row is about to change, and on a FAILED_ASR call it is a lie.
+ */
+function ReadPending({ status }: { status: string }) {
+  const stage = pipelineStage(status);
+  const working = stage.phase === "working";
+
+  return (
+    <div className="max-w-[36ch]">
+      {/* The label stays neutral even for the error phases: the row's own
+          state chip is already carrying the colour, and saying it twice is how
+          a palette stops being scarce. */}
+      <span className="text-xs font-medium text-text">{stage.label}</span>
+      {stage.hint ? (
+        working ? (
+          <SyncingHint>{stage.hint}</SyncingHint>
+        ) : (
+          <RowHint kind={stage.phase === "error" ? "blocked" : "action"}>{stage.hint}</RowHint>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 function FilterChip({
   active,
   onClick,
@@ -348,10 +423,15 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+      // Selected = a solid NEUTRAL fill. It used to be the brand gradient,
+      // whose blue mid-stop sat directly above a table where blue means
+      // "outgoing" - so a pressed filter and a call state were the same colour
+      // on the same screen. "This filter is on" is not a state, so under the
+      // colour rule (@aura/ui's state.tsx) it gets no hue; inverting the pill
+      // says it just as loudly.
       className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
         active
-          ? "border-transparent text-white"
+          ? "border-transparent bg-text text-bg"
           : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
       }`}
     >
@@ -368,12 +448,25 @@ function FilterChip({
  * the parts no list can afford to carry for every row.
  */
 function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => void }) {
+  const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
   const [detail, setDetail] = useState<OwnerCallDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notes, setNotes] = useState<CallNote[] | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     setDetail(null);
     setError(null);
+    setNotes(null);
+    setNoteDraft("");
+    // Audio is per-call: leaving it behind would have the next call opened play
+    // the previous one's recording.
+    setAudioUrl(null);
     if (!call) return;
     let cancelled = false;
     void fetchOwnerCallAction(call.id).then((result) => {
@@ -381,15 +474,92 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
       if (result.error) setError(result.error);
       else if (result.detail) setDetail(result.detail);
     });
+    // Notes ride alongside rather than inside the detail response - see
+    // fetchOwnerCallNotesAction for why they are their own round trip. A
+    // failure here degrades to "no notes" instead of blocking the drawer: the
+    // AI read is the reason the panel was opened.
+    void fetchOwnerCallNotesAction(call.id).then((result) => {
+      if (cancelled) return;
+      setNotes(result.notes ?? []);
+    });
     return () => {
       cancelled = true;
     };
   }, [call]);
 
+  async function submitNote() {
+    if (!call || !noteDraft.trim()) return;
+    setNoteBusy(true);
+    const result = await addOwnerCallNoteAction(call.id, noteDraft);
+    setNoteBusy(false);
+    if (result.error) {
+      await alert({ title: "Couldn't add the note", body: result.error, tone: "danger" });
+      return;
+    }
+    if (result.note) {
+      // Prepend rather than re-fetch: the list is newest-first and the server
+      // just handed back the row it wrote.
+      setNotes((current) => [result.note as CallNote, ...(current ?? [])]);
+      setNoteDraft("");
+    }
+  }
+
+  async function loadAudio() {
+    if (!call) return;
+    setPending(true);
+    const result = await fetchOwnerCallAudioAction(call.id);
+    setPending(false);
+    if (result.error) {
+      await alert({ title: "Couldn't load the recording", body: result.error, tone: "danger" });
+      return;
+    }
+    setAudioUrl(result.url ?? null);
+  }
+
+  async function reprocess() {
+    if (!call) return;
+    // Confirmed, not because the action is hard to undo - it is not - but
+    // because it SPENDS: the call goes back through the ASR provider and the
+    // analyzer, both billed, on a transcript already paid for once. The dialog
+    // is the only place a reader is told that before it happens.
+    const ok = await confirm({
+      title: "Reprocess this call?",
+      body: "The recording is transcribed and analysed again from scratch. This costs the same as a new call, and the current transcript and AI read are replaced.",
+      confirmLabel: "Reprocess",
+      tone: "danger",
+      // No type-DELETE gate. `tone: "danger"` turns it on by default and this
+      // is the case it is wrong for: nothing is destroyed, the transcript is
+      // rebuilt rather than removed, and the worst outcome is a second ASR
+      // bill. Making somebody type DELETE for that teaches them to type DELETE
+      // without reading, which is exactly the reflex the gate exists to stop
+      // on the dialogs that do erase things.
+      requireTyped: false,
+    });
+    if (!ok) return;
+
+    setPending(true);
+    const result = await reprocessOwnerCallAction(call.id);
+    setPending(false);
+    if (result.error) {
+      await alert({ title: "Couldn't reprocess the call", body: result.error, tone: "danger" });
+      return;
+    }
+    toast("Queued - this call will update as the pipeline works through it.");
+  }
+
   if (!call) return null;
 
   const analytics = detail?.analytics ?? null;
+  const sop = detail?.sop ?? null;
   const talkRatio = num(analytics?.talk_ratio ?? null);
+  // The detail's score, falling back to the row's - the list already carries
+  // one, and the drawer opening should not blank a chip that was on screen a
+  // moment ago while the fetch is in flight.
+  const qualityScore = num(analytics?.quality_score ?? call.quality_score ?? null);
+  const isTerminal =
+    call.status === "COMPLETE" ||
+    call.status === "TRANSCRIPTION_OFF" ||
+    call.status.startsWith("FAILED");
   const facts = (detail?.facts ?? []).filter(
     (f) => f.value_text !== null || f.value_num !== null || f.value_bool !== null,
   );
@@ -444,23 +614,191 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
             </Link>
           ) : null}
 
+          {/*
+            The coaching panel, in the same shape and the same words as the
+            operator drawer (calls-explorer.tsx:559). The two consoles are read
+            side by side during a support call, and a score that appeared bare
+            here and itemised there made the same call look like two different
+            verdicts. `quality_criteria` and `risk_flags` are what the owner
+            API started returning alongside the score for exactly this.
+          */}
           {analytics ? (
-            <div className="grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">
-              <div>
-                <dt className="text-text-muted">Who talked</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">
-                  {talkRatio === null
-                    ? "-"
-                    : `${Math.round(talkRatio * 100)}% your side`}
-                </dd>
+            <section className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <MonoLabel>Call analytics</MonoLabel>
+                {analytics.has_escalation_risk ? (
+                  <StatusChip tone="danger">Needs review</StatusChip>
+                ) : null}
               </div>
-              <div>
-                <dt className="text-text-muted">Interruptions</dt>
-                <dd className="mt-0.5 font-medium text-text tabular-nums">
-                  {analytics.interruption_count ?? "-"}
-                </dd>
+
+              <div className="flex flex-wrap gap-2">
+                {qualityScore !== null ? (
+                  <StatusChip
+                    tone={qualityScore >= 70 ? "solid" : qualityScore >= 40 ? "muted" : "danger"}
+                  >
+                    Quality: {Math.round(qualityScore)}/100
+                  </StatusChip>
+                ) : null}
+                {talkRatio !== null ? (
+                  <StatusChip tone="outline">Agent talk: {Math.round(talkRatio * 100)}%</StatusChip>
+                ) : null}
+                {analytics.interruption_count !== null ? (
+                  <StatusChip tone="outline">
+                    {analytics.interruption_count} interruption
+                    {analytics.interruption_count === 1 ? "" : "s"}
+                  </StatusChip>
+                ) : null}
               </div>
-            </div>
+
+              {analytics.quality_criteria ? (
+                <div className="space-y-1.5">
+                  {(
+                    [
+                      [
+                        "Consent disclosed",
+                        analytics.quality_criteria.consentDisclosed ? "Yes" : "No",
+                      ],
+                      ["Script adherence", `${analytics.quality_criteria.scriptAdherence}/10`],
+                      ["Professionalism", `${analytics.quality_criteria.professionalism}/10`],
+                      ["Conversion signal", `${analytics.quality_criteria.conversionSignal}/10`],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div key={label} className="flex gap-2 text-sm">
+                      <span className="w-36 shrink-0 text-xs text-text-muted">{label}</span>
+                      <span className="text-text">{value}</span>
+                    </div>
+                  ))}
+                  {analytics.quality_criteria.rationale ? (
+                    <p className="rounded-md border border-border bg-bg-subtle p-3 text-sm leading-relaxed text-text">
+                      {analytics.quality_criteria.rationale}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {analytics.risk_flags && analytics.risk_flags.length > 0 ? (
+                <div className="space-y-1.5">
+                  <MonoLabel>Risk flags</MonoLabel>
+                  {analytics.risk_flags.map((flag, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 rounded-md border border-border bg-bg-subtle p-2.5 text-xs"
+                    >
+                      <AlertTriangle
+                        aria-hidden="true"
+                        className={
+                          flag.severity === "high"
+                            ? "mt-0.5 h-3.5 w-3.5 shrink-0 text-danger-text"
+                            : "mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted"
+                        }
+                      />
+                      <span className="min-w-0">
+                        <span className="font-medium text-text">{humanize(flag.category)}</span>
+                        <span className="text-text-muted"> · {flag.severity}</span>
+                        {flag.snippet ? (
+                          <span className="mt-0.5 block break-words text-text">
+                            &ldquo;{flag.snippet}&rdquo;
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {/*
+            SOP adherence (migration 0089).
+            
+            A checklist with the QUOTE under each step, not a percentage with a
+            breakdown behind a click. The number is the least useful thing here:
+            a manager coaching a rep needs the sentence, and a rep disagreeing
+            with a verdict needs to see what it was based on. The panel is built
+            around the evidence and the percentage rides along at the top.
+          */}
+          {sop ? (
+            <section className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between gap-2">
+                <MonoLabel>Call procedure</MonoLabel>
+                {sop.adherence_pct !== null ? (
+                  <StatusChip
+                    tone={
+                      sop.adherence_pct >= 80
+                        ? "solid"
+                        : sop.adherence_pct >= 50
+                          ? "muted"
+                          : "danger"
+                    }
+                  >
+                    {sop.adherence_pct}% followed
+                  </StatusChip>
+                ) : (
+                  // Not 0%. Nothing was settled, which is not the same as
+                  // nothing was done - see 0089.
+                  <StatusChip tone="outline">Not scored</StatusChip>
+                )}
+              </div>
+
+              <p className="text-xs text-text-muted">
+                {sop.sop_name ?? "Procedure"} v{sop.sop_version}
+                {sop.steps_total !== null && sop.steps_total > 0
+                  ? ` · ${sop.steps_met ?? 0} of ${sop.steps_total} required steps`
+                  : ""}
+              </p>
+
+              <div className="space-y-1.5">
+                {sop.step_results.map((r) => {
+                  const step = sop.sop_steps?.find((x) => x.key === r.key);
+                  return (
+                    <div
+                      key={r.key}
+                      className="rounded-md border border-border bg-bg-subtle p-2.5 text-xs"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          aria-hidden="true"
+                          className={
+                            r.met === true
+                              ? "mt-0.5 shrink-0 text-success-text"
+                              : r.met === false
+                                ? "mt-0.5 shrink-0 text-danger-text"
+                                : "mt-0.5 shrink-0 text-text-muted"
+                          }
+                        >
+                          {r.met === true ? "✓" : r.met === false ? "✗" : "–"}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium text-text">
+                            {step?.label ?? humanize(r.key)}
+                          </span>
+                          <span className="text-text-muted">
+                            {r.met === true
+                              ? "Followed"
+                              : r.met === false
+                                ? "Not followed"
+                                : "The recording did not settle this"}
+                            {step && !step.required ? " · optional" : ""}
+                          </span>
+                          {r.evidence ? (
+                            <span className="mt-1 block break-words text-text">
+                              &ldquo;{r.evidence}&rdquo;
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {sop.evidence_redacted ? (
+                <p className="text-xs text-text-muted">
+                  The supporting quotes are hidden because your role cannot read call transcripts.
+                  The verdicts above are unaffected.
+                </p>
+              ) : null}
+            </section>
           ) : null}
 
           {facts.length > 0 ? (
@@ -487,6 +825,89 @@ function CallDrawer({ call, onClose }: { call: OwnerCall | null; onClose: () => 
             ) : (
               <TranscriptBody detail={detail} />
             )}
+          </div>
+
+          {/* Notes - the same `call_notes` rows the operator console writes. */}
+          <div className="space-y-2 border-t border-border pt-4">
+            <MonoLabel>Notes</MonoLabel>
+            {notes === null ? (
+              <p className="text-xs text-text-muted">Loading…</p>
+            ) : notes.length === 0 ? (
+              <p className="text-xs text-text-muted">No notes yet</p>
+            ) : (
+              <ul className="space-y-2">
+                {notes.map((note) => (
+                  <li key={note.id} className="rounded-md border border-border bg-bg-subtle p-2.5">
+                    <p className="text-xs leading-relaxed whitespace-pre-wrap text-text">
+                      {note.body}
+                    </p>
+                    <p className="mt-1 text-[10px] text-text-subtle">
+                      {new Date(note.created_at).toLocaleString()}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <textarea
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              rows={3}
+              placeholder="Add a note about this call…"
+              aria-label="Add a note about this call"
+              className="w-full rounded-md border border-border bg-surface p-2 text-xs text-text placeholder:text-text-subtle focus:border-accent focus:outline-none"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => void submitNote()}
+              disabled={noteBusy || !noteDraft.trim()}
+            >
+              {noteBusy ? "Saving…" : "Add note"}
+            </Button>
+          </div>
+
+          {/* Playback and reprocess. */}
+          <div className="space-y-2 border-t border-border pt-4">
+            {/* A recording is streamed from a signed URL and has no caption
+                track to point at - the transcript above is its accessible text
+                alternative. Keyed on the URL so pressing Reload swaps the
+                source instead of leaving the old one playing. */}
+            {audioUrl ? (
+              <audio key={audioUrl} controls preload="metadata" src={audioUrl} className="w-full" />
+            ) : null}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void loadAudio()}
+                disabled={pending}
+              >
+                <Play aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                {audioUrl ? "Reload audio" : "Load audio"}
+              </Button>
+
+              {/*
+                Hidden rather than disabled while the pipeline still holds the
+                call: the API answers 409 for a non-terminal status, and a
+                button whose only outcome is an error is worse than no button.
+              */}
+              {isTerminal ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void reprocess()}
+                  disabled={pending}
+                >
+                  <RefreshCw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                  {pending ? "Working…" : "Reprocess"}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </aside>

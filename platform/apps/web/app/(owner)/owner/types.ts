@@ -55,6 +55,22 @@ export interface Lead {
   call_intent?: string | null;
   call_sentiment?: string | null;
   call_outcome?: string | null;
+  /** First-touch channel (0078/0080). */
+  source_channel?: string | null;
+  /**
+   * Whose lead it is - a TELECALLER identity set by routing or a bulk
+   * reassign - as opposed to `telecaller` above, the handset that took the
+   * call. Optional: absent from an API older than CRM dashboard Phase 5.
+   */
+  assigned_telecaller_id?: string | null;
+  assigned_telecaller_name?: string | null;
+}
+
+/** A tag as the contact and deal lists return it (migration 0057). */
+export interface RecordTag {
+  id: string;
+  name: string;
+  color: string | null;
 }
 
 /** One row of the tenant's project catalogue - `GET /v1/projects`. */
@@ -104,6 +120,62 @@ export interface LeadCall {
 }
 
 /** One line of a diarized transcript - the shape the ASR pipeline stores. */
+/**
+ * The coaching breakdown behind `quality_score` - the same four criteria the
+ * operator drawer shows, because a manager reading "74/100" needs to know
+ * which part of the call earned it.
+ */
+export interface QualityCriteria {
+  consentDisclosed: boolean;
+  /** 0-10: did the agent follow the pitch/script. */
+  scriptAdherence: number;
+  /** 0-10: tone, courtesy, no talking over the customer. */
+  professionalism: number;
+  /** 0-10: did the agent ask for the sale/next step, handle objections. */
+  conversionSignal: number;
+  /** One short sentence - why this score. */
+  rationale: string | null;
+}
+
+/** One compliance/escalation-worthy moment the model noticed in the call. */
+export interface RiskFlag {
+  category: string;
+  snippet: string;
+  severity: "low" | "medium" | "high";
+}
+
+/**
+ * `call_analytics` for one call, as both call-shaped endpoints return it.
+ *
+ * ONE type rather than a copy per response. `quality_score` and the talk
+ * metrics are what the console shows a manager about their own floor, and the
+ * lead drawer and the call log are read side by side - a shape that drifted
+ * between them would let the same conversation score differently depending on
+ * which screen it was opened from.
+ *
+ * Numeric columns arrive as strings from `pg` for the NUMERIC ones and as
+ * numbers for the INTEGER ones, hence the union - run them through `num()`
+ * rather than trusting either.
+ */
+export interface CallAnalytics {
+  quality_score: string | number | null;
+  quality_criteria: QualityCriteria | null;
+  talk_ratio: string | number | null;
+  agent_talk_seconds: number | null;
+  customer_talk_seconds: number | null;
+  interruption_count: number | null;
+  risk_flags: RiskFlag[] | null;
+  has_escalation_risk: boolean | null;
+}
+
+/** A reviewer note on a call (`call_notes`), newest first. */
+export interface CallNote {
+  id: string;
+  body: string;
+  author: string | null;
+  created_at: string;
+}
+
 export interface CallSegment {
   speaker?: string | null;
   text: string;
@@ -142,14 +214,7 @@ export interface LeadCallDetail {
     segments: CallSegment[] | null;
     intelligence: CallIntelligence | null;
   } | null;
-  analytics: {
-    quality_score: string | number | null;
-    talk_ratio: string | number | null;
-    agent_talk_seconds: number | null;
-    customer_talk_seconds: number | null;
-    interruption_count: number | null;
-    has_escalation_risk: boolean | null;
-  } | null;
+  analytics: CallAnalytics | null;
   transcriptRedacted: boolean;
 }
 
@@ -183,6 +248,33 @@ export interface OwnerCall {
   lead_title: string | null;
 }
 
+/**
+ * How one call scored against the tenant's SOP (migration 0089).
+ *
+ * `sop_steps` is the step list from the VERSION that judged this call, not the
+ * active one - so a step renamed since is still shown under the wording it was
+ * scored against.
+ */
+export interface CallSopResult {
+  sop_id: string;
+  sop_version: number;
+  sop_name: string | null;
+  /** Null when that SOP version has since been deleted; the checklist then renders by key. */
+  sop_steps: Array<{ key: string; label: string; description: string; required: boolean }> | null;
+  step_results: Array<{
+    key: string;
+    /** true / false / null - null is "the call did not settle it", never a miss. */
+    met: boolean | null;
+    /** A verbatim quote. Null when absent, or withheld - see evidence_redacted. */
+    evidence: string | null;
+  }>;
+  steps_met: number | null;
+  steps_total: number | null;
+  adherence_pct: number | null;
+  /** True when the quotes were stripped because this reader may not read the transcript. */
+  evidence_redacted?: boolean;
+}
+
 /** `GET /v1/owner/calls/:id` - see LeadCallDetail for `transcriptRedacted`. */
 export interface OwnerCallDetail {
   call: OwnerCall;
@@ -194,14 +286,7 @@ export interface OwnerCallDetail {
     segments: CallSegment[] | null;
     intelligence: CallIntelligence | null;
   } | null;
-  analytics: {
-    quality_score: string | number | null;
-    talk_ratio: string | number | null;
-    agent_talk_seconds: number | null;
-    customer_talk_seconds: number | null;
-    interruption_count: number | null;
-    has_escalation_risk: boolean | null;
-  } | null;
+  analytics: CallAnalytics | null;
   /** What the AI pulled out of the conversation, as key/value pairs. */
   facts: Array<{
     field_key: string;
@@ -209,6 +294,8 @@ export interface OwnerCallDetail {
     value_num: string | number | null;
     value_bool: boolean | null;
   }>;
+  /** Null when no SOP is active, or the call had no speaker separation to score from. */
+  sop: CallSopResult | null;
   transcriptRedacted: boolean;
 }
 
@@ -238,7 +325,29 @@ export interface Overview {
     pipeline_value: number;
     won_value: number;
   };
-  calls: { total: number; complete: number; total_seconds: number };
+  /**
+   * The call window, broken out by the four states the console paints
+   * (@aura/ui's state.tsx).
+   *
+   * `outgoing + answered + missed === total` - `calls.direction` carries a
+   * CHECK constraint admitting only 'incoming' and 'outgoing', so the three
+   * partition the window exactly.
+   *
+   * `failed` OVERLAPS all three rather than being a fourth slice: a call whose
+   * transcode fell over still happened, still went one way or the other, and
+   * still lasted as long as it lasted. It counts how many of the window's
+   * calls the pipeline could not process. See the API's own note on why the
+   * missed-call number must never shrink because a worker had a bad afternoon.
+   */
+  calls: {
+    total: number;
+    complete: number;
+    outgoing: number;
+    answered: number;
+    missed: number;
+    failed: number;
+    total_seconds: number;
+  };
   funnel: Array<Stage & { count: number; value: number }>;
   stages: Stage[];
   telecallers: Telecaller[];
@@ -252,6 +361,20 @@ export interface Overview {
     last_activity_at: string;
     telecaller: string | null;
   }>;
+  /**
+   * Where demand arrived from (migration 0078's `source_channel`), rolled up
+   * for the marketing dashboard. Present on EVERY response regardless of who
+   * asked - see the API's own note on why the shape does not vary by persona.
+   */
+  bySource: Array<{ channel: string; leads: number; won: number; won_value: number }>;
+  /** The same, per campaign (`marketing_sources`). Top 8 by lead count. */
+  byCampaign: Array<{ id: string; name: string; leads: number; won: number; won_value: number }>;
+  /**
+   * Open follow-ups for whoever is asking. NOT windowed by `?days=` - a task
+   * three months overdue is more urgent than one due tomorrow, so the API
+   * deliberately ignores the reporting window here.
+   */
+  tasks: { open: number; overdue: number; due_today: number; undated: number };
 }
 
 /** numeric columns arrive from pg as strings; one place to make them numbers. */
@@ -289,7 +412,16 @@ export function relativeTime(iso: string | null): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  // An explicit locale AND time zone. A bare toLocaleDateString() uses
+  // whatever the machine is set to, so the server rendered "11/8/2026" and a
+  // browser "8/11/2026" for the same deal, and React threw a hydration
+  // mismatch on /owner/deals. "8 Aug 2026" is also unambiguous to read.
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
 }
 
 export function contactLabel(lead: Lead): string {
@@ -328,11 +460,17 @@ export interface Deal {
   updated_at: string;
   contact_name: string | null;
   account_name: string | null;
+  /** List endpoint only (CRM dashboard Phase 5) - absent on board and detail. */
+  owner_name?: string | null;
+  contact_email?: string | null;
+  tags?: RecordTag[];
 }
 
 export interface DealBoardColumn extends Stage {
   count: number;
   value: number;
+  /** Open deals in the whole column past the pipeline's stale threshold (0106). */
+  staleCount?: number;
   deals: Deal[];
 }
 
@@ -348,6 +486,12 @@ export interface Contact {
   phone_last3: string | null;
   title: string | null;
   owner_user_id: string | null;
+  /** The lead this contact was first created from, if any. */
+  source_lead_id?: string | null;
+  /** First-touch channel (0078/0080) - how this person first reached the business. */
+  source_channel?: string | null;
+  /** Set when a person chose the name (0107); the call projection then never overwrites it. */
+  display_name_set_by_human_at?: string | null;
   facts: Record<string, unknown>;
   status: "active" | "archived" | "merged";
   call_count: number;
@@ -355,6 +499,9 @@ export interface Contact {
   lead_score: number;
   last_activity_at: string;
   created_at: string;
+  /** List endpoint only (CRM dashboard Phase 5). */
+  owner_name?: string | null;
+  tags?: RecordTag[];
 }
 
 export interface Account {
@@ -418,6 +565,10 @@ export interface Interaction {
   duration_s: number | null;
   actor_user_id: string | null;
   actor: string | null;
+  /** 'automation' for a rule's row, a telecaller for a recorded call - see lib/activity.ts. */
+  actor_label?: string | null;
+  /** Set when a mailbox/calendar sync wrote the row. */
+  connection_id?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlertTriangle, KeyRound } from "lucide-react";
-import { BrutalButton, Card } from "@aura/ui";
+import { KeyRound } from "lucide-react";
+import { BrutalButton, Card, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import { EnrollmentCredentials, type Credentials } from "../enrollment-credentials";
 import { mintKeyAction } from "./actions";
@@ -22,10 +22,20 @@ export function KeyGenerator({
   const [maxUses, setMaxUses] = useState(1);
   const [result, setResult] = useState<(Credentials & { error?: string }) | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const submit = () =>
     startTransition(async () => {
-      setResult(await mintKeyAction({ orgId, instanceId, ttlMinutes, maxUses }));
+      const minted = await mintKeyAction({ orgId, instanceId, ttlMinutes, maxUses });
+      if (minted.error) {
+        await alert({
+          title: "Couldn't issue the enrollment key",
+          body: minted.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setResult(minted);
     });
 
   return (
@@ -85,13 +95,6 @@ export function KeyGenerator({
           <KeyRound className="h-4 w-4" />
           {pending ? "GENERATING..." : "GENERATE KEY"}
         </BrutalButton>
-
-        {result?.error ? (
-          <div className="border-2 border-red-600 bg-red-50 p-3.5 flex gap-2.5 items-start">
-            <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700 font-sans font-bold">{result.error}</p>
-          </div>
-        ) : null}
       </Card>
 
       {result?.adminKey ? (

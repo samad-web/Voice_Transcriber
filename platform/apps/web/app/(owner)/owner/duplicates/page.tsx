@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
 import type { DuplicateMatch } from "../types";
 import { DuplicatesManager } from "./duplicates-manager";
 
-export const metadata: Metadata = { title: "Duplicates - Aura" };
+export const metadata: Metadata = { title: "Duplicates" };
 
 interface ListResponse {
   duplicates: DuplicateMatch[];
@@ -18,6 +19,11 @@ interface ListResponse {
  * attempted here).
  */
 export default async function DuplicatesPage() {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("duplicates");
+
   const data = await ownerGet<ListResponse>("/v1/merge/duplicates?status=pending");
 
   if (!data) {

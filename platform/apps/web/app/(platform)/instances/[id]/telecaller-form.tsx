@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, User } from "lucide-react";
-import { Button, Checkbox, Input } from "@aura/ui";
+import { Button, Checkbox, Input, useAlert } from "@aura/ui";
 import { setDeviceTelecallerAction } from "./actions";
 
 /**
@@ -29,16 +29,19 @@ export function TelecallerForm({
   const [nameValue, setNameValue] = useState(name ?? "");
   const [idValue, setIdValue] = useState(externalId ?? "");
   const [reassign, setReassign] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const save = () => {
     const trimmedName = nameValue.trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      void alert({
+        title: "The telecaller needs a name",
+        body: "Type the name of whoever is holding this handset.",
+        tone: "danger",
+      });
       return;
     }
-    setError(null);
     startTransition(async () => {
       const res = await setDeviceTelecallerAction({
         orgId,
@@ -48,7 +51,11 @@ export function TelecallerForm({
         reassign,
       });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: "Couldn't save the telecaller",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       setEditing(false);
@@ -97,18 +104,12 @@ export function TelecallerForm({
               setNameValue(name ?? "");
               setIdValue(externalId ?? "");
               setReassign(false);
-              setError(null);
               setEditing(false);
             }}
           >
             Cancel
           </Button>
         </div>
-        {error ? (
-          <p role="alert" className="text-xs font-medium text-danger-text">
-            {error}
-          </p>
-        ) : null}
       </div>
     );
   }

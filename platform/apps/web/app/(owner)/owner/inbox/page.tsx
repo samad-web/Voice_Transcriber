@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { Card, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
+import { ChannelBar } from "../channel-bar";
 import { Inbox } from "./inbox-client";
 import type { Conversation } from "./actions";
 
-export const metadata: Metadata = { title: "Inbox - Aura" };
+export const metadata: Metadata = { title: "Inbox" };
 
 /**
  * Inbound messaging (migrations 0055/0056).
@@ -16,6 +18,16 @@ export const metadata: Metadata = { title: "Inbox - Aura" };
  * waiting" - which here means an enquiry nobody has claimed.
  */
 export default async function InboxPage() {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("inbox");
+
+  // Who may release an opt-out (migration 0100). Resolved here rather than in
+  // the client so the console never offers a button the API will refuse -
+  // OwnerRoleGuard is the actual gate; this only avoids showing a dead one.
+  const owner = await getOwner();
+
   const unmatched = await ownerGet<{ conversations: Conversation[]; total: number }>(
     "/v1/conversations?unmatchedOnly=true&limit=1",
   );
@@ -23,6 +35,7 @@ export default async function InboxPage() {
   return (
     <>
       <PageHeader title="Inbox" context="Pipeline" />
+      <ChannelBar />
 
       {unmatched === null ? (
         <Card>
@@ -34,23 +47,32 @@ export default async function InboxPage() {
       ) : (
         <div className="space-y-4">
           {unmatched.total > 0 ? (
-            <Card>
-              <MonoLabel>Unclaimed</MonoLabel>
-              <p className="mt-2 text-3xl font-semibold text-text tabular-nums">
-                {unmatched.total}
-              </p>
-              <p className="mt-1 text-xs text-text-muted">
-                {unmatched.total === 1
-                  ? "One thread is from a number that matches no contact."
-                  : "Threads from numbers that match no contact."}{" "}
+            // One tile rather than a full-width card: it is the page's only
+            // headline number, and the sentence that used to sit under it was
+            // doing two jobs - saying what the number counts, and explaining
+            // why the situation arises at all. The first is the tile's
+            // `context` line; the second is teaching copy and belongs beside
+            // the tile, not inside it.
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,20rem)_1fr] sm:items-center">
+              <StatCard
+                label="Unclaimed"
+                value={unmatched.total}
+                context={
+                  unmatched.total === 1
+                    ? "thread matches no contact"
+                    : "threads match no contact"
+                }
+              />
+              <p className="text-sm text-text-muted">
                 A number saved from a call log and the same person&rsquo;s WhatsApp number are
-                stored differently, so they do not always match automatically.
+                stored differently, so they do not always match automatically. Claiming a thread
+                onto a contact teaches the match for next time.
               </p>
-            </Card>
+            </div>
           ) : null}
 
           <Card>
-            <Inbox />
+            <Inbox canReleaseOptOut={owner?.membership.ownerRole === "owner" || owner?.membership.ownerRole === "manager"} />
           </Card>
         </div>
       )}

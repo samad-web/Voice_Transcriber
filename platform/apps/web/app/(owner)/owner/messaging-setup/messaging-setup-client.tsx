@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import { readChannel } from "@aura/shared";
 import {
   createWasiChannelAction,
   listChannelsAction,
   setChannelStatusAction,
   setForwardSecretAction,
+  verifyChannelAction,
   type MessagingChannel,
 } from "./actions";
 
@@ -20,8 +22,8 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
   const [channels, setChannels] = useState(initial);
   const [createOpen, setCreateOpen] = useState(false);
   const [secretDialogFor, setSecretDialogFor] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
 
   function refresh() {
     start(async () => {
@@ -32,15 +34,6 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
 
   return (
     <div className="space-y-4">
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
-
       {channels.length === 0 ? (
         <Card>
           <MonoLabel>No WhatsApp channel yet</MonoLabel>
@@ -53,7 +46,25 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
           </div>
         </Card>
       ) : (
-        channels.map((c) => (
+        channels.map((c) => {
+          /*
+           * The chip used to print `c.status`, which is an operator switch with
+           * two values and was being read as health. A channel with a typo'd
+           * key and one whose forward secret was never entered both said
+           * "active"; neither could carry a message. `readChannel` answers the
+           * question the chip was pretending to answer, and answers the send
+           * half and the receive half separately, because they fail separately.
+           */
+          const reading = readChannel({
+            status: c.status,
+            hasApiKey: c.has_api_key,
+            hasForwardSecret: c.has_forward_secret,
+            lastProbeAt: c.last_probe_at,
+            lastProbeOutcome: c.last_probe_outcome,
+            lastProbeDetail: c.last_probe_detail,
+            lastInboundAt: c.last_inbound_at,
+          });
+          return (
           <Card key={c.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -64,7 +75,25 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
                   {c.inbound_address} · via {c.provider}
                 </p>
               </div>
-              <StatusChip tone={c.status === "active" ? "solid" : "muted"}>{c.status}</StatusChip>
+              <StatusChip tone={reading.tone}>{reading.label}</StatusChip>
+            </div>
+
+            <div className="mt-2 space-y-1">
+              <p className="text-sm text-text-muted">{reading.detail}</p>
+              {/*
+                The provider's own words, kept out of the sentence above and
+                shown only when there are any. "Could not connect" does not tell
+                whoever has to fix this whether the key is wrong or the host is
+                down, and that detail is the whole of the fix.
+              */}
+              {c.last_probe_detail ? (
+                <p className="font-mono text-xs break-all text-text-muted">{c.last_probe_detail}</p>
+              ) : null}
+              <p className="text-xs text-text-muted">
+                {c.last_probe_at
+                  ? `Last checked ${new Date(c.last_probe_at).toLocaleString()}`
+                  : "Never checked against the provider."}
+              </p>
             </div>
 
             <div className="mt-3 space-y-2 rounded-md border border-border bg-surface-hover p-3 text-xs">
@@ -83,7 +112,38 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               </Button>
             </div>
 
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap gap-2">
+              {/*
+                Proving the credentials is a BUTTON and not something `create`
+                does, for the reason the API's verify handler states: a probe
+                failure at save time throws away five hand-copied values over a
+                condition that is often temporary, and a forward secret that
+                does not exist yet is the NORMAL order of operations.
+              */}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const res = await verifyChannelAction(c.id);
+                    // Only an unreachable Aura API is an error here. A refused
+                    // key is the answer, and it belongs on the card - putting
+                    // it in a modal would hide the finding behind an "error".
+                    if (res.error) {
+                      await alert({
+                        title: "Couldn't run the check",
+                        body: res.error,
+                        tone: "danger",
+                      });
+                      return;
+                    }
+                    refresh();
+                  })
+                }
+              >
+                {pending ? "Checking…" : "Check this number"}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -94,8 +154,15 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
                       c.id,
                       c.status === "active" ? "disabled" : "active",
                     );
-                    if (res.error) setError(res.error);
-                    else refresh();
+                    if (res.error) {
+                      await alert({
+                        title: "Couldn't change the channel status",
+                        body: res.error,
+                        tone: "danger",
+                      });
+                      return;
+                    }
+                    refresh();
                   })
                 }
               >
@@ -103,7 +170,8 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               </Button>
             </div>
           </Card>
-        ))
+          );
+        })
       )}
 
       <CreateDialog
@@ -140,13 +208,13 @@ function CreateDialog({
   const [apiKey, setApiKey] = useState("");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [wasiClientId, setWasiClientId] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
 
   // The kit's <Dialog> only toggles the underlying <dialog> element and never
   // unmounts its children, so without this a cancelled (or completed) attempt
-  // leaves its field values and error text showing the next time the dialog
-  // opens - for a different channel, or just a second try.
+  // leaves its field values showing the next time the dialog opens - for a
+  // different channel, or just a second try.
   useEffect(() => {
     if (!open) return;
     setInboundAddress("");
@@ -154,11 +222,9 @@ function CreateDialog({
     setApiKey("");
     setApiBaseUrl("");
     setWasiClientId("");
-    setError(null);
   }, [open]);
 
   function submit() {
-    setError(null);
     start(async () => {
       const res = await createWasiChannelAction({
         inboundAddress,
@@ -168,7 +234,11 @@ function CreateDialog({
         wasiClientId,
       });
       if (res.error) {
-        setError(res.error);
+        await alert({
+          title: "Couldn't connect WhatsApp",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       onCreated();
@@ -192,7 +262,6 @@ function CreateDialog({
       }
     >
       <div className="space-y-3">
-        {error ? <p className="text-sm text-danger-text">{error}</p> : null}
         <FormField label="WhatsApp number" name="inboundAddress" required>
           <Input
             value={inboundAddress}
@@ -231,15 +300,14 @@ function SecretDialog({
   onSaved: () => void;
 }) {
   const [secret, setSecret] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
 
   // Same stale-content issue as CreateDialog above - reset when opened for a
   // (possibly different) channel, not just left over from the last attempt.
   useEffect(() => {
     if (channelId === null) return;
     setSecret("");
-    setError(null);
   }, [channelId]);
 
   return (
@@ -258,10 +326,13 @@ function SecretDialog({
             onClick={() =>
               start(async () => {
                 if (!channelId) return;
-                setError(null);
                 const res = await setForwardSecretAction(channelId, secret);
                 if (res.error) {
-                  setError(res.error);
+                  await alert({
+                    title: "Couldn't save the forward secret",
+                    body: res.error,
+                    tone: "danger",
+                  });
                   return;
                 }
                 setSecret("");
@@ -275,7 +346,6 @@ function SecretDialog({
       }
     >
       <div className="space-y-3">
-        {error ? <p className="text-sm text-danger-text">{error}</p> : null}
         <FormField label="Forward secret" name="forwardSecret" required>
           <Input value={secret} onChange={(e) => setSecret(e.target.value)} />
         </FormField>

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Check, Pencil, X } from "lucide-react";
-import { Button, Checkbox, Input } from "@aura/ui";
+import { Button, Checkbox, Input, useAlert } from "@aura/ui";
 import { setTelecallerNameAction } from "./actions";
 
 /**
@@ -24,15 +24,21 @@ export function TelecallerName({
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name ?? "");
   const [reassign, setReassign] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const save = () => {
-    setError(null);
     startTransition(async () => {
       const result = await setTelecallerNameAction(deviceId, value.trim(), reassign);
-      if (result.error) setError(result.error);
-      else setEditing(false);
+      if (result.error) {
+        await alert({
+          title: "Couldn't rename the telecaller",
+          body: result.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setEditing(false);
     });
   };
 
@@ -52,7 +58,6 @@ export function TelecallerName({
             placeholder="Telecaller name"
             aria-label="Telecaller name"
             // <Input> is w-full by design; this one sits inside a table cell.
-            invalid={Boolean(error)}
             className="w-40"
           />
           <Button
@@ -91,13 +96,6 @@ export function TelecallerName({
             description="Keeps the previous person's call history under their own name instead of relabelling it."
             className="text-xs"
           />
-        ) : null}
-        {/* role=alert: the failure arrives after a round trip, so it has to be
-            announced rather than only appear. */}
-        {error ? (
-          <span role="alert" className="text-xs font-medium text-danger-text">
-            {error}
-          </span>
         ) : null}
       </div>
     );

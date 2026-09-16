@@ -1,5 +1,5 @@
-import { PageHeader } from "@/components/page-header";
 import { Card, Skeleton } from "@aura/ui";
+import { PageHeader } from "@/components/page-header";
 
 /** Mirrors meta-ads/page.tsx: intro copy, then a single connect button - no list to fetch. */
 export default function MetaAdsLoading() {

@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Card, MonoLabel, Skeleton } from "@aura/ui";
+import { OWNER_ROLE_ADMINS } from "@aura/shared";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { viewQueryFrom } from "@/lib/list-views";
+import { getOwner, ownerGet } from "@/lib/owner-context";
+import { SavedViewsBar } from "../saved-views/saved-views-bar";
+import { loadSavedViews } from "../saved-views/load";
 import type { Lead, Project, Stage } from "../types";
-import { LeadsTable } from "./leads-table";
+import { LeadsTable, type TelecallerOption } from "./leads-table";
 
-export const metadata: Metadata = { title: "All Leads - Aura" };
+export const metadata: Metadata = { title: "All Leads" };
 
 const PAGE_SIZE = 50;
 
@@ -35,19 +39,40 @@ export default async function LeadsPage({
   };
 
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
-  for (const key of ["stage", "status", "q", "sort", "telecallerId", "projectId"]) {
+  for (const key of [
+    "stage",
+    "status",
+    "q",
+    "sort",
+    "telecallerId",
+    "projectId",
+    "sourceChannel",
+    "assignedTo",
+    "responded",
+    "createdFrom",
+    "createdTo",
+  ]) {
     const value = one(key);
     if (value) query.set(key, value);
   }
   const offset = Math.max(0, Number(one("offset")) || 0);
   if (offset > 0) query.set("offset", String(offset));
 
+  const owner = await getOwner();
+  // Reassigning leads is lead routing's decision (owner/manager on the API,
+  // POST /v1/leads/reassign). The roster it picks from is gated the same way,
+  // so only those two personas fetch it and see the selection column.
+  const canReassign = owner ? OWNER_ROLE_ADMINS.includes(owner.membership.ownerRole) : false;
+
   // Concurrent: the catalogue only supplies the filter chips, so a projects
   // outage should cost the filter row, not the whole leads page. `?? []`
-  // rather than a failure branch - the table renders fine without it.
-  const [data, projects] = await Promise.all([
+  // rather than a failure branch - the table renders fine without it. Same for
+  // the roster and the saved views.
+  const [data, projects, team, views] = await Promise.all([
     ownerGet<ListResponse>(`/v1/leads?${query}`),
     ownerGet<{ projects: Project[] }>("/v1/projects"),
+    canReassign ? ownerGet<{ telecallers: TelecallerOption[] }>("/v1/owner/team") : Promise.resolve(null),
+    loadSavedViews("leads"),
   ]);
 
   if (!data) {
@@ -67,6 +92,7 @@ export default async function LeadsPage({
   return (
     <>
       <PageHeader title="All Leads" context="Pipeline" />
+      <SavedViewsBar list="leads" views={views} current={viewQueryFrom("leads", sp)} allLabel="All leads" />
       {/* useSearchParams needs a Suspense boundary to keep this page static-shell
           renderable; the table is the only client piece on the page. */}
       <Suspense fallback={<TableSkeleton />}>
@@ -77,6 +103,8 @@ export default async function LeadsPage({
           total={data.total}
           limit={data.limit ?? PAGE_SIZE}
           offset={data.offset ?? 0}
+          telecallers={team?.telecallers ?? []}
+          canReassign={canReassign && team !== null}
         />
       </Suspense>
     </>

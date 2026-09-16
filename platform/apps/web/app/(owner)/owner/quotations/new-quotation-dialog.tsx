@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Dialog, FormField, Input, Select } from "@aura/ui";
-import { createQuotationAction } from "./actions";
+import { Button, Dialog, FormField, Input, Select, useAlert } from "@aura/ui";
 import { createLineItemRow, useLineItemRows } from "../use-line-item-rows";
+import { createQuotationAction } from "./actions";
 
 /**
  * Start a quotation from a blank slate. No account/contact/deal picker -
@@ -24,8 +24,8 @@ export function NewQuotationDialog() {
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
   const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows();
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const alert = useAlert();
 
   const reset = () => {
     setCurrency("INR");
@@ -34,22 +34,27 @@ export function NewQuotationDialog() {
     setValidUntil("");
     setNotes("");
     setRows([createLineItemRow()]);
-    setError(null);
   };
 
   const submit = () => {
-    setError(null);
-
     const parsed = parse("Add at least one line item");
     if (parsed.items === null) {
-      setError(parsed.error);
+      void alert({
+        title: "Couldn't create the quotation",
+        body: parsed.error,
+        tone: "danger",
+      });
       return;
     }
 
     const trimmedDiscount = discountValue.trim();
     const discountNum = trimmedDiscount === "" ? 0 : Number(trimmedDiscount);
     if (trimmedDiscount !== "" && (!Number.isFinite(discountNum) || discountNum < 0)) {
-      setError("Enter a valid discount value");
+      void alert({
+        title: "Couldn't create the quotation",
+        body: "Enter a valid discount value",
+        tone: "danger",
+      });
       return;
     }
 
@@ -62,7 +67,11 @@ export function NewQuotationDialog() {
         items: parsed.items,
       });
       if (result.error || !result.quotation) {
-        setError(result.error ?? "Could not create quotation");
+        await alert({
+          title: "Couldn't create the quotation",
+          body: result.error ?? "Could not create quotation",
+          tone: "danger",
+        });
         return;
       }
       const id = result.quotation.id;
@@ -97,15 +106,6 @@ export function NewQuotationDialog() {
         }
       >
         <div className="space-y-4">
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-            >
-              {error}
-            </p>
-          ) : null}
-
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Currency" name="currency" required>
               <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />

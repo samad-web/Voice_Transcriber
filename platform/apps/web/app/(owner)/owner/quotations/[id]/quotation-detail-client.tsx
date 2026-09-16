@@ -15,6 +15,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  useAlert,
 } from "@aura/ui";
 import { createInvoiceFromQuotationAction } from "../../invoices/actions";
 import {
@@ -47,6 +48,7 @@ export function QuotationDetail({
   items: QuotationItem[];
 }) {
   const router = useRouter();
+  const alert = useAlert();
 
   const [quotation, setQuotation] = useState(initialQuotation);
   const [status, setStatus] = useState<QuotationStatus>(initialQuotation.status);
@@ -54,7 +56,6 @@ export function QuotationDetail({
     initialQuotation.valid_until ? initialQuotation.valid_until.slice(0, 10) : "",
   );
   const [notes, setNotes] = useState(initialQuotation.notes ?? "");
-  const [headerError, setHeaderError] = useState<string | null>(null);
   const [headerPending, startHeader] = useTransition();
 
   const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
@@ -64,14 +65,11 @@ export function QuotationDetail({
   const [discountValue, setDiscountValue] = useState(
     initialQuotation.discount_value ? String(Number(initialQuotation.discount_value)) : "0",
   );
-  const [itemsError, setItemsError] = useState<string | null>(null);
   const [itemsPending, startItems] = useTransition();
 
-  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [invoicePending, startInvoice] = useTransition();
 
   const saveHeader = () => {
-    setHeaderError(null);
     startHeader(async () => {
       const result = await updateQuotationAction(quotation.id, {
         status,
@@ -79,7 +77,11 @@ export function QuotationDetail({
         notes: notes.trim() || null,
       });
       if (result.error || !result.quotation) {
-        setHeaderError(result.error ?? "Could not save");
+        await alert({
+          title: "Couldn't save the quotation",
+          body: result.error ?? "Could not save",
+          tone: "danger",
+        });
         return;
       }
       setQuotation(result.quotation);
@@ -90,18 +92,24 @@ export function QuotationDetail({
   };
 
   const saveItems = () => {
-    setItemsError(null);
-
     const parsed = parse("A quotation needs at least one line item");
     if (parsed.items === null) {
-      setItemsError(parsed.error);
+      void alert({
+        title: "Couldn't save the line items",
+        body: parsed.error,
+        tone: "danger",
+      });
       return;
     }
 
     const trimmedDiscount = discountValue.trim();
     const discountNum = trimmedDiscount === "" ? 0 : Number(trimmedDiscount);
     if (trimmedDiscount !== "" && (!Number.isFinite(discountNum) || discountNum < 0)) {
-      setItemsError("Enter a valid discount value");
+      void alert({
+        title: "Couldn't save the line items",
+        body: "Enter a valid discount value",
+        tone: "danger",
+      });
       return;
     }
 
@@ -114,7 +122,11 @@ export function QuotationDetail({
         },
       });
       if (result.error || !result.quotation) {
-        setItemsError(result.error ?? "Could not save items");
+        await alert({
+          title: "Couldn't save the line items",
+          body: result.error ?? "Could not save items",
+          tone: "danger",
+        });
         return;
       }
       setQuotation(result.quotation);
@@ -127,11 +139,14 @@ export function QuotationDetail({
   };
 
   const createInvoice = () => {
-    setInvoiceError(null);
     startInvoice(async () => {
       const result = await createInvoiceFromQuotationAction(quotation.id);
       if (result.error || !result.invoice) {
-        setInvoiceError(result.error ?? "Could not create invoice");
+        await alert({
+          title: "Couldn't create the invoice",
+          body: result.error ?? "Could not create invoice",
+          tone: "danger",
+        });
         return;
       }
       router.push(`/owner/invoices/${result.invoice.id}`);
@@ -143,14 +158,6 @@ export function QuotationDetail({
       <div className="space-y-6">
         <Card>
           <MonoLabel>Line items</MonoLabel>
-          {itemsError ? (
-            <p
-              role="alert"
-              className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-            >
-              {itemsError}
-            </p>
-          ) : null}
 
           <div className="mt-3">
             <Table caption="Quotation line items">
@@ -278,14 +285,6 @@ export function QuotationDetail({
       <div className="space-y-4">
         <Card>
           <MonoLabel>Details</MonoLabel>
-          {headerError ? (
-            <p
-              role="alert"
-              className="mt-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-            >
-              {headerError}
-            </p>
-          ) : null}
           <div className="mt-3 space-y-3">
             <FormField label="Status" name="status">
               <Select value={status} onChange={(e) => setStatus(e.target.value as QuotationStatus)}>
@@ -375,11 +374,6 @@ export function QuotationDetail({
             Turns this quotation into a draft invoice, cloning its items and discount. Nothing sends
             automatically - you still generate and share the payment link yourself once it exists.
           </p>
-          {invoiceError ? (
-            <p role="alert" className="mt-2 text-xs font-medium text-danger-text">
-              {invoiceError}
-            </p>
-          ) : null}
           <Button
             type="button"
             size="sm"

@@ -1,20 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Mail, MessageSquare, Phone, StickyNote } from "lucide-react";
-import { Button, MonoLabel } from "@aura/ui";
-import {
-  fetchInteractionsAction,
-  logInteractionAction,
-  type LogInteractionInput,
-  type TimelineParent,
-} from "./crm-actions";
+import { Button, ErrorBanner, MonoLabel } from "@aura/ui";
+import { interactionToActivity } from "@/lib/activity";
+import { ActorAvatar, ActorKindLabel } from "./actor-badge";
+import { fetchInteractionsAction, type TimelineParent } from "./crm-actions";
+import { LogActivityForm } from "./log-activity-form";
 import { relativeTime, type Interaction } from "./types";
-
-/** Same hand-copied textarea chrome as lead-drawer.tsx - see that file's note. */
-const TEXTAREA_CLASS =
-  "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
-  "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
 
 const ICONS = {
   call: Phone,
@@ -34,16 +27,18 @@ function duration(seconds: number | null): string | null {
 }
 
 /**
- * The unified timeline (Track A2) for one contact, account or deal.
+ * The unified timeline (Track A2) for one account or deal. A contact's own page
+ * uses the wider ContactActivity feed, which adds WhatsApp threads and stage
+ * moves; this one is the interactions alone, sized for a drawer.
  *
  * Fetches on mount rather than taking rows as a prop: the drawer opens from a
  * board card that never carried interactions, and a deal's history is
  * unbounded, so it is not something the list query should be paying for on
  * every row.
  *
- * `call` rows are read-only here by construction - the composer only offers
- * the hand-loggable types, matching what the API accepts (a POST with
- * type=call is a 400). A call appears because the worker projected it.
+ * Every row says who acted - a teammate, an automation or the customer - using
+ * the same reading as the contact feed (lib/activity.ts), so the two surfaces
+ * can never disagree about whether a note was written by a person.
  */
 export function InteractionTimeline({
   parent,
@@ -55,21 +50,18 @@ export function InteractionTimeline({
   title?: string;
 }) {
   const [rows, setRows] = useState<Interaction[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Why the list is empty, not how a save went - it takes the place of the
+  // timeline rather than reporting an event, so it stays on the page.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
-  const [draft, setDraft] = useState<{ type: LogInteractionInput["type"]; body: string }>({
-    type: "note",
-    body: "",
-  });
-  const [pending, startTransition] = useTransition();
 
   const load = useCallback(() => {
     let cancelled = false;
-    setError(null);
+    setLoadError(null);
     void fetchInteractionsAction(parent, parentId).then((result) => {
       if (cancelled) return;
       if (result.error) {
-        setError(result.error);
+        setLoadError(result.error);
         setRows([]);
         return;
       }
@@ -85,30 +77,6 @@ export function InteractionTimeline({
     return load();
   }, [load]);
 
-  const submit = () => {
-    if (!draft.body.trim()) {
-      setError("Write something first");
-      return;
-    }
-    setError(null);
-    startTransition(async () => {
-      const result = await logInteractionAction(parent, parentId, {
-        type: draft.type,
-        body: draft.body.trim(),
-      });
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      // Prepend locally instead of refetching: the new row is always the most
-      // recent, and a refetch would visibly reshuffle a list the user is
-      // reading.
-      if (result.interaction) setRows((prev) => [result.interaction!, ...(prev ?? [])]);
-      setDraft({ type: draft.type, body: "" });
-      setComposing(false);
-    });
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -119,46 +87,20 @@ export function InteractionTimeline({
       </div>
 
       {composing ? (
-        <div className="space-y-2 rounded-md border border-border p-3">
-          <div className="flex flex-wrap gap-1.5">
-            {(["note", "email", "sms", "whatsapp", "meeting"] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                aria-pressed={draft.type === type}
-                onClick={() => setDraft({ ...draft, type })}
-                className={`inline-flex h-7 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
-                  draft.type === type
-                    ? "border-transparent bg-accent-subtle text-accent-text"
-                    : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
-                }`}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-          <textarea
-            value={draft.body}
-            onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-            rows={3}
-            maxLength={20000}
-            placeholder="What happened?"
-            className={TEXTAREA_CLASS}
-          />
-          <Button type="button" size="sm" onClick={submit} loading={pending}>
-            Save to timeline
-          </Button>
-        </div>
+        <LogActivityForm
+          parent={parent}
+          parentId={parentId}
+          onLogged={(interaction) => {
+            // Prepend locally instead of refetching: the new row is always the
+            // most recent, and a refetch would visibly reshuffle a list the
+            // user is reading.
+            setRows((prev) => [interaction, ...(prev ?? [])]);
+            setComposing(false);
+          }}
+        />
       ) : null}
 
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger bg-danger-subtle p-2 text-xs font-medium text-danger-text"
-        >
-          {error}
-        </p>
-      ) : null}
+      {loadError ? <ErrorBanner>{loadError}</ErrorBanner> : null}
 
       {rows === null ? (
         <p className="py-3 text-xs text-text-muted">Loading…</p>
@@ -169,6 +111,7 @@ export function InteractionTimeline({
           {rows.map((row) => {
             const Icon = ICONS[row.type] ?? StickyNote;
             const length = duration(row.duration_s);
+            const { actor, summary } = interactionToActivity(row, { contactName: null });
             // Calendar sync brings in meetings that have not happened yet - a
             // meeting next Thursday being the single most useful thing on a
             // deal. Nothing marks them in the database; "in the future" is
@@ -177,11 +120,13 @@ export function InteractionTimeline({
             const upcoming = new Date(row.occurred_at).getTime() > Date.now();
             return (
               <li key={row.id} className="flex items-start gap-3 px-3 py-2.5">
-                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+                <ActorAvatar actor={actor} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span className="text-xs font-medium text-text capitalize">
-                      {row.direction ? `${row.direction} ${row.type}` : row.type}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <ActorKindLabel actor={actor} />
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden="true" />
+                    <span className={`text-xs ${actor.kind === "automated" ? "text-text-muted" : "font-medium text-text"}`}>
+                      {summary}
                     </span>
                     {upcoming ? (
                       <span className="rounded-full bg-accent-subtle px-2 py-0.5 text-xs font-medium text-accent-text">
@@ -193,7 +138,7 @@ export function InteractionTimeline({
                         ? new Date(row.occurred_at).toLocaleString()
                         : relativeTime(row.occurred_at)}
                       {length ? ` · ${length}` : ""}
-                      {row.actor ? ` · ${row.actor}` : ""}
+                      {actor.via ? ` · ${actor.via}` : ""}
                     </span>
                   </div>
                   {row.subject ? (

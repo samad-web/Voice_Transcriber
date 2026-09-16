@@ -2,7 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { describeAnswers } from "@aura/shared";
-import { BrutalButton, Card, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import {
+  BrutalButton,
+  Card,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+  useToast,
+} from "@aura/ui";
 import {
   checkWhatsAppNumbersAction,
   convertLeadAction,
@@ -148,8 +157,9 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
   const [rejected, setRejected] = useState<Set<string>>(new Set());
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [confirmAll, setConfirmAll] = useState(false);
-  const [deleteNote, setDeleteNote] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const alert = useAlert();
+  const toast = useToast();
 
   /**
    * WhatsApp reachability, keyed by digits rather than by lead id: two leads
@@ -163,14 +173,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
   const [waChecks, setWaChecks] = useState<Map<string, { onWhatsApp: boolean; verifiedName?: string }>>(
     new Map(),
   );
-  const [waNote, setWaNote] = useState<string | null>(null);
   const [waPending, startWa] = useTransition();
-  /** Scoped to one lead id, so a note never appears under the wrong row. */
-  const [sendNote, setSendNote] = useState<{
-    id: string;
-    text: string;
-    tone: "good" | "warn" | "bad";
-  } | null>(null);
   const [sendPending, startSend] = useTransition();
 
   /**
@@ -180,10 +183,13 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
    */
   const runDelete = (scope: "selected" | "all", ids?: string[]) =>
     start(async () => {
-      setDeleteNote(null);
       const res = await deleteLeadsAction({ scope, ids });
       if (res.error) {
-        setDeleteNote(res.error);
+        await alert({
+          title: "Couldn't delete the enquiries",
+          body: res.error,
+          tone: "danger",
+        });
         return;
       }
       setConfirmAll(false);
@@ -199,7 +205,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
           `${res.orphanedCalendarEvents.length} Google Calendar event(s) could NOT be cancelled and must be removed by hand`,
         );
       }
-      setDeleteNote(`${parts.join(" · ")}.`);
+      toast(`${parts.join(" · ")}.`);
     });
 
   /**
@@ -213,13 +219,22 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
    */
   const runWhatsAppCheck = (leads: Lead[]) =>
     startWa(async () => {
-      setWaNote(null);
       const res = await checkWhatsAppNumbersAction(leads.map(messagingNumber));
-      if (res.error) return setWaNote(res.error);
+      if (res.error) {
+        await alert({
+          title: "Couldn't check the numbers",
+          body: res.error,
+          tone: "danger",
+        });
+        return;
+      }
       if (res.configured === false) {
-        return setWaNote(
-          "No WhatsApp instance is connected to this deployment, so numbers cannot be checked.",
-        );
+        await alert({
+          title: "No WhatsApp instance is connected",
+          body: "Nothing is connected to this deployment, so numbers cannot be checked.",
+          tone: "danger",
+        });
+        return;
       }
       const next = new Map(waChecks);
       for (const r of res.results ?? []) {
@@ -227,7 +242,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
       }
       setWaChecks(next);
       const missing = (res.results ?? []).filter((r) => !r.onWhatsApp).length;
-      setWaNote(
+      toast(
         missing === 0
           ? `All ${res.results?.length ?? 0} number(s) are on WhatsApp.`
           : `${missing} of ${res.results?.length ?? 0} number(s) are NOT on WhatsApp - messages to those will never arrive.`,
@@ -351,14 +366,7 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
               ? "Checking WhatsApp…"
               : `Check WhatsApp for ${visible.length} number${visible.length === 1 ? "" : "s"}`}
           </button>
-          {waNote ? <p className="text-xs text-text-muted">{waNote}</p> : null}
         </div>
-      ) : null}
-
-      {deleteNote ? (
-        <p role="status" className="rounded-md border border-border bg-bg-subtle p-3 text-xs text-text">
-          {deleteNote}
-        </p>
       ) : null}
 
       {/* The empty state now sits UNDER the tabs rather than replacing them, and
@@ -539,46 +547,32 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                       type="button"
                       disabled={sendPending}
                       onClick={() => {
-                        setSendNote(null);
                         startSend(async () => {
                           const res = await sendBookingConfirmationAction({ leadId: lead.id });
                           if (res.error) {
-                            setSendNote({ id: lead.id, text: res.error, tone: "bad" });
+                            await alert({
+                              title: "Couldn't queue the confirmation",
+                              body: res.error,
+                              tone: "danger",
+                            });
                             return;
                           }
-                          setSendNote({
-                            id: lead.id,
-                            // Says which message actually went. A confirmation
-                            // with no join link is still correct copy - the
-                            // sentence is removed rather than left blank - but
-                            // an operator pressing this to get somebody their
-                            // link needs to know that is not what they sent.
-                            text: res.hasMeetLink
+                          // Says which message actually went. A confirmation
+                          // with no join link is still correct copy - the
+                          // sentence is removed rather than left blank - but
+                          // an operator pressing this to get somebody their
+                          // link needs to know that is not what they sent.
+                          toast(
+                            res.hasMeetLink
                               ? "Queued - they'll get the time and the Meet link on WhatsApp within a minute."
                               : "Queued, but this booking has no Meet link, so the message confirms the time only.",
-                            tone: res.hasMeetLink ? "good" : "warn",
-                          });
+                          );
                         });
                       }}
                       className="rounded-md border border-border px-2.5 py-1 font-medium text-text-muted hover:bg-surface-hover hover:text-text disabled:opacity-40"
                     >
                       {sendPending ? "Sending…" : "Send on WhatsApp"}
                     </button>
-
-                    {sendNote?.id === lead.id ? (
-                      <span
-                        role="status"
-                        className={
-                          sendNote.tone === "bad"
-                            ? "text-danger-text"
-                            : sendNote.tone === "warn"
-                              ? "text-warning-text"
-                              : "text-text-muted"
-                        }
-                      >
-                        {sendNote.text}
-                      </span>
-                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -630,11 +624,26 @@ export function LeadsTable({ initial }: { initial: Lead[] }) {
                 onSubmit={(form) =>
                   start(async () => {
                     const res = await convertLeadAction({ leadId: lead.id, ...form });
-                    setResult(res);
+                    if (!res.orgId) {
+                      await alert({
+                        title: "Couldn't convert the lead",
+                        body: res.error,
+                        tone: "danger",
+                      });
+                      return;
+                    }
                     // Marked converted whenever a tenant exists, even if the link
                     // step failed - the client is real either way, and offering
                     // "Convert" again would create a second one.
-                    if (res.orgId) setConverted((s) => new Set(s).add(lead.id));
+                    setResult(res);
+                    setConverted((s) => new Set(s).add(lead.id));
+                    if (res.error) {
+                      await alert({
+                        title: "The client was created, but not everything finished",
+                        body: res.error,
+                        tone: "danger",
+                      });
+                    }
                   })
                 }
               />
@@ -727,24 +736,9 @@ function ConvertForm({
 }
 
 function Outcome({ result }: { result: ConvertResult }) {
-  if (result.error && !result.orgId) {
-    return (
-      <p role="alert" className="mt-4 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-danger-text">
-        {result.error}
-      </p>
-    );
-  }
   return (
     <div className="mt-4 rounded-md border border-border bg-bg-subtle p-4">
-      {result.error ? (
-        <p role="alert" className="mb-3 text-sm font-semibold text-danger-text">
-          {result.error}
-        </p>
-      ) : (
-        <p className="mb-3 text-sm font-semibold text-text">
-          {result.orgName} is provisioned.
-        </p>
-      )}
+      <p className="mb-3 text-sm font-semibold text-text">{result.orgName} is provisioned.</p>
       <MonoLabel>Enrollment key - shown once, not recoverable</MonoLabel>
       <code className="mt-1 block break-all rounded bg-surface p-3 text-xs text-text">
         {result.adminKey}

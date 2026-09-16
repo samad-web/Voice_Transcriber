@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, MonoLabel } from "@aura/ui";
+import { BreadcrumbLeaf } from "@/components/breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
 import { CustomFieldEditor } from "../../custom-field-editor";
 import { InteractionTimeline } from "../../interaction-timeline";
+import { LinkedRecords } from "../../linked-records";
 import { TaskList } from "../../task-list";
 import { relativeTime, type Account, type Contact } from "../../types";
 
-export const metadata: Metadata = { title: "Account - Aura" };
+export const metadata: Metadata = { title: "Account" };
 
 /**
  * One account, matching the contact detail page.
@@ -55,6 +57,7 @@ export default async function AccountDetailPage({
 
   return (
     <>
+      <BreadcrumbLeaf label={account.name} />
       <PageHeader title={account.name} context="Account" />
 
       <Link href="/owner/accounts" className="text-xs text-text-muted hover:text-text">
@@ -123,6 +126,10 @@ export default async function AccountDetailPage({
               </ul>
             )}
           </Card>
+
+          {/* Deals, quotations and invoices for the company - none of which this
+              page showed before (doc 23, H2). */}
+          <LinkedRecords parent={{ accountId: account.id }} showDeals />
         </div>
       </div>
     </>

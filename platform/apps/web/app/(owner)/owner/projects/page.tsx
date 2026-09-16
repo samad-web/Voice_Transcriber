@@ -2,12 +2,18 @@ import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
 import type { Project } from "../types";
 import { ProjectsClient } from "./projects-client";
 
-export const metadata: Metadata = { title: "Projects - Aura" };
+export const metadata: Metadata = { title: "Projects" };
 
 export default async function ProjectsPage() {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("projects");
+
   const data = await ownerGet<{ projects: Project[] }>("/v1/projects");
 
   if (!data) {
