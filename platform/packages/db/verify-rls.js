@@ -71,8 +71,28 @@ const APP_URL =
  *                     messaging_channels.webhook_token resolution documents.
  *                     Holds only a provider name + an opaque event id, no
  *                     tenant data.
+ *   app_releases      (0081) the fleet-wide Android release channel: one APK
+ *                     row per versionCode, shared by every tenant's handsets.
+ *                     It has no org_id because there is no per-tenant build -
+ *                     a handset asks "is there something newer than what I am
+ *                     running" and the answer is the same for all of them.
+ *                     Written by the operator (publish-app-release.js), read
+ *                     by GET /devices/me/update behind DeviceAuthGuard. Holds
+ *                     a version, an object key and a changelog: no tenant
+ *                     data, and nothing that identifies who is asking.
+ *
+ *                     Listed on 2026-09-10, when running verify-rls against a
+ *                     real database for the first time since 0081 landed
+ *                     surfaced it as unaccounted. It was never a leak - it was
+ *                     an unreviewed table, which is exactly what this check
+ *                     exists to force somebody to look at.
  */
-const NON_TENANT_TABLES = new Set(["users", "schema_migrations", "payment_webhook_events"]);
+const NON_TENANT_TABLES = new Set([
+  "users",
+  "schema_migrations",
+  "payment_webhook_events",
+  "app_releases",
+]);
 
 /**
  * Schemas OTHER THAN `public` that hold application data and have been reviewed
@@ -149,8 +169,106 @@ function assert(name, cond, detail = "") {
  * Same host set as ssl.js: loopback plus the compose/CI service names. A host
  * in here is a throwaway database - docker-compose locally, a `services:`
  * container in GitHub Actions.
+ *
+ * ── THIS LIST STOPPED BEING SUFFICIENT WHEN POSTGRES CAME IN-HOUSE ──────────
+ *
+ * It was written when production was Supabase Cloud, i.e. permanently remote,
+ * so "not in this list" and "is production" were the same statement. Now that
+ * the database runs on the same box as the app (supabase/selfhost), a
+ * production Postgres reachable as `db` over a compose network is one
+ * plausible-looking hostname away from matching, at which point this guard
+ * waves through the DELETE-cascade below against live customer data.
+ *
+ * Two things answer that. The stack publishes the database to Aura as
+ * `supabase-db`, which is deliberately not in this set - and, because Compose
+ * adds the service name as a network alias no matter what we ask for, `db`
+ * still resolves and the hostname alone cannot be trusted. So the real lock is
+ * assertProduction() below, which does not care what the host is called.
  */
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
+
+/**
+ * Refuse the destructive half under NODE_ENV=production, whatever the hostname.
+ *
+ * docker/node.Dockerfile bakes NODE_ENV=production into the image every
+ * production container runs from, so this is true exactly where it needs to be
+ * and false in local dev and CI.
+ *
+ * Deliberately NOT satisfied by RLS_TEST_ALLOW_REMOTE. That flag means "this
+ * remote host is a throwaway", which is a sentence that can be true; it says
+ * nothing about whether the database has customers in it.
+ *
+ * There IS one legitimate production run, and DEPLOYMENT.md §2 asks for it: a
+ * brand-new production database, before any customer is onboarded, where these
+ * six assertions are the last thing standing between a misconfigured
+ * APP_DATABASE_URL and a tenancy breach. Refusing that outright would delete the
+ * check from the one deployment where it is most valuable.
+ *
+ * So the override exists, and it is not the real lock. assertNoCustomerData()
+ * below is - it asks the database whether anything would actually be destroyed,
+ * which is the question, rather than trusting an operator's belief about it.
+ */
+function assertNotProduction(label) {
+  if (process.env.NODE_ENV !== "production") return;
+  if (process.env.RLS_TEST_ALLOW_PRODUCTION === "1") {
+    console.warn(
+      `WARNING: NODE_ENV=production and RLS_TEST_ALLOW_PRODUCTION=1 (${label}).\n` +
+        "Proceeding only if the database turns out to hold no customer data.",
+    );
+    return;
+  }
+  console.error(
+    [
+      `REFUSING TO RUN: NODE_ENV=production (checking ${label}).`,
+      "",
+      "The behavioural half of this script seeds two organizations and then runs",
+      "DELETE FROM organizations WHERE name LIKE 'rls-test-%', which cascades to",
+      "every tenant table.",
+      "",
+      "If you meant the read-only half - which IS meant to run in production, and",
+      "is what the deploy's migrate container runs - pass --structural-only.",
+      "",
+      "If this is a NEW production database with no customers yet (DEPLOYMENT.md",
+      "§2), re-run with RLS_TEST_ALLOW_PRODUCTION=1. That flag is not enough on",
+      "its own: the run still aborts if any non-test organization exists.",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
+/**
+ * The actual lock. Runs after connecting, because it is a question for the
+ * database rather than for the environment: is there anything here to lose?
+ *
+ * `organizations` is the tenant root and everything cascades from it, so one
+ * non-test row means real customer data is in scope. Cheap, exact, and it does
+ * not care what the host is called, what NODE_ENV says, or which flags were set.
+ */
+async function assertNoCustomerData(admin) {
+  if (process.env.NODE_ENV !== "production") return;
+  const { rows } = await admin.query(
+    "SELECT count(*)::int AS n FROM organizations WHERE name NOT LIKE 'rls-test-%'",
+  );
+  if (rows[0].n === 0) {
+    console.warn("Production database holds 0 non-test organizations - proceeding.");
+    return;
+  }
+  console.error(
+    [
+      "",
+      `REFUSING TO RUN: this production database holds ${rows[0].n} organization(s).`,
+      "",
+      "RLS_TEST_ALLOW_PRODUCTION=1 permits this check on an EMPTY production",
+      "database only. This one has customers in it, and the run would DELETE",
+      "rows that cascade across every tenant table.",
+      "",
+      "To exercise the behavioural checks against production-shaped data, restore",
+      "a backup into a throwaway database and run them there:",
+      "  supabase/selfhost/bin/restore-test.sh",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
 
 /**
  * The reason this exists: the seeding step runs
@@ -164,6 +282,10 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"])
  * So: refuse, by host, and make the override explicit and deliberate.
  */
 function assertDisposable(label, url) {
+  // Checked first: it is the one condition no override can excuse, so failing
+  // on it should not depend on the URL even parsing.
+  assertNotProduction(label);
+
   let host;
   try {
     // IPv6 hostnames come back bracketed from the URL parser.
@@ -515,8 +637,15 @@ async function behaviouralChecks(admin, app) {
 /**
  * `--structural-only`: the read-only half, deliberately runnable against
  * production (08 §1.5 - "the run it in the migrate container half is
- * structurally blocked: production is Supabase, so the guard refuses, and
- * the only override re-enables the destructive path against live data").
+ * structurally blocked ... and the only override re-enables the destructive
+ * path against live data").
+ *
+ * 08 §1.5 justified that block by saying production is Supabase Cloud and
+ * therefore never a local host. That argument expired when Postgres moved onto
+ * the same box (supabase/selfhost): the destructive half is now blocked by
+ * assertNotProduction() reading NODE_ENV instead, which does not depend on
+ * where the database happens to live. The conclusion is unchanged - this half
+ * runs in production, the other half never does.
  *
  * `structuralChecks` never writes - it enumerates `information_schema`,
  * `pg_class`, `pg_policies` and `pg_constraint`. `assertDisposable()` exists
@@ -550,6 +679,11 @@ async function main() {
 
   const admin = new Client({ connectionString: ADMIN_URL, ssl: sslFor(ADMIN_URL) });
   await admin.connect();
+
+  // Before the app connection, and before anything writes: the environment
+  // checks above are about intent, this one is about consequences.
+  await assertNoCustomerData(admin);
+
   const app = new Client({ connectionString: APP_URL, ssl: sslFor(APP_URL) });
   await app.connect();
 

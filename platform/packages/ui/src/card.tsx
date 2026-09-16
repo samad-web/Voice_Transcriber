@@ -29,11 +29,33 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
 }
 
+/**
+ * Does `className` already set all-sides padding?
+ *
+ * `cx` is a plain join (see cx.ts): a caller's class does not REPLACE a base
+ * class, it only lands later in the string, and Tailwind breaks that tie by
+ * stylesheet order rather than by string order. Tailwind emits `.p-0` before
+ * `.p-6`, so `p-6` was winning - which meant every `<Card className="p-0">` in
+ * the console (fourteen of them, each wrapping a full-bleed table or header
+ * strip that is supposed to run to the card's edge) still carried the 24px it
+ * had explicitly asked to drop. Dropping the base when the caller owns padding
+ * is the fix that does not add tailwind-merge to a kit whose whole point is
+ * having no runtime dependency beyond React.
+ *
+ * Only an unprefixed, all-sides `p-*` counts:
+ * - `sm:p-0` is a responsive override that still needs the base at other sizes.
+ * - `px-*`/`py-*` are partial overrides, and Tailwind's own ordering already
+ *   resolves those against `p-6` correctly (the directional utilities are
+ *   emitted after the all-sides one).
+ */
+const OWNS_PADDING = /(?:^|\s)p-\S/;
+
 export function Card({ children, elevated = false, className = "", ...rest }: CardProps) {
   return (
     <div
       className={cx(
-        "rounded-xl border border-border bg-surface p-6",
+        "rounded-xl border border-border bg-surface",
+        OWNS_PADDING.test(className) ? null : "p-6",
         elevated ? "shadow-lift" : "shadow-card",
         className,
       )}

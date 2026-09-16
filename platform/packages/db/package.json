@@ -16,6 +16,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@aura/shared": "workspace:*",
     "pg": "^8.13.0"
   },
   "devDependencies": {

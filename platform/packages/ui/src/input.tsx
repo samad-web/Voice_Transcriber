@@ -1,8 +1,18 @@
-import type { InputHTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 import { CONTROL_BASE, CONTROL_INVALID } from "./control-styles";
 import { cx } from "./cx";
 
-export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+/**
+ * `ComponentPropsWithRef`, not `InputHTMLAttributes`, so callers can hold a
+ * ref to the element. React 19 passes `ref` to a function component as an
+ * ordinary prop, so no `forwardRef` is needed - but the props type has to
+ * admit it, and `InputHTMLAttributes` alone does not. Strictly wider than what
+ * this accepted before; nothing that compiled stops compiling.
+ *
+ * The confirm dialog's type-DELETE gate needs it: that field has to take focus
+ * the moment the dialog opens.
+ */
+export interface InputProps extends ComponentPropsWithRef<"input"> {
   /** Sets `aria-invalid` and the danger border. FormField sets this for you. */
   invalid?: boolean;
   className?: string;

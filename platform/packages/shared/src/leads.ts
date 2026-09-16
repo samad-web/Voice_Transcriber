@@ -185,3 +185,28 @@ export function mergeFacts(
   }
   return out;
 }
+
+/**
+ * The card heading for a lead, and the display name of the contact and deal
+ * projected from it.
+ *
+ * Falls back the same way the Call Explorer labels a call: extracted name →
+ * the number's leading digits → nothing identifiable. An owner should never
+ * see a raw uuid on a board card.
+ *
+ * Lives here, not in the worker, because the API writes the same projection
+ * (doc 23, B3) and the two must name a record identically - UNMATCHABLE_DISPLAY_NAMES
+ * in dedupe.ts is matched against exactly this output.
+ */
+export function leadTitle(
+  extractedName: string | null,
+  remoteName: string | null,
+  numberPrefix: string | null,
+  numberLast3: string | null,
+): string {
+  const name = extractedName?.trim() || remoteName?.trim();
+  if (name) return name.slice(0, 200);
+  if (numberPrefix) return `${numberPrefix}…`;
+  if (numberLast3) return `…${numberLast3}`;
+  return "Unknown caller";
+}

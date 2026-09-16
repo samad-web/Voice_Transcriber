@@ -1,11 +1,14 @@
-import { GoogleGenAI, type ThinkingConfig } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import {
   compileToJsonSchema,
   ExtractionSchema,
   type ExtractionField,
+  type SopStep,
+  type SopStepResult,
   validateExtraction,
 } from "@aura/shared";
 import { RetryableError, withProviderRetry } from "./retry";
+import { geminiAnalyzeModel, geminiThinking } from "./gemini-config";
 import { sarvamChat, sarvamChatConfigured, sarvamChatModel } from "./sarvam";
 
 export { RetryableError, withProviderRetry } from "./retry";
@@ -23,47 +26,11 @@ export {
  */
 export const withGeminiRetry = withProviderRetry;
 
-/**
- * Reasoning budget for every Gemini call in the pipeline.
- *
- * Gemini has thinking ON by default with a dynamic budget, and thinking tokens
- * bill at the OUTPUT rate - the most expensive line on the invoice. Neither of
- * our jobs needs reasoning: ASR is dictation, and analyze copies values out of
- * a transcript into a fixed schema. Left at the default, a call silently pays
- * for hundreds of hidden tokens per request.
- *
- * This asks for that with `thinkingLevel`, NOT `thinkingBudget: 0`. The budget
- * form is a 2.x-ism that Gemini 3 models reject outright with
- * `400 … INVALID_ARGUMENT`, and because GEMINI_ANALYZE_MODEL was pointed at the
- * floating `gemini-flash-lite-latest` alias, Google re-pointing it at
- * gemini-3.5-flash-lite failed every analyze call in production without a line
- * of our code changing. "minimal" is accepted by both generations and measures
- * thoughtsTokenCount = 0, so it costs what a 0 budget was meant to cost.
- *
- * Raise GEMINI_THINKING_LEVEL (minimal|low|medium|high) if a tenant's
- * extraction quality genuinely needs reasoning.
- */
-export function geminiThinking(): ThinkingConfig {
-  const level = process.env.GEMINI_THINKING_LEVEL?.trim() || "minimal";
-  return { thinkingLevel: level as ThinkingConfig["thinkingLevel"] };
-}
-
-/**
- * Gemini's analyze model, and the one place its default lives.
- *
- * The default is deliberately NOT gemini-2.5-flash: Google retired it for new
- * users and the API now answers `404 … no longer available`, which the analyze
- * stage swallowed as a non-blocking conversation-intelligence error - calls
- * completed with an empty summary and no failure recorded anywhere. A default
- * that 404s is worse than no default at all, so it tracks a live model.
- *
- * Set this to a PINNED id, never a `-latest` alias. An alias moves underneath a
- * running deployment: `gemini-flash-lite-latest` silently became
- * gemini-3.5-flash-lite mid-morning and took the analyze stage down with it.
- */
-export function geminiAnalyzeModel(): string {
-  return process.env.GEMINI_ANALYZE_MODEL ?? "gemini-3.5-flash";
-}
+// Both now live in gemini-config.ts, so qualify.ts can share them without an
+// import cycle through this file. Imported AND re-exported: this file still
+// calls them itself, and a bare `export ... from` creates no local binding -
+// every existing caller keeps importing them from @aura/llm unchanged.
+export { geminiAnalyzeModel, geminiThinking } from "./gemini-config";
 
 /**
  * Render an instance's vocabulary as a glossary the analyser must spell by.
@@ -119,6 +86,50 @@ export function glossaryBlock(vocabulary?: string[] | null): string {
  */
 const SARVAM_LABEL_CHUNK = Number(process.env.SARVAM_LABEL_CHUNK ?? 10);
 
+/**
+ * How many labelling requests are in flight at once.
+ *
+ * The chunks were run one after another, which was invisible while each one
+ * FAILED in about a second and became the whole cost once they started
+ * succeeding: on the starter tier a request returned truncated in ~50s, and
+ * with real headroom sarvam-105b reasons for ~95s before answering. A
+ * 39-segment call was four serial requests - roles, two chunk passes, the
+ * call-level read - and took 7m52s, of which nine seconds was the actual
+ * transcription.
+ *
+ * Nothing about a chunk depends on another chunk. Roles are decided ONCE for
+ * the whole call before any of this runs (see the function docblock), and each
+ * chunk only labels intent, which is local to its own segments - so they are
+ * independent by construction, not by luck.
+ *
+ * Bounded rather than a bare Promise.all: an 84-segment call is three chunks
+ * today, but the ceiling is however long a call someone records, and firing
+ * twenty simultaneous requests at a starter-tier plan trades a latency problem
+ * for a 429 problem. Four is enough to make the count of chunks stop mattering
+ * for any realistic call.
+ */
+const SARVAM_LABEL_CONCURRENCY = Number(process.env.SARVAM_LABEL_CONCURRENCY ?? 4);
+
+/**
+ * Run `job` over every item, at most `limit` at a time.
+ *
+ * Workers pull from a shared cursor rather than taking a fixed slice each, so
+ * one slow request cannot leave the others idle behind it.
+ */
+async function inPoolOf<T>(
+  limit: number,
+  items: T[],
+  job: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      await job(items[i]!);
+    }
+  });
+  await Promise.all(workers);
+}
+
 export interface AnalyzeResult {
   output: Record<string, unknown>;
   validationStatus: "valid" | "repaired" | "failed";
@@ -168,6 +179,114 @@ export interface QualityCriteria {
   rationale: string;
 }
 
+/**
+ * The SOP block appended to the conversation prompt, and the reply schema for
+ * it. Built once and used by BOTH provider paths - the Gemini single-request
+ * path and Sarvam's separate call-level pass - because two copies of a prompt
+ * that must produce the same shape is how they stop producing the same shape.
+ *
+ * Returns null for an org with no SOP, and every caller checks that: the steps
+ * only reach the model when a tenant has actually defined them, so an org
+ * without one pays nothing at all - no extra input tokens, no extra output.
+ */
+export function sopPromptBlock(steps: SopStep[] | null | undefined): string | null {
+  if (!steps || steps.length === 0) return null;
+  const lines = steps.map((s) => `- ${s.key}: ${s.description}`).join("\n");
+  return (
+    "\n\nSOP CHECK. The team has a call procedure. For EACH step below decide " +
+    "whether the AGENT did it on this call, and return one entry per step in " +
+    '"sopResults" as {"key": the step key, "met": "yes"|"no"|"unclear", ' +
+    '\"evidence\": a VERBATIM quote from the call, or null}.\n' +
+    "RULES, and they matter more than the verdict:\n" +
+    '· "met": "yes" REQUIRES an "evidence" quote copied word-for-word from ' +
+    "the call. If you cannot quote it, you did not see it - answer unclear.\n" +
+    '· Answer "unclear" when the call does not settle the step - it ended ' +
+    "early, only one side was recorded, or the situation never arose. " +
+    "unclear is the correct answer far more often than no.\n" +
+    '· Answer "no" only when the step clearly SHOULD have happened and ' +
+    "demonstrably did not.\n" +
+    "· Judge only the Agent's words. The customer mentioning something does " +
+    "not mean the agent did it.\n" +
+    `STEPS:\n${lines}`
+  );
+}
+
+/** The `sopResults` half of a reply schema. Null when the org has no SOP. */
+export function sopReplySchema(
+  steps: SopStep[] | null | undefined,
+): Record<string, unknown> | null {
+  if (!steps || steps.length === 0) return null;
+  return {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        key: { type: "string", enum: steps.map((s) => s.key) },
+        // Deliberately NOT `{ type: "boolean" }`: a boolean schema cannot
+        // express "undecided", and a model forced to choose between true and
+        // false on a call that settled neither will pick one. The three-valued
+        // answer is the whole point, so it rides as a string the coercion maps.
+        met: { type: "string", enum: ["yes", "no", "unclear"] },
+        evidence: { type: "string" },
+      },
+      required: ["key", "met"],
+    },
+  };
+}
+
+/**
+ * Coerce the model's SOP verdicts, and enforce the one rule that makes them
+ * trustworthy: a step claimed as met WITHOUT a verbatim quote is downgraded to
+ * inconclusive.
+ *
+ * That downgrade is the feature, not defensive plumbing. A "met" with no
+ * evidence is indistinguishable from a hallucination, and this score is read in
+ * performance conversations - so the only "met" that survives is one a person
+ * can go and check against the transcript. The cost is that a genuinely
+ * followed step whose quote the model forgot reads as unclear, which is the
+ * right direction to be wrong in.
+ *
+ * Unknown keys are dropped rather than stored: they cannot be rendered against
+ * any step the tenant defined, and keeping them would let a model invent
+ * criteria nobody agreed to.
+ */
+function coerceSopResults(value: unknown, steps: SopStep[] | null | undefined): SopStepResult[] {
+  if (!steps || steps.length === 0 || !Array.isArray(value)) return [];
+  const known = new Map(steps.map((s) => [s.key, s]));
+  const seen = new Set<string>();
+  const out: SopStepResult[] = [];
+
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const key = typeof r.key === "string" ? r.key : "";
+    if (!known.has(key) || seen.has(key)) continue;
+    seen.add(key);
+
+    const evidenceRaw = typeof r.evidence === "string" ? r.evidence.trim() : "";
+    const evidence = evidenceRaw.length > 0 ? evidenceRaw.slice(0, 500) : null;
+
+    let met: boolean | null;
+    const verdict = typeof r.met === "string" ? r.met.trim().toLowerCase() : r.met;
+    if (verdict === "yes" || verdict === true) met = true;
+    else if (verdict === "no" || verdict === false) met = false;
+    else met = null;
+
+    // The rule. No quote, no "met".
+    if (met === true && !evidence) met = null;
+
+    out.push({ key, met, evidence: met === null && !evidence ? null : evidence });
+  }
+
+  // A step the model skipped entirely is inconclusive, not absent: the console
+  // renders a checklist of the tenant's steps, and a missing row would read as
+  // the step having been removed from the SOP rather than unjudged.
+  for (const step of steps) {
+    if (!seen.has(step.key)) out.push({ key: step.key, met: null, evidence: null });
+  }
+  return out;
+}
+
 /** One compliance/escalation-worthy moment the model noticed in the call. */
 export interface RiskFlag {
   /** e.g. "competitor_mention", "cancellation_request", "legal_threat". Free text - the automation-rule condition matches on severity, not category. */
@@ -215,9 +334,7 @@ function coerceRiskFlags(value: unknown): RiskFlag[] {
     .map((f) => ({
       category: typeof f.category === "string" ? f.category.slice(0, 60) : "other",
       snippet: typeof f.snippet === "string" ? f.snippet.slice(0, 300) : "",
-      severity: severities.has(String(f.severity))
-        ? (f.severity as RiskFlag["severity"])
-        : "low",
+      severity: severities.has(String(f.severity)) ? (f.severity as RiskFlag["severity"]) : "low",
     }));
 }
 
@@ -244,6 +361,12 @@ export interface ConversationIntelligence {
   qualityCriteria: QualityCriteria | null;
   /** Capped at 5 - this is a spotter, not a transcript re-derivation. */
   riskFlags: RiskFlag[];
+  /**
+   * Per-step verdicts against the tenant's own SOP (migration 0089), or an
+   * empty array when the org has no active SOP - which is the normal case and
+   * costs nothing, because the steps only enter the prompt when they exist.
+   */
+  sopResults: SopStepResult[];
   provider: string;
   model: string;
   tokensIn: number;
@@ -447,7 +570,13 @@ function normalizeDraft(raw: unknown): unknown {
       if (typeof f !== "object" || f === null) return f;
       const field = f as { key?: unknown };
       if (typeof field.key !== "string") return field;
-      return { ...field, key: field.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") };
+      return {
+        ...field,
+        key: field.key
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, "_"),
+      };
     }),
   };
 }
@@ -474,7 +603,11 @@ function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[
 
   if (errors.length > 0) return { errors };
   return {
-    data: { name, systemPrompt: systemPrompt.slice(0, 20000), fields: fieldsParsed.success ? fieldsParsed.data.fields : [] },
+    data: {
+      name,
+      systemPrompt: systemPrompt.slice(0, 20000),
+      fields: fieldsParsed.success ? fieldsParsed.data.fields : [],
+    },
   };
 }
 
@@ -485,15 +618,16 @@ function stubAgentDraft(input: {
   if (input.base) {
     return {
       name: `${input.base.name} (modified)`.slice(0, 120),
-      systemPrompt: `${input.base.systemPrompt}\n\nAdditional instruction: ${input.description}`.slice(
-        0,
-        20000,
-      ),
+      systemPrompt:
+        `${input.base.systemPrompt}\n\nAdditional instruction: ${input.description}`.slice(
+          0,
+          20000,
+        ),
       fields: input.base.fields,
     };
   }
   return {
-    name: (input.description.trim().slice(0, 60) || "Generated Agent"),
+    name: input.description.trim().slice(0, 60) || "Generated Agent",
     systemPrompt: `You are an expert call analyst. ${input.description}`.slice(0, 20000),
     fields: [
       {
@@ -561,7 +695,10 @@ export async function generateAgentDraft(input: {
           ai.models.generateContent({
             model,
             contents: [
-              { role: "user", parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote) }] },
+              {
+                role: "user",
+                parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote) }],
+              },
             ],
             config: {
               responseMimeType: "application/json",
@@ -581,7 +718,9 @@ export async function generateAgentDraft(input: {
   const second = parseAgentDraft(normalizeDraft(await run(first.errors.join("; "))));
   if ("data" in second) return second.data;
 
-  throw new Error(`generateAgentDraft: model output failed validation twice: ${second.errors.join("; ")}`);
+  throw new Error(
+    `generateAgentDraft: model output failed validation twice: ${second.errors.join("; ")}`,
+  );
 }
 
 /**
@@ -601,6 +740,12 @@ export async function analyzeConversation(
   vocabulary?: string[] | null,
   /** "incoming" | "outgoing". A real prior on which voice is the Agent. */
   direction?: string | null,
+  /**
+   * The tenant's active SOP steps (migration 0089), or null/empty for an org
+   * that has not defined one - which costs nothing, because the steps only
+   * enter the prompt and the reply schema when they exist.
+   */
+  sopSteps?: SopStep[] | null,
 ): Promise<ConversationIntelligence> {
   const base: ConversationIntelligence = {
     language: "und",
@@ -616,6 +761,7 @@ export async function analyzeConversation(
     qualityScore: null,
     qualityCriteria: null,
     riskFlags: [],
+    sopResults: [],
     provider: "none",
     model: "none",
     tokensIn: 0,
@@ -648,17 +794,17 @@ export async function analyzeConversation(
   // cannot hold a whole call's labels in one reply. Gemini has no such limit and
   // keeps the single-request path below, which is cheaper and needs no stitching.
   if (sarvamChatConfigured() && label) {
-    return sarvamConversation(text, usable, vocabulary, base, direction);
+    return sarvamConversation(text, usable, vocabulary, base, direction, sopSteps);
   }
 
   const roleRules =
-    "\"Agent\" is the telecaller/sales rep handling the call; \"Customer\" is the " +
+    '"Agent" is the telecaller/sales rep handling the call; "Customer" is the ' +
     "other party. Use cues: the Agent greets, pitches, and asks qualifying " +
     "questions; the Customer answers, asks about price/product, and raises " +
     "objections. Speaker roles must stay consistent for the whole call.\n";
   const intentRule =
-    "Give each turn a short 2-5 word intent (e.g. \"greeting\", \"price objection\", " +
-    "\"asking availability\", \"not interested\", \"schedule follow-up\").\n";
+    'Give each turn a short 2-5 word intent (e.g. "greeting", "price objection", ' +
+    '"asking availability", "not interested", "schedule follow-up").\n';
   const callRule =
     "Summarise the call and read the overall intent, sentiment and outcome. " +
     "Write the summary/intents in English regardless of the call's language.\n" +
@@ -722,7 +868,12 @@ export async function analyzeConversation(
       ).slice(0, 24000)}`
     : `Call transcript:\n${text.slice(0, 12000)}`;
 
-  const prompt = `${system}${glossaryBlock(vocabulary)}\n\nJSON shape:\n${shape}\n\n${userContent}`;
+  // The SOP block rides AFTER the JSON shape and before the transcript, so the
+  // step descriptions are the last instructions the model reads before the
+  // content it has to judge. Null - and therefore absent entirely - for an org
+  // with no SOP.
+  const sopBlock = sopPromptBlock(sopSteps) ?? "";
+  const prompt = `${system}${glossaryBlock(vocabulary)}\n\nJSON shape:\n${shape}${sopBlock}\n\n${userContent}`;
 
   /**
    * The reply shape as a schema, not just as prose in the prompt.
@@ -768,7 +919,13 @@ export async function analyzeConversation(
       required: ["category", "snippet", "severity"],
     },
   };
+  const sopSchema = sopReplySchema(sopSteps);
   const callFieldSchema = {
+    // Spread in only when the org has an SOP: an empty `sopResults` property
+    // on the schema would ask every tenant to fill in a field none of them
+    // have steps for, and structured-output generation honours what the
+    // schema says far more literally than what the prompt says.
+    ...(sopSchema ? { sopResults: sopSchema } : {}),
     summary: str,
     overall_intent: str,
     customer_intent: str,
@@ -939,10 +1096,9 @@ export async function analyzeConversation(
     key_points: Array.isArray(raw.key_points) ? raw.key_points.map(String) : [],
     action_items: Array.isArray(raw.action_items) ? raw.action_items.map(String) : [],
     qualityScore: coerceQualityScore((raw as { qualityScore?: unknown }).qualityScore),
-    qualityCriteria: coerceQualityCriteria(
-      (raw as { qualityCriteria?: unknown }).qualityCriteria,
-    ),
+    qualityCriteria: coerceQualityCriteria((raw as { qualityCriteria?: unknown }).qualityCriteria),
     riskFlags: coerceRiskFlags((raw as { riskFlags?: unknown }).riskFlags),
+    sopResults: coerceSopResults((raw as { sopResults?: unknown }).sopResults, sopSteps),
     provider: usedProvider,
     model: usedModel,
     tokensIn,
@@ -986,6 +1142,7 @@ async function sarvamConversation(
   vocabulary: string[] | null | undefined,
   base: ConversationIntelligence,
   direction?: string | null,
+  sopSteps?: SopStep[] | null,
 ): Promise<ConversationIntelligence> {
   const model = sarvamChatModel();
   const glossary = glossaryBlock(vocabulary);
@@ -1102,46 +1259,53 @@ async function sarvamConversation(
 
   const decided = new Map<number, string | null>();
 
+  const chunkStarts: number[] = [];
   for (let start = 0; start < usable.length; start += SARVAM_LABEL_CHUNK) {
-    const slice = usable.slice(start, start + SARVAM_LABEL_CHUNK);
-    const prompt =
-      `You are labelling segments of ONE phone call for a telecalling team. ` +
-      `${roleRules}\n` +
-      `The speaker of each segment is already known and is given to you - do ` +
-      `NOT second-guess it. Return only a short 2-5 word intent for each index ` +
-      `(e.g. "greeting", "price objection", "asking availability", ` +
-      `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"intent":"greeting"}]}` +
-      `${glossary}\n\n${context}\n\n` +
-      `Label exactly these segments:\n${JSON.stringify(
-        slice.map((s, k) => ({ i: start + k, speaker: roleOf(s), text: s.text.trim() })),
-      )}`;
-
-    try {
-      const res = await sarvamChat({
-        prompt,
-        jsonSchema: labelSchema,
-        label: `analyzeConversation.labels[${start}-${start + slice.length - 1}]`,
-      });
-      tokensIn += res.tokensIn;
-      tokensOut += res.tokensOut;
-      const parsed = JSON.parse(res.text || "{}") as {
-        labels?: Array<{ i?: unknown; intent?: unknown }>;
-      };
-      for (const l of parsed.labels ?? []) {
-        const i = Number(l?.i);
-        if (!Number.isInteger(i) || i < 0 || i >= usable.length) continue;
-        decided.set(i, l.intent ? String(l.intent) : null);
-      }
-    } catch (err) {
-      console.error(
-        `analyzeConversation: intent chunk ${start}-${start + slice.length - 1} failed, ` +
-          `those segments keep their role but lose their intent:`,
-        err,
-      );
-    }
+    chunkStarts.push(start);
   }
 
+  const runLabels = () =>
+    inPoolOf(SARVAM_LABEL_CONCURRENCY, chunkStarts, async (start) => {
+      const slice = usable.slice(start, start + SARVAM_LABEL_CHUNK);
+      const prompt =
+        `You are labelling segments of ONE phone call for a telecalling team. ` +
+        `${roleRules}\n` +
+        `The speaker of each segment is already known and is given to you - do ` +
+        `NOT second-guess it. Return only a short 2-5 word intent for each index ` +
+        `(e.g. "greeting", "price objection", "asking availability", ` +
+        `"not interested"). Return ONLY JSON: {"labels":[{"i":0,"intent":"greeting"}]}` +
+        `${glossary}\n\n${context}\n\n` +
+        `Label exactly these segments:\n${JSON.stringify(
+          slice.map((s, k) => ({ i: start + k, speaker: roleOf(s), text: s.text.trim() })),
+        )}`;
+
+      try {
+        const res = await sarvamChat({
+          prompt,
+          jsonSchema: labelSchema,
+          label: `analyzeConversation.labels[${start}-${start + slice.length - 1}]`,
+        });
+        tokensIn += res.tokensIn;
+        tokensOut += res.tokensOut;
+        const parsed = JSON.parse(res.text || "{}") as {
+          labels?: Array<{ i?: unknown; intent?: unknown }>;
+        };
+        for (const l of parsed.labels ?? []) {
+          const i = Number(l?.i);
+          if (!Number.isInteger(i) || i < 0 || i >= usable.length) continue;
+          decided.set(i, l.intent ? String(l.intent) : null);
+        }
+      } catch (err) {
+        console.error(
+          `analyzeConversation: intent chunk ${start}-${start + slice.length - 1} failed, ` +
+            `those segments keep their role but lose their intent:`,
+          err,
+        );
+      }
+    });
+
   // ── call-level reading: one small answer, so one request always suffices ──
+  const sarvamSopSchema = sopReplySchema(sopSteps);
   const summarySchema = {
     type: "object",
     properties: {
@@ -1166,6 +1330,7 @@ async function sarvamConversation(
       key_points: { type: "array", items: { type: "string" } },
       action_items: { type: "array", items: { type: "string" } },
       qualityScore: { type: "integer" },
+      ...(sarvamSopSchema ? { sopResults: sarvamSopSchema } : {}),
       qualityCriteria: {
         type: "object",
         properties: {
@@ -1199,34 +1364,49 @@ async function sarvamConversation(
     required: ["language", "summary", "sentiment", "outcome"],
   };
 
-  let raw: Partial<ConversationIntelligence> = {};
-  try {
-    const res = await sarvamChat({
-      prompt:
-        `Read ONE phone call for a telecalling / sales team and report on it. ` +
-        `${roleRules}\n` +
-        `Write the summary and intents in English regardless of the call's ` +
-        `language. Return ONLY JSON with keys: language (iso639-1), summary ` +
-        `(2-3 sentences), overall_intent, customer_intent, agent_intent, ` +
-        `sentiment, outcome, key_points, action_items, qualityScore (0-100), ` +
-        `qualityCriteria ({consentDisclosed: did the agent state this call may ` +
-        `be recorded, scriptAdherence 0-10, professionalism 0-10, ` +
-        `conversionSignal 0-10, rationale: one short sentence}), riskFlags ` +
-        `(up to 5, ONLY for things actually said - competitor mention, ` +
-        `cancellation/refund request, legal threat, broken promise, hostility; ` +
-        `empty array when there is nothing to flag).` +
-        `${glossary}\n\n${fullContext}`,
-      jsonSchema: summarySchema,
-      label: "analyzeConversation.summary",
-    });
-    tokensIn += res.tokensIn;
-    tokensOut += res.tokensOut;
-    raw = JSON.parse(res.text || "{}") as Partial<ConversationIntelligence>;
-  } catch (err) {
-    // Labels may well have landed; returning them without a summary is better
-    // than throwing the whole stage away.
-    console.error("analyzeConversation: call-level pass failed:", err);
-  }
+  /**
+   * The call-level read. A SIBLING of the labelling above, not its successor:
+   * it reads the transcript and the role mapping, never the per-segment
+   * intents, so waiting for the chunks bought nothing and cost a full request's
+   * latency on every call.
+   */
+  const runSummary = async (): Promise<Partial<ConversationIntelligence>> => {
+    try {
+      const res = await sarvamChat({
+        prompt:
+          `Read ONE phone call for a telecalling / sales team and report on it. ` +
+          `${roleRules}\n` +
+          `Write the summary and intents in English regardless of the call's ` +
+          `language. Return ONLY JSON with keys: language (iso639-1), summary ` +
+          `(2-3 sentences), overall_intent, customer_intent, agent_intent, ` +
+          `sentiment, outcome, key_points, action_items, qualityScore (0-100), ` +
+          `qualityCriteria ({consentDisclosed: did the agent state this call may ` +
+          `be recorded, scriptAdherence 0-10, professionalism 0-10, ` +
+          `conversionSignal 0-10, rationale: one short sentence}), riskFlags ` +
+          `(up to 5, ONLY for things actually said - competitor mention, ` +
+          `cancellation/refund request, legal threat, broken promise, hostility; ` +
+          `empty array when there is nothing to flag).` +
+          `${sopPromptBlock(sopSteps) ?? ""}` +
+          `${glossary}\n\n${fullContext}`,
+        jsonSchema: summarySchema,
+        label: "analyzeConversation.summary",
+      });
+      tokensIn += res.tokensIn;
+      tokensOut += res.tokensOut;
+      return JSON.parse(res.text || "{}") as Partial<ConversationIntelligence>;
+    } catch (err) {
+      // Labels may well have landed; returning them without a summary is better
+      // than throwing the whole stage away.
+      console.error("analyzeConversation: call-level pass failed:", err);
+      return {};
+    }
+  };
+
+  // Both halves at once. Each keeps its own try/catch, so this is still "a
+  // failed chunk loses its intents, a failed summary loses the summary" - one
+  // rejecting must never take the other down with it, which is exactly what a
+  // shared try around a Promise.all would have done.
+  const [, raw] = await Promise.all([runLabels(), runSummary()]);
 
   // Role comes from the one global mapping, never from the chunk - so a chunk
   // that failed costs an intent, not a swapped speaker.
@@ -1245,15 +1425,14 @@ async function sarvamConversation(
     customer_intent: raw.customer_intent || "",
     agent_intent: raw.agent_intent || "",
     sentiment:
-      raw.sentiment === "positive" || raw.sentiment === "negative"
-        ? raw.sentiment
-        : "neutral",
+      raw.sentiment === "positive" || raw.sentiment === "negative" ? raw.sentiment : "neutral",
     outcome: raw.outcome || "other",
     key_points: Array.isArray(raw.key_points) ? raw.key_points.map(String) : [],
     action_items: Array.isArray(raw.action_items) ? raw.action_items.map(String) : [],
     qualityScore: coerceQualityScore(raw.qualityScore),
     qualityCriteria: coerceQualityCriteria(raw.qualityCriteria),
     riskFlags: coerceRiskFlags(raw.riskFlags),
+    sopResults: coerceSopResults((raw as { sopResults?: unknown }).sopResults, sopSteps),
     provider: "sarvam",
     model,
     tokensIn: tokensIn || base.tokensIn,
@@ -1294,3 +1473,5 @@ function stubAnalyze(schema: ExtractionSchema): AnalyzeResult {
     tokensOut: 0,
   };
 }
+
+export { qualifyWhatsAppConversation, type QualificationResult } from "./qualify";

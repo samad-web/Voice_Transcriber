@@ -10,6 +10,8 @@ export type { PoolClient } from "pg";
 
 export * from "./secrets";
 export * from "./ssrf-guard";
+export * from "./lead-routing";
+export * from "./crm-projection";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 
@@ -53,9 +55,36 @@ export function getPool(): Pool {
 }
 
 /**
+ * The canonical UUID shape, anchored. Hex and dashes only - nothing that
+ * survives this test can carry SQL syntax, which is what makes the batched
+ * preamble in `withOrgContext` safe to build by interpolation.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * Run `fn` inside a transaction with `app.org_id` set transaction-locally.
  * Every tenant-scoped query MUST go through this - RLS policies filter on
  * current_setting('app.org_id') and default-deny when it is unset.
+ *
+ * WHY THE PREAMBLE IS ONE STATEMENT, NOT TWO: this wrapper is on the path of
+ * every tenant-scoped request in the platform, and `BEGIN` followed by
+ * `set_config` used to be two separate awaits - two full network round trips
+ * to Postgres before a single byte of the caller's own work was sent. The
+ * database is in AWS Seoul and the app runs in Mumbai, so each of those costs
+ * ~125ms; the pair was a fixed ~250ms tax on every request, entirely overhead.
+ *
+ * node-postgres does not pipeline - it writes a query, waits for its result,
+ * then writes the next - so the only way to spend one round trip instead of
+ * two is to send both statements in a single message. That means the simple
+ * query protocol, which does not accept bind parameters, so the org id has to
+ * be interpolated. `UUID_RE` above is what makes that safe: the value is
+ * checked against an anchored hex-and-dashes pattern first, and anything that
+ * is not literally a UUID never reaches the string.
+ *
+ * A non-UUID org id falls back to the original parameterised two-trip path
+ * rather than throwing. Nothing in the platform passes one today, but a
+ * caller that did would keep working correctly and merely stay slow - the
+ * failure mode of a performance change should never be a broken request.
  */
 export async function withOrgContext<T>(
   orgId: string,
@@ -63,9 +92,13 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   const client = await getPool().connect();
   try {
-    await client.query("BEGIN");
     // third arg `true` = transaction-scoped; resets automatically on COMMIT/ROLLBACK
-    await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    if (UUID_RE.test(orgId)) {
+      await client.query(`BEGIN; SELECT set_config('app.org_id', '${orgId}', true)`);
+    } else {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    }
     const result = await fn(client);
     await client.query("COMMIT");
     return result;

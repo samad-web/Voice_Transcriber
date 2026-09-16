@@ -281,7 +281,11 @@ describe("generateAgentDraft", () => {
 
   it("under ANALYZE_STUB=1 with a base agent, carries the base's fields forward unchanged", async () => {
     vi.stubEnv("ANALYZE_STUB", "1");
-    const base = { name: "Lead Qualifier", systemPrompt: "Extract intent.", fields: RD_SCHEMA.fields };
+    const base = {
+      name: "Lead Qualifier",
+      systemPrompt: "Extract intent.",
+      fields: RD_SCHEMA.fields,
+    };
     const draft = await generateAgentDraft({ description: "also flag budget objections", base });
 
     expect(draft.fields).toStrictEqual(base.fields);
@@ -296,12 +300,18 @@ describe("generateAgentDraft", () => {
         JSON.stringify({
           name: "Budget Flagger",
           systemPrompt: "Extract budget objections.",
-          fields: [{ key: "has_budget_objection", type: "boolean", description: "d", required: true }],
+          fields: [
+            { key: "has_budget_objection", type: "boolean", description: "d", required: true },
+          ],
         }),
       ),
     );
 
-    const base = { name: "Lead Qualifier", systemPrompt: "Extract intent.", fields: RD_SCHEMA.fields };
+    const base = {
+      name: "Lead Qualifier",
+      systemPrompt: "Extract intent.",
+      fields: RD_SCHEMA.fields,
+    };
     const draft = await generateAgentDraft({ description: "also flag budget objections", base });
 
     expect(sarvam.chat).toHaveBeenCalledTimes(1);
@@ -336,14 +346,22 @@ describe("generateAgentDraft", () => {
     sarvam.configured.mockReturnValue(true);
     sarvam.chat
       .mockResolvedValueOnce(
-        reply(JSON.stringify({ name: "Agent", systemPrompt: "p", fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: [] }] })),
+        reply(
+          JSON.stringify({
+            name: "Agent",
+            systemPrompt: "p",
+            fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: [] }],
+          }),
+        ),
       )
       .mockResolvedValueOnce(
         reply(
           JSON.stringify({
             name: "Agent",
             systemPrompt: "p",
-            fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: ["a", "b"] }],
+            fields: [
+              { key: "x", type: "enum", description: "d", required: true, enumValues: ["a", "b"] },
+            ],
           }),
         ),
       );
@@ -359,7 +377,9 @@ describe("generateAgentDraft", () => {
 
   it("throws when the repair also fails, rather than returning an unusable draft", async () => {
     sarvam.configured.mockReturnValue(true);
-    sarvam.chat.mockResolvedValue(reply(JSON.stringify({ name: "", systemPrompt: "", fields: [] })));
+    sarvam.chat.mockResolvedValue(
+      reply(JSON.stringify({ name: "", systemPrompt: "", fields: [] })),
+    );
 
     await expect(generateAgentDraft({ description: "d" })).rejects.toThrow(
       /model output failed validation twice/,
@@ -391,6 +411,9 @@ describe("analyzeConversation", () => {
       qualityScore: null,
       qualityCriteria: null,
       riskFlags: [],
+      // Empty rather than absent: an org with no SOP still gets the key, so a
+      // consumer never has to distinguish "no SOP" from "field missing".
+      sopResults: [],
       provider: "none",
       model: "none",
       tokensIn: 0,
@@ -417,5 +440,170 @@ describe("analyzeConversation", () => {
 
     expect(result.summary).toHaveLength(160);
     expect(result.turns[0].text).toBe(long);
+  });
+});
+
+/**
+ * SOP adherence (migration 0089).
+ *
+ * The rule these pin is the one that decides whether the feature is
+ * trustworthy: a step the model claims the agent MET, with no verbatim quote
+ * behind it, is downgraded to inconclusive. A score somebody cannot check by
+ * reading the transcript is a score they will stop believing the first time it
+ * is wrong about them, and this is read in performance conversations.
+ */
+describe("analyzeConversation - SOP adherence", () => {
+  const STEPS = [
+    {
+      key: "consent_disclosure",
+      label: "Disclosed recording",
+      description: "The agent states the call is recorded.",
+      required: true,
+    },
+    {
+      key: "next_step_confirmed",
+      label: "Confirmed a next step",
+      description: "The call ends with a specific agreed action.",
+      required: true,
+    },
+  ];
+
+  /** The label pass is chunked and irrelevant here; only the summary pass carries sopResults. */
+  const conversationReply = (sopResults: unknown) =>
+    reply(
+      JSON.stringify({
+        language: "en",
+        summary: "s",
+        sentiment: "neutral",
+        outcome: "other",
+        sopResults,
+      }),
+    );
+
+  beforeEach(() => {
+    sarvam.configured.mockReturnValue(true);
+  });
+
+  it("keeps a met verdict that carries a verbatim quote", async () => {
+    sarvam.chat.mockResolvedValue(
+      conversationReply([
+        { key: "consent_disclosure", met: "yes", evidence: "This call is being recorded." },
+      ]),
+    );
+
+    const result = await analyzeConversation(
+      "This call is being recorded.",
+      [{ speaker: "S1", text: "This call is being recorded.", startMs: 0, endMs: 1000 }],
+      null,
+      "outgoing",
+      STEPS,
+    );
+
+    const consent = result.sopResults.find((r) => r.key === "consent_disclosure");
+    expect(consent?.met).toBe(true);
+    expect(consent?.evidence).toBe("This call is being recorded.");
+  });
+
+  it("downgrades a met verdict with NO evidence to inconclusive", async () => {
+    // The whole point. An unevidenced "yes" is indistinguishable from a
+    // hallucination, so it must not reach a manager as a pass.
+    sarvam.chat.mockResolvedValue(
+      conversationReply([{ key: "consent_disclosure", met: "yes", evidence: "   " }]),
+    );
+
+    const result = await analyzeConversation(
+      "Hello.",
+      [{ speaker: "S1", text: "Hello.", startMs: 0, endMs: 500 }],
+      null,
+      "outgoing",
+      STEPS,
+    );
+
+    const consent = result.sopResults.find((r) => r.key === "consent_disclosure");
+    expect(consent?.met).toBeNull();
+    expect(consent?.evidence).toBeNull();
+  });
+
+  it("keeps a NOT-met verdict without evidence - absence has nothing to quote", async () => {
+    // The rule is asymmetric on purpose: you can quote what was said, never
+    // what was not. Requiring evidence for a miss would make every genuine miss
+    // inconclusive and the score meaningless.
+    sarvam.chat.mockResolvedValue(
+      conversationReply([{ key: "next_step_confirmed", met: "no", evidence: null }]),
+    );
+
+    const result = await analyzeConversation(
+      "Bye.",
+      [{ speaker: "S1", text: "Bye.", startMs: 0, endMs: 400 }],
+      null,
+      "outgoing",
+      STEPS,
+    );
+
+    expect(result.sopResults.find((r) => r.key === "next_step_confirmed")?.met).toBe(false);
+  });
+
+  it("fills in every step the model skipped as inconclusive", async () => {
+    // The console renders the tenant's checklist; a missing row would read as
+    // the step having been removed from the SOP rather than left unjudged.
+    sarvam.chat.mockResolvedValue(
+      conversationReply([
+        { key: "consent_disclosure", met: "yes", evidence: "Recorded for quality." },
+      ]),
+    );
+
+    const result = await analyzeConversation(
+      "Recorded for quality.",
+      [{ speaker: "S1", text: "Recorded for quality.", startMs: 0, endMs: 900 }],
+      null,
+      "outgoing",
+      STEPS,
+    );
+
+    expect(result.sopResults).toHaveLength(2);
+    expect(result.sopResults.find((r) => r.key === "next_step_confirmed")?.met).toBeNull();
+  });
+
+  it("drops steps the tenant never defined", async () => {
+    // A model inventing its own criterion must not have it stored - nobody
+    // agreed to be measured against it and no page can render it.
+    sarvam.chat.mockResolvedValue(
+      conversationReply([
+        { key: "invented_by_the_model", met: "yes", evidence: "something" },
+        { key: "consent_disclosure", met: "unclear", evidence: null },
+      ]),
+    );
+
+    const result = await analyzeConversation(
+      "Hello.",
+      [{ speaker: "S1", text: "Hello.", startMs: 0, endMs: 400 }],
+      null,
+      "outgoing",
+      STEPS,
+    );
+
+    expect(result.sopResults.map((r) => r.key).sort()).toStrictEqual([
+      "consent_disclosure",
+      "next_step_confirmed",
+    ]);
+  });
+
+  it("asks for nothing at all when the org has no SOP", async () => {
+    sarvam.chat.mockResolvedValue(conversationReply(undefined));
+
+    const result = await analyzeConversation(
+      "Hello.",
+      [{ speaker: "S1", text: "Hello.", startMs: 0, endMs: 400 }],
+      null,
+      "outgoing",
+      null,
+    );
+
+    expect(result.sopResults).toStrictEqual([]);
+    // An org without an SOP pays no extra tokens: the steps never enter the
+    // prompt, so "SOP CHECK" appears in none of the requests made.
+    for (const call of sarvam.chat.mock.calls) {
+      expect(String(call[0]?.prompt ?? "")).not.toContain("SOP CHECK");
+    }
   });
 });

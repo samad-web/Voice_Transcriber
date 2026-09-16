@@ -19,6 +19,7 @@ export { BrutalButton } from "./brutal-button";
 export { StatusChip } from "./status-chip";
 export { MonoLabel } from "./mono-label";
 export { StatCard } from "./stat-card";
+export type { StatCardProps, StatFormat } from "./stat-card";
 export { ConsolePanel } from "./console-panel";
 export { ProgressBar } from "./progress-bar";
 
@@ -49,8 +50,27 @@ export {
 } from "./table";
 export { Dialog } from "./dialog";
 export type { DialogProps } from "./dialog";
-export { ConfirmProvider, useConfirm } from "./confirm";
+export { ConfirmProvider, useConfirm, CONFIRM_WORD, typedWordFor } from "./confirm";
 export type { ConfirmOptions } from "./confirm";
+export { DropZone } from "./drop-zone";
+export type { DropZoneProps } from "./drop-zone";
+
+// ── the functional colour system (state.tsx is the contract) ────────────────
+export {
+  CONSOLE_STATES,
+  STATE_TONE,
+  callState,
+  callStateLabel,
+  pipelineStage,
+} from "./state";
+export type { CallLike, ConsoleState, PipelinePhase, PipelineStage, StateTone } from "./state";
+export { StateChip, StateRule } from "./state-chip";
+export type { StateChipProps } from "./state-chip";
+export { RowHint, SyncingHint } from "./row-hint";
+export { ErrorBanner } from "./error-banner";
+export type { RowHintKind, RowHintProps } from "./row-hint";
+export { FeedbackProvider, useAlert, useToast } from "./feedback";
+export type { AlertOptions, ToastOptions } from "./feedback";
 export { Tooltip } from "./tooltip";
 export type { TooltipProps } from "./tooltip";
 

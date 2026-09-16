@@ -130,3 +130,43 @@ export const AppUpdateResponse = z.object({
     .nullable(),
 });
 export type AppUpdateResponse = z.infer<typeof AppUpdateResponse>;
+
+// ── Handset enrollment QR ────────────────────────────────────────────────────
+
+/**
+ * The QR payload version the Android activation screen parses.
+ *
+ * A CONTRACT with software already installed on phones in the field. Bumping
+ * it, or renaming a field inside the payload, requires a matching change in
+ * `AdminActivationActivity` and a supported-version floor - old handsets cannot
+ * be updated on demand.
+ */
+export const ENROLLMENT_QR_VERSION = 1;
+
+export interface EnrollmentQrInput {
+  instanceId: string;
+  /** The one-time enrollment token. Called `adminKey` on the wire since v1. */
+  adminKey: string;
+  /** Where the handset should talk to. Omitted when the app already knows. */
+  serverUrl?: string | null;
+}
+
+/**
+ * Build the string the handset scans.
+ *
+ * Lives in @aura/shared rather than in either console because BOTH mint
+ * enrollment tokens now: the operator does it for bulk and MDM
+ * (`/instances/:id/keys`), and since migration 0096 a client does it for a
+ * phone in their hand (`/owner/devices/pairing-token`). Two consoles building
+ * the same payload from two copies of the shape is how one of them silently
+ * stops scanning after an unrelated edit.
+ */
+export function enrollmentQrPayload(input: EnrollmentQrInput): string {
+  const serverUrl = input.serverUrl?.trim();
+  return JSON.stringify({
+    v: ENROLLMENT_QR_VERSION,
+    instanceId: input.instanceId,
+    adminKey: input.adminKey,
+    ...(serverUrl ? { serverUrl } : {}),
+  });
+}

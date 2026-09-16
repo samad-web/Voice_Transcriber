@@ -98,6 +98,133 @@
   --color-info-subtle: #ecfeff;
   --color-info-text: #155e75; /* 6.99:1 on info-subtle */
 
+  /* ── Orange - the error hue, and the KPI surface ────────────────────────── */
+  /*
+   * ADDED for the functional colour rule (see src/state.ts, which is the only
+   * module allowed to spend these). The rule assigns red to MISSED, green to
+   * ANSWERED, blue to OUTGOING and orange to ERROR - so `--color-warning`'s
+   * yellow-brown (#A16207) can no longer carry "something failed", and there
+   * was no orange in the system at all.
+   *
+   * Three tiers, the same shape every other semantic hue here uses:
+   *   --color-orange        graphics/icons only (>=3:1 on bg). 3.56:1.
+   *   --color-orange-subtle chip/banner fill.
+   *   --color-orange-text   the label on that fill (>=4.5:1).
+   */
+  --color-orange: #ea580c; /* 3.56:1 on bg - graphic tier, never small text */
+  --color-orange-subtle: #fff7ed;
+  --color-orange-text: #9a3412; /* 6.88:1 on orange-subtle */
+
+  /* ── Blue, for the OUTGOING state only ──────────────────────────────────── */
+  /*
+   * The same three blues as the accent ramp above, under their own names, and
+   * that duplication is the entire point.
+   *
+   * `--color-accent` is BRANDABLE - a tenant's own hex replaces it for their
+   * whole console (branding.ts). The outgoing-call state is not: it is one
+   * letter of a four-letter alphabet (state.tsx), and it has to stay
+   * distinguishable from missed-red, answered-green and error-orange on every
+   * tenant's screen. Leaving the state on the accent meant a customer whose
+   * brand colour was red got red for "we rang them" AND red for "nobody picked
+   * up" - two opposite facts in one colour, on the page where the distinction
+   * matters most.
+   *
+   * So the state gets tokens branding does not touch. They start identical to
+   * the accent's, so an unbranded console is pixel-identical to what it was;
+   * they will diverge the first time a tenant sets a colour, which is correct.
+   */
+  --color-outgoing: #2563eb; /* 5.17:1 on bg */
+  --color-outgoing-subtle: #eff6ff;
+  --color-outgoing-text: #1e40af; /* 8.01:1 on outgoing-subtle */
+
+  /*
+   * ── THE KPI SURFACE ────────────────────────────────────────────────────
+   *
+   * The solid, saturated orange behind every StatCard. Deliberately a SEPARATE
+   * token from `--color-orange` above even though both are orange, because
+   * they answer to different rules and will drift apart the moment either is
+   * tuned:
+   *
+   *   --color-orange is a STATE colour. It means "this thing errored", it is
+   *     spent one chip at a time, and its brightness is chosen to clear 3:1 as
+   *     a graphic.
+   *   --color-kpi is a SURFACE. It means nothing; it is the console's headline
+   *     register, painted over whole cards, and its darkness is chosen so that
+   *     WHITE 12px TEXT clears 4.5:1 on it (#C2410C -> 5.18:1). #EA580C would
+   *     only reach 3.56:1 and the tile's eyebrow and context line would fail
+   *     WCAG 1.4.3 outright.
+   *
+   * A KPI tile therefore never renders a state colour inside itself - it is
+   * already orange, so an orange error chip on it would be invisible and a red
+   * one would read as decoration. StatCard renders state as an INVERTED chip
+   * (white fill, tile-coloured text) plus the state's glyph; the glyph, not the
+   * hue, is what distinguishes it there. See stat-card.tsx.
+   *
+   * ── AND IT IS THE DEFAULT, NOT THE ANSWER ──────────────────────────────
+   *
+   * These three are what an UNBRANDED console renders. A tenant who has set a
+   * brand colour gets their own trio, computed at request time by
+   * `kpiSurface()` in @aura/shared and set inline on the owner console's root
+   * element, which beats this declaration and every dark-mode one below it.
+   *
+   * The derivation is not "use their hex". It moves the fill only as far as it
+   * must to keep white-or-ink at 4.5:1 on it and to stay visible on both page
+   * grounds, and it computes the -fg and -hairline to match - because there is
+   * a band of mid-tones (0.183 < L < 0.214) where NO foreground reaches 4.5:1
+   * and a plain #FF0000 is in it. Nothing else in this file is handed to a
+   * tenant as a FILL WITH TEXT ON IT, which is why the accent ramp needs only
+   * a foreground swap and this one needs a search. See branding.ts.
+   *
+   * CONSTANT ACROSS LIGHT AND DARK, like --brand-gradient below and for the
+   * same reason: this is the product's headline register, and a KPI row that
+   * changed weight between modes would read as two different dashboards. It is
+   * also why the tenant derivation has to check BOTH grounds - one fill serves
+   * both, so a white brand colour must not vanish in light mode nor a black one
+   * in dark. At
+   * 3.82:1 against the dark-mode page background it separates cleanly, and the
+   * white label holds its 5.18:1 in both.
+   */
+  --color-kpi: #c2410c;
+  --color-kpi-fg: #ffffff; /* 5.18:1 on --color-kpi - AA at every text size */
+  /* The divider rule and icon tint INSIDE a KPI tile. Not `white/70` via
+     opacity: a translucent white over the fill produces a ratio nobody has
+     checked, and it changes the moment the fill is tuned. #FBD9C6 is a fixed
+     tint at 3.91:1 on the fill - comfortably past the 3:1 non-text floor, and
+     deliberately NOT used for any text. Every readable string on a KPI tile,
+     the 12px eyebrow included, takes the full-contrast --color-kpi-fg and is
+     de-emphasised by weight and size instead of by colour. */
+  --color-kpi-hairline: #fbd9c6;
+
+  /* ── Label tints - for CATEGORIES, which are not states ─────────────────── */
+  /*
+   * A tenant picks a colour per project (crm_projects.color, migration 0073),
+   * and that feature collided head-on with the functional colour rule: the
+   * palette it picked from was the SEMANTIC ramp, so a project could be green
+   * or red and sit in the same table cell as a green "Answered" chip or a red
+   * "Missed" one. Two things that look identical and mean nothing alike.
+   *
+   * Deleting the feature would have been the easy read of the rule and the
+   * wrong one - a catalogue of twenty projects needs a scanning accelerator,
+   * and the tenant already chose these. So the categories keep their colours
+   * and move to a ramp that CANNOT be confused with a state: no red, no green,
+   * no blue, no orange - those four are spoken for. What is left is violet,
+   * plum, teal and steel, which are distinguishable from each other at chip
+   * size and carry no alarm value at all, which is exactly what a category
+   * should carry.
+   *
+   * Every pair is a -50/-800-class tint: 8:1 or better in light mode, 7.7:1 or
+   * better in dark. They are backgrounds for small text, so they are held to
+   * the 4.5:1 floor with a lot of room, not to the 3:1 graphic one.
+   */
+  --color-label-violet: #f5f3ff;
+  --color-label-violet-text: #5b21b6; /* 9.5:1 */
+  --color-label-plum: #fdf4ff;
+  --color-label-plum-text: #86198f; /* 8.8:1 */
+  --color-label-teal: #f0fdfa;
+  --color-label-teal-text: #115e59; /* 8.0:1 */
+  --color-label-steel: #f1f5f9;
+  --color-label-steel-text: #334155; /* 9.9:1 */
+
   /* ── Terminal surface (ConsolePanel) ────────────────────────────────────── */
   /* The raw-JSON / pipeline-log panel. It stays dark in BOTH modes on purpose -
      a monospace log panel reading as a terminal is the affordance - but it now
@@ -261,6 +388,32 @@
     --color-info-subtle: #0c2b31;
     --color-info-text: #67e8f9;
 
+    /* The ERROR hue rebinds like every other semantic colour. --color-kpi and
+       --color-kpi-fg deliberately do NOT appear here: the KPI surface is
+       constant across modes (see its note in the @theme block above), and a
+       tenant override arrives as an inline style, which would beat a rebind
+       here anyway. */
+    --color-orange: #fb923c; /* 8.75:1 on bg - graphic tier */
+    --color-orange-subtle: #2b1508;
+    --color-orange-text: #fdba74; /* 10.26:1 on orange-subtle */
+
+    /* Tracks the dark accent's blues, for the same reason it does in light
+       mode - and stays out of branding's reach, which is the whole point. */
+    --color-outgoing: #3b82f6;
+    --color-outgoing-subtle: #17233f;
+    --color-outgoing-text: #93c5fd; /* 8.64:1 on outgoing-subtle */
+
+    /* Category tints, rebound. Still no red/green/blue/orange - the four
+       state hues stay reserved in both modes. */
+    --color-label-violet: #2a1d4a;
+    --color-label-violet-text: #c4b5fd; /* 7.9:1 */
+    --color-label-plum: #3b0f3e;
+    --color-label-plum-text: #f0abfc; /* 7.7:1 */
+    --color-label-teal: #0c2e2a;
+    --color-label-teal-text: #5eead4; /* 9.9:1 */
+    --color-label-steel: #1e293b;
+    --color-label-steel-text: #cbd5e1; /* 9.9:1 */
+
     /* The terminal surface is already dark, so in dark mode it has to stop
        being *blacker than the page* or the panel vanishes: at #101318 it is
        1.11:1 against --color-bg and only its edge distinguishes it. Hence a
@@ -311,6 +464,24 @@
   --color-info: #22d3ee;
   --color-info-subtle: #0c2b31;
   --color-info-text: #67e8f9;
+
+  /* Mirrors the prefers-color-scheme block above. --color-kpi is constant. */
+  --color-orange: #fb923c;
+  --color-orange-subtle: #2b1508;
+  --color-orange-text: #fdba74;
+
+  --color-outgoing: #3b82f6;
+  --color-outgoing-subtle: #17233f;
+  --color-outgoing-text: #93c5fd;
+
+  --color-label-violet: #2a1d4a;
+  --color-label-violet-text: #c4b5fd;
+  --color-label-plum: #3b0f3e;
+  --color-label-plum-text: #f0abfc;
+  --color-label-teal: #0c2e2a;
+  --color-label-teal-text: #5eead4;
+  --color-label-steel: #1e293b;
+  --color-label-steel-text: #cbd5e1;
 
   --color-terminal: #14181f;
   --color-terminal-border: #3d444d;

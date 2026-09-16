@@ -25,6 +25,11 @@ export const CallStatus = z.enum([
   "FAILED_ASR",
   "FAILED_ANALYZE",
   "FAILED_CRM",
+  // Audio that never arrived and never will (0101): the handset's upload was
+  // interrupted and abandoned, so there is nothing in S3 to resume from -
+  // unlike the other FAILED_* stages, retrying this one server-side cannot
+  // help. Written only by the worker's stall sweep (retry.ts).
+  "FAILED_UPLOAD",
 ]);
 export type CallStatus = z.infer<typeof CallStatus>;
 
