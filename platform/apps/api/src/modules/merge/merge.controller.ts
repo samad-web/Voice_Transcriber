@@ -18,6 +18,12 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import {
+  repointReferences,
+  restoreReferences,
+  type DroppedRefs,
+  type ReassignedRefs,
+} from "./merge-references";
 
 /**
  * Merge & duplicate detection (CRM Phase 1, E0.3) - Contact/Account only,
@@ -321,25 +327,36 @@ export class MergeController {
     const actorId = actorUserId(req);
 
     return this.db.withOrg(orgId, async (client) => {
-      const { rows: [survivor] } = await client.query(
-        `SELECT * FROM ${table} WHERE id = $1 AND status <> 'merged'`,
-        [survivorId],
-      );
-      if (!survivor) throw new NotFoundException("survivor not found (or already merged away)");
-      const { rows: [victim] } = await client.query(
-        `SELECT * FROM ${table} WHERE id = $1 AND status <> 'merged'`,
-        [victimId],
-      );
-      if (!victim) throw new NotFoundException("victim not found (or already merged away)");
-
       for (const key of Object.keys(fieldDecisions)) {
         if (!MERGE_FIELDS[objectType].includes(key)) {
           throw new BadRequestException(`"${key}" is not a mergeable field on ${objectType}`);
         }
       }
 
+      // Lock both rows, in id order so two merges over the same pair cannot
+      // deadlock, and read them under the lock. Without it two concurrent
+      // merges of one victim both saw it active and both "succeeded", leaving
+      // two merge_log rows for one merge (doc 23, D3).
+      const { rows: locked } = await client.query<Record<string, unknown> & { id: string; status: string }>(
+        `SELECT * FROM ${table} WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+        [[survivorId, victimId]],
+      );
+      const survivor = locked.find((r) => r.id === survivorId && r.status !== "merged");
+      if (!survivor) throw new NotFoundException("survivor not found (or already merged away)");
+      const victim = locked.find((r) => r.id === victimId && r.status !== "merged");
+      if (!victim) throw new NotFoundException("victim not found (or already merged away)");
+
       // Snapshot BEFORE mutating - this is what a revert restores.
       const survivorSnapshot = { ...survivor };
+
+      // Tombstone the victim FIRST. The partial unique indexes on email, phone
+      // and domain skip merged rows, so only once the victim is merged can the
+      // survivor take its email or domain. In the old order - survivor first -
+      // choosing the victim's email always failed on contacts_org_email.
+      await client.query(
+        `UPDATE ${table} SET status = 'merged', merged_into_id = $1 WHERE id = $2`,
+        [survivorId, victimId],
+      );
 
       const setClauses: string[] = [];
       const params: unknown[] = [survivorId];
@@ -348,34 +365,46 @@ export class MergeController {
         params.push(victim[key]);
         setClauses.push(`${key} = $${params.length}`);
       }
+      // Choosing which name survives is a person's decision, so the call
+      // projection must not overwrite it afterwards (migration 0107).
+      if (objectType === "contact" && fieldDecisions.display_name === "victim") {
+        setClauses.push("display_name_set_by_human_at = now()");
+      }
       params.push(JSON.stringify(victim.facts ?? {}));
       setClauses.push(`facts = facts || $${params.length}::jsonb`);
       params.push(JSON.stringify(victim.external_ids ?? {}));
       setClauses.push(`external_ids = external_ids || $${params.length}::jsonb`);
       params.push(victim.last_activity_at);
       setClauses.push(`last_activity_at = GREATEST(last_activity_at, $${params.length}::timestamptz)`);
+      // A survivor with no number takes the victim's (doc 23, D2). Otherwise the
+      // number stays only on the tombstone, and although lookups now follow the
+      // merge, the survivor's own page would never show the number the person
+      // actually calls from.
+      if (objectType === "contact" && !survivor.phone_hash && victim.phone_hash) {
+        params.push(victim.phone_hash, victim.phone_prefix, victim.phone_last3);
+        setClauses.push(
+          `phone_hash = $${params.length - 2}`,
+          `phone_prefix = $${params.length - 1}`,
+          `phone_last3 = $${params.length}`,
+        );
+      }
 
       await client.query(
         `UPDATE ${table} SET ${setClauses.join(", ")} WHERE id = $1`,
         params,
       );
 
-      const { rows: reassigned } = await client.query<{ id: string }>(
-        `UPDATE deals SET ${dealFk} = $1 WHERE ${dealFk} = $2 RETURNING id`,
-        [survivorId, victimId],
-      );
-
-      await client.query(
-        `UPDATE ${table} SET status = 'merged', merged_into_id = $1 WHERE id = $2`,
-        [survivorId, victimId],
-      );
+      // Every reference to the victim, not only its deals (doc 23, D1).
+      const { reassigned, dropped } = await repointReferences(client, objectType, survivorId, victimId);
+      const reassignedDeals = reassigned[`deals.${dealFk}`] ?? [];
 
       const revertDeadline = new Date(Date.now() + REVERT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
       const { rows: [logRow] } = await client.query<{ id: string }>(
         `INSERT INTO merge_log
            (org_id, object_type, survivor_id, victim_id, field_decisions,
-            survivor_snapshot, victim_snapshot, reassigned_deals, performed_by, revert_deadline_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
+            survivor_snapshot, victim_snapshot, reassigned_deals, reassigned_refs, dropped_refs,
+            performed_by, revert_deadline_at)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12)
          RETURNING id`,
         [
           orgId,
@@ -385,7 +414,9 @@ export class MergeController {
           JSON.stringify(fieldDecisions),
           JSON.stringify(survivorSnapshot),
           JSON.stringify(victim),
-          JSON.stringify(reassigned.map((r) => r.id)),
+          JSON.stringify(reassignedDeals),
+          JSON.stringify(reassigned),
+          JSON.stringify(dropped),
           actorId,
           revertDeadline,
         ],
@@ -404,7 +435,15 @@ export class MergeController {
         [orgId, actorId ?? "unknown", objectType, survivorId, JSON.stringify({ victimId, mergeLogId: logRow.id })],
       );
 
-      return { mergeId: logRow.id, survivorId, victimId, reassignedDeals: reassigned.length };
+      return {
+        mergeId: logRow.id,
+        survivorId,
+        victimId,
+        reassignedDeals: reassignedDeals.length,
+        // What else moved, by table - so the console can say "and 14 calls, 3
+        // tasks" rather than implying deals were all there was.
+        reassignedRefs: Object.fromEntries(Object.entries(reassigned).map(([k, ids]) => [k, ids.length])),
+      };
     });
   }
 
@@ -420,8 +459,10 @@ export class MergeController {
     const actorId = actorUserId(req);
 
     return this.db.withOrg(orgId, async (client) => {
+      // FOR UPDATE: two reverts of one merge must not both pass the
+      // reverted_at check below.
       const { rows: [log] } = await client.query(
-        `SELECT * FROM merge_log WHERE id = $1`,
+        `SELECT * FROM merge_log WHERE id = $1 FOR UPDATE`,
         [id],
       );
       if (!log) throw new NotFoundException("merge not found");
@@ -436,7 +477,19 @@ export class MergeController {
       const dealFk = DEAL_FK[log.object_type as ObjectType];
       const snapshot = log.survivor_snapshot as Record<string, unknown>;
 
-      const restorable = [...MERGE_FIELDS[log.object_type as ObjectType], "facts", "external_ids", "last_activity_at"];
+      // The phone fields too: a merge now hands a numberless survivor the
+      // victim's number (doc 23, D2). They are restored BEFORE the victim is
+      // un-tombstoned below, or two active contacts would briefly hold one
+      // number and trip contacts_org_phone.
+      const restorable = [
+        ...MERGE_FIELDS[log.object_type as ObjectType],
+        ...(log.object_type === "contact"
+          ? ["phone_hash", "phone_prefix", "phone_last3", "display_name_set_by_human_at"]
+          : []),
+        "facts",
+        "external_ids",
+        "last_activity_at",
+      ];
       const setClauses: string[] = [];
       const params: unknown[] = [log.survivor_id];
       for (const key of restorable) {
@@ -454,12 +507,26 @@ export class MergeController {
         [log.victim_id],
       );
 
-      const reassignedDeals = (log.reassigned_deals as string[]) ?? [];
-      if (reassignedDeals.length > 0) {
-        await client.query(
-          `UPDATE deals SET ${dealFk} = $1 WHERE id = ANY($2::uuid[])`,
-          [log.victim_id, reassignedDeals],
+      const reassignedRefs = (log.reassigned_refs as ReassignedRefs | null) ?? {};
+      if (Object.keys(reassignedRefs).length > 0 || Object.keys(log.dropped_refs ?? {}).length > 0) {
+        // Every reference the merge moved, and every row a conflict removed.
+        await restoreReferences(
+          client,
+          log.object_type as ObjectType,
+          log.survivor_id,
+          log.victim_id,
+          reassignedRefs,
+          (log.dropped_refs as DroppedRefs | null) ?? {},
         );
+      } else {
+        // A merge logged before 0105 moved deals only, and recorded only those.
+        const reassignedDeals = (log.reassigned_deals as string[]) ?? [];
+        if (reassignedDeals.length > 0) {
+          await client.query(
+            `UPDATE deals SET ${dealFk} = $1 WHERE id = ANY($2::uuid[])`,
+            [log.victim_id, reassignedDeals],
+          );
+        }
       }
 
       await client.query(

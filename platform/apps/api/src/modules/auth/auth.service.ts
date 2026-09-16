@@ -117,37 +117,111 @@ export class AuthService {
       recordingsExport: boolean;
       workspaceId: string | null;
       enabledModules: string[];
+      /** organizations.enabled_features (migration 0093) - the per-feature
+       *  refinement of the modules above. Rides along for the same reason
+       *  branding does: the console consults it on every navigation to decide
+       *  which rail entries exist, and a second round trip to Seoul for an
+       *  array of twenty short strings would be absurd. */
+      enabledFeatures: string[];
+      /** organizations.whatsapp_provider (migration 0093) - which connect flow
+       *  the client's WhatsApp Setup page offers. */
+      whatsappProvider: string;
+      /** organizations.branding (migration 0065) - the console paints itself
+       *  from this on every page, so it rides along here rather than costing a
+       *  second call. Opaque jsonb to this layer; @aura/shared's `Branding`
+       *  schema is what gives it a shape, at the point of use. */
+      branding: unknown;
+      /** organizations.setup_completed_at (migration 0095). Rides along for a
+       *  sharper reason than the rest: while it is NULL the owner layout
+       *  spends a round trip on GET /v1/owner/setup to render the checklist,
+       *  and the whole point of the column is that once it is set the console
+       *  can skip that call without asking anybody. Reading it here is what
+       *  makes "skip" free. */
+      setupCompletedAt: string | null;
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
-    const {
-      rows: [user],
-    } = await this.db.adminPool().query(
-      `SELECT id, email, name, status FROM users
-        WHERE ($1::text IS NOT NULL AND sso_subject = $1)
-           OR ($2::text IS NOT NULL AND lower(email) = lower($2))
-        ORDER BY (sso_subject = $1) DESC NULLS LAST
-        LIMIT 1`,
-      [identity.subject ?? null, identity.email ?? null],
-    );
-    if (!user || user.status !== "active") return { memberships: [], user: null };
-
+    // ONE round trip, not two. The web console calls this on every single
+    // navigation - it is how a Supabase session becomes an org - and the two
+    // queries this replaces ran back to back against a database in AWS Seoul
+    // while the API runs in Mumbai, so the second lookup cost ~125ms of pure
+    // flight time on every page in the product.
+    //
+    // The dependency that forced the split (memberships need `users.id`, which
+    // only the first query knows) is expressed as a CTE instead, so Postgres
+    // resolves it server-side in a single exchange. LEFT JOIN, not JOIN: a user
+    // holding no memberships must still come back as a found user, exactly as
+    // it did when the membership query simply returned no rows.
     const { rows } = await this.db.adminPool().query(
-      `SELECT m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
+      `WITH u AS (
+         SELECT id, email, name, status FROM users
+          WHERE ($1::text IS NOT NULL AND sso_subject = $1)
+             OR ($2::text IS NOT NULL AND lower(email) = lower($2))
+          ORDER BY (sso_subject = $1) DESC NULLS LAST
+          LIMIT 1
+       )
+       SELECT u.id AS "userId", u.email AS "userEmail", u.name AS "userName",
+              u.status AS "userStatus",
+              m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
               m.owner_role AS "ownerRole",
               m.recordings_listen AS "recordingsListen",
               m.recordings_export AS "recordingsExport",
               (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
                 ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
-              o.enabled_modules AS "enabledModules"
-         FROM memberships m
-         JOIN organizations o ON o.id = m.org_id
-        WHERE m.user_id = $1
+              o.enabled_modules AS "enabledModules",
+              o.enabled_features AS "enabledFeatures",
+              o.whatsapp_provider AS "whatsappProvider",
+              o.branding AS "branding",
+              o.setup_completed_at AS "setupCompletedAt"
+         FROM u
+         LEFT JOIN memberships m ON m.user_id = u.id
+         LEFT JOIN organizations o ON o.id = m.org_id
         ORDER BY m.created_at ASC`,
-      [user.id],
+      [identity.subject ?? null, identity.email ?? null],
     );
 
-    return { memberships: rows, user };
+    const found = rows[0];
+    if (!found || found.userStatus !== "active") return { memberships: [], user: null };
+
+    const user = {
+      id: found.userId,
+      email: found.userEmail,
+      name: found.userName,
+      status: found.userStatus,
+    };
+
+    // A user with no memberships still produces one row, with every membership
+    // column NULL from the LEFT JOIN - that is "found, but unbound", not a
+    // membership in an org whose id is null. Drop those rows.
+    const memberships = rows
+      .filter((r) => r.orgId !== null)
+      .map((r) => ({
+        orgId: r.orgId,
+        orgName: r.orgName,
+        orgStatus: r.orgStatus,
+        role: r.role,
+        ownerRole: r.ownerRole,
+        recordingsListen: r.recordingsListen,
+        recordingsExport: r.recordingsExport,
+        workspaceId: r.workspaceId,
+        enabledModules: r.enabledModules,
+        // COALESCE in TypeScript rather than SQL: the column is NOT NULL, so
+        // the only way these are absent is an API running ahead of migration
+        // 0093 - and a console that renders no navigation at all is a worse
+        // failure than one that briefly shows a page a tenant has switched off.
+        enabledFeatures: r.enabledFeatures ?? [],
+        whatsappProvider: r.whatsappProvider ?? "none",
+        branding: r.branding,
+        // An API running ahead of migration 0095 has no column and returns
+        // undefined here. Normalised to null - "setup not finished" - which
+        // makes the console spend one round trip asking, rather than
+        // suppressing a checklist it cannot rule out. The wrong direction
+        // would hide onboarding from every new client for the length of a
+        // rolling deploy, silently.
+        setupCompletedAt: r.setupCompletedAt ?? null,
+      }));
+
+    return { memberships, user };
   }
 
   /**

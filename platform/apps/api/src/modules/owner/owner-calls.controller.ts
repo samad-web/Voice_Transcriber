@@ -1,22 +1,31 @@
 import {
   BadRequestException,
+  Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Post,
   Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { publishPipeline } from "@aura/queue";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { orgHasModule } from "../../common/org-modules";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { S3Service } from "../../s3/s3.service";
+
+const CreateNoteBody = z.object({
+  body: z.string().min(1).max(10000),
+});
 
 const ListQuery = z.object({
   /**
@@ -99,7 +108,10 @@ const LEAD_JOIN = `
 @UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
 @RequireOwnerRole("owner", "manager")
 export class OwnerCallsController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly s3: S3Service,
+  ) {}
 
   /** List view: filtered, paginated, newest first. */
   @Get()
@@ -222,8 +234,15 @@ export class OwnerCallsController {
       const {
         rows: [analytics],
       } = await client.query(
-        `SELECT quality_score, talk_ratio, agent_talk_seconds, customer_talk_seconds,
-                interruption_count, has_escalation_risk
+        // quality_criteria and risk_flags come back here for the same reason the
+        // score does: the client is the one being coached. Withholding the
+        // breakdown while showing the number it produces leaves a manager with
+        // a verdict and no way to act on it - and leads.controller.ts already
+        // returns risk_flags on the lead-side view of the same call, so keeping
+        // them out here only made one call describe itself two ways.
+        `SELECT quality_score, quality_criteria, talk_ratio, agent_talk_seconds,
+                customer_talk_seconds, interruption_count, risk_flags,
+                has_escalation_risk
            FROM call_analytics WHERE call_id = $1 LIMIT 1`,
         [callId],
       );
@@ -233,10 +252,60 @@ export class OwnerCallsController {
         [callId],
       );
 
+      /*
+       * SOP adherence (migration 0089), joined to the SOP VERSION that judged
+       * this call rather than to whichever version is active now.
+       *
+       * That join condition is the whole reason `call_sops` is versioned. The
+       * step labels a reviewer reads have to be the ones the call was scored
+       * against - joining on `is_active` would relabel February's verdicts with
+       * March's wording, and a step renamed between the two would render a
+       * verdict under a rule it was never given.
+       *
+       * LEFT JOIN because an SOP version can be deleted while its scores
+       * remain; the result then renders by key with no label, which is
+       * degraded but honest.
+       */
+      const {
+        rows: [sop],
+      } = await client.query(
+        `SELECT r.step_results, r.steps_met, r.steps_total, r.adherence_pct,
+                r.sop_id, r.sop_version, s.name AS sop_name, s.steps AS sop_steps
+           FROM call_sop_results r
+           LEFT JOIN call_sops s ON s.id = r.sop_id AND s.version = r.sop_version
+          WHERE r.call_id = $1
+          LIMIT 1`,
+        [callId],
+      );
+
       const canRead = await this.canReadTranscript(client, req.principal, orgId);
       if (!canRead && transcript) {
         transcript.text = null;
         transcript.segments = null;
+      }
+
+      /*
+       * SOP EVIDENCE IS VERBATIM TRANSCRIPT TEXT, so it is redacted by exactly
+       * the same permission that redacts the transcript above.
+       *
+       * Easy to miss, because the field is called `evidence` and lives on a
+       * scoring row rather than on `transcripts`. It is a word-for-word quote
+       * of what somebody said on a customer's phone call, and a reviewer
+       * without `recordings_listen` reading seven of them per call would be
+       * reading the transcript in instalments - which is the same reasoning
+       * that keeps `q` search off the transcript body (see ListQuery).
+       *
+       * The VERDICTS stay. Whether a step was met is a judgement about the
+       * agent's conduct, which is what this reader is entitled to; the
+       * customer's words are not. So the checklist still renders, with the
+       * quotes withheld and the console saying so.
+       */
+      if (!canRead && sop && Array.isArray(sop.step_results)) {
+        sop.step_results = (sop.step_results as Array<Record<string, unknown>>).map((r) => ({
+          ...r,
+          evidence: null,
+        }));
+        sop.evidence_redacted = true;
       }
 
       return {
@@ -244,9 +313,184 @@ export class OwnerCallsController {
         transcript: transcript ?? null,
         analytics: analytics ?? null,
         facts,
+        sop: sop ?? null,
         transcriptRedacted: !canRead,
       };
     });
+  }
+
+  /**
+   * Reviewer notes on a call, in the CLIENT's console.
+   *
+   * The SAME `call_notes` rows the operator console writes (notes.controller.ts)
+   * rather than a second table. A note is about the call, not about who happened
+   * to be looking at it - two stores would let support and customer open the
+   * same conversation and each see notes the other had never heard of, which is
+   * the exact confusion a shared record exists to prevent.
+   *
+   * Owner and manager only, inherited from the controller.
+   */
+  @Get(":id/notes")
+  async listNotes(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) callId: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      if (!(await orgHasModule(client, "call_intel"))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+      const { rows } = await client.query(
+        `SELECT id, body, author, created_at
+           FROM call_notes WHERE call_id = $1 ORDER BY created_at DESC`,
+        [callId],
+      );
+      return { notes: rows };
+    });
+  }
+
+  @Post(":id/notes")
+  async createNote(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) callId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = CreateNoteBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    return this.db.withOrg(orgId, async (client) => {
+      if (!(await orgHasModule(client, "call_intel"))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+      // FK checks bypass RLS, so confirm the call is visible in this org first -
+      // the same order notes.controller.ts uses, and for the same reason.
+      const call = await client.query("SELECT 1 FROM calls WHERE id = $1", [callId]);
+      if (call.rowCount === 0) throw new NotFoundException("call not found");
+
+      const author = req.principal?.userId ?? "owner";
+      const {
+        rows: [note],
+      } = await client.query(
+        `INSERT INTO call_notes (org_id, call_id, body, author)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, body, author, created_at`,
+        [orgId, callId, parsed.data.body, author],
+      );
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+         VALUES ($1, 'user', $2, 'call.note', 'call', $3)`,
+        [orgId, author, callId],
+      );
+      return note;
+    });
+  }
+
+  /**
+   * A short-lived URL for the recording itself.
+   *
+   * Gated on the membership's `recordings_listen`, NOT on PermissionsGuard. The
+   * operator route can use that decorator because it is reached with a real
+   * platform principal; the owner console arrives on the platform admin key,
+   * which AdminKeyGuard mints with `recordingsListen: true` - so the same
+   * decorator here would wave every client member straight through to the audio.
+   * This is `canReadTranscript`'s check applied to the more sensitive half of
+   * the same split: someone who may not read the words certainly may not hear
+   * them said.
+   *
+   * Playback is audited for the same reason the operator path audits it -
+   * listening to a customer's recording is an event the tenant may later need
+   * to account for, whoever did it.
+   */
+  @Get(":id/audio")
+  async audio(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) callId: string,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      if (!(await orgHasModule(client, "call_intel"))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+      if (!(await this.canReadTranscript(client, req.principal, orgId))) {
+        throw new ForbiddenException("your account cannot play call recordings");
+      }
+      const {
+        rows: [rec],
+      } = await client.query(`SELECT s3_key FROM recordings WHERE call_id = $1`, [callId]);
+      if (!rec) throw new NotFoundException("no recording for this call");
+
+      const url = await this.s3.presignedGetUrl(rec.s3_key, 300);
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'recording.playback', 'call', $3, $4)`,
+        [orgId, req.principal?.userId ?? "owner", callId, JSON.stringify({ s3Key: rec.s3_key })],
+      );
+      return { url };
+    });
+  }
+
+  /**
+   * Re-run the pipeline for a finished call.
+   *
+   * OWNER ONLY - narrowing the controller's owner+manager, which is what
+   * `getAllAndOverride` in OwnerRoleGuard makes possible. Every press rewinds
+   * the call to UPLOADED, and `processCall` clears `asr_job_id` on its way
+   * through, so the audio goes to the ASR provider AGAIN and analyze runs again
+   * behind it. That is real money per press, on a transcript the tenant has
+   * already paid for once - a spending decision, and it belongs with the account
+   * holder rather than with everyone who can read the call log.
+   *
+   * The terminal-state guard is calls.controller.ts's, repeated rather than
+   * shared: an in-flight call must never be rewound underneath the worker
+   * holding it, and a 409 naming the current status is what tells the console to
+   * stop offering the button rather than to retry.
+   */
+  @Post(":id/reprocess")
+  @RequireOwnerRole("owner")
+  async reprocess(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) callId: string,
+  ) {
+    const result = await this.db.withOrg(orgId, async (client) => {
+      if (!(await orgHasModule(client, "call_intel"))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+      const {
+        rows: [call],
+      } = await client.query(`SELECT status FROM calls WHERE id = $1`, [callId]);
+      if (!call) throw new NotFoundException("call not found");
+
+      const terminal =
+        call.status === "COMPLETE" ||
+        call.status === "TRANSCRIPTION_OFF" ||
+        String(call.status).startsWith("FAILED_");
+      if (!terminal) {
+        throw new ConflictException(
+          `call is ${call.status}; only COMPLETE, TRANSCRIPTION_OFF or FAILED_* calls can be reprocessed`,
+        );
+      }
+
+      await client.query(
+        `UPDATE calls
+            SET status = 'UPLOADED', pipeline_attempts = 0, next_attempt_at = NULL
+          WHERE id = $1
+            AND (status IN ('COMPLETE', 'TRANSCRIPTION_OFF') OR status LIKE 'FAILED_%')`,
+        [callId],
+      );
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'call.reprocess', 'call', $3, $4)`,
+        [
+          orgId,
+          req.principal?.userId ?? "owner",
+          callId,
+          JSON.stringify({ from: call.status, via: "owner-console" }),
+        ],
+      );
+      return { status: "UPLOADED" as const };
+    });
+
+    // Source of truth is the DB flip above; the queue is only a wake-up.
+    await publishPipeline({ callId, orgId });
+    return result;
   }
 
   /** See the class docblock: identity from the principal, grant from the row. */

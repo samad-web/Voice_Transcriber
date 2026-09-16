@@ -15,7 +15,16 @@ import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { PIPELINE_QUEUE, queueDepth } from "@aura/queue";
-import { DEFAULT_PIPELINE_STAGES, OrgModule, PermissionObjectType } from "@aura/shared";
+import {
+  DEFAULT_PIPELINE_STAGES,
+  ORG_FEATURES,
+  OrgFeature,
+  OrgModule,
+  PermissionObjectType,
+  WhatsAppProvider,
+  defaultFeaturesFor,
+  reconcileFeatures,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
@@ -163,11 +172,49 @@ const CreateTenantBody = z.object({
    * flag decides whether 'crm' joins it. See org-modules.ts.
    */
   enableCrm: z.boolean().default(false),
+  /**
+   * The full module set, when the caller wants more than the enableCrm
+   * shorthand can express - `call_intel`, or Wasi, or a combination.
+   *
+   * `enableCrm` is kept rather than replaced: it is what every existing caller
+   * and script sends, and breaking those to gain one field would be a change
+   * nobody asked for. When both are present `modules` wins and `enableCrm` is
+   * ignored, which is the only ordering that lets a precise caller be precise.
+   */
+  modules: z.array(OrgModule).min(1).optional(),
+  /**
+   * Which features inside those modules the client gets. Omitted means the
+   * catalogue's defaults (`defaultFeaturesFor`), which is what a normal
+   * provisioning call wants - the operator picks modules, and the client gets
+   * a working console rather than an empty one.
+   */
+  features: z.array(OrgFeature).optional(),
+  whatsappProvider: WhatsAppProvider.optional(),
 });
 
-const UpdateModulesBody = z.object({
-  modules: z.array(OrgModule).min(1),
-});
+/**
+ * Modules, features and the WhatsApp provider in one request.
+ *
+ * All three optional and applied together, because they interact:
+ * `reconcileFeatures` drops features whose module is not enabled, and it has to
+ * see the module set that is being written in the SAME request, not the one
+ * still in the row. Splitting these into three endpoints would make "turn CRM
+ * on and enable Invoices" a two-request dance with an incoherent state in the
+ * middle.
+ */
+/** Every catalogued feature id - `reconcileFeatures` filters this by module. */
+const ALL_FEATURE_IDS = ORG_FEATURES.map((f) => f.id);
+
+const UpdateProvisioningBody = z
+  .object({
+    modules: z.array(OrgModule).min(1).optional(),
+    features: z.array(OrgFeature).optional(),
+    whatsappProvider: WhatsAppProvider.optional(),
+  })
+  .refine(
+    (b) => b.modules !== undefined || b.features !== undefined || b.whatsappProvider !== undefined,
+    { message: "nothing to update - send modules, features or whatsappProvider" },
+  );
 
 /**
  * Platform-operator (cross-tenant) surface. These endpoints span ALL orgs, so
@@ -197,7 +244,22 @@ export class AdminController {
 
     const rawToken = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-    const modules: OrgModule[] = p.enableCrm ? ["aura", "crm"] : ["aura"];
+
+    // An explicit `modules` list wins over the `enableCrm` shorthand; 'aura' is
+    // forced in either way, because every tenant created here is given an
+    // instance, a workspace and devices, so an org without it would be
+    // describing itself falsely from its first second.
+    const modules: OrgModule[] = p.modules
+      ? Array.from(new Set<OrgModule>(["aura", ...p.modules]))
+      : p.enableCrm
+        ? ["aura", "crm"]
+        : ["aura"];
+
+    // Defaults unless the caller was specific. Reconciled either way, so a
+    // request naming a feature whose module it did not ask for stores what will
+    // actually happen instead of a flag that can never take effect.
+    const features = reconcileFeatures(modules, p.features ?? defaultFeaturesFor(modules));
+    const whatsappProvider = p.whatsappProvider ?? "none";
 
     const client = await this.db.adminPool().connect();
     try {
@@ -206,14 +268,24 @@ export class AdminController {
       const {
         rows: [org],
       } = await client.query(
-        `INSERT INTO organizations (name, consent_policy, retention_days, region, enabled_modules)
+        `INSERT INTO organizations (name, consent_policy, retention_days, region,
+                                    enabled_modules, enabled_features, whatsapp_provider)
          VALUES ($1,
                  COALESCE($2, 'tone'),
                  COALESCE($3, 90),
                  COALESCE($4, 'ap-south-1'),
-                 $5)
-         RETURNING id, name, status, consent_policy, retention_days, region, enabled_modules, created_at`,
-        [p.name, p.consentPolicy ?? null, p.retentionDays ?? null, p.region ?? null, modules],
+                 $5, $6, $7)
+         RETURNING id, name, status, consent_policy, retention_days, region,
+                   enabled_modules, enabled_features, whatsapp_provider, created_at`,
+        [
+          p.name,
+          p.consentPolicy ?? null,
+          p.retentionDays ?? null,
+          p.region ?? null,
+          modules,
+          features,
+          whatsappProvider,
+        ],
       );
 
       // Board first: it find-or-creates the org's one default pipeline, which
@@ -274,36 +346,81 @@ export class AdminController {
   }
 
   /**
-   * Replace an org's module entitlement wholesale - the lever both "enable
-   * CRM for an existing client" and, later, "a plan upgrade" use (a plan
-   * assignment will just call this with the plan's module set). If 'crm' is
-   * newly present and the org has never been seeded, seedCrmDefaults runs
-   * inline; if 'crm' is being removed, existing roles/pipeline rows are left
-   * alone - CrmPermissionsGuard's `enabled_modules` check is what actually
-   * revokes access, not deleting data, so re-enabling later needs no reseed.
+   * An org's whole provisioning state: modules, the features inside them, and
+   * which platform its WhatsApp goes through.
+   *
+   * Replaces `PATCH tenants/:orgId/modules`. Same path, wider body - the
+   * `modules` field is unchanged and a caller sending only that behaves
+   * exactly as before, which is what keeps the operator console's existing
+   * module toggles working without touching them.
+   *
+   * ── WHAT EACH FIELD MEANS WHEN OMITTED ────────────────────────────────
+   *
+   * Omitted is "leave alone", not "clear". All three are independent, and an
+   * operator flipping a WhatsApp provider must not silently reset a feature
+   * grid they never opened. The one exception is the interaction the body's
+   * own refinement documents: changing `modules` reconciles `features` against
+   * the new set, because a feature whose module has gone is not a feature any
+   * more.
+   *
+   * ── WHAT IT STILL WILL NOT DELETE ─────────────────────────────────────
+   *
+   * Nothing. If 'crm' is newly present and the org has never been seeded,
+   * seedCrmDefaults runs inline; if 'crm' is being removed, roles and
+   * pipelines are left exactly where they are. CrmPermissionsGuard's
+   * `enabled_modules` check is what revokes access, not deleting data, so
+   * re-enabling later needs no reseed and loses no history. A feature turned
+   * off is the same promise one level down: the Invoices page disappears, the
+   * invoices do not.
    */
   @Patch("tenants/:orgId/modules")
-  async updateModules(
+  async updateProvisioning(
     @Param("orgId", ParseUUIDPipe) orgId: string,
     @Body() body: unknown,
     @Req() req: PrincipalRequest,
   ) {
-    const parsed = UpdateModulesBody.safeParse(body);
+    const parsed = UpdateProvisioningBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { modules } = parsed.data;
+    const patch = parsed.data;
 
     const client = await this.db.adminPool().connect();
     try {
       await client.query("BEGIN");
 
+      // Read first, under FOR UPDATE, because two of the three fields are
+      // decided by combining what was sent with what is already there -
+      // `features` has to be reconciled against the module set that will be in
+      // force after this write, which may be the one in the body or the one in
+      // the row. Locking the row makes that read-modify-write safe against a
+      // concurrent provisioning change rather than merely unlikely to collide.
+      const {
+        rows: [current],
+      } = await client.query(
+        `SELECT enabled_modules, enabled_features, whatsapp_provider
+           FROM organizations WHERE id = $1 FOR UPDATE`,
+        [orgId],
+      );
+      if (!current) throw new NotFoundException("tenant not found");
+
+      const modules: OrgModule[] = (patch.modules ?? current.enabled_modules) as OrgModule[];
+      // Reconciled against the modules being written, not the ones stored:
+      // "turn CRM on and enable Invoices" is one request, and checking the old
+      // row would refuse the Invoices half of it.
+      const features = reconcileFeatures(
+        modules,
+        (patch.features ?? current.enabled_features) as string[],
+      );
+      const whatsappProvider = patch.whatsappProvider ?? current.whatsapp_provider;
+
       const {
         rows: [org],
       } = await client.query(
-        `UPDATE organizations SET enabled_modules = $2 WHERE id = $1
-         RETURNING id, enabled_modules`,
-        [orgId, modules],
+        `UPDATE organizations
+            SET enabled_modules = $2, enabled_features = $3, whatsapp_provider = $4
+          WHERE id = $1
+         RETURNING id, enabled_modules, enabled_features, whatsapp_provider`,
+        [orgId, modules, features, whatsappProvider],
       );
-      if (!org) throw new NotFoundException("tenant not found");
 
       if (modules.includes("crm")) {
         // Unconditional and safe: seed_default_board returns the existing
@@ -327,11 +444,26 @@ export class AdminController {
         // inference ("inconsistent types deduced for parameter $1", 42P08).
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
          VALUES ($1, 'user', $2, 'tenant.modules_update', 'organization', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify({ modules })],
+        [
+          orgId,
+          req.principal?.userId ?? "dev-admin",
+          orgId,
+          // The RESOLVED state, not the patch. An entry reading
+          // `{"whatsappProvider":"wasi"}` tells a reader what one person
+          // touched; one reading the whole triple tells them what the tenant
+          // then had - which is the question anybody reading an audit log six
+          // months later is actually asking.
+          JSON.stringify({ modules, features, whatsappProvider }),
+        ],
       );
 
       await client.query("COMMIT");
-      return { orgId: org.id, enabledModules: org.enabled_modules };
+      return {
+        orgId: org.id,
+        enabledModules: org.enabled_modules,
+        enabledFeatures: org.enabled_features,
+        whatsappProvider: org.whatsapp_provider,
+      };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -345,7 +477,7 @@ export class AdminController {
     const admin = this.db.adminPool();
     const { rows } = await admin.query(
       `SELECT o.id, o.name, o.status, o.consent_policy, o.retention_days, o.region,
-              o.enabled_modules, o.created_at,
+              o.enabled_modules, o.enabled_features, o.whatsapp_provider, o.created_at,
               (SELECT count(*)::int FROM calls c     WHERE c.org_id = o.id) AS call_count,
               (SELECT count(*)::int FROM devices d   WHERE d.org_id = o.id) AS device_count,
               (SELECT count(*)::int FROM instances i WHERE i.org_id = o.id) AS instance_count
@@ -405,6 +537,12 @@ export class AdminController {
       stages,
       queue: { name: PIPELINE_QUEUE, depth, reachable: depth !== null },
       awaitingAudio: countOf("AWAITING_AUDIO"),
+      // Not folded into `stages`: STUCK_AFTER_MS (10 min) is calibrated to a
+      // pipeline run, not to a handset's upload, which can legitimately take
+      // far longer to retry over a bad connection - see
+      // PIPELINE_AWAITING_AUDIO_STALL_MS (6h) in the worker's retry.ts, which
+      // is what actually moves a call from AWAITING_AUDIO to FAILED_UPLOAD.
+      failedUpload: countOf("FAILED_UPLOAD"),
       stuckAfterSeconds: STUCK_AFTER_MS / 1000,
     };
   }

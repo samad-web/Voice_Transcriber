@@ -1,0 +1,304 @@
+import { createHash, randomBytes } from "node:crypto";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
+import { z } from "zod";
+import { canPairDevices, canRevokeDevices, resolveOwnerRole } from "@aura/shared";
+import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
+import { OrgId, TenantGuard } from "../../common/tenant.guard";
+import { DbService } from "../../db/db.service";
+
+/**
+ * The client's own handsets: see them, pair a new one, retire an old one
+ * (migration 0096).
+ *
+ * ── WHY THIS EXISTS BESIDE InstancesController ────────────────────────────
+ *
+ * `POST /instances/:id/keys` already mints enrollment tokens, and it is the
+ * OPERATOR's surface: it takes a configurable TTL and use-count because bulk
+ * and MDM enrolment need them, and it is reached with the bare platform admin
+ * key. It is deliberately not reused here.
+ *
+ * A client pairing one phone in their hand needs the opposite of configurable:
+ * ten minutes, one use, no choices. Those are constants below rather than
+ * request fields, so the narrow surface cannot be widened by whoever calls it.
+ *
+ * ── THE PERMISSION IS READ FROM `memberships`, NOT FROM THE REQUEST ───────
+ *
+ * `@RequireOwnerRole` cannot express this gate: pairing is a per-PERSON
+ * capability an owner hands out (0096), not a persona. So the guard admits
+ * every console persona and the capability is checked INSIDE the handler,
+ * against `memberships.can_pair_devices`.
+ *
+ * That is the same shape `owner-calls.controller.ts` uses for
+ * `recordings_listen`, and for the same reason: the owner console arrives on
+ * the platform admin key, so the flag cannot come from the principal and has
+ * to be read from the row. Reading it from the request would mean a caller
+ * asserting their own permission.
+ *
+ * ── THE TOKEN IS A CREDENTIAL ─────────────────────────────────────────────
+ *
+ * Whoever holds a live enrollment token can put a device into this tenant.
+ * Hence: one use, ten minutes, hashed at rest (the raw value exists only in
+ * the response body), every mint written to `audit_log` with the person who
+ * asked, and the device list below so an owner can see what appeared.
+ */
+
+/**
+ * Not request fields. See the header: a client pairing one phone needs no
+ * choices, and a constant cannot be widened by a caller.
+ */
+const PAIRING_TTL_MINUTES = 10;
+const PAIRING_MAX_USES = 1;
+
+const MintBody = z.object({
+  /**
+   * Which instance the handset joins. Optional: a tenant with exactly one
+   * instance - which is nearly all of them - should not be asked to choose,
+   * and the resolver below picks it when there is no ambiguity.
+   */
+  instanceId: z.string().uuid().optional(),
+});
+// Deliberately no `label`: the handset supplies its own at registration, and
+// an accepted-but-ignored field reads as supported.
+
+@Controller("owner/devices")
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+// Every console persona, because the real gate is the per-person capability
+// checked in the handlers. Mounting the guard with the full list rather than
+// omitting the decorator is deliberate: it keeps this controller inside the
+// OWNER_ROLE_ROUTES inventory that guard-mounting.spec.ts pins, so a future
+// route added here cannot quietly escape the persona check entirely.
+@RequireOwnerRole("owner", "manager", "telecaller", "sales", "marketing")
+export class OwnerDevicesController {
+  constructor(private readonly db: DbService) {}
+
+  /**
+   * This tenant's handsets.
+   *
+   * Readable by every persona: a telecaller seeing which phone is theirs and
+   * whether it has checked in recently is support-desk information, not a
+   * privileged view. Nothing here is a credential - the tokens are hashed and
+   * never returned.
+   */
+  @Get()
+  async list(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
+    return this.db.withOrg(orgId, async (client) => {
+      const { rows: devices } = await client.query(
+        `SELECT d.id, d.label, d.status, d.os_version AS "osVersion",
+                d.app_version AS "appVersion", d.capture_capability AS "captureCapability",
+                d.created_at AS "pairedAt",
+                i.name AS "instanceName",
+                t.display_name AS "telecallerName",
+                (SELECT max(c.started_at) FROM calls c WHERE c.device_id = d.id) AS "lastCallAt",
+                (SELECT count(*)::int FROM calls c WHERE c.device_id = d.id) AS "callCount"
+           FROM devices d
+           JOIN instances i ON i.id = d.instance_id
+           LEFT JOIN telecallers t ON t.id = d.telecaller_id
+          WHERE d.org_id = $1
+          ORDER BY d.status = 'active' DESC, d.created_at DESC`,
+        [orgId],
+      );
+
+      // The instances a new handset could join, so the console can skip the
+      // question when there is only one.
+      const { rows: instances } = await client.query(
+        `SELECT id, name FROM instances WHERE org_id = $1 ORDER BY created_at ASC`,
+        [orgId],
+      );
+
+      // What THIS caller may do, so the console renders the right buttons
+      // rather than offering an action the API will refuse.
+      const caller = await this.capabilitiesFor(client, orgId, req);
+      return { devices, instances, canPair: caller.canPair, canRevoke: caller.canRevoke };
+    });
+  }
+
+  /**
+   * Mint a one-time pairing token. The raw value is returned once and never
+   * again - only its SHA-256 is stored, exactly as `POST /instances/:id/keys`
+   * does.
+   */
+  @Post("pairing-token")
+  async mint(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+    const parsed = MintBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    return this.db.withOrg(orgId, async (client) => {
+      if (!(await this.capabilitiesFor(client, orgId, req)).canPair) {
+        throw new ForbiddenException(
+          "you do not have permission to pair a handset - ask an owner to grant it on the Team page",
+        );
+      }
+
+      const instanceId = await this.resolveInstance(client, orgId, parsed.data.instanceId);
+
+      const rawToken = randomBytes(32).toString("base64url");
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+
+      const {
+        rows: [token],
+      } = await client.query<{ expires_at: string }>(
+        `INSERT INTO enrollment_tokens (org_id, instance_id, token_hash, expires_at, max_uses)
+         VALUES ($1, $2, $3, now() + make_interval(mins => $4), $5)
+         RETURNING expires_at`,
+        [orgId, instanceId, tokenHash, PAIRING_TTL_MINUTES, PAIRING_MAX_USES],
+      );
+
+      await client.query(
+        // Names the PERSON, not "owner-console": the whole point of delegating
+        // this is being able to answer "who added that handset".
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+         VALUES ($1, 'user', $2, 'device.pairing_token.create', 'instance', $3)`,
+        [orgId, req.principal?.userId ?? "owner-console", instanceId],
+      );
+
+      return {
+        instanceId,
+        // The field is named `adminKey` because that is what the handset's
+        // activation screen and `EnrollmentCredentials`' QR payload already
+        // call it (`v: 1`). Renaming it here would break the scanner for a
+        // cosmetic gain.
+        adminKey: rawToken,
+        expiresAt: token.expires_at,
+        maxUses: PAIRING_MAX_USES,
+      };
+    });
+  }
+
+  /**
+   * Retire a handset. Owner and manager only, and NOT delegable - see 0096.
+   *
+   * `logged_out` rather than a delete: the device's calls, leads and
+   * attribution all point at this row, and removing it would orphan a
+   * telecaller's entire history. The handset is refused at its next
+   * authentication, which is what "retired" means operationally.
+   */
+  @Post(":id/revoke")
+  @RequireOwnerRole("owner", "manager")
+  async revoke(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [device],
+      } = await client.query<{ id: string; label: string | null }>(
+        `UPDATE devices SET status = 'logged_out'
+          WHERE id = $1 AND org_id = $2 AND status <> 'wiped'
+          RETURNING id, label`,
+        [id, orgId],
+      );
+      if (!device) throw new NotFoundException("no such handset in this workspace");
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+         VALUES ($1, 'user', $2, 'device.revoke', 'device', $3)`,
+        [orgId, req.principal?.userId ?? "owner-console", id],
+      );
+      return { revoked: true };
+    });
+  }
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * What this caller may do, derived from `memberships` alone.
+   *
+   * ── WHY THE PERSONA IS RE-READ HERE RATHER THAN TAKEN FROM THE PRINCIPAL ──
+   *
+   * The owner console reaches the API on the platform admin key with the
+   * caller's persona in an `x-caller-owner-role` header. `AdminKeyGuard` still
+   * parses that into `principal.ownerRole`, but checklist 08 §2.5 closed the
+   * hole where anything TRUSTED it: an admin-key holder could assert `owner`
+   * and be believed. `OwnerRoleGuard` now derives the persona from this table
+   * instead, and so must every in-handler check - otherwise the gate the guard
+   * cannot express (a per-person capability) would be the one place the old
+   * bypass still worked.
+   *
+   * One query for both, because the persona and the grant live in the same
+   * row and asking twice would be two round trips to Seoul for one answer.
+   */
+  private async capabilitiesFor(
+    client: { query: <R>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }> },
+    orgId: string,
+    req: PrincipalRequest,
+  ): Promise<{ canPair: boolean; canRevoke: boolean }> {
+    const userId = z.string().uuid().safeParse(req.principal?.userId);
+    // No user behind the credential - the bare admin key - has no membership
+    // to read, and so holds no delegated capability. Denying is correct: a
+    // capability handed to a PERSON cannot be exercised by nobody.
+    if (!userId.success) return { canPair: false, canRevoke: false };
+
+    const { rows } = await client.query<{
+      owner_role: string | null;
+      can_pair_devices: boolean;
+    }>(
+      // A person may hold an org-scope row and workspace-scope rows; the team
+      // controller writes both the persona and the grant to all of them
+      // together, so `bool_or` and the org-scope-first ordering agree.
+      `SELECT owner_role, bool_or(can_pair_devices) OVER () AS can_pair_devices
+         FROM memberships
+        WHERE user_id = $1 AND org_id = $2
+        ORDER BY (scope_type = 'org') DESC, id
+        LIMIT 1`,
+      [userId.data, orgId],
+    );
+    if (rows.length === 0) return { canPair: false, canRevoke: false };
+
+    const role = resolveOwnerRole(rows[0].owner_role);
+    return {
+      canPair: canPairDevices(role, rows[0].can_pair_devices === true),
+      canRevoke: canRevokeDevices(role),
+    };
+  }
+
+  /**
+   * Which instance a new handset joins.
+   *
+   * Named explicitly wins. With exactly one instance - nearly every tenant -
+   * it is chosen without asking. With several and no choice made, this refuses
+   * rather than guessing: picking the oldest would silently enrol a phone into
+   * the wrong desk, and a handset on the wrong instance sends its calls to the
+   * wrong workspace, which is not visible until somebody goes looking for
+   * calls that are not there.
+   */
+  private async resolveInstance(
+    client: { query: <R>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }> },
+    orgId: string,
+    requested: string | undefined,
+  ): Promise<string> {
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT id FROM instances WHERE org_id = $1 ORDER BY created_at ASC`,
+      [orgId],
+    );
+    if (rows.length === 0) {
+      throw new BadRequestException(
+        "this workspace has no instance to pair a handset into - contact your provider",
+      );
+    }
+    if (requested) {
+      if (!rows.some((r) => r.id === requested)) {
+        throw new NotFoundException("no such instance in this workspace");
+      }
+      return requested;
+    }
+    if (rows.length > 1) {
+      throw new BadRequestException("choose which instance this handset belongs to");
+    }
+    return rows[0].id;
+  }
+}

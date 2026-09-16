@@ -72,22 +72,41 @@ export class DeviceTelemetryController {
     });
   }
 
-  /** Batched client-side events - audited as a single batch for now. */
+  /**
+   * Batched client-side events - audited as a single batch for now.
+   *
+   * Broken down by `type` rather than left as a bare count: a bare `{count: 4}`
+   * cannot tell an operator whether those four events were routine
+   * (`call_offhook`) or the one type someone actually needs to act on, e.g.
+   * `oem_backlog_skipped` (OemRecordingIngestor - a handset's pre-existing OEM
+   * call recordings older than the import floor, which the fleet otherwise
+   * drops with no visibility anywhere). Malformed entries still count, just
+   * unlabeled, so a client bug never shrinks the total silently.
+   */
   @Post("events")
   async events(@Req() req: DeviceRequest, @Body() body: unknown) {
     const parsed = EventsBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { deviceId, orgId } = req.device;
-    const n = parsed.data.events.length;
+    const events = parsed.data.events;
+
+    const byType: Record<string, number> = {};
+    for (const e of events) {
+      const type =
+        typeof e === "object" && e !== null && typeof (e as Record<string, unknown>).type === "string"
+          ? ((e as Record<string, unknown>).type as string)
+          : "unknown";
+      byType[type] = (byType[type] ?? 0) + 1;
+    }
 
     await this.db.withOrg(orgId, (client) =>
       client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
          VALUES ($1, 'device', $2, 'device.events', 'device', $3, $4)`,
-        [orgId, deviceId, deviceId, JSON.stringify({ count: n })],
+        [orgId, deviceId, deviceId, JSON.stringify({ count: events.length, byType })],
       ),
     );
-    return { accepted: n };
+    return { accepted: events.length };
   }
 
   /**

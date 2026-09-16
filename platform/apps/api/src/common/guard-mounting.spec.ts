@@ -62,9 +62,11 @@ import { TasksController } from "../modules/tasks/tasks.controller";
 import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
 import { CustomFieldsController } from "../modules/custom-fields/custom-fields.controller";
 import { CustomFieldValuesController } from "../modules/custom-fields/custom-field-values.controller";
+import { AppDownloadController } from "../modules/devices/app-download.controller";
 import { DeviceTelemetryController } from "../modules/devices/device-telemetry.controller";
 import { DevicesController } from "../modules/devices/devices.controller";
 import { InstancesController } from "../modules/devices/instances.controller";
+import { OwnerDevicesController } from "../modules/devices/owner-devices.controller";
 // Two different controllers are both called `LeadsController` - the owner's
 // view of their own leads, and the platform operator's view of marketing funnel
 // enquiries. Aliased rather than renamed: they are genuinely both "leads" to
@@ -79,14 +81,17 @@ import { MergeController } from "../modules/merge/merge.controller";
 import { NotificationsController } from "../modules/notifications/notifications.controller";
 import { AutomationController } from "../modules/automation/automation.controller";
 import { ConversationsController } from "../modules/conversations/conversations.controller";
+import { EmbeddedSignupController } from "../modules/conversations/embedded-signup.controller";
 import { MessagingChannelsController } from "../modules/conversations/messaging-channels.controller";
 import { MessagingWebhookController } from "../modules/conversations/messaging-webhook.controller";
+import { ConversationQualificationController } from "../modules/conversations/conversation-qualification.controller";
 import { WhatsAppSendController } from "../modules/conversations/whatsapp-send.controller";
 import { TagsController } from "../modules/tags/tags.controller";
 import { MarketingSourcesController } from "../modules/tags/marketing-sources.controller";
 import { ProjectsController } from "../modules/projects/projects.controller";
 import { McpController } from "../modules/mcp/mcp.controller";
 import { PublicApiController } from "../modules/public-api/public-api.controller";
+import { RealtimeController } from "../modules/realtime/realtime.controller";
 import { McpServerController } from "../modules/public-api/mcp-server.controller";
 import { OutreachController } from "../modules/outreach/outreach.controller";
 import { ProductsController } from "../modules/products/products.controller";
@@ -97,10 +102,24 @@ import { RazorpayWebhookController } from "../modules/invoices/razorpay-webhook.
 import { ImportController } from "../modules/import/import.controller";
 import { MetaOAuthController } from "../modules/meta-ads/meta-oauth.controller";
 import { MetaWebhookController } from "../modules/meta-ads/meta-webhook.controller";
+import { ReportBuilderController } from "../modules/report-builder/report-builder.controller";
+import { ReportDatasetsController } from "../modules/report-builder/report-datasets.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
+import { OwnerTeamController } from "../modules/owner/owner-team.controller";
 import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
+import { TelecallerProductivityController } from "../modules/owner/telecaller-productivity.controller";
+import { CallSopsController } from "../modules/owner/call-sops.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
+import { IntakeWebhookController } from "../modules/lead-intake/intake-webhook.controller";
+import { LeadSourcesController } from "../modules/lead-intake/lead-sources.controller";
+import { LinkedInOAuthController } from "../modules/lead-intake/linkedin-oauth.controller";
+import { LeadRoutingController } from "../modules/lead-routing/lead-routing.controller";
+import { RecycleBinController } from "../modules/recycle-bin/recycle-bin.controller";
+import { SavedViewsController } from "../modules/saved-views/saved-views.controller";
+import { OptOutsController } from "../modules/conversations/opt-outs.controller";
+import { PaymentSettingsController } from "../modules/invoices/payment-settings.controller";
+import { SetupController } from "../modules/owner/setup.controller";
 import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
 import { MembersController } from "../modules/tenancy/members.controller";
@@ -121,12 +140,16 @@ const CONTROLLERS: Array<Type<unknown>> = [
   CallsController,
   NotesController,
   CrmController,
+  AppDownloadController,
   DevicesController,
   DeviceTelemetryController,
   InstancesController,
   LeadsController,
   OwnerCallsController,
   OwnerController,
+  OwnerTeamController,
+  TelecallerProductivityController,
+  CallSopsController,
   OwnersController,
   ErasureController,
   MembersController,
@@ -184,6 +207,11 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // header, so its `:token` path segment is the credential.
   ConversationsController,
   MessagingChannelsController,
+  // WhatsApp Embedded Signup (GET/POST /messaging/embedded-signup). Same
+  // AdminKeyGuard+TenantGuard tier as the channels controller beside it and
+  // for the same reason: this is org CONFIGURATION - which number this tenant
+  // has connected - not a CRM record with a PermissionObjectType.
+  EmbeddedSignupController,
   MessagingWebhookController,
   // The outbound half, added for Wasi (migration 0061). See
   // whatsapp-send.controller.ts's header for why it's a separate class
@@ -191,6 +219,13 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // route in this change (GET .../templates, a Wasi proxy) - no new import
   // needed for that, same class.
   WhatsAppSendController,
+  // WhatsApp qualification's review queue (migration 0080). The list is gated
+  // on `conversation:view`; approve is gated on `contact:create` because that
+  // is what approving actually does - create a contact/lead/deal - and gating
+  // the only write path on a READ permission would be the wrong grant. There
+  // is no `lead` object type in PermissionObjectType, which is why approve
+  // borrows `contact`.
+  ConversationQualificationController,
   // Tags and campaign attribution (migration 0057). TagsController carries
   // BOTH regimes: the tag vocabulary is org configuration, while attaching a
   // tag to a record is gated on that record's `edit` grant - a viewer who
@@ -200,6 +235,10 @@ const CONTROLLERS: Array<Type<unknown>> = [
   ProjectsController,
   McpController,
   PublicApiController,
+  // The console's live-update feed. The ONLY controller on the platform
+  // guarded by neither AdminKeyGuard nor DeviceAuthGuard - see INTERNAL
+  // below for why it has a guard of its own instead.
+  RealtimeController,
   McpServerController,
   // The follow-up ladder (migration 0058). AdminKeyGuard + TenantGuard, with
   // the automation rules above: it writes only to its own two tables, where a
@@ -232,12 +271,73 @@ const CONTROLLERS: Array<Type<unknown>> = [
   // messaging/webhook/:token and /webhooks/razorpay.
   MetaOAuthController,
   MetaWebhookController,
+  // The Report Builder (migration 0077) - user-assembled reports over the
+  // tenant's own CRM data. Both classes are CrmPermissionsGuard'd on `deal`,
+  // joining reports/targets/call-integrity below for the same reason those
+  // are: a report is a VIEW over contacts, deals and calls rather than a
+  // record class of its own, and widening PermissionObjectType would mean
+  // seeding grants for all five system roles in the same migration or locking
+  // every existing user out of the new object on the day it ships. See
+  // `Build docs/report_builder_design.md` D7.
+  ReportBuilderController,
+  ReportDatasetsController,
+  // The lead intake engine (migration 0078). Three classes, three regimes:
+  //
+  //  - IntakeWebhookController is entirely UNGUARDED, the same class of
+  //    exception as messaging/webhook/:token - a form on a customer's website,
+  //    an Exotel passthrough and a Mailgun route cannot present an admin key,
+  //    so the `:token` path segment IS the credential.
+  //  - LeadSourcesController is ordinary org CONFIGURATION on
+  //    AdminKeyGuard+TenantGuard, the tier projects/tags/marketing-sources sit
+  //    on. Deliberately not CrmPermissionsGuard'd: `PermissionObjectType` has
+  //    no value for a settings page, and widening it would mean seeding grants
+  //    for five system roles to gate a catalogue.
+  //  - LinkedInOAuthController mixes both in one class, like MetaOAuthController
+  //    does: `oauth/callback` is LinkedIn's own browser redirect and verifies
+  //    itself with a signed state token instead of a guard.
+  IntakeWebhookController,
+  LeadSourcesController,
+  LinkedInOAuthController,
+  // Automated lead distribution (migration 0094). AdminKeyGuard + TenantGuard +
+  // OwnerRoleGuard, with a real `@RequireOwnerRole("owner", "manager")` at
+  // class level rather than an inert mount - see OWNER_ROLE_ROUTES, where all
+  // eight of its routes are pinned. A distribution rule decides who gets paid,
+  // so a telecaller or a `sales` persona reaching it would be able to route the
+  // floor's leads to themselves.
+  LeadRoutingController,
+  RecycleBinController,
+  // The new-client setup checklist (migration 0095). AdminKeyGuard +
+  // TenantGuard + OwnerRoleGuard, owner/manager on the read and owner alone on
+  // the dismiss - see OWNER_ROLE_ROUTES.
+  SetupController,
+  // The client's own payment gateway. Owner ONLY, and deliberately NOT on
+  // CrmPermissionsGuard beside PaymentsController: these are live payment
+  // credentials, so "may edit an invoice" is the wrong question to ask about
+  // them.
+  PaymentSettingsController,
+  // The client's own handsets (migration 0096). Mounts OwnerRoleGuard with
+  // EVERY persona listed rather than omitting the decorator, because the real
+  // gate is a per-person capability (`memberships.can_pair_devices`) that
+  // `@RequireOwnerRole` cannot express and the handlers check themselves -
+  // the same shape owner-calls.controller.ts uses for `recordings_listen`.
+  // Listing every persona keeps its routes inside OWNER_ROLE_ROUTES below, so
+  // a route added here later cannot quietly escape the persona check.
+  OwnerDevicesController,
+  // A person's saved list filters (migration 0108). Plain AdminKeyGuard +
+  // TenantGuard and no permission grant: a view is a query string, opened by
+  // re-running the list endpoint under the viewer's own grant and scope, and
+  // every statement is narrowed to the calling user.
+  SavedViewsController,
+  // The review queue's probable opt-outs (migration 0109): confirm or dismiss.
+  // OwnerRoleGuard owner+manager at class level, the gate the opt-out release
+  // on ConversationsController already uses - see OWNER_ROLE_ROUTES.
+  OptOutsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
 
 /**
- * §1.2 - the seven routes with no `@UseGuards` metadata at all.
+ * §1.2 - the routes with no `@UseGuards` metadata at all.
  *
  * The messaging webhook is the newest member and the only one that is
  * unguarded while still writing tenant data. It is admissible because the
@@ -246,6 +346,28 @@ const CONTROLLERS: Array<Type<unknown>> = [
  * pool to name the org before anything is written. An unknown token 404s
  * without disclosing whether one exists.
  */
+/**
+ * The one route authenticated by the bare admin key and nothing else.
+ *
+ * `GET /internal/events` streams change signals to the web tier's fanout. It
+ * is not unguarded - `InternalStreamGuard` requires ADMIN_API_KEY, which in
+ * production is unset-means-deny - but it deliberately does NOT carry
+ * AdminKeyGuard + TenantGuard like every other credentialed route:
+ *
+ *  - it is cross-tenant by construction (one subscriber receives every org's
+ *    signals and the web tier filters per session), so there is no single
+ *    `x-org-id` for TenantGuard to pin; and
+ *  - it must not touch the database to accept a connection. AdminKeyGuard
+ *    validates the org header against `organizations` on every call, which for
+ *    a stream that reconnects after every deploy is a query per redial for a
+ *    fact this route never uses.
+ *
+ * What makes that safe is the payload, not the guard: these events carry an
+ * org id, a topic and a record id - never row content. See
+ * packages/shared/src/realtime.ts.
+ */
+const INTERNAL = ["GET /internal/events"];
+
 const UNGUARDED = [
   "GET /health",
   "POST /auth/login",
@@ -265,6 +387,30 @@ const UNGUARDED = [
   // resolve-then-verify shape as the other unauthenticated webhooks above.
   "GET /meta/webhook",
   "POST /meta/webhook",
+  // The lead intake engine's public front doors (migration 0078). Same
+  // resolve-the-token-then-write shape as the messaging webhook: the token is
+  // 32 CSPRNG bytes, UNIQUE platform-wide in `lead_sources.intake_token`, and
+  // resolving it on the admin pool both authenticates the caller and names the
+  // tenant. An unknown token 404s without disclosing whether one exists, and a
+  // token posted to the WRONG channel's endpoint 404s too.
+  "POST /intake/form/:token",
+  "POST /intake/telephony/:token",
+  "POST /intake/email/:token",
+  // LinkedIn's OAuth redirect lands here with no Aura credentials - verifies
+  // itself via the signed `state` param, exactly like Meta's.
+  "GET /linkedin/oauth/callback",
+  // The handset app's public download. Unlike every other member of this list
+  // it carries no token at all, and that is the point: the caller is a person
+  // holding a NEW phone, who has no console login and no device token because
+  // the app they are here to install is what would issue one.
+  //
+  // Admissible because it discloses only the client binary. It reads
+  // `app_releases`, which is fleet-wide and holds no tenant data; a fresh
+  // install is inert until somebody types an activation key into it; and the
+  // bucket stays private - both routes presign per request and the signature
+  // expires in fifteen minutes, so this publishes a link, never the object.
+  "GET /app/latest",
+  "GET /app/download",
 ];
 
 /** §1.1 rows 22, 23, 44, 48-50 - the handset fleet's entire surface. */
@@ -279,6 +425,11 @@ const DEVICE_AUTHED = [
   // and the APK URL is presigned per request rather than stored. DeviceAuthGuard
   // like every other /devices/me route: the signed device token IS the identity.
   "GET /devices/me/update",
+  // The handset registering its own push token, so the console can wake it
+  // (POST /devices/:id/ping) instead of waiting for its next poll. DeviceAuthGuard
+  // like every other /devices/me route: the signed device token IS the identity,
+  // and a phone has no principal to present.
+  "POST /devices/me/fcm-token",
 ];
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
@@ -318,20 +469,132 @@ const CROSS_TENANT = [
   "PUT /admin/funnel-criteria",
 ];
 
+/**
+ * The operator's instance surface (migration 0096's sibling fix). These mint
+ * enrollment tokens, and an enrollment token puts a device into the tenant -
+ * so a tenant console user is refused outright, while the bare platform admin
+ * key passes. Neither OrgRoleGuard (inert: it admits any `viaAdminKey` caller,
+ * which every owner-console request is) nor OwnerRoleGuard (refuses the bare
+ * admin key the operator console uses) could express that.
+ */
+const OPERATOR_ONLY_ROUTES = [
+  "POST /instances",
+  "GET /instances",
+  "GET /instances/:id",
+  "DELETE /instances/:id",
+  "POST /instances/:id/keys",
+];
+
 /** §2.3 - one route on the whole platform. */
 const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
 
-/** §2.4 - one controller, two routes. */
+/** §2.4 - three controllers. */
 const OWNER_ROLE_ROUTES = [
+  // Undoing an opt-out a customer asked for (migration 0100). Owner/manager
+  // rather than `conversation:edit`, because the justification for reversing
+  // it always happens outside the system - the customer said so on a call -
+  // and the person asserting that should not be the person who wants to send
+  // the message.
+  "POST /conversations/:id/opt-out/release",
   "GET /owner/overview",
   "GET /owner/crm-overview",
+  // Telecaller productivity (migration 0088). Mounts OwnerRoleGuard at class
+  // level and declares NO `@RequireOwnerRole` on the read, which is the same
+  // shape inventory 13 finding 3 flagged on `GET /owner/overview` - and, as
+  // there, the fix was not to add a persona requirement. Every persona is
+  // entitled to see their own talk time; what must not happen is a telecaller
+  // reading the floor's. The narrowing therefore comes from OwnerScopeGuard,
+  // which is never inert - it writes a scope for every request and resolves an
+  // own-scoped persona with no telecaller identity to a predicate matching
+  // nothing. owner-scope.spec.ts pins the column that predicate uses.
+  "GET /owner/productivity",
+  // The SOP surface (migration 0089). Unlike the productivity read above,
+  // every route here declares a real requirement: an SOP is the DEFINITION of
+  // the measure, it has no owner to narrow rows by, and a telecaller editing
+  // the rules they are scored against is the one shape of access there is no
+  // defensible reading of.
+  "GET /owner/sops",
+  "GET /owner/sops/:id/versions",
+  "POST /owner/sops",
+  "POST /owner/sops/:id/versions",
+  "POST /owner/sops/deactivate",
   "PATCH /owner/telecallers/:deviceId",
+  // The workspace's own team roster (migration 0079). Both routes declare a
+  // real requirement rather than mounting the guard inertly, and the two are
+  // deliberately DIFFERENT: reading the roster is owner-or-manager, while
+  // changing somebody's persona is owner alone. A manager who could assign
+  // personas could assign themselves `owner`, which is privilege escalation
+  // wearing the clothes of an ordinary team edit.
+  "GET /owner/team",
+  "PATCH /owner/team/:userId",
   // The client's own call log. Unlike the three above it declares a real
   // `@RequireOwnerRole("owner", "manager")` at class level rather than
   // mounting the guard inertly: reading the whole floor's conversations is a
   // manager's view of the team, not a telecaller's view of their own work.
+  // Automated lead distribution (migration 0094). Every route declares the
+  // class-level owner+manager requirement. Managers WRITE here, unlike
+  // `/owner/team` where they read the roster and only an owner changes it:
+  // setting a persona is privilege escalation, sharing out leads is not.
+  // Handsets (migration 0096). The list and the mint admit every persona at
+  // the guard and then check the per-person pairing grant in the handler;
+  // revoke is the one route with a real persona requirement, because retiring
+  // a working phone mid-shift is not delegable.
+  "GET /owner/devices",
+  "POST /owner/devices/pairing-token",
+  "POST /owner/devices/:id/revoke",
+  // The setup checklist (migration 0095). The read is owner-or-manager, the
+  // dismiss is owner alone: silencing a tenant-wide notice permanently is a
+  // decision, and a manager who could take it could hide an unfinished account
+  // from the person who owns it.
+  "GET /owner/setup",
+  "POST /owner/setup/dismiss",
+  // Owner alone on both halves: whoever holds these keys decides which bank
+  // account this business's money settles into.
+  "GET /owner/payment-settings",
+  "PUT /owner/payment-settings",
+  "GET /owner/lead-routing",
+  "POST /owner/lead-routing/rules",
+  "PATCH /owner/lead-routing/rules/:id",
+  "DELETE /owner/lead-routing/rules/:id",
+  "PUT /owner/lead-routing/rules/:id/targets",
+  "POST /owner/lead-routing/rules/:id/reset",
+  "GET /owner/lead-routing/rules/:id/preview",
+  "POST /owner/lead-routing/backfill",
+  "GET /owner/recycle-bin",
+  "POST /owner/recycle-bin/:resource/:id/restore",
   "GET /owner/calls",
   "GET /owner/calls/:id",
+  // Acting on a call, not just reading it. Notes and playback inherit the
+  // class's owner+manager; playback additionally checks the membership's
+  // `recordings_listen` INSIDE the handler, because the owner console arrives
+  // on the admin key that AdminKeyGuard mints with `recordingsListen: true` -
+  // PermissionsGuard would wave every client member through, so it is
+  // deliberately not mounted here.
+  "GET /owner/calls/:id/notes",
+  "POST /owner/calls/:id/notes",
+  "GET /owner/calls/:id/audio",
+  // OWNER ONLY - the one route in this controller that narrows the class
+  // decorator, via `getAllAndOverride`. A reprocess re-runs ASR and analyze
+  // against the paid providers, so it is a spending decision and belongs with
+  // the account holder rather than with everyone who can read the log.
+  "POST /owner/calls/:id/reprocess",
+  // Bulk lead reassignment from the Leads list (CRM dashboard Phase 5). The
+  // one route on LeadsController with a persona requirement: assigning leads
+  // is lead routing's decision made by hand, so it takes routing's
+  // owner+manager gate - a telecaller could otherwise hand off hard leads.
+  "POST /leads/reassign",
+  // The review queue (CRM dashboard Phase 7, migration 0109). A probable
+  // opt-out's verdict - confirm it or dismiss it - takes the same owner+manager
+  // gate as releasing one: keeping or stopping messages to a customer who may
+  // have asked us to stop is not the sending rep's call.
+  "GET /opt-outs",
+  "POST /opt-outs/:id/confirm",
+  "POST /opt-outs/:id/dismiss",
+  // The response SLA the sla_breach sweep measures against. Routing's own
+  // class-level owner+manager gate: how fast shared-out leads must be picked up
+  // is part of how they are shared out.
+  "GET /owner/lead-routing/response-sla",
+  "PUT /owner/lead-routing/response-sla",
 ];
 
 /**
@@ -360,6 +623,18 @@ const ORG_ROLE_ROUTES = [
   "POST /erasure-requests",
   "POST /devices/:id/logout",
   "POST /devices/:id/wipe",
+  // Removing an UNPAIRED device row - the tidying action logout and wipe do
+  // not provide. Same org_admin tier as its two siblings above, and for a
+  // stronger reason than either: they change a handset's status, this one
+  // deletes a record. The endpoint additionally refuses with 409 unless the
+  // device has zero calls and zero attributed leads, so "org_admin" is the
+  // floor and not the whole check.
+  "DELETE /devices/:id",
+  // Waking a handset through FCM so it checks in now rather than at its next
+  // scheduled poll. Sits with logout and wipe for the same reason they sit
+  // together: all three reach out and change what a phone in somebody's pocket
+  // is doing, which is an org_admin action whatever its blast radius.
+  "POST /devices/:id/ping",
   "POST /workspaces",
 ];
 
@@ -405,6 +680,11 @@ const CRM_PERMISSION_ROUTES = [
   "POST /contacts/:id/interactions",
   "GET /deals/:id/interactions",
   "POST /deals/:id/interactions",
+  // The console's global search over activity notes. The one flat
+  // interactions route: gated on `contact:view` and joined to contacts under
+  // that grant's `owned` scope, so it can only return notes whose contact the
+  // caller could already open.
+  "GET /interactions/search",
   // Track A3. `task` joined PermissionObjectType with migration 0041, which
   // also seeds every system role's task grants - so these are enforced from
   // the moment they ship, rather than being a retrofit later.
@@ -419,17 +699,52 @@ const CRM_PERMISSION_ROUTES = [
   "GET /conversations",
   "GET /conversations/:id",
   "PATCH /conversations/:id",
+  // Mounted from the class and INERT on this one: it declares no
+  // `@RequireCrmPermission`, and CrmPermissionsGuard returns true when the
+  // metadata is absent. Its real gate is OwnerRoleGuard (see
+  // OWNER_ROLE_ROUTES) - releasing a customer's opt-out is not a rep's day
+  // job. Listed here because the inventory records what is MOUNTED, and a
+  // guard that is mounted-but-inert is exactly the shape inventory 13 §7
+  // finding 3 exists to keep visible rather than to hide.
+  "POST /conversations/:id/opt-out/release",
+  // WhatsApp qualification (migration 0080). The queue reads on
+  // `conversation:view`; reject edits a verdict, so `conversation:edit`.
+  // Approve is the one that creates CRM records and is listed with the
+  // contact-writing routes below, on `contact:create`.
+  "GET /conversation-qualifications",
+  "POST /conversation-qualifications/:id/reject",
   // Attaching a label is editing the record it hangs off (migration 0057).
   "POST /contacts/:id/tags",
   "DELETE /contacts/:id/tags/:tagId",
   "POST /deals/:id/tags",
   "DELETE /deals/:id/tags/:tagId",
+  // The list views' bulk actions (CRM dashboard Phase 5). The same grant as
+  // the single-record edit each one repeats - `:edit` on the object - with
+  // the caller's `owned` scope inside the UPDATE/INSERT, so a scoped rep who
+  // selects a colleague's rows changes nothing about them.
+  "POST /contacts/reassign",
+  "POST /deals/reassign",
+  "POST /tasks/reassign",
+  "POST /tags/:id/contacts",
+  "POST /tags/:id/deals",
   // PRD Layer 3. Viewing a report needs `deal:view`; the CSV export needs
   // `deal:export` - the first route on the platform to use that action, and
   // the reason the export is its own route rather than a `?format=` param.
   "GET /reports/pipeline",
   "GET /reports/performance",
   "GET /reports/conversion",
+  // The three Tier-1 reports from the Hawcus gap analysis (migration 0090).
+  // Same `deal:view` gate as their four siblings. Two of them read `leads`,
+  // which has no owner_user_id, so an `owned`-scoped caller is REFUSED rather
+  // than silently widened - the rule query-compiler.spec.ts already pins for
+  // report-builder sources, asserted for these in reports-sla.spec.ts.
+  "GET /reports/response-time",
+  "GET /reports/followup-compliance",
+  "GET /reports/lead-aging",
+  // The team roll-up (CRM dashboard Phase 8). Same deal:view gate as its
+  // siblings; the service refuses an `owned` caller outright, because every
+  // row in it is somebody else's work.
+  "GET /reports/team",
   "GET /reports/:report/export",
   // PRD Layer 5. Gated on `deal` rather than a new object type: a target is a
   // statement about deals and attainment is computed from them. Setting one
@@ -480,6 +795,11 @@ const CRM_PERMISSION_ROUTES = [
   // The outbound WhatsApp send path (migration 0061). Gated on `conversation:edit`
   // rather than a new action - same reasoning as the email-send route above.
   "POST /conversations/:id/messages",
+  // Approving a WhatsApp qualification (0080) - the only route that turns an
+  // inbound thread into a lead. `contact:create`, because a contact is what it
+  // creates; it additionally requires a signed-in user id, which no permission
+  // grant can substitute for (safety rule 2).
+  "POST /conversation-qualifications/:id/approve",
   // The call-vs-CRM integrity review queue (0070). Gated on `deal` like
   // reports/targets - there is no dedicated object type for this either.
   "GET /call-integrity-flags",
@@ -489,6 +809,44 @@ const CRM_PERMISSION_ROUTES = [
   // itself is NOT here - it's org configuration (AdminKeyGuard+TenantGuard
   // only), the same tier as pipelines.
   "GET /reports/commission",
+  // ── the Report Builder (migration 0077) ─────────────────────────────────
+  //
+  // Every route is `deal:view` except the widget CSV export, which raises to
+  // `deal:export` exactly as `GET /reports/:report/export` does - seeing a
+  // chart and walking out with the rows behind it are different acts.
+  //
+  // The record SCOPE from this guard is not decoration here: it compiles into
+  // every widget's WHERE clause (query-compiler.ts), so an `owned`-scoped rep
+  // charting deals charts their own, in the editor, in the CSV and in a
+  // scheduled run. A source that cannot express `owned` is REFUSED rather
+  // than silently widened - pinned in query-compiler.spec.ts.
+  "GET /report-builder",
+  "POST /report-builder",
+  "GET /report-builder/templates",
+  "POST /report-builder/templates",
+  "GET /report-builder/palettes",
+  "POST /report-builder/palettes",
+  "GET /report-builder/:id",
+  "PATCH /report-builder/:id",
+  "DELETE /report-builder/:id",
+  "POST /report-builder/:id/publish",
+  "GET /report-builder/:id/shares",
+  "PUT /report-builder/:id/shares",
+  "PUT /report-builder/:id/link",
+  "GET /report-builder/:id/schedules",
+  "POST /report-builder/:id/schedules",
+  "DELETE /report-builder/:id/schedules/:scheduleId",
+  "POST /report-builder/:id/render",
+  "GET /report-builder/:id/runs",
+  "POST /report-builder/:id/runs",
+  "GET /report-builder/:id/runs/:runId",
+  "GET /report-builder/:id/widgets/:widgetId/export",
+  "GET /report-datasets",
+  "POST /report-datasets",
+  "GET /report-datasets/:id",
+  "DELETE /report-datasets/:id",
+  "POST /report-datasets/:id/rows",
+  "POST /report-datasets/:id/query",
 ];
 
 interface Route {
@@ -604,7 +962,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 230 routes, partitioned 190 tenant / 23 cross-tenant / 6 device / 11 unguarded", () => {
+  it("has 359 routes, partitioned 309 tenant / 24 cross-tenant / 8 device / 17 unguarded / 1 internal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -650,6 +1008,18 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // `req.principal` with the org taken FROM THE KEY, which TenantGuard then
     // pins exactly as it does for a session - the tenant boundary is the same
     // one, reached with a different credential.
+    // - and the Report Builder's twenty-seven (0077): twenty-one
+    // `/report-builder/*` and six `/report-datasets/*`, all tenant-scoped and
+    // all CrmPermissionsGuard'd on `deal`. Nothing here is cross-tenant,
+    // unguarded or device-authed: the read-only share link is deliberately NOT
+    // an anonymous endpoint - it still requires a session resolving to the
+    // owning org and only widens that session to `viewer`, so it adds no route
+    // to UNGUARDED. See `Build docs/report_builder_design.md` D6/D7.
+    // - and the lead intake engine's fifteen (0078): three unguarded intake
+    // webhooks (form/telephony/email), seven tenant-scoped `/lead-sources/*`
+    // configuration routes, and five for LinkedIn, of which `oauth/callback` is
+    // unguarded because LinkedIn's browser redirect carries no credential of
+    // ours. Nothing here is cross-tenant or device-authed.
     // - and call intelligence's one: `GET /leads/:id/calls/:callId`, the
     // client-facing transcript + AI read behind the `call_intel` module. Plain
     // AdminKeyGuard+TenantGuard like the rest of the owner leads controller:
@@ -658,41 +1028,134 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // from `organizations`, and `recordings_listen` REDACTS part of the
     // response rather than refusing it - the same shape `GET /calls/:id`
     // already has.
-        // - and the client's own call log's two (`GET /owner/calls` and
-    // `GET /owner/calls/:id`): tenant-scoped, and the only routes outside
-    // OwnerController carrying OwnerRoleGuard at class level - a call log is a
-    // manager's view of the floor, not a telecaller's view of their own work.
+        // - and the client's own call log's six (`GET /owner/calls`,
+    // `GET /owner/calls/:id`, its notes pair, `/audio` and `/reprocess`):
+    // tenant-scoped, and the only routes outside OwnerController carrying
+    // OwnerRoleGuard at class level - a call log is a manager's view of the
+    // floor, not a telecaller's view of their own work. `/reprocess` narrows
+    // that to owner alone, because it spends.
     // Their `call_intel` module check is not a guard for the same reason the
     // leads one is not: the list answers normally without the module and the
     // detail refuses, which is a decision each route makes for itself.
-    expect(ROUTES).toHaveLength(251);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(251);
+    // +1 over the previous 314: DELETE /devices/:id, the fleet-tidying route
+    // that lets an operator remove a handset which enrolled and then never
+    // uploaded anything. Tenant-scoped and org_admin-gated like the logout and
+    // wipe it sits beside - see ORG_ROLE_ROUTES.
+    //
+    // +2 again for WhatsApp Embedded Signup (GET/POST
+    // /messaging/embedded-signup): the client connects their own Facebook
+    // Business account rather than an operator pasting a number for them.
+    // Tenant-scoped on AdminKeyGuard+TenantGuard, the same tier as the
+    // messaging-channels routes they sit beside - org configuration, not a
+    // CRM record.
+    //
+    // +8 for automated lead distribution (migration 0094): the overview read,
+    // rule create/patch/delete, the target-list PUT, the window reset, the
+    // dry-run preview and the backlog backfill. All eight are tenant-scoped
+    // and owner/manager-gated - see OWNER_ROLE_ROUTES.
+    //
+    // +4 for the new-client setup checklist (migration 0095): the checklist
+    // read and its permanent dismiss, plus the GET/PUT pair behind the
+    // "connect your payment account" step - which had to exist before that
+    // step could be REQUIRED, since a required step with no page to finish it
+    // is a banner that never clears.
+    //
+    // +3 for client-side handset pairing (migration 0096): the fleet list, the
+    // one-time pairing token, and revoke. This is what let the setup
+    // checklist's "pair your first handset" become a REQUIRED step - it was
+    // guided-only in 0095 precisely because no client-reachable route could
+    // finish it.
+    //
+    // +2 for the recycle bin (migration 0097): list what this org has deleted,
+    // and restore one row. Both are owner/manager-gated even though several of
+    // the deletes they undo have looser gates - the bin is a cross-object view,
+    // and listing every dataset, rule and target an org ever deleted in one
+    // place is an admin surface even where each individual delete was not.
+    //
+    // +3, and they are three separate pieces of work rather than one - noted
+    // because a bare "+3" here is the kind of number a later reader has to
+    // re-derive from scratch:
+    //
+    //   POST /messaging/channels/:id/verify (migration 0099) - tries a
+    //     channel's credentials against the provider and records what came
+    //     back. Plain AdminKeyGuard+TenantGuard, the tier the rest of
+    //     MessagingChannelsController is on: this is org configuration, not a
+    //     record, so PermissionObjectType has no value for it.
+    //   POST /devices/:id/ping and POST /devices/me/fcm-token - the handset
+    //     wake-up path, which was already in the working tree when the
+    //     messaging route landed and had not been entered here. The first is
+    //     org_admin (see ORG_ROLE_ROUTES); the second is the handset writing
+    //     its own token, so it is DeviceAuthGuard'd and joins DEVICE_AUTHED
+    //     rather than the tenant-scoped count.
+    //
+    // +2 for the ready-made board packs: GET /pipelines/stage-packs/catalogue
+    // (the catalogue, plus which pack suits a typed business description) and
+    // POST /pipelines/:id/apply-stage-pack (replace the columns AND move any
+    // card whose column disappeared, in one transaction). Both are plain
+    // AdminKeyGuard+TenantGuard like the rest of PipelinesController - see the
+    // unenforced-by-design assertion below for why that controller has no
+    // permission check at all.
+    //
+    // +1 for the console global search over activity notes:
+    // GET /interactions/search, CrmPermissionsGuard on contact:view like the
+    // nested timeline routes beside it.
+    //
+    // +10 for the list views (CRM dashboard Phase 5): the four saved-view
+    // routes (GET/POST/PATCH/DELETE /saved-views, plain AdminKeyGuard +
+    // TenantGuard), bulk reassign on contacts/deals/tasks
+    // (CrmPermissionsGuard, `:edit`) and leads (OwnerRoleGuard, owner+manager),
+    // and bulk tagging via POST /tags/:id/contacts and /tags/:id/deals
+    // (CrmPermissionsGuard, `:edit`). All tenant-scoped.
+    //
+    // +7 for the review queue and notification delivery (CRM dashboard Phase 7,
+    // migration 0109): GET/PUT /notifications/preferences (plain AdminKeyGuard +
+    // TenantGuard, narrowed to the caller like the rest of that controller),
+    // the three /opt-outs routes and GET/PUT /owner/lead-routing/response-sla
+    // (OwnerRoleGuard, owner+manager). All tenant-scoped.
+    //
+    // +1 for GET /reports/team (CRM dashboard Phase 8): the manager's per-person
+    // roll-up, CrmPermissionsGuard on deal:view like every other report.
+    expect(ROUTES).toHaveLength(359);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(359);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
     const crossTenant = ROUTES.filter((r) => r.crossTenant);
     const tenantScoped = ROUTES.filter((r) => r.guards.includes("TenantGuard") && !r.crossTenant);
+    const internal = ROUTES.filter((r) => r.guards.includes("InternalStreamGuard"));
 
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
     expect(sorted(crossTenant.map((r) => r.route))).toEqual(sorted(CROSS_TENANT));
+    expect(sorted(internal.map((r) => r.route))).toEqual(sorted(INTERNAL));
+    // Its guard is the WHOLE chain. A route in this class that also picked up
+    // AdminKeyGuard would be silently re-tenanted, and one that lost
+    // InternalStreamGuard would be an open cross-tenant feed.
+    for (const { route, guards } of internal) {
+      expect([route, guards]).toEqual([route, ["InternalStreamGuard"]]);
+    }
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(209);
+    expect(tenantScoped).toHaveLength(309);
     // Exhaustive: every route is in exactly one class.
-    expect(unguarded.length + device.length + crossTenant.length + tenantScoped.length).toBe(250);
+    expect(
+      unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
+    ).toBe(359);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 215 principal routes", () => {
-    // 191 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 325 principal routes", () => {
+    // 283 tenant-scoped + 24 cross-tenant, LESS the 8 routes that carry
+    // TenantGuard without AdminKeyGuard - the six `/public/*` endpoints and
+    // the two `/mcp` ones, which authenticate with ApiKeyGuard instead and are
+    // pinned as their own allowlist below. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
     // chain-order block shows the reversed pair 401s a perfectly valid
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(225);
+    expect(principalRoutes).toHaveLength(325);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -816,6 +1279,23 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
+  it("mounts OperatorOnlyGuard on exactly the instance routes, after TenantGuard", () => {
+    // A route that LOSES this guard reopens the gap it closed: enrollment-token
+    // minting reachable by any tenant console user. A route that GAINS it
+    // unexpectedly is a silent lockout of the operator console.
+    const operatorOnly = ROUTES.filter((r) => r.guards.includes("OperatorOnlyGuard"));
+    expect(sorted(operatorOnly.map((r) => r.route))).toEqual(sorted(OPERATOR_ONLY_ROUTES));
+
+    for (const { route, guards } of operatorOnly) {
+      // It reads `req.principal`, which only AdminKeyGuard writes, so running
+      // it before that guard would 401 every operator request.
+      expect([route, guards.indexOf("OperatorOnlyGuard") > guards.indexOf("TenantGuard")]).toEqual([
+        route,
+        true,
+      ]);
+    }
+  });
+
   it("mounts CrmPermissionsGuard on exactly the contact/account/deal routes, after TenantGuard", () => {
     // The guard reads `req.principal` (AdminKeyGuard) and `req.tenantOrgId`
     // (TenantGuard), so like the other two metadata guards its position in the
@@ -842,7 +1322,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         r.route.includes("/custom-field-definitions") ||
         r.route.includes("/merge"),
     );
-    expect(unenforced).toHaveLength(14);
+    // 16 since the stage packs landed: the catalogue and the apply route are
+    // pipeline configuration, the same tier as renaming a column, and
+    // PermissionObjectType still has no value for a pipeline.
+    expect(unenforced).toHaveLength(16);
     for (const { route, guards } of unenforced) {
       expect([route, guards]).toEqual([route, ["AdminKeyGuard", "TenantGuard"]]);
     }
@@ -859,14 +1342,16 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     ]);
   });
 
-  it("pins the eleven unguarded routes as an explicit allowlist", () => {
+  it("pins the fifteen unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
     // `POST /auth/logout` is a known finding - an anonymous DELETE on the
     // RLS-bypassing pool. Razorpay, Meta's OAuth callback and Meta's leadgen
-    // webhook are the newest: unauthenticated for the same class of reason as
-    // the messaging webhook, resolve-then-verify rather than guard-then-trust.
-    // A TWELFTH unguarded route is not a judgement call this suite can make,
+    // webhook came next, and the lead intake engine's three token endpoints
+    // plus LinkedIn's OAuth callback (0078) are the newest: unauthenticated for
+    // the same class of reason as the messaging webhook, resolve-then-verify
+    // rather than guard-then-trust.
+    // A SIXTEENTH unguarded route is not a judgement call this suite can make,
     // so it fails and asks for one.
     for (const route of UNGUARDED) {
       expect([route, byRoute.get(route)?.guards]).toEqual([route, []]);

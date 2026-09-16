@@ -127,7 +127,7 @@ export class CrmTestService {
         `SELECT id, provider, label, target, workspace_id, endpoint, method, auth_type,
                 auth_header, auth_prefix, auth_secret, headers, config, body_template,
                 id_path, pair_keys, field_map
-           FROM crm_integrations WHERE id = $1`,
+           FROM crm_integrations WHERE id = $1 AND deleted_at IS NULL`,
         [integrationId],
       );
       if (!row) throw new NotFoundException("crm integration not found in this org");

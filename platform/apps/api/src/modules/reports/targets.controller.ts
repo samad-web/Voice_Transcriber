@@ -24,6 +24,8 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg, assertMembers } from "../../common/org-references";
+import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -112,7 +114,7 @@ export class TargetsController {
         `SELECT ${TARGET_COLUMNS_T}, u.name AS owner_name
            FROM sales_targets t
            LEFT JOIN users u ON u.id = t.owner_user_id
-          ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+          WHERE t.deleted_at IS NULL${where.length ? ` AND ${where.join(" AND ")}` : ""}
           ORDER BY t.period_start DESC, u.name NULLS FIRST`,
         params,
       );
@@ -179,7 +181,8 @@ export class TargetsController {
                 ), 0) AS actual
            FROM sales_targets t
            LEFT JOIN users u ON u.id = t.owner_user_id
-          WHERE COALESCE($1::date, current_date) BETWEEN t.period_start AND t.period_end
+          WHERE t.deleted_at IS NULL
+            AND COALESCE($1::date, current_date) BETWEEN t.period_start AND t.period_end
                 ${ownerFilter}
           ORDER BY u.name NULLS FIRST`,
         params,
@@ -225,17 +228,18 @@ export class TargetsController {
     const t = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      if (t.ownerUserId) {
-        const found = await client.query(`SELECT 1 FROM users WHERE id = $1`, [t.ownerUserId]);
-        if (!found.rowCount) throw new BadRequestException("user not found");
-      }
+      // Membership, not existence: `users` has no RLS, so the old
+      // `SELECT 1 FROM users` accepted a user from any tenant (doc 23, A1).
+      await assertMembers(client, orgId, { ownerUserId: t.ownerUserId });
+      await assertInOrg(client, orgId, { workspaceId: t.workspaceId });
 
       // ON CONFLICT on both partial unique indexes would need two statements,
       // so the overlap is checked explicitly - and it gives a message that
       // says what happened rather than surfacing a 23505.
       const clash = await client.query(
         `SELECT 1 FROM sales_targets
-          WHERE metric = $1 AND period_start = $2::date AND period_end = $3::date
+          WHERE deleted_at IS NULL
+            AND metric = $1 AND period_start = $2::date AND period_end = $3::date
             AND owner_user_id IS NOT DISTINCT FROM $4`,
         [t.metric, t.periodStart, t.periodEnd, t.ownerUserId ?? null],
       );
@@ -288,14 +292,16 @@ export class TargetsController {
       // A scoped rep can only delete their own target - and in practice
       // should not be setting targets at all, which is what `deal:edit`
       // being required already expresses.
-      const scoped = scopeClause("deal", recordScope, 2);
-      const { rowCount } = await client.query(
-        `DELETE FROM sales_targets WHERE id = $1 ${
-          scoped ? "AND owner_user_id = $2" : ""
-        }`,
-        scoped ? [id, recordScope.userId] : [id],
+      // Numbered from $3 because softDelete owns $1 (the id) and $2 (the actor).
+      const scoped = scopeClause("deal", recordScope, 3);
+      const removed = await softDelete(
+        client,
+        "sales_target",
+        id,
+        req,
+        scoped ? { clause: "owner_user_id = $3", params: [recordScope.userId] } : undefined,
       );
-      if (!rowCount) throw new NotFoundException("target not found");
+      if (!removed) throw new NotFoundException("target not found");
       await this.audit(client, orgId, "target.delete", id, req);
       return { deleted: true };
     });

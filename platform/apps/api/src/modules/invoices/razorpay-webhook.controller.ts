@@ -2,6 +2,7 @@ import { Controller, Post, Req } from "@nestjs/common";
 import type { RawBodyRequest } from "@nestjs/common";
 import type { Request } from "express";
 import { DbService } from "../../db/db.service";
+import { RealtimeService } from "../realtime/realtime.service";
 import { resolveRazorpayCredentials, verifyRazorpaySignature } from "./razorpay";
 
 /**
@@ -27,7 +28,10 @@ import { resolveRazorpayCredentials, verifyRazorpaySignature } from "./razorpay"
  */
 @Controller("webhooks/razorpay")
 export class RazorpayWebhookController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   @Post()
   async receive(@Req() req: RawBodyRequest<Request>) {
@@ -80,6 +84,10 @@ export class RazorpayWebhookController {
     // "already processed" and the writes would never happen - a payment
     // captured by Razorpay but stuck at status 'created' here forever.
     const eventKey = `${event}:${paymentId ?? linkId}`;
+    // Set only on the delivery that actually applied the payment, so a
+    // Razorpay retry does not announce the same money twice.
+    let applied = false;
+
     await this.db.withOrg(row.org_id, async (client) => {
       const inserted = await client.query(
         `INSERT INTO payment_webhook_events (provider, event_id) VALUES ('razorpay', $1)
@@ -108,7 +116,22 @@ export class RazorpayWebhookController {
          VALUES ($1, 'system', 'razorpay-webhook', 'payment.captured', 'invoice', $2)`,
         [row.org_id, row.invoice_id],
       );
+      applied = true;
     });
+
+    // Somebody sent an invoice and is waiting to see it marked paid. The
+    // global interceptor cannot announce this route - Razorpay presents no
+    // credential of ours, so no guard resolved the tenant - and the org is
+    // only known here, after the payment link was matched to it.
+    if (applied) {
+      this.realtime.publish({
+        orgId: row.org_id,
+        topic: "invoice",
+        action: "updated",
+        id: row.invoice_id,
+        at: new Date().toISOString(),
+      });
+    }
 
     return { ok: true };
   }

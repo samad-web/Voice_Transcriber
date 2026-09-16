@@ -15,6 +15,8 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { assertInOrg } from "../../common/org-references";
+import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -67,6 +69,7 @@ export class CommissionPlansController {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
         `SELECT ${COMMISSION_PLAN_COLUMNS} FROM commission_plans
+          WHERE deleted_at IS NULL
           ORDER BY active DESC, name ASC`,
       );
       return { plans: rows };
@@ -78,9 +81,11 @@ export class CommissionPlansController {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [plan],
-      } = await client.query(`SELECT ${COMMISSION_PLAN_COLUMNS} FROM commission_plans WHERE id = $1`, [
-        id,
-      ]);
+      } = await client.query(
+        `SELECT ${COMMISSION_PLAN_COLUMNS} FROM commission_plans
+          WHERE id = $1 AND deleted_at IS NULL`,
+        [id],
+      );
       if (!plan) throw new NotFoundException("commission plan not found");
       return { plan };
     });
@@ -93,6 +98,9 @@ export class CommissionPlansController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
+      // Foreign-key checks ignore RLS (doc 23, A2).
+      await assertInOrg(client, orgId, { workspaceId: p.workspaceId });
+
       const {
         rows: [plan],
       } = await client.query(
@@ -119,6 +127,9 @@ export class CommissionPlansController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // Foreign-key checks ignore RLS (doc 23, A2).
+      await assertInOrg(client, orgId, { workspaceId: p.workspaceId });
+
       const {
         rows: [plan],
       } = await client.query(
@@ -129,7 +140,7 @@ export class CommissionPlansController {
            rate_type    = COALESCE($6, rate_type),
            rate         = COALESCE($7, rate),
            active       = COALESCE($8, active)
-         WHERE id = $1
+         WHERE id = $1 AND deleted_at IS NULL
          RETURNING ${COMMISSION_PLAN_COLUMNS}`,
         [
           id,
@@ -159,8 +170,8 @@ export class CommissionPlansController {
   @Delete(":id")
   async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
-      const { rowCount } = await client.query(`DELETE FROM commission_plans WHERE id = $1`, [id]);
-      if (!rowCount) throw new NotFoundException("commission plan not found");
+      const removed = await softDelete(client, "commission_plan", id, req);
+      if (!removed) throw new NotFoundException("commission plan not found");
       await this.audit(client, orgId, "commission_plan.delete", id, req);
       return { deleted: true };
     });

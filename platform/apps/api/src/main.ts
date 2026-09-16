@@ -5,7 +5,7 @@ import helmet from "helmet";
 import { warnIfSecretsUnencrypted } from "@aura/db";
 import { AppModule } from "./app.module";
 import { assertRequiredEnv } from "./config/assert-env";
-import { corsOptions } from "./config/cors";
+import { corsDelegate } from "./config/cors";
 
 async function bootstrap() {
   // FIRST, before anything can bind a port (checklist 08 §0.2). In production
@@ -38,7 +38,7 @@ async function bootstrap() {
   app.useBodyParser("json", { limit: "1mb" });
 
   app.setGlobalPrefix("v1");
-  app.enableCors(corsOptions());
+  app.enableCors(corsDelegate());
 
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port);

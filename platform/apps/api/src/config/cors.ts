@@ -28,3 +28,37 @@ export function corsOptions(env: NodeJS.ProcessEnv = process.env): CorsOptions {
   // worse than the documented default.
   return { origin: origins.length > 0 ? origins : ["http://localhost:3000"] };
 }
+
+/**
+ * Paths that must answer a browser from ANY origin.
+ *
+ * The web-form intake endpoint (migration 0078) exists to be posted to by a
+ * form on a tenant's own website - acme.com, then the next tenant's site, then
+ * a staging copy of each. That list is tenant data, it changes without a
+ * deployment, and it is not knowable here where there is no database.
+ *
+ * So the transport is open and the DECISION is made in the handler, which does
+ * have the source's configured origin list and records a refusal in the intake
+ * ledger where the tenant can see it. That is not a weakening: a browser's
+ * Origin header is unforgeable only by browsers, and any attacker can post the
+ * same body from a server with no Origin at all. The token is the credential;
+ * the origin list is hygiene, and pretending otherwise in CORS would only have
+ * made the honest case (a real customer's form) fail.
+ */
+const OPEN_ORIGIN_PATHS = ["/v1/intake/form/"];
+
+/**
+ * Per-request CORS, so the intake endpoint can be open while the console API
+ * stays on its allowlist. Nest accepts this delegate shape directly.
+ */
+export function corsDelegate(env: NodeJS.ProcessEnv = process.env) {
+  const base = corsOptions(env);
+  return (req: { url?: string }, callback: (err: Error | null, options: object) => void): void => {
+    const url = req.url ?? "";
+    if (OPEN_ORIGIN_PATHS.some((path) => url.startsWith(path))) {
+      callback(null, { origin: true, methods: ["POST", "OPTIONS"], maxAge: 86_400 });
+      return;
+    }
+    callback(null, base);
+  };
+}

@@ -6,11 +6,11 @@ import {
   entryStage,
   ImportEntity,
   mapRow,
-  parsePipelineStages,
   REQUIRED_FIELDS,
   statusForStage,
   suggestMapping,
 } from "@aura/shared";
+import { findLiveContact, recordDealEntry, resolveDealPipeline } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -349,25 +349,24 @@ async function importAccountRow(
 async function importDealRow(client: QueryClient, orgId: string, row: Record<string, string | null>): Promise<RowOutcome> {
   if (!row.name) return { outcome: "failed", error: "no name on this row" };
 
-  const {
-    rows: [pipeline],
-  } = await client.query<{ id: string; stages: unknown }>(`SELECT id, stages FROM deal_pipelines WHERE is_default = true LIMIT 1`);
-  if (!pipeline) return { outcome: "failed", error: "org has no default pipeline" };
-  const stages = parsePipelineStages(pipeline.stages);
+  // The one pipeline rule every door uses (doc 23, B2) - this was a fourth
+  // variant, "any default, archived or not".
+  const pipeline = await resolveDealPipeline(client, orgId, { forWrite: true });
+  if (!pipeline) return { outcome: "failed", error: "org has no active pipeline" };
+  const stages = pipeline.stages;
 
   const requestedStage = row.stage?.trim();
   const stage = requestedStage && stages.some((s) => s.key === requestedStage) ? requestedStage : entryStage(stages);
   const status = statusForStage(stages, stage);
 
   let contactId: string | null = null;
+  let contactAccountId: string | null = null;
   if (row.contactEmail) {
-    const {
-      rows: [contact],
-    } = await client.query<{ id: string }>(`SELECT id FROM contacts WHERE org_id = $1 AND lower(email) = $2 AND status <> 'merged'`, [
-      orgId,
-      row.contactEmail.toLowerCase(),
-    ]);
+    // Follows a merge to the survivor, so a deal is never filed under a
+    // merged-away contact (doc 23, D2).
+    const contact = await findLiveContact(client, orgId, { email: row.contactEmail });
     contactId = contact?.id ?? null;
+    contactAccountId = contact?.accountId ?? null;
   }
 
   let accountId: string | null = null;
@@ -383,11 +382,22 @@ async function importDealRow(client: QueryClient, orgId: string, row: Record<str
 
   const amount = row.amount ? Number(row.amount.replace(/[^0-9.]/gu, "")) : null;
 
-  await client.query(
+  // No account column on the row? The deal inherits its contact's (doc 23, F2).
+  accountId = accountId ?? contactAccountId;
+
+  const {
+    rows: [deal],
+  } = await client.query<{ id: string }>(
     `INSERT INTO deals (org_id, pipeline_id, contact_id, account_id, name, stage, status, amount)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id`,
     [orgId, pipeline.id, contactId, accountId, row.name, stage, status, Number.isFinite(amount) ? amount : null],
   );
+  // The deal's first ledger row. Imported deals used to have none, so every
+  // funnel report built on the ledger dropped them (doc 23, B3). No automation
+  // event: a bulk import firing "deal created" once per row would bury the
+  // floor in tasks, the same reason the backfill never fires them (X6).
+  await recordDealEntry(client, orgId, { id: deal.id, stage, status }, "console", "csv import");
   return { outcome: "inserted" };
 }
 

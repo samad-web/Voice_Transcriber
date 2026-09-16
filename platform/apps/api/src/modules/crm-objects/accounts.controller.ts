@@ -17,6 +17,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -151,6 +152,9 @@ export class AccountsController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
+      // Foreign-key checks ignore RLS (doc 23, A2).
+      await assertInOrg(client, orgId, { workspaceId: p.workspaceId });
+
       const {
         rows: [account],
       } = await client.query(
@@ -187,6 +191,9 @@ export class AccountsController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // The owner must be a member of THIS org - `users` has no RLS (doc 23, A1).
+      await assertMembers(client, orgId, { ownerUserId: p.ownerUserId });
+
       // Same contract as the detail route: no row matched, no write, no
       // disclosure.
       const scopedUpdate = scopeClause("account", recordScope, 8);

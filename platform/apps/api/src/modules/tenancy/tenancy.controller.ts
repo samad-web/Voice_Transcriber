@@ -1,13 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Req,
-  UseGuards,
-} from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Patch, Req, UseGuards } from "@nestjs/common";
 import { z } from "zod";
+import { Branding } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { hashAppLockPassword } from "../../common/app-lock-hash";
 import type { PrincipalRequest } from "../../common/auth-principal";
@@ -19,22 +12,51 @@ import { DbService } from "../../db/db.service";
  *  CHECK constraint in migration 0016 - both are generated from the same list
  *  in the sense that they must be changed together. */
 const ASR_LANGUAGES = [
-  "unknown", "en-IN", "hi-IN", "bn-IN", "kn-IN", "ml-IN", "mr-IN", "od-IN",
-  "pa-IN", "ta-IN", "te-IN", "gu-IN", "as-IN", "ur-IN", "ne-IN", "kok-IN",
-  "ks-IN", "sd-IN", "sa-IN", "sat-IN", "mni-IN", "brx-IN", "mai-IN", "doi-IN",
+  "unknown",
+  "en-IN",
+  "hi-IN",
+  "bn-IN",
+  "kn-IN",
+  "ml-IN",
+  "mr-IN",
+  "od-IN",
+  "pa-IN",
+  "ta-IN",
+  "te-IN",
+  "gu-IN",
+  "as-IN",
+  "ur-IN",
+  "ne-IN",
+  "kok-IN",
+  "ks-IN",
+  "sd-IN",
+  "sa-IN",
+  "sat-IN",
+  "mni-IN",
+  "brx-IN",
+  "mai-IN",
+  "doi-IN",
 ] as const;
 
 /**
  * Per-tenant logo/colors (Kailash gap Milestone 4). One jsonb column
  * (migration 0065), same "tenant config as jsonb on organizations" precedent
  * as lead_stages/lead_rules - this is too small to earn its own table.
+ *
+ * The shape is `@aura/shared`'s `Branding` rather than a Zod object written out
+ * here. It used to be declared three times by hand - here, and again as
+ * `BrandingView` and `BrandingPatch` in the console - which is exactly the
+ * drift the shared package exists to stop. The console now renders its form
+ * from the same definition this endpoint validates against.
+ *
+ * One field is gone with that move: `loginBackgroundUrl`. Every tenant signs in
+ * at the same `<origin>/login` - no subdomain, no org in the path - so the
+ * sign-in screen has no tenant to resolve branding for and the value could
+ * never be applied. Nothing is deleted by dropping it: the UPDATE below merges,
+ * so a tenant who set it keeps the key in their jsonb, and Zod strips it on
+ * read.
  */
-const BrandingBody = z.object({
-  logoUrl: z.string().url().max(500).nullish(),
-  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
-  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
-  browserTitle: z.string().max(120).nullish(),
-});
+const BrandingBody = Branding;
 
 const PolicyBody = z.object({
   consentPolicy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]).optional(),
@@ -53,6 +75,22 @@ const PolicyBody = z.object({
    */
   transcriptionEnabled: z.boolean().optional(),
   /**
+   * Read inbound WhatsApp threads and propose leads from them (0080).
+   *
+   * OFF by default and deliberately a tenant decision, not a deployment one:
+   * turning it on sends this tenant's own customer conversations to an LLM
+   * provider. It lives beside transcriptionEnabled because it is the same kind
+   * of switch - "may this platform read our customers' words" - and belongs
+   * wherever a tenant already goes to answer that question.
+   *
+   * Turning it OFF stops the sweep for this org on its next tick. It does not
+   * delete verdicts already written; qualificationRetentionDays ages those out,
+   * and a tenant who wants them gone sooner sets that lower.
+   */
+  whatsappQualificationEnabled: z.boolean().optional(),
+  /** How long a decided qualification verdict is kept (0082). Default 90 days. */
+  qualificationRetentionDays: z.number().int().min(1).max(3650).optional(),
+  /**
    * What this instance's agents actually speak (0016). Auto-detect is only
    * right when we genuinely don't know - it has mislabelled a Tamil call as
    * Spanish, losing the whole transcript. `unknown` forces auto-detect back on.
@@ -62,7 +100,10 @@ const PolicyBody = z.object({
    * Saaras output format. `codemix` is the one that keeps an English brand name
    * out of Indic script - "RD Interlock" instead of "ஆர்டி இன்டர்லாக்".
    */
-  asrMode: z.enum(["transcribe", "translate", "verbatim", "translit", "codemix"]).nullable().optional(),
+  asrMode: z
+    .enum(["transcribe", "translate", "verbatim", "translit", "codemix"])
+    .nullable()
+    .optional(),
   /**
    * Proper nouns and domain terms in their correct spelling. Handed to the
    * analyse stages, not to ASR - the batch speech API takes no hotword list.
@@ -90,7 +131,7 @@ export class TenancyController {
       } = await client.query(
         `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
                 store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary, branding,
-                enabled_modules,
+                enabled_modules, whatsapp_qualification_enabled, qualification_retention_days,
                 (app_lock_password_hash IS NOT NULL) AS app_lock_enabled
            FROM organizations WHERE id = $1`,
         [orgId],
@@ -102,7 +143,11 @@ export class TenancyController {
   @Patch("branding")
   @UseGuards(OrgRoleGuard)
   @RequireOrgRole("org_admin")
-  async updateBranding(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+  async updateBranding(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
     const parsed = BrandingBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
@@ -149,6 +194,8 @@ export class TenancyController {
            retention_days = COALESCE($4, retention_days),
            store_full_number = COALESCE($5, store_full_number),
            transcription_enabled = COALESCE($6, transcription_enabled),
+           whatsapp_qualification_enabled = COALESCE($14, whatsapp_qualification_enabled),
+           qualification_retention_days = COALESCE($15, qualification_retention_days),
            asr_language = CASE WHEN $7::boolean THEN $8::text ELSE asr_language END,
            asr_mode = CASE WHEN $9::boolean THEN $10::text ELSE asr_mode END,
            vocabulary = COALESCE($11::text[], vocabulary),
@@ -156,6 +203,7 @@ export class TenancyController {
          WHERE id = $1
          RETURNING consent_policy, on_consent_failure, retention_days, store_full_number,
                    transcription_enabled, asr_language, asr_mode, vocabulary,
+                   whatsapp_qualification_enabled, qualification_retention_days,
                    (app_lock_password_hash IS NOT NULL) AS app_lock_enabled`,
         [
           orgId,
@@ -171,6 +219,8 @@ export class TenancyController {
           p.vocabulary ?? null,
           p.appLockPassword !== undefined,
           p.appLockPassword ? hashAppLockPassword(p.appLockPassword) : null,
+          p.whatsappQualificationEnabled ?? null,
+          p.qualificationRetentionDays ?? null,
         ],
       );
       // Policy changes must reach devices: bump every instance's config version.

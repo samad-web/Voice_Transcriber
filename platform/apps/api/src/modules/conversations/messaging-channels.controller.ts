@@ -14,11 +14,22 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { decryptSecret, encryptSecret } from "@aura/db";
-import { ConversationChannel, normalizePeerAddress } from "@aura/shared";
+import {
+  ConversationChannel,
+  normalizePeerAddress,
+  type ChannelProbeOutcome,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
-import { listWasiTemplates } from "./wasi-client";
+import { listWasiTemplates, probeWasiChannel } from "./wasi-client";
+
+/** The one method of the pg client this controller's helpers need. */
+type PgQuery = <R extends Record<string, unknown> = Record<string, unknown>>(
+  sql: string,
+  params?: unknown[],
+) => Promise<{ rows: R[] }>;
 
 /**
  * Per-org messaging identities (migration 0056).
@@ -65,9 +76,24 @@ const ChannelPatch = z
  * SELECT * with a delete-the-secret step downstream is one refactor away from
  * leaking it. The webhook token IS returned: it is the setup value an admin
  * has to paste into the provider, and it is already scoped to their own org.
+ *
+ * The two secrets are projected as BOOLEANS instead. Whether a forward secret
+ * exists is the difference between a channel that receives customer replies and
+ * one that silently discards them (messaging-webhook.controller.ts answers
+ * `signature verification failed` and drops the delivery), so the console has
+ * to know it - and a boolean answers that question without the value leaving
+ * the database. It is the same rule the row above states, applied rather than
+ * relaxed: the console gets the fact, never the secret.
+ *
+ * They feed `readChannel()` in @aura/shared, which turns these columns plus the
+ * 0099 probe columns into the state the page renders. `status` alone was being
+ * rendered as health and is not - it is an operator switch with two values.
  */
 const CHANNEL_COLUMNS = `id, workspace_id, channel, provider, inbound_address, display_name,
-  api_base_url, config, status, webhook_token, last_inbound_at, created_at, updated_at`;
+  api_base_url, config, status, webhook_token, last_inbound_at, created_at, updated_at,
+  last_probe_at, last_probe_outcome, last_probe_detail,
+  (api_key IS NOT NULL)       AS has_api_key,
+  (forward_secret IS NOT NULL) AS has_forward_secret`;
 
 @Controller("messaging/channels")
 @UseGuards(AdminKeyGuard, TenantGuard)
@@ -96,6 +122,9 @@ export class MessagingChannelsController {
     if (!inboundAddress) throw new BadRequestException("inboundAddress is not usable");
 
     return this.db.withOrg(orgId, async (client) => {
+      // Foreign-key checks ignore RLS (doc 23, A2).
+      await assertInOrg(client, orgId, { workspaceId: input.workspaceId });
+
       try {
         const {
           rows: [created],
@@ -170,6 +199,89 @@ export class MessagingChannelsController {
       if (!updated) throw new NotFoundException("channel not found");
       return withWebhookPath(updated);
     });
+  }
+
+  /**
+   * Try this channel's credentials against the provider, and record what came
+   * back (migration 0099).
+   *
+   * ── WHY THIS IS A SEPARATE CALL AND NOT PART OF create ──────────────────
+   *
+   * It is tempting to probe on create and refuse to save a channel whose key is
+   * bad. That would be wrong in a way this deployment feels hard: the API runs
+   * in Mumbai against a database in Seoul, the owner is pasting five values
+   * they had to fetch from another product's admin panel, and a probe failure
+   * at the moment of saving throws all five away for a reason that is often
+   * temporary - Wasi restarting, a network blip, or a forward secret that has
+   * not been generated on the other side YET, which is the normal order of
+   * operations.
+   *
+   * So creating stores, and proving is a button. The channel is honest about
+   * being unproven until somebody presses it - "Not checked yet" - which is
+   * strictly better than either lying green or losing the form.
+   *
+   * ── IT ALWAYS ANSWERS 200 ───────────────────────────────────────────────
+   *
+   * A refused key is not an error in THIS request: the request asked a question
+   * and got an answer. Returning 502 would make the console's error handler
+   * render "couldn't check the channel" over the top of a perfectly good
+   * finding, which is the answer the owner actually needs to read.
+   */
+  @Post(":id/verify")
+  async verify(@OrgId() orgId: string, @Param("id", new ParseUUIDPipe()) id: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [channel],
+      } = await client.query<{
+        provider: string;
+        api_key: string | null;
+        api_base_url: string | null;
+      }>(
+        `SELECT provider, api_key, api_base_url FROM messaging_channels
+          WHERE id = $1 AND org_id = $2`,
+        [id, orgId],
+      );
+      if (!channel) throw new NotFoundException("channel not found");
+
+      // Nothing to probe. Recorded all the same, so the page can say when it
+      // last looked rather than staying blank forever on a half-built channel.
+      if (channel.provider !== "wasi" || !channel.api_key || !channel.api_base_url) {
+        return this.recordProbe(client, orgId, id, {
+          outcome: "provider_error",
+          detail: "This channel has no API key or host URL stored, so there is nothing to check.",
+        });
+      }
+
+      const probe = await probeWasiChannel({
+        apiBaseUrl: channel.api_base_url,
+        apiKey: decryptSecret(channel.api_key) ?? "",
+      });
+      return this.recordProbe(client, orgId, id, probe);
+    });
+  }
+
+  /**
+   * Stores the measurement and hands back the whole row, so the console
+   * re-reads readiness from the same shape `list` returns rather than patching
+   * one field of its local copy and drifting.
+   */
+  private async recordProbe(
+    client: { query: PgQuery },
+    orgId: string,
+    id: string,
+    probe: { outcome: ChannelProbeOutcome; detail: string | null },
+  ) {
+    const {
+      rows: [updated],
+    } = await client.query(
+      `UPDATE messaging_channels
+          SET last_probe_at = now(), last_probe_outcome = $3, last_probe_detail = $4
+        WHERE id = $1 AND org_id = $2
+      RETURNING ${CHANNEL_COLUMNS}`,
+      [id, orgId, probe.outcome, probe.detail],
+    );
+    if (!updated) throw new NotFoundException("channel not found");
+    return { probe, channel: withWebhookPath(updated) };
   }
 
   /**

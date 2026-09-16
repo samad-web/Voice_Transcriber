@@ -25,6 +25,7 @@ import {
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { CrmTestService } from "./crm-test.service";
@@ -312,6 +313,7 @@ export class CrmController {
                 (SELECT count(*)::int FROM crm_sync_log l
                   WHERE l.integration_id = crm_integrations.id AND l.status = 'synced') AS synced
            FROM crm_integrations
+          WHERE deleted_at IS NULL
           ORDER BY created_at DESC`,
       );
       return { integrations: rows };
@@ -397,11 +399,15 @@ export class CrmController {
     @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      // Audit before the delete: the row the audit entry points at is about to
-      // stop existing, and an unexplained gap is worse than a dangling id.
+      // Audit first, as before. The row now survives the disconnect (0097), so
+      // the audit id no longer dangles - and neither does the outbox: anything
+      // still queued for this connection stays in crm_sync_log instead of
+      // cascading away mid-flight, and resumes if the connection is restored.
+      // The outbox worker joins on `deleted_at IS NULL`, so nothing reaches a
+      // disconnected endpoint in the meantime.
       await this.audit(client, orgId, "crm.disconnect", id, req);
-      const { rowCount } = await client.query("DELETE FROM crm_integrations WHERE id = $1", [id]);
-      if (rowCount === 0) throw new NotFoundException("crm integration not found in this org");
+      const removed = await softDelete(client, "crm_integration", id, req);
+      if (!removed) throw new NotFoundException("crm integration not found in this org");
       return { deleted: true };
     });
   }

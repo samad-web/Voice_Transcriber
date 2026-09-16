@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -26,6 +27,7 @@ import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
+import { FcmService } from "../../fcm/fcm.service";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
 const SetTelecallerBody = z.object({
@@ -152,6 +154,7 @@ export class DevicesController {
   constructor(
     private readonly db: DbService,
     private readonly s3: S3Service,
+    private readonly fcm: FcmService,
   ) {}
 
   /**
@@ -473,7 +476,9 @@ export class DevicesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Req() req: PrincipalRequest,
   ) {
-    return this.setDeviceStatus(orgId, id, "logged_out", req);
+    const result = await this.setDeviceStatus(orgId, id, "logged_out", req);
+    await this.pushConfigRefresh(orgId, id);
+    return result;
   }
 
   /** Remote wipe - device must delete local recordings + keys on next contact. */
@@ -485,9 +490,25 @@ export class DevicesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Req() req: PrincipalRequest,
   ) {
-    // TODO (checklist §3.5): push FCM message so the device acts immediately
-    // instead of on next config poll.
-    return this.setDeviceStatus(orgId, id, "wiped", req);
+    const result = await this.setDeviceStatus(orgId, id, "wiped", req);
+    await this.pushConfigRefresh(orgId, id);
+    return result;
+  }
+
+  /**
+   * Ping / wake a device - pushes a config-refresh signal without changing
+   * the device's status. Use this to remotely wake an app that Android's
+   * battery optimisation has put to sleep.
+   */
+  @Post(":id/ping")
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async ping(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    const pushed = await this.pushConfigRefresh(orgId, id);
+    return { pinged: pushed };
   }
 
   /**
@@ -584,6 +605,79 @@ export class DevicesController {
     }
   }
 
+  /**
+   * Remove an UNPAIRED device row - one that enrolled and then never produced
+   * anything.
+   *
+   * ── WHY THIS EXISTS ─────────────────────────────────────────────────────
+   *
+   * Enrollment keys get used twice, handsets get factory-reset mid-setup, and
+   * a test device gets enrolled during onboarding and then put in a drawer.
+   * Each of those leaves a permanent row in the fleet table that can only be
+   * logged out or wiped - neither of which removes it - so an operator's
+   * device list slowly fills with entries that never recorded a call and never
+   * will. There was no way to tidy that up, which is why there is now.
+   *
+   * ── WHY IT REFUSES RATHER THAN CASCADING ────────────────────────────────
+   *
+   * A device that HAS call history is not unpaired, and deleting it is not a
+   * tidying operation - it is destroying the audit trail of who recorded what.
+   * `calls.device_id` is deliberately the one foreign key to this table with
+   * no ON DELETE behaviour (0001:140), so the database would refuse anyway;
+   * this checks first so the operator gets a sentence naming the counts
+   * instead of a raw constraint violation. Leads are checked for the same
+   * reason even though their FK is ON DELETE SET NULL: silently un-attributing
+   * somebody's pipeline is a worse outcome than a refusal.
+   *
+   * `wiped` is not a bar. A wiped handset that never uploaded anything is the
+   * single most common thing an operator wants out of this table.
+   */
+  @Delete(":id")
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async remove(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [device],
+      } = await client.query(`SELECT id, label FROM devices WHERE id = $1`, [id]);
+      if (!device) throw new BadRequestException("device not found in this org");
+
+      const {
+        rows: [usage],
+      } = await client.query(
+        `SELECT (SELECT count(*) FROM calls WHERE device_id = $1)::int AS calls,
+                (SELECT count(*) FROM leads WHERE telecaller_device_id = $1)::int AS leads`,
+        [id],
+      );
+
+      if (usage.calls > 0 || usage.leads > 0) {
+        throw new ConflictException(
+          `This device is not unpaired - it has ${usage.calls} call(s) and ${usage.leads} lead(s) ` +
+            `attributed to it. Removing it would destroy that history. Wipe or log the device out instead.`,
+        );
+      }
+
+      // Written BEFORE the delete: audit_log.target_id is a plain uuid column
+      // with no foreign key, but the row it names has to be gone-or-not
+      // consistently with the entry, and a delete that succeeded with an
+      // audit write that failed is the ordering that loses the record. Both
+      // statements are inside withOrg's transaction, so either both land or
+      // neither does.
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+         VALUES ($1, 'user', $2, 'device.remove', 'device', $3)`,
+        [orgId, req.principal?.userId ?? "dev-admin", id],
+      );
+      await client.query(`DELETE FROM devices WHERE id = $1`, [id]);
+
+      return { removed: true, id, label: device.label as string | null };
+    });
+  }
+
   private setDeviceStatus(orgId: string, deviceId: string, status: "logged_out" | "wiped", req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
@@ -598,6 +692,56 @@ export class DevicesController {
       );
       return rows[0];
     });
+  }
+
+  /**
+   * Device FCM token registration. Called by the Android app after enrollment
+   * and on token refresh.
+   */
+  @Post("me/fcm-token")
+  @UseGuards(DeviceAuthGuard)
+  @SkipThrottle()
+  async registerFcmToken(@Req() req: DeviceRequest, @Body() body: unknown) {
+    const parsed = z.object({ token: z.string().min(1).max(500) }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { deviceId, orgId } = req.device;
+    await this.db.withOrg(orgId, (client) =>
+      client.query("UPDATE devices SET fcm_token = $2 WHERE id = $1", [deviceId, parsed.data.token]),
+    );
+    return { registered: true };
+  }
+
+  /**
+   * Look up a device's FCM token and push a config-refresh signal.
+   * Best-effort: returns false when push is unavailable or the device has no
+   * token (pre-upgrade handsets), so callers must not depend on it.
+   */
+  private async pushConfigRefresh(orgId: string, deviceId: string): Promise<boolean> {
+    // withOrg, NOT adminPool: this used to take orgId and never use it, reading
+    // `WHERE id = $1` off the RLS-bypassing pool. logout/wipe got away with it
+    // because setDeviceStatus runs org-scoped first and would already have
+    // thrown - but `ping` calls straight in here, so any org_admin holding a
+    // device UUID from another tenant could wake that handset. RLS's
+    // org_isolation policy on devices makes the id lookup org-scoped, and a
+    // cross-tenant id now returns no rows and reads as "no token".
+    //
+    // Wrapped because withOrg can throw where adminPool could not (it opens a
+    // transaction and the org_isolation policy casts app.org_id to uuid). The
+    // contract above promises callers a boolean and nothing worse: logout and
+    // wipe have ALREADY committed the status change by the time they call this,
+    // so letting a push lookup throw here would turn a completed remote wipe
+    // into a 500 and invite the operator to retry an action that had worked.
+    try {
+      const {
+        rows: [device],
+      } = await this.db.withOrg(orgId, (client) =>
+        client.query("SELECT fcm_token FROM devices WHERE id = $1", [deviceId]),
+      );
+      if (!device?.fcm_token) return false;
+      return this.fcm.sendToDevice(device.fcm_token, { action: "config_refresh" });
+    } catch {
+      return false;
+    }
   }
 
   /** Fleet listing for the web Devices page. */

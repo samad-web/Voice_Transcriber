@@ -8,7 +8,12 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { z } from "zod";
-import type { PermissionAction, PermissionObjectType } from "@aura/shared";
+import {
+  type PermissionAction,
+  type PermissionObjectType,
+  ownerRoleSeesAllRecords,
+  resolveOwnerRole,
+} from "@aura/shared";
 import type { PrincipalRequest } from "./auth-principal";
 import { DbService } from "../db/db.service";
 
@@ -59,6 +64,13 @@ export const RequireCrmPermission = (objectType: PermissionObjectType, action: P
  * over a data gap, the join falls back to matching the legacy `memberships.role`
  * string against `roles.key` - the same correspondence 0039's own backfill used.
  *
+ * PERSONA INTERSECTION (0079). The scope this guard publishes is the grid's
+ * grant narrowed by the caller's owner-console persona - a telecaller or sales
+ * persona reads `owned` even where the grid granted `all`. See the comment at
+ * the assignment below for why the narrowing happens here rather than in each
+ * controller. It only ever narrows: no persona can widen a grant, so an org
+ * that has never assigned a persona sees exactly what it saw before.
+ *
  * MODULE GATE. The query also requires `'crm' = ANY(organizations.enabled_modules)`
  * (migration 0072). CRM being off for an org denies exactly like a missing
  * grant does - zero rows, same 403 - which matters once a tenant that
@@ -97,7 +109,7 @@ export class CrmPermissionsGuard implements CanActivate {
     }
 
     const { rows } = await this.db.withOrg(orgId, (client) =>
-      client.query<{ scope: string }>(
+      client.query<{ scope: string; owner_role: string | null }>(
         // `ORDER BY scope` puts 'all' before 'owned' alphabetically, and LIMIT 1
         // therefore takes the WIDEST grant when a user somehow holds two. That
         // is the right tie-break: two grants means somebody was given both, and
@@ -105,7 +117,11 @@ export class CrmPermissionsGuard implements CanActivate {
         // configured. It cannot normally happen - role_permissions is unique on
         // (role, object, action) - but a membership resolving through the
         // legacy `role`-string fallback below can match a second row.
-        `SELECT rp.scope
+        // `m.owner_role` rides along for the persona intersection below. It
+        // costs nothing - the row is already being read - and fetching it
+        // separately would have added a second Mumbai→Seoul round trip to
+        // every CRM read.
+        `SELECT rp.scope, m.owner_role
            FROM memberships m
            JOIN organizations o
              ON o.id = m.org_id AND 'crm' = ANY(o.enabled_modules)
@@ -123,13 +139,36 @@ export class CrmPermissionsGuard implements CanActivate {
 
     if (rows.length === 0) throw new ForbiddenException(denial(required));
 
+    // ── The persona intersection (migration 0079) ───────────────────────
+    //
+    // The grid says what the ROLE was granted. The persona says which desk the
+    // person sits at. Both must hold, and they compose in one direction only:
+    // a persona may NARROW a grant, never widen one. So an `all` grant read by
+    // a telecaller or a sales persona becomes `owned`, and an `owned` grant
+    // stays `owned` no matter who reads it.
+    //
+    // Why this belongs here rather than in each controller: the controllers
+    // already apply `req.crmScope` faithfully via `@RecordScope()` and
+    // `scopeFilter()`. Narrowing the value they read means every one of them
+    // enforces the persona for free, and - more to the point - a controller
+    // added tomorrow enforces it too, without its author having to know the
+    // persona model exists. The alternative, a second filter beside the first
+    // at every call site, is the shape of thing that gets forgotten once and
+    // leaks quietly.
+    //
+    // `manager` and `marketing` are NOT narrowed. A manager's job is the whole
+    // floor's pipeline; a marketer's is the funnel across every source, which
+    // narrowed to "records assigned to me" is empty by construction. Both are
+    // restricted by OBJECT instead - see nav.ts and the persona guards - which
+    // is a different question from scope and is answered elsewhere.
+    const gridScope = rows[0].scope === "owned" ? "owned" : "all";
+    const persona = resolveOwnerRole(rows[0].owner_role);
+    const scope = ownerRoleSeesAllRecords(persona) ? gridScope : "owned";
+
     // The scope travels on the request because it is a predicate on rows, not
     // a verdict on the request - see crm-scope.ts. Every controller with a
     // @RequireCrmPermission route reads it via @RecordScope().
-    req.crmScope = {
-      scope: rows[0].scope === "owned" ? "owned" : "all",
-      userId: userId.data,
-    };
+    req.crmScope = { scope, userId: userId.data };
     return true;
   }
 }
