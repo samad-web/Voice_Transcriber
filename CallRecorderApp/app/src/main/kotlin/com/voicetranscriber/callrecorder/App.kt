@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import com.google.android.material.color.DynamicColors
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.platform.ConfigRefreshWorker
+import com.voicetranscriber.callrecorder.platform.FcmTokenManager
 import com.voicetranscriber.callrecorder.platform.HealthWorker
 import com.voicetranscriber.callrecorder.storage.RecordingDatabase
 import com.voicetranscriber.callrecorder.update.AppUpdateWorker
@@ -60,6 +61,12 @@ class App : Application() {
         // - AppUpdateWorker (~6h, wifi): downloads and verifies a newer APK, then
         //   offers it. Purely advisory - it can never stop this device recording.
         AppUpdateWorker.schedule(this)
+        // Self-heal the FCM push registration. No-ops (one prefs read) when the
+        // server already holds this device's current token; enqueues a retry
+        // when an earlier attempt exhausted its backoff, which is otherwise an
+        // invisible state - the handset keeps working and just never gets
+        // another push.
+        FcmTokenManager.ensureSynced(this)
     }
 
     companion object {
