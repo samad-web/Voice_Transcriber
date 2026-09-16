@@ -4,6 +4,7 @@
  */
 const { Client } = require("pg");
 const { sslFor } = require("./ssl");
+const { PermissionObjectType } = require("@aura/shared");
 const { randomBytes, scryptSync } = require("node:crypto");
 
 // Version-4-shaped fixed UUIDs - zod 4's .uuid() validates RFC version bits,
@@ -60,9 +61,81 @@ async function main() {
     [DEV_ORG_ID, DEV_USER_ID],
   );
 
-  console.log(`org:       ${DEV_ORG_ID}`);
+  // ── The CRM module, its roles and its permission grid ──────────────────────
+  //
+  // Same reason the board is seeded above, one level up: `db:reset` runs
+  // migrate BEFORE seed, so on a FRESH database migration 0039's one-time
+  // backfill finds no organizations and writes no roles - and then this script
+  // creates Dev Org afterwards with plain SQL, which is not the provisioning
+  // path. The org ends up with a membership and no grid.
+  //
+  // That failure is invisible and expensive to diagnose: `CrmPermissionsGuard`
+  // needs BOTH 'crm' in enabled_modules AND a `role_permissions` row, so every
+  // Contacts/Accounts/Deals/Tasks/Invoices page 403s and renders "Data
+  // unavailable" while Leads and the board beside them work fine. It reads
+  // exactly like a broken API, and it is a bare database.
+  //
+  // Object types come from the shared enum rather than a list written out
+  // here, because that is the part that GROWS - `lead` joined it in 0103 -
+  // and a hand-copied list is the half that would silently go stale. The five
+  // roles and the action rules below mirror migration 0039, which is frozen
+  // history and cannot drift. The live equivalent is `seedCrmDefaults` in
+  // apps/api/src/modules/admin/admin.controller.ts, which is what real tenants
+  // get; this is the dev-seed path to the same place.
+  await client.query(
+    `UPDATE organizations
+        SET enabled_modules = ARRAY['aura','crm']
+      WHERE id = $1 AND NOT ('crm' = ANY(enabled_modules))`,
+    [DEV_ORG_ID],
+  );
+
+  await client.query(
+    `INSERT INTO roles (org_id, key, name, is_system)
+     VALUES ($1, 'platform_admin',   'Platform Admin',   true),
+            ($1, 'org_admin',        'Org Admin',        true),
+            ($1, 'workspace_admin',  'Workspace Admin',  true),
+            ($1, 'workspace_member', 'Workspace Member', true),
+            ($1, 'viewer',           'Viewer',           true)
+     ON CONFLICT (org_id, key) DO NOTHING`,
+    [DEV_ORG_ID],
+  );
+
+  await client.query(
+    `INSERT INTO role_permissions (org_id, role_id, object_type, action, scope)
+     SELECT r.org_id, r.id, ot.object_type, a.action, 'all'
+       FROM roles r
+       CROSS JOIN unnest($2::text[]) AS ot(object_type)
+       CROSS JOIN (VALUES ('view'), ('create'), ('edit'), ('delete'), ('export')) AS a(action)
+      WHERE r.org_id = $1
+        AND r.is_system
+        AND (
+          r.key IN ('platform_admin', 'org_admin', 'workspace_admin')
+          OR (r.key = 'workspace_member' AND a.action IN ('view', 'create', 'edit'))
+          OR (r.key = 'viewer' AND a.action = 'view')
+        )
+     ON CONFLICT (role_id, object_type, action) DO NOTHING`,
+    [DEV_ORG_ID, PermissionObjectType.options],
+  );
+
+  // Point the membership at its role row. The guard has a documented fallback
+  // that matches `memberships.role` against `roles.key` when this is NULL, but
+  // leaving it NULL here would mean the dev seed only ever exercises the
+  // fallback and never the primary join - so a break in the join would pass
+  // every local check and fail in production.
+  await client.query(
+    `UPDATE memberships m
+        SET role_id = r.id
+       FROM roles r
+      WHERE m.org_id = $1 AND m.user_id = $2
+        AND r.org_id = m.org_id AND r.key = m.role
+        AND m.role_id IS DISTINCT FROM r.id`,
+    [DEV_ORG_ID, DEV_USER_ID],
+  );
+
+  console.log(`org:       ${DEV_ORG_ID}  (modules: aura, crm)`);
   console.log(`workspace: ${DEV_WORKSPACE_ID}`);
   console.log(`user:      admin@aura.local / admin  (org_admin, listen+export)`);
+  console.log(`grid:      5 system roles seeded with a full CRM permission grid`);
   await client.end();
 }
 
