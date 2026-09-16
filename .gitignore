@@ -12,3 +12,9 @@ graphify-out/
 *-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
 gcp-*.json
 service-account*.json
+
+# Competitor APK and its decompile scratch directory (~200 MB). Kept on disk as
+# a reference while the dialer work is live, but they are someone else's binary
+# and a tool's output — neither belongs in this repo's history.
+/ODialer.apk
+/scratch_odialer/

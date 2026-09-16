@@ -7,6 +7,12 @@ build/
 .env
 .env.local
 .env.*.local
+# The same backup trap the .env.production rule below exists to close, one
+# directory down. `.env.*.local` does not match a name with anything after
+# `.local`, so `apps/web/.env.development.local.bak-20260914-184503` — which
+# carries the root ADMIN_API_KEY and the dev org/user ids — sat untracked but
+# NOT ignored, one `git add -A` away from the history.
+.env.*.local.*
 # Production credentials live only on the server.
 #
 # The wildcard matters as much as the plain name. Every deploy that edits this
@@ -23,9 +29,49 @@ build/
 coverage/
 .DS_Store
 
+# Firebase service-account key (FCM push) — same class of secret as
+# .env.production; never commit.
+firebase-service-account.json
+
 # Supabase CLI scratch state (supabase/migrations itself IS committed)
 supabase/.branches/
 supabase/.temp/
 
+# ── Self-hosted Supabase (supabase/selfhost) ─────────────────────────────────
+#
+# Credentials for the whole stack: the Postgres superuser password and a
+# service-role key that bypasses RLS on every tenant. Same rule as
+# .env.production above, wildcard included.
+supabase/selfhost/.env.selfhost
+supabase/selfhost/.env.selfhost.*
+!supabase/selfhost/.env.selfhost.example
+
+# EXPORTS FROM THE CUTOVER. Every tenant's calls, transcripts and auth users in
+# a single file. bin/export-from-cloud.sh chmods the directory 700; this makes
+# sure a stray `git add -A` on the VPS cannot commit it — which is the exact
+# accident that put five .env.production backups in the working tree on
+# 2026-08-10.
+supabase/selfhost/dump/
+supabase/selfhost/**/*.dump
+supabase/selfhost/**/auth-users.sql
+supabase/selfhost/**/auth-identities.sql
+
+# Studio writes saved SQL snippets into its bind mount, inside the git tree.
+supabase/selfhost/upstream/volumes/snippets/*
+!supabase/selfhost/upstream/volumes/snippets/.gitkeep
+
+# Belt and braces: the stack is configured to keep Postgres and Storage state in
+# NAMED volumes (docker-compose.aura.yml), precisely so no database file ever
+# lands here. Anyone running the raw upstream compose file instead would get
+# these bind mounts back, and `git clean -xfd` would then delete the database.
+supabase/selfhost/upstream/volumes/db/data/
+supabase/selfhost/upstream/volumes/storage/
+
 # Written by scripts/apply-marketing-schema.sh. Never commit.
 .marketing-role-password
+
+# Local ASR/diarization scratch: sample call audio and the ffmpeg concat list
+# that stitches it. Regenerate from any recording; the repo is not the place for
+# audio that may carry a real customer's voice.
+*.wav
+list.txt

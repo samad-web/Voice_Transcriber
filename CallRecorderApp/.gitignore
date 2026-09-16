@@ -18,3 +18,25 @@ build_debug*.log
 .idea/
 *.iml
 .DS_Store
+
+# Firebase — the ADMIN SDK private key is a secret and must never be committed.
+#
+# app/google-services.json is deliberately NOT ignored. It carries no secret
+# (the "api_key" in it is a client identifier, restricted server-side), and
+# ignoring it breaks every build that is not this machine: the google-services
+# Gradle plugin needs it at build time, and an APK assembled without a valid one
+# dies in FirebaseInitProvider - a ContentProvider that runs BEFORE
+# Application.onCreate(), so nothing in the app can catch it and the process
+# just disappears at launch. Commit it.
+*firebase-adminsdk*
+*-service-account.json
+
+# Hand-downloaded Gradle distributions (~146 MB unpacked, ~137 MB zipped, each).
+# The wrapper normally fetches these into ~/.gradle; these copies exist only
+# because the wrapper download was blocked here. Nothing in the build references
+# them by this path, so they are disposable — but `git add -A` will happily
+# commit half a gigabyte of them.
+gradle.zip
+gradle-*.zip
+gradle_bin/
+gradle_*_bin/
