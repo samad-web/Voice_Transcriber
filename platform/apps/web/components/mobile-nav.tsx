@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { Lock, Menu, User, X } from "lucide-react";
+import { Lock, Menu, X } from "lucide-react";
 import { Logo } from "@aura/ui";
-import type { OwnerRole } from "@aura/shared";
+import { OWNER_ROLE_LABELS, type OwnerRole } from "@aura/shared";
 import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
+import { AccountMenu } from "@/components/account-menu";
 import { OwnerRailNav } from "@/components/owner-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -260,23 +261,11 @@ export function MobileNav({
               </div>
 
               <div className="space-y-3 border-t border-border p-4">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    aria-hidden="true"
-                    className="shrink-0 rounded-full bg-surface-hover p-2 text-text-muted"
-                  >
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block truncate text-xs font-medium text-text">
-                      {/* `||` not `??` - an account with no email arrives as "". */}
-                      {email || "Not signed in"}
-                    </span>
-                    <span className="block text-xs text-text-muted">
-                      {email ? "Signed in" : "Session pending"}
-                    </span>
-                  </div>
-                </div>
+                <AccountMenu
+                  email={email}
+                  roleLabel={area === "owner" ? OWNER_ROLE_LABELS[ownerRole ?? "owner"] : undefined}
+                  orgName={area === "owner" ? title : undefined}
+                />
 
                 {/* Always rendered - see the note in sidebar.tsx. On a phone this
                     is the ONLY sign-out that exists, since the desktop sidebar

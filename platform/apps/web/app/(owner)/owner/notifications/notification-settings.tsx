@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { NotificationKind } from "@aura/shared";
-import { Button, FormField, Select, useAlert } from "@aura/ui";
+import { Button, FormField, InfoHint, Select, useAlert } from "@aura/ui";
 import {
   NOTIFICATION_KINDS,
   NOTIFICATION_KIND_ORDER,
@@ -62,7 +62,10 @@ export function NotificationSettings({ initial }: { initial: NotificationPrefere
           return (
             <li key={kind} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-text">{spec.label}</p>
+                <p className="flex items-center gap-1.5 text-sm font-medium text-text">
+                  {spec.label}
+                  <InfoHint label={spec.label} content={spec.description} />
+                </p>
                 <p className="text-xs text-text-muted">{spec.description}</p>
               </div>
               <fieldset className="flex shrink-0 rounded-full border border-border-strong p-0.5">

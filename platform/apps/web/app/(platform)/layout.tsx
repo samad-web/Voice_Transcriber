@@ -4,6 +4,7 @@ import { NoConsoleAccess } from "@/components/no-console-access";
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
 import { Sidebar } from "@/components/sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { getPrincipal, isOperator } from "@/lib/owner-context";
 import { getSessionUser } from "@/lib/supabase/server";
 
@@ -35,7 +36,8 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         {/* The operator console watches every tenant at once, so it is the one
             place where "is this still live?" cannot be answered by recognising
             that your own numbers stopped moving. */}
-        <div className="print-hide flex justify-end">
+        <div className="print-hide flex items-center justify-end gap-1">
+          <ThemeToggle />
           <RealtimeIndicator />
         </div>
         {children}

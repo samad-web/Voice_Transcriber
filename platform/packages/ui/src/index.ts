@@ -73,6 +73,8 @@ export { FeedbackProvider, useAlert, useToast } from "./feedback";
 export type { AlertOptions, ToastOptions } from "./feedback";
 export { Tooltip } from "./tooltip";
 export type { TooltipProps } from "./tooltip";
+export { InfoHint, InfoHintsProvider, useInfoHints } from "./info-hint";
+export type { InfoHintProps } from "./info-hint";
 
 // ── marketing primitives (apps/marketing, slice 3) ───────────────────────────
 export { SectionHeading } from "./section-heading";

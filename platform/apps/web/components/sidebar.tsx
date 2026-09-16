@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Lock, User } from "lucide-react";
+import { Lock } from "lucide-react";
 import { Logo } from "@aura/ui";
-import type { OwnerRole } from "@aura/shared";
+import { OWNER_ROLE_LABELS, type OwnerRole } from "@aura/shared";
 import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
+import { AccountMenu } from "@/components/account-menu";
 import { OwnerRailNav } from "@/components/owner-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -128,26 +129,11 @@ export function Sidebar({
       </div>
 
       <div className="mt-8 space-y-3 border-t border-border px-1 pt-4">
-        <div className="flex items-center gap-2.5">
-          <div
-            aria-hidden="true"
-            className="shrink-0 rounded-full bg-surface-hover p-2 text-text-muted"
-          >
-            <User className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <span className="block truncate text-xs font-medium text-text">
-              {/* `||` not `??`. getSessionUser() returns `email: user.email ?? ""`,
-                  so an account without an email address arrives as an empty
-                  string, and `??` would render a blank line rather than the
-                  fallback. */}
-              {email || "Not signed in"}
-            </span>
-            <span className="block text-xs text-text-muted">
-              {email ? "Signed in" : "Session pending"}
-            </span>
-          </div>
-        </div>
+        <AccountMenu
+          email={email}
+          roleLabel={area === "owner" ? OWNER_ROLE_LABELS[ownerRole ?? "owner"] : undefined}
+          orgName={area === "owner" ? title : undefined}
+        />
 
         {/* ALWAYS RENDERED. This used to be `{email ? <SignOutButton /> : null}`,
             which hid the only way out of the console in exactly the cases where

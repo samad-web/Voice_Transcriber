@@ -15,6 +15,7 @@ import { TenantContextSwitcher, type TenantChip } from "@/components/tenant-cont
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
 import { Sidebar } from "@/components/sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
 import { SetupGate } from "@/components/setup-gate";
 import { getOwner, getOwnerBranding, ownerGet, type OwnerMembership } from "@/lib/owner-context";
@@ -225,8 +226,11 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           // reaches somebody wherever they happen to be in the console. The live
           // indicator sits beside it because they answer the same question from
           // two directions: the bell says what happened, this says whether you
-          // would have been told.
+          // would have been told. The theme toggle sits here too - one click,
+          // reachable from every page, rather than a control someone has to
+          // remember lives inside the account panel.
           <>
+            <ThemeToggle />
             <RealtimeIndicator />
             <NotificationBell />
           </>
