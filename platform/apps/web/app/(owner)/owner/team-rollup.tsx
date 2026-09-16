@@ -32,10 +32,22 @@ import { formatValue } from "./types";
  * capped at 6px and never carrying the text: it is a share of the team's open
  * pipeline, and the figure beside it is the number. A person with nothing open
  * has no bar rather than an empty track, so the eye lands on who is loaded.
+ *
+ * ── PEOPLE WITH NOTHING ARE FOLDED AWAY ──────────────────────────────────
+ *
+ * A workspace collects accounts - a viewer, somebody who left, a seat opened
+ * for a trial - and a row of zeros for each buries the three people who are
+ * actually carrying the floor. They are counted in one line that opens, rather
+ * than dropped: "nobody has given this person anything" is a real answer a
+ * manager sometimes needs, and a roll-up that silently omitted a name would be
+ * the wrong kind of tidy. A `<details>` element, so it costs no client JS.
  */
 export function TeamRollup({ data, days }: { data: TeamRollupData; days: number }) {
   const { members, totals } = data;
   if (members.length === 0) return null;
+
+  const carrying = members.filter((m) => m.userId === null || !isIdle(m));
+  const idle = members.filter((m) => m.userId !== null && isIdle(m));
 
   return (
     <Card>
@@ -48,8 +60,8 @@ export function TeamRollup({ data, days }: { data: TeamRollupData; days: number 
         </p>
       </div>
 
-      <ul className="mt-3 divide-y divide-border">
-        {members.map((member) => (
+      <ul aria-label="Who is carrying what" className="mt-3 divide-y divide-border">
+        {carrying.map((member) => (
           <TeamRow
             key={member.userId ?? "unassigned"}
             member={member}
@@ -58,7 +70,30 @@ export function TeamRollup({ data, days }: { data: TeamRollupData; days: number 
           />
         ))}
       </ul>
+
+      {idle.length > 0 ? (
+        <details className="mt-3 border-t border-border pt-3">
+          <summary className="cursor-pointer text-xs text-text-muted hover:text-text">
+            {idle.length} {idle.length === 1 ? "person has" : "people have"} nothing assigned
+          </summary>
+          <ul aria-label="People with nothing assigned" className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {idle.map((member) => (
+              <li key={member.userId} className="text-xs text-text-muted">
+                {member.name}
+                {member.ownerRole ? ` · ${member.ownerRole}` : ""}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </Card>
+  );
+}
+
+/** Nothing open and nothing won in the window - see the header. */
+function isIdle(member: TeamMember): boolean {
+  return (
+    member.openDeals + member.openLeads + member.openTasks + member.wonDeals === 0
   );
 }
 

@@ -82,6 +82,8 @@ interface LoadOptions {
    * and keeps the synthetic principal's `userId` null.
    */
   devUserId?: string;
+  /** Raw `DEV_OWNER_ROLE` - the local-dev persona override (Phase 8). */
+  devOwnerRole?: string;
 }
 
 /**
@@ -101,6 +103,7 @@ async function load(options: LoadOptions) {
   vi.stubEnv("DEV_ORG_ID", DEV_ORG_ID);
   vi.stubEnv("DEV_WORKSPACE_ID", DEV_WORKSPACE_ID);
   vi.stubEnv("DEV_USER_ID", options.devUserId ?? "");
+  vi.stubEnv("DEV_OWNER_ROLE", options.devOwnerRole ?? "");
 
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
@@ -356,6 +359,51 @@ describe("getPrincipal", () => {
     });
 
     expect((await getPrincipal())?.userId).toBe(DEV_USER_ID);
+  });
+
+  /**
+   * The persona override exists so the four non-owner dashboards can actually
+   * be looked at without a Supabase project - see devOwnerRole() in
+   * owner-context.ts. It defaults to `owner`, which is what this branch always
+   * hard-coded, so an unset var behaves exactly as before.
+   */
+  it("renders the dev console as the persona DEV_OWNER_ROLE names", async () => {
+    const asTelecaller = await load({
+      operatorEmails: "",
+      authEnabled: false,
+      session: null,
+      devOwnerRole: "telecaller",
+    });
+    expect((await asTelecaller.getPrincipal())?.membership?.ownerRole).toBe("telecaller");
+
+    const unset = await load({ operatorEmails: "", authEnabled: false, session: null });
+    expect((await unset.getPrincipal())?.membership?.ownerRole).toBe("owner");
+
+    const nonsense = await load({
+      operatorEmails: "",
+      authEnabled: false,
+      session: null,
+      devOwnerRole: "supreme-leader",
+    });
+    expect((await nonsense.getPrincipal())?.membership?.ownerRole).toBe("owner");
+  });
+
+  /**
+   * The same security shape as DEV_USER_ID below: a real session's persona
+   * comes from `memberships`, and no environment variable may touch it.
+   */
+  it("NEVER lets DEV_OWNER_ROLE reach a principal built from a real session", async () => {
+    const real = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+      devOwnerRole: "owner",
+    });
+    contextOk(real.fetchMock, {
+      memberships: [rawMembership({ ownerRole: "telecaller" })],
+      user: { id: USER_B, email: OWNER_EMAIL, name: null },
+    });
+    expect((await real.getPrincipal())?.membership?.ownerRole).toBe("telecaller");
   });
 
   /**

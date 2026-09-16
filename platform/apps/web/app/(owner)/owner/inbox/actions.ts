@@ -58,6 +58,8 @@ export interface InboxFilters {
   status?: ConversationStatus;
   unmatchedOnly?: boolean;
   limit?: number;
+  /** Rows to skip - the thread list's pager (CRM dashboard Phase 8). */
+  offset?: number;
 }
 
 /**
@@ -77,6 +79,7 @@ export async function listConversationsAction(
   if (filters.status) params.set("status", filters.status);
   if (filters.unmatchedOnly) params.set("unmatchedOnly", "true");
   params.set("limit", String(filters.limit ?? 50));
+  if (filters.offset) params.set("offset", String(filters.offset));
 
   try {
     const res = await fetch(`${API_URL}/v1/conversations?${params.toString()}`, {

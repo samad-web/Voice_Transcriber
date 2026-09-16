@@ -9,6 +9,13 @@
  * hairline) is 1.26:1 and must never be used here.
  */
 
+/*
+ * `text-sm` here is the DESKTOP size. On a phone every text control in the
+ * console is raised to 16px by one rule in apps/web/app/globals.css - iOS
+ * Safari zooms a focused control below that and never zooms back - and it is
+ * done there rather than here because the console has thirty-odd hand-rolled
+ * inputs beside these primitives, and a class only fixes the primitives.
+ */
 export const CONTROL_BASE =
   "w-full rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
   "transition-colors duration-150 ease-out " +

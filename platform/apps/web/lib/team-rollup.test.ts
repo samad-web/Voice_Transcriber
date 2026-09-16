@@ -30,7 +30,7 @@ const member = (over: Partial<TeamMember> = {}): TeamMember => ({
 describe("row links", () => {
   it("open each list on the same filter the number counted", () => {
     const m = member();
-    expect(teamDealsHref(m)).toBe(`/owner/deals?view=table&owner=${m.userId}`);
+    expect(teamDealsHref(m)).toBe(`/owner/deals?view=table&status=open&owner=${m.userId}`);
     expect(teamTasksHref(m)).toBe(`/owner/tasks?who=${m.userId}`);
     expect(teamTasksHref(m, true)).toBe(`/owner/tasks?who=${m.userId}&due=overdue`);
     expect(teamLeadsHref(m)).toBe(`/owner/leads?assignedTo=${m.telecallerId}`);

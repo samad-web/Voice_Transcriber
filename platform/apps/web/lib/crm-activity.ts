@@ -1,6 +1,7 @@
 import "server-only";
 import type { ApiResult } from "@/lib/api-result";
 import {
+  INTERACTION_LIMIT_MAX,
   interactionToActivity,
   mergeActivity,
   messageToActivity,
@@ -50,7 +51,6 @@ export interface ActivityOptions {
 }
 
 const INTERACTION_LIMIT = 100;
-export const INTERACTION_LIMIT_MAX = 200;
 const CONVERSATION_LIMIT = 10;
 const MESSAGES_PER_CONVERSATION = 100;
 

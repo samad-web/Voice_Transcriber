@@ -51,8 +51,17 @@ const VARIANTS: Record<ButtonVariant, string> = {
 /** Applied inline because a gradient fill can't be a Tailwind colour utility. */
 const PRIMARY_GRADIENT = { backgroundImage: "var(--brand-gradient)" };
 
+/**
+ * `sm` is 40px on a phone and 32px from `sm` up (CRM dashboard Phase 8).
+ *
+ * A 32px control is comfortable beside a cursor and small for a thumb on a
+ * moving floor, which is where this console is actually used: task-row.tsx had
+ * already made that exception by hand for its two log buttons, and a rule that
+ * lives in one component is a rule the next component forgets. Here it applies
+ * to every small button at once, and the dense desktop row is unchanged.
+ */
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-8 gap-1.5 px-3 text-xs",
+  sm: "h-10 gap-1.5 px-4 text-sm sm:h-8 sm:px-3 sm:text-xs",
   md: "h-10 gap-2 px-4 text-sm",
   lg: "h-12 gap-2 px-6 text-base",
 };

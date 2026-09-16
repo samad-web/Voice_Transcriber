@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
+  Button,
   ErrorBanner,
   StatusChip,
   useAlert,
@@ -48,6 +49,9 @@ function freeTextLabel(w: MessagingWindow): string {
 
 type Filter = "open" | "unmatched" | "closed";
 
+/** Threads per page. Fifty is what this list already fetched; now it says so. */
+const THREADS_PER_PAGE = 50;
+
 const FILTERS: Array<{ key: Filter; label: string; hint: string }> = [
   { key: "open", label: "Open", hint: "Threads still needing an answer." },
   {
@@ -71,6 +75,15 @@ const FILTERS: Array<{ key: Filter; label: string; hint: string }> = [
 export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean }) {
   const [filter, setFilter] = useState<Filter>("open");
   const [threads, setThreads] = useState<Conversation[] | null>(null);
+  /**
+   * The thread list's page (CRM dashboard Phase 8). It used to fetch the first
+   * fifty and stop, with nothing on screen saying so - a busy inbox simply did
+   * not have its older threads. Held in component state rather than the URL
+   * because the whole inbox is one client component whose filter lives here
+   * too, and a page number that outlived a filter change would open empty.
+   */
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [thread, setThread] = useState<{
     conversation: Conversation;
@@ -137,10 +150,11 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
     const requestFilter = filter;
     filterRef.current = requestFilter;
     start(async () => {
+      const paging = { limit: THREADS_PER_PAGE, offset: page * THREADS_PER_PAGE };
       const res = await listConversationsAction(
         requestFilter === "unmatched"
-          ? { unmatchedOnly: true }
-          : { status: requestFilter === "closed" ? "closed" : "open" },
+          ? { unmatchedOnly: true, ...paging }
+          : { status: requestFilter === "closed" ? "closed" : "open", ...paging },
       );
       // The filter moved on again while this was in flight - a newer load()
       // owns the list now, so this stale response is dropped rather than
@@ -153,8 +167,9 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
       }
       setError(null);
       setThreads(res.conversations ?? []);
+      setTotal(res.total ?? 0);
     });
-  }, [filter]);
+  }, [filter, page]);
 
   useEffect(load, [load]);
 
@@ -265,6 +280,7 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
               title={f.hint}
               onClick={() => {
                 setFilter(f.key);
+                setPage(0);
                 setSelectedId(null);
                 selectedIdRef.current = null;
                 setThread(null);
@@ -286,6 +302,34 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
         <p className="mt-2 text-xs text-text-muted">
           {FILTERS.find((f) => f.key === filter)?.hint}
         </p>
+
+        {total > THREADS_PER_PAGE ? (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-text-muted tabular-nums">
+              {page * THREADS_PER_PAGE + 1}-{Math.min((page + 1) * THREADS_PER_PAGE, total)} of {total}
+            </p>
+            <div className="flex gap-1.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={page === 0 || pending}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                ← Newer
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={(page + 1) * THREADS_PER_PAGE >= total || pending}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Older →
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <ul className="mt-3 space-y-1.5">
           {threads === null ? (

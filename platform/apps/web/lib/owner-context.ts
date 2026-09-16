@@ -160,6 +160,31 @@ interface ContextResponse {
  * `cache` dedupes this across a single render pass: the layout, the page and
  * every server action in one request resolve the principal once.
  */
+/**
+ * The persona the local-dev console acts as (CRM dashboard Phase 8).
+ *
+ * This branch used to hard-code `owner`, which made the other four personas
+ * unreachable without a Supabase project: every persona-dependent screen - the
+ * dashboards, the review queue's sources, the response-time card - rendered as
+ * an owner no matter what, so a change to them could only be reasoned about,
+ * never seen. `DEV_OWNER_ROLE=telecaller` now renders the console as that
+ * persona.
+ *
+ * It ONLY applies where there is no session at all (auth unconfigured), which
+ * is the mode whose own boot log says every page is reachable without one. A
+ * real session takes the path below and reads the persona from `memberships`,
+ * where it belongs; nothing here can widen a signed-in user's access.
+ *
+ * The API is NOT fooled by it: OwnerRoleGuard reads the persona from the
+ * caller's membership row, so to see a persona end to end the membership has
+ * to say the same thing. That is deliberate - a console that could claim a
+ * persona the API did not agree with would be a worse lie than the hard-coded
+ * owner it replaces.
+ */
+function devOwnerRole(): OwnerRole {
+  return resolveOwnerRole(process.env.DEV_OWNER_ROLE);
+}
+
 export const getPrincipal = cache(async (): Promise<Principal | null> => {
   const user = await getSessionUser();
 
@@ -174,7 +199,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       orgName: "",
       orgStatus: "active",
       role: "org_admin",
-      ownerRole: "owner",
+      ownerRole: devOwnerRole(),
       recordingsListen: true,
       recordingsExport: true,
       workspaceId: DEV_WORKSPACE_ID,

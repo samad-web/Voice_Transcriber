@@ -45,9 +45,16 @@ export interface TeamRollup {
   };
 }
 
-/** Open deals this person owns. `none` is the list's own word for unassigned. */
+/**
+ * Open deals this person owns. `none` is the list's own word for unassigned.
+ *
+ * `status=open` is not decoration: the figure counts open deals, and without it
+ * the list also shows what they have won and lost - a number that does not
+ * match the list it opens, which is the one thing Phase 6's drill-downs exist
+ * to prevent.
+ */
 export function teamDealsHref(member: TeamMember): string {
-  return `/owner/deals?view=table&owner=${member.userId ?? "none"}`;
+  return `/owner/deals?view=table&status=open&owner=${member.userId ?? "none"}`;
 }
 
 /** Their open follow-ups. The Tasks list takes a user id in `who`. */

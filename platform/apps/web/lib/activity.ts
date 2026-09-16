@@ -1,4 +1,15 @@
 /**
+ * How many logged activities one composed timeline may hold (CRM dashboard
+ * Phase 8) - the ceiling the interactions route enforces (limit max 200).
+ *
+ * It lives HERE, in the pure module, and not beside the loader that uses it:
+ * `lib/crm-activity.ts` imports "server-only", so a Client Component reading a
+ * value from it turns the whole page into a 500. Types from that module are
+ * fine (erased at compile time); values are not.
+ */
+export const INTERACTION_LIMIT_MAX = 200;
+
+/**
  * One person's history across every channel, as the 360° record reads it -
  * and, the part that matters most, WHO did each thing.
  *

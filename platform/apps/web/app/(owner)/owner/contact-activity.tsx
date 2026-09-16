@@ -12,8 +12,15 @@ import {
   StickyNote,
 } from "lucide-react";
 import { Button, ErrorBanner, MonoLabel, StateChip, callState } from "@aura/ui";
-import { interactionToActivity, mergeActivity, type ActivityChannel, type ActivityItem, type ActorKind } from "@/lib/activity";
-import { INTERACTION_LIMIT_MAX, type ContactActivity as ContactActivityData } from "@/lib/crm-activity";
+import {
+  INTERACTION_LIMIT_MAX,
+  interactionToActivity,
+  mergeActivity,
+  type ActivityChannel,
+  type ActivityItem,
+  type ActorKind,
+} from "@/lib/activity";
+import type { ContactActivity as ContactActivityData } from "@/lib/crm-activity";
 import { fetchContactActivityAction } from "./activity-actions";
 import { ActorAvatar, ActorKindLabel } from "./actor-badge";
 import { LogActivityForm } from "./log-activity-form";
