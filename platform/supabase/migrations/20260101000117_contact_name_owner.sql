@@ -1,4 +1,4 @@
--- 0107_contact_name_owner.sql - a name a person typed outranks a name a call
+-- 0117_contact_name_owner.sql - a name a person typed outranks a name a call
 -- extracted (the human-owns-it rule, Track A safety rule 2).
 --
 -- The Lead -> Contact projection (packages/db/src/crm-projection.ts) upgrades a

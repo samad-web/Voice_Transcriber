@@ -1,4 +1,4 @@
--- 0097_reversible_deletes.sql - a delete a tenant can take back.
+-- 0108_reversible_deletes.sql - a delete a tenant can take back.
 --
 -- ── THE PROBLEM THIS SOLVES ─────────────────────────────────────────────────
 --

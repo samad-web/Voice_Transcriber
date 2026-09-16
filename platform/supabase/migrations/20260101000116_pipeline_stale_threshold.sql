@@ -1,4 +1,4 @@
--- 0106_pipeline_stale_threshold.sql - how many days without activity before an
+-- 0116_pipeline_stale_threshold.sql - how many days without activity before an
 -- open deal on this pipeline is flagged stale on the Deals board and table.
 --
 -- ── WHY PER PIPELINE ────────────────────────────────────────────────────────

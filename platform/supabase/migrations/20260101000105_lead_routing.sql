@@ -1,4 +1,4 @@
--- 0094_lead_routing.sql - automated lead distribution: rules that hand an
+-- 0105_lead_routing.sql - automated lead distribution: rules that hand an
 -- incoming lead to a telecaller, by rotation or by a percentage split.
 --
 -- ── WHAT THIS REVERSES, AND WHY ─────────────────────────────────────────────
@@ -56,7 +56,7 @@
 -- ── WHERE THE ENGINE RUNS ───────────────────────────────────────────────────
 --
 -- Inside the intake transaction, not on a queue. Unlike `automation_events`,
--- which is deliberately asynchronous, an assignment cannot wait: 0090 measures
+-- which is deliberately asynchronous, an assignment cannot wait: 0093 measures
 -- `leads.first_responded_at`, and a lead that sits unassigned for a minute is a
 -- lead nobody has been told about. The cost of doing it inline is one locked
 -- row per rule, held for the tail of a transaction that was already short.
@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS lead_routing_targets (
   -- Today's count, for the cap. Stored rather than counted from
   -- lead_routing_assignments so the hot path stays two index lookups instead
   -- of an aggregate over a table that grows forever. `counter_day` is the
-  -- date IN THE ORG'S REPORTING TIMEZONE (0088) that `assigned_today` belongs
+  -- date IN THE ORG'S REPORTING TIMEZONE (0090) that `assigned_today` belongs
   -- to; the engine zeroes the pair when it rolls over. A stored counter with
   -- no date beside it is how a daily cap becomes a lifetime cap.
   assigned_today int  NOT NULL DEFAULT 0,

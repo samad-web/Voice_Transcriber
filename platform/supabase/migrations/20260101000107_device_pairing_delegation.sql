@@ -1,10 +1,10 @@
--- 0096_device_pairing_delegation.sql - the owner decides who may pair a handset.
+-- 0107_device_pairing_delegation.sql - the owner decides who may pair a handset.
 --
 -- ── THE PROBLEM THIS SOLVES ─────────────────────────────────────────────────
 --
 -- Enrolling a handset needs an enrollment token (0001), and tokens are minted
 -- from the OPERATOR console (`POST /instances/:id/keys`). A client could not
--- pair a phone without us, which is why migration 0095's setup checklist had to
+-- pair a phone without us, which is why migration 0106's setup checklist had to
 -- carry "pair your first handset" as a GUIDED step rather than a required one:
 -- a required step the client cannot finish is a banner that never clears.
 --

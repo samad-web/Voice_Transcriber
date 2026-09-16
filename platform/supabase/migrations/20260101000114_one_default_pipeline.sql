@@ -1,4 +1,4 @@
--- 0104_one_default_pipeline.sql - every org has exactly one ACTIVE default
+-- 0114_one_default_pipeline.sql - every org has exactly one ACTIVE default
 -- pipeline, and the database says so (doc 23, B1/B4).
 --
 -- ── THE PROBLEM ─────────────────────────────────────────────────────────────

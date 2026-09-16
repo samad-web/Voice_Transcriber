@@ -1,4 +1,4 @@
--- 0105_merge_references.sql - a merge moves EVERYTHING that points at the
+-- 0115_merge_references.sql - a merge moves EVERYTHING that points at the
 -- merged-away record, and a revert can move it all back (doc 23, D1).
 --
 -- Until now a merge repointed `deals` only, and `reassigned_deals` was the one

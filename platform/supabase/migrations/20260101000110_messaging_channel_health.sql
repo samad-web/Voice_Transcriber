@@ -1,4 +1,4 @@
--- 0099_messaging_channel_health.sql - recording whether a WhatsApp channel has
+-- 0110_messaging_channel_health.sql - recording whether a WhatsApp channel has
 -- ever been PROVEN to work, as opposed to merely configured.
 --
 -- ── THE FAILURE THIS EXISTS FOR ─────────────────────────────────────────────

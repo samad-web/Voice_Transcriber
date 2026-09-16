@@ -1,4 +1,4 @@
--- 0095_org_setup_checklist.sql - the new-client setup checklist: one column,
+-- 0106_org_setup_checklist.sql - the new-client setup checklist: one column,
 -- and the reason it is a column rather than a computed answer.
 --
 -- ── WHAT THE FEATURE IS ─────────────────────────────────────────────────────
@@ -25,8 +25,8 @@
 -- onboarding.
 --
 -- So the flag rides on `organizations`, which `AuthService.contextFor` already
--- reads to turn a session into an org - the same free ride `branding` (0065),
--- `enabled_modules` (0072) and `enabled_features` (0093) take. Once it is set,
+-- reads to turn a session into an org - the same free ride `branding` (0065)
+-- and `enabled_modules` (0072) take. Once it is set,
 -- the console skips the checklist entirely and costs nothing. While it is
 -- NULL - only during onboarding, which is exactly when it is worth paying for -
 -- the console spends one round trip on `GET /v1/owner/setup`, and that endpoint

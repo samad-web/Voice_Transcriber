@@ -1,4 +1,4 @@
--- 0100_messaging_opt_outs.sql - somebody asked to stop being messaged, and the
+-- 0111_messaging_opt_outs.sql - somebody asked to stop being messaged, and the
 -- product remembering it.
 --
 -- ── WHAT DOES NOT EXIST TODAY ───────────────────────────────────────────────
@@ -125,10 +125,10 @@ REVOKE ALL ON messaging_opt_outs FROM PUBLIC;
 --
 -- ⚠️ ONE OF THESE THREE IS A BUG FIX, NOT A NEW FEATURE.
 --
--- `lead_assigned` has been in @aura/shared's NotificationKind since 0094 and is
+-- `lead_assigned` has been in @aura/shared's NotificationKind since 0105 and is
 -- INSERTed directly by packages/db/src/lead-routing.ts (`notifyAssignee`, and
--- `notifyBackfillSummary`), but 0094 never widened this CHECK. Measured against
--- a database migrated to 0099:
+-- `notifyBackfillSummary`), but 0105 never widened this CHECK. Measured against
+-- a database migrated to 0110:
 --
 --   INSERT INTO notifications (..., kind, ...) VALUES (..., 'lead_assigned', ...);
 --   ERROR: new row for relation "notifications" violates check constraint
@@ -155,10 +155,10 @@ ALTER TABLE notifications
   ADD CONSTRAINT notifications_kind_check
   CHECK (kind IN ('task_assigned', 'task_due', 'deal_stage_changed', 'deal_idle',
                   'automation', 'report_ready',
-                  -- Shipped broken in 0094. See above.
+                  -- Shipped broken in 0105. See above.
                   'lead_assigned',
                   -- A customer may have asked to stop being messaged, and it
                   -- was ambiguous enough that a person has to decide.
                   'opt_out_requested',
-                  -- A WhatsApp channel cannot carry messages (migration 0099).
+                  -- A WhatsApp channel cannot carry messages (migration 0110).
                   'channel_needs_attention'));

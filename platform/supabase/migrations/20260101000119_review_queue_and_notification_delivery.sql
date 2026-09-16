@@ -1,4 +1,4 @@
--- 0109_review_queue_and_notification_delivery.sql - CRM dashboard, Phase 7:
+-- 0119_review_queue_and_notification_delivery.sql - CRM dashboard, Phase 7:
 -- the two notifications the review queue and the response SLA need, and a
 -- person's choice between hearing about things now or once a day.
 --
@@ -35,7 +35,7 @@
 -- ── 3. THE RESPONSE SLA ─────────────────────────────────────────────────────
 --
 -- `organizations.response_sla_minutes`: how long a new lead may wait for a
--- first response (leads.first_responded_at, 0090) before the floor is told.
+-- first response (leads.first_responded_at, 0093) before the floor is told.
 -- Sixty minutes by default - the "within the hour" bucket the response-time
 -- report already draws (sla.ts).
 --
@@ -194,7 +194,7 @@ COMMENT ON COLUMN organizations.response_sla_minutes IS
   'the assigned telecaller and the owners/managers (0109).';
 
 -- The SLA sweep's scan (open leads nobody has answered) needs no new index:
--- 0090's leads_org_unresponded is exactly that partial index.
+-- 0093's leads_org_unresponded is exactly that partial index.
 
 -- 4 ────────────────────────────────────────────────────────────────────────
 -- No pairing CHECK like 0100's release: with ON DELETE SET NULL, a CHECK would
