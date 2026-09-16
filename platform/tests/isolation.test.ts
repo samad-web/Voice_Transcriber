@@ -90,6 +90,31 @@ const post = (t: Tenant, path: string, body?: unknown) => call(asTenant(t), "POS
 const patch = (t: Tenant, path: string, body?: unknown) => call(asTenant(t), "PATCH", path, body);
 const del = (t: Tenant, path: string) => call(asTenant(t), "DELETE", path);
 
+/**
+ * The admin key, naming the tenant's OWN owner as the acting user.
+ *
+ * For routes behind `@RequireOwnerRole`. Since checklist 08 §2.5 closed the
+ * O4 bypass, OwnerRoleGuard resolves the persona from `memberships` using
+ * `x-caller-user-id` and refuses a bare admin key - so a tenancy case on such
+ * a route has to present a real user or it never reaches the code it is
+ * testing. `seedTenants` already gives every tenant's `userId` an
+ * `owner_role = 'owner'` membership in its own org.
+ *
+ * Deliberately NOT folded into `asTenant`: most routes here must be exercised
+ * by the bare admin key, because that is the credential whose steerability by
+ * `x-org-id` the rest of this file is about.
+ */
+const asTenantOwner = (t: Tenant): Caller => {
+  const base = asTenant(t);
+  return {
+    label: `${base.label}+owner`,
+    headers: { ...base.headers, "x-caller-user-id": t.userId },
+  };
+};
+
+const patchAsOwner = (t: Tenant, path: string, body?: unknown) =>
+  call(asTenantOwner(t), "PATCH", path, body);
+
 function expectStatus(res: ApiResponse, status: number, why: string): void {
   expect(res.status, `${why} - expected ${status}, got ${res.status}: ${res.text}`).toBe(status);
 }
@@ -169,8 +194,37 @@ const bInstance: Witness = {
                (SELECT count(*)::int FROM devices WHERE instance_id = $1) AS devices`,
   params: [B.instanceId],
 };
+/**
+ * A valid body for POST /v1/apikeys.
+ *
+ * `scopes` became REQUIRED (`z.array(ApiScope).min(1)`) when migration 0076
+ * gave keys a scope set, and this file still posted `{ name }` alone - so both
+ * of #6's cases 400'd at validation and **neither the positive nor the negative
+ * isolation assertion had run since**. A route that cannot be reached is a
+ * route whose isolation is untested, and the suite was green-ish enough
+ * (5 failures among 153) for that to go unnoticed.
+ *
+ * One narrow read scope on purpose: the case is about tenancy, not about what a
+ * key may do, and a key minted with everything would be the wrong artefact to
+ * leave lying in a test database.
+ */
+const MINT_KEY = { name: "made-by-a", scopes: ["leads:read"] };
+
 const bApiKey: Witness = {
-  sql: `SELECT count(*)::int AS n FROM api_keys WHERE id = $1`,
+  /**
+   * NOT `count(*) = 0` after a delete.
+   *
+   * DELETE /v1/apikeys/:id is a SOFT revoke and always has been (see the
+   * handler's own comment: the row survives so the trail of what the key was
+   * called, who minted it and what it could do outlives the panic that revoked
+   * it). The witness asserted the row was GONE, so it had been failing against
+   * correct behaviour - the test was wrong, not the code.
+   *
+   * What matters for isolation is unchanged and is what is now checked: the row
+   * is still B's, and A's request did not touch it.
+   */
+  sql: `SELECT count(*)::int AS n, count(revoked_at)::int AS revoked
+          FROM api_keys WHERE id = $1`,
   params: [B.apiKeyId],
 };
 const bAgent: Witness = {
@@ -197,14 +251,14 @@ const ROUTES: RouteCase[] = [
       // A and is invisible to B. `api_keys` is one of the routes doc 13 §1.4
       // names as having zero defence in depth - the INSERT names org_id, but
       // nothing re-checks it on read.
-      const created = await post(A, "/apikeys", { name: "made-by-a" });
+      const created = await post(A, "/apikeys", MINT_KEY);
       expectOk(created);
       const seenByB = await get(B, "/apikeys");
       expectOk(seenByB);
       expect(seenByB.body.keys.map((k: any) => k.id)).not.toContain(created.body.id);
     },
     positive: async () => {
-      const created = await post(A, "/apikeys", { name: "made-by-a" });
+      const created = await post(A, "/apikeys", MINT_KEY);
       expectOk(created);
       expect(created.body.key).toMatch(/^cik_live_/);
       const seenByA = await get(A, "/apikeys");
@@ -235,7 +289,10 @@ const ROUTES: RouteCase[] = [
     },
     positive: async () => {
       expectOk(await del(A, `/apikeys/${A.apiKeyId}`));
-      expect(await queryRows(bApiKey.sql, [A.apiKeyId])).toEqual([{ n: 0 }]);
+      // Revoked, not erased - the row stays and carries a `revoked_at`. This
+      // previously asserted `n: 0`, which is what a hard DELETE would leave and
+      // is not what this endpoint does.
+      expect(await queryRows(bApiKey.sql, [A.apiKeyId])).toEqual([{ n: 1, revoked: 1 }]);
     },
   },
 
@@ -985,19 +1042,40 @@ const ROUTES: RouteCase[] = [
     route: "PATCH /v1/owner/telecallers/:deviceId",
     pool: "withOrg",
     witness: bDevice,
+    /*
+     * NAMES ITS CALLER, and the reason is a security fix rather than a
+     * preference.
+     *
+     * This case used to send no caller identity at all, on the documented
+     * grounds that "an admin-key caller that omits x-caller-owner-role passes
+     * every @RequireOwnerRole" (doc 13 §2.4 O4). That was a BYPASS, and
+     * checklist 08 §2.5 closed it: OwnerRoleGuard now derives the persona from
+     * `memberships` and refuses a bare admin key outright, because a credential
+     * with no user behind it has no persona to grant.
+     *
+     * So both halves of this case started 403ing on the persona guard and
+     * **the tenancy property this case exists to prove stopped being tested**.
+     * The fix is to satisfy the persona guard honestly - `x-caller-user-id` for
+     * a user the fixture already seeds as `owner_role = 'owner'` in that org -
+     * so the only thing left that can deny the request is tenancy, which is the
+     * whole point.
+     *
+     * The caller is always A's own owner, including in the negative case: the
+     * question there is whether a legitimately-authorised owner of A can reach
+     * B's device, which is a sharper question than whether an unauthorised
+     * caller can.
+     */
     negative: async () => {
-      // No x-caller-owner-role header is sent, and that is deliberate: doc 13
-      // §2.4 O4 - an admin-key caller that omits it passes every
-      // @RequireOwnerRole. This test is about tenancy, and it must not be able
-      // to pass because the persona guard rejected it for an unrelated reason.
       expectDenied(
-        await patch(A, `/owner/telecallers/${B.deviceId}`, { name: "renamed by A" }),
+        await patchAsOwner(A, `/owner/telecallers/${B.deviceId}`, { name: "renamed by A" }),
         404,
         /device not found in this org/,
       );
     },
     positive: async () => {
-      const res = await patch(A, `/owner/telecallers/${A.deviceId}`, { name: "renamed by A" });
+      const res = await patchAsOwner(A, `/owner/telecallers/${A.deviceId}`, {
+        name: "renamed by A",
+      });
       expectOk(res);
       expect(res.body.device.telecaller_name).toBe("renamed by A");
     },
@@ -1522,5 +1600,120 @@ describe("session pinning (doc 13 §2.1 A9/A10, §2.2 T6)", () => {
       "/calls",
     );
     expectDenied(res, 400, /x-org-id header \(uuid\) required/);
+  });
+});
+
+describe("links to another tenant's rows (doc 23, A1/A2)", () => {
+  // Every CRM route here sits behind CrmPermissionsGuard, which refuses a bare
+  // admin key - so these cases act as each tenant's OWN owner, or they 403 at
+  // the guard and never reach the check they exist to test (the reachability
+  // trap isolation-suite cases have fallen into before).
+  const post = (t: Tenant, path: string, body?: unknown) => call(asTenantOwner(t), "POST", path, body);
+  const patch = (t: Tenant, path: string, body?: unknown) => call(asTenantOwner(t), "PATCH", path, body);
+
+  // The fixture tenants are created after migration 0039 seeded roles, so -
+  // unlike a tenant provisioned through the admin console (seedCrmDefaults in
+  // admin.controller.ts) - they hold no CRM grants, and every request below
+  // would 403 at the guard. Give each the org_admin role that console path
+  // creates, for the objects these cases write. Runs after the file-level
+  // beforeEach has re-seeded the tenants.
+  beforeEach(async () => {
+    for (const t of [A, B]) {
+      // CrmPermissionsGuard also requires the org to have the CRM module.
+      await queryRows(
+        `UPDATE organizations
+            SET enabled_modules = array_append(COALESCE(enabled_modules, '{}'), 'crm')
+          WHERE id = $1 AND NOT ('crm' = ANY(COALESCE(enabled_modules, '{}')))`,
+        [t.orgId],
+      );
+      await queryRows(
+        `INSERT INTO roles (org_id, key, name, is_system) VALUES ($1, 'org_admin', 'Org admin', true)`,
+        [t.orgId],
+      );
+      await queryRows(
+        `INSERT INTO role_permissions (org_id, role_id, object_type, action, scope)
+         SELECT r.org_id, r.id, ot.v, act.v, 'all'
+           FROM roles r
+           CROSS JOIN unnest(ARRAY['contact', 'account', 'deal', 'task']) AS ot(v)
+           CROSS JOIN unnest(ARRAY['view', 'create', 'edit']) AS act(v)
+          WHERE r.org_id = $1 AND r.key = 'org_admin'`,
+        [t.orgId],
+      );
+    }
+  });
+  // A foreign-key check ignores RLS. Before common/org-references.ts, tenant A
+  // could file its records under tenant B's account, contact or workspace, and
+  // name one of B's users as the owner - then read that user's name back
+  // through the report builder's owner join. Proven against the local database
+  // on 2026-09-15.
+  //
+  // Every negative case has its positive twin: the same request, aimed at the
+  // tenant's OWN rows, must succeed - otherwise a 400 here could just be a
+  // body the route never accepted.
+
+  const makeContact = async (t: Tenant, name: string) => {
+    const res = await post(t, "/contacts", { displayName: name });
+    expectOk(res);
+    return res.body.contact.id as string;
+  };
+
+  const makeAccount = async (t: Tenant, name: string) => {
+    const res = await post(t, "/accounts", { name });
+    expectOk(res);
+    return res.body.account.id as string;
+  };
+
+  it("refuses a contact filed under another tenant's account or workspace", async () => {
+    const accountB = await makeAccount(B, "b-account");
+    const before = await queryRows(`SELECT count(*)::int AS n FROM contacts WHERE org_id = $1`, [A.orgId]);
+
+    expectDenied(await post(A, "/contacts", { displayName: "x", accountId: accountB }), 400, /accountId/);
+    expectDenied(
+      await post(A, "/contacts", { displayName: "x", workspaceId: B.workspaceId }),
+      400,
+      /workspaceId/,
+    );
+    expect(await queryRows(`SELECT count(*)::int AS n FROM contacts WHERE org_id = $1`, [A.orgId])).toEqual(
+      before,
+    );
+
+    const accountA = await makeAccount(A, "a-account");
+    expectOk(await post(A, "/contacts", { displayName: "x", accountId: accountA, workspaceId: A.workspaceId }));
+  });
+
+  it("refuses another tenant's user as a contact's owner, and leaves the row untouched", async () => {
+    const contactA = await makeContact(A, "owned-contact");
+    const witness = () => queryRows(`SELECT owner_user_id FROM contacts WHERE id = $1`, [contactA]);
+    const before = await witness();
+
+    expectDenied(await patch(A, `/contacts/${contactA}`, { ownerUserId: B.userId }), 400, /ownerUserId/);
+    expect(await witness()).toEqual(before);
+
+    expectOk(await patch(A, `/contacts/${contactA}`, { ownerUserId: A.userId }));
+    expect(await witness()).toEqual([{ owner_user_id: A.userId }]);
+  });
+
+  it("refuses a deal on another tenant's contact, and an owner from another tenant", async () => {
+    const pipeline = await post(A, "/pipelines", { name: "Sales", isDefault: true });
+    expectOk(pipeline);
+    const contactB = await makeContact(B, "b-contact");
+
+    expectDenied(await post(A, "/deals", { name: "d", contactId: contactB }), 400, /contactId/);
+
+    const contactA = await makeContact(A, "a-contact");
+    const created = await post(A, "/deals", { name: "d", contactId: contactA });
+    expectOk(created);
+    const dealA = created.body.deal.id as string;
+
+    expectDenied(await patch(A, `/deals/${dealA}`, { ownerUserId: B.userId }), 400, /ownerUserId/);
+    expectDenied(await patch(A, `/deals/${dealA}`, { contactId: contactB }), 400, /contactId/);
+    expectOk(await patch(A, `/deals/${dealA}`, { ownerUserId: A.userId }));
+  });
+
+  it("refuses a task assigned to a user who belongs only to another tenant", async () => {
+    // tasks.controller.ts checked `users` for EXISTENCE, which a user from any
+    // tenant passes - and then sent that user a notification.
+    expectDenied(await post(A, "/tasks", { title: "t", assigneeUserId: B.userId }), 400, /assigneeUserId/);
+    expectOk(await post(A, "/tasks", { title: "t", assigneeUserId: A.userId }));
   });
 });
