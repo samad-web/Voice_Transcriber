@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { AlertCircle, Lock } from "lucide-react";
-import { Button, FormField, Input } from "@aura/ui";
+import { Button, FormField, Input, PasswordInput } from "@aura/ui";
 import { signInAction } from "./actions";
 
 /**
@@ -54,9 +54,8 @@ export function LoginForm({ next, configured }: { next?: string; configured: boo
       </FormField>
 
       <FormField label="Password" name="password" required>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="current-password"
           disabled={disabled}
           placeholder="••••••••"

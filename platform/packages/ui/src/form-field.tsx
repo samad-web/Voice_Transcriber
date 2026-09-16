@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from "react";
 import { cx } from "./cx";
 import { Input } from "./input";
 import { Label } from "./label";
+import { PasswordInput } from "./password-input";
 import { Select } from "./select";
 
 export interface FormFieldProps {
@@ -95,7 +96,10 @@ export function FormField({
       // it is only set for components we know accept it: our own Input/Select
       // (matched by identity, so the common `<FormField><Input/></FormField>`
       // actually turns red), or any child that already declares the prop.
-      ...(children.type === Input || children.type === Select || "invalid" in existing
+      ...(children.type === Input ||
+      children.type === PasswordInput ||
+      children.type === Select ||
+      "invalid" in existing
         ? { invalid: Boolean(error) }
         : {}),
     });
