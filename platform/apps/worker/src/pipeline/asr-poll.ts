@@ -1,6 +1,7 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { publishAnalyze } from "@aura/queue";
 import { collectSarvamAsrJob, sarvamAsrConfigured } from "./asr-sarvam";
-import { persistTranscript, priorAttempts, runPostAsrStages, stageHelpers } from "./pipeline";
+import { persistTranscript, priorAttempts, stageHelpers } from "./pipeline";
 
 /**
  * Second half of the ASR stage for batch providers.
@@ -112,6 +113,38 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
       continue;
     }
 
+    /*
+     * TWO transactions, not one, and the split is the whole point.
+     *
+     * `withOrgContext` is BEGIN…COMMIT. Holding the transcript write, the
+     * TRANSCRIBING → ANALYZING advance and the whole of analyze inside a single
+     * one meant none of it was visible until all of it was done: the console
+     * read the last COMMITTED status, so a call sat on "Transcribing" for the
+     * entire run and then jumped straight to Complete, never once showing
+     * "Analysing". With ASR taking nine seconds and analyze taking minutes,
+     * every one of those minutes was reported as transcription - the transcript
+     * had been sitting finished and paid for the whole time.
+     *
+     * So: commit the claim, the transcript and the advance first, then analyse
+     * in a second transaction that starts from ANALYZING.
+     *
+     * WHAT THIS COSTS. Before, a worker killed mid-analyze rolled everything
+     * back and the call returned to TRANSCRIBING with its job id, for the
+     * poller to collect again for free. Now the transcript is already
+     * committed, so a death mid-analyze leaves the call in ANALYZING until
+     * `failStalledCalls` lands it on FAILED_ANALYZE, and the retry sweep rewinds
+     * that all the way to UPLOADED - paying the ASR provider a second time for
+     * audio already transcribed. That is a rare crash against a status every
+     * call was reporting wrongly, so it is the right trade, but the honest fix
+     * is for a FAILED_ANALYZE retry to resume from the stored transcript rather
+     * than from the audio. Worth doing; it is not this change.
+     *
+     * The single-flight guard in startAsrPoller stays load-bearing for a
+     * different reason now: the claim clears `asr_job_id`, and this sweep only
+     * selects rows that still have one, so a committed claim is what stops a
+     * second tick from collecting the same job twice.
+     */
+    let claimed = false;
     await withOrgContext(row.org_id, async (client) => {
       await client.query(`SET LOCAL lock_timeout = ${CLAIM_LOCK_TIMEOUT_MS}`);
       let claim;
@@ -125,13 +158,10 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
         throw err;
       }
       if ((claim.rowCount ?? 0) === 0) return;
-      // The claim is committed only when this callback returns, so the row stays
-      // locked for the whole of runPostAsrStages below. That is what makes the
-      // single-flight guard in startAsrPoller load-bearing rather than tidy.
       await client.query("SET LOCAL lock_timeout = 0");
 
       const attempts = await priorAttempts(client, row.id);
-      const helpers = stageHelpers(client, row.id, attempts);
+      const helpers = stageHelpers(client, row.id, attempts, row.org_id);
       try {
         await persistTranscript(client, row.org_id, row.id, outcome.result);
       } catch (err) {
@@ -142,8 +172,35 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
         `call ${row.id}: transcript from ${outcome.result.engine} ` +
           `(${outcome.result.segments.length} segments, ${outcome.result.diarized ? "diarized" : "single speaker"})`,
       );
-      await runPostAsrStages(client, row.org_id, row.id, helpers);
+      // The advance rides in THIS transaction with the transcript it belongs
+      // to. If it does not take, something else moved the call while we held
+      // it - leave the second half alone rather than analysing a call we no
+      // longer own.
+      claimed = await helpers.advance("TRANSCRIBING", "ANALYZING");
     });
+    if (!claimed) continue;
+
+    /*
+     * HAND OFF, don't analyse (A2).
+     *
+     * This used to call runPostAsrStages inline, which made a tick of this
+     * sweep as long as the analysis of every call it collected - minutes each,
+     * strictly one after another, for the whole deployment. Three calls landing
+     * together meant the third waited for the first two, and the sweep's
+     * single-flight guard meant nothing else was collected in the meantime. It
+     * is the reason the pipeline topped out around 17 calls an hour.
+     *
+     * Now the sweep does what a poller should: it collects finished jobs and
+     * publishes. A tick is claims and publishes - seconds - and the analysis is
+     * done by consumers that scale with prefetch.
+     *
+     * The publish is a WAKE-UP, not the record. The transcript and the
+     * TRANSCRIBING → ANALYZING advance are already committed above, so a message
+     * lost between here and the broker costs latency - until failStalledCalls
+     * notices the call sitting in ANALYZING - and never the call itself. That is
+     * the same contract every other queue in this system has.
+     */
+    await publishAnalyze({ callId: row.id, orgId: row.org_id });
     finished++;
   }
 
@@ -156,7 +213,7 @@ async function failCall(row: PendingJob, err: Error): Promise<void> {
     const claim = await client.query(CLAIM_SQL, [row.id, row.asr_job_id]);
     if ((claim.rowCount ?? 0) === 0) return;
     const attempts = await priorAttempts(client, row.id);
-    await stageHelpers(client, row.id, attempts).fail("ASR", err);
+    await stageHelpers(client, row.id, attempts, row.org_id).fail("ASR", err);
   });
 }
 
@@ -165,16 +222,19 @@ export function startAsrPoller(): NodeJS.Timeout {
   /**
    * One sweep at a time.
    *
-   * A tick is not a quick status check - collecting a finished job runs the
-   * whole back half of the pipeline, which on a long call means a dozen chunked
-   * analyze requests and several minutes inside one transaction. A bare
-   * setInterval starts the next tick anyway, and the ticks then fight over the
-   * same row: the first holds its lock while it works, the rest block on it
-   * until Postgres kills them with `canceling statement due to statement
-   * timeout ... while locking tuple`. That failure rolls the claim back, so the
-   * job is picked up again on the next tick and the provider is paid twice for
-   * exactly the same work - which is what it did in production before this
-   * guard existed.
+   * A tick is now a short thing - claim, write the transcript, publish - because
+   * A2 moved the analysis onto its own queue. It was not always: a tick used to
+   * run the whole back half of the pipeline for every job it collected, several
+   * minutes each inside one transaction, which is what made the guard essential.
+   *
+   * It stays, for two reasons that outlived the original one. The provider round
+   * trip per outstanding job is still real work, so a slow provider can still
+   * make a tick outlast the interval. And overlapping ticks fight over the same
+   * row: the first holds its lock while it works, the rest block until Postgres
+   * kills them with `canceling statement due to statement timeout ... while
+   * locking tuple`. That failure rolls the claim back, so the job is collected
+   * again on the next tick and the provider is paid twice for exactly the same
+   * work - which is what it did in production before this guard existed.
    */
   let running = false;
   return setInterval(() => {

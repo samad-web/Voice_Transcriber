@@ -1,10 +1,11 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { consumePipeline } from "@aura/queue";
+import { consumeAnalyze, consumeEnrich, consumePipeline } from "@aura/queue";
 import { warnIfSecretsUnencrypted } from "@aura/db";
 import { WorkerModule } from "./worker.module";
-import { processCall } from "./pipeline/pipeline";
+import { analyzeCall, processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
+import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
 import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
@@ -24,14 +25,38 @@ import { startFunnelReminderSweep } from "./pipeline/funnel-reminders";
 import { startFunnelRetentionSweep } from "./pipeline/funnel-retention";
 import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
+import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
+import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
+import { startLinkedInSweep } from "./pipeline/linkedin-sync";
+import { startChannelWatchdog } from "./pipeline/channel-watchdog";
+import { startSlaBreachSweep } from "./pipeline/sla-breach";
+import { startReportScheduleSweep } from "./pipeline/report-schedules";
+import { startRecycleBinPurge } from "./pipeline/recycle-bin-purge";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
   app.enableShutdownHooks();
   warnIfSecretsUnencrypted("worker");
 
+  // Admission: transcode + the ASR submit. Ends at the submit with a batch
+  // provider, so it is short work that parallelises freely (PIPELINE_PREFETCH).
   await consumePipeline(processCall);
+  // Analysis: the two provider calls and everything downstream (A2). This is
+  // where throughput now comes from - it used to run one call at a time inside
+  // the ASR poller's sweep. Scale it with ANALYZE_PREFETCH, against the
+  // provider's rate limit rather than against CPU.
+  await consumeAnalyze(analyzeCall);
+  // Enrichment (A4): the conversation read, the coaching metrics, and the CRM
+  // send it releases. Off the lead's critical path by construction - a lead is
+  // on the board before a message reaches this queue - so it is the right lane
+  // to let fall behind under load.
+  await consumeEnrich(enrichCall);
+  // And its durable half, because a queue is only a wake-up signal: this finds
+  // calls whose enrichment message was lost, whose worker died mid-read, or
+  // whose retry is now due. Without it a lost message would hold that call's
+  // CRM delivery forever.
+  startEnrichmentSweep();
   startReaper();
   // A6's shadow-read burn-in check: does a lead's dual-written deal/contact
   // still agree with it? Off unless CRM_RECONCILE_ENABLED=true - see the
@@ -131,18 +156,62 @@ async function bootstrap() {
   // off replies/meetings/inactivity that already exist. Pure computation, no
   // sends - see the module header for the safety-rule reasoning.
   startLeadScoringSweep();
+  // The telecaller productivity rollup (migration 0088). Recomputes the last
+  // couple of days from `calls` and `call_analytics` rather than accumulating,
+  // so a late upload or a reprocessed call corrects itself on the next tick
+  // instead of leaving a total nobody can explain. Pure computation, no sends.
+  //
+  // Belongs to the SWEEP half of the worker, not the consumer half: it is a
+  // whole-tenant aggregate on a timer, so a second worker replica running it
+  // concurrently would do the same work twice. Harmless today because the
+  // upsert is idempotent, but it is the reason this must stay on the
+  // single-replica side when the process is split.
+  startTelecallerStatsSweep();
+  // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
+  // threads and writes a scored PROPOSAL a person then approves - it creates no
+  // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only
+  // for orgs that set whatsapp_qualification_enabled, because it sends their
+  // customer conversations to an LLM provider.
+  startWhatsAppQualificationSweep();
+  // The WhatsApp channel watchdog (migrations 0099/0100). A channel with a
+  // refused key, or one whose replies are being discarded for want of a
+  // forward secret, is invisible today until a customer says "I replied days
+  // ago" - so this asks the provider on a timer and raises an in-app
+  // notification for the org's owners and managers. It reads; it sends nothing.
+  startChannelWatchdog();
+  // The response SLA (migration 0109). An open lead nobody has answered within
+  // the org's response_sla_minutes raises one in-app notification per lead for
+  // its telecaller and the owners/managers. Leads from the last week only. It
+  // writes notifications; it sends nothing.
+  startSlaBreachSweep();
   // Meta lead ads pulled through the tenant's MCP server onto the SAME lead
   // board the handset's calls land on. Off unless META_MCP_SYNC_ENABLED is
   // exactly "true" - it makes outbound requests to a tenant-supplied URL.
+  // Scheduled Report Builder deliveries (migration 0077). Renders a published
+  // report, freezes the result, and raises an IN-APP notification for each
+  // recipient - who must still hold a live membership at delivery time. It
+  // sends nothing outward, which is what keeps safety rule 3 true; see the
+  // module header and design doc D6 for the reasoning and the seam.
+  startReportScheduleSweep();
+  startRecycleBinPurge();
   const metaMcp = startMetaMcpSweep();
+  // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
+  // webhook to receive, so it is polled. Does not start at all unless an
+  // approved LinkedIn app's credentials are configured - it says so once at
+  // boot rather than failing per sweep. Also ages out the intake ledger.
+  const linkedin = startLinkedInSweep();
   const asr = sarvamAsrConfigured()
     ? `sarvam:${sarvamAsrModel()} batch`
     : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
   console.log(
-    `Aura worker consuming aura.pipeline (transcode → asr[${asr}] → analyze → crm) ` +
+    `Aura worker consuming aura.pipeline x${process.env.PIPELINE_PREFETCH ?? 8} ` +
+      `(transcode → asr[${asr}]) + aura.analyze x${process.env.ANALYZE_PREFETCH ?? 8} ` +
+      `(extract → lead) + aura.enrich x${process.env.ENRICH_PREFETCH ?? 4} ` +
+      "(intelligence → crm) " +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
       "+ booking confirmations + call reminders + form nudges" +
-      (metaMcp ? " + meta-mcp lead pull" : ""),
+      (metaMcp ? " + meta-mcp lead pull" : "") +
+      (linkedin ? " + linkedin lead pull" : ""),
   );
 }
 

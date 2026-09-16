@@ -1,5 +1,5 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
-import { publishPipeline } from "@aura/queue";
+import { publishAnalyze, publishPipeline } from "@aura/queue";
 import { priorAttempts, stageHelpers } from "./pipeline";
 
 /**
@@ -7,28 +7,60 @@ import { priorAttempts, stageHelpers } from "./pipeline";
  *
  * Same shape as the CRM outbox drain, and for the same reason: the calls table
  * IS the queue. `fail()` in pipeline.ts stamps `next_attempt_at`; this sweep
- * finds whatever is due, rewinds it to UPLOADED and republishes. Nothing lives
- * only in RabbitMQ, so a worker restart, a redeploy or a purged broker cannot
- * strand a call that was waiting to be retried.
+ * finds whatever is due, rewinds it to the earliest stage whose work is actually
+ * missing, and republishes to that stage's queue. Nothing lives only in
+ * RabbitMQ, so a worker restart, a redeploy or a purged broker cannot strand a
+ * call that was waiting to be retried.
  *
  * Runs cross-tenant off the admin pool to find work, then re-enters each org's
  * RLS context to touch its rows - the sweep spans tenants, the writes never do.
  */
 
 /**
- * Rewind is conditional on the row still being FAILED_* with a due
+ * REWIND TO THE STAGE THAT ACTUALLY NEEDS REDOING (A3).
+ *
+ * Rewind stays conditional on the row still being FAILED_* with a due
  * `next_attempt_at`. Two sweepers, or a sweep racing an operator pressing
  * Reprocess, therefore cannot both claim the same call: the first UPDATE clears
  * next_attempt_at and the second matches nothing.
+ *
+ * This used to set every failed call back to UPLOADED, which re-ran the whole
+ * pipeline from the audio - including a second full ASR charge for a call whose
+ * transcript was already written, correct, and paid for. Analyze failures are
+ * the common case (it is the stage with two provider calls in it), so the
+ * commonest retry in the system was also the one that wasted the most money.
+ * The poller's own header has asked for this fix since the transaction split.
+ *
+ * The condition is deliberately on the FAILED STAGE and not merely on a
+ * transcript existing. A reprocess re-runs ASR over audio that already has a
+ * transcript from a previous run; if that re-run fails, "a transcript exists" is
+ * true but stale, and resuming from it would quietly analyse the old one instead
+ * of retrying the transcription the operator asked for. Only a failure at or
+ * after ANALYZE may resume.
+ *
+ * FAILED_CRM resumes from ANALYZING too. That re-runs analyze, which is not
+ * free, but it is the only in-flight state above ANALYZING and it is reached
+ * solely by `failStalledCalls` - a worker that died mid-SYNCING - never by a
+ * delivery failure, which has its own outbox and must not come through here.
+ *
+ * Returning the status is what tells the caller which queue to wake: the two
+ * stages are consumed separately since A2, and publishing a resumed call to the
+ * admission queue would have `processCall` skip it for not being in UPLOADED.
  */
 const CLAIM_SQL = `
-  UPDATE calls
-     SET status = 'UPLOADED', next_attempt_at = NULL
-   WHERE id = $1
-     AND status LIKE 'FAILED_%'
-     AND next_attempt_at IS NOT NULL
-     AND next_attempt_at <= now()
-  RETURNING id`;
+  UPDATE calls c
+     SET status = CASE
+           WHEN c.status IN ('FAILED_ANALYZE', 'FAILED_CRM')
+            AND EXISTS (SELECT 1 FROM transcripts t WHERE t.call_id = c.id)
+           THEN 'ANALYZING'
+           ELSE 'UPLOADED'
+         END,
+         next_attempt_at = NULL
+   WHERE c.id = $1
+     AND c.status LIKE 'FAILED_%'
+     AND c.next_attempt_at IS NOT NULL
+     AND c.next_attempt_at <= now()
+  RETURNING c.status`;
 
 export async function retryDueCalls(limit = 200): Promise<number> {
   const { rows: due } = await getAdminPool().query<{ id: string; org_id: string }>(
@@ -56,16 +88,20 @@ export async function retryDueCalls(limit = 200): Promise<number> {
     // a successful claim means a call is never enqueued twice; if the publish
     // itself throws, the call is left in UPLOADED and the stuck-call sweep
     // below picks it up rather than it being lost.
-    const claimed: string[] = [];
+    const claimed: Array<{ callId: string; status: string }> = [];
     await withOrgContext(orgId, async (client) => {
       for (const callId of callIds) {
-        const res = await client.query(CLAIM_SQL, [callId]);
-        if ((res.rowCount ?? 0) > 0) claimed.push(callId);
+        const res = await client.query<{ status: string }>(CLAIM_SQL, [callId]);
+        if ((res.rowCount ?? 0) > 0) claimed.push({ callId, status: res.rows[0]!.status });
       }
     });
 
-    for (const callId of claimed) {
-      await publishPipeline({ callId, orgId });
+    for (const { callId, status } of claimed) {
+      // Wake the queue that owns the stage this call was rewound TO. A resumed
+      // call published to the admission queue would be skipped for not being in
+      // UPLOADED, and would then sit in ANALYZING until the stall sweep noticed.
+      if (status === "ANALYZING") await publishAnalyze({ callId, orgId });
+      else await publishPipeline({ callId, orgId });
       requeued++;
     }
   }
@@ -224,7 +260,7 @@ export async function failStalledCalls(limit = 200): Promise<number> {
         // attempt counter, the backoff and `next_attempt_at` all behave
         // identically, which is what puts the call back in front of
         // retryDueCalls on the next tick.
-        await stageHelpers(client, row.id, attempts).fail(
+        await stageHelpers(client, row.id, attempts, row.org_id).fail(
           stage,
           new Error(
             `stalled in ${row.status} for ${minutes} minutes - the run that claimed it never finished`,
@@ -236,6 +272,83 @@ export async function failStalledCalls(limit = 200): Promise<number> {
   }
 
   if (failed > 0) console.log(`pipeline stall sweep: failed ${failed} stranded call(s)`);
+  return failed;
+}
+
+/**
+ * How long a call may sit in AWAITING_AUDIO before its upload is declared
+ * never coming.
+ *
+ * There was no sweeper at all for this state until now (calls.controller.ts,
+ * migration 0019 both flag the gap) - a call whose upload was interrupted and
+ * then abandoned (handset offline for good, local file/DB row wiped, app
+ * uninstalled) sat here forever, indistinguishable from one still mid-upload.
+ * Generous on purpose: as of 0101 the client's own retry resumes the SAME
+ * call via its idempotency key, and it fires on every new call the device
+ * makes (UploadScheduler.enqueue drains the whole pending/failed queue), not
+ * on a fixed schedule - a rep who goes quiet for a few hours must not have a
+ * perfectly retriable upload declared dead under them.
+ */
+const AWAITING_AUDIO_STALL_MS = Number(
+  process.env.PIPELINE_AWAITING_AUDIO_STALL_MS ?? 6 * 60 * 60 * 1000,
+);
+
+const CLAIM_AWAITING_AUDIO_SQL = `
+  UPDATE calls
+     SET status = 'FAILED_UPLOAD',
+         error_message = $2,
+         updated_at = now()
+   WHERE id = $1
+     AND status = 'AWAITING_AUDIO'
+     AND created_at < now() - make_interval(secs => $3)
+  RETURNING id`;
+
+/**
+ * Stranded AWAITING_AUDIO rows: audio never arrived, and nothing left to wait
+ * for. FAILED_UPLOAD is deliberately given no `next_attempt_at` - unlike every
+ * other FAILED_* state, retryDueCalls resuming this one from the server side
+ * cannot help, because there is no audio in S3 to resume from. The only way a
+ * call like this ever completes is the handset uploading again from scratch,
+ * which - since it starts a fresh POST /v1/calls - lands as a brand new row,
+ * not a change to this one.
+ *
+ * `created_at`, not `updated_at`: a call that keeps getting retried under 0101
+ * reuses this same row without moving its status, so measuring from creation
+ * is what makes "it has been in this state for N hours" mean what it says
+ * regardless of how many failed attempts happened in between.
+ */
+export async function failStrandedAwaitingAudio(limit = 200): Promise<number> {
+  const seconds = Math.round(AWAITING_AUDIO_STALL_MS / 1000);
+  const { rows: stranded } = await getAdminPool().query<{ id: string; org_id: string }>(
+    `SELECT id, org_id
+       FROM calls
+      WHERE status = 'AWAITING_AUDIO'
+        AND created_at < now() - make_interval(secs => $1)
+      ORDER BY created_at
+      LIMIT $2`,
+    [seconds, limit],
+  );
+  if (stranded.length === 0) return 0;
+
+  const byOrg = new Map<string, string[]>();
+  for (const row of stranded) {
+    const list = byOrg.get(row.org_id) ?? [];
+    list.push(row.id);
+    byOrg.set(row.org_id, list);
+  }
+
+  const message = `no audio received within ${Math.round(seconds / 3600)}h of the call being created`;
+  let failed = 0;
+  for (const [orgId, callIds] of byOrg) {
+    await withOrgContext(orgId, async (client) => {
+      for (const callId of callIds) {
+        const res = await client.query(CLAIM_AWAITING_AUDIO_SQL, [callId, message, seconds]);
+        if ((res.rowCount ?? 0) > 0) failed++;
+      }
+    });
+  }
+
+  if (failed > 0) console.log(`pipeline retry: failed ${failed} stranded awaiting-audio call(s)`);
   return failed;
 }
 
@@ -262,5 +375,8 @@ export function startStalledCallSweeper(): NodeJS.Timeout {
   const interval = Number(process.env.PIPELINE_STALL_INTERVAL_MS ?? 5 * 60 * 1000);
   return setInterval(() => {
     void failStalledCalls().catch((err) => console.error("pipeline stall sweep:", err));
+    void failStrandedAwaitingAudio().catch((err) =>
+      console.error("pipeline awaiting-audio sweep:", err),
+    );
   }, interval);
 }

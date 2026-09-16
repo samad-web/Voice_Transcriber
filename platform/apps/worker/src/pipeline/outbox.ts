@@ -49,6 +49,7 @@ export async function enqueueDispatch(
   const { rows: integrations } = await client.query<CrmIntegration>(
     `SELECT ${INTEGRATION_COLUMNS} FROM crm_integrations ci
       WHERE ci.status = 'connected'
+        AND ci.deleted_at IS NULL
         AND ci.workspace_id = (SELECT workspace_id FROM calls WHERE id = $1)
         AND ($2::boolean OR NOT ci.only_qualified)`,
     [callId, qualified],
@@ -189,6 +190,7 @@ export async function drainOutbox(intervalMs = 15_000): Promise<number> {
         AND l.next_attempt_at IS NOT NULL
         AND l.next_attempt_at <= now()
         AND i.status = 'connected'
+        AND i.deleted_at IS NULL
       ORDER BY l.next_attempt_at
       LIMIT 500`,
   );
@@ -213,7 +215,8 @@ export async function drainOutbox(intervalMs = 15_000): Promise<number> {
         const {
           rows: [integration],
         } = await client.query<CrmIntegration>(
-          `SELECT ${INTEGRATION_COLUMNS} FROM crm_integrations WHERE id = $1`,
+          `SELECT ${INTEGRATION_COLUMNS} FROM crm_integrations
+            WHERE id = $1 AND deleted_at IS NULL`,
           [row.integration_id],
         );
         if (!integration) continue;

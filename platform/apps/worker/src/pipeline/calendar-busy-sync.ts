@@ -249,7 +249,13 @@ export function startCalendarBusySync(): NodeJS.Timeout | null {
 
   console.log("calendar busy sync: ON - Google busy times close matching slots every 10 minutes");
   void run();
-  const timer = setInterval(run, INTERVAL_MS);
+  // `void run()`, not a bare `run` - `setInterval` wants `() => void` and `run`
+  // is async, which is what `no-misused-promises` was flagging. Harmless here
+  // only because `run` catches everything itself; the moment somebody removes
+  // that try/catch a rejected sweep becomes an unhandled rejection that takes
+  // the worker down. The explicit `void` is also the idiom every other sweep in
+  // this directory already uses, and the one the line above uses.
+  const timer = setInterval(() => void run(), INTERVAL_MS);
   timer.unref?.();
   return timer;
 }

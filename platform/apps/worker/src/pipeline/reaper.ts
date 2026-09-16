@@ -97,7 +97,18 @@ export async function reapExpired(): Promise<number> {
           WHERE c.status <> 'merged'
             AND c.last_activity_at < now() - make_interval(days => $1)
             AND NOT EXISTS (SELECT 1 FROM deals WHERE contact_id = c.id)
-            AND NOT EXISTS (SELECT 1 FROM interactions WHERE contact_id = c.id AND call_id IS NULL)
+            -- A person's record of them (a note, an email, a call someone
+            -- logged by hand) keeps the contact; a RECORDED call row does not.
+            -- Keyed on type plus the hand-logged marker, never on
+            -- call_id IS NULL: interactions.call_id is ON DELETE SET NULL, so
+            -- once this very sweep removes an expired call its row would read
+            -- as hand-logged and keep the contact alive forever. The marker is
+            -- in metadata rather than actor_user_id, which is SET NULL too.
+            AND NOT EXISTS (
+              SELECT 1 FROM interactions
+               WHERE contact_id = c.id
+                 AND (type <> 'call' OR metadata @> '{"logged_by_hand": true}')
+            )
             AND NOT EXISTS (SELECT 1 FROM tasks WHERE contact_id = c.id AND deal_id IS NULL)
          RETURNING c.id`,
         [org.retention_days],

@@ -77,6 +77,13 @@ interface JoinedRow {
   contact_facts: Record<string, unknown> | null;
   contact_call_count: number | null;
   contact_last_activity_at: Date | null;
+  /**
+   * ANY live contact for this lead - by `source_lead_id`, or by the phone hash
+   * the projection dedupes on - found without going through the deal. The
+   * contact above is the deal's; this one exists so "this lead never became a
+   * contact" can be reported even when there is no deal to look through.
+   */
+  lead_contact_id?: string | null;
 }
 
 interface Finding {
@@ -102,12 +109,27 @@ function sameValue(a: unknown, b: unknown): boolean {
 function findMismatches(row: JoinedRow, includeStage: boolean): Finding[] {
   const findings: Finding[] = [];
 
+  // The contact question is asked FIRST and on its own. It used to be reached
+  // only through the deal, after an early return for a lead with no deal - so
+  // the exact symptom "this lead never became a contact" could not be reported
+  // for the leads most likely to have it (doc 23, F3).
+  if (!row.contact_id && !row.lead_contact_id) {
+    findings.push({ dealId: row.deal_id, contactId: null, field: "contact_missing", leadValue: row.lead_id, crmValue: null });
+  }
+
   if (!row.deal_id) {
     findings.push({ dealId: null, contactId: null, field: "deal_missing", leadValue: row.lead_id, crmValue: null });
     return findings; // nothing else on the deal side to compare without one
   }
-  if (!row.contact_id) {
-    findings.push({ dealId: row.deal_id, contactId: null, field: "contact_missing", leadValue: row.lead_id, crmValue: null });
+  if (!row.contact_id && row.lead_contact_id) {
+    // The person exists, the deal just is not attached to them.
+    findings.push({
+      dealId: row.deal_id,
+      contactId: row.lead_contact_id,
+      field: "deal.contact_unlinked",
+      leadValue: row.lead_contact_id,
+      crmValue: null,
+    });
   }
 
   if (!sameValue(row.lead_title, row.deal_name)) {
@@ -239,30 +261,53 @@ async function logIfChanged(client: Queryable, orgId: string, leadId: string, f:
  */
 export async function reconcileOrg(client: Queryable, orgId: string): Promise<number> {
   const includeStage = includeStageEnabled();
-  const { rows } = await client.query<JoinedRow>(
-    `SELECT
-        l.id AS lead_id, l.title AS lead_title, l.value_num AS lead_value_num,
-        l.facts AS lead_facts, l.call_count AS lead_call_count,
-        l.last_activity_at AS lead_last_activity_at, l.stage AS lead_stage, l.status AS lead_status,
-        d.id AS deal_id, d.name AS deal_name, d.amount AS deal_amount, d.facts AS deal_facts,
-        d.call_count AS deal_call_count, d.last_activity_at AS deal_last_activity_at,
-        d.stage AS deal_stage, d.status AS deal_status,
-        c.id AS contact_id, c.display_name AS contact_name, c.facts AS contact_facts,
-        c.call_count AS contact_call_count, c.last_activity_at AS contact_last_activity_at
-      FROM leads l
-      LEFT JOIN deals d ON d.source_lead_id = l.id
-      LEFT JOIN contacts c ON c.id = d.contact_id
-     WHERE l.last_activity_at > now() - make_interval(days => $1)
-     ORDER BY l.last_activity_at DESC
-     LIMIT $2`,
-    [WINDOW_DAYS, BATCH],
-  );
-
   let logged = 0;
-  for (const row of rows) {
-    for (const finding of findMismatches(row, includeStage)) {
-      if (await logIfChanged(client, orgId, row.lead_id, finding)) logged++;
+
+  // Keyset pages of BATCH, walked to the end of the window. It used to be one
+  // LIMIT with no cursor, so an org with more than BATCH leads active inside
+  // the window never had the rest checked, and nothing said so (doc 23, F3).
+  let cursor: { at: Date; id: string } | null = null;
+  for (;;) {
+    const page: { rows: JoinedRow[] } = await client.query<JoinedRow>(
+      `SELECT
+          l.id AS lead_id, l.title AS lead_title, l.value_num AS lead_value_num,
+          l.facts AS lead_facts, l.call_count AS lead_call_count,
+          l.last_activity_at AS lead_last_activity_at, l.stage AS lead_stage, l.status AS lead_status,
+          d.id AS deal_id, d.name AS deal_name, d.amount AS deal_amount, d.facts AS deal_facts,
+          d.call_count AS deal_call_count, d.last_activity_at AS deal_last_activity_at,
+          d.stage AS deal_stage, d.status AS deal_status,
+          c.id AS contact_id, c.display_name AS contact_name, c.facts AS contact_facts,
+          c.call_count AS contact_call_count, c.last_activity_at AS contact_last_activity_at,
+          lc.id AS lead_contact_id
+        FROM leads l
+        LEFT JOIN deals d ON d.source_lead_id = l.id
+        LEFT JOIN contacts c ON c.id = d.contact_id
+        -- The lead's contact found WITHOUT the deal: the one it created, or the
+        -- one its number was deduped onto.
+        LEFT JOIN LATERAL (
+          SELECT k.id FROM contacts k
+           WHERE k.status <> 'merged'
+             AND (k.source_lead_id = l.id
+                  OR (l.contact_number_hash IS NOT NULL AND k.phone_hash = l.contact_number_hash))
+           LIMIT 1
+        ) lc ON true
+       WHERE l.last_activity_at > now() - make_interval(days => $1)
+         AND ($3::timestamptz IS NULL OR (l.last_activity_at, l.id) < ($3::timestamptz, $4::uuid))
+       ORDER BY l.last_activity_at DESC, l.id DESC
+       LIMIT $2`,
+      [WINDOW_DAYS, BATCH, cursor?.at ?? null, cursor?.id ?? null],
+    );
+    const rows: JoinedRow[] = page.rows;
+
+    for (const row of rows) {
+      for (const finding of findMismatches(row, includeStage)) {
+        if (await logIfChanged(client, orgId, row.lead_id, finding)) logged++;
+      }
     }
+
+    if (rows.length < BATCH) break;
+    const last: JoinedRow = rows[rows.length - 1];
+    cursor = { at: last.lead_last_activity_at, id: last.lead_id };
   }
   return logged;
 }

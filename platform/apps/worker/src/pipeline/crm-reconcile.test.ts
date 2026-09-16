@@ -175,3 +175,37 @@ describe("reconcileOrg", () => {
     expect(logged.filter((l) => l.field === "deal.name")).toHaveLength(2);
   });
 });
+
+describe("reconcileOrg - the contact side on its own (doc 23, F3)", () => {
+  const NO_DEAL = {
+    ...MATCHING_ROW,
+    deal_id: null,
+    deal_name: null,
+    contact_id: null,
+    contact_name: null,
+  };
+
+  it("flags a lead that never became a contact, even when it has no deal to look through", async () => {
+    // Before: the early return for a missing deal meant this lead reported
+    // deal_missing only, and "no contact" could not be seen at all.
+    const { client, logged } = fakeReconcileDb([{ ...NO_DEAL, lead_contact_id: null }]);
+    await reconcileOrg(client, "org-1");
+    expect(logged.map((l) => l.field)).toEqual(["contact_missing", "deal_missing"]);
+  });
+
+  it("does not call a contact missing when the lead's number was deduped onto one", async () => {
+    const { client, logged } = fakeReconcileDb([{ ...NO_DEAL, lead_contact_id: "contact-9" }]);
+    await reconcileOrg(client, "org-1");
+    expect(logged.map((l) => l.field)).toEqual(["deal_missing"]);
+  });
+
+  it("reports a deal not attached to a contact the lead does have", async () => {
+    const { client, logged } = fakeReconcileDb([
+      { ...MATCHING_ROW, contact_id: null, contact_name: null, lead_contact_id: "contact-9" },
+    ]);
+    await reconcileOrg(client, "org-1");
+    const fields = logged.map((l) => l.field);
+    expect(fields).toContain("deal.contact_unlinked");
+    expect(fields).not.toContain("contact_missing");
+  });
+});
