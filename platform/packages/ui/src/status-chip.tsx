@@ -37,7 +37,7 @@ const TONES = {
     glyph: <circle cx="5" cy="5" r="3.5" fill="currentColor" />,
   },
   muted: {
-    className: "border-border bg-surface-hover text-text",
+    className: "border-border-strong bg-surface-hover text-text",
     // Bar - "neutral / informational".
     glyph: <rect x="1.5" y="4" width="7" height="2" rx="1" fill="currentColor" />,
   },

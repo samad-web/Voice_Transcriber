@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { AlertTriangle, Copy, Trash2, UserPlus } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
+import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
 import {
   createOwnerAction,
@@ -103,7 +104,7 @@ export function OwnerAccounts({
       <div className="flex items-start justify-between gap-3">
         <div>
           <MonoLabel>Owner Logins</MonoLabel>
-          <p className="text-xs text-neutral-500 font-sans mt-1.5 leading-relaxed max-w-md">
+          <p className="text-xs text-text-muted font-sans mt-1.5 leading-relaxed max-w-md">
             A sign-in scoped to this instance only. Owners land on their own
             dashboard, lead board and lead list - never the operator console.
           </p>
@@ -125,19 +126,19 @@ export function OwnerAccounts({
       ) : null}
 
       {owners.length > 0 ? (
-        <div className="divide-y-2 divide-neutral-100 border-2 border-neutral-200">
+        <div className="divide-y-2 divide-border border-2 border-border">
           {owners.map((owner) => (
             <div
               key={owner.userId}
               className="px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap"
             >
               <div className="min-w-0">
-                <span className="font-display font-bold text-black block truncate">
+                <span className="font-display font-bold text-text block truncate">
                   {owner.name || owner.email}
                 </span>
-                <span className="text-[10px] font-mono text-neutral-400 break-all">
+                <span className="text-[10px] font-mono text-text-muted break-all">
                   {owner.name ? `${owner.email} · ` : ""}
-                  added {new Date(owner.createdAt).toLocaleDateString()}
+                  added <LocalTime iso={owner.createdAt} mode="date" />
                 </span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -147,7 +148,7 @@ export function OwnerAccounts({
                   type="button"
                   disabled={pending || !owner.hasLogin}
                   onClick={() => reset(owner.userId, owner.email)}
-                  className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-black hover:bg-black hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black"
+                  className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-border-strong hover:bg-black hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black"
                 >
                   Reset password
                 </button>
@@ -166,7 +167,7 @@ export function OwnerAccounts({
                     disabled={pending}
                     onClick={() => setConfirming(owner.userId)}
                     aria-label={`Revoke ${owner.email}`}
-                    className="p-1.5 border-2 border-black text-black hover:bg-red-500 hover:text-white hover:border-red-500"
+                    className="p-1.5 border-2 border-border-strong text-text hover:bg-red-500 hover:text-white hover:border-red-500"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -176,15 +177,15 @@ export function OwnerAccounts({
           ))}
         </div>
       ) : (
-        <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-6 text-center border-2 border-neutral-200">
+        <p className="text-xs font-mono font-bold uppercase text-text-muted py-6 text-center border-2 border-border">
           No owner has access yet
         </p>
       )}
 
-      <div className="space-y-3 pt-2 border-t-2 border-neutral-200">
+      <div className="space-y-3 pt-2 border-t-2 border-border">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
+            <label className="text-xs font-mono text-text uppercase tracking-wider font-bold block">
               Owner Email
             </label>
             <input
@@ -196,8 +197,8 @@ export function OwnerAccounts({
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-              Name <span className="text-neutral-400">(optional)</span>
+            <label className="text-xs font-mono text-text uppercase tracking-wider font-bold block">
+              Name <span className="text-text-muted">(optional)</span>
             </label>
             <input
               className={inputClass}
@@ -208,12 +209,12 @@ export function OwnerAccounts({
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-xs font-sans text-neutral-600">
+        <label className="flex items-center gap-2 text-xs font-sans text-text-muted">
           <input
             type="checkbox"
             checked={canListen}
             onChange={(e) => setCanListen(e.target.checked)}
-            className="w-4 h-4 border-2 border-black accent-black"
+            className="w-4 h-4 border-2 border-border-strong accent-black"
           />
           May listen to call recordings
         </label>
@@ -234,7 +235,7 @@ export function OwnerAccounts({
       ) : null}
 
       {result?.linkedExisting ? (
-        <p className="text-xs font-mono font-bold uppercase text-neutral-500 border-2 border-black p-3">
+        <p className="text-xs font-mono font-bold uppercase text-text-muted border-2 border-border p-3">
           {result.forEmail} already had an Aura login - it was linked to this
           instance and keeps its existing password.
         </p>

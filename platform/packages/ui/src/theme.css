@@ -526,6 +526,48 @@
   }
 
   /*
+   * `color-scheme` above gets native form controls and the page canvas onto
+   * the right mode, but not the scrollbar's actual pixels: on Windows,
+   * Chromium's dark-mode scrollbar is still a plain grey block with square
+   * arrow buttons at each end - the one piece of chrome that reads as "the OS
+   * bolted onto the product" rather than part of it, on the one element
+   * (the sidebar rail) that's on screen in every single view. Styled here,
+   * once, so it's consistent everywhere something scrolls (the rail, a
+   * `Table`'s horizontal wrapper, a `Dialog`, a `textarea`) without any of
+   * them opting in individually.
+   *
+   * `border-border-strong`, not `border-border`, for the thumb - the same
+   * WCAG-tuned token `Input`/`Select` use for their edge (control-styles.ts),
+   * because a scrollbar thumb is itself an operable control, not decoration.
+   * Track is transparent on purpose: it should read as part of whatever
+   * surface it's cut into (`bg-surface`, `bg-bg`, a table's wrapper) rather
+   * than adding a second stripe of colour next to it.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-text-subtle);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /*
    * One global honouring of prefers-reduced-motion. Kill the durations rather
    * than the transitions - components read these vars, so a reduced-motion user
    * gets the same end state instantly instead of a half-animated one, and no

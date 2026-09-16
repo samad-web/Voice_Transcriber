@@ -20,9 +20,10 @@ export interface TenantChip {
  * Which tenant you are in, always on screen, and the way to change it.
  *
  * "Unmistakable" is carried by three channels at once, never colour alone:
- * the tenant's own logo or monogram, its name in full, and its accent (a
- * swatch here and the hairline across the top of the header - see
- * lib/tenant-accent.ts for why that accent can never be a state colour).
+ * the tenant's own logo or monogram, its name in full, and its accent (the
+ * hairline across the top of the header, plus a swatch here when the mark
+ * beside it doesn't already show that colour - see lib/tenant-accent.ts for
+ * why that accent can never be a state colour).
  *
  * With one membership it is a static badge: a dropdown with nothing to choose
  * is furniture. With several it opens a list, and choosing one posts
@@ -75,11 +76,13 @@ export function TenantContextSwitcher({
 
   const badge = (
     <>
-      <span
-        aria-hidden="true"
-        className="h-7 w-1 shrink-0 rounded-full"
-        style={{ backgroundColor: current.accent.swatch }}
-      />
+      {showsSwatch(current) ? (
+        <span
+          aria-hidden="true"
+          className="h-7 w-1 shrink-0 rounded-full"
+          style={{ backgroundColor: current.accent.swatch }}
+        />
+      ) : null}
       <TenantMark tenant={current} size="md" />
       <span className="min-w-0 text-left">
         <span className="block max-w-[11rem] truncate text-sm leading-tight font-semibold text-text sm:max-w-[14rem]">
@@ -130,11 +133,15 @@ export function TenantContextSwitcher({
                     onClick={() => choose(tenant.orgId)}
                     className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-hover disabled:cursor-default disabled:hover:bg-transparent"
                   >
-                    <span
-                      aria-hidden="true"
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: tenant.accent.swatch }}
-                    />
+                    {showsSwatch(tenant) ? (
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: tenant.accent.swatch }}
+                      />
+                    ) : (
+                      <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0" />
+                    )}
                     <TenantMark tenant={tenant} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-text">{tenant.name}</span>
@@ -154,6 +161,11 @@ export function TenantContextSwitcher({
       ) : null}
     </div>
   );
+}
+
+/** An unbranded monogram tile is already filled with the swatch's ramp, so a swatch beside it only repeats it. */
+function showsSwatch(tenant: TenantChip): boolean {
+  return Boolean(tenant.logoUrl) || tenant.accent.branded;
 }
 
 function TenantMark({ tenant, size }: { tenant: TenantChip; size: "sm" | "md" }) {

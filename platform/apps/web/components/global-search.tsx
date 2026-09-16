@@ -174,7 +174,7 @@ export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: 
         onKeyDown={onKeyDown}
         autoComplete="off"
         spellCheck={false}
-        className="h-9 w-full rounded-full border border-border-strong bg-surface pr-16 pl-9 text-sm text-text transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle [&::-webkit-search-cancel-button]:hidden"
+        className="h-9 w-full rounded-sm border border-border-strong bg-surface pr-16 pl-9 text-sm text-text transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle [&::-webkit-search-cancel-button]:hidden"
       />
       <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-1">
         {status === "loading" ? (
