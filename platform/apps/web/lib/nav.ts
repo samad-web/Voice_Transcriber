@@ -550,21 +550,6 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
-    href: "/owner/handsets",
-    label: "Handsets",
-    icon: Smartphone,
-    title: "Handsets",
-    context: "Settings",
-    // Read-only here on purpose: provisioning a key, remote-wiping or
-    // removing a phone from the fleet stays an operator action on the other
-    // console (Instances -> <instance> -> Devices), the same asymmetry the
-    // rest of Settings already draws (Transcription lets an owner edit their
-    // own glossary; nothing here lets them re-enroll a handset). Owner and
-    // manager, matching Transcription and Team - the two personas who run
-    // the floor, not the two who sell on it.
-    ownerRoles: ["owner", "manager"],
-  },
-  {
     href: "/owner/integrations",
     label: "Integrations",
     icon: Plug,
@@ -724,7 +709,6 @@ export type NavSection = (typeof OWNER_NAV_SECTIONS)[number]["key"];
 const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/calls/triage": "conversations",
   "/owner/features": "workspace",
-  "/owner/handsets": "workspace",
   "/owner/integrations": "workspace",
   "/owner/staff": "workspace",
   "/owner/superfone": "conversations",

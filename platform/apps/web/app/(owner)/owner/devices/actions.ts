@@ -35,6 +35,30 @@ export interface DevicesResponse {
   canRevoke: boolean;
 }
 
+/** How long a handset has been quiet. Bands, not a timestamp - the question is
+ *  "is this phone still with us", and an exact minute count does not help. */
+export type DeviceStaleness = "never" | "<1h" | "1-24h" | "1-7d" | "stale";
+
+/**
+ * A row of `GET /v1/devices/fleet-health`, narrowed to what this page draws.
+ *
+ * The endpoint also returns `instanceId` and a `health` object (battery, free
+ * storage, pending uploads, failure counts). Both are deliberately left off:
+ * the reasons derived from them already arrive in `attentionReasons`, and
+ * restating the raw numbers here would put a second, unexplained set of
+ * thresholds in the browser next to the ones devices.controller.ts documents.
+ */
+export interface DeviceHealth {
+  deviceId: string;
+  staleness: DeviceStaleness;
+  needsAttention: boolean;
+  attentionReasons: string[];
+}
+
+export interface FleetHealthResponse {
+  devices: DeviceHealth[];
+}
+
 /** Shown once. The raw token exists only in this response - only its hash is stored. */
 export interface PairingToken {
   instanceId: string;

@@ -702,13 +702,24 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
-  it("shows Handsets to owner and manager alone, matching Transcription and Team", () => {
-    // The fleet is read-only here (see nav.ts's comment on the item) - no API
-    // guard to mirror, so this test IS the contract until one exists.
-    expect(nav("owner")).toContain("/owner/handsets");
-    expect(nav("manager")).toContain("/owner/handsets");
-    for (const role of ["telecaller", "sales", "marketing"] as const) {
-      expect([role, nav(role).includes("/owner/handsets")]).toEqual([role, false]);
+  it("shows Handsets to every persona, and offers it exactly once", () => {
+    // Two entries once carried this label - a read-only fleet view at
+    // /owner/handsets and the pairing surface at /owner/devices - and the rail
+    // showed both, in the same section, under the same name. /owner/devices
+    // won; /owner/handsets is now a redirect and must not be in the rail.
+    expect(nav("owner")).toContain("/owner/devices");
+    expect(nav("owner")).not.toContain("/owner/handsets");
+    expect(OWNER_NAV_ITEMS.filter((i) => i.label === "Handsets")).toHaveLength(1);
+
+    // Every persona, deliberately - the surviving page is NOT read-only, and
+    // that is precisely why the restriction lifted. Pairing and retiring are
+    // per-person capabilities the API decides and returns on the payload
+    // (`canPair`/`canRevoke`), so the rail no longer has to guess: a telecaller
+    // checking whether their own phone has checked in is support-desk
+    // information, and hiding the page would also hide it from a telecaller an
+    // owner had deliberately granted pairing to.
+    for (const role of ["owner", "manager", "telecaller", "sales", "marketing"] as const) {
+      expect([role, nav(role).includes("/owner/devices")]).toEqual([role, true]);
     }
   });
 

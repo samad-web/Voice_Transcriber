@@ -11,6 +11,7 @@ import {
   MonoLabel,
   Select,
   StatusChip,
+  Tooltip,
   useAlert,
   useConfirm,
   useToast,
@@ -20,10 +21,37 @@ import {
   mintPairingTokenAction,
   refreshDevicesAction,
   revokeDeviceAction,
+  type DeviceHealth,
+  type DeviceStaleness,
   type DevicesResponse,
   type OwnerDevice,
   type PairingToken,
 } from "./actions";
+
+/**
+ * How long since the handset was heard from, in words.
+ *
+ * Carried over from the retired `/owner/handsets` page along with the tones
+ * below, so retiring it lost nothing. "Never seen" is `outline` rather than a
+ * state hue on purpose: a phone paired ten seconds ago has not checked in
+ * either, and dressing that as a fault would make the first thing a new tenant
+ * sees look broken.
+ */
+const HEALTH_LABEL: Record<DeviceStaleness, string> = {
+  "<1h": "Active <1h",
+  "1-24h": "Seen 1-24h ago",
+  "1-7d": "Seen 1-7d ago",
+  stale: "Stale 7d+",
+  never: "Never seen",
+};
+
+const HEALTH_TONE = {
+  "<1h": "solid",
+  "1-24h": "muted",
+  "1-7d": "muted",
+  stale: "danger",
+  never: "outline",
+} as const satisfies Record<DeviceStaleness, string>;
 
 /**
  * The client's own handsets (migration 0107).
@@ -43,7 +71,16 @@ import {
  * component only renders what it was told. A client that decided for itself
  * would be a second copy of the rule, and it would be the one that drifts.
  */
-export function DevicesClient({ data }: { data: DevicesResponse }) {
+export function DevicesClient({
+  data,
+  health,
+}: {
+  data: DevicesResponse;
+  /** Empty when `/v1/devices/fleet-health` did not answer - the chips are then
+   *  simply absent, which is why this is a plain array and not optional. */
+  health: DeviceHealth[];
+}) {
+  const healthByDevice = new Map(health.map((h) => [h.deviceId, h]));
   const [token, setToken] = useState<PairingToken | null>(null);
   const [instanceId, setInstanceId] = useState(data.instances[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
@@ -145,7 +182,23 @@ export function DevicesClient({ data }: { data: DevicesResponse }) {
         </Card>
       ) : (
         <Card>
-          <MonoLabel>Handsets</MonoLabel>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <MonoLabel>Handsets</MonoLabel>
+            {/* The one number worth putting above the fold, and only when it is
+                non-zero: a quiet fleet should look quiet, not wear a green
+                "0 need attention" badge competing with the rows below it. */}
+            {(() => {
+              const attention = data.devices.filter(
+                (d) => healthByDevice.get(d.id)?.needsAttention,
+              ).length;
+              if (attention === 0) return null;
+              return (
+                <span className="text-xs text-text-muted tabular-nums">
+                  {attention} of {data.devices.length} need attention
+                </span>
+              );
+            })()}
+          </div>
           <ul className="mt-4 divide-y divide-border">
             {data.devices.map((device) => (
               <li key={device.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
@@ -160,6 +213,34 @@ export function DevicesClient({ data }: { data: DevicesResponse }) {
                     {device.telecallerName ? (
                       <StatusChip tone="muted">{device.telecallerName}</StatusChip>
                     ) : null}
+                    {(() => {
+                      const h = healthByDevice.get(device.id);
+                      // No health row means the endpoint did not answer, not
+                      // that the phone is fine - so show nothing rather than
+                      // inventing reassurance.
+                      if (!h) return null;
+                      return (
+                        <Tooltip
+                          content={
+                            h.needsAttention
+                              ? h.attentionReasons.join(", ")
+                              : "No issues reported"
+                          }
+                        >
+                          {/* Tooltip's trigger must itself be focusable (see
+                              Tooltip's own doc comment) - a bare StatusChip
+                              <span> would never show these reasons to somebody
+                              navigating by keyboard. */}
+                          <button type="button" className="cursor-default rounded-full">
+                            <StatusChip
+                              tone={h.needsAttention ? "danger" : HEALTH_TONE[h.staleness]}
+                            >
+                              {HEALTH_LABEL[h.staleness]}
+                            </StatusChip>
+                          </button>
+                        </Tooltip>
+                      );
+                    })()}
                   </div>
                   <p className="mt-0.5 text-xs text-text-muted">
                     {device.instanceName}

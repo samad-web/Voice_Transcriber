@@ -461,10 +461,26 @@ export const FEATURES: FeatureSpec[] = [
   {
     key: "handsets",
     label: "Handsets",
-    blurb: "The phones in the fleet and what each one last reported.",
+    blurb: "The phones in the fleet, what each one last reported, and pairing a new one.",
     module: "aura",
     group: "workspace",
-    hrefs: ["/owner/handsets"],
+    // `/owner/devices`, not `/owner/handsets`. Both existed for one release -
+    // a read-only fleet view here and the pairing surface migration 0107 gave
+    // the client - and the rail carried BOTH under the label "Handsets", which
+    // is the duplicate this entry resolves. `/owner/devices` won because it is
+    // the superset (it shows the fleet AND pairs), because the setup checklist
+    // already sends people there (onboarding.ts), and because
+    // operator-only.guard.ts names it as the client's pairing route. The old
+    // path still resolves - it redirects - so live links keep working.
+    hrefs: ["/owner/devices"],
+    // LOCKED, and that is a change in kind from the read-only page this
+    // replaced. A switchable feature has to be safe to switch off; this one is
+    // not. A tenant who turned Handsets off could no longer pair a phone, and
+    // an Aura tenant with no phone has no calls, no transcripts and no leads -
+    // the switch would brick the product from inside the product. Same
+    // reasoning as `leads` and `staff`: it stays on the board so an owner can
+    // see it exists, wearing "always on" instead of a toggle.
+    locked: true,
     defaultEnabled: true,
   },
   {
