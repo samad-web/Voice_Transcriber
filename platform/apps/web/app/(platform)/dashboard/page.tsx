@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Activity, Building2, DollarSign, HardDrive, Phone } from "lucide-react";
-import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
+import { Card, MonoLabel, STATE_TONE, StatCard, StatusChip } from "@aura/ui";
+import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { operatorGate } from "@/lib/operator-gate";
@@ -89,7 +90,7 @@ export default async function DashboardPage({
             <h3 className="text-xl font-display font-black uppercase tracking-tight">
               Across all tenants
             </h3>
-            <p className="text-xs text-neutral-500 font-sans font-medium mt-0.5">
+            <p className="text-xs text-text-muted font-sans font-medium mt-0.5">
               Every customer combined. The per-tenant view is below.
             </p>
           </div>
@@ -128,15 +129,15 @@ export default async function DashboardPage({
           </div>
 
           <Card className="overflow-hidden p-0">
-            <div className="px-5 py-3.5 border-b-2 border-black bg-neutral-50">
-              <span className="text-xs font-display font-bold uppercase tracking-wider">
+            <div className="px-5 py-3.5 border-b-2 border-border-strong bg-bg-subtle">
+              <span className="text-xs font-display font-bold uppercase tracking-wider text-text">
                 By tenant
               </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left border-collapse">
                 <thead>
-                  <tr className="bg-neutral-100 border-b-2 border-neutral-200 font-mono text-[10px] text-black font-bold uppercase tracking-wider">
+                  <tr className="bg-bg-subtle border-b-2 border-border font-mono text-[10px] text-text font-bold uppercase tracking-wider">
                     <th className="py-3 px-5">Tenant</th>
                     <th className="py-3 px-4">Calls</th>
                     <th className="py-3 px-4">Failed</th>
@@ -144,13 +145,13 @@ export default async function DashboardPage({
                     <th className="py-3 px-4">Last call</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                <tbody className="divide-y-2 divide-border text-sm text-text">
                   {fleet.byTenant.map((t) => (
-                    <tr key={t.id} className="hover:bg-neutral-50">
+                    <tr key={t.id} className="hover:bg-surface-hover">
                       <td className="py-3.5 px-5">
                         <Link
                           href={`/instances/${t.id}/calls`}
-                          className="font-display font-bold text-black hover:underline"
+                          className="font-display font-bold text-text hover:underline"
                         >
                           {t.name}
                         </Link>
@@ -160,17 +161,19 @@ export default async function DashboardPage({
                       </td>
                       <td className="py-3.5 px-4 font-mono text-xs font-bold">{t.calls}</td>
                       <td className="py-3.5 px-4 font-mono text-xs">
+                        {/* Failed is an ERROR, which is orange in this console -
+                            red means a missed call (@aura/ui's state.tsx). */}
                         {t.failed > 0 ? (
-                          <span className="text-red-700 font-bold">{t.failed}</span>
+                          <span className={`${STATE_TONE.error.text} font-bold`}>{t.failed}</span>
                         ) : (
-                          <span className="text-neutral-400">0</span>
+                          <span className="text-text-muted">0</span>
                         )}
                       </td>
                       <td className="py-3.5 px-4 font-mono text-xs">
                         {Math.round(t.total_seconds / 60)}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-xs text-neutral-500">
-                        {t.last_call_at ? new Date(t.last_call_at).toLocaleDateString() : "-"}
+                      <td className="py-3.5 px-4 font-mono text-xs text-text-muted">
+                        {t.last_call_at ? <LocalTime iso={t.last_call_at} mode="date" /> : "-"}
                       </td>
                     </tr>
                   ))}
@@ -181,12 +184,12 @@ export default async function DashboardPage({
         </section>
       ) : null}
 
-      <section className="space-y-4 border-t-2 border-black pt-6">
+      <section className="space-y-4 border-t-2 border-border-strong pt-6">
         <div>
           <h3 className="text-xl font-display font-black uppercase tracking-tight">
             {activeTenant?.name ?? "Selected tenant"}
           </h3>
-          <p className="text-xs text-neutral-500 font-sans font-medium mt-0.5">
+          <p className="text-xs text-text-muted font-sans font-medium mt-0.5">
             One customer. Switch tenants to compare.
           </p>
         </div>
@@ -231,7 +234,7 @@ export default async function DashboardPage({
                 Call ingest - last 7 days{activeTenant ? ` · ${activeTenant.name}` : ""}
               </MonoLabel>
               {data.byDay.length === 0 ? (
-                <p className="text-sm text-neutral-500 mt-3 font-sans">
+                <p className="text-sm text-text-muted mt-3 font-sans">
                   No calls in the window yet.
                 </p>
               ) : (
@@ -242,11 +245,11 @@ export default async function DashboardPage({
                       <div key={d.day} className="flex-1 flex flex-col items-center gap-1.5">
                         <div className="w-full flex flex-col justify-end h-32">
                           <div
-                            className="w-full bg-black border-2 border-black"
+                            className="w-full bg-text"
                             style={{ height: `${(d.volume / max) * 100}%` }}
                           />
                         </div>
-                        <span className="text-[9px] font-mono text-neutral-400 font-bold">
+                        <span className="text-[9px] font-mono text-text-muted font-bold">
                           {new Date(d.day).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",

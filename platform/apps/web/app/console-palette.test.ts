@@ -82,7 +82,6 @@ const LEGACY_STOCK_PALETTE = [
   "app/(platform)/agents/agent-sandbox.tsx",
   "app/(platform)/agents/agent-studio.tsx",
   "app/(platform)/api-keys/api-keys-manager.tsx",
-  "app/(platform)/dashboard/page.tsx",
   "app/(platform)/instances/enrollment-credentials.tsx",
   "app/(platform)/instances/new/instance-form.tsx",
   "app/(platform)/instances/new/page.tsx",
