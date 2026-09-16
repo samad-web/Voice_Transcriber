@@ -36,19 +36,13 @@ export const SITE_URL =
 export const CONSOLE_URL = "https://aura.sirahagents.com/admin";
 
 /**
- * The console door - an address, not a button.
- *
- * Signing in is not a marketing action. The visitor this site is written for
- * has no account, and a "Sign in" sitting beside the one CTA gives them a
- * second thing to weigh at the exact moment the page is asking them to decide
- * one thing. So console access moved to a URL people who need it already know:
- * `/admin` 307s to the console login (see app/admin/route.ts).
- *
- * This is discoverability, not security. Anyone may follow it; the console's
- * own auth is what protects the console. It is excluded from robots.txt and the
- * sitemap because it is a door, not a page - there is nothing there to index.
+ * The one console sign-in, shown as a quiet "Log in" link in the header and
+ * footer (owner's request, 2026-09-17 - reversing the 2026-08-08 "address, not
+ * a button" decision). Operators and customers share it on purpose: the console
+ * routes by role after sign-in (app/(platform)/layout.tsx sends an owner to
+ * their CRM at /owner), so no visitor has to know which console is theirs.
  */
-export const CONSOLE_ENTRY = "/admin";
+export const CONSOLE_LOGIN_URL = `${CONSOLE_URL}/login`;
 
 export const BRAND = "Aura";
 export const BRAND_LINE = "Every call, accounted for.";

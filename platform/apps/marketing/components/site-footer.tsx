@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Container } from "./ui/layout";
 import { Logo } from "@/components/brand/logo";
 import { LEGAL_PAGES } from "@/lib/legal";
-import { BRAND, BRAND_LINE, CONSOLE_ENTRY, LEGAL_ENTITY, NAV } from "@/lib/site";
+import { BRAND, BRAND_LINE, CONSOLE_LOGIN_URL, LEGAL_ENTITY, NAV } from "@/lib/site";
 
 /**
  * Footer.
@@ -22,8 +22,9 @@ import { BRAND, BRAND_LINE, CONSOLE_ENTRY, LEGAL_ENTITY, NAV } from "@/lib/site"
  *   renders NAV, so it cannot drift out of step with the page again.
  * · The mark was a hardcoded "A" in a box - a placeholder that outlived the
  *   real logo arriving. It uses the same Logo component as everywhere else.
- * · Console sign-in points at /admin rather than the console origin directly,
- *   so the door has one address and CONSOLE_URL is referenced in one place.
+ * · Console sign-in is one "Log in" link (lib/site.ts) for operators and
+ *   customers alike. This column is where phone visitors find it - the header
+ *   drops it below `sm`.
  *
  * The Trust column keeps /compatibility and /security even though both came
  * out of the header. They are the data-handling disclosures for a product that
@@ -106,16 +107,13 @@ export function SiteFooter() {
             <h2 className="text-sm font-semibold text-text">Customers</h2>
             <ul className="mt-3 space-y-2">
               <li>
-                {/* A plain anchor, not next/link. /admin is a route handler
-                    that 307s to another origin - a client-side navigation
-                    would prefetch it on hover and then have to unwind a
-                    cross-origin redirect the router cannot follow. This wants
-                    a full document request. */}
+                {/* A plain anchor, not next/link: the console is a different
+                    app, so this wants a full document request. */}
                 <a
-                  href={CONSOLE_ENTRY}
+                  href={CONSOLE_LOGIN_URL}
                   className="rounded-md text-base text-text-muted transition-colors duration-150 ease-out hover:text-text"
                 >
-                  Sign in to the console
+                  Log in
                 </a>
               </li>
             </ul>

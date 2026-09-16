@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ButtonLink } from "./ui/button";
 import { HeaderCta } from "./header-cta";
 import { Logo } from "@/components/brand/logo";
-import { BRAND, NAV } from "@/lib/site";
+import { BRAND, CONSOLE_LOGIN_URL, NAV } from "@/lib/site";
 
 /**
  * Sticky header.
@@ -21,10 +21,10 @@ import { BRAND, NAV } from "@/lib/site";
  *   the footer.
  *
  * · One CTA. `/start` is the single conversion target for the whole site, and
- *   it is the only thing in here with a filled background. The "Sign in" that
- *   used to sit beside it is gone: it competed for the same corner of the same
- *   bar as the primary action, and it was aimed at people who already bought.
- *   Console access is now an address - /admin - which redirects to the login.
+ *   it is the only thing in here with a filled background. The "Log in" link
+ *   beside it (restored 2026-09-17 at the owner's request) is muted nav-style
+ *   text so it never competes with it, and drops out below `sm`, where the
+ *   footer carries it instead.
  *
  * The `<details>` mobile menu is gone with the nav it was holding: two in-page
  * anchors on a page you scroll anyway do not earn a disclosure widget, a
@@ -60,6 +60,12 @@ export function SiteHeader() {
             ))}
           </ul>
         </nav>
+
+        {/* A plain anchor: this leaves this app for the console, so client-side
+            routing and hover prefetch would only get in the way. */}
+        <a href={CONSOLE_LOGIN_URL} className="mk-nav-link ml-auto hidden sm:inline-flex">
+          Log in
+        </a>
 
         <HeaderCta />
       </div>

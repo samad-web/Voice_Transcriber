@@ -35,7 +35,9 @@ export function HeaderCta() {
   if (pathname === "/start") return null;
 
   return (
-    <Link href="/start" className="mk-cta mk-cta-sm ml-auto">
+    // ml-auto only below `sm`: from `sm` up the "Log in" link carries it, and two
+    // auto margins would split the free space and strand that link mid-bar.
+    <Link href="/start" className="mk-cta mk-cta-sm ml-auto sm:ml-2">
       {/* The short form of the page's CTA. The body buttons say "Book my call
           now"; this drops the "now" because it is a persistent header button
           rather than a moment of decision, and an urgency word that follows you
