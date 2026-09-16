@@ -1,11 +1,13 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import {
+  type Branding,
   type FeatureKey,
   type FeatureOverrides,
   type OwnerRole,
   enabledFeatures,
   featureForPath,
+  parseBranding,
   resolveOwnerRole,
 } from "@aura/shared";
 import {
@@ -16,6 +18,7 @@ import {
   apiGetAs,
   crossTenantHeaders,
 } from "@/lib/server-api";
+import { readActiveOrgPreference } from "@/lib/active-org";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { getSessionUser } from "@/lib/supabase/server";
 
@@ -63,6 +66,21 @@ export interface OwnerMembership {
    * these two fields.
    */
   featureOverrides: FeatureOverrides;
+  /** organizations.whatsapp_provider (migration 0104) - which connect flow the
+   *  WhatsApp Setup page offers. 'none' or 'wasi'. */
+  whatsappProvider: string;
+  /** organizations.branding (migration 0065), already parsed. Carried on the
+   *  membership rather than fetched per page - see `getOwnerBranding`. */
+  branding: Branding;
+  /**
+   * organizations.setup_completed_at (migration 0106), ISO or null.
+   *
+   * Non-null is the owner layout's licence to render no setup checklist and
+   * make no extra call - which is the whole reason the column exists. Null
+   * means onboarding is unfinished OR unknown, and the layout pays one round
+   * trip to find out.
+   */
+  setupCompletedAt: string | null;
 }
 
 export interface Principal {
@@ -85,6 +103,30 @@ export interface Principal {
   operatorListed?: boolean;
   /** This account IS the root operator ("max") - see ROOT_OPERATOR_EMAIL. */
   isRoot?: boolean;
+  /**
+   * Every tenant this account belongs to, `membership` included - what the
+   * header's tenant switcher offers. Read-only context: nothing may treat an
+   * entry here as the active org except through `membership`.
+   */
+  memberships: OwnerMembership[];
+}
+
+/**
+ * The membership the console acts as.
+ *
+ * `preferredOrgId` (the switcher's cookie) wins only when it names one of
+ * THESE memberships and that tenant is active - so the choice can never reach
+ * outside what the verified session already holds. Otherwise the long-standing
+ * rule: first active membership, else the first one.
+ */
+export function pickActiveMembership<M extends { orgId: string; orgStatus: string }>(
+  memberships: M[],
+  preferredOrgId: string | null,
+): M | null {
+  const preferred = preferredOrgId
+    ? memberships.find((m) => m.orgId === preferredOrgId && m.orgStatus === "active")
+    : undefined;
+  return preferred ?? memberships.find((m) => m.orgStatus === "active") ?? memberships[0] ?? null;
 }
 
 /**
@@ -146,8 +188,10 @@ if (AUTH_ENABLED && OPERATOR_EMAILS.length === 0) {
   );
 }
 
-interface RawMembership extends Omit<OwnerMembership, "ownerRole"> {
+interface RawMembership extends Omit<OwnerMembership, "ownerRole" | "branding"> {
   ownerRole: string | null;
+  /** Straight off the API as jsonb - `parseBranding` gives it a shape below. */
+  branding: unknown;
 }
 
 interface ContextResponse {
@@ -159,6 +203,31 @@ interface ContextResponse {
  * `cache` dedupes this across a single render pass: the layout, the page and
  * every server action in one request resolve the principal once.
  */
+/**
+ * The persona the local-dev console acts as (CRM dashboard Phase 8).
+ *
+ * This branch used to hard-code `owner`, which made the other four personas
+ * unreachable without a Supabase project: every persona-dependent screen - the
+ * dashboards, the review queue's sources, the response-time card - rendered as
+ * an owner no matter what, so a change to them could only be reasoned about,
+ * never seen. `DEV_OWNER_ROLE=telecaller` now renders the console as that
+ * persona.
+ *
+ * It ONLY applies where there is no session at all (auth unconfigured), which
+ * is the mode whose own boot log says every page is reachable without one. A
+ * real session takes the path below and reads the persona from `memberships`,
+ * where it belongs; nothing here can widen a signed-in user's access.
+ *
+ * The API is NOT fooled by it: OwnerRoleGuard reads the persona from the
+ * caller's membership row, so to see a persona end to end the membership has
+ * to say the same thing. That is deliberate - a console that could claim a
+ * persona the API did not agree with would be a worse lie than the hard-coded
+ * owner it replaces.
+ */
+function devOwnerRole(): OwnerRole {
+  return resolveOwnerRole(process.env.DEV_OWNER_ROLE);
+}
+
 export const getPrincipal = cache(async (): Promise<Principal | null> => {
   const user = await getSessionUser();
 
@@ -168,6 +237,33 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
   // the platform console stays reachable too.
   if (!user) {
     if (AUTH_ENABLED) return null;
+    const devMembership: OwnerMembership = {
+      orgId: DEV_ORG_ID,
+      orgName: "",
+      orgStatus: "active",
+      role: "org_admin",
+      ownerRole: devOwnerRole(),
+      recordingsListen: true,
+      recordingsExport: true,
+      workspaceId: DEV_WORKSPACE_ID,
+      // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally - 0072's backfill.
+      enabledModules: ["aura", "crm"],
+      // No overrides locally: the catalogue's defaults are every feature on,
+      // so a laptop with no database rows renders the whole console. This
+      // branch exists so the console is usable without a Supabase project, and
+      // a developer checking a page they cannot reach because a flag they
+      // never set is off would be debugging the wrong thing entirely.
+      featureOverrides: {},
+      whatsappProvider: "wasi",
+      // Local dev runs unbranded: the console renders in the stock palette,
+      // which is what you want when checking a change against the design system.
+      branding: {},
+      // Set, so the setup checklist stays out of the way locally. A developer
+      // opening any page to check an unrelated change should not be met by an
+      // onboarding modal about a tenant that does not exist. Clear this to
+      // work on the checklist itself.
+      setupCompletedAt: new Date(0).toISOString(),
+    };
     return {
       email: "",
       subject: "",
@@ -179,21 +275,8 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       // AUTH_ENABLED - a real session takes the path below.
       userId: DEV_USER_ID,
       kind: "operator",
-      membership: {
-        orgId: DEV_ORG_ID,
-        orgName: "",
-        orgStatus: "active",
-        role: "org_admin",
-        ownerRole: "owner",
-        recordingsListen: true,
-        recordingsExport: true,
-        workspaceId: DEV_WORKSPACE_ID,
-        // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally - 0072's backfill.
-        enabledModules: ["aura", "crm"],
-        // No overrides locally: the catalogue's defaults are every feature on,
-        // so a laptop with no database rows renders the whole console.
-        featureOverrides: {},
-      },
+      membership: devMembership,
+      memberships: [devMembership],
     };
   }
 
@@ -219,12 +302,31 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
   const memberships: OwnerMembership[] = rawMemberships.map((m) => ({
     ...m,
     ownerRole: resolveOwnerRole(m.ownerRole),
+    // Defaulted here as well as in the API, for the case the API's own note
+    // describes: a console deployed ahead of migration 0101 would otherwise
+    // map `undefined` into a field `resolveFeatures` expects to be a record.
+    // `{}` is the honest empty value - it means "no override", so the
+    // catalogue's own defaults answer, which is exactly right for an API that
+    // cannot yet tell us otherwise.
+    featureOverrides: m.featureOverrides ?? {},
+    whatsappProvider: m.whatsappProvider ?? "none",
+    branding: parseBranding(m.branding),
+    // Same fail-towards-asking default the API applies: a console deployed
+    // ahead of migration 0106 sees `undefined` and must treat it as "not
+    // finished", so onboarding is merely delayed by a round trip rather than
+    // hidden from every new client for the length of a rolling deploy.
+    setupCompletedAt: m.setupCompletedAt ?? null,
   }));
 
-  // One owner, one instance. A user with several memberships (staff who own
-  // more than one tenant) gets their first; an instance switcher is the
-  // natural place to extend this.
-  const membership = memberships.find((m) => m.orgStatus === "active") ?? memberships[0] ?? null;
+  // A user with several memberships (staff who own more than one tenant) sees
+  // the one they last picked in the header's tenant switcher, else their first
+  // active one. The preference is only honoured inside this list - see
+  // lib/active-org.ts. Not read at all for a single membership: there is
+  // nothing to choose between, and it saves a cookie parse on every render.
+  const membership = pickActiveMembership(
+    memberships,
+    memberships.length > 1 ? await readActiveOrgPreference() : null,
+  );
 
   const email = user.email.toLowerCase();
   const isRoot = ROOT_OPERATOR_EMAIL !== "" && email === ROOT_OPERATOR_EMAIL;
@@ -250,6 +352,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     membership,
     operatorListed: listedOperator,
     isRoot,
+    memberships,
   };
 });
 
@@ -391,4 +494,34 @@ export async function requireFeature(pathname: string): Promise<void> {
   const owner = await getOwner();
   if (!owner) return redirect("/dashboard");
   if (!ownerFeatures(owner).has(feature)) redirect("/owner");
+}
+
+/**
+ * This org's white-label branding (migration 0065).
+ *
+ * ── WHY THIS IS NOT A FETCH ─────────────────────────────────────────────────
+ *
+ * The owner console applies branding in its LAYOUT, so this is read on every
+ * single page, twice per render (once in `generateMetadata` for the tab title
+ * and favicon, once in the layout body for the colours and the mark). Fetching
+ * `/v1/org` for it would put a fresh HTTP call plus a database query in front
+ * of every navigation in the product.
+ *
+ * That is the exact cost `AuthService.contextFor` was rewritten to remove - its
+ * own comment records that a second lookup was "~125ms of pure flight time on
+ * every page", the API running in Mumbai and the database in AWS Seoul. Undoing
+ * that to fetch a hex code would be a poor trade.
+ *
+ * So `branding` rides along on the org row `contextFor` already reads to
+ * resolve the session, and this is a pure accessor over a `cache`d principal:
+ * no request, no query. It is a function rather than a field so that a future
+ * change of source stays invisible to the ~40 call sites in the layout tree.
+ *
+ * Never throws. `parseBranding` has already turned anything malformed into `{}`
+ * at the point the membership was built, so a bad colour costs a tenant their
+ * branding for that render, not their console.
+ */
+export async function getOwnerBranding(): Promise<Branding> {
+  const owner = await getOwner();
+  return owner?.membership.branding ?? {};
 }

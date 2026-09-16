@@ -17,7 +17,7 @@ import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 
-export const metadata: Metadata = { title: "Handsets - Aura" };
+export const metadata: Metadata = { title: "Handsets" };
 
 interface DeviceRow {
   id: string;

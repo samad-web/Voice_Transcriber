@@ -19,6 +19,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -66,6 +67,9 @@ const UpdateQuotationBody = z.object({
 const ListQuery = z.object({
   status: z.enum(["draft", "sent", "accepted", "rejected", "expired"]).optional(),
   dealId: z.string().uuid().optional(),
+  /** Everything raised for one person or company - the contact and account pages' reverse lookup (doc 23, H2). */
+  contactId: z.string().uuid().optional(),
+  accountId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -97,7 +101,7 @@ export class QuotationsController {
   ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { status, dealId, limit, offset } = parsed.data;
+    const { status, dealId, contactId, accountId, limit, offset } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const where = ["1=1"];
@@ -109,6 +113,14 @@ export class QuotationsController {
       if (dealId) {
         params.push(dealId);
         where.push(`deal_id = $${params.length}`);
+      }
+      if (contactId) {
+        params.push(contactId);
+        where.push(`contact_id = $${params.length}`);
+      }
+      if (accountId) {
+        params.push(accountId);
+        where.push(`account_id = $${params.length}`);
       }
       if (recordScope.scope === "owned") {
         params.push(recordScope.userId);
@@ -176,6 +188,14 @@ export class QuotationsController {
 
     try {
       return await this.db.withOrg(orgId, async (client) => {
+        // Foreign-key checks ignore RLS (doc 23, A2).
+        await assertInOrg(client, orgId, {
+          workspaceId: p.workspaceId,
+          accountId: p.accountId,
+          contactId: p.contactId,
+          dealId: p.dealId,
+        });
+
         const {
           rows: [quotation],
         } = await client.query(
@@ -231,6 +251,14 @@ export class QuotationsController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // Before the line items are replaced below, so a rejected link writes
+      // nothing (doc 23, A2).
+      await assertInOrg(client, orgId, {
+        accountId: p.accountId,
+        contactId: p.contactId,
+        dealId: p.dealId,
+      });
+
       const scoped = scopeClause("quotation", recordScope, 2);
       const {
         rows: [existing],
@@ -309,6 +337,10 @@ export class QuotationsController {
   }
 
   private async insertItems(client: QueryClient, orgId: string, quotationId: string, items: LineItemInput[] & { productId?: string | null }[]) {
+    // A line item's product must be this org's catalogue entry (doc 23, A2).
+    await assertInOrg(client, orgId, {
+      productId: (items as { productId?: string | null }[]).map((item) => item.productId),
+    });
     let position = 0;
     for (const item of items as any[]) {
       const lineTotal = computeLineTotal(item);

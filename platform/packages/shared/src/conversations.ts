@@ -127,6 +127,8 @@ export const ConversationListQuery = z.object({
   assignedUserId: z.string().uuid().optional(),
   /** "Inbound traffic nobody has claimed onto a contact yet." */
   unmatchedOnly: z.coerce.boolean().optional(),
+  /** Only this contact's threads - the contact page's own list. */
+  contactId: z.string().uuid().optional(),
   search: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).default(0),

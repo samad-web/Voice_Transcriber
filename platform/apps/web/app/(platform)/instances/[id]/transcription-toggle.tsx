@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff } from "lucide-react";
 import {
-  BrutalButton,
+  Button,
   Card,
   MonoLabel,
+  RowHint,
   StatusChip,
   useAlert,
   useConfirm,
@@ -48,6 +49,7 @@ export function TranscriptionToggle({
   const router = useRouter();
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
+  const hintId = useId();
   const confirm = useConfirm();
   const alert = useAlert();
   const toast = useToast();
@@ -60,6 +62,8 @@ export function TranscriptionToggle({
         "transcribed or analysed until you switch this back on.",
       confirmLabel: "Stop transcribing",
       tone: "danger",
+      // Reversible switch: calls keep arriving and keep their recordings.
+      requireTyped: false,
     });
     if (!ok) return;
     startTransition(async () => {
@@ -131,19 +135,23 @@ export function TranscriptionToggle({
         <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
       </div>
 
-      <p className="text-xs text-neutral-500 font-sans font-medium leading-relaxed">
+      {/* Wired to the button below with aria-describedby, not just placed near
+          it. A screen-reader user who tabs straight onto "Enable transcription"
+          would otherwise hear a verb and nothing about what it costs or what it
+          leaves alone - which is the entire content of the decision. */}
+      <RowHint kind="toggle" id={`${hintId}-state`}>
         {enabled
-          ? "Calls from this instance are transcribed and analysed as they arrive."
-          : "Calls are still collected and listed with their recordings, but ASR and analysis are skipped. Nothing is being spent on this instance."}
-      </p>
+          ? "On: calls from this instance are transcribed and analysed as they arrive, and each one is billed."
+          : "Off: calls are still collected and listed with their recordings, but ASR and analysis are skipped. Nothing is being spent on this instance."}
+      </RowHint>
 
       {asking ? (
-        <div className="space-y-2 border-2 border-black bg-neutral-50 p-3">
+        <div className="space-y-2 rounded-md border border-border-strong bg-bg-subtle p-3">
           <MonoLabel>How much of the backlog should be transcribed?</MonoLabel>
-          <p className="text-[11px] text-neutral-600 font-sans leading-relaxed">
-            Calls that arrived while transcription was off still have their audio.
-            Transcribing them costs the same as a new call, so pick a window.
-          </p>
+          <RowHint kind="action">
+            Calls that arrived while transcription was off still have their audio. Transcribing
+            them costs the same as a new call, so pick a window.
+          </RowHint>
           <div className="space-y-1.5 pt-1">
             {BACKLOG_CHOICES.map((c) => (
               <button
@@ -151,26 +159,33 @@ export function TranscriptionToggle({
                 type="button"
                 disabled={pending}
                 onClick={() => enable(c.days)}
-                className="w-full border-2 border-black bg-white p-2 text-left hover:bg-neutral-100 disabled:opacity-50"
+                className="w-full rounded-md border border-border-strong bg-surface p-2 text-left transition-colors duration-150 ease-out hover:bg-surface-hover disabled:cursor-not-allowed disabled:text-text-subtle"
               >
-                <span className="block text-xs font-sans font-bold">{c.label}</span>
-                <span className="block text-[11px] text-neutral-500 font-sans">{c.blurb}</span>
+                <span className="block text-xs font-medium text-text">{c.label}</span>
+                <span className="block text-xs text-text-muted">{c.blurb}</span>
               </button>
             ))}
           </div>
-          <BrutalButton variant="secondary" disabled={pending} onClick={() => setAsking(false)}>
-            CANCEL
-          </BrutalButton>
+          <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => setAsking(false)}>
+            Cancel
+          </Button>
         </div>
       ) : (
-        <BrutalButton
+        <Button
+          type="button"
           variant={enabled ? "secondary" : "primary"}
           disabled={pending}
+          loading={pending}
+          aria-describedby={`${hintId}-state`}
           onClick={enabled ? () => void disable() : () => setAsking(true)}
         >
-          {enabled ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-          {pending ? "SAVING…" : enabled ? "DISABLE TRANSCRIPTION" : "ENABLE TRANSCRIPTION"}
-        </BrutalButton>
+          {enabled ? (
+            <MicOff className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Mic className="h-4 w-4" aria-hidden="true" />
+          )}
+          {enabled ? "Disable transcription" : "Enable transcription"}
+        </Button>
       )}
     </Card>
   );

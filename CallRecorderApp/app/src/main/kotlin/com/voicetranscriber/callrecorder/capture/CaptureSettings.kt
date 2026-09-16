@@ -166,9 +166,23 @@ class CaptureSettings(context: Context) {
         private const val KEY_OEM_FOLDERS = "oemFolders"
         private const val KEY_OEM_INGEST_SINCE = "oemIngestSince"
 
-        /** How far before first-ingest to still import: a test call made just before the
-         *  update installs must come through, but the historical backlog must not. */
-        const val BACKLOG_GRACE_MS = 3L * 24 * 60 * 60 * 1000  // 3 days
+        /**
+         * How far before first-ingest to still import: a test call made just before the
+         * update installs must come through, but the historical backlog must not.
+         *
+         * Was 3 days, which turned out too tight for real onboarding: a handset's OEM
+         * recorder is very often already running before this app is even installed (Samsung
+         * / Xiaomi ship one by default), so any gap between "the phone already has calls
+         * recorded" and "ingestion actually first runs" - which needs enrollment AND the
+         * operator flipping recordingEnabled, not just install - silently and permanently
+         * dropped everything older than the floor, with nothing on the handset or the
+         * console to say so. 30 days matches the window already used elsewhere in this
+         * codebase for "recent but not unbounded" (see the transcription lookback), and
+         * still bounds the worst case: a phone with years of history under
+         * Music/PhoneRecord does not dump the whole archive. Anything still skipped is now
+         * counted and reported - see OemRecordingIngestor.ingest.
+         */
+        const val BACKLOG_GRACE_MS = 30L * 24 * 60 * 60 * 1000  // 30 days
         private const val KEY_VOIP = "recordVoipCalls"
         private const val KEY_ANNOUNCE = "announceRecording"
         private const val KEY_ENCRYPT = "encryptAtRest"

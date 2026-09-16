@@ -4,10 +4,19 @@ import {
   detectProjects,
   entryStage,
   parseLeadStages,
-  parsePipelineStages,
   statusForStage,
   type DetectableProject,
 } from "@aura/shared";
+import {
+  findLiveContact,
+  projectFactsToCustomFields,
+  queueContactCreated,
+  queueDealCreated,
+  recordDealEntry,
+  recordNoPipeline,
+  resolveDealPipeline,
+  routeLead,
+} from "@aura/db";
 import { DbService } from "../../db/db.service";
 
 /**
@@ -68,7 +77,15 @@ export interface CreateLeadInput {
   leadSourceId?: string | null;
   /** The campaign, inherited from the source's own configuration. */
   marketingSourceId?: string | null;
-  /** Who works it. Inherited from the source; never a rotation - see 0078. */
+  /**
+   * Who works it, when the CALLER already knows.
+   *
+   * Still never a rotation: a value here is a person's decision (a source
+   * pinned to one owner, an integration naming a rep) and it outranks every
+   * distribution rule. Rotation arrived in 0105 and runs AFTER this write,
+   * only when this field is empty and only on a newly created lead - see
+   * the routing block at the end of `writeLead`.
+   */
   assignedTelecallerId?: string | null;
   /** Which desk. Defaults to the org's first workspace, as before. */
   workspaceId?: string | null;
@@ -107,6 +124,14 @@ export interface LeadRecord {
   status: string;
   projectKey: string | null;
   projectDetectedFrom: string | null;
+  /**
+   * Who the distribution engine (0094) gave it to, when it ran and picked
+   * somebody. Null covers three different things - not a new lead, already
+   * assigned, no rule matched - and callers should treat all three the same
+   * way: the lead is fine, it just has no automatic owner. The reason is in
+   * `lead_routing_assignments` when a rule was involved at all.
+   */
+  routedTelecallerId: string | null;
 }
 
 /**
@@ -201,32 +226,24 @@ export class CrmIngestService {
       // Same order, and the same reason, as import.controller.ts and the Meta
       // webhook: an unguarded INSERT here raises 23505 for anyone the tenant
       // already knows, and inside a transaction that loses the whole request.
-      let contact: { id: string } | undefined;
-      if (phone.hash) {
-        ({
-          rows: [contact],
-        } = await client.query<{ id: string }>(
-          `SELECT id FROM contacts WHERE org_id = $1 AND phone_hash = $2 AND status <> 'merged'`,
-          [orgId, phone.hash],
-        ));
-      }
-      if (!contact && email) {
-        ({
-          rows: [contact],
-        } = await client.query<{ id: string }>(
-          `SELECT id FROM contacts WHERE org_id = $1 AND lower(email) = $2 AND status <> 'merged'`,
-          [orgId, email],
-        ));
-      }
+      //
+      // Through findLiveContact, which also follows a MERGE: a number or email
+      // left on a merged-away contact resolves to the survivor, instead of
+      // quietly recreating the duplicate an operator just merged (doc 23, D2).
+      let contact: { id: string; account_id: string | null } | undefined;
+      let contactCreated = false;
+      const known = await findLiveContact(client, orgId, { phoneHash: phone.hash, email });
+      if (known) contact = { id: known.id, account_id: known.accountId };
       if (!contact) {
+        contactCreated = true;
         ({
           rows: [contact],
-        } = await client.query<{ id: string }>(
+        } = await client.query<{ id: string; account_id: string | null }>(
           `INSERT INTO contacts (org_id, workspace_id, display_name, email,
                                  phone_hash, phone_prefix, phone_last3, facts,
                                  source_channel, marketing_source_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
-           RETURNING id`,
+           RETURNING id, account_id`,
           [
             orgId,
             org.workspace_id,
@@ -376,47 +393,45 @@ export class CrmIngestService {
       );
 
       // ── Deal, on the org's default pipeline ──────────────────────────────
-      const {
-        rows: [pipeline],
-      } = await client.query<{ id: string; stages: unknown }>(
-        `SELECT id, stages FROM deal_pipelines
-          WHERE org_id = $1 AND status = 'active'
-          ORDER BY is_default DESC, created_at ASC LIMIT 1`,
-        [orgId],
-      );
+      // resolveDealPipeline is the one rule every door uses (doc 23, B2).
+      const pipeline = await resolveDealPipeline(client, orgId, { forWrite: true });
       let dealId: string | null = null;
       if (pipeline) {
-        const dealStages = parsePipelineStages(pipeline.stages);
-        const dealStage = entryStage(dealStages);
+        const dealStage = entryStage(pipeline.stages);
+        // Same call the Meta webhook makes: pipeline stages carry the same
+        // {key,label,terminal?} shape lead stages do, and `terminal` is the
+        // only field statusForStage reads.
+        const dealStatus = statusForStage(pipeline.stages, dealStage);
         const {
           rows: [deal],
-        } = await client.query<{ id: string }>(
-          `INSERT INTO deals (org_id, workspace_id, pipeline_id, contact_id, name, stage, status,
-                              amount, summary, source_lead_id, facts, call_count, last_activity_at,
-                              source_channel, marketing_source_id, assigned_telecaller_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, 0, now(), $12, $13, $14)
+        } = await client.query<{ id: string; account_id: string | null; created: boolean }>(
+          `INSERT INTO deals (org_id, workspace_id, pipeline_id, contact_id, account_id, name, stage,
+                              status, amount, summary, source_lead_id, facts, call_count,
+                              last_activity_at, source_channel, marketing_source_id,
+                              assigned_telecaller_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, 0, now(), $13, $14, $15)
            ON CONFLICT (source_lead_id) WHERE source_lead_id IS NOT NULL
            DO UPDATE SET
              summary = COALESCE(EXCLUDED.summary, deals.summary),
              amount  = COALESCE(EXCLUDED.amount, deals.amount),
              facts   = deals.facts || EXCLUDED.facts,
+             -- The contact's account fills an empty slot only (doc 23, F2).
+             account_id = COALESCE(deals.account_id, EXCLUDED.account_id),
              source_channel      = COALESCE(deals.source_channel, EXCLUDED.source_channel),
              marketing_source_id = COALESCE(deals.marketing_source_id, EXCLUDED.marketing_source_id),
              assigned_telecaller_id =
                COALESCE(deals.assigned_telecaller_id, EXCLUDED.assigned_telecaller_id),
              last_activity_at = now()
-           RETURNING id`,
+           RETURNING id, account_id, (xmax = 0) AS created`,
           [
             orgId,
             org.workspace_id,
             pipeline.id,
             contact.id,
+            contact.account_id,
             title,
             dealStage,
-            // Same call the Meta webhook makes: pipeline stages carry the same
-            // {key,label,terminal?} shape lead stages do, and `terminal` is the
-            // only field statusForStage reads.
-            statusForStage(dealStages, dealStage),
+            dealStatus,
             input.value ?? null,
             input.notes?.trim() ?? null,
             lead.id,
@@ -427,10 +442,80 @@ export class CrmIngestService {
           ],
         );
         dealId = deal.id;
+
+        // What this door used to skip, and the call pipeline never did
+        // (doc 23, B3): the deal's entry row in the stage ledger, and its
+        // typed custom fields.
+        if (deal.created) {
+          await recordDealEntry(
+            client,
+            orgId,
+            { id: deal.id, stage: dealStage, status: dealStatus },
+            "pipeline",
+            input.sourceChannel ? `intake:${input.sourceChannel}` : "public-api",
+          );
+        }
+        await projectFactsToCustomFields(client, orgId, "deal", deal.id, facts);
+
+        // A live arrival is what a "deal created" rule is for (doc 23, C1).
+        // Keyed per deal, so a provider retrying the same webhook cannot fire
+        // it twice.
+        if (deal.created) {
+          await queueDealCreated(client, orgId, {
+            id: deal.id,
+            contactId: contact.id,
+            accountId: deal.account_id,
+            stage: dealStage,
+            status: dealStatus,
+            amount: input.value ?? null,
+            ownerUserId: null,
+          });
+        }
+      } else {
+        await recordNoPipeline(client, orgId, "intake");
+      }
+
+      await projectFactsToCustomFields(client, orgId, "contact", contact.id, facts);
+      if (contactCreated) {
+        await queueContactCreated(client, orgId, {
+          id: contact.id,
+          accountId: contact.account_id,
+          ownerUserId: null,
+        });
       }
 
       // ── Project ──────────────────────────────────────────────────────────
       const project = await this.labelProject(client, orgId, lead.id, dealId, input);
+
+      // ── Distribution (migration 0094) ────────────────────────────────────
+      //
+      // AFTER the project label, because a rule may match on `project_id` and
+      // a rule that reads a column written two statements later is a rule that
+      // works in testing and not in production.
+      //
+      // Three guards, and each one is load-bearing:
+      //
+      //  - `lead.created` only. A re-submission through a second form is not a
+      //    new lead and must not be taken off whoever is already working it.
+      //    The ON CONFLICT above already refuses to overwrite the column; this
+      //    stops the engine from even spending a rule's turn on it, which
+      //    would otherwise skew the rotation with leads nobody received.
+      //
+      //  - not when the caller named an owner. A source pinned to one person
+      //    (0078) is a decision a human made, and it outranks every rule.
+      //
+      //  - never blocking. `routeLead` runs inside its own SAVEPOINT and
+      //    returns rather than throwing, so a routing fault costs the
+      //    assignment and never the lead.
+      let routedTelecallerId: string | null = null;
+      if (lead.created && !input.assignedTelecallerId) {
+        const routed = await routeLead(client, orgId, {
+          leadId: lead.id,
+          dealId,
+          trigger: "intake",
+        });
+        routedTelecallerId = routed.telecallerId;
+      }
 
       await client.query(
         // The actor names the channel, so the audit trail distinguishes a lead
@@ -450,6 +535,7 @@ export class CrmIngestService {
         status,
         projectKey: project.key,
         projectDetectedFrom: project.matchedOn,
+        routedTelecallerId,
       };
     }
   }

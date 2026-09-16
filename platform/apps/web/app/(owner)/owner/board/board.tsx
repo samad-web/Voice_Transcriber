@@ -3,7 +3,7 @@
 import { LeadDrawer } from "../lead-drawer";
 import { ProjectChip } from "../project-chip";
 import { TemperatureChip } from "../temperature-chip";
-import { updateLeadAction } from "../actions";
+import { fetchLeadAction, updateLeadAction } from "../actions";
 import {
   contactLabel,
   type BoardColumn,
@@ -50,6 +50,10 @@ export function Board({
         getCallCount: (lead) => lead.call_count,
         getLastActivityAt: (lead) => lead.last_activity_at,
         dragDataKey: "text/lead-id",
+        // `/owner/board?focus=<leadId>` opens that lead's drawer, the same deep
+        // link the Deals board has - used by a contact page's "Open the lead"
+        // (doc 23, H2).
+        loadFocused: async (id) => (await fetchLeadAction(id)).lead ?? null,
         // Two chips share this slot: how warm the lead is, and what it is
         // for. Temperature first - it is the one that decides whether the
         // card is worth opening at all.

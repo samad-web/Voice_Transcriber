@@ -6,7 +6,7 @@ import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { TriageQueue } from "./triage-queue";
 import type { TriageCounts, UnmatchedCall } from "./actions";
 
-export const metadata: Metadata = { title: "Unmatched calls - Aura" };
+export const metadata: Metadata = { title: "Unmatched calls" };
 
 interface TriageResponse {
   calls: UnmatchedCall[];

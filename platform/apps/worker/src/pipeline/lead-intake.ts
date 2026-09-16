@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { routeLead } from "@aura/db";
 import { entryStage, parseLeadStages, phoneDigits, statusForStage } from "@aura/shared";
 import type { LeadSourceKind } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
@@ -229,7 +230,7 @@ export async function ingestIntakeLead(
   let contactId: string | null = null;
   let dealId: string | null = null;
   try {
-    const projection = await projectLeadToCrm(client, orgId, row.id);
+    const projection = await projectLeadToCrm(client, orgId, row.id, { emitEvents: true });
     contactId = projection.contactId;
     dealId = projection.dealId;
     if (projection.reason === "no default pipeline for org") {
@@ -256,6 +257,18 @@ export async function ingestIntakeLead(
         WHERE id = $1 AND COALESCE(project_source, 'extraction') <> 'human'`,
       [row.id, source.project_id],
     );
+  }
+
+  // The distribution engine (0105), through the SAME entry point the API's
+  // `writeLead` uses - see `packages/db/src/lead-routing.ts` for why routing
+  // lives in @aura/db rather than being written once here and once there.
+  //
+  // Last, after the project label above, because a rule may match on
+  // `project_id`. New leads only, and never over a source's named owner: a
+  // re-submission must not move a lead off whoever is already working it, and
+  // a person's explicit choice outranks a rotation.
+  if (row.created && !source.assigned_telecaller_id) {
+    await routeLead(client, orgId, { leadId: row.id, dealId, trigger: "intake" });
   }
 
   await client.query(

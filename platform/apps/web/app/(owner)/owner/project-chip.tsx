@@ -8,20 +8,53 @@ import { Sparkles } from "lucide-react";
  * `crm_projects.color` stores a design-token KEY, never `#ff0088`. A tenant
  * picking a raw colour picks it once, in whichever theme they happen to be
  * using, and it becomes unreadable for every colleague on the other one.
- * These six are defined in packages/ui/src/theme.css with a light and a dark
- * value each, so a project stays legible in both by construction.
+ * These are defined in packages/ui/src/theme.css with a light and a dark value
+ * each, so a project stays legible in both by construction.
+ *
+ * ── WHY THE PALETTE CHANGED ─────────────────────────────────────────────
+ *
+ * It used to be the SEMANTIC ramp - accent, success, warning, danger, info -
+ * which put it in direct collision with the functional colour rule
+ * (@aura/ui's state.tsx): a project could be green or red, and it renders in
+ * the same table cell as a green "Answered" chip and a red "Missed" one. Two
+ * marks that look identical and mean nothing alike is exactly the failure the
+ * rule exists to prevent, and a category is not a state.
+ *
+ * The feature survives; only the ramp moved. `--color-label-*` is four tints -
+ * violet, plum, teal, steel - chosen because none of them is red, green, blue
+ * or orange, so a project chip CANNOT be read as a state no matter where it
+ * lands. They are distinguishable from each other at chip size and carry no
+ * alarm value at all, which is the whole job of a category colour.
  */
 const PALETTE = {
-  accent: "border-transparent bg-accent-subtle text-accent-text",
-  success: "border-transparent bg-success-subtle text-success-text",
-  warning: "border-transparent bg-warning-subtle text-warning-text",
-  danger: "border-transparent bg-danger-subtle text-danger-text",
-  info: "border-transparent bg-info-subtle text-info-text",
+  violet: "border-transparent bg-label-violet text-label-violet-text",
+  plum: "border-transparent bg-label-plum text-label-plum-text",
+  teal: "border-transparent bg-label-teal text-label-teal-text",
+  steel: "border-transparent bg-label-steel text-label-steel-text",
   neutral: "border-border bg-surface-hover text-text-muted",
 } as const;
 
 export type ProjectColor = keyof typeof PALETTE;
 export const PROJECT_COLORS = Object.keys(PALETTE) as ProjectColor[];
+
+/**
+ * Keys already stored against tenants' projects, mapped onto the ramp that
+ * replaced them.
+ *
+ * Without this, `projectColor` would fall through to its name hash and every
+ * existing project would silently change colour - which for a catalogue people
+ * have learned to scan by colour is a worse outcome than the collision this
+ * change set out to fix. The mapping is arbitrary but STABLE, which is the
+ * only property that matters: `accent` (blue) and `info` (cyan) both land on
+ * teal, `danger` and `warning` on plum, `success` on violet.
+ */
+const LEGACY_COLORS: Record<string, ProjectColor> = {
+  accent: "teal",
+  info: "teal",
+  success: "violet",
+  danger: "plum",
+  warning: "plum",
+};
 
 /**
  * A project with no colour chosen still gets a stable one, derived from its
@@ -32,6 +65,7 @@ export const PROJECT_COLORS = Object.keys(PALETTE) as ProjectColor[];
  */
 export function projectColor(name: string, stored: string | null): ProjectColor {
   if (stored && stored in PALETTE) return stored as ProjectColor;
+  if (stored && stored in LEGACY_COLORS) return LEGACY_COLORS[stored]!;
   const hues = PROJECT_COLORS.filter((c) => c !== "neutral");
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;

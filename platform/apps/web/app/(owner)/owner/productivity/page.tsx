@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import type { ProductivityResponse, TelecallerProductivityRow } from "./types";
 
-export const metadata: Metadata = { title: "Productivity - Aura" };
+export const metadata: Metadata = { title: "Productivity" };
 
 /** Presets rather than a date picker: these are the three ranges anyone asks for. */
 const RANGES = [

@@ -14,13 +14,14 @@ import { LeadsController } from "./leads.controller";
 import { OwnerController } from "./owner.controller";
 import { OwnersController } from "./owners.controller";
 import { OwnerAccountsService } from "./owner-accounts.service";
+import { SetupController } from "./setup.controller";
 import { SupabaseAdminService } from "./supabase-admin.service";
 
 /**
  * The customer-owner surface: the lead pipeline, the client's own call log,
  * the instance's rollup, the Staff section (roster, permission grid,
- * scorecard), the feature switchboard, and the logins that scope all of it to
- * one tenant.
+ * scorecard), the feature switchboard, the new-client setup checklist, and the
+ * logins that scope all of it to one tenant.
  *
  * `RolesModule` is imported for `RolesService` alone - the client's roles
  * controller and the operator's must behave identically, and that file explains
@@ -42,6 +43,7 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     LeadsController,
     OwnerController,
     OwnersController,
+    SetupController,
   ],
   providers: [OwnerAccountsService, SupabaseAdminService],
 })

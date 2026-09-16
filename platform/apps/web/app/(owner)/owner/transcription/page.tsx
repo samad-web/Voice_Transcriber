@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { TranscriptionClient } from "./transcription-client";
 
-export const metadata: Metadata = { title: "Transcription - Aura" };
+export const metadata: Metadata = { title: "Transcription" };
 
 /** The slice of `GET /v1/org` this page reads. Snake_case, straight from the row. */
 interface OrgTranscription {

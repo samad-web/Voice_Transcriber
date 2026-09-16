@@ -113,7 +113,12 @@ vi.mock("./pipeline", async (importOriginal) => {
 });
 // The hand-off (A2). Recorded so the tests can assert the poller PUBLISHES
 // rather than analyses, and that it only does so once it owns the call.
-vi.mock("@aura/queue", () => ({ publishAnalyze }));
+vi.mock("@aura/queue", () => ({
+  publishAnalyze,
+  // A change signal, not work: the pipeline calls it after a status
+  // transition. Stubbed so these tests need no broker.
+  publishEvent: vi.fn(),
+}));
 
 // Safe despite the mocks above: vitest hoists every vi.mock over the imports,
 // so asr-poll.ts is loaded against the fakes. A static import rather than a

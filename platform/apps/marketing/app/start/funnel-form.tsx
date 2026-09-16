@@ -933,12 +933,20 @@ function SlotPicker({ name }: { name: string }) {
 
   useEffect(() => {
     let live = true;
-    // `void`: the result is applied through the `live` flag and there is no
-    // caller to await it. Unmarked, an eventual rejection would be an
-    // unhandled promise rather than a slot list that simply did not refresh.
-    void listOpenSlotsAction().then((r) => {
-      if (live) setSlots(r.slots);
-    });
+    // An unhandled rejection here left `slots` null with no record anywhere, so
+    // a server action failing in production was indistinguishable from a
+    // genuinely empty calendar - the same screen, a completely different
+    // problem. An empty list is the RIGHT outcome for the visitor (this
+    // component renders nothing without slots, so they fall back to "we'll be
+    // in touch"), but it has to be reached deliberately and logged.
+    listOpenSlotsAction()
+      .then((r) => {
+        if (live) setSlots(r.slots);
+      })
+      .catch((err: unknown) => {
+        if (live) setSlots([]);
+        console.error("[funnel] could not load open slots", err);
+      });
     return () => {
       live = false;
     };
@@ -1081,7 +1089,18 @@ function SlotPicker({ name }: { name: string }) {
                           setError(res.error ?? "That time is no longer available.");
                           // Re-fetch: whatever went is gone, and showing it again
                           // invites a second failure on the same button.
-                          void listOpenSlotsAction().then((r) => setSlots(r.slots));
+                          //
+                          // A failed re-fetch KEEPS the current list rather than
+                          // clearing it. They have just been told that one time
+                          // is taken; wiping every remaining button on top of
+                          // that turns a small correction into a dead end, and
+                          // the other times are probably still bookable.
+                          try {
+                            const refreshed = await listOpenSlotsAction();
+                            setSlots(refreshed.slots);
+                          } catch (err) {
+                            console.error("[funnel] could not refresh open slots", err);
+                          }
                         }
                       })
                     }

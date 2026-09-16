@@ -1,6 +1,6 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { qualifyWhatsAppConversation } from "@aura/llm";
-import type { QualifiableMessage } from "@aura/shared";
+import { OWNER_ROLE_ADMINS, type QualifiableMessage } from "@aura/shared";
 
 /**
  * The WhatsApp qualification sweep (migration 0080).
@@ -217,19 +217,72 @@ export async function runWhatsAppQualificationSweep(): Promise<number> {
       continue;
     }
 
+    let prospects = 0;
     for (const candidate of candidates) {
       try {
         const messages = await loadMessages(org.id, candidate.id);
         const result = await qualifyWhatsAppConversation(messages, org.name);
-        if (await writeVerdict(org.id, candidate, result)) total++;
+        if (await writeVerdict(org.id, candidate, result)) {
+          total++;
+          if (result.verdict.disposition === "prospect") prospects++;
+        }
       } catch (err) {
         console.error(`whatsapp qualification: conversation ${candidate.id} failed:`, err);
+      }
+    }
+
+    if (prospects > 0) {
+      try {
+        await raiseReviewPending(org.id);
+      } catch (err) {
+        console.error(`whatsapp qualification: review notice failed for org ${org.id}:`, err);
       }
     }
   }
 
   if (total > 0) console.log(`whatsapp qualification: ${total} verdict(s) queued for review`);
   return total;
+}
+
+/**
+ * Tell the owners and managers that prospects are waiting in the review queue
+ * (migration 0119's `review_pending`).
+ *
+ * ONE notice for a queue, not one per proposal: the sweep runs every fifteen
+ * minutes and a busy inbox would otherwise fill the bell with rows that all
+ * say "go to the queue". The dedupe key is the OLDEST pending prospect, which
+ * gives the useful rhythm for free - while nobody has touched the queue, new
+ * arrivals collapse onto the notice already sitting there; once somebody works
+ * it, the oldest changes and the next arrival raises a fresh one.
+ *
+ * Only `prospect` proposals count, matching what the queue shows by default
+ * (junk is hidden there, and personal threads are never shown at all).
+ */
+export async function raiseReviewPending(orgId: string): Promise<void> {
+  await withOrgContext(orgId, async (client) => {
+    await client.query(
+      `WITH waiting AS (
+         SELECT id, created_at FROM conversation_qualifications
+          WHERE org_id = $1 AND status = 'pending' AND disposition = 'prospect'
+       ), summary AS (
+         SELECT count(*) AS n,
+                (SELECT id FROM waiting ORDER BY created_at, id LIMIT 1) AS oldest
+           FROM waiting
+       )
+       INSERT INTO notifications (org_id, user_id, kind, title, body, link_path, dedupe_key)
+       SELECT DISTINCT $1::uuid, m.user_id, 'review_pending',
+              CASE WHEN s.n = 1 THEN '1 WhatsApp lead is waiting for review'
+                   ELSE s.n || ' WhatsApp leads are waiting for review' END,
+              'Nothing becomes a lead until somebody approves it.',
+              '/owner/review?source=whatsapp',
+              'review_pending:whatsapp:' || s.oldest
+         FROM summary s
+         JOIN memberships m ON m.org_id = $1 AND m.owner_role = ANY($2::text[])
+        WHERE s.n > 0
+       ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
+      [orgId, OWNER_ROLE_ADMINS],
+    );
+  });
 }
 
 export function startWhatsAppQualificationSweep(): NodeJS.Timeout {

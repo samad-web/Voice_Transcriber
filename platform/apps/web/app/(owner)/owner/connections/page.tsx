@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { ConnectionsManager, type ConnectionView, type ProviderView } from "./connections-manager";
 
-export const metadata: Metadata = { title: "Connections - Aura" };
+export const metadata: Metadata = { title: "Connections" };
 
 /**
  * Connect your own email and calendar (PRD Layer 1).

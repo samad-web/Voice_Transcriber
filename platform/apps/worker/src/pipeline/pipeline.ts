@@ -8,6 +8,7 @@ import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
 import { prepareAudioForAsr } from "./audio-prep";
 import { projectLeadToCrm } from "./crm-objects";
 import { upsertLead } from "./leads";
+import { announce } from "./realtime";
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -119,13 +120,31 @@ export async function priorAttempts(client: PoolClient, callId: string): Promise
  * TRANSCRIBING, and the poller that picks the call up later - possibly in a
  * different process - has to advance and fail it by exactly the same rules.
  */
-export function stageHelpers(client: PoolClient, callId: string, attempts: number): StageHelpers {
+export function stageHelpers(
+  client: PoolClient,
+  callId: string,
+  attempts: number,
+  /**
+   * The tenant, when the caller knows it - and every caller does. Optional only
+   * because this signature is public and a fourth required parameter would be a
+   * breaking change for no gain: without it the transition still happens, it is
+   * simply not announced, and the console falls back to noticing on its next
+   * poll. Pass it. A call moving from TRANSCRIBING to COMPLETE with nobody told
+   * is exactly the case where somebody sits watching "Transcribing" for four
+   * minutes after it finished.
+   */
+  orgId?: string,
+): StageHelpers {
   const advance = async (from: string, to: string) => {
     const res = await client.query(
       "UPDATE calls SET status = $3 WHERE id = $1 AND status = $2 RETURNING id",
       [callId, from, to],
     );
-    return (res.rowCount ?? 0) > 0;
+    const moved = (res.rowCount ?? 0) > 0;
+    // Only a transition that actually took is worth announcing. A lost race
+    // means another worker owns this call and will announce its own.
+    if (moved && orgId) announce(orgId, "call", "updated", callId);
+    return moved;
   };
 
   /**
@@ -165,6 +184,8 @@ export function stageHelpers(client: PoolClient, callId: string, attempts: numbe
         retryBackoffSeconds(attempts + 1),
       ],
     );
+
+    if (orgId) announce(orgId, "call", "updated", callId);
 
     const used = row?.pipeline_attempts ?? attempts + 1;
     if (used < MAX_PIPELINE_ATTEMPTS) {
@@ -293,9 +314,13 @@ export async function recordAsrUsage(
 export function orgStageHelpers(orgId: string, callId: string, attempts: number): StageHelpers {
   return {
     advance: (from, to) =>
-      withOrgContext(orgId, (client) => stageHelpers(client, callId, attempts).advance(from, to)),
+      withOrgContext(orgId, (client) =>
+        stageHelpers(client, callId, attempts, orgId).advance(from, to),
+      ),
     fail: (stage, err) =>
-      withOrgContext(orgId, (client) => stageHelpers(client, callId, attempts).fail(stage, err)),
+      withOrgContext(orgId, (client) =>
+        stageHelpers(client, callId, attempts, orgId).fail(stage, err),
+      ),
   };
 }
 
@@ -633,24 +658,15 @@ export async function runPostAsrStages(
     // this write is additive until that cutover happens.
     if (leadId) {
       try {
-        const projection = await projectLeadToCrm(client, orgId, leadId);
+        // emitEvents: a live call is exactly what a "deal created" rule is
+        // written for (doc 23, C1). The backfill replays history and leaves
+        // it off.
+        const projection = await projectLeadToCrm(client, orgId, leadId, { emitEvents: true });
         if (projection.reason === "no default pipeline for org") {
-          // This org gets ZERO CRM projection until someone seeds a default
-          // pipeline - worth an operator's attention, not a scrolled-past log
-          // line. Spam-guarded to one row per org per day, since every future
-          // call on this org hits the same no-op otherwise.
+          // The projection itself now leaves the operator-visible audit row
+          // (one per org per day), for every door rather than only this one.
           console.error(
             `call ${callId}: crm-object projection skipped - org ${orgId} has no default pipeline`,
-          );
-          await client.query(
-            `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, meta)
-           SELECT $1, 'system', 'pipeline', 'crm.no_default_pipeline', 'organization', '{}'::jsonb
-            WHERE NOT EXISTS (
-              SELECT 1 FROM audit_log
-               WHERE org_id = $1 AND action = 'crm.no_default_pipeline'
-                 AND created_at > now() - interval '24 hours'
-            )`,
-            [orgId],
           );
         } else {
           console.log(
@@ -682,6 +698,12 @@ export async function runPostAsrStages(
     );
   });
   console.log(`call ${callId}: COMPLETE`);
+
+  // The lead, the contact and the deal this call produced are committed and
+  // visible as of the line above. The `call` topic was already announced by the
+  // SYNCING -> COMPLETE advance; this is the second half of the same moment,
+  // for the board and the pipeline panels rather than the call log.
+  announce(orgId, "lead", "created", callId);
 
   // Hand the call to the enrichment lane (A4). Last, and deliberately outside
   // every transaction above: the lead is committed and visible by now, so a

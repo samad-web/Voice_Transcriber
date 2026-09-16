@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { SopEditor } from "./sop-editor";
 
-export const metadata: Metadata = { title: "Call procedure - Aura" };
+export const metadata: Metadata = { title: "Call procedure" };
 
 interface SopRow {
   id: string;

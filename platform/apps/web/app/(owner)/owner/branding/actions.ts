@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { Branding } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
 
@@ -10,19 +11,17 @@ import { ownerHeaders } from "../actions";
  * tenant is re-resolved from the session inside `ownerHeaders()`.
  */
 
-export interface BrandingPatch {
-  logoUrl?: string | null;
-  primaryColor?: string;
-  secondaryColor?: string;
-  browserTitle?: string;
-  /* The white-label fields (Hawcus gap analysis §3.8). Nullable like `logoUrl`
-     rather than string-only like the colours, because clearing an image means
-     "go back to the default asset" and the API reads null as exactly that. */
-  faviconUrl?: string | null;
-  bannerUrl?: string | null;
-  loginBackgroundUrl?: string | null;
-  appBackgroundColor?: string;
-}
+/**
+ * The patch body IS the shared `Branding` shape - the same definition
+ * tenancy.controller.ts validates the request against. It used to be a
+ * hand-written interface here, and had already drifted from the API's Zod
+ * object (the colours were `string`, the API accepts null too).
+ *
+ * Every field is optional and the API merges into the existing jsonb, so a
+ * patch carries only what changed. Images clear to `null`, which the API reads
+ * as "go back to the default asset"; the colours do the same.
+ */
+export type BrandingPatch = Branding;
 
 export interface BrandingActionResult {
   error?: string;
@@ -52,7 +51,11 @@ export async function updateBrandingAction(patch: BrandingPatch): Promise<Brandi
       }
       return { error: typeof detail === "string" ? detail : `API ${res.status}` };
     }
-    revalidatePath("/owner/branding");
+    // The whole route group, not just this page. Branding is applied in the
+    // owner LAYOUT now - the mark, the tab title, the favicon and the colour
+    // tokens every page inherits - so revalidating only /owner/branding would
+    // leave the rest of the console on the old palette until its cache expired.
+    revalidatePath("/owner", "layout");
     return {};
   } catch {
     return { error: "API unreachable" };

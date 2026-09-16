@@ -24,6 +24,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, type CrmRecordScope } from "../../common/crm-scope";
+import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { crmSource, crmSourceCatalogue } from "./crm-sources";
@@ -80,7 +81,7 @@ export class ReportDatasetsController {
                 )::int AS used_by_reports
            FROM report_datasets d
            LEFT JOIN users u ON u.id = d.created_by
-          WHERE d.org_id = $1
+          WHERE d.org_id = $1 AND d.deleted_at IS NULL
           ORDER BY d.created_at DESC`,
         [orgId],
       ),
@@ -211,7 +212,7 @@ export class ReportDatasetsController {
       await client.query(
         `UPDATE report_datasets
             SET columns = $2::jsonb, row_count = $3, schema_fingerprint = $4, refreshed_at = now()
-          WHERE id = $1`,
+          WHERE id = $1 AND deleted_at IS NULL`,
         [id, JSON.stringify(columns), rows.length, fingerprint],
       );
       await insertRows(client, orgId, id, rows);
@@ -283,11 +284,13 @@ export class ReportDatasetsController {
     @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      // Rows cascade; the audit row is written BEFORE the delete so the target
-      // still exists if the delete then fails and rolls the whole thing back.
+      // The uploaded rows used to cascade away with the dataset, which meant
+      // deleting a data source destroyed the sheet somebody had imported and
+      // there was no way back. Nothing is deleted now (0108), so the rows stay
+      // put and a restore is one UPDATE.
       await this.reports.audit(client, orgId, actorUserId(req), "report.dataset_delete", id);
-      const { rowCount } = await client.query(`DELETE FROM report_datasets WHERE id = $1`, [id]);
-      if (!rowCount) throw new BadRequestException("data source not found");
+      const removed = await softDelete(client, "report_dataset", id, req);
+      if (!removed) throw new BadRequestException("data source not found");
       return { deleted: true };
     });
   }

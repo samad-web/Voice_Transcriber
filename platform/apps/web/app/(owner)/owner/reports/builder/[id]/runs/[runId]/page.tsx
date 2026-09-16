@@ -9,7 +9,7 @@ import { ownerGet } from "@/lib/owner-context";
 import type { WidgetResult } from "../../../chart-surface";
 import { FrozenReport } from "./frozen-report";
 
-export const metadata: Metadata = { title: "Report run - Aura" };
+export const metadata: Metadata = { title: "Report run" };
 
 interface RunResponse {
   run: {

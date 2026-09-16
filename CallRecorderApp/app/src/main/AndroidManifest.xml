@@ -114,6 +114,16 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- FCM push receiver: wakes the app for instant logout/wipe/ping from
+             the platform console instead of waiting for the ~1h config poll. -->
+        <service
+            android:name=".platform.AuraFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- Phone-call state (native cellular calls) -->
         <receiver
             android:name=".service.PhoneStateReceiver"

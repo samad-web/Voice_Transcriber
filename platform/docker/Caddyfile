@@ -36,6 +36,45 @@
 	}
 }
 
+# ── Self-hosted Supabase on its own domain ───────────────────────────────────
+# The console signs in against {$SUPABASE_DOMAIN}/auth/v1, and the browser has
+# to reach the same origin the token was issued for - so this is a real public
+# vhost, not an internal hop.
+#
+# WHY A SUBDOMAIN RATHER THAN A PATH ON {$APP_DOMAIN}: that host is already
+# fully carved up (/v1 to the API, /admin to the console, / to the marketing
+# site). Adding /auth/v1, /rest/v1, /storage/v1 and the Studio root to it means
+# four more prefixes competing with a catch-all, in two separate edge configs.
+# A subdomain has none of that, and it needs one DNS A record.
+#
+# The upstream is the Envoy gateway in the `aura-supabase` compose project,
+# reachable here because docker-compose.aura.yml joins it to this network under
+# the alias `supabase-gateway`. It publishes nothing to the host.
+#
+# Studio (the dashboard, at /) is behind the gateway's basic auth -
+# DASHBOARD_USERNAME / DASHBOARD_PASSWORD in .env.selfhost. That is the ONLY
+# thing between the internet and a SQL console over every tenant's data;
+# supabase/selfhost/bin/verify-selfhost.sh asserts it answers 401.
+{$SUPABASE_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy supabase-gateway:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	log {
+		output file /data/access-supabase.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+	}
+}
+
 # ── Object storage on its own domain ─────────────────────────────────────────
 # Devices upload recording parts straight to MinIO using presigned URLs the API
 # signs against S3_PUBLIC_ENDPOINT. SigV4 covers the Host header, so this domain

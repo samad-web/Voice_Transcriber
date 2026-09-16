@@ -24,6 +24,7 @@ import {
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { actorUserId, softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -76,7 +77,8 @@ export class AutomationController {
   async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
-        `SELECT ${RULE_COLUMNS} FROM automation_rules ORDER BY created_at DESC`,
+        `SELECT ${RULE_COLUMNS} FROM automation_rules
+          WHERE deleted_at IS NULL ORDER BY created_at DESC`,
       );
       return { rules: rows, triggers: AutomationTrigger.options, sweepTriggers: SWEEP_TRIGGERS };
     });
@@ -100,7 +102,7 @@ export class AutomationController {
         `SELECT r.id, r.rule_id, a.name AS rule_name, r.subject_type, r.subject_id,
                 r.matched, r.outcome, r.error, r.created_at
            FROM automation_runs r
-           JOIN automation_rules a ON a.id = r.rule_id
+           JOIN automation_rules a ON a.id = r.rule_id AND a.deleted_at IS NULL
           WHERE ($1::uuid IS NULL OR r.rule_id = $1::uuid)
           ORDER BY r.created_at DESC
           LIMIT $2`,
@@ -227,7 +229,7 @@ export class AutomationController {
         conditions: unknown;
         actions: unknown;
         status: string;
-      }>(`SELECT ${RULE_COLUMNS} FROM automation_rules WHERE id = $1`, [id]);
+      }>(`SELECT ${RULE_COLUMNS} FROM automation_rules WHERE id = $1 AND deleted_at IS NULL`, [id]);
       if (!existing) throw new NotFoundException("automation rule not found");
 
       const merged = AutomationRuleInput.safeParse({
@@ -248,7 +250,7 @@ export class AutomationController {
         `UPDATE automation_rules
             SET name = $2, description = $3, trigger = $4,
                 conditions = $5::jsonb, actions = $6::jsonb, status = $7
-          WHERE id = $1
+          WHERE id = $1 AND deleted_at IS NULL
           RETURNING ${RULE_COLUMNS}`,
         [
           id,
@@ -266,18 +268,24 @@ export class AutomationController {
   }
 
   /**
-   * Deleted, not archived - unlike a custom field.
+   * Retire a rule, reversibly (migration 0097).
    *
-   * A field definition is archived because records still hold values that
-   * refer to it. A rule holds nothing: its history lives in automation_runs,
-   * which keeps its own copy of what happened. Leaving a paused rule around
-   * forever would just be a list of things somebody has to read past.
+   * This used to be a hard DELETE, justified by a comment saying a rule "holds
+   * nothing" because its history lives in automation_runs. That was wrong:
+   * `automation_runs.rule_id` is ON DELETE CASCADE (0049), so deleting the rule
+   * also erased every record of what it had done - including the runs somebody
+   * was reading to answer "why did this deal move?". Marking the row leaves the
+   * history intact and makes the answer recoverable.
+   *
+   * The worker's four sweeps filter `deleted_at IS NULL` alongside their
+   * existing `status = 'active'`, so a deleted rule stops firing immediately
+   * rather than when the purge sweep reaches it.
    */
   @Delete(":id")
   async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
-      const { rowCount } = await client.query(`DELETE FROM automation_rules WHERE id = $1`, [id]);
-      if (!rowCount) throw new NotFoundException("automation rule not found");
+      const removed = await softDelete(client, "automation_rule", id, req);
+      if (!removed) throw new NotFoundException("automation rule not found");
       await this.audit(client, orgId, "automation.delete", id, req);
       return { deleted: true };
     });
@@ -296,9 +304,4 @@ export class AutomationController {
       [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
-}
-
-function actorUserId(req: PrincipalRequest): string | null {
-  const parsed = z.string().uuid().safeParse(req.principal?.userId);
-  return parsed.success ? parsed.data : null;
 }

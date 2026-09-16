@@ -97,31 +97,33 @@ export default async function DashboardPage({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             <StatCard
               label="Tenants"
-              value={String(fleet.tenants.total)}
+              value={fleet.tenants.total}
+              context={`${fleet.tenants.active} active`}
               icon={<Building2 className="h-5 w-5" />}
-              footer={<span>{fleet.tenants.active} active</span>}
             />
             <StatCard
               label="Calls"
               value={fleet.calls.calls.toLocaleString()}
+              context={`${fleet.calls.in_pipeline} still in flight`}
               icon={<Phone className="h-5 w-5" />}
-              footer={
-                <span>
-                  {fleet.calls.failed} failed · {fleet.calls.in_pipeline} in flight
-                </span>
-              }
+              // The one state on the operator's fleet row. `failed` is an
+              // ERROR - orange - and on an already-orange tile it renders as
+              // an inverted chip carrying the triangle, which is what
+              // distinguishes it there. See StatCard.
+              state={fleet.calls.failed > 0 ? "error" : undefined}
+              stateLabel={fleet.calls.failed > 0 ? `${fleet.calls.failed} failed` : undefined}
             />
             <StatCard
               label="Recorded Time"
               value={`${fleetMinutes.toLocaleString()} min`}
+              context={`${fleet.calls.complete} calls fully processed`}
               icon={<Activity className="h-5 w-5" />}
-              footer={<span>{fleet.calls.complete} complete</span>}
             />
             <StatCard
               label="Devices"
               value={`${fleet.devices.active}/${fleet.devices.total}`}
+              context="active / enrolled"
               icon={<HardDrive className="h-5 w-5" />}
-              footer={<span>active / enrolled</span>}
             />
           </div>
 
@@ -197,32 +199,30 @@ export default async function DashboardPage({
               <StatCard
                 label="Capture Success"
                 value={`${successRate}%`}
+                context={`${data.calls.complete} of ${data.calls.total} complete`}
                 icon={<Activity className="h-5 w-5" />}
-                footer={
-                  <span>
-                    {data.calls.complete}/{data.calls.total} complete
-                  </span>
-                }
               />
               <Link href={`/instances/${orgId}/calls`} className="block">
                 <StatCard
                   label="Recorded Time"
                   value={`${minutes} min`}
+                  context="open the call log"
                   icon={<Phone className="h-5 w-5" />}
-                  footer={<span>{data.calls.failed} failed · view calls</span>}
+                  state={data.calls.failed > 0 ? "error" : undefined}
+                  stateLabel={data.calls.failed > 0 ? `${data.calls.failed} failed` : undefined}
                 />
               </Link>
               <StatCard
                 label="Fleet Health"
                 value={`${data.devices.active}/${data.devices.total}`}
+                context="handsets active / enrolled"
                 icon={<HardDrive className="h-5 w-5" />}
-                footer={<span>active devices</span>}
               />
               <StatCard
                 label="LLM Tokens"
                 value={tokens.toLocaleString()}
+                context="metered from day one"
                 icon={<DollarSign className="h-5 w-5" />}
-                footer={<span>metered from day one</span>}
               />
             </div>
 

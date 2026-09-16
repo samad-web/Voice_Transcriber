@@ -96,7 +96,8 @@ export const CRM_SOURCES: CrmSource[] = [
   {
     key: "deals",
     name: "Deals",
-    description: "One row per deal, with its pipeline, stage, owner, project and campaign.",
+    description:
+      "One row per deal, with its pipeline, stage, owner, project and campaign. Most deals were projected from a lead, which also appears in Leads.",
     from: `deals t
       LEFT JOIN deal_pipelines pl ON pl.id = t.pipeline_id
       LEFT JOIN users ou          ON ou.id = t.owner_user_id
@@ -173,7 +174,7 @@ export const CRM_SOURCES: CrmSource[] = [
     key: "leads",
     name: "Leads",
     description:
-      "The raw enquiry stream - one row per lead, with its stage, project and telecaller.",
+      "The raw enquiry stream - one row per lead, with its stage, project and telecaller. A lead that became a deal also appears in Deals; group or filter by Converted to count each enquiry once.",
     from: `leads t
       LEFT JOIN crm_projects pr ON pr.id = t.project_id
       LEFT JOIN telecallers tc  ON tc.id = t.telecaller_id
@@ -207,6 +208,16 @@ export const CRM_SOURCES: CrmSource[] = [
         "Telecaller",
       ),
       col("workspace_name", "COALESCE(w.name, 'Unknown')", "categorical", "Workspace"),
+      // Whether this enquiry was projected into a deal (deals.source_lead_id).
+      // Without it a dashboard showing a Leads count beside a Deals count
+      // counts every converted enquiry twice, and nothing on the page can
+      // tell them apart (doc 23, H1).
+      col(
+        "converted",
+        "CASE WHEN EXISTS (SELECT 1 FROM deals cd WHERE cd.source_lead_id = t.id) THEN 'Has a deal' ELSE 'No deal' END",
+        "categorical",
+        "Converted",
+      ),
       col("value_num", "t.value_num", "numeric", "Value", { currency: true }),
       col("score", "t.score", "numeric", "Score"),
       col("call_count", "t.call_count", "numeric", "Calls"),

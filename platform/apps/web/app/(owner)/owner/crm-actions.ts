@@ -54,6 +54,60 @@ export async function updateDealAction(
   return result.error ? { error: result.error } : { deal: result.data?.deal };
 }
 
+export interface ContactUpdate {
+  displayName?: string;
+  email?: string | null;
+  title?: string | null;
+  accountId?: string | null;
+}
+
+/**
+ * Inline edits on the contact record. Only the four fields the page edits are
+ * forwarded, whatever the caller passes - this is a public endpoint, and the
+ * PATCH route also accepts owner and status changes that belong to other
+ * surfaces with their own checks.
+ *
+ * A name set here is a HUMAN edit: the API stamps it so a later call's AI
+ * extraction cannot overwrite it (Track A safety rule 2, migration 0107).
+ */
+export async function updateContactAction(
+  contactId: string,
+  update: ContactUpdate,
+): Promise<ActionResult & { contact?: Partial<Contact> }> {
+  const body: ContactUpdate = {};
+  if (update.displayName !== undefined) body.displayName = update.displayName;
+  if (update.email !== undefined) body.email = update.email;
+  if (update.title !== undefined) body.title = update.title;
+  if (update.accountId !== undefined) body.accountId = update.accountId;
+
+  const result = await patchRecordAction<{ contact: Partial<Contact> }>(
+    `/v1/contacts/${encodeURIComponent(contactId)}`,
+    body,
+    [`/owner/contacts/${contactId}`, "/owner/contacts"],
+  );
+  return result.error ? { error: result.error } : { contact: result.data?.contact };
+}
+
+/**
+ * One deal, for a deep link to a card the board did not load (a column only
+ * carries its top N). Null when it is gone or outside the caller's scope - the
+ * API 404s both alike, and the board then simply opens nothing.
+ */
+export async function fetchDealAction(dealId: string): Promise<Deal | null> {
+  const headers = await ownerHeaders();
+  if (!headers) return null;
+  try {
+    const res = await fetch(`${API_URL}/v1/deals/${encodeURIComponent(dealId)}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return ((await res.json()) as { deal?: Deal }).deal ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Duplicate detection & merge (E0.3) - exact-match only (external_id
  * collisions), see merge.controller.ts's header for why phone/email/domain
@@ -168,16 +222,22 @@ export async function fetchInteractionsAction(
 }
 
 export interface LogInteractionInput {
-  type: "email" | "sms" | "whatsapp" | "meeting" | "note";
+  type: "call" | "email" | "sms" | "whatsapp" | "meeting" | "note";
   subject?: string | null;
   body?: string | null;
   direction?: "incoming" | "outgoing" | null;
+  /** Required for `call`, refused on anything else (@aura/shared InteractionInput). */
+  outcome?: "connected" | "no_answer" | "busy" | "voicemail" | "wrong_number" | null;
+  durationS?: number | null;
 }
 
 /**
- * Log something that happened by hand. `call` is deliberately not an option -
- * calls reach the timeline through the worker, and letting a human type one in
- * would put a row on the timeline that no recording backs.
+ * Log something that happened by hand.
+ *
+ * A `call` logged here is a call made from a phone the platform does not
+ * record. The API stores it with no call_id and a `logged_by_hand` marker, and
+ * every timeline says "logged by hand - not a recording", so it can never pass
+ * for audio (see @aura/shared's ManualInteractionType).
  */
 export async function logInteractionAction(
   parent: TimelineParent,
@@ -289,16 +349,40 @@ export async function fetchTasksAction(
     accountId?: string;
     status?: string;
     limit?: number;
+    /** Rows to skip - the Tasks list's pager (CRM dashboard Phase 8). */
+    offset?: number;
+    /** Only tasks assigned to the signed-in person - resolved by the API from the session. */
+    mine?: boolean;
+    /** The Tasks list's filters (CRM dashboard Phase 5). */
+    assigneeUserId?: string;
+    unassigned?: boolean;
+    priority?: "low" | "normal" | "high";
+    q?: string;
+    /** Inclusive `YYYY-MM-DD` bounds in the viewer's calendar (lib/next-actions.ts dueWindowQuery). */
+    dueFrom?: string;
+    dueTo?: string;
+    undated?: boolean;
+    sort?: "due" | "created" | "priority";
   } = {},
 ): Promise<{ tasks?: Task[]; total?: number; error?: string }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
 
   const params = new URLSearchParams();
+  if (query.offset) params.set("offset", String(query.offset));
+  if (query.mine) params.set("mine", "1");
+  else if (query.assigneeUserId) params.set("assigneeUserId", query.assigneeUserId);
+  else if (query.unassigned) params.set("unassigned", "1");
   if (query.dealId) params.set("dealId", query.dealId);
   if (query.contactId) params.set("contactId", query.contactId);
   if (query.accountId) params.set("accountId", query.accountId);
   if (query.status) params.set("status", query.status);
+  if (query.priority) params.set("priority", query.priority);
+  if (query.q) params.set("q", query.q);
+  if (query.dueFrom) params.set("dueFrom", query.dueFrom);
+  if (query.dueTo) params.set("dueTo", query.dueTo);
+  if (query.undated) params.set("undated", "1");
+  if (query.sort) params.set("sort", query.sort);
   params.set("limit", String(query.limit ?? 50));
 
   try {

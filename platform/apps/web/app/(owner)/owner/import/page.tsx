@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
+import { requireOwnerFeature } from "@/lib/owner-features";
+import { ChannelBar } from "../channel-bar";
 import { ImportWizard } from "./import-client";
 import { requireFeature } from "@/lib/owner-context";
 
-export const metadata: Metadata = { title: "Bulk Import - Aura" };
+export const metadata: Metadata = { title: "Bulk Import" };
 
 /**
  * Bulk CSV import: contacts, accounts or deals, mapped and de-duplicated by
@@ -17,6 +19,7 @@ export default async function ImportPage() {
   return (
     <>
       <PageHeader title="Bulk Import" context="Pipeline" />
+      <ChannelBar />
       <ImportWizard />
     </>
   );

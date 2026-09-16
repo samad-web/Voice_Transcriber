@@ -6,8 +6,9 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Lock, Menu, User, X } from "lucide-react";
 import { Logo } from "@aura/ui";
-import type { FeatureOverrides, OwnerRole } from "@aura/shared";
-import { NAV_ITEMS, navItemFor, ownerNavSectionsFor, type NavArea, type NavGroup } from "@/lib/nav";
+import type { OwnerRole } from "@aura/shared";
+import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
+import { OwnerRailNav } from "@/components/owner-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 /**
@@ -27,12 +28,20 @@ export function MobileNav({
   crmEnabled = true,
   /** Whether this org has the call-intelligence module - hides the call log. */
   callIntelEnabled = false,
-  /** The org's own feature switches (migration 0101), raw. Resolved inside
-   *  `ownerNavSectionsFor` so the API, the worker and this rail all run the
-   *  one `resolveFeatures`. */
-  featureOverrides = {},
+  /** The org's modules + its own raw feature switches (migration 0101),
+   *  resolved inside `ownerRailFor` by the one `enabledFeatures` the API and
+   *  worker also call. Omitted on the operator rail, which has no tenant. */
+  entitlement,
   title = "Aura Platform",
   subtitle = "Call Intelligence",
+  /** See <Sidebar>: this org's own mark, resolved by the owner layout. */
+  logoUrl,
+  /**
+   * The tenant's accent (lib/tenant-accent.ts), drawn as a hairline on the top
+   * bar. On a phone the console header scrolls away, so this bar is what keeps
+   * WHICH TENANT visible at all times. Owner console only.
+   */
+  accentColor,
 }: {
   email?: string | null;
   area?: NavArea;
@@ -40,25 +49,23 @@ export function MobileNav({
   crmPrimary?: boolean;
   crmEnabled?: boolean;
   callIntelEnabled?: boolean;
-  featureOverrides?: FeatureOverrides;
+  entitlement?: Entitlement;
   title?: string;
   subtitle?: string;
+  logoUrl?: string | null;
+  accentColor?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  // Grouped for the owner, flat for the platform - see <Sidebar>. The two
-  // rails render the same rail; only the breakpoint differs.
-  const groups: NavGroup[] =
+  // Same rail as <Sidebar> at each console - see there. Only the breakpoint differs.
+  const ownerRail =
     area === "owner"
-      ? ownerNavSectionsFor(
-          ownerRole ?? "owner",
-          crmPrimary,
-          crmEnabled,
-          callIntelEnabled,
-          featureOverrides,
-        )
-      : [{ key: null, label: null, items: NAV_ITEMS }];
-  const items = groups.flatMap((group) => group.items);
+      ? ownerRailFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled, entitlement)
+      : null;
+  const groups = platformNavSections();
+  const items = ownerRail
+    ? [...ownerRail.primary, ...ownerRail.more.flatMap((group) => group.items)]
+    : groups.flatMap((group) => group.items);
   const current = navItemFor(pathname, items);
 
   // Focus management for the drawer-as-dialog: the trigger opens it, the close
@@ -135,10 +142,19 @@ export function MobileNav({
 
   return (
     <>
-      <header className="print-hide sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-surface px-4 py-3 md:hidden">
-        <Logo size={28} priority />
+      <header
+        className="print-hide sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-surface px-4 py-3 md:hidden"
+        style={accentColor ? { boxShadow: `inset 0 3px 0 0 ${accentColor}` } : undefined}
+      >
+        <Logo size={28} priority src={logoUrl} />
         <div className="min-w-0 flex-1">
-          <span className="block text-xs leading-tight text-text-muted">Aura</span>
+          {/* The eyebrow was a hardcoded "Aura", which every customer saw at the
+              top of their own console on a phone - the one place in the owner
+              rail the product name was still asserted over the tenant's. The
+              operator console keeps it: that one IS ours. */}
+          <span className="block truncate text-xs leading-tight text-text-muted">
+            {area === "owner" ? title : "Aura"}
+          </span>
           <span className="mt-0.5 block truncate text-sm font-semibold leading-tight text-text">
             {current?.title ?? "Platform"}
           </span>
@@ -198,7 +214,10 @@ export function MobileNav({
               </div>
 
               <div className="flex-1 space-y-4 p-3">
-                {groups.map((group) => (
+                {ownerRail ? (
+                  <OwnerRailNav rail={ownerRail} pathname={pathname} variant="drawer" />
+                ) : null}
+                {ownerRail ? null : groups.map((group) => (
                   <section
                     key={group.key ?? "top"}
                     aria-label={group.label ?? undefined}

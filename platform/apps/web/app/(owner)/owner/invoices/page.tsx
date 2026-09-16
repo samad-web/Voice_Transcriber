@@ -16,9 +16,10 @@ import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
-import type { Invoice, InvoiceStatus } from "./actions";
+import type { Invoice, InvoiceStatus, PaymentSettings } from "./actions";
+import { PaymentSettingsCard } from "./payment-settings";
 
-export const metadata: Metadata = { title: "Invoices - Aura" };
+export const metadata: Metadata = { title: "Invoices" };
 
 const PAGE_SIZE = 50;
 
@@ -68,6 +69,13 @@ export default async function InvoicesPage({
 
   const data = await ownerGet<ListResponse>(`/v1/invoices?${query}`);
 
+  // Owner-only on the API, so a manager gets null here and simply does not see
+  // the card - the same split the route enforces, rather than a second copy of
+  // the rule. Fetched alongside the list rather than in its own Suspense
+  // boundary: it is one indexed row by primary key, and a second sequential
+  // round trip to Seoul would cost more than the query does.
+  const settings = await ownerGet<{ settings: PaymentSettings }>("/v1/owner/payment-settings");
+
   if (!data) {
     return (
       <>
@@ -86,6 +94,8 @@ export default async function InvoicesPage({
     <>
       <PageHeader title="Invoices" context="Pipeline" />
 
+      {settings?.settings ? <PaymentSettingsCard initial={settings.settings} /> : null}
+
       <nav className="flex flex-wrap gap-1" aria-label="Filter by status">
         {STATUSES.map((s) => {
           const next = new URLSearchParams();
@@ -97,11 +107,10 @@ export default async function InvoicesPage({
               key={s.value || "all"}
               href={href}
               aria-current={active ? "page" : undefined}
-              style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
               className={
                 "inline-flex h-8 items-center rounded-full px-3 text-xs font-medium transition-colors duration-150 ease-out " +
                 (active
-                  ? "text-white"
+                  ? "bg-text text-bg"
                   : "border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text")
               }
             >

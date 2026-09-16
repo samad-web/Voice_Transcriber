@@ -1,12 +1,58 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { normaliseStaleAfterDays } from "@/lib/deal-staleness";
+import { ownerGet } from "@/lib/owner-context";
+import { requireOwnerFeature } from "@/lib/owner-features";
+import {
+  REPORT_RANGES,
+  closedDealsHref,
+  formatDateRange,
+  formatDuration,
+  formatPercent,
+  formatPercentPoints,
+  leadsArrivedHref,
+  openDealsHref,
+  openLeadsHref,
+  parseReportRange,
+  reportsHref,
+  staleDealsHref,
+} from "@/lib/report-dashboard";
+import { FilterLink } from "../filter-link";
 import { formatValue } from "../types";
 import { CommissionPlansClient } from "./commission-plans-client";
 import type { CommissionPlan } from "./commission-actions";
+import { DailyLeadsChart, type DailyLeadsRow } from "./daily-leads-chart";
+import { MetricCard } from "./metric-card";
+import { OverdueMetricCard } from "./overdue-metric-card";
+import { StageValueChart } from "./stage-value-chart";
 
-export const metadata: Metadata = { title: "Reports - Aura" };
+export const metadata: Metadata = { title: "Reports" };
+
+interface ResponseTimeReport {
+  from: string;
+  to: string;
+  kpi: {
+    leads: number;
+    responded: number;
+    unresponded: number;
+    medianMinutes: number | null;
+    within1hrPct: number | null;
+  };
+  daily: DailyLeadsRow[];
+}
+
+interface LeadAgingReport {
+  total: number;
+  neverResponded: number;
+}
+
+interface PipelineListItem {
+  id: string;
+  is_default: boolean;
+  status: "active" | "archived";
+  stale_after_days?: number;
+}
 
 interface PipelineReport {
   pipeline: { id: string; name: string } | null;
@@ -101,27 +147,78 @@ const pct = (value: number | null): string =>
   value === null ? "-" : `${Math.round(value * 100)}%`;
 
 /**
- * Pipeline reporting (PRD Layer 3).
+ * Pipeline reporting (PRD Layer 3), led by the dashboard (CRM dashboard Phase 6).
+ *
+ * ── ABOVE THE FOLD: SIX NUMBERS, TWO CHARTS ─────────────────────────────────
+ *
+ * One date-range row, then six metric cards, then two charts - and nothing
+ * else before the fold. Every card and every bar opens the list of the records
+ * it counted, with a filter built from what the report ECHOED
+ * (lib/report-dashboard.ts), so the number and the list cannot disagree.
+ *
+ * Four cards are snapshots of now (pipeline value, open leads, stale deals,
+ * overdue follow-ups) and say so; two follow the range (conversion, response
+ * time), as do the funnel, rep performance and commission further down.
  *
  * Server-rendered in full: every figure here is an aggregate the API already
  * computes, and a dashboard whose numbers arrive after the layout is the
- * classic way to make a reader trust the wrong figure for a second.
+ * classic way to make a reader trust the wrong figure for a second. The one
+ * exception is overdue follow-ups, counted in the browser for the reason
+ * overdue-metric-card.tsx gives.
  *
- * The three reports are fetched in parallel and degrade independently - a
- * role that may not read one still gets the others rather than an empty page.
+ * The reports are fetched in parallel and degrade independently - a role that
+ * may not read one still gets the others rather than an empty page. A card
+ * whose report failed says "not available", never a zero.
  */
-export default async function ReportsPage() {
-  // Off means off, not merely hidden - see requireFeature.
-  await requireFeature("/owner/reports");
-  const [pipeline, conversion, performance, attainment, commission, commissionPlans] =
-    await Promise.all([
-      ownerGet<PipelineReport>("/v1/reports/pipeline"),
-      ownerGet<ConversionReport>("/v1/reports/conversion"),
-      ownerGet<PerformanceReport>("/v1/reports/performance"),
-      ownerGet<AttainmentReport>("/v1/targets/attainment"),
-      ownerGet<CommissionReport>("/v1/reports/commission"),
-      ownerGet<{ plans: CommissionPlan[] }>("/v1/commission-plans"),
-    ]);
+export default async function ReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // not provisioned for must neither cost a round trip nor 404 only after
+  // proving the data behind it exists.
+  await requireOwnerFeature("reports");
+
+  const range = parseReportRange((await searchParams).range);
+  const days = `days=${range}`;
+
+  const [
+    pipeline,
+    conversion,
+    performance,
+    attainment,
+    commission,
+    commissionPlans,
+    responseTime,
+    aging,
+    pipelines,
+  ] = await Promise.all([
+    ownerGet<PipelineReport>("/v1/reports/pipeline"),
+    ownerGet<ConversionReport>(`/v1/reports/conversion?${days}`),
+    ownerGet<PerformanceReport>(`/v1/reports/performance?${days}`),
+    ownerGet<AttainmentReport>("/v1/targets/attainment"),
+    ownerGet<CommissionReport>(`/v1/reports/commission?${days}`),
+    ownerGet<{ plans: CommissionPlan[] }>("/v1/commission-plans"),
+    ownerGet<ResponseTimeReport>(`/v1/reports/response-time?${days}`),
+    ownerGet<LeadAgingReport>("/v1/reports/lead-aging"),
+    ownerGet<{ pipelines: PipelineListItem[] }>("/v1/pipelines"),
+  ]);
+
+  // Stale deals on the SAME pipeline the pipeline report chose, at that
+  // pipeline's own threshold - the query the Deals table's "Idle N+ days"
+  // chip runs, so the card and the list it opens count the same deals.
+  const reportPipelineId = pipeline?.pipeline?.id ?? null;
+  const staleAfterDays = normaliseStaleAfterDays(
+    pipelines?.pipelines.find((p) => p.id === reportPipelineId)?.stale_after_days,
+  );
+  const stale = reportPipelineId
+    ? await ownerGet<{ total: number }>(
+        `/v1/deals?pipelineId=${encodeURIComponent(reportPipelineId)}&staleDays=${staleAfterDays}&limit=1`,
+      )
+    : null;
+
+  const closed = conversion?.summary ? conversion.summary.won + conversion.summary.lost : 0;
 
   if (!pipeline && !conversion && !performance) {
     return (
@@ -141,24 +238,107 @@ export default async function ReportsPage() {
     <>
       <PageHeader title="Reports" context="Pipeline" />
 
-      {pipeline?.pipeline ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Stat label="Open pipeline" value={formatValue(pipeline.totals.amount)} />
-          <Stat
-            label="Weighted forecast"
-            value={formatValue(pipeline.totals.weightedAmount)}
-            hint="Discounted by each stage's likelihood of closing"
-          />
-          <Stat label="Open deals" value={String(pipeline.totals.deals)} />
-          <Stat
-            label="Avg days to win"
-            value={
-              pipeline.totals.avgDaysToWin === null ? "-" : String(pipeline.totals.avgDaysToWin)
-            }
-            hint={`${pipeline.totals.wonDeals} won so far`}
-          />
-        </div>
-      ) : null}
+      {/* The one filter row, above everything it scopes (dataviz: filters sit
+          in a single row above the charts, never inside a card). */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <nav aria-label="Date range" className="flex flex-wrap items-center gap-1.5">
+          {REPORT_RANGES.map((r) => (
+            <FilterLink key={r} active={r === range} href={reportsHref(r)}>
+              Last {r} days
+            </FilterLink>
+          ))}
+        </nav>
+        {conversion ? (
+          <p className="text-xs text-text-muted tabular-nums">{formatDateRange(conversion.from, conversion.to)}</p>
+        ) : null}
+      </div>
+
+      <section aria-label="Key metrics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <MetricCard
+          label="Conversion rate"
+          scope="range"
+          value={formatPercent(conversion?.summary?.winRate)}
+          hint={
+            !conversion?.summary
+              ? "No pipeline yet."
+              : closed === 0
+                ? `None of the ${conversion.summary.created} deals created have closed yet.`
+                : `${conversion.summary.won} won of ${closed} closed · deals created in range`
+          }
+          href={conversion?.summary ? closedDealsHref(conversion.pipeline?.id ?? null, conversion.from, conversion.to) : null}
+          unavailable={!conversion}
+        />
+        <MetricCard
+          label="Open pipeline value"
+          scope="now"
+          value={pipeline ? formatValue(pipeline.totals.amount) : "-"}
+          hint={
+            pipeline
+              ? `${pipeline.totals.deals} open deal${pipeline.totals.deals === 1 ? "" : "s"} · ${formatValue(pipeline.totals.weightedAmount)} weighted`
+              : undefined
+          }
+          href={pipeline?.pipeline ? openDealsHref(pipeline.pipeline.id) : null}
+          unavailable={!pipeline}
+        />
+        <MetricCard
+          label="Median first response"
+          scope="range"
+          value={formatDuration(responseTime?.kpi.medianMinutes)}
+          hint={
+            !responseTime
+              ? undefined
+              : responseTime.kpi.leads === 0
+                ? "No leads arrived in this range."
+                : `${responseTime.kpi.responded} of ${responseTime.kpi.leads} leads answered · ${formatPercentPoints(responseTime.kpi.within1hrPct)} within 1 h`
+          }
+          href={responseTime ? leadsArrivedHref(responseTime.from, responseTime.to) : null}
+          unavailable={!responseTime}
+        />
+        <MetricCard
+          label="Open leads"
+          scope="now"
+          value={aging ? String(aging.total) : "-"}
+          hint={aging ? `${aging.neverResponded} never contacted` : undefined}
+          href={openLeadsHref()}
+          unavailable={!aging}
+        />
+        <MetricCard
+          label="Stale deals"
+          scope="now"
+          value={stale ? String(stale.total) : "-"}
+          hint={`Open and idle ${staleAfterDays}+ days`}
+          href={staleDealsHref(reportPipelineId)}
+          unavailable={!stale}
+        />
+        <OverdueMetricCard />
+      </section>
+
+      <section aria-label="Charts" className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-text">Open pipeline by stage</h2>
+            <span className="text-xs text-text-muted">Value · open deals · right now</span>
+          </div>
+          {!pipeline ? (
+            <NotPermitted />
+          ) : !pipeline.pipeline ? (
+            <EmptyState title="No pipeline yet" description="Create a deal to see where the value sits." />
+          ) : (
+            <StageValueChart rows={pipeline.rows} pipelineId={pipeline.pipeline.id} />
+          )}
+        </Card>
+        <Card>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-text">New leads per day</h2>
+            <span className="text-xs text-text-muted">Last {range} days</span>
+          </div>
+          {!responseTime ? (
+            <NotPermitted />
+          ) : (
+            <DailyLeadsChart rows={responseTime.daily} from={responseTime.from} to={responseTime.to} />
+          )}
+        </Card>
+      </section>
 
       {attainment && attainment.attainment.length > 0 ? (
         <Card>
@@ -225,6 +405,16 @@ export default async function ReportsPage() {
           <MonoLabel>Forecast by stage</MonoLabel>
           <ExportLink report="pipeline" />
         </div>
+        {pipeline?.pipeline ? (
+          <p className="mt-2 text-xs text-text-muted">
+            Weighted forecast{" "}
+            <span className="font-medium text-text">{formatValue(pipeline.totals.weightedAmount)}</span> · average{" "}
+            <span className="font-medium text-text">
+              {pipeline.totals.avgDaysToWin === null ? "-" : pipeline.totals.avgDaysToWin}
+            </span>{" "}
+            days to win across {pipeline.totals.wonDeals} won deal{pipeline.totals.wonDeals === 1 ? "" : "s"}
+          </p>
+        ) : null}
         {!pipeline ? (
           <NotPermitted />
         ) : pipeline.rows.length === 0 ? (
@@ -270,7 +460,7 @@ export default async function ReportsPage() {
           <>
             {conversion.summary ? (
               <p className="mt-2 text-xs text-text-muted">
-                {conversion.summary.created} deals created since {conversion.from} ·{" "}
+                {conversion.summary.created} deals created {formatDateRange(conversion.from, conversion.to)} ·{" "}
                 {conversion.summary.won} won · {conversion.summary.lost} lost · win rate{" "}
                 <span className="font-medium text-text">{pct(conversion.summary.winRate)}</span>
               </p>
@@ -320,10 +510,7 @@ export default async function ReportsPage() {
         {!performance ? (
           <NotPermitted />
         ) : performance.reps.length === 0 ? (
-          <EmptyState
-            title="Nothing in this window"
-            description="No deals were created since the window opened."
-          />
+          <EmptyState title="Nothing in this window" description="No deals were created in this date range." />
         ) : (
           <>
             <div className="mt-3 overflow-x-auto">
@@ -430,16 +617,6 @@ export default async function ReportsPage() {
         )}
       </Card>
     </>
-  );
-}
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <MonoLabel>{label}</MonoLabel>
-      <p className="mt-1 text-2xl font-semibold text-text tabular-nums">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-text-muted">{hint}</p> : null}
-    </Card>
   );
 }
 

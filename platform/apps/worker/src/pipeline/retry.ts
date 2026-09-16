@@ -260,7 +260,7 @@ export async function failStalledCalls(limit = 200): Promise<number> {
         // attempt counter, the backoff and `next_attempt_at` all behave
         // identically, which is what puts the call back in front of
         // retryDueCalls on the next tick.
-        await stageHelpers(client, row.id, attempts).fail(
+        await stageHelpers(client, row.id, attempts, row.org_id).fail(
           stage,
           new Error(
             `stalled in ${row.status} for ${minutes} minutes - the run that claimed it never finished`,
@@ -272,6 +272,83 @@ export async function failStalledCalls(limit = 200): Promise<number> {
   }
 
   if (failed > 0) console.log(`pipeline stall sweep: failed ${failed} stranded call(s)`);
+  return failed;
+}
+
+/**
+ * How long a call may sit in AWAITING_AUDIO before its upload is declared
+ * never coming.
+ *
+ * There was no sweeper at all for this state until now (calls.controller.ts,
+ * migration 0019 both flag the gap) - a call whose upload was interrupted and
+ * then abandoned (handset offline for good, local file/DB row wiped, app
+ * uninstalled) sat here forever, indistinguishable from one still mid-upload.
+ * Generous on purpose: as of 0101 the client's own retry resumes the SAME
+ * call via its idempotency key, and it fires on every new call the device
+ * makes (UploadScheduler.enqueue drains the whole pending/failed queue), not
+ * on a fixed schedule - a rep who goes quiet for a few hours must not have a
+ * perfectly retriable upload declared dead under them.
+ */
+const AWAITING_AUDIO_STALL_MS = Number(
+  process.env.PIPELINE_AWAITING_AUDIO_STALL_MS ?? 6 * 60 * 60 * 1000,
+);
+
+const CLAIM_AWAITING_AUDIO_SQL = `
+  UPDATE calls
+     SET status = 'FAILED_UPLOAD',
+         error_message = $2,
+         updated_at = now()
+   WHERE id = $1
+     AND status = 'AWAITING_AUDIO'
+     AND created_at < now() - make_interval(secs => $3)
+  RETURNING id`;
+
+/**
+ * Stranded AWAITING_AUDIO rows: audio never arrived, and nothing left to wait
+ * for. FAILED_UPLOAD is deliberately given no `next_attempt_at` - unlike every
+ * other FAILED_* state, retryDueCalls resuming this one from the server side
+ * cannot help, because there is no audio in S3 to resume from. The only way a
+ * call like this ever completes is the handset uploading again from scratch,
+ * which - since it starts a fresh POST /v1/calls - lands as a brand new row,
+ * not a change to this one.
+ *
+ * `created_at`, not `updated_at`: a call that keeps getting retried under 0101
+ * reuses this same row without moving its status, so measuring from creation
+ * is what makes "it has been in this state for N hours" mean what it says
+ * regardless of how many failed attempts happened in between.
+ */
+export async function failStrandedAwaitingAudio(limit = 200): Promise<number> {
+  const seconds = Math.round(AWAITING_AUDIO_STALL_MS / 1000);
+  const { rows: stranded } = await getAdminPool().query<{ id: string; org_id: string }>(
+    `SELECT id, org_id
+       FROM calls
+      WHERE status = 'AWAITING_AUDIO'
+        AND created_at < now() - make_interval(secs => $1)
+      ORDER BY created_at
+      LIMIT $2`,
+    [seconds, limit],
+  );
+  if (stranded.length === 0) return 0;
+
+  const byOrg = new Map<string, string[]>();
+  for (const row of stranded) {
+    const list = byOrg.get(row.org_id) ?? [];
+    list.push(row.id);
+    byOrg.set(row.org_id, list);
+  }
+
+  const message = `no audio received within ${Math.round(seconds / 3600)}h of the call being created`;
+  let failed = 0;
+  for (const [orgId, callIds] of byOrg) {
+    await withOrgContext(orgId, async (client) => {
+      for (const callId of callIds) {
+        const res = await client.query(CLAIM_AWAITING_AUDIO_SQL, [callId, message, seconds]);
+        if ((res.rowCount ?? 0) > 0) failed++;
+      }
+    });
+  }
+
+  if (failed > 0) console.log(`pipeline retry: failed ${failed} stranded awaiting-audio call(s)`);
   return failed;
 }
 
@@ -298,5 +375,8 @@ export function startStalledCallSweeper(): NodeJS.Timeout {
   const interval = Number(process.env.PIPELINE_STALL_INTERVAL_MS ?? 5 * 60 * 1000);
   return setInterval(() => {
     void failStalledCalls().catch((err) => console.error("pipeline stall sweep:", err));
+    void failStrandedAwaitingAudio().catch((err) =>
+      console.error("pipeline awaiting-audio sweep:", err),
+    );
   }, interval);
 }

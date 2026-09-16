@@ -5,7 +5,7 @@ import type { McpConnection } from "./actions";
 import { MetaAdsConnect } from "./meta-ads-client";
 import { McpConnect } from "./mcp-connect";
 
-export const metadata: Metadata = { title: "Meta Lead Ads - Aura" };
+export const metadata: Metadata = { title: "Meta Lead Ads" };
 
 /**
  * Connect Meta (Facebook) Lead Ads so leads submitted through a Page's

@@ -1,14 +1,6 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Req,
-  UseGuards,
-} from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Patch, Req, UseGuards } from "@nestjs/common";
 import { z } from "zod";
-import { ASR_LANGUAGES, ASR_MODES } from "@aura/shared";
+import { ASR_LANGUAGES, ASR_MODES, Branding } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { hashAppLockPassword } from "../../common/app-lock-hash";
 import type { PrincipalRequest } from "../../common/auth-principal";
@@ -20,32 +12,21 @@ import { DbService } from "../../db/db.service";
  * Per-tenant logo/colors (Kailash gap Milestone 4). One jsonb column
  * (migration 0065), same "tenant config as jsonb on organizations" precedent
  * as lead_stages/lead_rules - this is too small to earn its own table.
+ *
+ * The shape is `@aura/shared`'s `Branding` rather than a Zod object written out
+ * here. It used to be declared three times by hand - here, and again as
+ * `BrandingView` and `BrandingPatch` in the console - which is exactly the
+ * drift the shared package exists to stop. The console now renders its form
+ * from the same definition this endpoint validates against.
+ *
+ * One field is gone with that move: `loginBackgroundUrl`. Every tenant signs in
+ * at the same `<origin>/login` - no subdomain, no org in the path - so the
+ * sign-in screen has no tenant to resolve branding for and the value could
+ * never be applied. Nothing is deleted by dropping it: the UPDATE below merges,
+ * so a tenant who set it keeps the key in their jsonb, and Zod strips it on
+ * read.
  */
-const BrandingBody = z.object({
-  logoUrl: z.string().url().max(500).nullish(),
-  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
-  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
-  browserTitle: z.string().max(120).nullish(),
-
-  /*
-   * The four below complete the white-label surface (Hawcus gap analysis §3.8,
-   * which lists logo, favicon, banner, brand colour, login background, tab
-   * title, app background and accent). The first four map onto the fields
-   * above - `secondaryColor` IS the accent - and these are what was missing.
-   *
-   * URLs rather than uploads, consistent with `logoUrl`: there is no asset
-   * pipeline here and inventing one for a favicon would be the tail wagging
-   * the dog. The console says so next to each field rather than presenting a
-   * file picker that would not work.
-   *
-   * Every one is optional and merged into the existing jsonb, so a tenant that
-   * set only a logo is unaffected by their existence.
-   */
-  faviconUrl: z.string().url().max(500).nullish(),
-  bannerUrl: z.string().url().max(500).nullish(),
-  loginBackgroundUrl: z.string().url().max(500).nullish(),
-  appBackgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/u).nullish(),
-});
+const BrandingBody = Branding;
 
 const PolicyBody = z.object({
   consentPolicy: z.enum(["none", "tone", "tone_and_tts", "prohibited"]).optional(),
@@ -129,7 +110,11 @@ export class TenancyController {
   @Patch("branding")
   @UseGuards(OrgRoleGuard)
   @RequireOrgRole("org_admin")
-  async updateBranding(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+  async updateBranding(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
     const parsed = BrandingBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;

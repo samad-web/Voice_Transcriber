@@ -65,6 +65,7 @@ export const FeatureKey = z.enum([
   "sla_reports",
   // ── Lead connectors ──
   "lead_sources",
+  "lead_routing",
   "sheets_sync",
   "messaging_setup",
   "meta_ads",
@@ -355,6 +356,22 @@ export const FEATURES: FeatureSpec[] = [
     module: "aura",
     group: "connectors",
     hrefs: ["/owner/lead-sources"],
+    defaultEnabled: true,
+  },
+  {
+    key: "lead_routing",
+    label: "Lead routing",
+    blurb:
+      "Rules that decide who works each new lead, instead of somebody assigning them by hand.",
+    // `aura`, not `crm`: routing acts on `leads`, which every recorder tenant
+    // has. The page is owner/manager by persona (nav.ts), which is the tighter
+    // control and the one that matters here.
+    module: "aura",
+    group: "connectors",
+    hrefs: ["/owner/lead-routing"],
+    // On like every other catalogued feature - the page being visible routes
+    // nothing. A rule has to be written before a lead moves, so the opt-in
+    // that matters is creating the rule, not finding the page.
     defaultEnabled: true,
   },
   {

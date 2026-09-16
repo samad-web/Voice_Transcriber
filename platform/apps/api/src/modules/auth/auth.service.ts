@@ -124,6 +124,21 @@ export class AuthService {
        * a page the API refuses.
        */
       featureOverrides: Record<string, boolean>;
+      /** organizations.whatsapp_provider (migration 0104) - which connect flow
+       *  the client's WhatsApp Setup page offers. */
+      whatsappProvider: string;
+      /** organizations.branding (migration 0065) - the console paints itself
+       *  from this on every page, so it rides along here rather than costing a
+       *  second call. Opaque jsonb to this layer; @aura/shared's `Branding`
+       *  schema is what gives it a shape, at the point of use. */
+      branding: unknown;
+      /** organizations.setup_completed_at (migration 0106). Rides along for a
+       *  sharper reason than the rest: while it is NULL the owner layout spends
+       *  a round trip on GET /v1/owner/setup to render the checklist, and the
+       *  whole point of the column is that once it is set the console can skip
+       *  that call without asking anybody. Reading it here is what makes it
+       *  free. */
+      setupCompletedAt: string | null;
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
@@ -155,6 +170,9 @@ export class AuthService {
               (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
                 ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
               o.enabled_modules AS "enabledModules",
+              o.whatsapp_provider AS "whatsappProvider",
+              o.branding AS "branding",
+              o.setup_completed_at AS "setupCompletedAt",
               -- The client's own switchboard (0101), aggregated in the same
               -- exchange. This query runs on every navigation in the console;
               -- a second lookup would cost ~125ms of Mumbai->Seoul flight time
@@ -208,6 +226,14 @@ export class AuthService {
         workspaceId: r.workspaceId,
         enabledModules: r.enabledModules,
         featureOverrides: (r.featureOverrides ?? {}) as Record<string, boolean>,
+        whatsappProvider: r.whatsappProvider ?? "none",
+        branding: r.branding,
+        // An API running ahead of migration 0106 has no column and returns
+        // undefined here. Normalised to null - "setup not finished" - so the
+        // console spends one round trip asking rather than suppressing a
+        // checklist it cannot rule out. The wrong direction would hide
+        // onboarding from every new client for a whole rolling deploy.
+        setupCompletedAt: r.setupCompletedAt ?? null,
       }));
 
     return { memberships, user };

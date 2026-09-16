@@ -6,7 +6,7 @@ import type { OwnerCall, Telecaller } from "../types";
 import { CallsExplorer } from "./calls-explorer";
 import type { Disposition } from "./actions";
 
-export const metadata: Metadata = { title: "Calls - Aura" };
+export const metadata: Metadata = { title: "Calls" };
 
 const PAGE_SIZE = 50;
 

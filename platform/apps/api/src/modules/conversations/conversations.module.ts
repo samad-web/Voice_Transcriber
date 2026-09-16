@@ -2,9 +2,11 @@ import { Module } from "@nestjs/common";
 import { PublicApiModule } from "../public-api/public-api.module";
 import { ConversationsController } from "./conversations.controller";
 import { ConversationsService } from "./conversations.service";
+import { EmbeddedSignupController } from "./embedded-signup.controller";
 import { MessagingChannelsController } from "./messaging-channels.controller";
 import { MessagingWebhookController } from "./messaging-webhook.controller";
 import { ConversationQualificationController } from "./conversation-qualification.controller";
+import { OptOutsController } from "./opt-outs.controller";
 import { WhatsAppSendController } from "./whatsapp-send.controller";
 
 /**
@@ -28,8 +30,10 @@ import { WhatsAppSendController } from "./whatsapp-send.controller";
     ConversationQualificationController,
     ConversationsController,
     MessagingChannelsController,
+    EmbeddedSignupController,
     MessagingWebhookController,
     WhatsAppSendController,
+    OptOutsController,
   ],
   providers: [ConversationsService],
 })

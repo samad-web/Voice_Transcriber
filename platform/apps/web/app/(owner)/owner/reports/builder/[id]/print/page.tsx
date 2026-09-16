@@ -5,7 +5,7 @@ import { getOwner } from "@/lib/owner-context";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 import { PrintableReport } from "./printable-report";
 
-export const metadata: Metadata = { title: "Print report - Aura" };
+export const metadata: Metadata = { title: "Print report" };
 
 interface RenderResponse {
   name: string;

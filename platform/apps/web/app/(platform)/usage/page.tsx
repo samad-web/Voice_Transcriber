@@ -109,30 +109,26 @@ export default async function UsagePage({
             <StatCard
               label="Calls Processed"
               value={n(usage.metrics.calls)}
+              context={`of ${formatLimit(usage.limits.callsPerMonth)} / month`}
               icon={<Phone className="h-5 w-5" />}
-              footer={<span>of {formatLimit(usage.limits.callsPerMonth)} / month</span>}
             />
             <StatCard
               label="Recorded Minutes"
               value={n(usage.metrics.minutes)}
+              context="metered from ingest"
               icon={<Clock className="h-5 w-5" />}
-              footer={<span>metered from ingest</span>}
             />
             <StatCard
               label="LLM Tokens"
               value={n(tokensUsed)}
+              context={`${n(usage.metrics.llmTokensIn)} in / ${n(usage.metrics.llmTokensOut)} out`}
               icon={<Cpu className="h-5 w-5" />}
-              footer={
-                <span>
-                  {n(usage.metrics.llmTokensIn)} in / {n(usage.metrics.llmTokensOut)} out
-                </span>
-              }
             />
             <StatCard
               label="Active Devices"
               value={n(usage.metrics.devices)}
+              context={`${n(usage.metrics.apiKeys)} API keys`}
               icon={<Smartphone className="h-5 w-5" />}
-              footer={<span>{n(usage.metrics.apiKeys)} API keys</span>}
             />
           </div>
 

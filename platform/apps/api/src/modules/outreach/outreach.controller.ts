@@ -23,6 +23,7 @@ import {
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -265,6 +266,12 @@ export class OutreachController {
       if (steps.length === 0) {
         throw new NotFoundException("cadence not found, inactive, or has no steps");
       }
+
+      // Foreign-key checks ignore RLS, and `users` has none at all - so the
+      // contact and deal must be this org's, and the owner a member of it
+      // (doc 23, A1/A2).
+      await assertInOrg(client, orgId, { contactId: input.contactId, dealId: input.dealId });
+      await assertMembers(client, orgId, { ownerUserId: input.ownerUserId });
 
       let journeyId: string;
       try {

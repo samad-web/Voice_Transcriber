@@ -67,6 +67,22 @@ export interface Lead {
   call_intent?: string | null;
   call_sentiment?: string | null;
   call_outcome?: string | null;
+  /** First-touch channel (0078/0080). */
+  source_channel?: string | null;
+  /**
+   * Whose lead it is - a TELECALLER identity set by routing or a bulk
+   * reassign - as opposed to `telecaller` above, the handset that took the
+   * call. Optional: absent from an API older than CRM dashboard Phase 5.
+   */
+  assigned_telecaller_id?: string | null;
+  assigned_telecaller_name?: string | null;
+}
+
+/** A tag as the contact and deal lists return it (migration 0057). */
+export interface RecordTag {
+  id: string;
+  name: string;
+  color: string | null;
 }
 
 /** One row of the tenant's project catalogue - `GET /v1/projects`. */
@@ -323,7 +339,29 @@ export interface Overview {
     pipeline_value: number;
     won_value: number;
   };
-  calls: { total: number; complete: number; total_seconds: number };
+  /**
+   * The call window, broken out by the four states the console paints
+   * (@aura/ui's state.tsx).
+   *
+   * `outgoing + answered + missed === total` - `calls.direction` carries a
+   * CHECK constraint admitting only 'incoming' and 'outgoing', so the three
+   * partition the window exactly.
+   *
+   * `failed` OVERLAPS all three rather than being a fourth slice: a call whose
+   * transcode fell over still happened, still went one way or the other, and
+   * still lasted as long as it lasted. It counts how many of the window's
+   * calls the pipeline could not process. See the API's own note on why the
+   * missed-call number must never shrink because a worker had a bad afternoon.
+   */
+  calls: {
+    total: number;
+    complete: number;
+    outgoing: number;
+    answered: number;
+    missed: number;
+    failed: number;
+    total_seconds: number;
+  };
   funnel: Array<Stage & { count: number; value: number }>;
   stages: Stage[];
   telecallers: Telecaller[];
@@ -412,7 +450,16 @@ export function relativeTime(iso: string | null): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  // An explicit locale AND time zone. A bare toLocaleDateString() uses
+  // whatever the machine is set to, so the server rendered "11/8/2026" and a
+  // browser "8/11/2026" for the same deal, and React threw a hydration
+  // mismatch on /owner/deals. "8 Aug 2026" is also unambiguous to read.
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
 }
 
 export function contactLabel(lead: Lead): string {
@@ -451,11 +498,17 @@ export interface Deal {
   updated_at: string;
   contact_name: string | null;
   account_name: string | null;
+  /** List endpoint only (CRM dashboard Phase 5) - absent on board and detail. */
+  owner_name?: string | null;
+  contact_email?: string | null;
+  tags?: RecordTag[];
 }
 
 export interface DealBoardColumn extends Stage {
   count: number;
   value: number;
+  /** Open deals in the whole column past the pipeline's stale threshold (0106). */
+  staleCount?: number;
   deals: Deal[];
 }
 
@@ -471,6 +524,12 @@ export interface Contact {
   phone_last3: string | null;
   title: string | null;
   owner_user_id: string | null;
+  /** The lead this contact was first created from, if any. */
+  source_lead_id?: string | null;
+  /** First-touch channel (0078/0080) - how this person first reached the business. */
+  source_channel?: string | null;
+  /** Set when a person chose the name (0107); the call projection then never overwrites it. */
+  display_name_set_by_human_at?: string | null;
   facts: Record<string, unknown>;
   status: "active" | "archived" | "merged";
   call_count: number;
@@ -478,6 +537,9 @@ export interface Contact {
   lead_score: number;
   last_activity_at: string;
   created_at: string;
+  /** List endpoint only (CRM dashboard Phase 5). */
+  owner_name?: string | null;
+  tags?: RecordTag[];
 }
 
 export interface Account {
@@ -560,6 +622,10 @@ export interface Interaction {
   duration_s: number | null;
   actor_user_id: string | null;
   actor: string | null;
+  /** 'automation' for a rule's row, a telecaller for a recorded call - see lib/activity.ts. */
+  actor_label?: string | null;
+  /** Set when a mailbox/calendar sync wrote the row. */
+  connection_id?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
 }

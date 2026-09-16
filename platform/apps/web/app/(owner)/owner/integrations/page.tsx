@@ -6,7 +6,7 @@ import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 
-export const metadata: Metadata = { title: "Integrations - Aura" };
+export const metadata: Metadata = { title: "Integrations" };
 
 /**
  * One page that answers both questions a customer actually asks: what can this

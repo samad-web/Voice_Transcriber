@@ -258,9 +258,17 @@ export class OwnerCallsController {
 
       /*
        * SOP adherence (migration 0091), joined to the SOP VERSION that judged
-       * this call rather than to whichever version is active now. That join
-       * condition is the whole reason `call_sops` is versioned: joining on
-       * `is_active` would relabel February's verdicts with March's wording.
+       * this call rather than to whichever version is active now.
+       *
+       * That join condition is the whole reason `call_sops` is versioned. The
+       * step labels a reviewer reads have to be the ones the call was scored
+       * against - joining on `is_active` would relabel February's verdicts with
+       * March's wording, and a step renamed between the two would render a
+       * verdict under a rule it was never given.
+       *
+       * LEFT JOIN because an SOP version can be deleted while its scores
+       * remain; the result then renders by key with no label, which is
+       * degraded but honest.
        */
       const {
         rows: [sop],
@@ -284,16 +292,17 @@ export class OwnerCallsController {
        * SOP EVIDENCE IS VERBATIM TRANSCRIPT TEXT, so it is redacted by exactly
        * the same permission that redacts the transcript above.
        *
-       * Easy to miss: the field is called `evidence` and lives on a scoring row
-       * rather than on `transcripts`. It is a word-for-word quote of what
-       * somebody said on a customer's phone call, and a reviewer without
-       * `recordings_listen` reading several per call would be reading the
-       * transcript in instalments - the same reasoning that keeps `q` search
-       * off the transcript body.
+       * Easy to miss, because the field is called `evidence` and lives on a
+       * scoring row rather than on `transcripts`. It is a word-for-word quote
+       * of what somebody said on a customer's phone call, and a reviewer
+       * without `recordings_listen` reading seven of them per call would be
+       * reading the transcript in instalments - which is the same reasoning
+       * that keeps `q` search off the transcript body (see ListQuery).
        *
        * The VERDICTS stay. Whether a step was met is a judgement about the
-       * agent's conduct, which this reader is entitled to; the customer's words
-       * are not.
+       * agent's conduct, which is what this reader is entitled to; the
+       * customer's words are not. So the checklist still renders, with the
+       * quotes withheld and the console saying so.
        */
       if (!canRead && sop && Array.isArray(sop.step_results)) {
         sop.step_results = (sop.step_results as Array<Record<string, unknown>>).map((r) => ({

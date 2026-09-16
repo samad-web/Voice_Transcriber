@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock, User } from "lucide-react";
 import { Logo } from "@aura/ui";
-import type { FeatureOverrides, OwnerRole } from "@aura/shared";
-import { NAV_ITEMS, navItemFor, ownerNavSectionsFor, type NavArea, type NavGroup } from "@/lib/nav";
+import type { OwnerRole } from "@aura/shared";
+import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
+import { OwnerRailNav } from "@/components/owner-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export function Sidebar({
@@ -24,13 +25,16 @@ export function Sidebar({
   crmEnabled = true,
   /** Whether this org has the call-intelligence module - hides the call log. */
   callIntelEnabled = false,
-  /** The org's own feature switches (migration 0101), raw. Resolved inside
-   *  `ownerNavSectionsFor` so the API, the worker and this rail all run the
-   *  one `resolveFeatures`. */
-  featureOverrides = {},
+  /** The org's modules + per-feature toggles (migration 0093), resolved by the
+   *  owner layout. Omitted on the operator rail, which has no tenant. */
+  entitlement,
   /** Rail heading. The owner console shows their company name here. */
   title = "Aura Platform",
   subtitle = "Call Intelligence",
+  /** This org's own mark (`branding.logoUrl`, migration 0065). Resolved by the
+   *  owner layout; the operator rail leaves it unset and keeps the Aura mark,
+   *  which is correct for a console that spans every tenant. */
+  logoUrl,
 }: {
   email?: string | null;
   area?: NavArea;
@@ -38,30 +42,28 @@ export function Sidebar({
   crmPrimary?: boolean;
   crmEnabled?: boolean;
   callIntelEnabled?: boolean;
-  featureOverrides?: FeatureOverrides;
+  entitlement?: Entitlement;
   title?: string;
   subtitle?: string;
+  logoUrl?: string | null;
 }) {
   const pathname = usePathname();
-  // The owner rail is grouped under headings (two dozen destinations is a wall
-  // without them); the platform rail is one flat list, which is the same shape
-  // with a single unlabelled group.
-  const groups: NavGroup[] =
+  // The owner console gets the capped top-level rail with a More disclosure
+  // (nav.ts, "THE TOP-LEVEL RAIL"); the operator console keeps its grouped
+  // rail, which is fifteen links and reads fine under five headings.
+  const ownerRail =
     area === "owner"
-      ? ownerNavSectionsFor(
-          ownerRole ?? "owner",
-          crmPrimary,
-          crmEnabled,
-          callIntelEnabled,
-          featureOverrides,
-        )
-      : [{ key: null, label: null, items: NAV_ITEMS }];
-  const items = groups.flatMap((group) => group.items);
+      ? ownerRailFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled, entitlement)
+      : null;
+  const groups = platformNavSections();
   // Longest-prefix match against every item at once, not each item tested
   // independently - otherwise Dashboard (href "/owner") matches the prefix
   // test on every other owner route too, and both it and the real current
   // item render as active together.
-  const active = navItemFor(pathname, items);
+  const active = navItemFor(
+    pathname,
+    groups.flatMap((group) => group.items),
+  );
 
   return (
     <aside className="print-hide sticky top-0 hidden h-dvh w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-surface p-4 md:flex lg:w-64">
@@ -73,7 +75,7 @@ export function Sidebar({
              superseded by the owner's decision to adopt the full landing
              register here. The active item below still gets its own gradient
              fill, which reads fine against a static mark two rows above it. */}
-          <Logo size={32} priority />
+          <Logo size={32} priority src={logoUrl} />
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold leading-tight text-text">{title}</h1>
             <span className="mt-0.5 block truncate text-xs text-text-muted">{subtitle}</span>
@@ -81,7 +83,8 @@ export function Sidebar({
         </div>
 
         <nav aria-label="Main" className="space-y-4">
-          {groups.map((group) => (
+          {ownerRail ? <OwnerRailNav rail={ownerRail} pathname={pathname} variant="sidebar" /> : null}
+          {ownerRail ? null : groups.map((group) => (
             // A <section> per group with its heading as the accessible name,
             // so a screen reader can move between them the way a sighted
             // reader skims the headings - a flat list of links with visual

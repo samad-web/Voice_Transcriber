@@ -17,6 +17,7 @@ import {
   Card,
   EmptyState,
   MonoLabel,
+  STATE_TONE,
   StatusChip,
   TableBody,
   TableCell,
@@ -25,6 +26,7 @@ import {
   TableRow,
   Tooltip,
 } from "@aura/ui";
+import type { ConsoleState } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
 import { operatorGate } from "@/lib/operator-gate";
@@ -104,8 +106,13 @@ interface DeviceRow {
   telecaller_name: string | null;
   telecaller_id: string | null;
   telecaller_external_id: string | null;
-  /** Active status heard from inside the last 24h - see instances.controller.ts. */
+  /** Active and heard from inside the last 24h - instances.controller.ts owns
+   *  the definition; the fleet header counts these. */
   connected: boolean;
+  /** Uploaded calls and attributed leads. Both zero = an unpaired enrolment,
+   *  which is the only kind DeviceActions offers to remove. */
+  call_count: number;
+  lead_count: number;
 }
 
 interface Overview {
@@ -146,10 +153,18 @@ function formatDuration(s: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/*
+ * `danger` is the ERROR tone now - orange, not red (see @aura/ui's state.tsx),
+ * and reserved for something the system got wrong. That forced a distinction
+ * this map had been eliding: `wiped` and `lost` were both painted as faults,
+ * and only one of them is. A wiped handset did exactly what an operator told
+ * it to and is a settled, terminal state; a LOST one is an unresolved problem
+ * with a customer's recordings on it. Only the second is an error.
+ */
 const DEVICE_TONE = {
   active: "solid",
   logged_out: "muted",
-  wiped: "danger",
+  wiped: "outline",
   lost: "danger",
 } as const;
 
@@ -247,7 +262,7 @@ function Metric({
   label,
   value,
   hint,
-  tone = "default",
+  state = "neutral",
   href,
   gotoTab,
   gotoAnchor,
@@ -255,7 +270,13 @@ function Metric({
   label: string;
   value: string;
   hint?: string;
-  tone?: "default" | "danger";
+  /**
+   * The only cell that gets a colour is one reporting an ERROR - a flagged
+   * handset. Everything else in this strip is a count, and a count is not a
+   * state (@aura/ui's state.tsx). It was `"danger"` and painted red; red is
+   * MISSED now, and a device with low storage is not a missed call.
+   */
+  state?: ConsoleState;
   href?: string;
   gotoTab?: string;
   /** Element id to land on inside that tab, rather than its top. */
@@ -268,7 +289,7 @@ function Metric({
       <p
         className={
           "mt-1 text-2xl leading-tight font-semibold break-words tabular-nums " +
-          (tone === "danger" ? "text-danger-text" : "text-text")
+          STATE_TONE[state].text
         }
       >
         {value}
@@ -504,11 +525,7 @@ export default async function InstanceDetailPage({
         <Metric
           label="Devices"
           value={deviceTotal.toLocaleString()}
-          hint={
-            deviceTotal === 0
-              ? "Open fleet"
-              : `${connectedTotal.toLocaleString()} connected now`
-          }
+          hint="Open fleet"
           gotoTab="devices"
         />
         <Metric
@@ -528,7 +545,7 @@ export default async function InstanceDetailPage({
           <Metric
             label="Needs attention"
             value={flagged.toLocaleString()}
-            tone="danger"
+            state="error"
             hint={flagged === 1 ? "1 handset flagged" : `${flagged} handsets flagged`}
             gotoTab="devices"
           />
@@ -710,9 +727,8 @@ export default async function InstanceDetailPage({
                     sideways scroll on every laptop. Status and health are one
                     stacked cell now (two chips, same glance) and the device id
                     is a copy target rather than 36 characters of column, which
-                    brought the table inside a 1440px viewport - widened back to
-                    1040px for the Remove button the actions cell gained. */}
-                <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
+                    brings the table inside a 1440px viewport. */}
+                <table className="w-full min-w-[980px] border-collapse text-left text-sm">
                   <caption className="sr-only">Enrolled devices for {inst.name}</caption>
                   <TableHead>
                     <tr>
@@ -801,6 +817,8 @@ export default async function InstanceDetailPage({
                               deviceId={device.id}
                               label={device.label ?? "this device"}
                               status={device.status}
+                              callCount={device.call_count}
+                              leadCount={device.lead_count}
                             />
                           </TableCell>
                         </TableRow>

@@ -5,7 +5,7 @@ import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { DuplicateMatch } from "../types";
 import { DuplicatesManager } from "./duplicates-manager";
 
-export const metadata: Metadata = { title: "Duplicates - Aura" };
+export const metadata: Metadata = { title: "Duplicates" };
 
 interface ListResponse {
   duplicates: DuplicateMatch[];

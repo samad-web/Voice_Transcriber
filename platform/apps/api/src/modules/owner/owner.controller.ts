@@ -228,8 +228,41 @@ export class OwnerController {
                   COALESCE(sum(value_num) FILTER (WHERE status = 'won'),  0)::float AS won_value
              FROM leads${leadWhere}`,
 
+          /*
+           * The call KPI row, broken out by the four states the console paints
+           * (packages/ui/src/state.tsx): outgoing, answered, missed, error.
+           *
+           * `missed` is DERIVED, because the schema has no such status - and
+           * never did. `calls.status` is the processing pipeline
+           * (AWAITING_AUDIO -> ... -> COMPLETE, plus FAILED_*), so the only
+           * columns that can answer "did anyone pick up" are direction and
+           * duration: an inbound call that connected for zero seconds is one
+           * nobody answered. Same test packages/shared's telephony intake
+           * already applies to a CTI webhook's `call_status: "missed"`.
+           *
+           * outgoing + answered + missed = total exactly, because `direction`
+           * carries a CHECK constraint admitting only those two values.
+           *
+           * `failed` deliberately OVERLAPS the three rather than slicing them.
+           * A transcode that fell over does not un-make the phone call: the
+           * handset still reports which way it went and how long it lasted, so
+           * a failed outgoing call is still an outgoing call in this row, and
+           * `failed` counts - separately - how many of the window's calls we
+           * could not process. Making it a fifth exclusive bucket would mean
+           * an owner's "missed calls" number quietly shrank whenever the
+           * worker had a bad afternoon, which is the one thing a missed-call
+           * number must never do.
+           *
+           * (A per-ROW chip resolves the same overlap the other way and shows
+           * the error - see callState(). There, "you have no transcript" is
+           * the fact the reader needs; here, it is not.)
+           */
           `SELECT count(*)::int AS total,
                   count(*) FILTER (WHERE status = 'COMPLETE')::int AS complete,
+                  count(*) FILTER (WHERE direction = 'outgoing')::int AS outgoing,
+                  count(*) FILTER (WHERE direction = 'incoming' AND duration_s > 0)::int AS answered,
+                  count(*) FILTER (WHERE direction = 'incoming' AND duration_s <= 0)::int AS missed,
+                  count(*) FILTER (WHERE status LIKE 'FAILED%')::int AS failed,
                   COALESCE(sum(duration_s), 0)::int AS total_seconds
              FROM calls
             WHERE started_at > now() - make_interval(days => ${days})${callAnd}`,
@@ -461,8 +494,16 @@ export class OwnerController {
                   COALESCE(sum(amount) FILTER (WHERE status = 'won'),  0)::float AS won_value
              FROM deals${dealWhere}`,
 
+          // Identical to overview()'s call aggregate above, including the
+          // derived `missed` and the deliberately overlapping `failed` - see
+          // the long note there. The two must stay in step: the dashboard
+          // renders one component from whichever of them answered.
           `SELECT count(*)::int AS total,
                   count(*) FILTER (WHERE status = 'COMPLETE')::int AS complete,
+                  count(*) FILTER (WHERE direction = 'outgoing')::int AS outgoing,
+                  count(*) FILTER (WHERE direction = 'incoming' AND duration_s > 0)::int AS answered,
+                  count(*) FILTER (WHERE direction = 'incoming' AND duration_s <= 0)::int AS missed,
+                  count(*) FILTER (WHERE status LIKE 'FAILED%')::int AS failed,
                   COALESCE(sum(duration_s), 0)::int AS total_seconds
              FROM calls
             WHERE started_at > now() - make_interval(days => ${days})${callAnd}`,

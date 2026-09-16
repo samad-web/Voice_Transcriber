@@ -3,16 +3,19 @@ package com.voicetranscriber.callrecorder.ingest
 import android.content.Context
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import com.voicetranscriber.callrecorder.App
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
 import com.voicetranscriber.callrecorder.platform.ActivationStore
+import com.voicetranscriber.callrecorder.platform.EventLog
 import com.voicetranscriber.callrecorder.recordings.SourceRegistry
 import com.voicetranscriber.callrecorder.service.CallLogReader
 import com.voicetranscriber.callrecorder.storage.RecordingEntity
 import com.voicetranscriber.callrecorder.upload.UploadScheduler
 import java.io.File
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.Locale
 
 /**
@@ -59,6 +62,30 @@ object OemRecordingIngestor {
 
     private val AUDIO_EXTS = setOf("m4a", "3ga", "amr", "awb", "mp3", "wav", "aac")
 
+    /**
+     * Folder fragments that identify some OEM's call-recording directory. Used to classify
+     * MediaStore rows, which arrive with no indication of what produced them.
+     */
+    private val CALL_DIR_MARKERS = listOf(
+        "/call/", "/calls/", "/call recordings/", "/callrecord", "/call_rec",
+        "/phonerecord", "/recordings/call", "/record/call",
+    )
+
+    /** Shared-storage folders that hold audio which is definitively NOT a call recording. */
+    private val EXCLUDED_DIRS = listOf(
+        "voice recorder", "voice_recorder", "voicerecorder", "/whatsapp/", "/telegram/",
+        "/download/", "/downloads/", "/ringtones/", "/notifications/", "/alarms/",
+        "/podcasts/", "/movies/", "/dcim/", "/audiobooks/",
+    )
+
+    /**
+     * Cap on MediaStore rows examined per pass. The query is ordered newest-first, so a call
+     * recorded today sits near the top; without a cap a media library of tens of thousands of
+     * tracks would be walked on every ingest - and [isAvailable] runs from a broadcast
+     * receiver on the main thread, where that is an ANR.
+     */
+    private const val MEDIA_ROW_CAP = 3_000
+
     /** Don't touch a file the dialer may still be writing. */
     private const val SETTLE_MS = 10_000L
 
@@ -88,6 +115,8 @@ object OemRecordingIngestor {
         val known = dao.allFilePaths().toHashSet()
         val now = System.currentTimeMillis()
         var ingested = 0
+        var skippedByFloor = 0
+        var oldestSkippedAt = Long.MAX_VALUE
 
         // Backlog floor. On the very first ingest, anchor it a few days back so a call made
         // just before this build installed still imports, while a handset that already holds
@@ -114,7 +143,15 @@ object OemRecordingIngestor {
 
             val parsed = parseName(file)
             // Historical backlog on a phone that recorded calls long before enrollment - skip.
-            if (parsed.startedAt < since) continue
+            // Silent otherwise: counted and reported below so a customer who onboarded with
+            // real backlog on the handset (very common - Samsung/Xiaomi's own recorder was
+            // already running before this app existed) shows up as "N calls were never sent"
+            // instead of a rep just noticing gaps with no explanation anywhere.
+            if (parsed.startedAt < since) {
+                skippedByFloor++
+                if (parsed.startedAt < oldestSkippedAt) oldestSkippedAt = parsed.startedAt
+                continue
+            }
             // The filename has no direction, so enrich from the call log by timestamp. Using
             // the nearest entry (not simply the latest) keeps a backlog import accurate.
             val info = CallLogReader.nearest(context, parsed.startedAt)
@@ -159,6 +196,21 @@ object OemRecordingIngestor {
                 .onFailure { Log.w(TAG, "insert failed for ${file.name}", it) }
         }
 
+        if (skippedByFloor > 0) {
+            val oldestIso = Instant.ofEpochMilli(oldestSkippedAt).toString()
+            val graceDays = CaptureSettings.BACKLOG_GRACE_MS / (24 * 60 * 60 * 1000)
+            Log.w(
+                TAG,
+                "skipped $skippedByFloor recording(s) older than the $graceDays-day " +
+                    "import floor (oldest: $oldestIso) - they will never be uploaded",
+            )
+            EventLog.record(
+                context,
+                "oem_backlog_skipped",
+                mapOf("count" to skippedByFloor.toString(), "oldestSkippedAt" to oldestIso),
+            )
+        }
+
         // Always sweep - NOT only when something new was ingested. The duplicate we need to
         // clear may sit beside an OEM recording that was imported on an earlier run.
         purgeDuplicateAppCaptures(dao)
@@ -199,17 +251,39 @@ object OemRecordingIngestor {
      */
     fun isAvailable(context: Context): Boolean {
         if (CaptureSettings(context).oemRecordingSeen) return true
-        return folders(context).any { dir ->
+        val inKnownFolder = folders(context).any { dir ->
             runCatching { dir.isDirectory && (dir.list()?.any { isAudio(it) } == true) }
                 .getOrDefault(false)
         }
+        // Checked last, and only ever needs one hit: this is the case that matters on a brand
+        // whose folder we don't have listed, where the folder walk finds nothing and we would
+        // otherwise wrongly conclude the handset doesn't record itself.
+        return inKnownFolder || mediaStoreFiles(context, stopAfter = 1).isNotEmpty()
     }
 
-    /** All call-recording files across the configured folders, newest first. */
-    private fun candidateFiles(context: Context): List<File> = folders(context)
-        .flatMap { dir -> filesUnder(dir) }
-        .filter { it.isFile && isAudio(it.name) && isCallRecording(it) }
-        .sortedByDescending { it.lastModified() }
+    /**
+     * Every call recording this handset holds, newest first, from two independent discoveries
+     * unioned by path.
+     *
+     * The folder list on its own is a standing liability: each OEM files recordings somewhere
+     * different, and they move between OS versions - HyperOS relocated Xiaomi's from
+     * MIUI/sound_recorder/call_rec to Recordings/sound_recorder/call_rec, and ingestion
+     * silently returned nothing until that path was added by hand. MediaStore already knows
+     * where the dialer put them on ANY brand, so it covers folders we have never seen and
+     * survives the next relocation without a code change.
+     *
+     * Both are kept because they fail in different places: MediaStore needs READ_MEDIA_AUDIO
+     * and lags until the media scanner indexes a new file, while the folder walk reads the
+     * disk directly but only where we thought to look.
+     */
+    private fun candidateFiles(context: Context): List<File> {
+        val fromFolders = folders(context)
+            .flatMap { dir -> filesUnder(dir) }
+            .filter { it.isFile && isAudio(it.name) && isCallRecording(it) }
+        return (fromFolders + mediaStoreFiles(context))
+            .distinctBy { it.absolutePath }
+            .sortedByDescending { it.lastModified() }
+    }
 
     /**
      * Files directly in [dir] plus files one level down. Transsion (Infinix/Tecno/itel) nests
@@ -233,6 +307,69 @@ object OemRecordingIngestor {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .map { File(root, it) }
+    }
+
+    /**
+     * Call recordings as MediaStore knows them, wherever on shared storage they live.
+     *
+     * Returns empty - never throws - when READ_MEDIA_AUDIO hasn't been granted, leaving the
+     * folder walk in charge. DATA is deprecated but still populated for shared-storage files,
+     * and a real path is what the rest of the pipeline needs: the settle check, size, mtime
+     * and upload all work on a File.
+     *
+     * @param stopAfter return as soon as this many matches are found (existence checks).
+     */
+    private fun mediaStoreFiles(context: Context, stopAfter: Int = Int.MAX_VALUE): List<File> =
+        runCatching {
+            val out = mutableListOf<File>()
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Audio.Media.DISPLAY_NAME, MediaStore.Audio.Media.DATA),
+                null,
+                null,
+                "${MediaStore.Audio.Media.DATE_MODIFIED} DESC",
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                if (dataIdx < 0) return@use
+                var rows = 0
+                while (cursor.moveToNext() && rows++ < MEDIA_ROW_CAP) {
+                    val name = cursor.getString(nameIdx) ?: continue
+                    val path = cursor.getString(dataIdx) ?: continue
+                    if (!isAudio(name) || !looksLikeCallRecording(path, name)) continue
+                    val file = File(path)
+                    if (!file.isFile) continue
+                    out += file
+                    if (out.size >= stopAfter) break
+                }
+            }
+            out
+        }.getOrElse {
+            // A missing permission is the ordinary case on a handset that granted only
+            // All-files access, not an error worth surfacing.
+            Log.d(TAG, "MediaStore unavailable (${it.javaClass.simpleName}) - folders only")
+            emptyList()
+        }
+
+    /**
+     * Whether a MediaStore row is a call recording.
+     *
+     * This has to be STRICT. The query returns every indexed audio file on the device, so a
+     * loose rule would import the user's music library, WhatsApp voice notes and ringtones as
+     * leads - each of which would reach the CRM as a call and be transcribed at cost. A
+     * recognised call-recording folder or a dialer naming prefix is required; "it is audio"
+     * is never enough.
+     */
+    private fun looksLikeCallRecording(path: String, name: String): Boolean {
+        val p = path.lowercase(Locale.US)
+        val n = name.lowercase(Locale.US)
+        // App-private storage - including our own captures under Android/data - is not OEM
+        // output, and adopting our own file here would double-count the call.
+        if (p.contains("/android/data/") || p.contains("/android/obb/")) return false
+        if (EXCLUDED_DIRS.any { p.contains(it) }) return false
+        return CALL_DIR_MARKERS.any { p.contains(it) } ||
+            n.startsWith("call recording") ||
+            n.startsWith("call_")
     }
 
     private fun isAudio(name: String) =

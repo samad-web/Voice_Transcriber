@@ -51,3 +51,26 @@
    migrating concurrently, and the brief for this slice gates the loader removal
    on that grep coming back empty. Delete the Space_Grotesk import and the
    `${spaceGrotesk.variable}` class from app/layout.tsx once it does. */
+
+/* ── Text controls are 16px on a phone (CRM dashboard Phase 8) ──────────────
+
+   iOS Safari ZOOMS the page when a text control smaller than 16px takes focus,
+   and it does not zoom back out: the person is left magnified, with the rest of
+   the page off to the right, which reads as the console being broken rather
+   than as a browser behaviour. Every form here was 14px.
+
+   This is a stylesheet rule rather than a class on each control because the
+   console has thirty-odd files with hand-rolled inputs beside the kit's Input
+   and Select, and a rule that has to be remembered in each of them is a rule
+   the next one forgets. Above the phone breakpoint the 14px density returns,
+   where no browser does this.
+
+   Checkboxes and radios are excluded - they have no text, and their size is set
+   deliberately per component. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

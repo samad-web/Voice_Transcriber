@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildQualificationTranscript,
+  NON_RETAINABLE_DISPOSITIONS,
+  QualificationDisposition,
+  redactForRetention,
   heuristicQualify,
   parseStatedBudget,
   QUALIFICATION_TRANSCRIPT_LIMIT,
@@ -158,5 +161,82 @@ describe("heuristicQualify", () => {
     const v = heuristicQualify([msg("outgoing", "hello?"), msg("incoming", null)]);
     expect(v.disposition).toBe("unclear");
     expect(v.score).toBe(0);
+  });
+});
+
+describe("redactForRetention", () => {
+  const full = QualificationVerdict.parse({
+    disposition: "prospect",
+    score: 80,
+    intent: "price enquiry",
+    rationale: "Asked for a quote.",
+    name: "Asha",
+    email: "asha@example.com",
+    company: "Asha Traders",
+    budget: 250000,
+    notes: "wants a quote for 200 units",
+  });
+
+  it("keeps everything for a business enquiry", () => {
+    const out = redactForRetention(full);
+    expect(out.name).toBe("Asha");
+    expect(out.notes).toBe("wants a quote for 200 units");
+    expect(out.budget).toBe(250000);
+  });
+
+  /**
+   * The whole point. A business WhatsApp number here is often the owner's own
+   * phone, so their family writes to it. None of that may be retained, and the
+   * rationale must not repeat what was said - office staff read this queue.
+   */
+  it("strips every extracted field from a personal message", () => {
+    const out = redactForRetention({ ...full, disposition: "personal" });
+    expect(out.name).toBeNull();
+    expect(out.email).toBeNull();
+    expect(out.company).toBeNull();
+    expect(out.budget).toBeNull();
+    expect(out.notes).toBeNull();
+    expect(out.rationale).toBe("Private message, not business correspondence.");
+  });
+
+  it("strips wrong numbers and spam too - neither consented to be in a CRM", () => {
+    for (const d of ["wrong_number", "spam"] as const) {
+      const out = redactForRetention({ ...full, disposition: d });
+      expect([d, out.name, out.email, out.company, out.budget, out.notes]).toEqual([
+        d,
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]);
+    }
+  });
+
+  it("redacts every non-retainable disposition, so the list cannot drift", () => {
+    // Guards against someone adding a category to NON_RETAINABLE_DISPOSITIONS
+    // and not to the function, or vice versa.
+    for (const d of NON_RETAINABLE_DISPOSITIONS) {
+      expect([d, redactForRetention({ ...full, disposition: d }).notes]).toEqual([d, null]);
+    }
+    const retainable = QualificationDisposition.options.filter(
+      (d) => !NON_RETAINABLE_DISPOSITIONS.includes(d),
+    );
+    for (const d of retainable) {
+      expect([d, redactForRetention({ ...full, disposition: d }).notes]).toEqual([
+        d,
+        "wants a quote for 200 units",
+      ]);
+    }
+  });
+});
+
+describe("the personal disposition", () => {
+  it("exists - a business number in this market is often a personal phone too", () => {
+    expect(QualificationDisposition.options).toContain("personal");
+  });
+
+  it("is never lead-worthy and always bands as junk, whatever it scored", () => {
+    expect(scoreBand(99, "personal")).toBe("junk");
   });
 });

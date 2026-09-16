@@ -12,11 +12,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { InteractionInput } from "@aura/shared";
+import { HAND_LOGGED_CALL_METADATA, InteractionInput } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { enqueueAutomationEventSafely } from "../automation/enqueue";
@@ -27,9 +28,42 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+const SearchQuery = z.object({
+  q: z.string().trim().min(2).max(200),
+  limit: z.coerce.number().int().min(1).max(25).default(8),
+});
+
+/** `%`, `_` and the escape character itself are literal in a search box, not wildcards. */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * ~140 characters of `text` centred on the first case-insensitive hit of `q`,
+ * with ellipses where it was cut. Done here rather than in SQL so the browser
+ * never receives a 4 KB note body to show one line of it.
+ */
+export function snippetAround(text: string, q: string, width = 140): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= width) return flat;
+  const hit = flat.toLowerCase().indexOf(q.toLowerCase());
+  let start = hit < 0 ? 0 : Math.max(0, Math.min(hit - Math.floor(width / 3), flat.length - width));
+  // Begin on a word, not halfway through one - unless that would skip the hit.
+  if (start > 0 && flat[start - 1] !== " ") {
+    const space = flat.indexOf(" ", start);
+    if (space !== -1 && (hit < 0 || space < hit)) start = space + 1;
+  }
+  const end = Math.min(flat.length, start + width);
+  return `${start > 0 ? "…" : ""}${flat.slice(start, end).trim()}${end < flat.length ? "…" : ""}`;
+}
+
+// `actor_label` and `connection_id` ride along so the console can say WHO did
+// something as well as their name: a user id is a person, 'automation' is a
+// rule, a connection is a mailbox/calendar sync, and a call carries the
+// handset's telecaller. See apps/web/lib/activity.ts.
 const INTERACTION_COLUMNS = `i.id, i.type, i.direction, i.contact_id, i.account_id, i.deal_id,
   i.call_id, i.subject, i.body, i.occurred_at, i.duration_s, i.actor_user_id,
-  COALESCE(u.name, i.actor_label) AS actor, i.metadata, i.created_at`;
+  COALESCE(u.name, i.actor_label) AS actor, i.actor_label, i.connection_id, i.metadata, i.created_at`;
 
 /**
  * The unified interaction timeline (Track A2, migration 0040).
@@ -104,6 +138,76 @@ export class InteractionsController {
       query,
       recordScope,
     );
+  }
+
+  /**
+   * Activity-note search for the console's global search box.
+   *
+   * The one flat interactions route, and the header's argument against flat
+   * routes still holds - which is why it is gated on `contact:view` and returns
+   * ONLY rows attached to a contact the caller can see. The parent is decided
+   * statically (the contact), exactly as the nested routes decide it by path;
+   * the contact's `owned` scope is applied in the join, so a scoped rep cannot
+   * find a colleague's call notes by guessing a word in them.
+   *
+   * Consequence, stated rather than hidden: an interaction attached only to a
+   * deal or an account (no contact) is not searchable here. `logOnDeal` stamps
+   * the deal's contact when it has one, so in practice that is a deal with no
+   * person on it.
+   *
+   * Matches `subject` and `body`. For synced mail those hold the subject and
+   * snippet only (Track A safety rule 1), so this cannot surface a message body
+   * the CRM never stored.
+   */
+  @Get("interactions/search")
+  @RequireCrmPermission("contact", "view")
+  async search(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    const parsed = SearchQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { q, limit } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      const params: unknown[] = [`%${escapeLike(q)}%`];
+      const owned = scopeClause("contact", recordScope, 3, "c");
+      params.push(limit);
+      if (owned) params.push(recordScope.userId);
+
+      const { rows } = await client.query<{
+        id: string;
+        type: string;
+        direction: string | null;
+        subject: string | null;
+        body: string | null;
+        occurred_at: string;
+        contact_id: string;
+        contact_name: string;
+        deal_id: string | null;
+        actor: string | null;
+      }>(
+        `SELECT i.id, i.type, i.direction, i.subject, left(i.body, 4000) AS body,
+                i.occurred_at, i.contact_id, c.display_name AS contact_name, i.deal_id,
+                COALESCE(u.name, i.actor_label) AS actor
+           FROM interactions i
+           JOIN contacts c ON c.id = i.contact_id AND c.status <> 'merged'
+           LEFT JOIN users u ON u.id = i.actor_user_id
+          WHERE (i.subject ILIKE $1 ESCAPE '\\' OR i.body ILIKE $1 ESCAPE '\\')
+                ${owned ? `AND ${owned}` : ""}
+          ORDER BY i.occurred_at DESC
+          LIMIT $2`,
+        params,
+      );
+
+      return {
+        notes: rows.map(({ body, ...row }) => ({
+          ...row,
+          snippet: snippetAround(body ?? row.subject ?? "", q),
+        })),
+      };
+    });
   }
 
   @Post("contacts/:id/interactions")
@@ -209,6 +313,14 @@ export class InteractionsController {
 
     return this.db.withOrg(orgId, async (client) => {
       await assertExists(client, parentTable, parentId, recordScope);
+      // The parent is checked above; the OTHER links in the body are not the
+      // parent and were written unchecked. Foreign-key checks ignore RLS
+      // (doc 23, A2).
+      await assertInOrg(client, orgId, {
+        contactId: p.contactId,
+        accountId: p.accountId,
+        dealId: p.dealId,
+      });
 
       // Logging against a deal fills in that deal's contact; see logOnDeal.
       let contactId = p.contactId ?? null;
@@ -222,19 +334,32 @@ export class InteractionsController {
         contactId = deal?.contact_id ?? null;
       }
 
+      // A hand-logged call carries its marker IN THE ROW (@aura/shared's
+      // HAND_LOGGED_CALL_METADATA), never only in the UI: call_id stays NULL, so
+      // the call-integrity sweep cannot mistake it for a recording, and the
+      // retention reaper and erasure read the marker as a person's record.
+      // Direction defaults to outgoing - "log call" on a follow-up is a call
+      // somebody made.
+      const isCall = p.type === "call";
+      const metadata = isCall ? { ...HAND_LOGGED_CALL_METADATA, outcome: p.outcome } : {};
+
       const {
         rows: [interaction],
       } = await client.query(
         `INSERT INTO interactions
            (org_id, type, direction, contact_id, account_id, deal_id, subject, body,
-            occurred_at, duration_s, actor_user_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, now()), $10, $11)
+            occurred_at, duration_s, actor_user_id, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, now()), $10, $11, $12::jsonb)
          RETURNING id, type, direction, contact_id, account_id, deal_id, subject, body,
-                   occurred_at, duration_s, actor_user_id, metadata, created_at`,
+                   occurred_at, duration_s, actor_user_id,
+                   -- The same shape the list returns, so a row the console
+                   -- shows straight after logging it already says who wrote it.
+                   (SELECT u.name FROM users u WHERE u.id = interactions.actor_user_id) AS actor,
+                   actor_label, connection_id, metadata, created_at`,
         [
           orgId,
           p.type,
-          p.direction ?? null,
+          p.direction ?? (isCall ? "outgoing" : null),
           contactId,
           p.accountId ?? null,
           p.dealId ?? null,
@@ -243,6 +368,7 @@ export class InteractionsController {
           p.occurredAt ?? null,
           p.durationS ?? null,
           actorUserId(req),
+          JSON.stringify(metadata),
         ],
       );
 

@@ -53,6 +53,10 @@ const ReprocessBacklogBody = z.object({
         "FAILED_ASR",
         "FAILED_ANALYZE",
         "FAILED_CRM",
+        // FAILED_UPLOAD deliberately excluded: it means the audio never reached
+        // S3 at all, so rewinding it to UPLOADED can only ever fail again at
+        // transcode. There is nothing here for a bulk "try these again" action
+        // to usefully retry - see 0101.
       ]),
     )
     .min(1),
@@ -107,7 +111,6 @@ export class CallsController {
   /**
    * §6.1 upload admission: device status, org status, and consent policy are
    * checked BEFORE any bytes move; rejecting early saves battery + bandwidth.
-   * TODO (checklist §2.2): honor the Idempotency-Key on retries.
    */
   @Post()
   @UseGuards(DeviceAuthGuard)
@@ -143,6 +146,46 @@ export class CallsController {
         throw new ConflictException("tenant consent policy prohibits recording");
       }
 
+      // Idempotent retry (0101, widened by 0102): the client resends the SAME
+      // idempotencyKey on every retry of the same local recording. If this
+      // device already has a call for that key which is not a dead
+      // FAILED_UPLOAD, hand back a fresh multipart plan for the SAME call
+      // instead of inserting a second row and orphaning (or duplicating) the
+      // first. That covers two distinct retries with one lookup:
+      //   - still AWAITING_AUDIO: the earlier upload was interrupted
+      //     partway through - resume it.
+      //   - anything else except FAILED_UPLOAD (UPLOADED, mid-pipeline,
+      //     COMPLETE, or any FAILED_* pipeline stage): the audio already made
+      //     it, and this retry only exists because the handset never saw the
+      //     success response. POST /complete below recognises this by status
+      //     and acknowledges it as done rather than re-running the pipeline;
+      //     the fresh multipart upload minted here is what lets an
+      //     already-in-the-field app build complete the exact same
+      //     request/response shape it always has, redundantly re-uploading
+      //     the identical bytes into an upload that is simply never finished
+      //     server-side.
+      // FAILED_UPLOAD is excluded on purpose: it means audio was never
+      // received at all (see the worker's stall sweep, retry.ts), so a retry
+      // against it is a genuinely fresh attempt, not a replay - it falls
+      // through to the normal insert path below, same as before this existed.
+      const {
+        rows: [existing],
+      } = await client.query(
+        `SELECT c.id, r.s3_key, r.bytes
+           FROM calls c JOIN recordings r ON r.call_id = c.id
+          WHERE c.device_id = $1 AND c.idempotency_key = $2 AND c.status <> 'FAILED_UPLOAD'
+          ORDER BY c.created_at DESC
+          LIMIT 1`,
+        [deviceId, call.idempotencyKey],
+      );
+      if (existing) {
+        const upload = await this.s3.createMultipartUpload(existing.s3_key, Number(existing.bytes));
+        return {
+          callId: existing.id,
+          upload: { method: "multipart" as const, ...upload },
+        };
+      }
+
       const consentStatus =
         ctx.consent_policy === "none"
           ? "not_required"
@@ -169,8 +212,8 @@ export class CallsController {
            (org_id, workspace_id, device_id, telecaller_id, direction, started_at, duration_s,
             audio_source_used, status, consent_status,
             remote_number_prefix, remote_number_last3, remote_number_hash, remote_name,
-            remote_number_full)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'AWAITING_AUDIO', $9, $10, $11, $12, $13, $14)
+            remote_number_full, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'AWAITING_AUDIO', $9, $10, $11, $12, $13, $14, $15)
          RETURNING id`,
         [
           orgId,
@@ -190,6 +233,7 @@ export class CallsController {
           numberHash,
           remoteName,
           numberFull,
+          call.idempotencyKey,
         ],
       );
 
@@ -213,8 +257,11 @@ export class CallsController {
   @Post(":id/complete")
   @UseGuards(DeviceAuthGuard)
   // Not throttled - the second half of ingest. Losing this call after the bytes
-  // are already in S3 strands the recording in AWAITING_AUDIO with no sweeper
-  // that recovers it, so it is the worst possible request to rate-limit.
+  // are already in S3 strands the recording in AWAITING_AUDIO (the client's
+  // retry can resume it via the idempotency key in create() above, but only
+  // while it keeps trying; the worker's stall sweep in retry.ts is the
+  // backstop for a device that never comes back), so it is the worst possible
+  // request to rate-limit.
   @SkipThrottle()
   async complete(
     @Req() req: DeviceRequest,
@@ -241,14 +288,25 @@ export class CallsController {
         [callId],
       );
       if (!row) throw new NotFoundException("call not found");
-      if (row.status !== "AWAITING_AUDIO") {
-        throw new ConflictException(`call is ${row.status}, not awaiting audio`);
-      }
       if (row.sha256 !== sha256) {
         throw new BadRequestException("sha256 mismatch with call creation");
       }
       return row;
     });
+
+    // Idempotent replay (0102): this call already has its audio - either this
+    // exact /complete already ran and its response never reached the handset,
+    // or create() above handed a retry this row's real S3 key under a fresh
+    // multipart upload it turns out not to need. The sha256 check just above
+    // already proved this is the SAME recording, not a stray reuse of the
+    // callId, so acknowledge it as done rather than rejecting a "double
+    // complete" - and touch neither S3 nor the pipeline: finishing the
+    // multipart upload the client just performed would overwrite a real,
+    // already-processed object with a redundant copy of itself, and
+    // republishing would run the pipeline a second time for free.
+    if (rec.status !== "AWAITING_AUDIO") {
+      return { callId, status: rec.status };
+    }
 
     // Outside any transaction / pool connection now.
     await this.s3.completeMultipartUpload(rec.s3_key, uploadId, parts);

@@ -15,6 +15,26 @@ function isPublic(pathname: string) {
 }
 
 /**
+ * Private paths that a browser fetches rather than navigates to, and which must
+ * therefore be REFUSED rather than redirected.
+ *
+ * `/events` is the console's live-update stream and `/events/poll` its
+ * fallback. Sending an expired session a 307 to `/login` gives EventSource an
+ * HTML page where it wanted an event stream, and gives `fetch(...).json()` a
+ * login form to parse - both of which surface as "something went wrong"
+ * somewhere deep in the client with no indication that the actual problem is a
+ * session that needs renewing. A 401 says it in one number.
+ *
+ * Strictly narrower than the redirect it replaces: it grants nothing, it only
+ * refuses more legibly.
+ */
+const REFUSE_DONT_REDIRECT = ["/events"];
+
+function isFetchOnly(pathname: string) {
+  return REFUSE_DONT_REDIRECT.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/**
  * Refreshes the Supabase session on every request and gates the app.
  *
  * Two rules keep this from locking anyone out or leaking pages:
@@ -63,6 +83,10 @@ export async function updateSession(request: NextRequest) {
   const user = error ? null : (data?.claims ?? null);
 
   const { pathname, search } = request.nextUrl;
+
+  if (!user && isFetchOnly(pathname)) {
+    return new NextResponse("not signed in", { status: 401 });
+  }
 
   if (!user && !isPublic(pathname)) {
     const url = request.nextUrl.clone();

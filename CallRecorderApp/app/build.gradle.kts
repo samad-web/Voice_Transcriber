@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
 }
 
 /**
@@ -39,8 +40,8 @@ android {
         // against: publish-app-release.js refuses a code that is not higher than
         // the live one, because a handset offered an equal code would prompt
         // forever and never be able to satisfy the prompt.
-        versionCode = 5
-        versionName = "1.1.1"
+        versionCode = 6
+        versionName = "1.1.2"
     }
 
     signingConfigs {
@@ -147,4 +148,17 @@ dependencies {
 
     // QR scanning for device activation (instance id + admin key).
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // Firebase Cloud Messaging (FCM) — remote wakeup / instant logout+wipe push.
+    //
+    // Plain `firebase-messaging`, not `-ktx`: as of BOM 33.x the Kotlin
+    // extensions live in the main artifact and the -ktx one is deprecated.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    // Declared explicitly, NOT left to come in transitively behind Firebase:
+    // this is what provides `Task.await()` (kotlinx.coroutines.tasks), which
+    // FcmTokenWorker uses to read the registration token. It used to arrive via
+    // firebase-messaging-ktx, so dropping that artifact above would otherwise
+    // have taken the token fetch with it.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }

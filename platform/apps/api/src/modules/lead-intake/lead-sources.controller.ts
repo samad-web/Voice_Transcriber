@@ -24,6 +24,7 @@ import {
   parseSpreadsheetId,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { generateIntakeToken, LeadIntakeService } from "./lead-intake.service";
@@ -208,6 +209,14 @@ export class LeadSourcesController {
     this.assertProvider(input.kind, input.provider);
 
     return this.db.withOrg(orgId, async (client) => {
+      // Doc 23, A2 - see common/org-references.ts.
+      await assertInOrg(client, orgId, {
+        marketingSourceId: input.marketingSourceId,
+        projectId: input.projectId,
+        telecallerId: input.assignedTelecallerId,
+        workspaceId: input.workspaceId,
+      });
+
       const {
         rows: [row],
       } = await client.query<{ id: string; intake_token: string }>(
@@ -253,6 +262,14 @@ export class LeadSourcesController {
       );
       if (!existing) throw new NotFoundException("no such lead source");
       if (patch.provider) this.assertProvider(existing.kind, patch.provider);
+      // A source decides where every lead it produces is filed and who works
+      // it, so each of these must be this org's (doc 23, A2).
+      await assertInOrg(client, orgId, {
+        marketingSourceId: patch.marketingSourceId,
+        projectId: patch.projectId,
+        telecallerId: patch.assignedTelecallerId,
+        workspaceId: patch.workspaceId,
+      });
 
       // Dynamic SET, same shape as leads.controller.ts: only the keys actually
       // sent are written, so a console that renders one field cannot blank the

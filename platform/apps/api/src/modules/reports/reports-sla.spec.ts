@@ -65,3 +65,28 @@ describe("owned scope on follow-up compliance", () => {
     ).rejects.toThrow(REACHED_THE_DATABASE);
   });
 });
+
+describe("owned scope on the team roll-up (CRM dashboard Phase 8)", () => {
+  const reports = new ReportsService(landmineDb);
+
+  it("refuses before touching the database", async () => {
+    // Every row is somebody else's work, so there is no honest narrowing of it
+    // to the caller's own records - and a roll-up that quietly returned one row
+    // would look like a team of one.
+    await expect(reports.team("org", "2026-01-01", "2026-01-31", owned)).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it("says why, rather than just saying no", async () => {
+    await expect(reports.team("org", "2026-01-01", "2026-01-31", owned)).rejects.toThrow(
+      /other people's work/i,
+    );
+  });
+
+  it("does not refuse an unscoped caller", async () => {
+    await expect(reports.team("org", "2026-01-01", "2026-01-31", all)).rejects.toThrow(
+      REACHED_THE_DATABASE,
+    );
+  });
+});

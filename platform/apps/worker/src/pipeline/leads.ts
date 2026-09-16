@@ -2,6 +2,7 @@ import {
   deriveLeadTemperature,
   entryStage,
   isFilled,
+  leadTitle,
   parseLeadRules,
   parseLeadStages,
   qualifyLead,
@@ -52,25 +53,9 @@ export interface LeadUpsertResult {
   reason: string;
 }
 
-/**
- * The card heading.
- *
- * Falls back the same way the Call Explorer labels a call: extracted name →
- * the number's leading digits → nothing identifiable. An owner should never
- * see a raw uuid on a board card.
- */
-export function leadTitle(
-  extractedName: string | null,
-  remoteName: string | null,
-  numberPrefix: string | null,
-  numberLast3: string | null,
-): string {
-  const name = extractedName?.trim() || remoteName?.trim();
-  if (name) return name.slice(0, 200);
-  if (numberPrefix) return `${numberPrefix}…`;
-  if (numberLast3) return `…${numberLast3}`;
-  return "Unknown caller";
-}
+// The card heading. Moved to @aura/shared so the API's projection names a
+// record exactly as this one does (doc 23, B3); re-exported for existing importers.
+export { leadTitle };
 
 /**
  * Qualify a completed call and write (or update) its lead.

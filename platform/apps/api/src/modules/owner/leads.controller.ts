@@ -8,27 +8,34 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
 import {
+  BulkAssignLeadsInput,
   LeadSourceChannel,
   LeadTemperature,
   parseLeadStages,
   parsePipelineStages,
   statusForStage,
+  type BulkResult,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { assignInBulk } from "../../common/bulk-assign";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { orgHasModule } from "../../common/org-modules";
+import { assertInOrg } from "../../common/org-references";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OwnerScope, type OwnerRecordScope, ownerScopeFilter } from "../../common/owner-scope";
 import { OwnerScopeGuard } from "../../common/owner-scope.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { recordStageTransition } from "../crm-objects/stage-history";
+import { dealStageChangedSubject, enqueueAutomationEventSafely } from "../automation/enqueue";
 
 /**
  * "none" alongside a uuid, so "which leads has the detector NOT managed to
@@ -42,6 +49,12 @@ const ListQuery = z.object({
   stage: z.string().max(40).optional(),
   status: z.enum(["open", "won", "lost"]).optional(),
   telecallerId: z.string().uuid().optional(),
+  /**
+   * Who the lead is ASSIGNED to (`assigned_telecaller_id`, a telecaller
+   * identity) - not `telecallerId` above, which is the handset that took the
+   * call. `none` is the unrouted backlog.
+   */
+  assignedTo: z.union([z.string().uuid(), z.literal("none")]).optional(),
   projectId: ProjectFilter.optional(),
   /**
    * "none" alongside a channel for the same reason ProjectFilter has it: the
@@ -65,6 +78,16 @@ const ListQuery = z.object({
   unresponded: z.coerce.boolean().optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
+  /**
+   * Arrived within these dates, inclusive, in the org's reporting timezone -
+   * the SAME predicate the response-time report windows on
+   * (reports.service.ts `responseTime`), so the dashboard's card and chart
+   * open lists of exactly the leads they counted.
+   */
+  createdFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** `no` = nobody has responded yet (first_responded_at, migration 0090). */
+  responded: z.enum(["yes", "no"]).optional(),
   sort: z.enum(["activity", "created", "value", "title"]).default("activity"),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -116,7 +139,10 @@ const LEAD_COLUMNS = `
   -- tell a phone call from an ad from a CSV import, so "which channel is worth
   -- the money" was unanswerable from the screen people actually work in.
   l.source_channel, ls.name AS source_name, ms.name AS campaign_name,
-  COALESCE(d.telecaller_name, d.label) AS telecaller`;
+  COALESCE(d.telecaller_name, d.label) AS telecaller,
+  -- Whose lead it is (routing, or a person's bulk reassign), as opposed to
+  -- whose handset took the call above.
+  l.assigned_telecaller_id, atc.display_name AS assigned_telecaller_name`;
 
 /**
  * The joins LEAD_COLUMNS depends on. Kept beside it rather than repeated at
@@ -128,7 +154,8 @@ const LEAD_JOINS = `
   LEFT JOIN devices d      ON d.id = l.telecaller_device_id
   LEFT JOIN crm_projects pr ON pr.id = l.project_id
   LEFT JOIN lead_sources ls ON ls.id = l.lead_source_id
-  LEFT JOIN marketing_sources ms ON ms.id = l.marketing_source_id`;
+  LEFT JOIN marketing_sources ms ON ms.id = l.marketing_source_id
+  LEFT JOIN telecallers atc ON atc.id = l.assigned_telecaller_id`;
 
 /**
  * The AI read of the lead's most recent call - what the operator console has
@@ -290,12 +317,16 @@ export class LeadsController {
       stage,
       status,
       telecallerId,
+      assignedTo,
       projectId,
       sourceChannel,
       minAgeDays,
       maxAgeDays,
       unresponded,
       q,
+      createdFrom,
+      createdTo,
+      responded,
       sort,
       limit,
       offset,
@@ -334,6 +365,15 @@ export class LeadsController {
       if (stage) add("l.stage = $?", stage);
       if (status) add("l.status = $?", status);
       if (telecallerId) add("l.telecaller_device_id = $?", telecallerId);
+      if (assignedTo === "none") where.push("l.assigned_telecaller_id IS NULL");
+      else if (assignedTo) add("l.assigned_telecaller_id = $?", assignedTo);
+      // Day bounds in the org's reporting timezone, written exactly as
+      // reports.service.ts responseTime writes them.
+      const tz = `(SELECT reporting_timezone FROM organizations LIMIT 1)`;
+      if (createdFrom) add(`l.created_at >= ($?::date)::timestamp AT TIME ZONE ${tz}`, createdFrom);
+      if (createdTo) add(`l.created_at < (($?::date) + 1)::timestamp AT TIME ZONE ${tz}`, createdTo);
+      if (responded === "no") where.push("l.first_responded_at IS NULL");
+      else if (responded === "yes") where.push("l.first_responded_at IS NOT NULL");
       if (projectId === "none") where.push("l.project_id IS NULL");
       else if (projectId) add("l.project_id = $?", projectId);
       if (sourceChannel === "none") where.push("l.source_channel IS NULL");
@@ -635,6 +675,76 @@ export class LeadsController {
   }
 
   /**
+   * Give many leads to one telecaller - the Leads list's bulk "Reassign".
+   *
+   * ── OWNER AND MANAGER ONLY ─────────────────────────────────────────────────
+   *
+   * Assignment is what lead routing (0094) does, and its rules page is
+   * owner/manager; a person redistributing the backlog by hand is making the
+   * same decision, so it gets the same gate. A telecaller who could reassign
+   * could hand their hard leads to a colleague, or take the easy ones.
+   *
+   * The target is a TELECALLER identity, checked against this org
+   * (org-references.ts), not a user: a telecaller can have no console login.
+   * The persona scope is still ANDed into the UPDATE, which for these two
+   * personas narrows nothing today and keeps meaning something if that changes.
+   *
+   * Assignment is a person's decision (crm-ingest.service.ts keeps it across
+   * re-submissions), so an assigned lead stays assigned until a person moves it.
+   */
+  @Post("reassign")
+  @UseGuards(OwnerRoleGuard)
+  @RequireOwnerRole("owner", "manager")
+  async reassign(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @OwnerScope() scope: OwnerRecordScope,
+  ): Promise<BulkResult> {
+    const parsed = BulkAssignLeadsInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { ids, telecallerId } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      await assertInOrg(client, orgId, { telecallerId });
+      const updated = await assignInBulk(client, {
+        orgId,
+        table: "leads",
+        column: "assigned_telecaller_id",
+        value: telecallerId,
+        ids,
+        owned: ownerScopeFilter("lead", scope, "r"),
+        audit: { targetType: "lead", action: "lead.reassign", actorId: req.principal?.userId ?? "unknown" },
+      });
+
+      // Tell the telecaller, once per click - and only one bound to a console
+      // login (lead-routing.ts's notifyAssignee reasoning: an unbound
+      // telecaller has nobody to tell, and that is a normal state). Not when
+      // the person reassigning IS that telecaller.
+      if (telecallerId && updated.length > 0) {
+        const one = updated.length === 1;
+        await client.query(
+          `INSERT INTO notifications (org_id, user_id, kind, title, body, link_path)
+           SELECT $1, t.user_id, 'lead_assigned', $2, $3, $4
+             FROM telecallers t
+            WHERE t.id = $5 AND t.org_id = $1 AND t.user_id IS NOT NULL
+              AND t.user_id::text IS DISTINCT FROM $6`,
+          [
+            orgId,
+            one ? "A lead was assigned to you" : `${updated.length} leads were assigned to you`,
+            "Reassigned to you from the Leads list.",
+            one ? `/owner/leads?focus=${updated[0]}` : "/owner/leads",
+            telecallerId,
+            req.principal?.userId ?? null,
+          ],
+        );
+      }
+
+      return { updated: updated.length, skipped: ids.length - updated.length };
+    });
+  }
+
+  /**
    * Move a card, or edit what the owner keeps on it.
    *
    * A stage move is the one field with a side effect: status is derived from
@@ -664,6 +774,10 @@ export class LeadsController {
         );
       }
       const status = p.stage ? statusForStage(stages, p.stage) : null;
+
+      // The handset and project must be this org's - foreign-key checks
+      // ignore RLS (doc 23, A2).
+      await assertInOrg(client, orgId, { deviceId: p.telecallerDeviceId, projectId: p.projectId });
 
       // WRITES ARE SCOPED TOO, not only reads. A telecaller who can see just
       // their own leads but could still PATCH any lead id would be able to
@@ -753,14 +867,29 @@ export class LeadsController {
         );
       }
 
-      // A6: the worker's dual-write (projectLeadToCrm) only sets a deal's
-      // stage/status ONCE, on creation - a follow-up call must never move a
-      // deal a human is already working. This IS that human moving it, so
-      // propagating it onto the linked deal is this endpoint's job, not the
-      // worker's. Own non-blocking try/catch inside - a bug here must never
-      // break the lead PATCH itself.
-      if (p.stage)
-        await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
+      // Everything below is carried onto the lead's deal and contact, and none
+      // of it may cost the lead PATCH itself. A try/catch alone cannot promise
+      // that: once a statement fails inside a Postgres transaction, every later
+      // statement fails too - including the audit insert below - so the whole
+      // PATCH would 500 after all. The SAVEPOINT is what makes "non-blocking"
+      // true.
+      await client.query("SAVEPOINT lead_propagation");
+      try {
+        // Edits a person made to the lead reach the records projected from it.
+        // Before this, a renamed or repriced lead left its deal and contact on
+        // the old values forever (doc 23, F1).
+        await this.propagateFieldsToCrm(client, leadId, p);
+
+        // A6: the worker's dual-write (projectLeadToCrm) only sets a deal's
+        // stage/status ONCE, on creation - a follow-up call must never move a
+        // deal a human is already working. This IS that human moving it, so
+        // propagating it onto the linked deal is this endpoint's job.
+        if (p.stage) await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
+        await client.query("RELEASE SAVEPOINT lead_propagation");
+      } catch (err) {
+        await client.query("ROLLBACK TO SAVEPOINT lead_propagation");
+        console.error(`lead ${leadId}: deal/contact propagation error (non-blocking):`, err);
+      }
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
@@ -782,57 +911,112 @@ export class LeadsController {
    * quality signal for reconciliation, not something to guess about here.
    */
   private async propagateStageToDeal(
-    client: {
-      query: <R = Record<string, unknown>>(
-        sql: string,
-        params?: unknown[],
-      ) => Promise<{ rows: R[] }>;
-    },
+    client: PropagationClient,
     orgId: string,
     leadId: string,
     newStage: string,
     actorId: string | null,
   ): Promise<void> {
-    try {
-      const {
-        rows: [deal],
-      } = await client.query<{ id: string; stage: string; status: string; pipeline_id: string }>(
-        `SELECT id, stage, status, pipeline_id FROM deals WHERE source_lead_id = $1`,
-        [leadId],
-      );
-      if (!deal) return; // no dual-written deal for this lead (yet, or ever)
+    const {
+      rows: [deal],
+    } = await client.query<{
+      id: string;
+      stage: string;
+      status: string;
+      pipeline_id: string;
+      contact_id: string | null;
+      account_id: string | null;
+      amount: string | null;
+      owner_user_id: string | null;
+    }>(
+      `SELECT id, stage, status, pipeline_id, contact_id, account_id, amount, owner_user_id
+         FROM deals WHERE source_lead_id = $1`,
+      [leadId],
+    );
+    if (!deal) return; // no dual-written deal for this lead (yet, or ever)
 
-      const {
-        rows: [pipeline],
-      } = await client.query<{ stages: unknown }>(
-        `SELECT stages FROM deal_pipelines WHERE id = $1`,
-        [deal.pipeline_id],
+    const {
+      rows: [pipeline],
+    } = await client.query<{ stages: unknown }>(`SELECT stages FROM deal_pipelines WHERE id = $1`, [
+      deal.pipeline_id,
+    ]);
+    const stages = parsePipelineStages(pipeline?.stages);
+    if (!stages.some((s) => s.key === newStage)) {
+      console.error(
+        `lead ${leadId}: cannot propagate stage "${newStage}" - not a stage on deal ${deal.id}'s pipeline`,
       );
-      const stages = parsePipelineStages(pipeline?.stages);
-      if (!stages.some((s) => s.key === newStage)) {
-        console.error(
-          `lead ${leadId}: cannot propagate stage "${newStage}" - not a stage on deal ${deal.id}'s pipeline`,
-        );
-        return;
-      }
-      const dealStatus = statusForStage(stages, newStage);
+      return;
+    }
+    const dealStatus = statusForStage(stages, newStage);
 
+    await client.query(
+      `UPDATE deals SET stage = $2, status = $3, stage_changed_at = now(), last_activity_at = now()
+        WHERE id = $1`,
+      [deal.id, newStage, dealStatus],
+    );
+    await recordStageTransition(client, orgId, {
+      dealId: deal.id,
+      fromStage: deal.stage,
+      toStage: newStage,
+      fromStatus: deal.status,
+      toStatus: dealStatus,
+      changedBy: actorId,
+      source: "console",
+    });
+
+    // The event the Deals board's own PATCH queues for the same move. Without
+    // it a stage rule fired only when a card was dragged on Deals, never on the
+    // Lead Board most of the floor works from (doc 23, C2).
+    if (deal.stage !== newStage) {
+      await enqueueAutomationEventSafely(
+        client,
+        orgId,
+        "deal.stage_changed",
+        "deal",
+        deal.id,
+        dealStageChangedSubject(deal, deal.stage, newStage, dealStatus),
+      );
+    }
+  }
+
+  /**
+   * Carry a person's edits to a lead onto the deal and contact projected from
+   * it (doc 23, F1). One direction only - lead to deal/contact - by decision X3.
+   *
+   * - title    -> deal.name       (the reconciler compares exactly these two)
+   * - valueNum -> deal.amount
+   * - contactName -> contact.display_name, but ONLY on the contact this lead
+   *   created (`source_lead_id`). A contact is org-wide and several leads can
+   *   collapse into it; renaming it from one of them would rename a person
+   *   every other lead also points at.
+   *
+   * A cleared contact name is not carried: `display_name` is NOT NULL, and
+   * blanking a person's name because a card's label was emptied is not an edit
+   * anybody meant.
+   */
+  private async propagateFieldsToCrm(
+    client: PropagationClient,
+    leadId: string,
+    p: { title?: string; valueNum?: number | null; contactName?: string | null },
+  ): Promise<void> {
+    if (p.title !== undefined || p.valueNum !== undefined) {
       await client.query(
-        `UPDATE deals SET stage = $2, status = $3, stage_changed_at = now(), last_activity_at = now()
-          WHERE id = $1`,
-        [deal.id, newStage, dealStatus],
+        `UPDATE deals SET
+           name   = COALESCE($2, name),
+           amount = CASE WHEN $3::boolean THEN $4::numeric ELSE amount END
+         WHERE source_lead_id = $1`,
+        [leadId, p.title ?? null, p.valueNum !== undefined, p.valueNum ?? null],
       );
-      await recordStageTransition(client, orgId, {
-        dealId: deal.id,
-        fromStage: deal.stage,
-        toStage: newStage,
-        fromStatus: deal.status,
-        toStatus: dealStatus,
-        changedBy: actorId,
-        source: "console",
-      });
-    } catch (err) {
-      console.error(`lead ${leadId}: deal stage propagation error (non-blocking):`, err);
+    }
+    const name = p.contactName?.trim();
+    if (name) {
+      await client.query(
+        // A person renamed the lead, so the name is now a human's (0107) and
+        // the call projection will not write the extraction back over it.
+        `UPDATE contacts SET display_name = $2, display_name_set_by_human_at = now()
+          WHERE source_lead_id = $1 AND status <> 'merged'`,
+        [leadId, name.slice(0, 200)],
+      );
     }
   }
 }
@@ -841,3 +1025,8 @@ function actorUserId(req: PrincipalRequest): string | null {
   const parsed = z.string().uuid().safeParse(req.principal?.userId);
   return parsed.success ? parsed.data : null;
 }
+
+/** The client shape the propagation helpers need - a pg client inside withOrg. */
+type PropagationClient = {
+  query: <R = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }>;
+};

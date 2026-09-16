@@ -127,24 +127,23 @@ export default async function InstanceCallsPage({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="Calls"
-          value={String(stats?.total ?? 0)}
+          value={stats?.total ?? 0}
+          context={`${stats?.complete ?? 0} fully processed`}
           icon={<Phone className="h-4 w-4" />}
-          footer={<span>{stats?.failed ?? 0} failed</span>}
+          state={(stats?.failed ?? 0) > 0 ? "error" : undefined}
+          stateLabel={(stats?.failed ?? 0) > 0 ? `${stats?.failed} failed` : undefined}
         />
         <StatCard
           label="Recorded time"
           value={`${minutes} min`}
+          context="across every call in this instance"
           icon={<Timer className="h-4 w-4" />}
         />
         <StatCard
           label="Capture success"
           value={successRate}
+          context={`${stats?.complete ?? 0} of ${stats?.total ?? 0} complete`}
           icon={<Activity className="h-4 w-4" />}
-          footer={
-            <span>
-              {stats?.complete ?? 0}/{stats?.total ?? 0} complete
-            </span>
-          }
         />
       </div>
 

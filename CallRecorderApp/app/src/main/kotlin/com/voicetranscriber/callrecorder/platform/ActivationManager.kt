@@ -31,6 +31,11 @@ object ActivationManager {
             enrollment.deviceId, enrollment.refreshToken,
         )
         refreshConfig(context)
+        // Register the FCM push token so the server can wake this device,
+        // push instant logout/wipe, and trigger config refreshes on demand.
+        // Hands off to WorkManager - enrollment must not fail, or appear to
+        // fail, because a push token could not be registered.
+        FcmTokenManager.syncNow(context)
         "Activated as device ${enrollment.deviceId.take(8)}…"
     }
 

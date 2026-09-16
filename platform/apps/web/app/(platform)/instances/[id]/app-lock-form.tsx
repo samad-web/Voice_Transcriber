@@ -62,6 +62,10 @@ export function AppLockForm({ orgId, enabled }: { orgId: string; enabled: boolea
       body: "Every enrolled handset will open straight to the recordings list again, with no password.",
       confirmLabel: "Turn off lock",
       tone: "danger",
+      // A reversible switch - setting a password again restores it - so no
+      // type-DELETE gate. See ConfirmOptions.requireTyped for where the line
+      // is drawn.
+      requireTyped: false,
     });
     if (!ok) return;
     startTransition(async () => {

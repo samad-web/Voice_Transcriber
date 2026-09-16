@@ -2,6 +2,7 @@ import { Activity, Building2, Server } from "lucide-react";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin } from "@/lib/server-api";
+import { Provisioning } from "./provisioning";
 
 /**
  * Platform-admin console (us, not customers). Gated by `(admin)/layout.tsx`
@@ -18,6 +19,10 @@ interface Tenant {
   region: string;
   call_count: number;
   device_count: number;
+  /** Migration 0072/0093 - what this client is provisioned for. */
+  enabled_modules: string[];
+  enabled_features: string[];
+  whatsapp_provider: string;
 }
 
 interface HealthStage {
@@ -32,6 +37,7 @@ interface Health {
   stages: HealthStage[];
   queue?: { name: string; depth: number | null; reachable: boolean };
   awaitingAudio?: number;
+  failedUpload?: number;
   stuckAfterSeconds?: number;
 }
 
@@ -92,6 +98,26 @@ export default async function AdminPage() {
         </Card>
       ) : (
         <div className="space-y-6">
+          {/* Provisioning first, above the read-only tenant table. This is the
+              page's only surface an operator ACTS on, and burying an action
+              below two panels of reporting is how a console teaches people that
+              the thing they came for is somewhere further down. */}
+          {tenantData === null ? null : (
+            <Provisioning
+              tenants={tenantData.tenants.map((t) => ({
+                id: t.id,
+                name: t.name,
+                // Defaulted here rather than trusted: an API running ahead of
+                // migration 0093 returns neither, and a crash on `.includes`
+                // of undefined would take the whole admin console down over a
+                // column that is only a provisioning preference.
+                enabled_modules: t.enabled_modules ?? [],
+                enabled_features: t.enabled_features ?? [],
+                whatsapp_provider: t.whatsapp_provider ?? "none",
+              }))}
+            />
+          )}
+
           {/* Tenants */}
           <Card elevated className="overflow-hidden p-0">
             <div className={PANEL_HEAD}>
@@ -199,6 +225,9 @@ export default async function AdminPage() {
                   queue {health.queue?.reachable ? `${health.queue.depth} waiting` : "unreachable"}
                 </StatusChip>
                 <span>awaiting audio {health.awaitingAudio ?? 0}</span>
+                <span className={health.failedUpload ? "font-medium text-danger-text" : undefined}>
+                  failed upload {health.failedUpload ?? 0}
+                </span>
                 <span>stalled after {Math.round((health.stuckAfterSeconds ?? 0) / 60)}m</span>
               </div>
             ) : null}

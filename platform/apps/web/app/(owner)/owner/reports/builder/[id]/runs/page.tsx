@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { LocalTime } from "@/components/local-time";
 import { ownerGet } from "@/lib/owner-context";
 
-export const metadata: Metadata = { title: "Report runs - Aura" };
+export const metadata: Metadata = { title: "Report runs" };
 
 interface RunRow {
   id: string;

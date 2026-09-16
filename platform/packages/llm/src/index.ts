@@ -1468,7 +1468,4 @@ function stubAnalyze(schema: ExtractionSchema): AnalyzeResult {
   };
 }
 
-export {
-  qualifyWhatsAppConversation,
-  type QualificationResult,
-} from "./qualify";
+export { qualifyWhatsAppConversation, type QualificationResult } from "./qualify";

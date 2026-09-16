@@ -5,6 +5,7 @@ import { computeTalkMetrics, upsertCallAnalytics } from "./call-analytics";
 import { loadActiveSop, upsertSopResult, type ActiveSop } from "./call-sop";
 import { enqueueDispatch } from "./outbox";
 import { detectCallProjects } from "./projects";
+import { announce } from "./realtime";
 
 /**
  * The enrichment lane (A4): everything a person reads, and nothing a lead needs.
@@ -214,8 +215,9 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
       asrSegments,
       input.vocabulary ?? [],
       input.direction,
-          // null for an org with no SOP, or a call with no real speaker
-      // separation - in both cases the steps never enter the prompt.
+      // null for an org with no SOP, or a call with no real speaker
+      // separation - in both cases the steps never enter the prompt, so
+      // neither costs a token.
       sop?.steps ?? null,
     );
   } catch (err) {
@@ -327,14 +329,16 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
       }
 
       /*
-       * SOP adherence (0091). Non-blocking, like the analytics above: the lead
-       * is already on the board by the time this lane runs, so a scoring
-       * failure must not cost the call its enrichment.
+       * SOP adherence (0091). Non-blocking, like the analytics above: a lead is
+       * already on the board by the time this lane runs, and a scoring failure
+       * must not cost the call its enrichment.
        *
        * `sop` is null whenever the steps never went into the prompt - no active
        * SOP, or no acoustic separation - so this writes nothing rather than a
-       * row of nulls. The console tells those two cases apart; a checklist of
-       * inconclusive steps would look like a rep who failed every one.
+       * row of nulls. That distinction matters to the console, which says
+       * "needs speaker separation" for the second case and shows no panel at
+       * all for the first; a row full of inconclusive steps would look like a
+       * rep who failed every one.
        */
       if (sop) {
         try {
@@ -419,6 +423,11 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
   }
 
   await settle(orgId, callId, "done");
+  // The conversation read, the coaching metrics and the risk flags all landed
+  // just now, minutes after the call itself completed and long after anybody
+  // stopped expecting the page to change. Call Intel and the quality panels are
+  // reading exactly these columns.
+  announce(orgId, "call", "updated", callId);
   console.log(`call ${callId}: enriched`);
 }
 

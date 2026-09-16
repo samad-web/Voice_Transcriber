@@ -8,7 +8,7 @@ import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
 import { SuperfoneConnect } from "./superfone-connect";
 
-export const metadata: Metadata = { title: "Superfone - Aura" };
+export const metadata: Metadata = { title: "Superfone" };
 
 interface SourceRow {
   id: string;

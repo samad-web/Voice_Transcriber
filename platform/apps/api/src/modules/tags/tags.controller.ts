@@ -14,9 +14,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { BulkTagInput, type BulkResult } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { RecordScope, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg } from "../../common/org-references";
+import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -68,7 +72,7 @@ export class TagsController {
                 (SELECT count(*) FROM contact_tags ct WHERE ct.tag_id = t.id)::int AS contact_count,
                 (SELECT count(*) FROM deal_tags    dt WHERE dt.tag_id = t.id)::int AS deal_count
            FROM tags t
-          WHERE t.org_id = $1
+          WHERE t.org_id = $1 AND t.deleted_at IS NULL
           ORDER BY lower(t.name)`,
         [orgId],
       );
@@ -128,7 +132,7 @@ export class TagsController {
         const {
           rows: [tag],
         } = await client.query(
-          `UPDATE tags SET ${sets.join(", ")} WHERE id = $1
+          `UPDATE tags SET ${sets.join(", ")} WHERE id = $1 AND deleted_at IS NULL
            RETURNING id, name, color, created_at`,
           params,
         );
@@ -142,18 +146,25 @@ export class TagsController {
   }
 
   /**
-   * Delete the tag and every attachment of it.
+   * Retire the tag, reversibly (migration 0097).
    *
-   * The join tables CASCADE, so this really does remove the label everywhere
-   * rather than leaving orphaned rows. That is destructive and irreversible,
-   * which is why the list endpoint returns usage counts - the console shows
-   * "used on 34 contacts" before it asks.
+   * This used to be a hard DELETE, and the join tables CASCADE, so tidying a
+   * tag list also erased which four hundred contacts had been in that campaign.
+   * Now the row is marked and the taggings are simply left alone: nothing is
+   * deleted, so nothing cascades, and restoring from the bin is one UPDATE.
+   *
+   * The list endpoint still returns usage counts, because "used on 34 contacts"
+   * before the click is better than a recycle bin afterwards.
    */
   @Delete("tags/:id")
-  async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+  async remove(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
-      const { rowCount } = await client.query(`DELETE FROM tags WHERE id = $1`, [id]);
-      if (!rowCount) throw new NotFoundException("tag not found");
+      const removed = await softDelete(client, "tag", id, req);
+      if (!removed) throw new NotFoundException("tag not found");
       return { deleted: true };
     });
   }
@@ -247,6 +258,154 @@ export class TagsController {
       return { detached: true };
     });
   }
+
+  // ── attaching in bulk (the list views' bulk action bar) ───────────────
+
+  /**
+   * One tag onto many contacts - "tag these 40 as the Diwali campaign".
+   *
+   * Addressed by TAG (`tags/:id/contacts`), not `contacts/bulk/tags`: the
+   * latter would be matched by `contacts/:id/tags` above with id "bulk" and
+   * fail its uuid pipe before ever reaching a bulk handler.
+   *
+   * Same grant as attaching one (`contact:edit`), and - unlike the single
+   * attach, which predates record scope - the `owned` scope is applied to the
+   * selection: a rep who can edit only their own contacts gets their own
+   * tagged and the rest counted as skipped, never relabelled.
+   */
+  @Post("tags/:id/contacts")
+  @UseGuards(CrmPermissionsGuard)
+  @RequireCrmPermission("contact", "edit")
+  async tagContacts(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) tagId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
+  ): Promise<BulkResult> {
+    const parsed = BulkTagInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { ids } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      // Foreign keys ignore RLS (org-references.ts): without this, contact_tags
+      // would accept another tenant's contact id under this org's tag.
+      await assertInOrg(client, orgId, { contactId: ids });
+      await assertLiveTag(client, orgId, tagId);
+      const counts = await attachInBulk(client, {
+        orgId,
+        tagId,
+        ids,
+        actor: actorUserId(req),
+        records: "contacts",
+        join: "contact_tags",
+        column: "contact_id",
+        // A merged contact is a pointer to its survivor, not a record anyone works.
+        extra: "r.status <> 'merged'",
+        owned: scopeFilter("contact", recordScope, "r"),
+      });
+      return { updated: counts.eligible, skipped: ids.length - counts.eligible };
+    });
+  }
+
+  /** The same for deals, on `deal:edit` and the deal's own scope. */
+  @Post("tags/:id/deals")
+  @UseGuards(CrmPermissionsGuard)
+  @RequireCrmPermission("deal", "edit")
+  async tagDeals(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) tagId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
+  ): Promise<BulkResult> {
+    const parsed = BulkTagInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { ids } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      await assertInOrg(client, orgId, { dealId: ids });
+      await assertLiveTag(client, orgId, tagId);
+      const counts = await attachInBulk(client, {
+        orgId,
+        tagId,
+        ids,
+        actor: actorUserId(req),
+        records: "deals",
+        join: "deal_tags",
+        column: "deal_id",
+        extra: null,
+        owned: scopeFilter("deal", recordScope, "r"),
+      });
+      return { updated: counts.eligible, skipped: ids.length - counts.eligible };
+    });
+  }
+}
+
+type BulkClient = {
+  query: <R = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: R[]; rowCount: number | null }>;
+};
+
+/**
+ * 400 unless the tag is this org's and not in the recycle bin (0097). A binned
+ * tag still exists, and attaching to it would put a label on records that no
+ * list, filter or chip can show.
+ */
+async function assertLiveTag(client: BulkClient, orgId: string, tagId: string): Promise<void> {
+  const { rowCount } = await client.query(
+    `SELECT 1 FROM tags WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+    [tagId, orgId],
+  );
+  if (!rowCount) throw new BadRequestException("tagId: no such tag in this organization");
+}
+
+/**
+ * INSERT ... SELECT over the records the caller may edit, in one statement.
+ *
+ * `eligible` counts the selected records that passed the scope, whether or not
+ * they already carried the tag - re-tagging a tagged record is success, the
+ * same no-op the single attach treats it as.
+ *
+ * Table and column names come from the two call sites above, never from the
+ * request.
+ */
+async function attachInBulk(
+  client: BulkClient,
+  o: {
+    orgId: string;
+    tagId: string;
+    ids: string[];
+    actor: string | null;
+    records: "contacts" | "deals";
+    join: "contact_tags" | "deal_tags";
+    column: "contact_id" | "deal_id";
+    extra: string | null;
+    owned: { sql: string; value: string } | null;
+  },
+): Promise<{ eligible: number }> {
+  const params: unknown[] = [o.orgId, o.ids, o.tagId, o.actor];
+  const where = [`r.org_id = $1`, `r.id = ANY($2::uuid[])`];
+  if (o.extra) where.push(o.extra);
+  if (o.owned) {
+    params.push(o.owned.value);
+    where.push(o.owned.sql.replace(/\$\?/g, `$${params.length}`));
+  }
+  const {
+    rows: [row],
+  } = await client.query<{ eligible: number }>(
+    `WITH eligible AS (
+       SELECT r.id FROM ${o.records} r WHERE ${where.join(" AND ")}
+     ), attached AS (
+       INSERT INTO ${o.join} (org_id, ${o.column}, tag_id, tagged_by)
+       SELECT $1, e.id, $3, $4 FROM eligible e
+       ON CONFLICT (${o.column}, tag_id) DO NOTHING
+       RETURNING 1
+     )
+     SELECT (SELECT count(*) FROM eligible)::int AS eligible,
+            (SELECT count(*) FROM attached)::int AS attached`,
+    params,
+  );
+  return { eligible: row?.eligible ?? 0 };
 }
 
 function readTagId(body: unknown): string {

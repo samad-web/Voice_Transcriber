@@ -22,6 +22,7 @@
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/throttler": "^6.4.0",
+    "firebase-admin": "^14.4.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "reflect-metadata": "^0.2.2",

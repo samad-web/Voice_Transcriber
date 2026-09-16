@@ -26,9 +26,17 @@ import type { DbClient } from "./crm-dispatch";
  *
  * Rules can move deals; a moved deal is a stage change; a stage change is a
  * trigger. That is a loop unless something stops it, and the something is not
- * a depth counter - it is that NOTHING IN THIS FILE ENQUEUES AN EVENT. Only
- * the API (a person did something) and the sweep below (a deadline passed)
- * ever insert into automation_events.
+ * a depth counter - it is that NOTHING IN THIS FILE ENQUEUES AN EVENT. Three
+ * producers insert into automation_events, and none of them is a rule:
+ *
+ *   - the API, when a person did something;
+ *   - the sweep below, when a deadline passed;
+ *   - the Lead -> Contact/Deal projection (@aura/db crm-projection.ts), when a
+ *     call, form, email or ad CREATED a contact or deal - `contact.created` and
+ *     `deal.created` only, once per record (doc 23, C1). This cannot close a
+ *     loop because no action a rule can take creates a contact or a deal;
+ *     automation.test.ts in @aura/shared pins that, so adding such an action
+ *     fails a test that points back here.
  *
  * The cost is real and worth naming: a rule cannot chain into another rule.
  * "When it goes idle, move it to Nurture" will not then fire "when it enters
@@ -318,7 +326,7 @@ async function moveStage(
 export async function processEvent(client: DbClient, event: EventRow): Promise<void> {
   const { rows: rules } = await client.query<RuleRow>(
     `SELECT id, name, conditions, actions FROM automation_rules
-      WHERE trigger = $1 AND status = 'active'`,
+      WHERE trigger = $1 AND status = 'active' AND deleted_at IS NULL`,
     [event.trigger],
   );
 
@@ -427,7 +435,7 @@ export async function sweepAutomationTriggers(): Promise<number> {
 
   const { rows: idleRules } = await pool.query<{ org_id: string; conditions: AutomationConditions }>(
     `SELECT org_id, conditions FROM automation_rules
-      WHERE trigger = 'deal.idle' AND status = 'active'`,
+      WHERE trigger = 'deal.idle' AND status = 'active' AND deleted_at IS NULL`,
   );
   for (const rule of idleRules) {
     const days = rule.conditions?.idleDays ?? 14;
@@ -455,7 +463,7 @@ export async function sweepAutomationTriggers(): Promise<number> {
 
   const { rows: overdueRules } = await pool.query<{ org_id: string }>(
     `SELECT DISTINCT org_id FROM automation_rules
-      WHERE trigger = 'task.overdue' AND status = 'active'`,
+      WHERE trigger = 'task.overdue' AND status = 'active' AND deleted_at IS NULL`,
   );
   for (const rule of overdueRules) {
     const { rowCount } = await pool.query(
@@ -482,7 +490,7 @@ export async function sweepAutomationTriggers(): Promise<number> {
   // (checked in matchesConditions) decide whether THIS rule cares yet.
   const { rows: outreachOverdueRules } = await pool.query<{ org_id: string }>(
     `SELECT DISTINCT org_id FROM automation_rules
-      WHERE trigger = 'outreach_step.overdue' AND status = 'active'`,
+      WHERE trigger = 'outreach_step.overdue' AND status = 'active' AND deleted_at IS NULL`,
   );
   for (const rule of outreachOverdueRules) {
     const { rowCount } = await pool.query(

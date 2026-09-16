@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet } from "@/lib/owner-context";
 import { FeatureBoard } from "./feature-board";
 
-export const metadata: Metadata = { title: "Features - Aura" };
+export const metadata: Metadata = { title: "Features" };
 
 export interface FeatureRow {
   key: string;

@@ -38,9 +38,16 @@ const GATED = FEATURES.filter((f) => !f.locked).flatMap((f) =>
 );
 
 describe("every switchable page enforces its own feature", () => {
-  it.each(GATED)("%s gates %s", (_key, href) => {
+  it.each(GATED)("%s gates %s", (key, href) => {
     const source = readFileSync(pageFileFor(href), "utf8");
-    expect(source).toContain(`requireFeature("${href}")`);
+    // Two gate helpers, one resolver. `requireFeature` is keyed by PATH
+    // (owner-context.ts) and `requireOwnerFeature` by FEATURE
+    // (owner-features.ts); both run the shared `enabledFeatures`, so a page
+    // may use whichever reads better - but it must use one.
+    const gated =
+      source.includes(`requireFeature("${href}")`) ||
+      source.includes(`requireOwnerFeature("${key}")`);
+    expect([href, gated]).toEqual([href, true]);
   });
 
   it("covers something - a silently empty list would pass every case above", () => {

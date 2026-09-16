@@ -45,6 +45,22 @@ export const QualificationDisposition = z.enum([
   "vendor",
   /** Reached the wrong number and said so. */
   "wrong_number",
+  /**
+   * A private message to the human who owns the handset - a friend, a family
+   * member, a landlord, a doctor's receptionist.
+   *
+   * This category is NOT optional in this market. A business WhatsApp number in
+   * India is very often somebody's personal phone, so private traffic arrives on
+   * it constantly. Without a name of its own, a personal message could only land
+   * as `unclear` - and `unclear` means "look at this", which puts the owner's
+   * private life in a review queue for their staff to read. It also risks worse:
+   * a friend writing "how much did the car cost?" matches every buying keyword
+   * there is.
+   *
+   * Nothing about a personal thread is retained beyond the verdict itself - see
+   * redactForRetention().
+   */
+  "personal",
   /** Bulk, promotional, a scam, a link drop. */
   "spam",
   /** Too little was said to tell. Not a failure - the honest answer. */
@@ -54,6 +70,48 @@ export type QualificationDisposition = z.infer<typeof QualificationDisposition>;
 
 /** Only a `prospect` is ever worth putting in front of a reviewer as a lead. */
 export const LEAD_WORTHY_DISPOSITIONS: readonly QualificationDisposition[] = ["prospect"];
+
+/**
+ * Dispositions whose extracted content must NOT be kept.
+ *
+ * A verdict has to record that a thread was read and judged - otherwise the
+ * sweep re-reads and re-bills it forever, and there is no audit trail for why
+ * an enquiry never reached the board. But for these categories the extracted
+ * name, email, company and notes have no business purpose whatsoever: a
+ * personal message is the handset owner's private life, and a wrong number is
+ * a stranger who never wanted to talk to this business at all.
+ *
+ * So the row survives and its CONTENT does not. This is the smallest thing that
+ * is both honest about what happened and free of data nobody is entitled to.
+ */
+export const NON_RETAINABLE_DISPOSITIONS: readonly QualificationDisposition[] = [
+  "personal",
+  "wrong_number",
+  "spam",
+];
+
+/**
+ * Strip a verdict of everything a non-business thread should not leave behind.
+ *
+ * Applied at the WRITE site, not at render time. A redaction that happens on the
+ * way out still means the private message is sitting in the database, readable
+ * by anyone with SQL access and included in every backup - which is exactly the
+ * thing being avoided.
+ */
+export function redactForRetention(verdict: QualificationVerdict): QualificationVerdict {
+  if (!NON_RETAINABLE_DISPOSITIONS.includes(verdict.disposition)) return verdict;
+  return {
+    ...verdict,
+    name: null,
+    email: null,
+    company: null,
+    budget: null,
+    notes: null,
+    // The rationale is kept but must not quote the message - the prompt is
+    // explicit about that for these categories, and this is the backstop.
+    rationale: verdict.disposition === "personal" ? "Private message, not business correspondence." : verdict.rationale,
+  };
+}
 
 /**
  * The model's answer, and the shape the sweep persists.
@@ -337,6 +395,12 @@ export function qualificationPrompt(businessContext?: string | null): string {
     "   is asking about buying - price, availability, a quote, a demo, a booking.",
     "   An existing customer chasing an order is `existing_customer`, not `prospect`.",
     "   Someone selling TO this business, or a delivery/courier message, is `vendor`.",
+    "   A private message to the person who owns this phone - a friend, a relative,",
+    "   a landlord, a clinic, a school - is `personal`. This number may be somebody's",
+    "   own phone as well as the business's, so personal messages are COMMON and",
+    "   must never be scored as leads. If someone writes about money or a purchase",
+    "   in a way that is clearly private life rather than this business's product,",
+    "   that is still `personal`.",
     "2. Use `unclear` when too little was said to tell. This is a correct answer and",
     "   is strongly preferred over guessing `prospect`. A thread that only says 'hi'",
     "   is `unclear`.",
@@ -348,6 +412,10 @@ export function qualificationPrompt(businessContext?: string | null): string {
     "   becomes a real number in the business's revenue reports.",
     "5. `budget` must be a plain number in the currency they used, or null.",
     "6. `rationale` is one sentence quoting or paraphrasing what decided it.",
+    "   EXCEPTION: for `personal`, `wrong_number` and `spam`, do NOT quote or",
+    "   describe the content. Say only what category it is. The rationale is shown",
+    "   to office staff, and a private message must not be repeated to them.",
+    "   For those three, return null for name, email, company, budget and notes.",
     "7. The conversation may be in Hindi, Hinglish or another Indian language.",
     "   Judge it in that language; write intent, rationale and notes in English.",
     "",

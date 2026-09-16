@@ -1,3 +1,4 @@
+import { StatusChip } from "@aura/ui";
 import { LEAD_TEMPERATURE_LABELS, type LeadTemperature } from "@aura/shared";
 
 /**
@@ -16,10 +17,20 @@ import { LEAD_TEMPERATURE_LABELS, type LeadTemperature } from "@aura/shared";
  * the colour merely reinforces it. Same reason `project-chip.tsx` prints a
  * name rather than a coloured dot.
  */
-const TONE: Record<LeadTemperature, string> = {
-  hot: "border-danger-text/30 bg-danger-subtle text-danger-text",
-  medium: "border-warning-text/30 bg-warning-subtle text-warning-text",
-  cold: "border-border-strong bg-bg-subtle text-text-muted",
+/**
+ * Weight, not status - and that is why none of these is red or orange.
+ *
+ * A hot lead is the BEST thing on the board; danger and warning are spoken for
+ * (see console-palette.test.ts - red means a missed call, orange means an error
+ * needing attention), and borrowing them here would make the most valuable card
+ * on the page read as the most alarming. StatusChip's three neutral tones carry
+ * the ordering on their own: filled, barred, hollow - which also survives
+ * printing and colour blindness, the failure this file's header is about.
+ */
+const TONE: Record<LeadTemperature, "solid" | "muted" | "outline"> = {
+  hot: "solid",
+  medium: "muted",
+  cold: "outline",
 };
 
 export function TemperatureChip({
@@ -34,7 +45,6 @@ export function TemperatureChip({
   const label = LEAD_TEMPERATURE_LABELS[temperature];
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${TONE[temperature]}`}
       // The title is where the provenance lives. Putting "(AI)" in the chip
       // itself doubles its width on a card that is already tight, and the
       // distinction only matters when somebody stops to question the rating.
@@ -44,11 +54,13 @@ export function TemperatureChip({
           : `${label} - rated from what the AI heard on the call`
       }
     >
-      {label}
-      {source === "user" ? null : <span aria-hidden className="opacity-60">~</span>}
-      <span className="sr-only">
-        {source === "user" ? " (set by your team)" : " (rated automatically)"}
-      </span>
+      <StatusChip tone={TONE[temperature]}>
+        {label}
+        {source === "user" ? null : <span aria-hidden>~</span>}
+        <span className="sr-only">
+          {source === "user" ? " (set by your team)" : " (rated automatically)"}
+        </span>
+      </StatusChip>
     </span>
   );
 }

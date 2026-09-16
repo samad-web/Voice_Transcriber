@@ -4,11 +4,11 @@ import { useState, useTransition } from "react";
 import { Button, FormField, Input, useAlert, useToast } from "@aura/ui";
 import { updateBrandingAction, type BrandingPatch } from "./actions";
 
+/** The form's own state: every field as a string, "" for unset. */
 export interface BrandingView {
   logoUrl: string;
   faviconUrl: string;
   bannerUrl: string;
-  loginBackgroundUrl: string;
   primaryColor: string;
   secondaryColor: string;
   appBackgroundColor: string;
@@ -60,12 +60,6 @@ const IMAGES = [
     label: "Banner",
     placeholder: "https://example.com/banner.png",
     hint: "A wide image for the top of the console. Optional.",
-  },
-  {
-    key: "loginBackgroundUrl",
-    label: "Sign-in background",
-    placeholder: "https://example.com/login-bg.jpg",
-    hint: "Fills the background of the sign-in screen.",
   },
 ] as const;
 

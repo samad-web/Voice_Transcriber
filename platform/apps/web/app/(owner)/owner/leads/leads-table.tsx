@@ -7,6 +7,7 @@ import {
   Button,
   Input,
   MonoLabel,
+  Select,
   StatusChip,
   TableBody,
   TableCell,
@@ -14,8 +15,12 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { formatDateRange } from "@/lib/report-dashboard";
+import { BulkActionBar } from "../bulk/bulk-action-bar";
+import { useRowSelection } from "../bulk/use-row-selection";
 import { LeadDrawer } from "../lead-drawer";
 import { CallReadChips } from "../call-intel";
+import { CHANNEL_OPTIONS } from "../list-options";
 import { ProjectChip } from "../project-chip";
 import { TemperatureChip } from "../temperature-chip";
 import {
@@ -35,6 +40,13 @@ const SORTS = [
   { key: "title", label: "A-Z" },
 ] as const;
 
+/** A telecaller identity a lead can be assigned to - from GET /v1/owner/team. */
+export interface TelecallerOption {
+  id: string;
+  displayName: string;
+  userId: string | null;
+}
+
 /**
  * The list view: the same leads as the board, but filterable and sortable -
  * what you use to answer "which leads has nobody touched in a fortnight?".
@@ -49,6 +61,8 @@ export function LeadsTable({
   total,
   limit,
   offset,
+  telecallers = [],
+  canReassign = false,
 }: {
   leads: Lead[];
   stages: Stage[];
@@ -56,10 +70,15 @@ export function LeadsTable({
   total: number;
   limit: number;
   offset: number;
+  /** The assignable roster - empty for personas that cannot reassign. */
+  telecallers?: TelecallerOption[];
+  /** Owner/manager: show the selection column and the bulk Reassign. */
+  canReassign?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const [rows, setRows] = useState(leads);
+  const selection = useRowSelection(canReassign ? rows.map((l) => l.id) : []);
   /**
    * Whether this tenant has the `call_intel` module, decided from the payload
    * rather than a prop: the API omits these keys entirely for a tenant without
@@ -95,6 +114,20 @@ export function LeadsTable({
   const stage = params.get("stage");
   const status = params.get("status");
   const project = params.get("projectId");
+  const channel = params.get("sourceChannel") ?? "";
+  const assignedTo = params.get("assignedTo") ?? "";
+  const responded = params.get("responded") ?? "";
+  const createdFrom = params.get("createdFrom");
+  const createdTo = params.get("createdTo");
+
+  /** The created-date window is set by a Reports drill-down; clearing it removes both ends at once. */
+  const clearCreated = () => {
+    const next = new URLSearchParams(params.toString());
+    next.delete("createdFrom");
+    next.delete("createdTo");
+    next.delete("offset");
+    router.push(`/owner/leads${next.toString() ? `?${next}` : ""}`);
+  };
   const sort = params.get("sort") ?? "activity";
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.max(1, Math.ceil(total / limit));
@@ -223,14 +256,68 @@ export function LeadsTable({
         </div>
       ) : null}
 
-      {status ? (
-        <div className="flex items-center gap-2">
-          <MonoLabel>Filtered to</MonoLabel>
-          <FilterChip active onClick={() => setParam("status", null)}>
-            {status} ✕
-          </FilterChip>
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+        <LeadSelect
+          id="leads-status"
+          label="Status"
+          value={status ?? ""}
+          onChange={(value) => setParam("status", value || null)}
+          options={[
+            { value: "", label: "Any status" },
+            { value: "open", label: "Open" },
+            { value: "won", label: "Won" },
+            { value: "lost", label: "Lost" },
+          ]}
+        />
+        <LeadSelect
+          id="leads-responded"
+          label="Contacted"
+          value={responded}
+          onChange={(value) => setParam("responded", value || null)}
+          options={[
+            { value: "", label: "Either" },
+            { value: "no", label: "Not yet" },
+            { value: "yes", label: "Yes" },
+          ]}
+        />
+        <LeadSelect
+          id="leads-channel"
+          label="Came in through"
+          value={channel}
+          onChange={(value) => setParam("sourceChannel", value || null)}
+          options={CHANNEL_OPTIONS}
+        />
+        {/* Only where the roster could be read (owner/manager) - a telecaller's
+            list is already narrowed to their own leads. */}
+        {telecallers.length > 0 || assignedTo ? (
+          <LeadSelect
+            id="leads-assigned"
+            label="Assigned to"
+            value={assignedTo}
+            onChange={(value) => setParam("assignedTo", value || null)}
+            options={[
+              { value: "", label: "Anyone" },
+              { value: "none", label: "Unassigned" },
+              ...telecallers.map((t) => ({ value: t.id, label: t.displayName })),
+              ...(assignedTo && assignedTo !== "none" && !telecallers.some((t) => t.id === assignedTo)
+                ? [{ value: assignedTo, label: "(no longer active)" }]
+                : []),
+            ]}
+          />
+        ) : null}
+        {createdFrom || createdTo ? (
+          <div>
+            <MonoLabel>Arrived</MonoLabel>
+            <div className="mt-1.5">
+              <FilterChip active onClick={clearCreated}>
+                {formatDateRange(createdFrom ?? createdTo!, createdTo ?? createdFrom!)}
+                <span aria-hidden="true" className="ml-1.5">✕</span>
+                <span className="sr-only"> - remove this filter</span>
+              </FilterChip>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <div className="overflow-hidden rounded-md border border-border bg-surface">
         <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
@@ -260,16 +347,31 @@ export function LeadsTable({
             className="overflow-x-auto"
           >
             <table
-              className={`w-full ${showRead ? "min-w-[1140px]" : "min-w-[980px]"} border-collapse text-left text-sm`}
+              className={`w-full ${showRead ? "min-w-[1280px]" : "min-w-[1120px]"} border-collapse text-left text-sm`}
             >
               <TableHead>
                 <tr>
+                  {canReassign ? (
+                    <TableHeaderCell className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={selection.allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = selection.someSelected;
+                        }}
+                        onChange={selection.toggleAll}
+                        aria-label={selection.allSelected ? "Deselect all leads on this page" : "Select all leads on this page"}
+                        className="h-4 w-4 cursor-pointer accent-accent"
+                      />
+                    </TableHeaderCell>
+                  ) : null}
                   <TableHeaderCell>Lead</TableHeaderCell>
                   <TableHeaderCell>How warm</TableHeaderCell>
                   <TableHeaderCell>Project</TableHeaderCell>
                   <TableHeaderCell>Stage</TableHeaderCell>
                   <TableHeaderCell className="text-right">Value</TableHeaderCell>
-                  <TableHeaderCell>Telecaller</TableHeaderCell>
+                  <TableHeaderCell>Assigned to</TableHeaderCell>
+                  <TableHeaderCell>Handset</TableHeaderCell>
                   <TableHeaderCell className="text-right">Calls</TableHeaderCell>
                   {showRead ? <TableHeaderCell>Last call read</TableHeaderCell> : null}
                   <TableHeaderCell>Next action</TableHeaderCell>
@@ -294,8 +396,25 @@ export function LeadsTable({
                         setOpen(lead);
                       }
                     }}
-                    className="cursor-pointer"
+                    aria-selected={canReassign ? selection.selected.has(lead.id) : undefined}
+                    className={`cursor-pointer ${selection.selected.has(lead.id) ? "bg-surface-hover" : ""}`}
                   >
+                    {canReassign ? (
+                      // The row itself opens the drawer; the checkbox cell must not.
+                      <TableCell
+                        className="w-10"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selection.selected.has(lead.id)}
+                          onChange={() => selection.toggle(lead.id)}
+                          aria-label={`Select ${lead.title}`}
+                          className="h-4 w-4 cursor-pointer accent-accent"
+                        />
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <span className="block font-medium text-text">{lead.title}</span>
                       <span className="text-xs text-text-muted">{contactLabel(lead)}</span>
@@ -337,6 +456,7 @@ export function LeadsTable({
                     <TableCell className="text-right tabular-nums">
                       {num(lead.value_num) === null ? "-" : formatValue(lead.value_num)}
                     </TableCell>
+                    <TableCell className="text-text-muted">{lead.assigned_telecaller_name ?? "-"}</TableCell>
                     <TableCell className="text-text-muted">{lead.telecaller ?? "-"}</TableCell>
                     <TableCell className="text-right tabular-nums">{lead.call_count}</TableCell>
                     {showRead ? (
@@ -392,6 +512,18 @@ export function LeadsTable({
         ) : null}
       </div>
 
+      {canReassign ? (
+        // Reassign only: a lead has no tags and no email address - the contact
+        // made from it does, on the Contacts list.
+        <BulkActionBar
+          object="leads"
+          noun="lead"
+          ids={selection.ids}
+          onClear={selection.clear}
+          reassign="telecallers"
+        />
+      ) : null}
+
       <LeadDrawer
         lead={open}
         stages={stages}
@@ -400,6 +532,38 @@ export function LeadsTable({
         onChanged={patch}
       />
     </>
+  );
+}
+
+/** A labelled native select that applies on change, for the filters with too many values for chips. */
+function LeadSelect({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly { value: string; label: string }[];
+}) {
+  return (
+    <div className="min-w-[9rem]">
+      <label htmlFor={id} className="block text-xs text-text-muted">
+        {label}
+      </label>
+      <div className="mt-1.5">
+        <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </div>
   );
 }
 
@@ -418,10 +582,12 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+      // Selected = a solid NEUTRAL fill, not the brand gradient. This strip sits
+      // directly above a lead table; "this filter is on" is not one of the four
+      // states (@aura/ui's state.tsx), so it gets no hue.
       className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
         active
-          ? "border-transparent text-white"
+          ? "border-transparent bg-text text-bg"
           : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
       }`}
     >

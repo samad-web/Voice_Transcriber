@@ -57,3 +57,38 @@ export async function enqueueAutomationEventSafely(
     console.error(`automation enqueue (${trigger}) failed:`, err);
   }
 }
+
+/**
+ * The `deal.stage_changed` subject, built in ONE place.
+ *
+ * Two endpoints move a deal's stage: the Deals board's own PATCH, and the Lead
+ * Board's PATCH carrying a lead's move onto its deal. Only the first used to
+ * queue this event, so a stage rule fired for a card dragged on Deals and never
+ * for the same deal dragged on the Lead Board - the board most of the floor
+ * actually uses (doc 23, C2). Both now build the payload here, so they cannot
+ * drift apart on its shape either.
+ */
+export function dealStageChangedSubject(
+  deal: {
+    id: string;
+    contact_id?: string | null;
+    account_id?: string | null;
+    amount?: string | number | null;
+    owner_user_id?: string | null;
+  },
+  fromStage: string,
+  toStage: string,
+  status: string,
+): AutomationSubject {
+  return {
+    dealId: deal.id,
+    contactId: deal.contact_id ?? null,
+    accountId: deal.account_id ?? null,
+    stage: toStage,
+    fromStage,
+    toStage,
+    status,
+    amount: deal.amount === null || deal.amount === undefined ? null : Number(deal.amount),
+    dealOwnerUserId: deal.owner_user_id ?? null,
+  };
+}

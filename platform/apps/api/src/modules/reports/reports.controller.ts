@@ -26,9 +26,19 @@ import {
 /** `YYYY-MM-DD`, same contract as tasks.dueOn - a report window is days, not instants. */
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
+/**
+ * `days` - "the last N days, ending today" - as an alternative to naming
+ * `from`. The console's dashboard uses it and then builds every drill-down link
+ * from the `from`/`to` the response echoes, so a metric card and the list it
+ * opens are guaranteed to be the same window: the console never has to guess
+ * which "today" the API used.
+ */
+const Days = z.coerce.number().int().min(1).max(366).optional();
+
 const WindowQuery = z.object({
   from: DateOnly.optional(),
   to: DateOnly.optional(),
+  days: Days,
   pipelineId: z.string().uuid().optional(),
 });
 
@@ -36,17 +46,21 @@ const WindowQuery = z.object({
 const DateWindowQuery = z.object({
   from: DateOnly.optional(),
   to: DateOnly.optional(),
+  days: Days,
 });
 
 const ReportName = z.enum(["pipeline", "performance", "conversion", "commission"]);
 type ReportName = z.infer<typeof ReportName>;
 
-/** Default window: the last 90 days, inclusive of today. */
-function resolveWindow(from?: string, to?: string): { from: string; to: string } {
+/**
+ * Default window: the last 90 days, inclusive of today. An explicit `from`
+ * wins over `days`; `days` wins over the default.
+ */
+export function resolveWindow(from?: string, to?: string, days?: number): { from: string; to: string } {
   const end = to ?? new Date().toISOString().slice(0, 10);
   if (from) return { from, to: end };
   const start = new Date(`${end}T00:00:00Z`);
-  start.setUTCDate(start.getUTCDate() - 89);
+  start.setUTCDate(start.getUTCDate() - ((days ?? 90) - 1));
   return { from: start.toISOString().slice(0, 10), to: end };
 }
 
@@ -90,7 +104,7 @@ export class ReportsController {
   ) {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
     return this.reports.performance(orgId, from, to, recordScope);
   }
 
@@ -103,7 +117,7 @@ export class ReportsController {
   ) {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
     return this.reports.conversion(orgId, from, to, parsed.data.pipelineId, recordScope);
   }
 
@@ -116,7 +130,7 @@ export class ReportsController {
   ) {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
     return this.reports.commission(orgId, from, to, recordScope);
   }
 
@@ -140,7 +154,7 @@ export class ReportsController {
   ) {
     const parsed = DateWindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
     return this.reports.responseTime(orgId, from, to, recordScope);
   }
 
@@ -153,8 +167,26 @@ export class ReportsController {
   ) {
     const parsed = DateWindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
     return this.reports.followupCompliance(orgId, from, to, recordScope);
+  }
+
+  /**
+   * The team roll-up (CRM dashboard Phase 8) - one row per person, not per
+   * handset. `deal:view` like its siblings; an `owned` caller is refused in
+   * the service, because every row here is somebody else's work.
+   */
+  @Get("team")
+  @RequireCrmPermission("deal", "view")
+  async team(
+    @OrgId() orgId: string,
+    @Query() query: unknown,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    const parsed = DateWindowQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
+    return this.reports.team(orgId, from, to, recordScope);
   }
 
   /** A snapshot of now, so it takes no window - see the service comment. */
@@ -187,7 +219,7 @@ export class ReportsController {
     const parsed = WindowQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
-    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to);
+    const { from, to } = resolveWindow(parsed.data.from, parsed.data.to, parsed.data.days);
     // The export carries the SAME scope as the on-screen report. A CSV that
     // widened it would be the leak with the longest legs - a file, off the
     // platform, with no permission attached to it any more.

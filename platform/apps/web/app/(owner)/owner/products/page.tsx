@@ -6,7 +6,7 @@ import { ownerGet, requireFeature } from "@/lib/owner-context";
 import { ProductsClient } from "./products-client";
 import type { Product } from "./actions";
 
-export const metadata: Metadata = { title: "Products - Aura" };
+export const metadata: Metadata = { title: "Products" };
 
 const PAGE_SIZE = 50;
 

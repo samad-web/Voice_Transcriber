@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cx } from "./cx";
+import { STATE_TONE } from "./state";
 
 /*
  * Colour alone must never be the difference between two statuses (WCAG 1.4.1,
@@ -11,6 +12,23 @@ import { cx } from "./cx";
  * glyphs are chosen to differ in silhouette rather than in hue: a filled disc, a
  * hollow ring, a bar, a triangle. Squint at them in greyscale and they are still
  * four different marks.
+ *
+ * ── WHAT THIS COMPONENT IS FOR NOW ──────────────────────────────────────────
+ *
+ * Everything that is NOT one of the four states in `state.tsx`: a capability, a
+ * plan tier, a device's enrolment, a count. Three of its four tones are
+ * therefore NEUTRAL - grey, by design, because the functional colour rule says
+ * a category is not a state and does not get a hue.
+ *
+ * `danger` is the exception and it is no longer red. Red now means MISSED and
+ * only missed (see state.tsx for why), so the one thing StatusChip is still
+ * allowed to colour - something the system failed at - takes the error orange
+ * straight out of `STATE_TONE`, and keeps the triangle it always had. Call
+ * sites did not have to change: every existing `tone="danger"` in the console
+ * marks a failure, a stale device or a flagged call, which is exactly "error".
+ *
+ * For an actual call state, reach for `StateChip` instead. This component
+ * cannot express "missed" and that is deliberate.
  */
 const TONES = {
   solid: {
@@ -28,10 +46,12 @@ const TONES = {
     // Hollow ring - "inactive / not yet".
     glyph: <circle cx="5" cy="5" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />,
   },
+  // Orange, not red - and drawn from STATE_TONE rather than restating the
+  // classes, so this chip and a StateChip labelled "Error" can never drift
+  // into two different oranges.
   danger: {
-    className: "border-danger-text/30 bg-danger-subtle text-danger-text",
-    // Triangle - "attention". The only pointed silhouette in the set.
-    glyph: <path d="M5 1 L9.3 8.5 H0.7 Z" fill="currentColor" />,
+    className: STATE_TONE.error.chip,
+    glyph: STATE_TONE.error.glyph,
   },
 } as const;
 

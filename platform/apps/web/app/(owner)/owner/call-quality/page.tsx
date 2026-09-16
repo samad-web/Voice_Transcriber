@@ -7,7 +7,7 @@ import { DispositionsEditor } from "./dispositions-editor";
 import type { CallIntegrityFlag } from "./actions";
 import type { Disposition } from "./disposition-actions";
 
-export const metadata: Metadata = { title: "Call Quality - Aura" };
+export const metadata: Metadata = { title: "Call Quality" };
 
 interface ListResponse {
   flags: CallIntegrityFlag[];

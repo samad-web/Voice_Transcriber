@@ -1,11 +1,13 @@
 # Aura — Platform Architecture & Flow Map
 
-_Last regenerated: 2026-09-01 · branch `crm-connectors-and-console-auth` · schema at migration `0078_lead_intake`_
+_Last regenerated: 2026-09-15 · branch `crm-connectors-and-console-auth` · schema at migration `0119_review_queue_and_notification_delivery`_
 
 This is the whole-system document: every runtime, every flow, and what is wired
 to what. It supersedes `07_WEBAPP_OVERVIEW.md`, `02_BACKEND_DESIGN.md` and
 `13_ROUTE_AND_GUARD_INVENTORY.md` for orientation — those stay authoritative for
-their own detail.
+their own detail. The design system has its own document,
+[`22_DESIGN_SYSTEM.md`](22_DESIGN_SYSTEM.md) — this one names `@aura/ui` only
+where it affects wiring.
 
 The Android handset agent has its own document:
 [`CallRecorderApp/ARCHITECTURE.md`](../CallRecorderApp/ARCHITECTURE.md). This one
@@ -94,7 +96,7 @@ and the module headers say so where that is true.
 | `@aura/db` | `getPool()` (`aura_app`, RLS-bound), `getAdminPool()` (RLS-bypassing, sweeps only), `withOrgContext()`, secret encryption, SSRF guard for tenant-supplied URLs |
 | `@aura/llm` | Gemini analyze + conversation intelligence + agent drafting, Sarvam batch ASR, provider retry |
 | `@aura/queue` | RabbitMQ helper. **The queue is only a wake-up signal** — Postgres is the state machine |
-| `@aura/ui` | Neo-brutalist monochrome design system |
+| `@aura/ui` | Design system — v1 neo-brutalist primitives restyled onto v2 modern-minimal tokens; console pages themselves not yet migrated. See [`22_DESIGN_SYSTEM.md`](22_DESIGN_SYSTEM.md) |
 
 ---
 
@@ -163,6 +165,21 @@ privacy-sensitive artifact the platform stores.
 The admin key never reaches the browser: `lib/server-api.ts` carries
 `import "server-only"`, so a Client Component importing it is a build error.
 
+The owner sidebar (`lib/nav.ts`) groups its ~30 destinations into seven labelled
+sections — Pipeline, Customers, Conversations, Sales, Insights, Lead connectors,
+Workspace — rather than one flat column; the platform sidebar groups the same
+way (Call intelligence, Growth, Clients, CRM setup, Access). Both read from one
+href→section map, so "what is next to what" has a single answer instead of a
+`section` field scattered across two dozen item literals.
+
+`/owner/calls` (the client's own call log) and `/calls` (the operator's
+cross-tenant explorer) are deliberately separate routes over the same `calls`
+table, not one screen with a role switch: the operator view joins `instances`
+and surfaces pipeline internals — attempt counts, `next_attempt_at`,
+`error_message`, consent status — that are ours to act on and not a client's to
+interpret. Both re-check the `call_intel` module per request rather than
+trusting the nav, because a hidden link is not a closed door.
+
 ---
 
 ## 5. Flow — device enrollment and configuration
@@ -195,6 +212,31 @@ Operator console                Handset                        API
 `recordingEnabled`.** Device wipe / logout is an `org_admin` action
 (`OrgRoleGuard`) and flips `devices.status`, which the upload admission check
 reads on the very next call.
+
+### App self-update (0081)
+
+The fleet's APK is sideloaded, so nothing could replace it before this shipped
+— a fix meant physically collecting phones.
+
+```
+scripts/publish-app-release.js          → app_releases (platform-level, no org_id, no RLS)
+                                            staged published=false until promoted
+        │
+        ▼
+GET /v1/devices/me/update  (DeviceAuthGuard)
+  ├─ compares the handset's reported versionCode to the newest PUBLISHED row
+  └─ returns a presigned download URL, generated per request (bucket stays private)
+        │
+        ▼
+Android: ~6h wifi-only worker → download → verify SHA-256 → notification
+  → tap runs a PackageInstaller session (system confirmation every time)
+  → reports the installed version back via POST /v1/devices/me/health → devices.app_version
+```
+
+The route is advisory by construction: it cannot touch `recordingEnabled`, so a
+bad release cannot take the fleet offline. `publish-app-release.js` refuses a
+`versionCode` that is not strictly higher than the live one — a handset offered
+an equal code would prompt forever and never satisfy the prompt.
 
 ---
 

@@ -123,6 +123,41 @@ export function ownerRoleSeesAllRecords(role: OwnerRole): boolean {
  */
 export const OWNER_ROLE_ADMINS: OwnerRole[] = ["owner", "manager"];
 
+/**
+ * May this person mint a handset pairing token? (migration 0107)
+ *
+ * The OWNER persona is always allowed, whatever the stored flag says. That is
+ * not a convenience: storing the owner's own permission would create a state -
+ * owner with the flag off - in which a tenant has nobody who can pair a handset
+ * and no way to fix it from inside their own console. It matches the console's
+ * standing invariant that owners are strictly a narrowing of nothing.
+ *
+ * Everybody else - manager, telecaller, sales, marketing - holds it only
+ * because an owner handed it to them, one person at a time. There is
+ * deliberately no persona that carries it implicitly: "all managers may pair"
+ * was never the requirement, and widening a persona to fit would hand those
+ * people everything else that persona carries too.
+ *
+ * Pairing only. Revoking a handset is owner/manager and is not delegable - see
+ * 0107 header for why the reversible half travels and the destructive half
+ * does not.
+ */
+export function canPairDevices(role: OwnerRole, granted: boolean): boolean {
+  return role === "owner" || granted === true;
+}
+
+/**
+ * May this person take a handset OFF the floor?
+ *
+ * Not delegable, and not the same question as `canPairDevices`. Pairing adds a
+ * device the owner can see and remove; revoking pulls a working phone out of a
+ * shift. An owner asking somebody to "set up the new handsets" is not asking
+ * them to be able to unplug anyone.
+ */
+export function canRevokeDevices(role: OwnerRole): boolean {
+  return OWNER_ROLE_ADMINS.includes(role);
+}
+
 /** True when this persona may administer the workspace's people and settings. */
 export function isWorkspaceAdminRole(role: OwnerRole): boolean {
   return OWNER_ROLE_ADMINS.includes(role);

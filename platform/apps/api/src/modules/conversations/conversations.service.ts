@@ -1,7 +1,21 @@
 import { createHash } from "node:crypto";
 import { Injectable } from "@nestjs/common";
-import type { InboundMessage } from "@aura/shared";
+import { OWNER_ROLE_ADMINS, readOptOut, type InboundMessage, type OptOutVerdict } from "@aura/shared";
 import { DbService } from "../../db/db.service";
+import { notify } from "../notifications/notify";
+import { RealtimeService } from "../realtime/realtime.service";
+
+/**
+ * The slice of the pg client the ingest helpers need. Narrow on purpose: these
+ * run INSIDE the caller's transaction and must not be handed anything that
+ * could open a second connection and break that guarantee.
+ */
+type IngestClient = {
+  query: <R extends Record<string, unknown> = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[],
+  ) => Promise<{ rows: R[]; rowCount: number | null }>;
+};
 
 /**
  * The resolved tenant behind a webhook token.
@@ -35,6 +49,12 @@ export interface IngestResult {
   deduped: boolean;
   /** True when the peer matched an existing contact. */
   matched: boolean;
+  /**
+   * Set when this message read as a request to stop being contacted
+   * (migration 0100). `certain` blocks the send path from now on; `probable`
+   * only asks a person. Null on a replay and on every ordinary message.
+   */
+  optOut: OptOutVerdict["level"] | null;
 }
 
 /**
@@ -63,7 +83,10 @@ export function hashPeer(peerAddress: string): string | null {
 
 @Injectable()
 export class ConversationsService {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
   /**
    * Turn an anonymous webhook token into a tenant.
@@ -132,7 +155,7 @@ export class ConversationsService {
    * one peer: the second INSERT ... ON CONFLICT resolves against the first.
    */
   async ingestInbound(channel: ResolvedChannel, msg: InboundMessage): Promise<IngestResult> {
-    return this.db.withOrg(channel.orgId, async (client) => {
+    const result = await this.db.withOrg(channel.orgId, async (client) => {
       // ── the thread ────────────────────────────────────────────────────
       // ON CONFLICT DO UPDATE rather than DO NOTHING because we always need
       // the id back, and a plain DO NOTHING returns no row when it collides.
@@ -210,6 +233,10 @@ export class ConversationsService {
           messageId: null,
           deduped: true,
           matched: conversation.contact_id !== null,
+          // A replay carries no new intent. Re-running opt-out detection here
+          // would re-notify a person about a request they already saw, every
+          // time the provider retried - which is how a bell stops being read.
+          optOut: null,
         };
       }
 
@@ -255,7 +282,152 @@ export class ConversationsService {
         [channel.id],
       );
 
-      return { conversationId: conversation.id, messageId, deduped: false, matched };
+      // ── did they ask us to stop? (migration 0100) ─────────────────────
+      const optOut = await this.recordOptOut(client, channel, msg, conversation.id, messageId);
+
+      return { conversationId: conversation.id, messageId, deduped: false, matched, optOut };
     });
+
+    // The inbox is the one console page people sit and watch, so a message
+    // that lands without the list moving reads as the product being broken.
+    // Announced after the transaction commits, and only for a message that was
+    // actually stored - a deduped redelivery changes nothing to look at.
+    //
+    // The global interceptor cannot announce this: the messaging webhook is
+    // unauthenticated by necessity (a relay cannot present an admin key) and
+    // resolves its tenant from the URL token, so no guard ever set
+    // `req.tenantOrgId` for it to read.
+    if (!result.deduped) {
+      this.realtime.publish({
+        orgId: channel.orgId,
+        topic: "conversation",
+        action: "updated",
+        id: result.conversationId,
+        at: new Date().toISOString(),
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Read one inbound message as a possible "stop messaging me", and record it.
+   *
+   * ── WHY IT RUNS INSIDE THE INGEST TRANSACTION ─────────────────────────
+   *
+   * So the opt-out and the message that carried it commit together. If this
+   * ran afterwards, a crash in between would store a customer's request to be
+   * left alone as an ordinary message and lose the request - which is the one
+   * failure mode this feature exists to prevent, and the one nobody would ever
+   * notice happening.
+   *
+   * ── WHY A `probable` CAN BE PROMOTED BUT NEVER DEMOTED ────────────────
+   *
+   * Somebody who writes "enough" (probable) and then "stop sending me
+   * messages" (certain) has been clear twice, and the second message must
+   * upgrade the first. The reverse - a certain opt-out softened back to
+   * probable by a later ambiguous line - would un-silence somebody who had
+   * already asked plainly, so the upsert below only ever moves in one
+   * direction.
+   *
+   * A RELEASED opt-out is also left alone: once a person has recorded that the
+   * customer changed their mind, a stray "no more" in a later message must not
+   * quietly re-block them behind that person's back.
+   */
+  private async recordOptOut(
+    client: IngestClient,
+    channel: ResolvedChannel,
+    msg: InboundMessage,
+    conversationId: string,
+    messageId: string,
+  ): Promise<OptOutVerdict["level"] | null> {
+    // Media-only messages arrive with no body, and `readOptOut` treats an
+    // empty string as "none" - but skipping the call entirely keeps the common
+    // case free of work it cannot possibly need.
+    if (!msg.body) return null;
+
+    const verdict = readOptOut(msg.body);
+    if (verdict.level === "none") return null;
+
+    const { rows } = await client.query<{ level: string }>(
+      `INSERT INTO messaging_opt_outs (org_id, channel, peer_address, level, source_message_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (org_id, channel, peer_address) DO UPDATE
+          SET level             = 'certain',
+              source_message_id = EXCLUDED.source_message_id,
+              updated_at        = now()
+        WHERE messaging_opt_outs.level = 'probable'
+          AND EXCLUDED.level = 'certain'
+          AND messaging_opt_outs.released_at IS NULL
+       RETURNING level`,
+      [channel.orgId, msg.channel, msg.peerAddress, verdict.level, messageId],
+    );
+
+    // No row back means the upsert's WHERE declined the update: an opt-out
+    // already stands at this level or higher, or a person released it. Either
+    // way nothing changed, so nobody is told again.
+    if (rows.length === 0) return null;
+
+    await this.notifyOptOut(client, channel, conversationId, msg, verdict.level);
+    return verdict.level;
+  }
+
+  /**
+   * Tell somebody a customer asked to stop.
+   *
+   * BOTH levels notify, which is worth stating because only one of them
+   * blocks. A `certain` opt-out is enforced silently by the send path, and a
+   * customer disappearing from the outbound side without anyone being told is
+   * exactly the silent-failure shape this module was built to avoid - the rep
+   * would keep the thread open wondering why their message never sent.
+   *
+   * The assigned rep if there is one, else the org's owners and managers -
+   * the same two personas `seesSetupChecklist` picks, and the only ones who
+   * can act on it. An unassigned thread with no admin is possible in theory
+   * and writes no notification; the row itself is still the durable record and
+   * the send path still refuses.
+   */
+  private async notifyOptOut(
+    client: IngestClient,
+    channel: ResolvedChannel,
+    conversationId: string,
+    msg: InboundMessage,
+    level: OptOutVerdict["level"],
+  ): Promise<void> {
+    const { rows: recipients } = await client.query<{ user_id: string }>(
+      `SELECT c.assigned_user_id AS user_id
+         FROM conversations c
+        WHERE c.id = $1 AND c.assigned_user_id IS NOT NULL
+        UNION
+       SELECT m.user_id
+         FROM memberships m
+        WHERE m.org_id = $2
+          AND m.owner_role = ANY($3::text[])
+          AND NOT EXISTS (
+            SELECT 1 FROM conversations c2
+             WHERE c2.id = $1 AND c2.assigned_user_id IS NOT NULL
+          )`,
+      [conversationId, channel.orgId, OWNER_ROLE_ADMINS],
+    );
+
+    for (const { user_id } of recipients) {
+      await notify(client, channel.orgId, {
+        userId: user_id,
+        kind: "opt_out_requested",
+        title:
+          level === "certain"
+            ? `${msg.peerLabel ?? msg.peerAddress} asked to stop being messaged`
+            : `${msg.peerLabel ?? msg.peerAddress} may have asked to stop being messaged`,
+        body:
+          level === "certain"
+            ? "Nothing further will be sent to this number. Open the thread to see what they said."
+            : "This was not clear enough to act on automatically, so nothing has been blocked. Open the thread and decide.",
+        linkPath: `/owner/inbox?conversation=${conversationId}`,
+        // One per person per thread per level. A customer repeating themselves
+        // is not new information; the same customer escalating from probable to
+        // certain IS, so the level is part of the key.
+        dedupeKey: `opt_out:${conversationId}:${level}`,
+      });
+    }
   }
 }

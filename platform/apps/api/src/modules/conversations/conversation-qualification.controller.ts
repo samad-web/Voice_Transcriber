@@ -138,6 +138,15 @@ export class ConversationQualificationController {
       // "wrong number" is confident junk, not a warm lead.
       where.push("q.disposition = 'prospect'");
     }
+    // `personal` is NEVER listed, by any filter, including includeJunk.
+    //
+    // A business WhatsApp number in this market is often the owner's own phone,
+    // so private messages land in the same inbox. "Show me everything" is a
+    // request to see the threads that were not leads - it is not consent to
+    // show office staff the owner's family messages. 0082 already guarantees
+    // such a row carries no extracted content; this makes sure the row itself
+    // never reaches a screen either.
+    where.push("q.disposition <> 'personal'");
     // A rep scoped to `owned` conversations sees verdicts only for their own -
     // the same predicate the inbox applies, on the same column.
     const scoped = scopeClause("conversation", recordScope, params.length + 1, "c");

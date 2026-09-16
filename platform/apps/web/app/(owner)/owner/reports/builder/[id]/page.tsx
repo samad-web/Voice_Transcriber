@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, MonoLabel } from "@aura/ui";
 import type { BindingIssue, ColumnMeta, Palette, ReportDoc } from "@aura/shared";
+import { BreadcrumbLeaf } from "@/components/breadcrumbs";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet } from "@/lib/owner-context";
 import { ReportEditor } from "./report-editor";
 import type { Member, ScheduleRow, ShareRow } from "./share-panel";
 
-export const metadata: Metadata = { title: "Report - Aura" };
+export const metadata: Metadata = { title: "Report" };
 
 interface DetailResponse {
   report: {
@@ -101,6 +102,7 @@ export default async function ReportBuilderDetailPage({
 
   return (
     <>
+      <BreadcrumbLeaf label={detail.report.name} />
       <PageHeader title={detail.report.name} context="Report builder" />
       <div className="-mt-2 flex flex-wrap items-center gap-3 text-xs">
         <Link href="/owner/reports/builder" className="text-accent-text hover:underline">

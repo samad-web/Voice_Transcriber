@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { GripVertical, Phone } from "lucide-react";
+import { GripVertical, Hourglass, Phone } from "lucide-react";
 import { EmptyState, MonoLabel, useAlert } from "@aura/ui";
+import { useFocusParam } from "../lib/use-focus-param";
 import { formatValue, num, relativeTime } from "../types";
 
 /**
@@ -31,6 +32,12 @@ export interface KanbanColumn<T> {
   terminal?: "won" | "lost";
   count: number;
   value: number;
+  /**
+   * How many records in the WHOLE column are stale, from the API - not just
+   * the top N cards loaded here, which is why it is not counted client-side.
+   * Omitted when the board has no stale rule.
+   */
+  staleCount?: number;
   items: T[];
 }
 
@@ -53,6 +60,17 @@ export interface KanbanBoardConfig<T> {
    * board shares this file and will want something of its own here.
    */
   renderBadge?: (item: T) => ReactNode;
+  /**
+   * Fetch one record for a `?focus=<id>` deep link (global search, a
+   * notification) when it is not among the cards this board loaded - a column
+   * only carries its top N. Omitted, a focus id not on the board opens nothing.
+   */
+  loadFocused?: (id: string) => Promise<T | null>;
+  /**
+   * Days without activity when this card is stale, else null (lib/deal-staleness.ts).
+   * Omitted, no card is ever flagged - the lead board has no stale rule yet.
+   */
+  getStaleDays?: (item: T) => number | null;
   emptyState: { title: string; description: string };
   /**
    * PATCH the stage on the server. Returns the merged record on success so
@@ -80,6 +98,35 @@ export function KanbanBoard<T extends { stage: string }>({
   const [over, setOver] = useState<string | null>(null);
   const [open, setOpen] = useState<T | null>(null);
   const alert = useAlert();
+  /** Moves this board has sent but not yet had confirmed. */
+  const inFlight = useRef(0);
+
+  /*
+   * FOLLOW THE SERVER, BUT NOT OVER SOMEBODY'S HANDS.
+   *
+   * `useState(initial)` seeds once and then owns the board, which was fine
+   * while the only way to get new props was a navigation that remounted this
+   * component. It is not fine now: the console re-renders itself whenever
+   * anything changes (components/realtime-provider.tsx), and without this the
+   * board would be the one page that never moved - a colleague's card landing
+   * in a column nobody watching this screen could see.
+   *
+   * The three guards are the whole subtlety, and each of them is a real way to
+   * ruin somebody's afternoon:
+   *
+   *   dragging - re-seeding mid-drag pulls the card out of the cursor.
+   *   open     - the drawer renders from the item it was opened with; swapping
+   *              the collection underneath it closes or blanks the drawer
+   *              somebody is halfway through editing.
+   *   inFlight - between an optimistic move and the server confirming it, the
+   *              props still say the card is in its old column. Re-seeding
+   *              there would snap it back, and it would jump forward again on
+   *              the next refresh. The most visible bug of the three.
+   */
+  useEffect(() => {
+    if (dragging || open || inFlight.current > 0) return;
+    setColumns(initial);
+  }, [initial, dragging, open]);
 
   const {
     getId,
@@ -91,6 +138,7 @@ export function KanbanBoard<T extends { stage: string }>({
     getLastActivityAt,
     dragDataKey,
     renderBadge,
+    getStaleDays,
     emptyState,
     moveOnServer,
     renderDrawer,
@@ -98,6 +146,17 @@ export function KanbanBoard<T extends { stage: string }>({
 
   const findItem = (id: string) =>
     columns.flatMap((c) => c.items).find((item) => getId(item) === id) ?? null;
+
+  // Deep link: ?focus=<id> opens that card's drawer (../lib/use-focus-param.ts).
+  const { clearFocus } = useFocusParam<T>({
+    findLoaded: findItem,
+    load: config.loadFocused,
+    open: setOpen,
+  });
+  const closeDrawer = () => {
+    setOpen(null);
+    clearFocus();
+  };
 
   /**
    * Move a card between columns in local state, returning the previous
@@ -111,6 +170,14 @@ export function KanbanBoard<T extends { stage: string }>({
     if (!item || item.stage === toStage) return null;
     const from = item.stage;
     const moved = { ...item, stage: toStage } as T;
+    // Moving a card IS activity - the deals PATCH stamps last_activity_at - so
+    // a stale card leaves its column's stale count and joins no other. The
+    // card's own flag clears when the server's record merges in below.
+    const wasStale = getStaleDays ? getStaleDays(item) !== null : false;
+    const shift = (column: KanbanColumn<T>, delta: number) =>
+      column.staleCount === undefined || !wasStale || delta > 0
+        ? column.staleCount
+        : Math.max(0, column.staleCount + delta);
 
     setColumns((prev) =>
       prev.map((column) => {
@@ -119,6 +186,7 @@ export function KanbanBoard<T extends { stage: string }>({
             ...column,
             count: Math.max(0, column.count - 1),
             value: column.value - (num(getValue(item)) ?? 0),
+            staleCount: shift(column, -1),
             items: column.items.filter((it) => getId(it) !== id),
           };
         }
@@ -127,6 +195,7 @@ export function KanbanBoard<T extends { stage: string }>({
             ...column,
             count: column.count + 1,
             value: column.value + (num(getValue(item)) ?? 0),
+            staleCount: shift(column, 1),
             items: [moved, ...column.items],
           };
         }
@@ -140,7 +209,17 @@ export function KanbanBoard<T extends { stage: string }>({
     const from = applyLocal(id, toStage);
     if (!from) return;
 
-    const result = await moveOnServer(id, toStage);
+    inFlight.current += 1;
+    let result: Awaited<ReturnType<typeof moveOnServer>>;
+    try {
+      result = await moveOnServer(id, toStage);
+    } finally {
+      // In a `finally`, so a thrown action cannot leave the counter stuck above
+      // zero - which would silently switch this board's live updates off for
+      // the rest of the session.
+      inFlight.current -= 1;
+    }
+
     if (result.error) {
       applyLocal(id, from);
       await alert({ title: "Couldn't move the card", body: result.error, tone: "danger" });
@@ -218,19 +297,29 @@ export function KanbanBoard<T extends { stage: string }>({
                 <span className="block truncate text-sm font-medium text-text">
                   {column.label}
                 </span>
-                {column.value > 0 ? (
-                  <span className="text-xs text-text-muted tabular-nums">
-                    {formatValue(column.value)}
-                  </span>
-                ) : null}
+                {/* Always shown, zero included: an empty value line reads as
+                    "not loaded", and a column worth nothing is worth knowing. */}
+                <span className="flex items-center gap-2 text-xs text-text-muted tabular-nums">
+                  <span>{formatValue(column.value)}</span>
+                  {column.staleCount ? (
+                    <span className="inline-flex items-center gap-0.5 text-warning-text">
+                      <Hourglass aria-hidden="true" className="h-3 w-3" />
+                      {column.staleCount} stale
+                    </span>
+                  ) : null}
+                </span>
               </div>
               <span
                 className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums ${
-                  // Won is the one stage worth marking in colour; lost is
-                  // deliberately quiet rather than red, because a lost lead is
-                  // a normal outcome and not an error to be flagged.
+                  // Three weights of NEUTRAL, not a hue. Won used to be green
+                  // and lost was already deliberately quiet - but under the
+                  // colour rule (@aura/ui's state.tsx) green means a call
+                  // somebody answered, and these chips sit on a board a
+                  // telecaller reads in the same glance as their call list.
+                  // A stage is not a state. Won still leads the eye: it is
+                  // the only inverted chip on the board.
                   column.terminal === "won"
-                    ? "border-transparent bg-success-subtle text-success-text"
+                    ? "border-transparent bg-text text-bg"
                     : column.terminal === "lost"
                       ? "border-border bg-surface-hover text-text-muted"
                       : "border-border bg-surface text-text"
@@ -251,6 +340,7 @@ export function KanbanBoard<T extends { stage: string }>({
                 const secondary = getSecondary(item);
                 const callCount = getCallCount(item);
                 const value = getValue(item);
+                const stale = getStaleDays ? getStaleDays(item) : null;
                 return (
                   <article
                     key={id}
@@ -261,9 +351,11 @@ export function KanbanBoard<T extends { stage: string }>({
                       setDragging(id);
                     }}
                     onDragEnd={() => setDragging(null)}
-                    className={`cursor-grab rounded-md border border-border bg-surface p-2.5 shadow-sm transition-opacity duration-150 ease-out active:cursor-grabbing ${
-                      dragging === id ? "opacity-40" : ""
-                    }`}
+                    className={`cursor-grab rounded-md border bg-surface p-2.5 shadow-sm transition-opacity duration-150 ease-out active:cursor-grabbing ${
+                      // A stale card carries a tinted edge as well as its chip,
+                      // so a column of them can be scanned without reading.
+                      stale !== null ? "border-warning-text/40" : "border-border"
+                    } ${dragging === id ? "opacity-40" : ""}`}
                   >
                     <button
                       type="button"
@@ -311,8 +403,9 @@ export function KanbanBoard<T extends { stage: string }>({
                           )}
                         </span>
                       </div>
-                      <span className="mt-1 block text-xs text-text-subtle">
-                        {relativeTime(getLastActivityAt(item))}
+                      <span className="mt-1 flex items-center justify-between gap-2 text-xs text-text-subtle">
+                        <span>{relativeTime(getLastActivityAt(item))}</span>
+                        {stale !== null ? <StaleFlag days={stale} /> : null}
                       </span>
                     </button>
                   </article>
@@ -329,7 +422,28 @@ export function KanbanBoard<T extends { stage: string }>({
         ))}
       </div>
 
-      {renderDrawer({ open, onClose: () => setOpen(null), onChanged: patchOpen })}
+      {renderDrawer({ open, onClose: closeDrawer, onChanged: patchOpen })}
     </>
+  );
+}
+
+/**
+ * The "no activity in N days" flag. Icon, words and tint together - never the
+ * tint alone - and in the WARNING ramp, which the colour rule leaves free:
+ * red, green, blue and orange are call states (@aura/ui's state.tsx), and an
+ * idle deal is none of them.
+ */
+export function StaleFlag({ days }: { days: number }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-subtle px-1.5 py-0.5 text-[11px] font-medium text-warning-text tabular-nums"
+      title={`No activity for ${days} day${days === 1 ? "" : "s"}`}
+    >
+      <Hourglass aria-hidden="true" className="h-3 w-3" />
+      <span aria-hidden="true">{days}d idle</span>
+      <span className="sr-only">
+        No activity for {days} day{days === 1 ? "" : "s"}
+      </span>
+    </span>
   );
 }

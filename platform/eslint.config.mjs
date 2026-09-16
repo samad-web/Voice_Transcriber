@@ -80,18 +80,19 @@ export default tseslint.config(
   },
 
   // ---------------------------------------------------------------------------
-  // Browser-automation scripts. These run under `node`, but the callbacks they
-  // hand to `page.evaluate()` are serialised and executed INSIDE the page - so
-  // `document` and `window` are real there and undefined in the surrounding
-  // file. eslint cannot tell the two contexts apart, and reported seven
-  // `no-undef` errors for code that is correct.
+  // Build scripts that drive a headless browser (apps/marketing/scripts/*.mjs,
+  // Playwright). These run in Node, but the callbacks handed to `page.evaluate`
+  // are serialised and executed in the PAGE - so `document` and `window` are
+  // genuinely defined at the only place they appear, and the Node-globals-only
+  // block above was reporting seven `no-undef` ERRORS for correct code.
   //
-  // Scoped to the automation directory rather than relaxing `no-undef`
-  // globally: everywhere else in this repository a bare `document` in a Node
-  // file IS the bug the rule exists to catch.
+  // Scoped to this one directory rather than loosened globally: `document` being
+  // undefined is a real error everywhere else in the workspace, and that is the
+  // reading worth keeping. ESLint cannot tell which side of the boundary a
+  // callback lands on, so the directory is the only honest granularity here.
   // ---------------------------------------------------------------------------
   {
-    files: ["apps/marketing/scripts/**/*.mjs"],
+    files: ["apps/marketing/scripts/**/*.mjs", "scripts/**/*.mjs"],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },

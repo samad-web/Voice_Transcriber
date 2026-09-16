@@ -281,7 +281,11 @@ describe("generateAgentDraft", () => {
 
   it("under ANALYZE_STUB=1 with a base agent, carries the base's fields forward unchanged", async () => {
     vi.stubEnv("ANALYZE_STUB", "1");
-    const base = { name: "Lead Qualifier", systemPrompt: "Extract intent.", fields: RD_SCHEMA.fields };
+    const base = {
+      name: "Lead Qualifier",
+      systemPrompt: "Extract intent.",
+      fields: RD_SCHEMA.fields,
+    };
     const draft = await generateAgentDraft({ description: "also flag budget objections", base });
 
     expect(draft.fields).toStrictEqual(base.fields);
@@ -296,12 +300,18 @@ describe("generateAgentDraft", () => {
         JSON.stringify({
           name: "Budget Flagger",
           systemPrompt: "Extract budget objections.",
-          fields: [{ key: "has_budget_objection", type: "boolean", description: "d", required: true }],
+          fields: [
+            { key: "has_budget_objection", type: "boolean", description: "d", required: true },
+          ],
         }),
       ),
     );
 
-    const base = { name: "Lead Qualifier", systemPrompt: "Extract intent.", fields: RD_SCHEMA.fields };
+    const base = {
+      name: "Lead Qualifier",
+      systemPrompt: "Extract intent.",
+      fields: RD_SCHEMA.fields,
+    };
     const draft = await generateAgentDraft({ description: "also flag budget objections", base });
 
     expect(sarvam.chat).toHaveBeenCalledTimes(1);
@@ -336,14 +346,22 @@ describe("generateAgentDraft", () => {
     sarvam.configured.mockReturnValue(true);
     sarvam.chat
       .mockResolvedValueOnce(
-        reply(JSON.stringify({ name: "Agent", systemPrompt: "p", fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: [] }] })),
+        reply(
+          JSON.stringify({
+            name: "Agent",
+            systemPrompt: "p",
+            fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: [] }],
+          }),
+        ),
       )
       .mockResolvedValueOnce(
         reply(
           JSON.stringify({
             name: "Agent",
             systemPrompt: "p",
-            fields: [{ key: "x", type: "enum", description: "d", required: true, enumValues: ["a", "b"] }],
+            fields: [
+              { key: "x", type: "enum", description: "d", required: true, enumValues: ["a", "b"] },
+            ],
           }),
         ),
       );
@@ -359,7 +377,9 @@ describe("generateAgentDraft", () => {
 
   it("throws when the repair also fails, rather than returning an unusable draft", async () => {
     sarvam.configured.mockReturnValue(true);
-    sarvam.chat.mockResolvedValue(reply(JSON.stringify({ name: "", systemPrompt: "", fields: [] })));
+    sarvam.chat.mockResolvedValue(
+      reply(JSON.stringify({ name: "", systemPrompt: "", fields: [] })),
+    );
 
     await expect(generateAgentDraft({ description: "d" })).rejects.toThrow(
       /model output failed validation twice/,

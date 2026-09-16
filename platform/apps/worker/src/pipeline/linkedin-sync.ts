@@ -112,8 +112,7 @@ export async function syncConnection(
   const token = await usableToken(connection);
   if (!token) throw new Error("no usable access token - reconnect this LinkedIn account");
 
-  const since =
-    connection.sync_cursor ?? new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000);
+  const since = connection.sync_cursor ?? new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000);
   const leads = await fetchLeadFormResponses(
     connection.account_urn,
     token,

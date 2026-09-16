@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Copy, QrCode } from "lucide-react";
 import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
+import { enrollmentQrPayload } from "@aura/shared";
 
 export interface Credentials {
   instanceId?: string;
@@ -33,11 +34,13 @@ export function EnrollmentCredentials({
 
   useEffect(() => {
     if (!result.instanceId || !result.adminKey) return;
-    const payload = JSON.stringify({
-      v: 1,
+    // Built by @aura/shared, not inline: the owner console mints pairing
+    // tokens too (migration 0096), and two consoles with their own copy of
+    // this shape is how one of them silently stops scanning.
+    const payload = enrollmentQrPayload({
       instanceId: result.instanceId,
       adminKey: result.adminKey,
-      ...(serverUrl?.trim() ? { serverUrl: serverUrl.trim() } : {}),
+      serverUrl,
     });
     // `void` + a rejection handler: a floating promise here would be an
     // unhandled rejection AND would leave the previous credential's QR on

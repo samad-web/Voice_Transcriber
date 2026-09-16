@@ -82,7 +82,7 @@ export class ReportBuilderService {
       client.query<DatasetRecord>(
         `SELECT id, name, kind, source_key, columns, row_count, schema_fingerprint,
                 refreshed_at, created_at
-           FROM report_datasets WHERE id = $1`,
+           FROM report_datasets WHERE id = $1 AND deleted_at IS NULL`,
         [datasetId],
       ),
     );

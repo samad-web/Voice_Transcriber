@@ -28,6 +28,7 @@ import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
+import { FcmService } from "../../fcm/fcm.service";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
 const SetTelecallerBody = z.object({
@@ -177,6 +178,7 @@ export class DevicesController {
   constructor(
     private readonly db: DbService,
     private readonly s3: S3Service,
+    private readonly fcm: FcmService,
   ) {}
 
   /**
@@ -498,7 +500,9 @@ export class DevicesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Req() req: PrincipalRequest,
   ) {
-    return this.setDeviceStatus(orgId, id, "logged_out", req);
+    const result = await this.setDeviceStatus(orgId, id, "logged_out", req);
+    await this.pushConfigRefresh(orgId, id);
+    return result;
   }
 
   /** Remote wipe - device must delete local recordings + keys on next contact. */
@@ -510,9 +514,25 @@ export class DevicesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Req() req: PrincipalRequest,
   ) {
-    // TODO (checklist §3.5): push FCM message so the device acts immediately
-    // instead of on next config poll.
-    return this.setDeviceStatus(orgId, id, "wiped", req);
+    const result = await this.setDeviceStatus(orgId, id, "wiped", req);
+    await this.pushConfigRefresh(orgId, id);
+    return result;
+  }
+
+  /**
+   * Ping / wake a device - pushes a config-refresh signal without changing
+   * the device's status. Use this to remotely wake an app that Android's
+   * battery optimisation has put to sleep.
+   */
+  @Post(":id/ping")
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async ping(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    const pushed = await this.pushConfigRefresh(orgId, id);
+    return { pinged: pushed };
   }
 
   /**
@@ -702,6 +722,56 @@ export class DevicesController {
 
       return { id, outcome, calls };
     });
+  }
+
+  /**
+   * Device FCM token registration. Called by the Android app after enrollment
+   * and on token refresh.
+   */
+  @Post("me/fcm-token")
+  @UseGuards(DeviceAuthGuard)
+  @SkipThrottle()
+  async registerFcmToken(@Req() req: DeviceRequest, @Body() body: unknown) {
+    const parsed = z.object({ token: z.string().min(1).max(500) }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { deviceId, orgId } = req.device;
+    await this.db.withOrg(orgId, (client) =>
+      client.query("UPDATE devices SET fcm_token = $2 WHERE id = $1", [deviceId, parsed.data.token]),
+    );
+    return { registered: true };
+  }
+
+  /**
+   * Look up a device's FCM token and push a config-refresh signal.
+   * Best-effort: returns false when push is unavailable or the device has no
+   * token (pre-upgrade handsets), so callers must not depend on it.
+   */
+  private async pushConfigRefresh(orgId: string, deviceId: string): Promise<boolean> {
+    // withOrg, NOT adminPool: this used to take orgId and never use it, reading
+    // `WHERE id = $1` off the RLS-bypassing pool. logout/wipe got away with it
+    // because setDeviceStatus runs org-scoped first and would already have
+    // thrown - but `ping` calls straight in here, so any org_admin holding a
+    // device UUID from another tenant could wake that handset. RLS's
+    // org_isolation policy on devices makes the id lookup org-scoped, and a
+    // cross-tenant id now returns no rows and reads as "no token".
+    //
+    // Wrapped because withOrg can throw where adminPool could not (it opens a
+    // transaction and the org_isolation policy casts app.org_id to uuid). The
+    // contract above promises callers a boolean and nothing worse: logout and
+    // wipe have ALREADY committed the status change by the time they call this,
+    // so letting a push lookup throw here would turn a completed remote wipe
+    // into a 500 and invite the operator to retry an action that had worked.
+    try {
+      const {
+        rows: [device],
+      } = await this.db.withOrg(orgId, (client) =>
+        client.query("SELECT fcm_token FROM devices WHERE id = $1", [deviceId]),
+      );
+      if (!device?.fcm_token) return false;
+      return this.fcm.sendToDevice(device.fcm_token, { action: "config_refresh" });
+    } catch {
+      return false;
+    }
   }
 
   /** Fleet listing for the web Devices page. */

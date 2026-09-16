@@ -198,8 +198,12 @@ Neither was visible to a typecheck.
   (`scope` is enforced as of C1.)
 - **A generic custom-object system.** Only custom *fields* on the three fixed objects (Contact,
   Account, Deal) exist. Admin-definable new object types were explicitly out of scope.
-- **Territory/ownership rules beyond `all` vs `owned` scope** on the permission grid — no
-  round-robin assignment, no lead routing rules. `owned` itself is enforced (C1).
+- **Territory rules beyond `all` vs `owned` scope** on the permission grid. `owned` itself is
+  enforced (C1). Lead ROUTING is no longer in this list: migration 0094 adds distribution rules
+  (round-robin and percentage split) that assign incoming leads to telecallers — see
+  `packages/db/migrations/0094_lead_routing.sql`. What is still absent is a territory MODEL
+  (geography/segment ownership as a first-class object); routing matches on channel, source,
+  project and deal size instead.
 - **Commission and comp plans.** Layer 5's quota half is built; commission is payroll — it needs
   an accrual model, a claw-back rule for a deal that unwinds and an approval trail, which makes a
   bug in it a different category of problem from a wrong number on a dashboard.

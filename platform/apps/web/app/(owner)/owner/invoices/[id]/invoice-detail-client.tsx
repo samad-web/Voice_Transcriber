@@ -195,6 +195,9 @@ export function InvoiceDetail({
         body: `A balance of ${formatMoney(balanceDue, invoice.currency)} is still due. Marking it paid records money you may not have received.`,
         confirmLabel: "Mark paid",
         tone: "danger",
+        // Recoverable: the status can be set back, and no record is destroyed.
+        // Loud, but not a deletion.
+        requireTyped: false,
       });
       if (!ok) return;
     }

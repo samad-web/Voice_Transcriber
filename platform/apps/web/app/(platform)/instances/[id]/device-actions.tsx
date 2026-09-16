@@ -5,23 +5,52 @@ import { LogOut, Trash2, X } from "lucide-react";
 import { BrutalButton, useAlert, useConfirm, useToast } from "@aura/ui";
 import { deleteDeviceAction, logoutDeviceAction, wipeDeviceAction } from "./actions";
 
+/**
+ * The three things an operator can do to a handset, in increasing order of
+ * consequence, and the microcopy that says which is which.
+ *
+ * ── WHY THE ROW EXPLAINS ITSELF ─────────────────────────────────────────────
+ *
+ * "Logout", "Wipe" and "Remove" are three buttons that all sound like ways of
+ * getting rid of a device, and choosing wrong is expensive in both directions
+ * - a wipe when you meant a logout destroys the recordings on somebody's
+ * phone, and a logout when you meant a wipe leaves them there. The difference
+ * cannot be inferred from three verbs, so the row says it in a sentence.
+ */
 export function DeviceActions({
   orgId,
   deviceId,
   label,
   status,
+  callCount,
+  leadCount,
 }: {
   orgId: string;
   deviceId: string;
   /** For the confirm dialog's copy - "Wipe device" alone reads as a template. */
   label: string;
   status: "active" | "logged_out" | "wiped" | "lost";
+  /** Calls this handset has uploaded. 0 (with no leads) = unpaired. */
+  callCount: number;
+  leadCount: number;
 }) {
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
   const alert = useAlert();
   const toast = useToast();
   const disabled = status === "wiped";
+  const name = label?.trim() || "this device";
+
+  /*
+   * An unpaired device: enrolled, and then nothing. Removing one destroys a
+   * row and no history, which is why it is offered at all - but it is still a
+   * delete, and it still goes through the same type-DELETE gate as wiping a
+   * handset or dropping an instance. The brief for this console is that the
+   * gate is not graded by how much is being destroyed: an operator should
+   * never have to work out which deletes are the serious ones, because the
+   * moment some of them are cheap, the reflex generalises to all of them.
+   */
+  const unpaired = callCount === 0 && leadCount === 0;
 
   const logout = () =>
     startTransition(async () => {
@@ -35,7 +64,7 @@ export function DeviceActions({
 
   const wipe = async () => {
     const ok = await confirm({
-      title: "Remote wipe this device?",
+      title: `Remote wipe ${name}?`,
       body: "This is irreversible. Every recording, credential and enrolment on the handset is purged, and the device must be enrolled again from scratch.",
       confirmLabel: "Wipe device",
       tone: "danger",

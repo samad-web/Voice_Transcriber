@@ -29,23 +29,61 @@ import Image from "next/image";
  * marketing, which leaves "/logo.png" exactly as it was, and is baked in per
  * app at build time - the same value next.config.ts reads for `basePath`, so
  * the two cannot disagree.
+ *
+ * ── WHY A TENANT MARK IS A BARE <img> ───────────────────────────────────────
+ *
+ * `src` overrides the artwork with one org's own logo (migration 0065's
+ * `branding.logoUrl`). That path deliberately does NOT go through next/image:
+ * the URL is arbitrary and tenant-supplied, and next/image refuses any remote
+ * host not listed in `images.remotePatterns` at BUILD time - which an owner
+ * typing a URL into the branding form cannot add. Optimising it is not worth
+ * making the feature impossible, and the branding form's own preview already
+ * renders the same URL the same way for the same reason.
  */
 export function Logo({
   size = 36,
   priority = false,
+  src,
+  alt,
 }: {
   size?: number;
   /** Set true for above-the-fold marks (hero, header) to avoid a pop-in. */
   priority?: boolean;
+  /** One org's own mark (`branding.logoUrl`). Falls back to the Aura artwork. */
+  src?: string | null;
+  /**
+   * Only set this where the mark is the ONLY thing naming the org. Both console
+   * rails render the org name in text beside it, so there the mark stays
+   * decorative and this stays unset - announcing the company twice is worse
+   * than not announcing it at all.
+   */
+  alt?: string;
 }) {
+  const decorative = !alt;
+
+  if (src) {
+    return (
+      // Bare <img>: a tenant-supplied host cannot be allowlisted at build time,
+      // so next/image would refuse it outright. See the note above.
+      <img
+        src={src}
+        alt={alt ?? ""}
+        width={size}
+        height={size}
+        aria-hidden={decorative ? "true" : undefined}
+        style={{ width: size, height: size, objectFit: "contain" }}
+      />
+    );
+  }
+
   return (
     <Image
       src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/logo.png`}
-      alt=""
+      alt={alt ?? ""}
       width={size}
       height={size}
       priority={priority}
-      aria-hidden="true"
+      aria-hidden={decorative ? "true" : undefined}
       style={{ width: size, height: size, objectFit: "contain" }}
     />
   );

@@ -161,7 +161,7 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
       await client.query("SET LOCAL lock_timeout = 0");
 
       const attempts = await priorAttempts(client, row.id);
-      const helpers = stageHelpers(client, row.id, attempts);
+      const helpers = stageHelpers(client, row.id, attempts, row.org_id);
       try {
         await persistTranscript(client, row.org_id, row.id, outcome.result);
       } catch (err) {
@@ -213,7 +213,7 @@ async function failCall(row: PendingJob, err: Error): Promise<void> {
     const claim = await client.query(CLAIM_SQL, [row.id, row.asr_job_id]);
     if ((claim.rowCount ?? 0) === 0) return;
     const attempts = await priorAttempts(client, row.id);
-    await stageHelpers(client, row.id, attempts).fail("ASR", err);
+    await stageHelpers(client, row.id, attempts, row.org_id).fail("ASR", err);
   });
 }
 

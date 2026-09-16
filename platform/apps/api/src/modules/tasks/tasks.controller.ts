@@ -13,28 +13,46 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { TaskInput, TaskUpdate } from "@aura/shared";
+import { BulkAssignTasksInput, TaskInput, TaskPriority, TaskUpdate, type BulkResult } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { assignInBulk } from "../../common/bulk-assign";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { notify } from "../notifications/notify";
 import { DbService } from "../../db/db.service";
+
+const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
 const ListQuery = z.object({
   status: z.enum(["open", "done", "cancelled"]).optional(),
   assigneeUserId: z.string().uuid().optional(),
   /** `?mine=1` - resolves to the caller, so the console needn't know its own id. */
   mine: z.coerce.boolean().optional(),
+  /** Only tasks nobody has been given. */
+  unassigned: z.coerce.boolean().optional(),
   dealId: z.string().uuid().optional(),
   contactId: z.string().uuid().optional(),
   accountId: z.string().uuid().optional(),
   leadId: z.string().uuid().optional(),
+  priority: TaskPriority.optional(),
+  /** Title search. */
+  q: z.string().max(200).optional(),
   /** Only what is already late. The manager's view, and the notification hook's. */
   overdue: z.coerce.boolean().optional(),
   /** The follow-up queue's tab. Supersedes `overdue`, which it also expresses. */
   bucket: z.enum(["all", "overdue", "today", "upcoming", "completed"]).optional(),
+  /**
+   * A due-date window, inclusive, in the VIEWER's calendar. The console sends
+   * the dates rather than a word like "today" because "today" is the browser's
+   * date (lib/next-actions.ts), and this server's midnight is not the rep's.
+   */
+  dueFrom: DateOnly.optional(),
+  dueTo: DateOnly.optional(),
+  /** Only tasks with no due date. */
+  undated: z.coerce.boolean().optional(),
   sort: z.enum(["due", "created", "priority"]).default("due"),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -146,7 +164,14 @@ export class TasksController {
         add("t.assignee_user_id = $?", me);
       } else if (q.assigneeUserId) {
         add("t.assignee_user_id = $?", q.assigneeUserId);
+      } else if (q.unassigned) {
+        where.push("t.assignee_user_id IS NULL");
       }
+      if (q.priority) add("t.priority = $?", q.priority);
+      if (q.q) add("t.title ILIKE $?", `%${q.q}%`);
+      if (q.dueFrom) add("t.due_on >= $?::date", q.dueFrom);
+      if (q.dueTo) add("t.due_on <= $?::date", q.dueTo);
+      if (q.undated) where.push("t.due_on IS NULL");
 
       // The `owned` half of the permission grid. For a task that means either
       // END of it - assignee or creator - because a rep who asked a colleague
@@ -275,13 +300,16 @@ export class TasksController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      // FK violations bypass RLS and would surface as a 500, so every
-      // referenced object is confirmed visible in THIS org first.
-      await assertVisible(client, "contacts", p.contactId);
-      await assertVisible(client, "accounts", p.accountId);
-      await assertVisible(client, "deals", p.dealId);
-      await assertVisible(client, "leads", p.leadId);
-      await assertVisible(client, "users", p.assigneeUserId);
+      // FK checks bypass RLS, so every referenced row is confirmed to be in
+      // THIS org first - and the assignee a MEMBER of it, since `users` has
+      // no RLS and an existence check alone accepted another tenant's user.
+      await assertInOrg(client, orgId, {
+        contactId: p.contactId,
+        accountId: p.accountId,
+        dealId: p.dealId,
+        leadId: p.leadId,
+      });
+      await assertMembers(client, orgId, { assigneeUserId: p.assigneeUserId });
 
       const {
         rows: [task],
@@ -338,6 +366,71 @@ export class TasksController {
     });
   }
 
+  /**
+   * Hand many follow-ups to one person - the Tasks list's bulk "Reassign".
+   *
+   * `task:edit` and the task scope (assignee OR creator) in the UPDATE, as the
+   * single PATCH. The new assignee is told ONCE, not once per task: forty
+   * "task assigned" rows for one click is the noise that teaches people to
+   * ignore the bell. `notify` still drops it when they gave the tasks to
+   * themselves.
+   */
+  @Post("reassign")
+  @RequireCrmPermission("task", "edit")
+  async reassign(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
+  ): Promise<BulkResult> {
+    const parsed = BulkAssignTasksInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { ids, assigneeUserId } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      // `tasks` isn't in org-references' table map; the org filter in
+      // assignInBulk's UPDATE is what keeps another tenant's ids untouched,
+      // and an id that is not this org's is simply skipped.
+      await assertMembers(client, orgId, { assigneeUserId });
+      const updated = await assignInBulk(client, {
+        orgId,
+        table: "tasks",
+        column: "assignee_user_id",
+        value: assigneeUserId,
+        ids,
+        owned: scopeFilter("task", recordScope, "r"),
+        audit: { targetType: "task", action: "task.reassign", actorId: req.principal?.userId ?? "dev-admin" },
+      });
+
+      if (assigneeUserId && updated.length > 0) {
+        const {
+          rows: [first],
+        } = await client.query<{ title: string; due_on: string | null; deal_id: string | null; contact_id: string | null }>(
+          `SELECT title, to_char(due_on, 'YYYY-MM-DD') AS due_on, deal_id, contact_id FROM tasks WHERE id = $1`,
+          [updated[0]],
+        );
+        const one = updated.length === 1;
+        await notify(
+          client,
+          orgId,
+          {
+            userId: assigneeUserId,
+            kind: "task_assigned",
+            title: one ? first.title : `${updated.length} follow-ups were assigned to you`,
+            body: one ? (first.due_on ? `Due ${first.due_on}` : null) : `Starting with "${first.title.slice(0, 80)}"`,
+            linkPath: "/owner/tasks",
+            taskId: one ? updated[0] : null,
+            dealId: one ? first.deal_id : null,
+            contactId: one ? first.contact_id : null,
+          },
+          actorUserId(req),
+        );
+      }
+
+      return { updated: updated.length, skipped: ids.length - updated.length };
+    });
+  }
+
   @Patch(":id")
   @RequireCrmPermission("task", "edit")
   async update(
@@ -352,8 +445,8 @@ export class TasksController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      await assertVisible(client, "users", p.assigneeUserId ?? undefined);
-      await assertVisible(client, "leads", p.leadId ?? undefined);
+      await assertInOrg(client, orgId, { leadId: p.leadId ?? undefined });
+      await assertMembers(client, orgId, { assigneeUserId: p.assigneeUserId });
 
       const sets: string[] = [];
       const params: unknown[] = [id];
@@ -440,19 +533,6 @@ export class TasksController {
       [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
     );
   }
-}
-
-/** No-op when the id is absent - every reference on a task is optional. */
-async function assertVisible(
-  client: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> },
-  table: "contacts" | "accounts" | "deals" | "leads" | "users",
-  id: string | null | undefined,
-): Promise<void> {
-  if (!id) return;
-  // `users` is not an org-scoped table, so RLS does not constrain this one;
-  // it is a existence check against a real FK, which is what stops a 500.
-  const found = await client.query(`SELECT 1 FROM ${table} WHERE id = $1`, [id]);
-  if (!found.rowCount) throw new BadRequestException(`${table.replace(/s$/, "")} not found`);
 }
 
 /** Same validate-or-null helper merge/interactions need - see those files. */

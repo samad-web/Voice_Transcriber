@@ -6,7 +6,7 @@ import { ownerGet } from "@/lib/owner-context";
 import type { CatalogueEntry, DatasetRow } from "../types";
 import { DataSourcesClient } from "./data-sources-client";
 
-export const metadata: Metadata = { title: "Report data sources - Aura" };
+export const metadata: Metadata = { title: "Report data sources" };
 
 export default async function DataSourcesPage() {
   const data = await ownerGet<{ datasets: DatasetRow[]; catalogue: CatalogueEntry[] }>(

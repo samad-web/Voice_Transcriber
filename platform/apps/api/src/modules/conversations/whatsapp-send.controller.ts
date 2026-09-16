@@ -114,6 +114,39 @@ export class WhatsAppSendController {
         throw new BadRequestException("this conversation has no messaging channel attached");
       }
 
+      /*
+       * ── did this person ask us to stop? (migration 0100) ───────────────
+       *
+       * FIRST, before the plan check, the cap and the credentials. Every gate
+       * below this one is about whether WE are allowed to send; this one is
+       * about whether THEY agreed to receive, and that answer does not become
+       * less true because the org is within its daily cap.
+       *
+       * Only `certain` blocks. A `probable` is recorded and notified and
+       * deliberately does not stop a human from replying - very often the
+       * right response to "leave me alone" is a person saying something,
+       * and a machine that decided otherwise would be making the call that
+       * belongs to them.
+       */
+      const {
+        rows: [optOut],
+      } = await client.query<{ created_at: Date }>(
+        `SELECT created_at FROM messaging_opt_outs
+          WHERE org_id = $1 AND channel = 'whatsapp' AND peer_address = $2
+            AND level = 'certain' AND released_at IS NULL`,
+        [orgId, convo.peer_address],
+      );
+      if (optOut) {
+        // 403, not 400: the request is well-formed and the caller is
+        // authenticated - they are simply not permitted to message this
+        // person. The message says who can undo it, because a flat refusal
+        // with no exit is how somebody ends up editing the database.
+        throw new ForbiddenException(
+          "this person asked to stop being messaged, so nothing can be sent to them. " +
+            "If they have since said otherwise, an owner or manager can release the opt-out on the thread.",
+        );
+      }
+
       const {
         rows: [channel],
       } = await client.query<{

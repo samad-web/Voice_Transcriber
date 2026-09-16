@@ -1,7 +1,31 @@
 # Getting the database off the far side of the Indian Ocean
 
-**Status:** planned. The code-side round-trip reductions are done and deployable
-independently; this document is the infrastructure half.
+**Status:** superseded by `supabase/selfhost/`, which is the executable version
+of this plan. The measurements and the reasoning below still stand and are worth
+reading first — but the decision landed one step further than what this document
+recommends, and the runbook, not this file, is what to follow.
+
+**What changed:** this document argues for moving only the *data* to Mumbai and
+leaving auth on Supabase Cloud (§"Recommended"), because `getClaims()` had made
+auth latency free and an auth migration looked expensive. The decision taken was
+to self-host **the whole Supabase stack** on the VPS instead.
+
+The two costs this document warns about are both real and both accepted:
+
+* **Everyone is signed out once.** The self-hosted stack signs with a different
+  `JWT_SECRET`. Nobody resets a password — `encrypted_password` is a portable
+  bcrypt hash and migrates with the users.
+* **The web image must be rebuilt, not restarted**, because
+  `NEXT_PUBLIC_SUPABASE_URL` / `_ANON_KEY` are build args.
+
+Two things it worried about turned out not to apply. `auth.users` never had to
+"migrate right the first time" in the hard sense, because **nothing in this
+codebase joins `auth.users`** — the only binding is `users.sso_subject`, so
+preserving the UUIDs is sufficient. And the round trips land at ~0.2ms over the
+compose network rather than the ~1–5ms an in-region managed database would give.
+
+The code-side round-trip reductions tabulated at the end are done and were
+deployable independently of any of this.
 
 ## The measurement this is based on
 

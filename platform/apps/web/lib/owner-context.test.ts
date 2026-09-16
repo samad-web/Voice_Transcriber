@@ -32,6 +32,13 @@ vi.mock("@/lib/supabase/server", () => ({
   getSessionUser: vi.fn(),
 }));
 
+// The tenant switcher's cookie. Its real body reads `next/headers` cookies,
+// which only exist inside a request; the default here is "no preference",
+// which is what every case written before the switcher expects.
+vi.mock("@/lib/active-org", () => ({
+  readActiveOrgPreference: vi.fn(async () => null),
+}));
+
 // ── fixtures (inventory 13 §5.0) ─────────────────────────────────────────────
 const DEV_ORG_ID = "00000000-0000-4000-8000-000000000001";
 const DEV_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
@@ -74,6 +81,8 @@ interface LoadOptions {
    * and keeps the synthetic principal's `userId` null.
    */
   devUserId?: string;
+  /** Raw `DEV_OWNER_ROLE` - the local-dev persona override (Phase 8). */
+  devOwnerRole?: string;
 }
 
 /**
@@ -93,6 +102,7 @@ async function load(options: LoadOptions) {
   vi.stubEnv("DEV_ORG_ID", DEV_ORG_ID);
   vi.stubEnv("DEV_WORKSPACE_ID", DEV_WORKSPACE_ID);
   vi.stubEnv("DEV_USER_ID", options.devUserId ?? "");
+  vi.stubEnv("DEV_OWNER_ROLE", options.devOwnerRole ?? "");
 
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
@@ -133,6 +143,7 @@ describe("isOperator", () => {
     userId: DEV_USER_ID,
     kind: "operator",
     membership: null,
+    memberships: [],
     ...over,
   });
 
@@ -228,6 +239,12 @@ describe("isOperator", () => {
             workspaceId: WORKSPACE_B,
             enabledModules: ["aura", "crm"],
             featureOverrides: {},
+            whatsappProvider: "none",
+            branding: {},
+            // Irrelevant to this assertion - it is about `kind`, not about
+            // onboarding - but the membership shape is exact, so a fixture
+            // that omits a field stops compiling when one is added.
+            setupCompletedAt: null,
           },
         }),
       ),
@@ -284,11 +301,13 @@ describe("getPrincipal", () => {
     });
 
     const principal = await getPrincipal();
+    expect(principal?.memberships).toEqual([principal?.membership]);
     expect(principal).toEqual({
       email: "",
       subject: "",
       userId: null,
       kind: "operator",
+      memberships: expect.any(Array),
       membership: {
         orgId: DEV_ORG_ID,
         orgName: "",
@@ -303,6 +322,15 @@ describe("getPrincipal", () => {
         // catalogue's defaults are every feature on, so local dev renders the
         // whole console - which is what this mode is for.
         featureOverrides: {},
+        whatsappProvider: "wasi",
+        // Local dev is unbranded on purpose - the console renders in the stock
+        // palette, which is what you want when checking a change against the
+        // design system.
+        branding: {},
+        // Epoch, not null: local dev is not an onboarding tenant, and a
+        // developer opening any page to check an unrelated change should not
+        // be met by the setup modal (migration 0095).
+        setupCompletedAt: "1970-01-01T00:00:00.000Z",
       },
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -327,6 +355,51 @@ describe("getPrincipal", () => {
     });
 
     expect((await getPrincipal())?.userId).toBe(DEV_USER_ID);
+  });
+
+  /**
+   * The persona override exists so the four non-owner dashboards can actually
+   * be looked at without a Supabase project - see devOwnerRole() in
+   * owner-context.ts. It defaults to `owner`, which is what this branch always
+   * hard-coded, so an unset var behaves exactly as before.
+   */
+  it("renders the dev console as the persona DEV_OWNER_ROLE names", async () => {
+    const asTelecaller = await load({
+      operatorEmails: "",
+      authEnabled: false,
+      session: null,
+      devOwnerRole: "telecaller",
+    });
+    expect((await asTelecaller.getPrincipal())?.membership?.ownerRole).toBe("telecaller");
+
+    const unset = await load({ operatorEmails: "", authEnabled: false, session: null });
+    expect((await unset.getPrincipal())?.membership?.ownerRole).toBe("owner");
+
+    const nonsense = await load({
+      operatorEmails: "",
+      authEnabled: false,
+      session: null,
+      devOwnerRole: "supreme-leader",
+    });
+    expect((await nonsense.getPrincipal())?.membership?.ownerRole).toBe("owner");
+  });
+
+  /**
+   * The same security shape as DEV_USER_ID below: a real session's persona
+   * comes from `memberships`, and no environment variable may touch it.
+   */
+  it("NEVER lets DEV_OWNER_ROLE reach a principal built from a real session", async () => {
+    const real = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+      devOwnerRole: "owner",
+    });
+    contextOk(real.fetchMock, {
+      memberships: [rawMembership({ ownerRole: "telecaller" })],
+      user: { id: USER_B, email: OWNER_EMAIL, name: null },
+    });
+    expect((await real.getPrincipal())?.membership?.ownerRole).toBe("telecaller");
   });
 
   /**
@@ -456,6 +529,60 @@ describe("getPrincipal", () => {
     expect(principal?.kind).toBe("owner");
   });
 
+  // ── the header's tenant switcher (lib/active-org.ts) ───────────────────────
+  //
+  // The cookie is a preference over the session's OWN memberships and nothing
+  // more. The third case is the security property: a cookie naming a tenant
+  // this session does not belong to must change nothing at all.
+  async function loadWithPreference(preferred: string | null) {
+    const loaded = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    const activeOrg = await import("@/lib/active-org");
+    vi.mocked(activeOrg.readActiveOrgPreference).mockResolvedValue(preferred);
+    return loaded;
+  }
+
+  it("honours the switcher's choice when it names one of the session's memberships", async () => {
+    const { getPrincipal, fetchMock } = await loadWithPreference(ORG_B);
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ orgId: DEV_ORG_ID }), rawMembership({ orgId: ORG_B })],
+      user: { id: USER_B },
+    });
+
+    const principal = await getPrincipal();
+    expect(principal?.membership?.orgId).toBe(ORG_B);
+    expect(principal?.memberships.map((m) => m.orgId)).toEqual([DEV_ORG_ID, ORG_B]);
+  });
+
+  it("ignores a choice pointing at a suspended membership", async () => {
+    const { getPrincipal, fetchMock } = await loadWithPreference(ORG_B);
+    contextOk(fetchMock, {
+      memberships: [
+        rawMembership({ orgId: DEV_ORG_ID }),
+        rawMembership({ orgId: ORG_B, orgStatus: "suspended" }),
+      ],
+      user: { id: USER_B },
+    });
+
+    expect((await getPrincipal())?.membership?.orgId).toBe(DEV_ORG_ID);
+  });
+
+  it("ignores a choice naming a tenant the session does NOT belong to", async () => {
+    const STRANGER_ORG = "00000000-0000-4000-8000-0000000000c1";
+    const { getPrincipal, fetchMock } = await loadWithPreference(STRANGER_ORG);
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ orgId: DEV_ORG_ID }), rawMembership({ orgId: ORG_B })],
+      user: { id: USER_B },
+    });
+
+    const principal = await getPrincipal();
+    expect(principal?.membership?.orgId).toBe(DEV_ORG_ID);
+    expect(principal?.memberships.map((m) => m.orgId)).not.toContain(STRANGER_ORG);
+  });
+
   it("carries each legal persona through unchanged", async () => {
     for (const persona of ["owner", "manager", "telecaller"] as const) {
       const { getPrincipal, fetchMock } = await load({
@@ -510,6 +637,7 @@ describe("getPrincipal", () => {
         // API outage must not hand anybody the console.
         operatorListed: false,
         isRoot: false,
+        memberships: [],
       });
       // THE property: an unbound session is not an operator.
       expect(isOperator(principal)).toBe(false);
@@ -592,5 +720,97 @@ describe("getOwner", () => {
       session: null,
     });
     await expect(getOwner()).resolves.toBeNull();
+  });
+});
+
+/**
+ * Branding (migration 0065) rides the session lookup.
+ *
+ * The owner console applies branding in its LAYOUT, so this is read on every
+ * page. These pin the property that makes that affordable: it arrives on the
+ * org row `contextFor` already reads, and resolving it costs NO second request.
+ * A regression here is not a wrong colour, it is ~125ms added to every
+ * navigation in the product (see AuthService.contextFor's own note on the
+ * Mumbai/Seoul split).
+ */
+describe("getOwnerBranding", () => {
+  it("comes off the context response without a further request", async () => {
+    const FIXTURE = {
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    };
+    const CONTEXT = {
+      memberships: [rawMembership({ branding: { primaryColor: "#84cc16", browserTitle: "Acme" } })],
+      user: { id: USER_B },
+    };
+
+    // What a bare session costs, measured rather than assumed: resolving a
+    // principal also resolves the operator allowlist (0089), so the old "one
+    // call" was true only until that landed. The property worth pinning is that
+    // BRANDING adds nothing on top.
+    //
+    // Baseline FIRST, in its own fixture: `load` swaps the module registry, so
+    // a second load would leave the first fixture's spy attached to nothing.
+    const baseline = await load(FIXTURE);
+    contextOk(baseline.fetchMock, CONTEXT);
+    await baseline.getOwner();
+    const sessionCost = baseline.fetchMock.mock.calls.length;
+
+    const { getOwnerBranding, fetchMock } = await load(FIXTURE);
+    contextOk(fetchMock, CONTEXT);
+    await expect(getOwnerBranding()).resolves.toEqual({
+      primaryColor: "#84cc16",
+      browserTitle: "Acme",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(sessionCost);
+  });
+
+  it("drops a stored value the schema no longer accepts", async () => {
+    // `loginBackgroundUrl` was retired: every tenant signs in at the same URL,
+    // so it could never be applied. Tenants who set it still have the key.
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    contextOk(fetchMock, {
+      memberships: [
+        rawMembership({
+          branding: { logoUrl: "https://cdn.example.com/l.png", loginBackgroundUrl: "https://x/y" },
+        }),
+      ],
+      user: { id: USER_B },
+    });
+
+    await expect(getOwnerBranding()).resolves.toEqual({
+      logoUrl: "https://cdn.example.com/l.png",
+    });
+  });
+
+  it("degrades a malformed blob to unbranded rather than throwing", async () => {
+    // A bad colour must cost a tenant their branding, not their console.
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+    });
+    contextOk(fetchMock, {
+      memberships: [rawMembership({ branding: { primaryColor: "puce" } })],
+      user: { id: USER_B },
+    });
+
+    await expect(getOwnerBranding()).resolves.toEqual({});
+  });
+
+  it("is empty for a session with no membership to brand", async () => {
+    const { getOwnerBranding, fetchMock } = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: "stranger@example.com" },
+    });
+    contextOk(fetchMock, { memberships: [], user: { id: USER_B } });
+
+    await expect(getOwnerBranding()).resolves.toEqual({});
   });
 });

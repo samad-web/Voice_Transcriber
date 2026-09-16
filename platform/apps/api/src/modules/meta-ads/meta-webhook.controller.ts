@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { decryptSecret } from "@aura/db";
 import { DbService } from "../../db/db.service";
 import { LeadIntakeService } from "../lead-intake/lead-intake.service";
+import { RealtimeService } from "../realtime/realtime.service";
 import { fetchLead, mapLeadFields, verifyMetaSignature } from "./meta-client";
 
 interface MetaWebhookBody {
@@ -46,6 +47,7 @@ export class MetaWebhookController {
   constructor(
     private readonly db: DbService,
     private readonly intake: LeadIntakeService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /** Meta's subscription handshake - confirms this endpoint is really us. */
@@ -109,6 +111,11 @@ export class MetaWebhookController {
 
     const pageToken = decryptSecret(connection.access_token);
     if (!pageToken) return;
+
+    // Captured from inside the transaction and announced after it commits.
+    // A lead announced mid-transaction is a lead every open console goes
+    // looking for and, on a rollback, never finds.
+    let createdLeadId: string | null = null;
 
     await this.db.withOrg(connection.org_id, async (client) => {
       // Idempotent claim, same shape as every other webhook ledger: a second
@@ -193,6 +200,22 @@ export class MetaWebhookController {
          VALUES ($1, 'system', 'meta-webhook', 'lead.create_from_leadgen', 'lead', $2)`,
         [connection.org_id, result.leadId],
       );
+      createdLeadId = result.leadId ?? null;
     });
+
+    // Meta is the one source where somebody is genuinely watching the board
+    // for an arrival - the ad is running and they want to know it works. The
+    // global interceptor cannot announce this route (an unauthenticated
+    // webhook resolves its tenant from the page id, not through a guard), so
+    // it is said here, where the org is known and the write is committed.
+    if (createdLeadId) {
+      this.realtime.publish({
+        orgId: connection.org_id,
+        topic: "lead",
+        action: "created",
+        id: createdLeadId,
+        at: new Date().toISOString(),
+      });
+    }
   }
 }

@@ -17,6 +17,7 @@ import {
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorOnlyGuard } from "../../common/operator-only.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -57,7 +58,13 @@ const KEY_COLUMNS = `id, expires_at, max_uses, use_count, created_at,
  * hash is stored. The web activation page renders it as copy-once + QR.
  */
 @Controller("instances")
-@UseGuards(AdminKeyGuard, TenantGuard)
+// OperatorOnlyGuard third, the same position CrmPermissionsGuard/OwnerRoleGuard
+// take. These routes mint enrollment tokens, and an enrollment token puts a
+// device into the tenant - so they are the operator's, and a tenant console
+// user is refused outright. A client pairing a handset has /owner/devices
+// (migration 0096), which is gated on a per-person capability and issues a
+// narrower one-use token.
+@UseGuards(AdminKeyGuard, TenantGuard, OperatorOnlyGuard)
 export class InstancesController {
   constructor(private readonly db: DbService) {}
 
@@ -154,6 +161,17 @@ export class InstancesController {
         [instanceId],
       );
 
+      // `call_count`/`lead_count` are what make a handset's row honest about
+      // whether it has ever done anything: a device with neither is an
+      // unpaired enrolment - a key used twice, a phone factory-reset halfway
+      // through setup, a demo handset now in a drawer - and is the only kind
+      // the console offers to REMOVE. Counted here rather than inferred in the
+      // browser from `last_seen_at`, because a handset can beacon for weeks
+      // and never upload a call, and one can upload a call and then go quiet
+      // forever; neither direction of that guess is safe when the button it
+      // decides is a delete. DELETE /v1/devices/:id re-checks both counts at
+      // the moment of the click regardless - this is the affordance, not the
+      // guard.
       const { rows: devices } = await client.query(
         // `connected` mirrors devices.controller.ts's CONNECTED constant
         // (active + heard from inside 24h) verbatim - the two live in
@@ -162,7 +180,9 @@ export class InstancesController {
         // rather than a coincidence to "clean up" later.
         `SELECT d.id, d.label, d.fingerprint, d.status, d.capture_capability, d.last_seen_at,
                 d.created_at, d.telecaller_name, d.telecaller_id, t.external_id AS telecaller_external_id,
-                (d.status = 'active' AND d.last_seen_at > now() - interval '24 hours') AS connected
+                (d.status = 'active' AND d.last_seen_at > now() - interval '24 hours') AS connected,
+                (SELECT count(*) FROM calls c WHERE c.device_id = d.id)::int AS call_count,
+                (SELECT count(*) FROM leads l WHERE l.telecaller_device_id = d.id)::int AS lead_count
            FROM devices d
            LEFT JOIN telecallers t ON t.id = d.telecaller_id
           WHERE d.instance_id = $1 AND d.removed_at IS NULL

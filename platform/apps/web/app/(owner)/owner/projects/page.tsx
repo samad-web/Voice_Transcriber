@@ -5,7 +5,7 @@ import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { Project } from "../types";
 import { ProjectsClient } from "./projects-client";
 
-export const metadata: Metadata = { title: "Projects - Aura" };
+export const metadata: Metadata = { title: "Projects" };
 
 export default async function ProjectsPage() {
   // Off means off, not merely hidden - see requireFeature.

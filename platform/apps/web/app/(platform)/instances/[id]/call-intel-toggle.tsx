@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useId, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileText } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm } from "@aura/ui";
+import { Button, Card, MonoLabel, RowHint, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { setModuleEnabledAction } from "./actions";
 import type { OwnerRow } from "./owner-accounts";
 
@@ -47,6 +47,7 @@ export function CallIntelToggle({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const hintId = useId();
   const confirm = useConfirm();
   const alert = useAlert();
 
@@ -99,35 +100,38 @@ export function CallIntelToggle({
         <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
       </div>
 
-      <p className="text-xs text-neutral-500 font-sans font-medium leading-relaxed">
+      <RowHint kind="toggle" id={`${hintId}-state`}>
         {enabled
-          ? "This client sees each call's intent, sentiment and outcome on their leads, and can open the transcript."
-          : "This client sees only the lead a call produced - no transcript, no intent or sentiment labels."}
-      </p>
+          ? "On: this client sees each call's intent, sentiment and outcome on their leads, and can open the transcript."
+          : "Off: this client sees only the lead a call produced - no transcript, no intent or sentiment labels."}
+      </RowHint>
 
       {enabled ? (
-        <div className="border-2 border-black bg-white p-3 space-y-1.5">
+        <div className="space-y-1.5 rounded-md border border-border-strong bg-bg-subtle p-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <MonoLabel>Who can open a transcript</MonoLabel>
             <StatusChip tone={canRead.length > 0 ? "solid" : "muted"}>
               {canRead.length} of {active.length}
             </StatusChip>
           </div>
-          <p className="text-[10px] font-mono text-neutral-500 leading-relaxed">
+          <RowHint kind="blocked">
             {canRead.length === 0
               ? "Nobody. Their team sees the intent and sentiment labels, but every transcript stays withheld until an account is given recordings access in Owner accounts above."
               : "The rest of their team still sees the intent and sentiment labels - only the verbatim text is withheld. Recordings access is per account, in Owner accounts above."}
-          </p>
+          </RowHint>
         </div>
       ) : null}
 
-      <BrutalButton
+      <Button
+        type="button"
         variant={enabled ? "secondary" : "primary"}
         disabled={pending}
+        loading={pending}
+        aria-describedby={`${hintId}-state`}
         onClick={() => void toggle(!enabled)}
       >
-        {pending ? "SAVING…" : enabled ? "TURN OFF" : "TURN ON"}
-      </BrutalButton>
+        {enabled ? "Turn off" : "Turn on"}
+      </Button>
     </Card>
   );
 }

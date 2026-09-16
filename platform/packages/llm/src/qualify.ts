@@ -6,6 +6,7 @@ import {
   qualificationPrompt,
   QualificationVerdict,
   QUALIFICATION_RESPONSE_SCHEMA,
+  redactForRetention,
   type QualifiableMessage,
 } from "@aura/shared";
 import { geminiAnalyzeModel, geminiThinking } from "./gemini-config";
@@ -27,6 +28,25 @@ export interface QualificationResult {
   model: string;
   tokensIn: number;
   tokensOut: number;
+}
+
+/**
+ * The ONLY way a verdict leaves this module.
+ *
+ * `redactForRetention` drops the extracted name, email, company and notes for a
+ * personal message, a wrong number or spam. Funnelling every return through one
+ * helper is deliberate: this function has six exit points, and a privacy rule
+ * applied at five of them is not a privacy rule. A model that ignores the
+ * prompt's instruction to return nulls for those categories is caught here.
+ */
+function result(
+  verdict: QualificationVerdict,
+  provider: QualificationResult["provider"],
+  model: string,
+  tokensIn = 0,
+  tokensOut = 0,
+): QualificationResult {
+  return { verdict: redactForRetention(verdict), provider, model, tokensIn, tokensOut };
 }
 
 function geminiConfigured(): boolean {
@@ -55,14 +75,14 @@ export async function qualifyWhatsAppConversation(
   // heuristic returns `unclear`/0 for this, which is the right answer, and
   // paying for an LLM call to reach it is not.
   if (!transcript.trim()) {
-    return { verdict: heuristicQualify(messages), provider: "heuristic", model: "none", tokensIn: 0, tokensOut: 0 };
+    return result(heuristicQualify(messages), "heuristic", "none");
   }
 
   if (process.env.QUALIFY_STUB === "1") {
-    return { verdict: heuristicQualify(messages), provider: "stub", model: "stub", tokensIn: 0, tokensOut: 0 };
+    return result(heuristicQualify(messages), "stub", "stub");
   }
   if (!geminiConfigured()) {
-    return { verdict: heuristicQualify(messages), provider: "heuristic", model: "none", tokensIn: 0, tokensOut: 0 };
+    return result(heuristicQualify(messages), "heuristic", "none");
   }
 
   const model = geminiAnalyzeModel();
@@ -95,7 +115,7 @@ export async function qualifyWhatsAppConversation(
     tokensOut = response.usageMetadata?.candidatesTokenCount ?? 0;
   } catch (err) {
     console.error("whatsapp qualification: provider failed, falling back to heuristic:", err);
-    return { verdict: heuristicQualify(messages), provider: "heuristic", model: "none", tokensIn: 0, tokensOut: 0 };
+    return result(heuristicQualify(messages), "heuristic", "none");
   }
 
   // The budget is re-parsed rather than trusted, even though the schema asks
@@ -109,8 +129,8 @@ export async function qualifyWhatsAppConversation(
 
   if (!verdict.success) {
     console.error("whatsapp qualification: unusable model output:", verdict.error.message);
-    return { verdict: heuristicQualify(messages), provider: "heuristic", model: "none", tokensIn, tokensOut };
+    return result(heuristicQualify(messages), "heuristic", "none", tokensIn, tokensOut);
   }
 
-  return { verdict: verdict.data, provider: "gemini", model, tokensIn, tokensOut };
+  return result(verdict.data, "gemini", model, tokensIn, tokensOut);
 }

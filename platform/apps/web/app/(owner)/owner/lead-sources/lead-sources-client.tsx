@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorBanner,
   FormField,
   Input,
   MonoLabel,
@@ -399,11 +400,7 @@ function EventLog({ sourceId }: { sourceId: string }) {
   };
 
   if (error) {
-    return (
-      <p role="alert" className="mt-4 rounded-md border border-danger bg-danger-subtle p-3 text-sm text-danger-text">
-        {error}
-      </p>
-    );
+    return <ErrorBanner className="mt-4">{error}</ErrorBanner>;
   }
   if (events === null) {
     return <p className="mt-4 text-sm text-text-muted">Loading arrivals…</p>;

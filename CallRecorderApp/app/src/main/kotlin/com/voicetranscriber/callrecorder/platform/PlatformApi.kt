@@ -185,10 +185,15 @@ object PlatformApi {
 
     data class CallResult(val status: String, val transcript: String?)
 
-    /** GET /v1/devices/me/calls/{id} - pipeline status + transcript for a call this device uploaded. */
+    /** POST /v1/devices/me/calls/{id} - pipeline status + transcript for a call this device uploaded. */
     fun fetchCallResult(baseUrl: String, accessToken: String, callId: String): CallResult {
         val response = request(baseUrl, "GET", "/devices/me/calls/$callId", null, bearer = accessToken)
         val transcript = if (response.isNull("transcript")) null else response.optString("transcript", null)
         return CallResult(status = response.optString("status", "UNKNOWN"), transcript = transcript)
+    }
+
+    /** POST /v1/devices/me/fcm-token - register or update the device's FCM push token. */
+    fun updateFcmToken(baseUrl: String, accessToken: String, token: String) {
+        request(baseUrl, "POST", "/devices/me/fcm-token", JSONObject().put("token", token), bearer = accessToken)
     }
 }

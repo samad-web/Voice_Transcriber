@@ -47,6 +47,14 @@ vi.mock("@aura/db", () => ({
             ? { rows: [{ id: CALL_ID }], rowCount: 1 }
             : { rows: [], rowCount: 0 };
         }
+        // failStrandedAwaitingAudio's claim-and-write is one statement, not the
+        // claim-then-fail() pair the branch above models - there is no shared
+        // `fail()` call to split it from, and no next_attempt_at to schedule.
+        if (/status = 'FAILED_UPLOAD'/.test(text)) {
+          return claimSucceeds
+            ? { rows: [{ id: CALL_ID }], rowCount: 1 }
+            : { rows: [], rowCount: 0 };
+        }
         if (/SELECT pipeline_attempts/.test(text)) {
           return { rows: [{ pipeline_attempts: 1 }], rowCount: 1 };
         }
@@ -59,7 +67,12 @@ vi.mock("@aura/db", () => ({
 }));
 
 // The sweep never publishes - it hands the call to retryDueCalls, which does.
-vi.mock("@aura/queue", () => ({ publishPipeline: vi.fn() }));
+vi.mock("@aura/queue", () => ({
+  publishPipeline: vi.fn(),
+  // A change signal, not work: the pipeline calls it after a status
+  // transition. Stubbed so these tests need no broker.
+  publishEvent: vi.fn(),
+}));
 
 /**
  * PIPELINE_STALL_MS is read at module load, so - exactly as report 12 §5.6
@@ -85,6 +98,11 @@ function stalledRow(status: string, minutesAgo = 90) {
 /** The `fail()` write, if one happened. */
 function failure(): Recorded | undefined {
   return issued.find((q) => /pipeline_attempts = pipeline_attempts \+ 1/.test(q.text));
+}
+
+/** The AWAITING_AUDIO -> FAILED_UPLOAD write, if one happened. */
+function uploadFailure(): Recorded | undefined {
+  return issued.find((q) => /FAILED_UPLOAD/.test(q.text));
 }
 
 afterEach(() => {
@@ -200,5 +218,79 @@ describe("failStalledCalls", () => {
     await failStalledCalls();
 
     expect(Number(issued[0].values[2])).toBe(15 * 60);
+  });
+});
+
+/**
+ * The fourth way a call goes missing: the handset's upload never finished and
+ * never will (the file was deleted, the app was uninstalled, the device is
+ * gone for good). Unlike the three sweeps above, there is no audio in S3 to
+ * resume - so this one does not hand the call back to retryDueCalls at all,
+ * it lands it on a status with no next_attempt_at and stops there.
+ */
+describe("failStrandedAwaitingAudio", () => {
+  it("does nothing when no call has been sitting in AWAITING_AUDIO", async () => {
+    const { failStrandedAwaitingAudio } = await loadSweeper();
+    expect(await failStrandedAwaitingAudio()).toBe(0);
+    expect(issued).toHaveLength(0);
+  });
+
+  it("fails a stranded upload to FAILED_UPLOAD", async () => {
+    stalledRows = [stalledRow("AWAITING_AUDIO")];
+    const { failStrandedAwaitingAudio } = await loadSweeper();
+    expect(await failStrandedAwaitingAudio()).toBe(1);
+    expect(uploadFailure()).toBeDefined();
+  });
+
+  it("writes no next_attempt_at - nothing server-side can complete a call with no audio", async () => {
+    stalledRows = [stalledRow("AWAITING_AUDIO")];
+    const { failStrandedAwaitingAudio } = await loadSweeper();
+    await failStrandedAwaitingAudio();
+
+    // A next_attempt_at is what retryDueCalls selects on; writing one would
+    // rewind this call to UPLOADED with nothing in S3 to transcode.
+    expect(uploadFailure()!.text).not.toMatch(/next_attempt_at/);
+    expect(uploadFailure()!.text).not.toMatch(/pipeline_attempts/);
+  });
+
+  it("claims conditionally, on the same row and the same staleness it selected", async () => {
+    stalledRows = [stalledRow("AWAITING_AUDIO")];
+    const { failStrandedAwaitingAudio } = await loadSweeper();
+    await failStrandedAwaitingAudio();
+
+    const claim = uploadFailure()!;
+    expect(claim.text).toMatch(/WHERE id = \$1/);
+    expect(claim.text).toMatch(/AND status = 'AWAITING_AUDIO'/);
+    expect(claim.text).toMatch(/created_at < now\(\) - make_interval/);
+    expect(claim.values[0]).toBe(CALL_ID);
+  });
+
+  it("fails nothing when the claim loses the race", async () => {
+    // The client's own retry (0101) resumed the same row between the scan and
+    // the write - it must not be stamped FAILED_UPLOAD out from under it.
+    stalledRows = [stalledRow("AWAITING_AUDIO")];
+    claimSucceeds = false;
+
+    const { failStrandedAwaitingAudio } = await loadSweeper();
+    expect(await failStrandedAwaitingAudio()).toBe(0);
+  });
+
+  it("defaults to a 6-hour window, generous enough that a device merely offline is never failed", async () => {
+    stalledRows = [stalledRow("AWAITING_AUDIO")];
+    const { failStrandedAwaitingAudio } = await loadSweeper();
+    await failStrandedAwaitingAudio();
+
+    expect(Number(uploadFailure()!.values[2])).toBe(6 * 60 * 60);
+  });
+
+  it("honours PIPELINE_AWAITING_AUDIO_STALL_MS rather than ignoring it", async () => {
+    stalledRows = [stalledRow("AWAITING_AUDIO")];
+    vi.stubEnv("PIPELINE_AWAITING_AUDIO_STALL_MS", String(60 * 60 * 1000));
+    vi.resetModules();
+
+    const { failStrandedAwaitingAudio } = await import("./retry");
+    await failStrandedAwaitingAudio();
+
+    expect(Number(uploadFailure()!.values[2])).toBe(60 * 60);
   });
 });

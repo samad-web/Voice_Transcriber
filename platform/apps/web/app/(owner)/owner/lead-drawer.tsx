@@ -102,7 +102,7 @@ export function LeadDrawer({
     startTransition(async () => {
       const result = await updateLeadAction(lead.id, update);
       if (result.error) {
-        await alert({ title: "Couldn't update the lead", body: result.error, tone: "danger" });
+        await alert({ title: "Couldn't save the lead", body: result.error, tone: "danger" });
         return;
       }
       toast("Saved");
@@ -114,8 +114,8 @@ export function LeadDrawer({
     const parsedValue = draft.value.trim() === "" ? null : Number(draft.value);
     if (parsedValue !== null && !Number.isFinite(parsedValue)) {
       void alert({
-        title: "Couldn't update the lead",
-        body: "Value must be a number",
+        title: "Enter a valid deal value",
+        body: "The value has to be a number - leave it empty if there isn't one yet.",
         tone: "danger",
       });
       return;
@@ -138,7 +138,7 @@ export function LeadDrawer({
     startTransition(async () => {
       const result = await updateLeadAction(lead.id, { projectId });
       if (result.error) {
-        await alert({ title: "Couldn't change the project", body: result.error, tone: "danger" });
+        await alert({ title: "Couldn't set the project", body: result.error, tone: "danger" });
         return;
       }
       toast("Saved");
@@ -358,11 +358,9 @@ export function LeadDrawer({
                 className={TEXTAREA_CLASS}
               />
             </FormField>
-            <div className="flex items-center gap-3">
-              <Button type="button" onClick={saveDetails} loading={pending}>
-                Save
-              </Button>
-            </div>
+            <Button type="button" onClick={saveDetails} loading={pending}>
+              Save
+            </Button>
           </div>
 
           <div className="space-y-2">

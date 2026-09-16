@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AutomationAction,
   AutomationRuleInput,
   dueDate,
   matchesConditions,
@@ -167,5 +168,17 @@ describe("AutomationRuleInput validation", () => {
       actions: [{ type: "send_email", to: "anyone@example.com", subject: "hi", body: "hi" }],
     });
     expect(bad.success).toBe(false);
+  });
+});
+
+describe("the loop guard for events the projection queues (doc 23, C1)", () => {
+  it("offers no action that creates a contact or a deal", () => {
+    // The Lead -> Contact/Deal projection queues `contact.created` and
+    // `deal.created`. That is only loop-free while no rule can itself create a
+    // contact or deal - see the LOOPS header in apps/worker/src/pipeline/
+    // automation.ts. If this list grows, re-read that header before
+    // updating the expectation.
+    const types = AutomationAction.options.map((option) => option.shape.type.value).sort();
+    expect(types).toEqual(["add_note", "create_task", "move_stage", "notify", "set_custom_field"]);
   });
 });

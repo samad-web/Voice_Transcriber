@@ -141,7 +141,12 @@ vi.mock("./call-analytics", () => ({
   upsertCallAnalytics: vi.fn(async () => {}),
 }));
 vi.mock("./crm-objects", () => ({ projectLeadToCrm: vi.fn(async () => ({ reason: "skipped" })) }));
-vi.mock("@aura/queue", () => ({ publishEnrich: vi.fn(async () => {}) }));
+vi.mock("@aura/queue", () => ({
+  publishEnrich: vi.fn(async () => {}),
+  // A change signal, not work: the pipeline calls it after a status
+  // transition. Stubbed so these tests need no broker.
+  publishEvent: vi.fn(),
+}));
 vi.mock("./leads", () => ({ upsertLead: vi.fn(async () => ({ leadId: null, reason: "none" })) }));
 vi.mock("./outbox", () => ({ enqueueDispatch: vi.fn(async () => {}) }));
 vi.mock("./projects", () => ({ detectCallProjects: vi.fn(async () => {}) }));

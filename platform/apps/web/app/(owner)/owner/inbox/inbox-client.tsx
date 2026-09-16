@@ -1,12 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { StatusChip, useAlert, useToast } from "@aura/ui";
+import {
+  Button,
+  ErrorBanner,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
+import {
+  formatRemaining,
+  messagingWindow,
+  windowNotice,
+  type MessagingWindow,
+} from "@aura/shared";
+import { useRealtime } from "@/components/realtime-provider";
 import { RecordPicker } from "../record-picker";
 import {
   fetchChannelTemplatesAction,
   fetchThreadAction,
   listConversationsAction,
+  releaseOptOutAction,
   sendWhatsAppMessageAction,
   updateConversationAction,
   type Conversation,
@@ -14,7 +29,28 @@ import {
   type WasiTemplate,
 } from "./actions";
 
+/**
+ * The free-text tab's label, which carries the countdown.
+ *
+ * On the tab rather than only in the notice above it, because the tab is what
+ * somebody is looking at when they decide which mode to use - and the notice
+ * stays silent until the window is nearly shut, by design.
+ */
+function freeTextLabel(w: MessagingWindow): string {
+  switch (w.kind) {
+    case "unrestricted":
+      return "Free text";
+    case "open":
+      return `Free text (${formatRemaining(w.remainingMs)} left)`;
+    case "closed":
+      return "Free text (window closed)";
+  }
+}
+
 type Filter = "open" | "unmatched" | "closed";
+
+/** Threads per page. Fifty is what this list already fetched; now it says so. */
+const THREADS_PER_PAGE = 50;
 
 const FILTERS: Array<{ key: Filter; label: string; hint: string }> = [
   { key: "open", label: "Open", hint: "Threads still needing an answer." },
@@ -36,9 +72,18 @@ const FILTERS: Array<{ key: Filter; label: string; hint: string }> = [
  * disappears from Open, and nobody answers it. Reading zeroes the badge.
  * Closing is a button somebody presses.
  */
-export function Inbox() {
+export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean }) {
   const [filter, setFilter] = useState<Filter>("open");
   const [threads, setThreads] = useState<Conversation[] | null>(null);
+  /**
+   * The thread list's page (CRM dashboard Phase 8). It used to fetch the first
+   * fifty and stop, with nothing on screen saying so - a busy inbox simply did
+   * not have its older threads. Held in component state rather than the URL
+   * because the whole inbox is one client component whose filter lives here
+   * too, and a page number that outlived a filter change would open empty.
+   */
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [thread, setThread] = useState<{
     conversation: Conversation;
@@ -105,10 +150,11 @@ export function Inbox() {
     const requestFilter = filter;
     filterRef.current = requestFilter;
     start(async () => {
+      const paging = { limit: THREADS_PER_PAGE, offset: page * THREADS_PER_PAGE };
       const res = await listConversationsAction(
         requestFilter === "unmatched"
-          ? { unmatchedOnly: true }
-          : { status: requestFilter === "closed" ? "closed" : "open" },
+          ? { unmatchedOnly: true, ...paging }
+          : { status: requestFilter === "closed" ? "closed" : "open", ...paging },
       );
       // The filter moved on again while this was in flight - a newer load()
       // owns the list now, so this stale response is dropped rather than
@@ -121,10 +167,57 @@ export function Inbox() {
       }
       setError(null);
       setThreads(res.conversations ?? []);
+      setTotal(res.total ?? 0);
     });
-  }, [filter]);
+  }, [filter, page]);
 
   useEffect(load, [load]);
+
+  /*
+   * A message arriving is the one change in this console somebody is literally
+   * sitting and waiting for, and the whole list lives in this component's own
+   * state - so a `router.refresh()` cannot touch it and only an explicit
+   * subscription will do.
+   *
+   * The list always reloads. The open thread reloads too, but only when it is
+   * the one that changed: re-fetching whichever thread happens to be on screen
+   * every time any other thread gets a message would fight with somebody
+   * reading it, and `fetchThreadAction` marks nothing read so it would be a
+   * pointless round trip besides.
+   */
+  useRealtime(["conversation", "message"], (event) => {
+    load();
+    const current = selectedIdRef.current;
+    if (!current) return;
+    if (event.topic === "*" || !event.id || event.id === current) {
+      void fetchThreadAction(current).then((res) => {
+        // Selection moved while this was in flight - same race the click
+        // handler above guards, for the same reason.
+        if (selectedIdRef.current !== current) return;
+        if (res.conversation) {
+          setThread({ conversation: res.conversation, messages: res.messages ?? [] });
+        }
+      });
+    }
+  });
+
+  /*
+   * The reply window, recomputed on every render from `last_inbound_at`.
+   *
+   * `new Date()` in render rather than a ticking interval: this only has to be
+   * right when somebody looks at it, and a timer that re-renders the whole
+   * inbox once a second to move a number nobody is watching is a worse trade
+   * than a countdown that is a few minutes stale. The notice deliberately
+   * carries no seconds for the same reason.
+   */
+  const replyWindow = thread
+    ? messagingWindow(
+        thread.conversation.channel,
+        thread.conversation.channel_provider,
+        thread.conversation.last_inbound_at,
+        new Date(),
+      )
+    : ({ kind: "unrestricted" } as const);
 
   function open(id: string) {
     setSelectedId(id);
@@ -187,16 +280,17 @@ export function Inbox() {
               title={f.hint}
               onClick={() => {
                 setFilter(f.key);
+                setPage(0);
                 setSelectedId(null);
                 selectedIdRef.current = null;
                 setThread(null);
               }}
               aria-pressed={filter === f.key}
-              style={filter === f.key ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+              // Neutral fill for the selected filter - see @aura/ui's state.tsx.
               className={
                 "h-9 rounded-full px-3 text-sm font-medium transition-colors " +
                 (filter === f.key
-                  ? "text-white"
+                  ? "bg-text text-bg"
                   : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
               }
             >
@@ -208,6 +302,34 @@ export function Inbox() {
         <p className="mt-2 text-xs text-text-muted">
           {FILTERS.find((f) => f.key === filter)?.hint}
         </p>
+
+        {total > THREADS_PER_PAGE ? (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-text-muted tabular-nums">
+              {page * THREADS_PER_PAGE + 1}-{Math.min((page + 1) * THREADS_PER_PAGE, total)} of {total}
+            </p>
+            <div className="flex gap-1.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={page === 0 || pending}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                ← Newer
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={(page + 1) * THREADS_PER_PAGE >= total || pending}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Older →
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <ul className="mt-3 space-y-1.5">
           {threads === null ? (
@@ -257,14 +379,7 @@ export function Inbox() {
 
       {/* ── reading pane ────────────────────────────────────────────── */}
       <div className="min-w-0 rounded-md border border-border p-4">
-        {error ? (
-          <p
-            role="alert"
-            className="mb-3 rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text"
-          >
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorBanner className="mb-3">{error}</ErrorBanner> : null}
 
         {thread === null ? (
           <p className="text-sm text-text-muted">Pick a thread to read it.</p>
@@ -357,29 +472,62 @@ export function Inbox() {
               )}
             </ul>
 
-            {thread.conversation.channel === "whatsapp" && thread.conversation.messaging_channel_id ? (
+            {thread.conversation.opted_out ? (
+              /*
+               * They asked to stop (migration 0100). The composer is REPLACED
+               * rather than disabled: a greyed-out text box with a message
+               * beside it still reads as "type here and find out", and the
+               * send route refuses regardless. What a person needs here is the
+               * fact and, if they are senior enough, the way to undo it.
+               */
+              <OptedOutNotice
+                conversationId={thread.conversation.id}
+                canRelease={canReleaseOptOut}
+                onReleased={() => open(thread.conversation.id)}
+              />
+            ) : thread.conversation.channel === "whatsapp" && thread.conversation.messaging_channel_id ? (
               <div className="mt-4 border-t border-border pt-3">
+                {/*
+                  The 24-hour window, said BEFORE the message is typed.
+                  Previously the only way to learn it had closed was to write a
+                  reply and watch Wasi refuse it - which teaches you nothing
+                  about the twenty minutes you had.
+                */}
+                {windowNotice(replyWindow) ? (
+                  <p
+                    role="status"
+                    className={
+                      replyWindow.kind === "closed"
+                        ? "mb-2 rounded-md border border-warning-text/30 bg-warning-subtle px-2.5 py-2 text-xs text-warning-text"
+                        : "mb-2 text-xs text-text-muted"
+                    }
+                  >
+                    {windowNotice(replyWindow)}
+                  </p>
+                ) : null}
+
                 <div className="flex items-center gap-1">
                   {(["text", "template"] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
+                      // Free text is not selectable once the window has shut.
+                      // Offering a mode whose every send is rejected upstream
+                      // is the same failure as an armed Send button.
+                      disabled={mode === "text" && replyWindow.kind === "closed"}
                       onClick={() => {
                         setComposerMode(mode);
                         if (mode === "template") loadTemplates(thread.conversation.messaging_channel_id!);
                       }}
                       aria-pressed={composerMode === mode}
-                      style={
-                        composerMode === mode ? { backgroundImage: "var(--brand-gradient)" } : undefined
-                      }
                       className={
-                        "h-8 rounded-full px-2.5 text-xs font-medium transition-colors " +
+                        "h-8 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-50 " +
                         (composerMode === mode
-                          ? "text-white"
+                          ? "bg-text text-bg"
                           : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
                       }
                     >
-                      {mode === "text" ? "Free text (within 24h)" : "Template"}
+                      {mode === "text" ? freeTextLabel(replyWindow) : "Template"}
                     </button>
                   ))}
                 </div>
@@ -388,7 +536,7 @@ export function Inbox() {
                   <textarea
                     value={composerText}
                     onChange={(e) => setComposerText(e.target.value)}
-                    placeholder="Type a reply - only deliverable within 24h of their last message."
+                    placeholder="Type a reply."
                     rows={3}
                     className="mt-2 w-full resize-none rounded-md border border-border-strong bg-surface p-2.5 text-sm text-text placeholder:text-text-muted"
                   />
@@ -415,7 +563,11 @@ export function Inbox() {
                   <button
                     type="button"
                     disabled={
-                      sending || (composerMode === "text" ? !composerText.trim() : !templateName)
+                      sending ||
+                      // Free text outside the window is refused by Wasi, so the
+                      // button must not look armed.
+                      (composerMode === "text" && replyWindow.kind === "closed") ||
+                      (composerMode === "text" ? !composerText.trim() : !templateName)
                     }
                     onClick={send}
                     className="inline-flex h-9 items-center rounded-md bg-accent px-3 text-sm font-medium text-accent-fg disabled:opacity-60"
@@ -457,4 +609,98 @@ function formatWhen(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/**
+ * The thread belongs to somebody who asked to stop being messaged
+ * (migration 0100).
+ *
+ * ── WHY THIS REPLACES THE COMPOSER RATHER THAN DISABLING IT ────────────────
+ *
+ * A greyed-out text box with an explanation beside it still reads as "type
+ * here and find out", and people do. The send route refuses either way, so the
+ * only thing a disabled composer adds is a wasted attempt and a 403 the rep
+ * has to interpret. What is useful here is the fact, plainly, and the way out
+ * for the one person who is allowed to take it.
+ *
+ * ── WHY THE RELEASE BUTTON IS ROLE-GATED IN THE UI TOO ─────────────────────
+ *
+ * OwnerRoleGuard already refuses a rep on the API, so this changes no
+ * security - it avoids offering a button that 403s, the same split
+ * `SetupGate`'s `canDismiss` makes for the same reason.
+ *
+ * ── WHY IT ASKS TWICE ──────────────────────────────────────────────────────
+ *
+ * Releasing reverses a customer's explicit instruction on the strength of
+ * something that happened outside the system. That is a decision worth one
+ * deliberate beat, and the confirmation text names what is being asserted -
+ * "they have told you they want to hear from you again" - rather than the
+ * mechanical "are you sure".
+ */
+function OptedOutNotice({
+  conversationId,
+  canRelease,
+  onReleased,
+}: {
+  conversationId: string;
+  canRelease: boolean;
+  onReleased: () => void;
+}) {
+  const [pending, start] = useTransition();
+  const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
+
+  return (
+    <div
+      role="status"
+      className="mt-4 rounded-md border border-warning-text/30 bg-warning-subtle px-3 py-2.5"
+    >
+      <p className="text-sm font-semibold text-warning-text">
+        This person asked to stop being messaged
+      </p>
+      <p className="mt-1 text-sm text-warning-text">
+        Nothing can be sent to them from here. Their messages still arrive and you can still read
+        the thread.
+      </p>
+      {canRelease ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              const ok = await confirm({
+                title: "Release this opt-out?",
+                body: "Only do this if they have told you they want to hear from you again. It is recorded against your name.",
+                confirmLabel: "Release",
+                tone: "danger",
+              });
+              if (!ok) return;
+              const res = await releaseOptOutAction(conversationId);
+              if (res.error) {
+                await alert({
+                  title: "Couldn't release the opt-out",
+                  body: res.error,
+                  tone: "danger",
+                });
+                return;
+              }
+              // `released: false` means somebody else got there first. Not a
+              // failure - the thread is sendable either way, which is what the
+              // person wanted.
+              toast(res.released ? "Opt-out released" : "Already released");
+              onReleased();
+            })
+          }
+          className="mt-2 text-sm font-semibold text-warning-text underline underline-offset-2 disabled:opacity-60"
+        >
+          {pending ? "Releasing…" : "They asked me to message them again"}
+        </button>
+      ) : (
+        <p className="mt-2 text-xs text-warning-text">
+          An owner or manager can release this if the customer has since said otherwise.
+        </p>
+      )}
+    </div>
+  );
 }

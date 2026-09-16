@@ -1,26 +1,27 @@
 import type { Metadata } from "next";
 import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } from "lucide-react";
-import Link from "next/link";
 import type { OwnerRole } from "@aura/shared";
 import { Card, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
+import type { TeamRollup as TeamRollupData } from "@/lib/team-rollup";
+import { ownerNavItemsFor } from "@/lib/nav";
 import { getOwner, ownerGet } from "@/lib/owner-context";
 import {
   ActivityChart,
-  PANEL_LINK,
+  CallOutcomes,
   CampaignTable,
   PipelineByStage,
   RecentActivity,
   SourceBreakdown,
-  LeadTriage,
-  TaskLoad,
   TelecallerTable,
   WindowPicker,
 } from "./dashboard-panels";
+import { NextActions } from "./next-actions";
+import { TeamRollup } from "./team-rollup";
 import { formatDuration, formatValue, type Overview } from "./types";
 
-export const metadata: Metadata = { title: "Dashboard - Aura" };
+export const metadata: Metadata = { title: "Dashboard" };
 
 /**
  * The owner console's landing page - five dashboards behind one route
@@ -65,10 +66,24 @@ export default async function OwnerDashboardPage({
   // `ownerGet` already resolves to authenticate the call below.
   const owner = await getOwner();
   const role: OwnerRole = owner?.membership.ownerRole ?? "owner";
+  const callIntel = owner?.membership.enabledModules.includes("call_intel") ?? false;
 
-  const data = await ownerGet<Overview>(
-    crmPrimary ? `/v1/owner/crm-overview?days=${days}` : `/v1/owner/overview?days=${days}`,
-  );
+  /*
+   * Owners and managers also get the per-person roll-up (Phase 8). Fetched in
+   * parallel with the overview rather than after it - this page already costs
+   * one Mumbai-to-Seoul round trip, and a second in series would be felt.
+   *
+   * A rep never asks for it: their dashboard is their own desk, the API would
+   * refuse an `owned` caller outright (reports.service.ts), and asking anyway
+   * would spend a round trip to render nothing.
+   */
+  const wantsTeam = role === "owner" || role === "manager";
+  const [data, team] = await Promise.all([
+    ownerGet<Overview>(
+      crmPrimary ? `/v1/owner/crm-overview?days=${days}` : `/v1/owner/overview?days=${days}`,
+    ),
+    wantsTeam ? ownerGet<TeamRollupData>(`/v1/reports/team?days=${days}`) : Promise.resolve(null),
+  ]);
 
   if (!data) {
     return (
@@ -84,7 +99,20 @@ export default async function OwnerDashboardPage({
     );
   }
 
-  const view = { data, days, crmPrimary, role };
+  // Next actions appears only where this reader can open Tasks at all - the same
+  // persona, module and feature rule the rail applies, so the panel never
+  // renders a list the API would refuse (tasks are CRM-module objects).
+  const tasksVisible = owner
+    ? ownerNavItemsFor(
+        role,
+        crmPrimary,
+        owner.membership.enabledModules.includes("crm"),
+        callIntel,
+        { modules: owner.membership.enabledModules, features: owner.membership.featureOverrides },
+      ).some((item) => item.href === "/owner/tasks")
+    : false;
+
+  const view = { data, days, crmPrimary, role, callIntel, tasksVisible, team };
 
   return (
     <>
@@ -118,6 +146,24 @@ interface ViewProps {
   days: number;
   crmPrimary: boolean;
   role: OwnerRole;
+  /**
+   * Whether this tenant has the `call_intel` module, so the call-outcomes
+   * panel knows whether "open the call log" is a link it may offer. Resolved
+   * on the server like every other entitlement; a persona that can see the
+   * OUTCOMES of calls is not necessarily entitled to read what was said in
+   * them, which is why this is a separate flag rather than an inference from
+   * the numbers being non-zero.
+   */
+  callIntel: boolean;
+  /** Whether the Next actions panel may render - see the page body. */
+  tasksVisible: boolean;
+  /**
+   * The per-person roll-up, for the two personas entitled to it. Null for
+   * everyone else, and also when the call failed - a dashboard that still
+   * renders its own numbers is a better answer than one that 500s over a
+   * panel, so the panel simply does not appear.
+   */
+  team: TeamRollupData | null;
 }
 
 /** Links fork on the shadow-read flag, not on the persona. */
@@ -128,8 +174,7 @@ function links(crmPrimary: boolean) {
     // The board/leads pages don't accept a ?stage=/?focus= query yet, so the
     // CRM-primary links point at the plain page rather than a param it would
     // silently ignore - see CRM_STATUS.md, A6 Milestone 4.
-    stageHref: (stageKey: string) =>
-      crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`,
+    stageHref: (stageKey: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?stage=${stageKey}`),
     allHref: crmPrimary ? "/owner/deals" : "/owner/leads",
     allLinkLabel: crmPrimary ? "All deals →" : "All leads →",
     recordHref: (id: string) => (crmPrimary ? "/owner/deals" : `/owner/leads?focus=${id}`),
@@ -144,32 +189,6 @@ function winRate(leads: Overview["leads"]): number | null {
 }
 
 /**
- * "How many people have a login, and what can they do?" - answered on the
- * dashboard rather than only on the Team page, because the question is usually
- * asked in passing rather than deliberately.
- *
- * A LINK, not a rendered headcount, and that is the whole design: the numbers
- * live behind `GET /v1/owner/team`, which is owner/manager-only, and fetching
- * them here would mean a second API call on the landing page of every persona
- * that can already see this composition. The Team page is one click away and
- * has the real answer, so this is a signpost - not a duplicate of it that could
- * disagree.
- */
-function TeamStrip() {
-  return (
-    <Card className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <Users className="h-4 w-4 text-text-muted" />
-        <span className="text-sm text-text">People, roles and logins for this workspace</span>
-      </div>
-      <Link href="/owner/staff" className={PANEL_LINK}>
-        Manage team →
-      </Link>
-    </Card>
-  );
-}
-
-/**
  * THE OWNER — the whole business, unchanged from before personas existed.
  *
  * Deliberately identical to what shipped: an owner's dashboard was never the
@@ -177,8 +196,8 @@ function TeamStrip() {
  * existing customer already reads would have been an unrequested cost paid by
  * people who did not ask for it.
  */
-function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, calls, funnel, telecallers, byDay, stages, recent, triage } = data;
+function OwnerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, team }: ViewProps) {
+  const { leads, calls, funnel, telecallers, byDay, stages, recent } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
 
@@ -187,52 +206,53 @@ function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
           label="Open leads"
-          value={String(leads.open)}
+          value={leads.open}
+          context={`${leads.created_in_window} new in ${days}d`}
           icon={<Target className="h-5 w-5" />}
-          footer={
-            <span>
-              {leads.created_in_window} new in {days}d
-            </span>
-          }
         />
         <StatCard
           label="Pipeline value"
           value={formatValue(leads.pipeline_value)}
+          context={`across ${leads.open} open ${leads.open === 1 ? "lead" : "leads"}`}
           icon={<Banknote className="h-5 w-5" />}
-          footer={<span>across open leads</span>}
         />
         <StatCard
           label="Won"
-          value={String(leads.won)}
+          value={leads.won}
+          context={`${rate === null ? "nothing closed yet" : `${rate}% win rate`}${
+            leads.won_value > 0 ? ` · ${formatValue(leads.won_value)}` : ""
+          }`}
           icon={<Trophy className="h-5 w-5" />}
-          footer={
-            <span>
-              {rate === null ? "nothing closed yet" : `${rate}% win rate`}
-              {leads.won_value > 0 ? ` · ${formatValue(leads.won_value)}` : ""}
-            </span>
-          }
         />
         <StatCard
           label="Calls"
-          value={String(calls.total)}
+          value={calls.total}
+          context={`${formatDuration(calls.total_seconds)} on the phone`}
           icon={<PhoneCall className="h-5 w-5" />}
-          footer={<span>{formatDuration(calls.total_seconds)} on the phone</span>}
+          // The one state a KPI tile carries, and only when there is one to
+          // carry. On the fill it renders as a white chip with the slashed
+          // ring, not as red - see StatCard's note on why the tile drops the
+          // hue. The full breakdown is in CallOutcomes below; this is the
+          // flag that sends somebody down to it.
+          state={calls.missed > 0 ? "missed" : undefined}
+          stateLabel={calls.missed > 0 ? `${calls.missed} missed` : undefined}
         />
       </div>
 
-      {/* Directly under the KPI row, above everything descriptive. The four
-          cards above say how the business is doing; this says what is going
-          wrong right now, and burying it under two charts would make it a
-          thing people find rather than a thing people see. */}
-      {triage ? <LeadTriage triage={triage} /> : null}
-
-      <TeamStrip />
+      {tasksVisible ? <NextActions canViewTeam /> : null}
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+        <CallOutcomes
+          calls={calls}
+          days={days}
+          href={callIntel ? "/owner/calls" : undefined}
+        />
         <ActivityChart byDay={byDay} days={days} leadLabel={crmPrimary ? "Deals" : "Leads"} />
       </div>
 
+      <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+
+      {team ? <TeamRollup data={team} days={days} /> : null}
       <TelecallerTable telecallers={telecallers} days={days} />
       <RecentActivity recent={recent} stages={stages} {...l} />
     </>
@@ -249,8 +269,8 @@ function OwnerDashboard({ data, days, crmPrimary }: ViewProps) {
  * overdue follow-up count, which is the thing they can actually do something
  * about this afternoon.
  */
-function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, calls, funnel, telecallers, byDay, stages, recent, tasks, triage } = data;
+function ManagerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, team }: ViewProps) {
+  const { leads, calls, funnel, telecallers, byDay, stages, recent, tasks } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
   const active = telecallers.filter((t) => t.calls > 0).length;
@@ -260,60 +280,56 @@ function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
           label="Open leads"
-          value={String(leads.open)}
+          value={leads.open}
+          context={`${leads.created_in_window} new in ${days}d`}
           icon={<Target className="h-5 w-5" />}
-          footer={
-            <span>
-              {leads.created_in_window} new in {days}d
-            </span>
-          }
         />
         <StatCard
           label="Team on the phone"
           value={`${active}/${telecallers.length}`}
+          context={`${formatDuration(calls.total_seconds)} across ${calls.total} calls`}
           icon={<Users className="h-5 w-5" />}
-          footer={
-            <span>
-              {formatDuration(calls.total_seconds)} across {calls.total} calls
-            </span>
-          }
         />
         <StatCard
           label="Win rate"
-          value={rate === null ? "-" : `${rate}%`}
+          // A string, and one the tile has to render as prose rather than as a
+          // figure. "Not enough closed yet" is the honest answer when nothing
+          // has closed - a "0%" win rate says the team is losing, which is a
+          // different and untrue claim.
+          value={rate === null ? "Not enough closed yet" : `${rate}%`}
+          context={`${leads.won} won · ${leads.lost} lost`}
           icon={<Trophy className="h-5 w-5" />}
-          footer={
-            <span>
-              {leads.won} won · {leads.lost} lost
-            </span>
-          }
         />
         <StatCard
           label="Overdue follow-ups"
-          value={String(tasks.overdue)}
+          value={tasks.overdue}
+          context={`${tasks.open} open in total`}
           icon={<ListChecks className="h-5 w-5" />}
-          footer={<span>{tasks.open} open in total</span>}
         />
       </div>
 
-      {/* Ahead of the leaderboard, because "who needs help today" is a better
-          question once you can see what is actually unattended. */}
-      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <TaskLoad tasks={tasks} />
-        {triage ? <LeadTriage triage={triage} /> : null}
-      </div>
+      {tasksVisible ? <NextActions canViewTeam /> : null}
 
-      <TeamStrip />
+      {/* The roll-up leads. A manager opens this page to find out who needs
+          help today, and that answer was previously three scrolls down. The
+          CRM roll-up comes before the call leaderboard because it is about
+          PEOPLE and their work; the leaderboard below is about the phone
+          lines, which is a different question with a different unit. */}
+      {team ? <TeamRollup data={team} days={days} /> : null}
 
-      {/* The leaderboard follows. A manager opens this page to find out who
-          needs help today, and that answer was previously three scrolls
-          down. */}
-      <TelecallerTable telecallers={telecallers} days={days} title="Who is working what" />
+      <TelecallerTable telecallers={telecallers} days={days} title="Who is on the phone" />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+        <CallOutcomes
+          calls={calls}
+          days={days}
+          href={callIntel ? "/owner/calls" : undefined}
+          label="How the floor's calls went"
+        />
         <ActivityChart byDay={byDay} days={days} leadLabel={crmPrimary ? "Deals" : "Leads"} />
       </div>
+
+      <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
 
       <RecentActivity recent={recent} stages={stages} {...l} label="Latest across the team" />
     </>
@@ -334,8 +350,8 @@ function ManagerDashboard({ data, days, crmPrimary }: ViewProps) {
  * rather than the next one, and the value of a lead they were handed is not a
  * number they set.
  */
-function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, calls, funnel, byDay, stages, recent, tasks, triage } = data;
+function TelecallerDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
+  const { leads, calls, funnel, byDay, stages, recent, tasks } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
 
@@ -344,47 +360,35 @@ function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
           label="Your open leads"
-          value={String(leads.open)}
+          value={leads.open}
+          context={`${leads.created_in_window} new in ${days}d`}
           icon={<Target className="h-5 w-5" />}
-          footer={
-            <span>
-              {leads.created_in_window} new in {days}d
-            </span>
-          }
         />
         <StatCard
           label="Your calls"
-          value={String(calls.total)}
+          value={calls.total}
+          context={`${formatDuration(calls.total_seconds)} on the phone`}
           icon={<PhoneCall className="h-5 w-5" />}
-          footer={<span>{formatDuration(calls.total_seconds)} on the phone</span>}
+          state={calls.missed > 0 ? "missed" : undefined}
+          stateLabel={calls.missed > 0 ? `${calls.missed} missed` : undefined}
         />
         <StatCard
           label="Follow-ups due"
-          value={String(tasks.overdue + tasks.due_today)}
+          value={tasks.overdue + tasks.due_today}
+          context={`${tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}${tasks.open} open`}
           icon={<ListChecks className="h-5 w-5" />}
-          footer={
-            <span>
-              {tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}
-              {tasks.open} open
-            </span>
-          }
         />
         <StatCard
           label="You won"
-          value={String(leads.won)}
+          value={leads.won}
+          context={rate === null ? "nothing closed yet" : `${rate}% win rate`}
           icon={<Trophy className="h-5 w-5" />}
-          footer={<span>{rate === null ? "nothing closed yet" : `${rate}% win rate`}</span>}
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <TaskLoad tasks={tasks} />
-        {/* Their OWN ageing, already narrowed by the API - the same panel the
-            manager sees, over a smaller set of rows. A rep is entitled to know
-            which of their leads have gone cold; it is the manager's version of
-            the number that needed a persona decision, not this one. */}
-        {triage ? <LeadTriage triage={triage} /> : null}
-      </div>
+      {/* Follow-ups first: "what should I do next" is the question this desk
+          opens the console to answer. */}
+      {tasksVisible ? <NextActions canViewTeam={false} /> : null}
 
       <PipelineByStage
         funnel={funnel}
@@ -395,12 +399,15 @@ function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
         label="Your leads by stage"
       />
 
-      <ActivityChart
-        byDay={byDay}
-        days={days}
-        leadLabel={crmPrimary ? "Deals" : "Leads"}
-        title={`Your calls and new leads - last ${days} days`}
-      />
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <CallOutcomes calls={calls} days={days} label="How your calls went" />
+        <ActivityChart
+          byDay={byDay}
+          days={days}
+          leadLabel={crmPrimary ? "Deals" : "Leads"}
+          title={`Your calls and new leads - last ${days} days`}
+        />
+      </div>
 
       <RecentActivity
         recent={recent}
@@ -421,8 +428,8 @@ function TelecallerDashboard({ data, days, crmPrimary }: ViewProps) {
  * not appear at all. Both personas are scoped to their own records; what
  * separates them is which of their own numbers matter.
  */
-function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
-  const { leads, funnel, byDay, stages, recent, tasks, triage } = data;
+function SalesDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
+  const { leads, funnel, byDay, stages, recent, tasks } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
   const noun = crmPrimary ? "deals" : "leads";
@@ -433,55 +440,39 @@ function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
         <StatCard
           label="Your pipeline"
           value={formatValue(leads.pipeline_value)}
+          context={`across ${leads.open} open ${noun}`}
           icon={<Banknote className="h-5 w-5" />}
-          footer={
-            <span>
-              across {leads.open} open {noun}
-            </span>
-          }
         />
         <StatCard
           label="You won"
           value={formatValue(leads.won_value)}
+          context={`${leads.won} closed in this window`}
           icon={<Trophy className="h-5 w-5" />}
-          footer={<span>{leads.won} closed in this window</span>}
         />
         <StatCard
           label="Win rate"
-          value={rate === null ? "-" : `${rate}%`}
+          value={rate === null ? "Not enough closed yet" : `${rate}%`}
+          context={`${leads.won} won · ${leads.lost} lost`}
           icon={<Target className="h-5 w-5" />}
-          footer={
-            <span>
-              {leads.won} won · {leads.lost} lost
-            </span>
-          }
         />
         <StatCard
           label="Follow-ups due"
-          value={String(tasks.overdue + tasks.due_today)}
+          value={tasks.overdue + tasks.due_today}
+          context={`${tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}${tasks.open} open`}
           icon={<ListChecks className="h-5 w-5" />}
-          footer={
-            <span>
-              {tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}
-              {tasks.open} open
-            </span>
-          }
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <PipelineByStage
-          funnel={funnel}
-          total={leads.total}
-          crmPrimary={crmPrimary}
-          scoped
-          {...l}
-          label={`Your ${noun} by stage`}
-        />
-        <TaskLoad tasks={tasks} />
-      </div>
+      {tasksVisible ? <NextActions canViewTeam={false} /> : null}
 
-      {triage ? <LeadTriage triage={triage} /> : null}
+      <PipelineByStage
+        funnel={funnel}
+        total={leads.total}
+        crmPrimary={crmPrimary}
+        scoped
+        {...l}
+        label={`Your ${noun} by stage`}
+      />
 
       <ActivityChart
         byDay={byDay}
@@ -515,7 +506,7 @@ function SalesDashboard({ data, days, crmPrimary }: ViewProps) {
  * by construction. They are restricted by OBJECT instead - no call transcripts,
  * no invoices, no customer inbox - which the nav and the API guards enforce.
  */
-function MarketingDashboard({ data, days, crmPrimary }: ViewProps) {
+function MarketingDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
   const { leads, funnel, byDay, bySource, byCampaign, stages, recent } = data;
   const l = links(crmPrimary);
   const rate = winRate(leads);
@@ -527,41 +518,35 @@ function MarketingDashboard({ data, days, crmPrimary }: ViewProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
           label={`New leads in ${days}d`}
-          value={String(leads.created_in_window)}
+          value={leads.created_in_window}
+          context={`${channels} ${channels === 1 ? "channel" : "channels"} attributed`}
           icon={<Megaphone className="h-5 w-5" />}
-          footer={
-            <span>
-              {channels} {channels === 1 ? "channel" : "channels"} attributed
-            </span>
-          }
         />
         <StatCard
           label="Converted"
-          value={rate === null ? "-" : `${rate}%`}
+          value={rate === null ? "Not enough closed yet" : `${rate}%`}
+          context={`${leads.won} won · ${leads.lost} lost`}
           icon={<Target className="h-5 w-5" />}
-          footer={
-            <span>
-              {leads.won} won · {leads.lost} lost
-            </span>
-          }
         />
         <StatCard
           label="Revenue won"
           value={formatValue(leads.won_value)}
+          // Names the channel that CLOSED the most, not the one that delivered
+          // the most - the whole reason this dashboard exists. A channel name
+          // is a string on a tile whose value is a number, which is exactly
+          // what the second line is for.
+          context={best && best.won > 0 ? `best channel: ${best.channel}` : "nothing closed yet"}
           icon={<Banknote className="h-5 w-5" />}
-          footer={
-            // Names the channel that CLOSED the most, not the one that
-            // delivered the most - the whole reason this dashboard exists.
-            <span>{best && best.won > 0 ? `best: ${best.channel}` : "nothing closed yet"}</span>
-          }
         />
         <StatCard
           label="Open pipeline"
           value={formatValue(leads.pipeline_value)}
+          context={`across ${leads.open} open leads`}
           icon={<Trophy className="h-5 w-5" />}
-          footer={<span>across {leads.open} open leads</span>}
         />
       </div>
+
+      {tasksVisible ? <NextActions canViewTeam={false} /> : null}
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
         <SourceBreakdown bySource={bySource} days={days} />

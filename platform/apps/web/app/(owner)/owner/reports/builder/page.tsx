@@ -7,7 +7,7 @@ import { LocalTime } from "@/components/local-time";
 import { NewReportLauncher } from "./new-report-launcher";
 import type { CatalogueEntry, DatasetRow, ReportRow, TemplateRow } from "./types";
 
-export const metadata: Metadata = { title: "Report builder - Aura" };
+export const metadata: Metadata = { title: "Report builder" };
 
 /**
  * The Report Builder's front door.

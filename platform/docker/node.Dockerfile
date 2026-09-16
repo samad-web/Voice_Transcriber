@@ -32,7 +32,12 @@ RUN pnpm --filter "@aura/api..." --filter "@aura/worker..." build
 
 
 FROM node:22-alpine AS runtime
-RUN corepack enable && apk add --no-cache curl
+# ffmpeg is the worker's audio preparation (B2/B3): it strips the ringing, hold
+# music and trailing silence that ASR is billed for at the full rate, and
+# downmixes to the 16 kHz mono the recogniser wants. The pipeline degrades to
+# submitting the original audio if it is missing, so this is a cost dependency
+# rather than a functional one - but the cost is the largest line on the bill.
+RUN corepack enable && apk add --no-cache curl ffmpeg
 WORKDIR /app
 ENV NODE_ENV=production
 

@@ -128,7 +128,7 @@ export class ErasureController {
       // outlive any one lead once dedup is org-wide. Resolve and erase them
       // explicitly, the same "who else still points here" question the lead
       // DELETE below already answers for the phone-hash fan-out.
-      const { purged: crmPurged, retainedContactIds } = await this.eraseCrmObjects(
+      const { purged: crmPurged, retainedContactIds, retainedDealIds } = await this.eraseCrmObjects(
         client,
         callId,
         rec?.remote_number_hash ?? null,
@@ -160,8 +160,11 @@ export class ErasureController {
         purged,
         // Never claim a scrub that didn't happen: a contact retained here
         // still has another legitimate link (a hand-created deal, a manual
-        // note, a task) - see the class docstring for the disclosed gap.
+        // note, a task, a quotation or invoice) - see the class docstring for
+        // the disclosed gap.
         retainedContactIds,
+        // Deals kept because a quotation or invoice was raised against them.
+        retainedDealIds,
         erasedAtUtc: new Date().toISOString(),
       };
       const signature = createHmac(
@@ -200,19 +203,28 @@ export class ErasureController {
     callId: string,
     phoneHash: string | null,
     deletedLeadIds: string[],
-  ): Promise<{ purged: string[]; retainedContactIds: string[] }> {
+  ): Promise<{ purged: string[]; retainedContactIds: string[]; retainedDealIds: string[] }> {
     const purged: string[] = [];
 
-    const { rows: dealRows } = await client.query(
-      `SELECT id FROM deals
-        WHERE source_lead_id = ANY($1::uuid[])
-           OR id IN (SELECT deal_id FROM interactions WHERE call_id = $2 AND deal_id IS NOT NULL)`,
+    // A deal a quotation or invoice was raised against is RETAINED, and said
+    // so on the receipt (doc 23, E1, decision X1). Both foreign keys are ON
+    // DELETE SET NULL, so deleting the deal used to leave an issued invoice
+    // pointing at nothing - and an invoice snapshots only the GSTIN, so it
+    // silently lost who and what it was for. A tax record is exactly the kind
+    // of "other legitimate link" this method already retains contacts for.
+    const { rows: dealRows } = await client.query<{ id: string; billed: boolean }>(
+      `SELECT d.id,
+              (EXISTS (SELECT 1 FROM quotations q WHERE q.deal_id = d.id)
+               OR EXISTS (SELECT 1 FROM invoices i WHERE i.deal_id = d.id)) AS billed
+         FROM deals d
+        WHERE d.source_lead_id = ANY($1::uuid[])
+           OR d.id IN (SELECT deal_id FROM interactions WHERE call_id = $2 AND deal_id IS NOT NULL)`,
       [deletedLeadIds, callId],
     );
-    if (dealRows.length > 0) {
-      await client.query("DELETE FROM deals WHERE id = ANY($1::uuid[])", [
-        dealRows.map((r) => r.id as string),
-      ]);
+    const retainedDealIds = dealRows.filter((r) => r.billed).map((r) => r.id);
+    const deletableDealIds = dealRows.filter((r) => !r.billed).map((r) => r.id);
+    if (deletableDealIds.length > 0) {
+      await client.query("DELETE FROM deals WHERE id = ANY($1::uuid[])", [deletableDealIds]);
       purged.push("deal_rows");
     }
 
@@ -241,9 +253,22 @@ export class ErasureController {
            LEFT JOIN (
              SELECT contact_id FROM deals WHERE contact_id = ANY($1::uuid[])
              UNION ALL
-             SELECT contact_id FROM interactions WHERE contact_id = ANY($1::uuid[]) AND call_id IS NULL
+             -- A person's record: anything but a call, or a call someone
+             -- logged by hand. Never call_id IS NULL - call_id is ON DELETE SET
+             -- NULL, so a recorded call retention already removed would read as
+             -- hand-logged and block this erasure.
+             SELECT contact_id FROM interactions
+              WHERE contact_id = ANY($1::uuid[])
+                AND (type <> 'call' OR metadata @> '{"logged_by_hand": true}')
              UNION ALL
              SELECT contact_id FROM tasks WHERE contact_id = ANY($1::uuid[]) AND deal_id IS NULL
+             -- A quotation or invoice issued to this person keeps them
+             -- (doc 23, E1): both FKs are SET NULL, so erasing the contact
+             -- would leave the document with no customer.
+             UNION ALL
+             SELECT contact_id FROM quotations WHERE contact_id = ANY($1::uuid[])
+             UNION ALL
+             SELECT contact_id FROM invoices WHERE contact_id = ANY($1::uuid[])
            ) b ON b.contact_id = ids.id
           GROUP BY ids.id`,
         [contactIds],
@@ -285,6 +310,6 @@ export class ErasureController {
     }
     if (deletedAnyContact) purged.push("contact_rows");
 
-    return { purged, retainedContactIds };
+    return { purged, retainedContactIds, retainedDealIds };
   }
 }

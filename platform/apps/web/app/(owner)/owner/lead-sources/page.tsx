@@ -7,7 +7,7 @@ import { publicApiOrigin } from "@/lib/public-origin";
 import { LeadSourcesClient } from "./lead-sources-client";
 import { SheetsPanel } from "./sheets-panel";
 
-export const metadata: Metadata = { title: "Lead sources - Aura" };
+export const metadata: Metadata = { title: "Lead sources" };
 
 export interface LeadSourceRow {
   id: string;

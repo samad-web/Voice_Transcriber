@@ -3,7 +3,7 @@ import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet, requireFeature } from "@/lib/owner-context";
 
-export const metadata: Metadata = { title: "Response & Follow-ups - Aura" };
+export const metadata: Metadata = { title: "Response & Follow-ups" };
 
 interface ResponseTimeReport {
   from: string;

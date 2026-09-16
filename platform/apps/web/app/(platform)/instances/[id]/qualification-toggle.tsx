@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useId, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ScanSearch, ShieldOff } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm } from "@aura/ui";
+import { Button, Card, MonoLabel, RowHint, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { setWhatsAppQualificationAction } from "./actions";
 
 /**
@@ -34,6 +34,7 @@ export function QualificationToggle({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const hintId = useId();
   const confirm = useConfirm();
   const alert = useAlert();
 
@@ -42,7 +43,9 @@ export function QualificationToggle({
       const res = await setWhatsAppQualificationAction({ orgId, enabled: next });
       if (res.error) {
         await alert({
-          title: "Couldn't change WhatsApp lead qualification",
+          title: next
+            ? "Couldn't turn on WhatsApp qualification"
+            : "Couldn't turn off WhatsApp qualification",
           body: res.error,
           tone: "danger",
         });
@@ -74,6 +77,8 @@ export function QualificationToggle({
         `for review stay in the queue, and decided ones are deleted after ${retentionDays} days.`,
       confirmLabel: "Stop qualifying",
       tone: "danger",
+      // Reversible switch, no data destroyed by the act of flipping it.
+      requireTyped: false,
     });
     if (ok) set(false);
   };
@@ -88,20 +93,27 @@ export function QualificationToggle({
         <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
       </div>
 
-      <p className="text-xs text-neutral-500 font-sans font-medium leading-relaxed">
+      <RowHint kind="toggle" id={`${hintId}-state`}>
         {enabled
-          ? `Unclaimed WhatsApp threads are read and scored, and proposed leads wait for a person to approve them. Decided verdicts are deleted after ${retentionDays} days.`
-          : "Inbound WhatsApp is stored and readable in the inbox as usual, but nothing is sent to an AI provider and no leads are proposed from it."}
-      </p>
+          ? `On: unclaimed WhatsApp threads are read and scored, and proposed leads wait for a person to approve them. Nothing reaches the CRM without that approval, and decided verdicts are deleted after ${retentionDays} days.`
+          : "Off: inbound WhatsApp is stored and readable in the inbox as usual, but nothing is sent to an AI provider and no leads are proposed from it."}
+      </RowHint>
 
-      <BrutalButton
+      <Button
+        type="button"
         variant={enabled ? "secondary" : "primary"}
         disabled={pending}
+        loading={pending}
+        aria-describedby={`${hintId}-state`}
         onClick={enabled ? () => void disable() : () => void enable()}
       >
-        {enabled ? <ShieldOff className="h-4 w-4" /> : <ScanSearch className="h-4 w-4" />}
-        {pending ? "SAVING…" : enabled ? "TURN OFF QUALIFICATION" : "TURN ON QUALIFICATION"}
-      </BrutalButton>
+        {enabled ? (
+          <ShieldOff className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <ScanSearch className="h-4 w-4" aria-hidden="true" />
+        )}
+        {enabled ? "Turn off qualification" : "Turn on qualification"}
+      </Button>
     </Card>
   );
 }

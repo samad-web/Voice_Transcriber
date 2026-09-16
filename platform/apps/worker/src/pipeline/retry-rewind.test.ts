@@ -24,7 +24,13 @@ const { publishPipeline, publishAnalyze } = vi.hoisted(() => ({
   publishPipeline: vi.fn(async () => {}),
   publishAnalyze: vi.fn(async () => {}),
 }));
-vi.mock("@aura/queue", () => ({ publishPipeline, publishAnalyze }));
+vi.mock("@aura/queue", () => ({
+  publishPipeline,
+  publishAnalyze,
+  // A change signal, not work: the pipeline calls it after a status
+  // transition. Stubbed so these tests need no broker.
+  publishEvent: vi.fn(),
+}));
 
 /**
  * What each successive claim's CASE resolved to, as Postgres would return it.

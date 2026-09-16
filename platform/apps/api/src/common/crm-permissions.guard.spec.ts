@@ -459,3 +459,66 @@ describe("the owner-console persona narrows the grid's grant", () => {
     return expect(scopeFrom("all", "TELECALLER")).resolves.toBe("owned");
   });
 });
+
+/**
+ * The persona intersection (migration 0079).
+ *
+ * The grid says what the ROLE was granted; the persona says which desk the
+ * person sits at. Both apply, and they compose in ONE direction: a persona may
+ * narrow a grant and can never widen one. These cases pin that direction,
+ * because a bug that inverted it would look like a working feature - everybody
+ * would see their records, and two of them would see everybody's.
+ */
+describe("the owner-console persona narrows the grid's grant", () => {
+  const scopeFrom = async (grid: "all" | "owned", persona: string | null) => {
+    const { db } = fakeDb(true, grid, persona);
+    const guard = new CrmPermissionsGuard(new Reflector(), db);
+    const { context, req } = contextFor(
+      FixtureController.prototype.viewContact,
+      sessionPrincipal({ userId: USER_A }),
+    );
+    await guard.canActivate(context);
+    return req.crmScope?.scope;
+  };
+
+  it("narrows an `all` grant to `owned` for the two own-scoped personas", () => {
+    // The whole point: an org_admin can hand `all` to the role a telecaller
+    // holds without that telecaller reading the floor's contacts.
+    return Promise.all([
+      expect(scopeFrom("all", "telecaller")).resolves.toBe("owned"),
+      expect(scopeFrom("all", "sales")).resolves.toBe("owned"),
+    ]);
+  });
+
+  it("leaves an `all` grant alone for owner, manager and marketing", () => {
+    return Promise.all([
+      expect(scopeFrom("all", "owner")).resolves.toBe("all"),
+      expect(scopeFrom("all", "manager")).resolves.toBe("all"),
+      expect(scopeFrom("all", "marketing")).resolves.toBe("all"),
+    ]);
+  });
+
+  it("never WIDENS - an `owned` grant stays owned for every persona", () => {
+    // The direction that would be a hole rather than a bug. If a persona could
+    // widen, `owner` would override an administrator's deliberate narrowing.
+    return Promise.all(
+      ["owner", "manager", "telecaller", "sales", "marketing", null].map((persona) =>
+        expect(scopeFrom("owned", persona)).resolves.toBe("owned"),
+      ),
+    );
+  });
+
+  it("treats a membership with no persona exactly as it did before 0079", () => {
+    // Backwards compatibility, stated as a test: `resolveOwnerRole(null)` is
+    // `owner` by 0018's documented fail-open, so an org that has never assigned
+    // a persona sees precisely what it saw before this change shipped.
+    return expect(scopeFrom("all", null)).resolves.toBe("all");
+  });
+
+  it("resolves a case variant of a restricted persona downward, not upward", () => {
+    // `resolveOwnerRole` normalises before matching. If it did not, "Telecaller"
+    // would fall through its fail-open default to `owner` and this guard would
+    // hand the most restricted persona the widest scope.
+    return expect(scopeFrom("all", "TELECALLER")).resolves.toBe("owned");
+  });
+});

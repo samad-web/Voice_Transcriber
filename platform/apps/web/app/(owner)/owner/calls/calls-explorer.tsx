@@ -8,12 +8,18 @@ import {
   Button,
   Input,
   MonoLabel,
+  RowHint,
+  StateChip,
+  StateRule,
   StatusChip,
+  SyncingHint,
   TableBody,
   TableCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  callState,
+  pipelineStage,
   useAlert,
   useConfirm,
   useToast,
@@ -53,7 +59,8 @@ const SENTIMENTS = [
 /** Who was on the other end, in the order a person would recognise them. */
 function contact(call: OwnerCall): string {
   if (call.remote_name) return call.remote_name;
-  if (call.remote_number_prefix) return `${call.remote_number_prefix}…${call.remote_number_last3 ?? ""}`;
+  if (call.remote_number_prefix)
+    return `${call.remote_number_prefix}…${call.remote_number_last3 ?? ""}`;
   if (call.remote_number_last3) return `…${call.remote_number_last3}`;
   return "Unknown caller";
 }
@@ -234,9 +241,7 @@ export function CallsExplorer({
         </div>
 
         {calls.length === 0 ? (
-          <p className="py-12 text-center text-sm text-text-muted">
-            No calls match these filters.
-          </p>
+          <p className="py-12 text-center text-sm text-text-muted">No calls match these filters.</p>
         ) : (
           <div tabIndex={0} role="region" aria-label="Calls" className="overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-left text-sm">
@@ -268,7 +273,14 @@ export function CallsExplorer({
                     }}
                     className="cursor-pointer"
                   >
-                    <TableCell>
+                    {/* `relative` so the state rule can pin itself to the
+                        row's leading edge. On a <td> rather than the <tr>:
+                        `position: relative` on a table ROW is not reliably
+                        honoured as a containing block across browsers, and
+                        the first cell's box is flush with the row's edge
+                        anyway. */}
+                    <TableCell className="relative">
+                      <StateRule state={callState(call)} />
                       <span className="block text-text">{relativeTime(call.started_at)}</span>
                       <span className="text-xs text-text-muted">
                         {new Date(call.started_at).toLocaleString()}
@@ -276,12 +288,19 @@ export function CallsExplorer({
                     </TableCell>
                     <TableCell>
                       <span className="block font-medium text-text">{contact(call)}</span>
-                      <span className="text-xs text-text-muted">{humanize(call.direction)}</span>
+                      {/* The state, in the row, in words - not just as the
+                          coloured rule at the row's left edge. The rule is an
+                          accelerator for scanning a hundred rows; this is what
+                          the state actually IS, and it is what a screen reader
+                          and a greyscale printout get. */}
+                      <StateChip state={callState(call)} className="mt-1" />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatDuration(call.duration_s)}
                     </TableCell>
-                    <TableCell>{call.telecaller ?? <span className="text-text-subtle">-</span>}</TableCell>
+                    <TableCell>
+                      {call.telecaller ?? <span className="text-text-subtle">-</span>}
+                    </TableCell>
                     <TableCell>
                       {call.sentiment || call.outcome || call.quality_score !== null ? (
                         <CallReadChips
@@ -290,12 +309,15 @@ export function CallsExplorer({
                           qualityScore={call.quality_score}
                         />
                       ) : (
-                        // Why there is nothing to show, in the row itself: a
-                        // bare dash here reads as a fault, and the commonest
-                        // reason by far is a call too short to be transcribed.
-                        <span className="text-xs text-text-subtle">
-                          {call.status === "COMPLETE" ? "Not analysed" : humanize(call.status)}
-                        </span>
+                        // Why there is nothing to show, in the row itself. A
+                        // bare dash reads as a fault, and "Transcribing" on its
+                        // own reads as one too - it is a word the reader did
+                        // not ask for, in a column where they expected an
+                        // answer. pipelineStage() turns each of the eleven
+                        // statuses into a sentence saying what is happening and
+                        // whether it is theirs to fix; the spinner says it is
+                        // still moving.
+                        <ReadPending status={call.status} />
                       )}
                     </TableCell>
                     <TableCell>
@@ -350,6 +372,48 @@ export function CallsExplorer({
 }
 
 /** Selected filter = the gradient fill, the same "you are here" the sidebar uses. */
+/**
+ * What the "AI read" column says when there is nothing to read yet.
+ *
+ * ── WHY A SENTENCE AND NOT A WORD ───────────────────────────────────────────
+ *
+ * This column used to print the raw status - "Transcribing", "Syncing",
+ * "Failed asr" - and a status word is only meaningful to somebody who already
+ * knows the pipeline. The reader is a business owner looking for what the call
+ * was about; "Transcribing" does not tell them whether to wait, refresh, call
+ * support, or give up on this row entirely, which are the only four things
+ * they might do.
+ *
+ * So each state gets one plain sentence saying what is happening and whose
+ * problem it is. The copy lives in @aura/ui's `pipelineStage`, beside the
+ * status table it describes, so this component cannot fall out of step with a
+ * status that gets added later.
+ *
+ * The three-quarter ring spins only for the phases that are genuinely still
+ * moving. A settled row gets no spinner - an animation that never stops is a
+ * promise the row is about to change, and on a FAILED_ASR call it is a lie.
+ */
+function ReadPending({ status }: { status: string }) {
+  const stage = pipelineStage(status);
+  const working = stage.phase === "working";
+
+  return (
+    <div className="max-w-[36ch]">
+      {/* The label stays neutral even for the error phases: the row's own
+          state chip is already carrying the colour, and saying it twice is how
+          a palette stops being scarce. */}
+      <span className="text-xs font-medium text-text">{stage.label}</span>
+      {stage.hint ? (
+        working ? (
+          <SyncingHint>{stage.hint}</SyncingHint>
+        ) : (
+          <RowHint kind={stage.phase === "error" ? "blocked" : "action"}>{stage.hint}</RowHint>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 function FilterChip({
   active,
   onClick,
@@ -364,10 +428,15 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      style={active ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+      // Selected = a solid NEUTRAL fill. It used to be the brand gradient,
+      // whose blue mid-stop sat directly above a table where blue means
+      // "outgoing" - so a pressed filter and a call state were the same colour
+      // on the same screen. "This filter is on" is not a state, so under the
+      // colour rule (@aura/ui's state.tsx) it gets no hue; inverting the pill
+      // says it just as loudly.
       className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
         active
-          ? "border-transparent text-white"
+          ? "border-transparent bg-text text-bg"
           : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
       }`}
     >
@@ -471,6 +540,13 @@ function CallDrawer({
       body: "The recording is transcribed and analysed again from scratch. This costs the same as a new call, and the current transcript and AI read are replaced.",
       confirmLabel: "Reprocess",
       tone: "danger",
+      // No type-DELETE gate. `tone: "danger"` turns it on by default and this
+      // is the case it is wrong for: nothing is destroyed, the transcript is
+      // rebuilt rather than removed, and the worst outcome is a second ASR
+      // bill. Making somebody type DELETE for that teaches them to type DELETE
+      // without reading, which is exactly the reflex the gate exists to stop
+      // on the dialogs that do erase things.
+      requireTyped: false,
     });
     if (!ok) return;
 

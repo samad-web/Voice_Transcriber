@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canPairDevices,
+  canRevokeDevices,
   OWNER_ROLE_ADMINS,
   OWNER_ROLE_DESCRIPTIONS,
   OWNER_ROLE_LABELS,
@@ -193,5 +195,46 @@ describe("adding a persona (the deploy-order constraint)", () => {
     for (const role of OwnerRole.options) {
       expect([role, resolveOwnerRole(role)]).toEqual([role, role]);
     }
+  });
+});
+
+describe("device pairing capability (migration 0107)", () => {
+  it("always allows an owner, whatever the stored flag says", () => {
+    // Storing the owner's own permission would create a state - owner with the
+    // flag off - in which a tenant has nobody who can pair a handset and no way
+    // to fix it from inside their own console.
+    expect(canPairDevices("owner", false)).toBe(true);
+    expect(canPairDevices("owner", true)).toBe(true);
+  });
+
+  it("allows nobody else without an explicit grant", () => {
+    // There is deliberately no persona that carries this implicitly: "all
+    // managers may pair" was never the requirement.
+    for (const role of ["manager", "telecaller", "sales", "marketing"] as const) {
+      expect(canPairDevices(role, false)).toBe(false);
+    }
+  });
+
+  it("allows anyone the owner has granted it to, including a telecaller", () => {
+    for (const role of ["manager", "telecaller", "sales", "marketing"] as const) {
+      expect(canPairDevices(role, true)).toBe(true);
+    }
+  });
+
+  it("treats a non-boolean grant as no grant", () => {
+    // The flag arrives from a database row; anything that is not exactly true
+    // must not widen access.
+    expect(canPairDevices("telecaller", undefined as unknown as boolean)).toBe(false);
+    expect(canPairDevices("telecaller", null as unknown as boolean)).toBe(false);
+  });
+
+  it("keeps revoking with owner and manager, and does not delegate it", () => {
+    // Pairing adds a device the owner can see and remove; revoking pulls a
+    // working phone out of a shift. Only the reversible half travels.
+    expect(canRevokeDevices("owner")).toBe(true);
+    expect(canRevokeDevices("manager")).toBe(true);
+    expect(canRevokeDevices("telecaller")).toBe(false);
+    expect(canRevokeDevices("sales")).toBe(false);
+    expect(canRevokeDevices("marketing")).toBe(false);
   });
 });

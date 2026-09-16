@@ -1,5 +1,8 @@
 import * as amqp from "amqplib";
 
+/** The change-signal bus behind the console's live updates - see ./events.ts. */
+export * from "./events";
+
 /**
  * Thin RabbitMQ helper. The queue is only a wake-up signal - the Postgres
  * state machine is the source of truth for pipeline progress (design doc §6.2).

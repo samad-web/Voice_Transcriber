@@ -51,6 +51,16 @@ const UpdateMemberBody = z.object({
    * action is what makes the incomplete state hard to reach.
    */
   telecallerId: z.string().uuid().nullable().optional(),
+  /**
+   * May this person pair a handset? (migration 0107)
+   *
+   * OWNER-granted, per person - the route is already `@RequireOwnerRole("owner")`
+   * so a manager cannot hand the capability to themselves or to anybody else.
+   * Setting it on an owner is accepted and inert: `canPairDevices()` returns
+   * true for that persona whatever the column says, because a tenant must never
+   * reach a state where nobody can pair a phone.
+   */
+  canPairDevices: z.boolean().optional(),
 });
 
 const InviteBody = z.object({
@@ -129,6 +139,7 @@ export class OwnerTeamController {
                 m.status, m.staff_code AS "staffCode", m.phone, m.job_title AS "jobTitle",
                 m.suspended_at AS "suspendedAt",
                 m.role_id AS "roleId", r.name AS "roleName", r.key AS "roleKey",
+                m.can_pair_devices AS "canPairDevices",
                 t.id AS "telecallerId", t.display_name AS "telecallerName"
            FROM memberships m
            JOIN users u ON u.id = m.user_id
@@ -192,7 +203,11 @@ export class OwnerTeamController {
     const parsed = UpdateMemberBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
-    if (p.ownerRole === undefined && p.telecallerId === undefined) {
+    if (
+      p.ownerRole === undefined &&
+      p.telecallerId === undefined &&
+      p.canPairDevices === undefined
+    ) {
       throw new BadRequestException("no fields to update");
     }
 
@@ -236,6 +251,37 @@ export class OwnerTeamController {
         await client.query(
           `UPDATE memberships SET owner_role = $1 WHERE user_id = $2 AND org_id = $3`,
           [p.ownerRole, userId, orgId],
+        );
+      }
+
+      // ── The handset-pairing grant (migration 0096) ───────────────────
+      //
+      // Written to EVERY membership row this person holds in this org, for the
+      // same reason the persona above is: a person may hold an org-scope row
+      // and workspace-scope rows, "may pair a handset" is a statement about
+      // the PERSON, and `capabilitiesFor` reads it with `bool_or` - so leaving
+      // one row behind would make the answer depend on which row was read.
+      //
+      // `org_id = $3` is defence in depth exactly as it is above: RLS already
+      // pins this to the current tenant, but a membership set is inherently
+      // cross-org, and a future change swapping `withOrg` for `adminPool()`
+      // would otherwise hand somebody this capability in every tenant at once.
+      if (p.canPairDevices !== undefined) {
+        await client.query(
+          `UPDATE memberships SET can_pair_devices = $1 WHERE user_id = $2 AND org_id = $3`,
+          [p.canPairDevices, userId, orgId],
+        );
+        await client.query(
+          // Audited because it hands somebody the ability to add a device to
+          // the tenant. "Who gave them that, and when" has to be answerable.
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+           VALUES ($1, 'user', $2, $3, 'user', $4)`,
+          [
+            orgId,
+            actorId ?? "owner-console",
+            p.canPairDevices ? "member.pairing_grant" : "member.pairing_revoke",
+            userId,
+          ],
         );
       }
 

@@ -349,7 +349,7 @@ export class ReportsService {
       }>(
         `SELECT id, name, metric, rate_type, rate
            FROM commission_plans
-          WHERE active = true
+          WHERE active = true AND deleted_at IS NULL
           ORDER BY name ASC`,
       );
       if (plans.length === 0) return { from, to, rows: [] };
@@ -910,6 +910,224 @@ export class ReportsService {
       };
     });
   }
+
+  /**
+   * The team roll-up (CRM dashboard Phase 8) - one row per person on the floor.
+   *
+   * ── WHY THIS IS NOT `performance()` ──────────────────────────────────────
+   *
+   * `performance()` groups deals by `telecaller_id`, which is a HANDSET's
+   * identity: it answers "how did the phone lines do". Its own comment records
+   * that it cannot attribute tasks to a rep for exactly that reason - a
+   * telecaller is not a console user - so its task and interaction totals are
+   * workspace-wide.
+   *
+   * A manager's question is about PEOPLE: who is carrying what, and who is
+   * behind. So this groups on the console user - `deals.owner_user_id`,
+   * `tasks.assignee_user_id` - and reaches leads through `telecallers.user_id`,
+   * which is the one honest bridge between the two identities. A telecaller
+   * with no login contributes no row here and their leads land in the
+   * unassigned bucket, which is the truth rather than a blank name.
+   *
+   * ── WHY A ROLL-UP REFUSES AN `owned` SCOPE ───────────────────────────────
+   *
+   * Every row is somebody else's work. There is no honest narrowing of "the
+   * team" to "your own records": the one-row answer that would leave is the
+   * caller's own dashboard, which they already have. Refused, not widened -
+   * the rule the lead-based reports above follow.
+   *
+   * ONE query. This runs on a page a manager opens all day against a database
+   * a continent away (~125ms a round trip), so the roster, the deals, the
+   * tasks and the leads are joined in the database rather than in four calls.
+   */
+  async team(orgId: string, from: string, to: string, recordScope: CrmRecordScope = UNSCOPED) {
+    if (recordScope.scope === "owned") {
+      throw new ForbiddenException(
+        "the team roll-up is a view of other people's work, so it cannot be scoped to your own records",
+      );
+    }
+
+    return this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query<TeamQueryRow>(
+        `WITH member AS (
+           -- One row per person, whichever membership they hold: somebody with
+           -- both an org and a workspace membership is one human being.
+           SELECT DISTINCT ON (m.user_id)
+                  m.user_id, m.owner_role, u.name, u.email
+             FROM memberships m
+             JOIN users u ON u.id = m.user_id
+            WHERE m.org_id = $1
+            ORDER BY m.user_id, m.created_at
+         ), rep AS (
+           SELECT DISTINCT ON (t.user_id) t.user_id, t.id AS telecaller_id
+             FROM telecallers t
+            WHERE t.user_id IS NOT NULL AND t.status = 'active'
+            ORDER BY t.user_id, t.created_at
+         ), deal AS (
+           -- NULL owners are grouped too, and become the unassigned row below.
+           -- "Won" is dated by stage_changed_at: a won deal's last stage change
+           -- IS the win, and deals carry no closed_at column.
+           SELECT d.owner_user_id AS user_id,
+                  count(*) FILTER (WHERE d.status = 'open') AS open_deals,
+                  COALESCE(sum(d.amount) FILTER (WHERE d.status = 'open'), 0) AS open_value,
+                  count(*) FILTER (WHERE d.status = 'won' AND d.stage_changed_at >= $2::date
+                                     AND d.stage_changed_at < ($3::date + 1)) AS won_deals,
+                  COALESCE(sum(d.amount) FILTER (WHERE d.status = 'won' AND d.stage_changed_at >= $2::date
+                                     AND d.stage_changed_at < ($3::date + 1)), 0) AS won_value,
+                  max(d.last_activity_at) FILTER (WHERE d.status = 'open') AS last_activity_at
+             FROM deals d
+            GROUP BY d.owner_user_id
+         ), task AS (
+           SELECT t.assignee_user_id AS user_id,
+                  count(*) FILTER (WHERE t.status = 'open') AS open_tasks,
+                  count(*) FILTER (WHERE t.status = 'open' AND t.due_on IS NOT NULL
+                                     AND t.due_on < current_date) AS overdue_tasks
+             FROM tasks t
+            GROUP BY t.assignee_user_id
+         ), lead AS (
+           -- Unanswered past the org's response SLA (0109) - the same predicate
+           -- the sla_breach sweep raises a notification on, so the roll-up and
+           -- the bell can never disagree about who is late.
+           SELECT l.assigned_telecaller_id AS telecaller_id,
+                  count(*) FILTER (WHERE l.status = 'open') AS open_leads,
+                  count(*) FILTER (WHERE l.status = 'open' AND l.first_responded_at IS NULL
+                                     AND l.created_at <= now() - make_interval(mins => $4::int))
+                    AS unanswered_leads
+             FROM leads l
+            GROUP BY l.assigned_telecaller_id
+         )
+         SELECT m.user_id, m.name, m.email, m.owner_role, r.telecaller_id,
+                COALESCE(d.open_deals, 0)      AS open_deals,
+                COALESCE(d.open_value, 0)      AS open_value,
+                COALESCE(d.won_deals, 0)       AS won_deals,
+                COALESCE(d.won_value, 0)       AS won_value,
+                COALESCE(tk.open_tasks, 0)     AS open_tasks,
+                COALESCE(tk.overdue_tasks, 0)  AS overdue_tasks,
+                COALESCE(ld.open_leads, 0)     AS open_leads,
+                COALESCE(ld.unanswered_leads, 0) AS unanswered_leads,
+                d.last_activity_at
+           FROM member m
+           LEFT JOIN rep  r  ON r.user_id = m.user_id
+           LEFT JOIN deal d  ON d.user_id = m.user_id
+           LEFT JOIN task tk ON tk.user_id = m.user_id
+           LEFT JOIN lead ld ON ld.telecaller_id = r.telecaller_id
+         UNION ALL
+         -- What nobody owns. A manager's roll-up that silently dropped it would
+         -- make an unworked pile invisible precisely because it has no name.
+         SELECT NULL::uuid, NULL, NULL, NULL, NULL::uuid,
+                COALESCE((SELECT open_deals     FROM deal WHERE user_id IS NULL), 0),
+                COALESCE((SELECT open_value     FROM deal WHERE user_id IS NULL), 0),
+                COALESCE((SELECT won_deals      FROM deal WHERE user_id IS NULL), 0),
+                COALESCE((SELECT won_value      FROM deal WHERE user_id IS NULL), 0),
+                COALESCE((SELECT open_tasks     FROM task WHERE user_id IS NULL), 0),
+                COALESCE((SELECT overdue_tasks  FROM task WHERE user_id IS NULL), 0),
+                COALESCE((SELECT open_leads     FROM lead WHERE telecaller_id IS NULL), 0),
+                COALESCE((SELECT unanswered_leads FROM lead WHERE telecaller_id IS NULL), 0),
+                NULL`,
+        [orgId, from, to, await responseSlaMinutes(client)],
+      );
+
+      const members: TeamMemberRow[] = rows.map((r) => ({
+        userId: r.user_id,
+        name: r.name ?? (r.user_id === null ? "Unassigned" : "Unnamed"),
+        email: r.email,
+        ownerRole: r.owner_role,
+        telecallerId: r.telecaller_id,
+        openDeals: Number(r.open_deals),
+        openValue: Number(r.open_value),
+        wonDeals: Number(r.won_deals),
+        wonValue: Number(r.won_value),
+        openTasks: Number(r.open_tasks),
+        overdueTasks: Number(r.overdue_tasks),
+        openLeads: Number(r.open_leads),
+        unansweredLeads: Number(r.unanswered_leads),
+        lastActivityAt: r.last_activity_at,
+      }));
+
+      return { from, to, members: sortTeam(members), totals: totalTeam(members) };
+    });
+  }
+}
+
+interface TeamQueryRow {
+  user_id: string | null;
+  name: string | null;
+  email: string | null;
+  owner_role: string | null;
+  telecaller_id: string | null;
+  open_deals: string;
+  open_value: string;
+  won_deals: string;
+  won_value: string;
+  open_tasks: string;
+  overdue_tasks: string;
+  open_leads: string;
+  unanswered_leads: string;
+  last_activity_at: string | null;
+}
+
+export interface TeamMemberRow {
+  /** null is the unassigned bucket, which is a pile of work rather than a person. */
+  userId: string | null;
+  name: string;
+  email: string | null;
+  ownerRole: string | null;
+  /** Their handset identity, when they have one - what leads are assigned to. */
+  telecallerId: string | null;
+  openDeals: number;
+  openValue: number;
+  wonDeals: number;
+  wonValue: number;
+  openTasks: number;
+  overdueTasks: number;
+  openLeads: number;
+  /** Open, never answered, and already past the org's response SLA. */
+  unansweredLeads: number;
+  lastActivityAt: string | null;
+}
+
+/**
+ * Who a manager should look at first: whoever is most behind, then whoever
+ * carries the most. Sorting on trouble rather than on money is the whole
+ * difference between this table and the leaderboard on the reports page.
+ */
+function sortTeam(members: TeamMemberRow[]): TeamMemberRow[] {
+  const trouble = (m: TeamMemberRow) => m.unansweredLeads + m.overdueTasks;
+  const idle = (m: TeamMemberRow) =>
+    m.openDeals + m.openLeads + m.openTasks + m.wonDeals === 0 && m.userId !== null;
+  return [...members].sort(
+    (a, b) =>
+      // The unassigned pile last unless it is empty, and people with nothing
+      // at all after those who are carrying something.
+      Number(a.userId === null) - Number(b.userId === null) ||
+      Number(idle(a)) - Number(idle(b)) ||
+      trouble(b) - trouble(a) ||
+      b.openValue - a.openValue ||
+      a.name.localeCompare(b.name),
+  );
+}
+
+function totalTeam(members: TeamMemberRow[]) {
+  const sum = (pick: (m: TeamMemberRow) => number) => members.reduce((n, m) => n + pick(m), 0);
+  return {
+    people: members.filter((m) => m.userId !== null).length,
+    openDeals: sum((m) => m.openDeals),
+    openValue: sum((m) => m.openValue),
+    wonDeals: sum((m) => m.wonDeals),
+    wonValue: sum((m) => m.wonValue),
+    openTasks: sum((m) => m.openTasks),
+    overdueTasks: sum((m) => m.overdueTasks),
+    openLeads: sum((m) => m.openLeads),
+    unansweredLeads: sum((m) => m.unansweredLeads),
+  };
+}
+
+/** The org's response SLA (0109), defaulted the same way the column is. */
+async function responseSlaMinutes(client: {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: { response_sla_minutes: number }[] }>;
+}): Promise<number> {
+  const { rows } = await client.query(`SELECT response_sla_minutes FROM organizations LIMIT 1`);
+  return rows[0]?.response_sla_minutes ?? 60;
 }
 
 /**

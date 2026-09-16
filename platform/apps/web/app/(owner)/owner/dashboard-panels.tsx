@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import { Card, MonoLabel, RowHint, StateChip, StatusChip, STATE_TONE } from "@aura/ui";
+import type { ConsoleState } from "@aura/ui";
 import { TelecallerName } from "./telecaller-name";
 import { formatDuration, formatValue, num, relativeTime, type Overview, type Stage } from "./types";
 
@@ -36,12 +37,17 @@ export function WindowPicker({ days }: { days: number }) {
           key={d}
           href={`/owner?days=${d}`}
           aria-current={d === days ? "true" : undefined}
-          // Selected window = the gradient fill, the same "you are here"
-          // signal the sidebar and the lead filters use.
-          style={d === days ? { backgroundImage: "var(--brand-gradient)" } : undefined}
+          // Selected = a solid NEUTRAL fill, not the brand gradient it used to
+          // carry. "Which window am I looking at" is not one of the four
+          // states (@aura/ui's state.tsx), so it does not get a hue - and the
+          // gradient's blue mid-stop sat inches from the blue that now means
+          // "outgoing" on the same screen. Inverting the pill is just as
+          // unmistakable and spends nothing from the palette. The rail keeps
+          // its gradient: it is permanent chrome and never sits beside call
+          // data.
           className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors duration-150 ease-out ${
             d === days
-              ? "border-transparent text-white"
+              ? "border-transparent bg-text text-bg"
               : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
           }`}
         >
@@ -139,11 +145,14 @@ export function PipelineByStage({
                 className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-border"
               >
                 <div
-                  // Lost stays neutral rather than red: a lost lead is a normal
-                  // outcome, not a fault condition, and semantic colour is for
-                  // status only (doc 16 §1.1).
+                  // BOTH bars are neutral now. Lost was already grey - a lost
+                  // lead is a normal outcome, not a fault - and the open bars
+                  // have joined it: a stage is a category, not a state, and
+                  // under the colour rule a category gets no hue. The two
+                  // greys still separate cleanly, which is all the bar was
+                  // using colour for.
                   className={`h-full rounded-full ${
-                    stage.terminal === "lost" ? "bg-border-strong" : "bg-accent"
+                    stage.terminal === "lost" ? "bg-border-strong" : "bg-text"
                   }`}
                   style={{ width: `${(stage.count / funnelMax) * 100}%` }}
                 />
@@ -151,6 +160,117 @@ export function PipelineByStage({
             </Link>
           ))}
         </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * THE ONE PANEL THAT SPENDS THE PALETTE.
+ *
+ * Three figures - missed, answered, outgoing - and the whole reason the
+ * functional colour rule exists on this dashboard. Everything else on the page
+ * is grey or is a KPI tile, so a red number here is the only red an owner
+ * sees, and it is on the number they came for.
+ *
+ * ── WHY THE THREE ADD UP AND `failed` DOES NOT ──────────────────────────────
+ *
+ * `outgoing + answered + missed === calls.total`, exactly, because the
+ * direction column admits nothing else. `failed` is counted over the same set,
+ * not carved out of it - a call the transcoder choked on still happened and is
+ * still in whichever of the three it belongs to. So it is reported as a
+ * SENTENCE below the row rather than a fourth figure beside them, which is
+ * also honest about what it is: an operational problem for us, not a business
+ * outcome for the reader.
+ *
+ * ── WHY IT IS NOT THREE MORE KPI TILES ──────────────────────────────────────
+ *
+ * The tiles are a solid orange band. Painting states inside them means either
+ * losing the hue (the tiles are already orange) or three coloured cards
+ * fighting an orange row. A neutral panel gives each figure a plain white
+ * ground where its colour means exactly one thing, and puts the three side by
+ * side where the comparison between them is the point.
+ */
+export function CallOutcomes({
+  calls,
+  days,
+  href,
+  label = "Call outcomes",
+}: {
+  calls: Overview["calls"];
+  days: number;
+  /** The call log, when this reader is entitled to it. Omitted = no link. */
+  href?: string;
+  label?: string;
+}) {
+  const figures: Array<{ state: ConsoleState; value: number; caption: string }> = [
+    {
+      state: "missed",
+      value: calls.missed,
+      caption: "inbound, nobody picked up",
+    },
+    {
+      state: "answered",
+      value: calls.answered,
+      caption: "inbound, someone spoke",
+    },
+    {
+      state: "outgoing",
+      value: calls.outgoing,
+      caption: "we called them",
+    },
+  ];
+
+  return (
+    <Card elevated className="space-y-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <MonoLabel>{label}</MonoLabel>
+        {href ? (
+          <Link href={href} className={PANEL_LINK}>
+            Open call log →
+          </Link>
+        ) : (
+          <span className="text-xs text-text-muted tabular-nums">last {days} days</span>
+        )}
+      </div>
+
+      {calls.total === 0 ? (
+        <p className="py-8 text-center text-sm text-text-muted">
+          No calls in this window. Outcomes appear here as handsets upload them.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            {figures.map(({ state, value, caption }) => (
+              <div key={state} className="min-w-0">
+                <StateChip state={state} />
+                <p
+                  className={`mt-2 text-2xl font-semibold tabular-nums ${STATE_TONE[state].text}`}
+                >
+                  {value}
+                </p>
+                {/* The percentage is what makes the number mean anything: 40
+                    missed calls is a catastrophe on a floor doing 60 and a
+                    rounding error on one doing 4,000. */}
+                <p className="mt-0.5 text-xs text-text-muted tabular-nums">
+                  {Math.round((value / calls.total) * 100)}% of {calls.total}
+                </p>
+                <p className="mt-0.5 text-xs leading-snug text-text-muted">{caption}</p>
+              </div>
+            ))}
+          </div>
+
+          {calls.failed > 0 ? (
+            <div className="border-t border-border pt-3">
+              <RowHint kind="blocked">
+                {calls.failed} of these {calls.failed === 1 ? "call" : "calls"} could not be
+                processed, so {calls.failed === 1 ? "it has" : "they have"} no transcript and no AI
+                read. The recording is still stored and the call is still counted above - nothing
+                is lost, and there is nothing for you to do here.
+              </RowHint>
+            </div>
+          ) : null}
+        </>
       )}
     </Card>
   );
@@ -186,7 +306,11 @@ export function ActivityChart({
                   />
                   <div
                     title={`${d.leads} ${leadLabel.toLowerCase()}`}
-                    className="w-1/2 rounded-t-sm bg-accent"
+                    // Two greys, not grey and blue. The pair was already
+                    // carrying its own legend and its own title attributes, so
+                    // the hue was never the thing distinguishing them - and
+                    // blue means "outgoing" now.
+                    className="w-1/2 rounded-t-sm bg-text"
                     style={{ height: `${(d.leads / maxDay) * 100}%` }}
                   />
                 </div>
@@ -201,7 +325,7 @@ export function ActivityChart({
               <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-border-strong" /> Calls
             </span>
             <span className="flex items-center gap-1.5 text-xs text-text-muted">
-              <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-accent" /> {leadLabel}
+              <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-text" /> {leadLabel}
             </span>
           </div>
         </>
@@ -498,180 +622,6 @@ export function CampaignTable({
   );
 }
 
-/**
- * Open follow-ups, ordered by how late they are.
- *
- * Overdue leads, and it is the only number rendered in a warning tone: on a
- * dashboard that is otherwise a scoreboard, this is the one panel that is a
- * to-do list, and being late is the only genuine fault condition on the page
- * (doc 16 §1.1 keeps semantic colour for status alone).
- */
-export function TaskLoad({ tasks }: { tasks: Overview["tasks"] }) {
-  return (
-    <Card elevated className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <MonoLabel>Your follow-ups</MonoLabel>
-        <Link href="/owner/tasks" className={PANEL_LINK}>
-          All tasks →
-        </Link>
-      </div>
-      {tasks.open === 0 ? (
-        <p className="py-6 text-center text-sm text-text-muted">Nothing outstanding - you are clear</p>
-      ) : (
-        // Every tile is a link to the tab that holds exactly the rows it
-        // counts. That is the whole difference between a dashboard and a
-        // triage surface: a number you can act on without first working out
-        // where the rows behind it live.
-        <div className="grid grid-cols-3 gap-3">
-          <TaskCount
-            label="Overdue"
-            value={tasks.overdue}
-            tone={tasks.overdue > 0 ? "warn" : "plain"}
-            href="/owner/tasks?bucket=overdue"
-          />
-          <TaskCount
-            label="Due today"
-            value={tasks.due_today}
-            tone="plain"
-            href="/owner/tasks?bucket=today"
-          />
-          <TaskCount
-            label="Upcoming"
-            value={tasks.upcoming}
-            tone="plain"
-            href="/owner/tasks?bucket=upcoming"
-          />
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function TaskCount({
-  label,
-  value,
-  tone,
-  href,
-}: {
-  label: string;
-  value: number;
-  tone: "warn" | "plain";
-  href?: string;
-}) {
-  const body = (
-    <>
-      <span
-        className={`block text-2xl font-semibold tabular-nums ${
-          tone === "warn" ? "text-danger-text" : "text-text"
-        }`}
-      >
-        {value.toLocaleString()}
-      </span>
-      <span className="mt-0.5 block text-xs text-text-muted">{label}</span>
-    </>
-  );
-  const shell = "rounded-lg border border-border bg-bg-subtle px-3 py-3 text-center";
-  // A plain div when there is nowhere to go, rather than a link to a page that
-  // cannot honour the filter. A tile that navigates to a list showing
-  // something other than the number that was clicked is worse than one that
-  // does not navigate at all.
-  return href ? (
-    <Link href={href} className={`${shell} block transition-colors hover:border-border-strong`}>
-      {body}
-    </Link>
-  ) : (
-    <div className={shell}>{body}</div>
-  );
-}
-
-/**
- * Lead ageing, and the leads nobody has answered at all.
- *
- * ── EVERY NUMBER HERE IS A FILTER ───────────────────────────────────────────
- *
- * The bucket bounds come from the server (reports/sla.ts's AGING_BUCKETS,
- * rendered into SQL by agingBucketFilters) and the links carry those same
- * bounds as `minAgeDays`/`maxAgeDays` into the leads list. Tile and
- * destination therefore agree by construction: there is one definition of
- * "4-7 days" and both ends read it.
- *
- * ── AND IT DOES NOT SOFTEN THE NUMBER ───────────────────────────────────────
- *
- * "Nobody has answered 3,639 of these" renders exactly like that, in the
- * warning tone, with no encouraging framing. The reference tenant this was
- * modelled on displayed 969 overdue at 99% without flinching, and that honesty
- * is the reason anyone believed the rest of the page.
- */
-export function LeadTriage({ triage }: { triage: NonNullable<Overview["triage"]> }) {
-  const buckets = [
-    { key: "d0_3", label: "0-3 days", value: triage.d0_3, min: 0, max: 3 },
-    { key: "d4_7", label: "4-7 days", value: triage.d4_7, min: 4, max: 7 },
-    { key: "d8_15", label: "8-15 days", value: triage.d8_15, min: 8, max: 15 },
-    { key: "d16_30", label: "16-30 days", value: triage.d16_30, min: 16, max: 30 },
-    { key: "d30_plus", label: "30+ days", value: triage.d30_plus, min: 31, max: null },
-  ] as const;
-
-  const neverPct =
-    triage.open_total === 0 ? null : Math.round((triage.never_responded / triage.open_total) * 100);
-
-  return (
-    <Card elevated className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <MonoLabel>Needs attention</MonoLabel>
-        <Link href="/owner/reports/sla" className={PANEL_LINK}>
-          Response &amp; follow-ups →
-        </Link>
-      </div>
-
-      {triage.open_total === 0 ? (
-        <p className="py-6 text-center text-sm text-text-muted">No open leads</p>
-      ) : (
-        <>
-          <Link
-            href="/owner/leads?unresponded=1&status=open"
-            className="block rounded-lg border border-border bg-bg-subtle px-3 py-3 transition-colors hover:border-border-strong"
-          >
-            <span className="flex items-baseline gap-2">
-              <span
-                className={`text-2xl font-semibold tabular-nums ${
-                  triage.never_responded > 0 ? "text-danger-text" : "text-text"
-                }`}
-              >
-                {triage.never_responded.toLocaleString()}
-              </span>
-              <span className="text-sm text-text-muted">
-                never answered{neverPct === null ? "" : ` · ${neverPct}% of open leads`}
-              </span>
-            </span>
-          </Link>
-
-          <div>
-            <p className="mb-1.5 text-xs text-text-muted">Open leads, by how long they have sat</p>
-            <div className="grid grid-cols-5 gap-1.5">
-              {buckets.map((b) => (
-                <Link
-                  key={b.key}
-                  href={`/owner/leads?status=open&minAgeDays=${b.min}${
-                    b.max === null ? "" : `&maxAgeDays=${b.max}`
-                  }`}
-                  className="rounded-lg border border-border bg-bg-subtle px-1.5 py-2.5 text-center transition-colors hover:border-border-strong"
-                >
-                  <span
-                    className={`block text-lg font-semibold tabular-nums ${
-                      b.key === "d30_plus" && b.value > 0 ? "text-danger-text" : "text-text"
-                    }`}
-                  >
-                    {b.value.toLocaleString()}
-                  </span>
-                  <span className="mt-0.5 block text-[0.6875rem] leading-tight text-text-muted">
-                    {b.label}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
+// The counts-only follow-up panel (TaskLoad) that lived here was replaced by
+// ./next-actions.tsx, which lists the follow-ups themselves in the order to
+// work them, with Done / Log call / Log message on each row.

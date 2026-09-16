@@ -7,7 +7,7 @@ import { PerformanceTab } from "./performance-tab";
 import { RolesTab } from "./roles-tab";
 import { TeamTab } from "./team-tab";
 
-export const metadata: Metadata = { title: "Staff - Aura" };
+export const metadata: Metadata = { title: "Staff" };
 
 const TABS = [
   { key: "team", label: "Team" },

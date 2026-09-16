@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "281615038369",
+    "project_id": "auratel-9ddbd",
+    "storage_bucket": "auratel-9ddbd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:281615038369:android:f6dc822e7fea16c545fde0",
+        "android_client_info": {
+          "package_name": "com.voicetranscriber.callrecorder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA18Zjc-ZhSlFqU10WCgoG5jWWM-Gr4Qy0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

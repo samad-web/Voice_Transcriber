@@ -290,7 +290,7 @@ export async function ingestLead(
   // Non-blocking, matching how pipeline.ts treats the same call: a projection
   // failure must not lose the lead we have already committed.
   try {
-    const projection = await projectLeadToCrm(client, connection.org_id, row.id);
+    const projection = await projectLeadToCrm(client, connection.org_id, row.id, { emitEvents: true });
     if (projection.reason === "no default pipeline for org") {
       console.error(
         `meta-mcp: org ${connection.org_id} has no default pipeline - lead ${row.id} is on the board but has no deal`,

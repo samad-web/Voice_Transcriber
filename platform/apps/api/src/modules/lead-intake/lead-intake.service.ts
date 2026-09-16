@@ -14,6 +14,7 @@ import {
   type NormalizedIntake,
 } from "@aura/shared";
 import { DbService } from "../../db/db.service";
+import { RealtimeService } from "../realtime/realtime.service";
 import { CrmIngestService, type IngestClient } from "../public-api/crm-ingest.service";
 import { verifyIntakeSignature } from "./signatures";
 
@@ -136,6 +137,7 @@ export class LeadIntakeService {
   constructor(
     private readonly db: DbService,
     private readonly ingest: CrmIngestService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -197,7 +199,28 @@ export class LeadIntakeService {
    */
   async ingestPayload(source: ResolvedSource, req: IntakeRequest): Promise<IntakeResult> {
     try {
-      return await this.db.withOrg(source.orgId, (client) => this.ingestOnClient(client, source, req));
+      const result = await this.db.withOrg(source.orgId, (client) =>
+        this.ingestOnClient(client, source, req),
+      );
+      // Announced HERE and not inside `ingestOnClient`: this is the first line
+      // that runs after the transaction commits. Publishing from inside it
+      // would tell every open console a lead had arrived and then, on a
+      // rollback, leave them re-reading for a row that never existed.
+      //
+      // The interceptor cannot do this for us - an unauthenticated webhook
+      // resolves its tenant from a token rather than through a guard, so
+      // `req.tenantOrgId` is unset and the interceptor correctly stays silent
+      // rather than guessing which org to wake.
+      if (result.leadId) {
+        this.realtime.publish({
+          orgId: source.orgId,
+          topic: "lead",
+          action: "created",
+          id: result.leadId,
+          at: new Date().toISOString(),
+        });
+      }
+      return result;
     } catch (err) {
       // The lead write failed and took the claim down with it, which is what
       // must happen - see this module's header. Record the failure on a FRESH

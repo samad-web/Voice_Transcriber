@@ -32,7 +32,10 @@ import { startSheetsSync } from "./pipeline/sheets-sync";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
 import { startLinkedInSweep } from "./pipeline/linkedin-sync";
+import { startChannelWatchdog } from "./pipeline/channel-watchdog";
+import { startSlaBreachSweep } from "./pipeline/sla-breach";
 import { startReportScheduleSweep } from "./pipeline/report-schedules";
+import { startRecycleBinPurge } from "./pipeline/recycle-bin-purge";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -188,6 +191,17 @@ async function bootstrap() {
   // for orgs that set whatsapp_qualification_enabled, because it sends their
   // customer conversations to an LLM provider.
   startWhatsAppQualificationSweep();
+  // The WhatsApp channel watchdog (migrations 0110/0111). A channel with a
+  // refused key, or one whose replies are being discarded for want of a
+  // forward secret, is invisible today until a customer says "I replied days
+  // ago" - so this asks the provider on a timer and raises an in-app
+  // notification for the org's owners and managers. It reads; it sends nothing.
+  startChannelWatchdog();
+  // The response SLA (migration 0119). An open lead nobody has answered within
+  // the org's response_sla_minutes raises one in-app notification per lead for
+  // its telecaller and the owners/managers. Leads from the last week only. It
+  // writes notifications; it sends nothing.
+  startSlaBreachSweep();
   // Meta lead ads pulled through the tenant's MCP server onto the SAME lead
   // board the handset's calls land on. Off unless META_MCP_SYNC_ENABLED is
   // exactly "true" - it makes outbound requests to a tenant-supplied URL.
@@ -197,6 +211,7 @@ async function bootstrap() {
   // sends nothing outward, which is what keeps safety rule 3 true; see the
   // module header and design doc D6 for the reasoning and the seam.
   startReportScheduleSweep();
+  startRecycleBinPurge();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an

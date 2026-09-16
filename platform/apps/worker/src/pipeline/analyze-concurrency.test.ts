@@ -35,7 +35,12 @@ const { analyzeConversation, analyzeTranscript, publishEnrich } = vi.hoisted(() 
 }));
 
 vi.mock("@aura/llm", () => ({ analyzeConversation, analyzeTranscript }));
-vi.mock("@aura/queue", () => ({ publishEnrich }));
+vi.mock("@aura/queue", () => ({
+  publishEnrich,
+  // A change signal, not work: the pipeline calls it after a status
+  // transition. Stubbed so these tests need no broker.
+  publishEvent: vi.fn(),
+}));
 // Hands every phase the same recording client, so `issued` stays one ordered
 // log of the whole run even though it spans several transactions (A1).
 vi.mock("@aura/db", () => ({

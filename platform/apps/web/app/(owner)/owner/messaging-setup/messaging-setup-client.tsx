@@ -3,11 +3,13 @@
 import { useEffect, useState, useTransition } from "react";
 import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { MetaChannelDialog } from "./meta-channel-dialog";
+import { readChannel } from "@aura/shared";
 import {
   createWasiChannelAction,
   listChannelsAction,
   setChannelStatusAction,
   setForwardSecretAction,
+  verifyChannelAction,
   type MessagingChannel,
 } from "./actions";
 
@@ -55,7 +57,25 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
       </Card>
 
       {channels.length === 0 ? null : (
-        channels.map((c) => (
+        channels.map((c) => {
+          /*
+           * The chip used to print `c.status`, which is an operator switch with
+           * two values and was being read as health. A channel with a typo'd
+           * key and one whose forward secret was never entered both said
+           * "active"; neither could carry a message. `readChannel` answers the
+           * question the chip was pretending to answer, and answers the send
+           * half and the receive half separately, because they fail separately.
+           */
+          const reading = readChannel({
+            status: c.status,
+            hasApiKey: c.has_api_key,
+            hasForwardSecret: c.has_forward_secret,
+            lastProbeAt: c.last_probe_at,
+            lastProbeOutcome: c.last_probe_outcome,
+            lastProbeDetail: c.last_probe_detail,
+            lastInboundAt: c.last_inbound_at,
+          });
+          return (
           <Card key={c.id}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -66,7 +86,25 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
                   {c.inbound_address} · via {c.provider}
                 </p>
               </div>
-              <StatusChip tone={c.status === "active" ? "solid" : "muted"}>{c.status}</StatusChip>
+              <StatusChip tone={reading.tone}>{reading.label}</StatusChip>
+            </div>
+
+            <div className="mt-2 space-y-1">
+              <p className="text-sm text-text-muted">{reading.detail}</p>
+              {/*
+                The provider's own words, kept out of the sentence above and
+                shown only when there are any. "Could not connect" does not tell
+                whoever has to fix this whether the key is wrong or the host is
+                down, and that detail is the whole of the fix.
+              */}
+              {c.last_probe_detail ? (
+                <p className="font-mono text-xs break-all text-text-muted">{c.last_probe_detail}</p>
+              ) : null}
+              <p className="text-xs text-text-muted">
+                {c.last_probe_at
+                  ? `Last checked ${new Date(c.last_probe_at).toLocaleString()}`
+                  : "Never checked against the provider."}
+              </p>
             </div>
 
             <div className="mt-3 space-y-2 rounded-md border border-border bg-surface-hover p-3 text-xs">
@@ -85,7 +123,38 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               </Button>
             </div>
 
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap gap-2">
+              {/*
+                Proving the credentials is a BUTTON and not something `create`
+                does, for the reason the API's verify handler states: a probe
+                failure at save time throws away five hand-copied values over a
+                condition that is often temporary, and a forward secret that
+                does not exist yet is the NORMAL order of operations.
+              */}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const res = await verifyChannelAction(c.id);
+                    // Only an unreachable Aura API is an error here. A refused
+                    // key is the answer, and it belongs on the card - putting
+                    // it in a modal would hide the finding behind an "error".
+                    if (res.error) {
+                      await alert({
+                        title: "Couldn't run the check",
+                        body: res.error,
+                        tone: "danger",
+                      });
+                      return;
+                    }
+                    refresh();
+                  })
+                }
+              >
+                {pending ? "Checking…" : "Check this number"}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -112,7 +181,8 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               </Button>
             </div>
           </Card>
-        ))
+          );
+        })
       )}
 
       <MetaChannelDialog

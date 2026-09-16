@@ -13,25 +13,41 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { entryStage, parsePipelineStages, statusForStage } from "@aura/shared";
+import { BulkReassignInput, entryStage, statusForStage, type BulkResult } from "@aura/shared";
+import { resolveDealPipeline, type DbClient } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { assignInBulk } from "../../common/bulk-assign";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
+import { assertInOrg, assertMembers } from "../../common/org-references";
+import { actorUserId } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
-import { enqueueAutomationEventSafely } from "../automation/enqueue";
+import { dealStageChangedSubject, enqueueAutomationEventSafely } from "../automation/enqueue";
+import { OwnerFilter } from "../../common/list-filters";
 import { recordStageTransition } from "./stage-history";
-
-type DbClient = { query<R = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: R[] }> };
 
 const ListQuery = z.object({
   pipelineId: z.string().uuid().optional(),
   stage: z.string().max(40).optional(),
-  status: z.enum(["open", "won", "lost"]).optional(),
+  /** `closed` = won OR lost - the denominator of the dashboard's conversion rate. */
+  status: z.enum(["open", "won", "lost", "closed"]).optional(),
   contactId: z.string().uuid().optional(),
   accountId: z.string().uuid().optional(),
   q: z.string().max(200).optional(),
+  /**
+   * Created within these dates, inclusive. The SAME predicate the conversion
+   * report windows on (reports.service.ts `conversion`), so the dashboard's
+   * conversion card and the list it opens count exactly the same deals.
+   */
+  createdFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** `me` resolves to the caller; `none` is the unowned pile (contacts.controller.ts). */
+  owner: OwnerFilter.optional(),
+  tagId: z.string().uuid().optional(),
+  /** Open deals idle at least this many days (the pipeline's stale threshold, 0106). */
+  staleDays: z.coerce.number().int().min(1).max(365).optional(),
   sort: z.enum(["activity", "created", "amount", "name"]).default("activity"),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -85,6 +101,20 @@ const DEAL_JOINS = `FROM deals d
   LEFT JOIN accounts a ON a.id = d.account_id`;
 
 /**
+ * List-only columns: the owner's name, the tags, and the contact's address -
+ * the last so the bulk bar's "Email" can list addresses without a round trip
+ * per deal. Not in DEAL_COLUMNS because the board and detail don't need them.
+ */
+const DEAL_LIST_EXTRAS = `,
+  (SELECT u.name FROM users u WHERE u.id = d.owner_user_id) AS owner_name,
+  c.email AS contact_email,
+  COALESCE((
+    SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY lower(t.name))
+      FROM deal_tags dt JOIN tags t ON t.id = dt.tag_id AND t.deleted_at IS NULL
+     WHERE dt.deal_id = d.id
+  ), '[]'::json) AS tags`;
+
+/**
  * Deals - CRM Phase 1, E0.1. The pipeline object that inherits `leads`'
  * board/stage role; `stage` is validated against the owning pipeline's
  * `stages`, exactly like owner/leads.controller.ts validates against
@@ -95,20 +125,24 @@ const DEAL_JOINS = `FROM deals d
 export class DealsController {
   constructor(private readonly db: DbService) {}
 
-  /** Resolve a pipeline (explicit id, or the org's default) and parse its stages. */
-  private async resolvePipeline(client: DbClient, pipelineId?: string) {
-    const {
-      rows: [pipeline],
-    } = await client.query<{ id: string; stages: unknown }>(
-      pipelineId
-        ? `SELECT id, stages FROM deal_pipelines WHERE id = $1`
-        : `SELECT id, stages FROM deal_pipelines WHERE is_default = true LIMIT 1`,
-      pipelineId ? [pipelineId] : [],
-    );
+  /**
+   * Resolve a pipeline (explicit id, or the org's default) and parse its stages.
+   *
+   * Through @aura/db's resolveDealPipeline, the one rule every door uses
+   * (doc 23, B2). `forWrite` refuses an archived pipeline for a NEW deal; reads
+   * and edits of an existing deal may still name one.
+   */
+  private async resolvePipeline(
+    client: DbClient,
+    orgId: string,
+    pipelineId?: string | null,
+    forWrite = false,
+  ) {
+    const pipeline = await resolveDealPipeline(client, orgId, { pipelineId, forWrite });
     if (!pipeline) {
-      throw new NotFoundException(pipelineId ? "pipeline not found" : "org has no default pipeline");
+      throw new NotFoundException(pipelineId ? "pipeline not found" : "org has no active pipeline");
     }
-    return { id: pipeline.id, stages: parsePipelineStages(pipeline.stages) };
+    return pipeline;
   }
 
   @Get()
@@ -116,11 +150,30 @@ export class DealsController {
   async list(
     @OrgId() orgId: string,
     @Query() query: unknown,
+    @Req() req: PrincipalRequest,
     @RecordScope() recordScope: CrmRecordScope,
   ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { pipelineId, stage, status, contactId, accountId, q, sort, limit, offset } = parsed.data;
+    const {
+      pipelineId,
+      stage,
+      status,
+      contactId,
+      accountId,
+      q,
+      owner,
+      tagId,
+      staleDays,
+      createdFrom,
+      createdTo,
+      sort,
+      limit,
+      offset,
+    } = parsed.data;
+
+    const me = actorUserId(req);
+    if (owner === "me" && !me) return { deals: [], total: 0, limit, offset };
 
     return this.db.withOrg(orgId, async (client) => {
       const where: string[] = [];
@@ -132,9 +185,20 @@ export class DealsController {
 
       if (pipelineId) add("d.pipeline_id = $?", pipelineId);
       if (stage) add("d.stage = $?", stage);
-      if (status) add("d.status = $?", status);
+      if (status === "closed") where.push("d.status IN ('won', 'lost')");
+      else if (status) add("d.status = $?", status);
+      if (createdFrom) add("d.created_at >= $?::date", createdFrom);
+      if (createdTo) add("d.created_at < ($?::date + 1)", createdTo);
       if (contactId) add("d.contact_id = $?", contactId);
       if (accountId) add("d.account_id = $?", accountId);
+      if (owner === "none") where.push("d.owner_user_id IS NULL");
+      else if (owner) add("d.owner_user_id = $?", owner === "me" ? me : owner);
+      if (tagId) add("EXISTS (SELECT 1 FROM deal_tags dt WHERE dt.deal_id = d.id AND dt.tag_id = $?)", tagId);
+      // Only deals past a stale threshold - the table's "stale" filter. Same
+      // predicate as the board's per-column stage_stale count.
+      if (staleDays) {
+        add("d.status = 'open' AND d.last_activity_at <= now() - make_interval(days => $?::int)", staleDays);
+      }
 
       // The `owned` half of the permission grid. A role granted deal:view with
       // scope 'owned' sees only its own pipeline - applied here because it is a
@@ -156,7 +220,7 @@ export class DealsController {
 
       params.push(limit, offset);
       const { rows } = await client.query(
-        `SELECT ${DEAL_COLUMNS}, count(*) OVER()::int AS total_count
+        `SELECT ${DEAL_COLUMNS}${DEAL_LIST_EXTRAS}, count(*) OVER()::int AS total_count
            ${DEAL_JOINS}
           ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
           ORDER BY ${ORDER[sort]}
@@ -186,7 +250,7 @@ export class DealsController {
     const { pipelineId, perStage } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      const pipeline = await this.resolvePipeline(client, pipelineId);
+      const pipeline = await this.resolvePipeline(client, orgId, pipelineId);
 
       // Rank inside each stage in one pass - a query per column would be N
       // round trips for a board that is read on every page load (same
@@ -195,19 +259,40 @@ export class DealsController {
       // stage_total and stage_value are computed by those windows, so
       // filtering after the fact would show a scoped user their own cards
       // under somebody else's column totals.
-      const scoped = scopeClause("deal", recordScope, 3, "d");
+      // The pipeline's stale threshold (migration 0106) - display only, see the
+      // migration header. Read here rather than through resolveDealPipeline so
+      // the shared resolver keeps returning exactly what every write path needs.
+      const {
+        rows: [settings],
+      } = await client.query<{ stale_after_days: number }>(
+        `SELECT stale_after_days FROM deal_pipelines WHERE id = $1`,
+        [pipeline.id],
+      );
+      const staleAfterDays = settings?.stale_after_days ?? 7;
+
+      // `stage_stale` sits inside the same scoped partition as the other two
+      // windows, for the same reason. Its predicate is the web's staleDays()
+      // (apps/web/lib/deal-staleness.ts) in SQL: open, and idle for at least
+      // the threshold. Counted over the WHOLE column, not the top N cards.
+      const scoped = scopeClause("deal", recordScope, 4, "d");
       const { rows } = await client.query(
         `SELECT * FROM (
            SELECT ${DEAL_COLUMNS},
                   row_number() OVER (PARTITION BY d.stage ORDER BY d.last_activity_at DESC) AS rn,
                   count(*)     OVER (PARTITION BY d.stage)::int AS stage_total,
-                  COALESCE(sum(d.amount) OVER (PARTITION BY d.stage), 0)::float AS stage_value
+                  COALESCE(sum(d.amount) OVER (PARTITION BY d.stage), 0)::float AS stage_value,
+                  (count(*) FILTER (
+                     WHERE d.status = 'open'
+                       AND d.last_activity_at <= now() - make_interval(days => $3::int)
+                   ) OVER (PARTITION BY d.stage))::int AS stage_stale
              ${DEAL_JOINS}
             WHERE d.pipeline_id = $1 ${scoped ? `AND ${scoped}` : ""}
          ) ranked
           WHERE rn <= $2
           ORDER BY rn`,
-        scoped ? [pipeline.id, perStage, recordScope.userId] : [pipeline.id, perStage],
+        scoped
+          ? [pipeline.id, perStage, staleAfterDays, recordScope.userId]
+          : [pipeline.id, perStage, staleAfterDays],
       );
 
       const columns = pipeline.stages.map((s) => {
@@ -216,7 +301,10 @@ export class DealsController {
           ...s,
           count: cards[0]?.stage_total ?? 0,
           value: cards[0]?.stage_value ?? 0,
-          deals: cards.map(({ rn: _rn, stage_total: _t, stage_value: _v, ...d }) => d),
+          staleCount: cards[0]?.stage_stale ?? 0,
+          deals: cards.map(
+            ({ rn: _rn, stage_total: _t, stage_value: _v, stage_stale: _s, ...d }) => d,
+          ),
         };
       });
 
@@ -226,7 +314,13 @@ export class DealsController {
       const known = new Set(pipeline.stages.map((s) => s.key));
       const orphans = rows.filter((r) => !known.has(String(r.stage)));
 
-      return { pipelineId: pipeline.id, columns, orphaned: orphans.length, stages: pipeline.stages };
+      return {
+        pipelineId: pipeline.id,
+        columns,
+        orphaned: orphans.length,
+        stages: pipeline.stages,
+        staleAfterDays,
+      };
     });
   }
 
@@ -314,7 +408,14 @@ export class DealsController {
     const p = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
-      const pipeline = await this.resolvePipeline(client, p.pipelineId);
+      // Foreign-key checks ignore RLS, so a deal could otherwise hang off
+      // another tenant's contact, account or workspace (doc 23, A2).
+      await assertInOrg(client, orgId, {
+        workspaceId: p.workspaceId,
+        accountId: p.accountId,
+        contactId: p.contactId,
+      });
+      const pipeline = await this.resolvePipeline(client, orgId, p.pipelineId, true);
 
       const stage = p.stage ?? entryStage(pipeline.stages);
       if (!pipeline.stages.some((s) => s.key === stage)) {
@@ -323,6 +424,11 @@ export class DealsController {
         );
       }
       const status = statusForStage(pipeline.stages, stage);
+
+      // A deal for a contact, with no account given, belongs to that contact's
+      // company. Without this every deal raised from a contact page landed
+      // under "No account" in every by-account report (doc 23, F2).
+      const accountId = p.accountId ?? (await this.contactAccount(client, p.contactId));
 
       const {
         rows: [inserted],
@@ -336,7 +442,7 @@ export class DealsController {
           orgId,
           p.workspaceId ?? null,
           pipeline.id,
-          p.accountId ?? null,
+          accountId,
           p.contactId ?? null,
           p.name,
           stage,
@@ -388,6 +494,39 @@ export class DealsController {
    * stamped for time-in-stage reporting - same contract as
    * owner/leads.controller.ts's update handler.
    */
+  /**
+   * Give many deals one owner - the table's bulk "Reassign". Same grant as the
+   * PATCH's ownerUserId, scope in the UPDATE (bulk-assign.ts), and no
+   * last_activity_at bump, so a redistributed stale deal still reads as stale.
+   */
+  @Post("reassign")
+  @RequireCrmPermission("deal", "edit")
+  async reassign(
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+    @RecordScope() recordScope: CrmRecordScope,
+  ): Promise<BulkResult> {
+    const parsed = BulkReassignInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { ids, ownerUserId } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      await assertInOrg(client, orgId, { dealId: ids });
+      await assertMembers(client, orgId, { ownerUserId });
+      const updated = await assignInBulk(client, {
+        orgId,
+        table: "deals",
+        column: "owner_user_id",
+        value: ownerUserId,
+        ids,
+        owned: scopeFilter("deal", recordScope, "r"),
+        audit: { targetType: "deal", action: "deal.reassign", actorId: req.principal?.userId ?? "dev-admin" },
+      });
+      return { updated: updated.length, skipped: ids.length - updated.length };
+    });
+  }
+
   @Patch(":id")
   @RequireCrmPermission("deal", "edit")
   async update(
@@ -403,6 +542,10 @@ export class DealsController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // Doc 23, A1/A2 - see common/org-references.ts.
+      await assertInOrg(client, orgId, { accountId: p.accountId, contactId: p.contactId });
+      await assertMembers(client, orgId, { ownerUserId: p.ownerUserId });
+
       let status: string | null = null;
       let previous: { stage: string; status: string } | null = null;
       if (p.stage) {
@@ -414,7 +557,7 @@ export class DealsController {
           scoped ? [id, recordScope.userId] : [id],
         );
         if (!existing) throw new NotFoundException("deal not found");
-        const pipeline = await this.resolvePipeline(client, existing.pipeline_id);
+        const pipeline = await this.resolvePipeline(client, orgId, existing.pipeline_id);
         if (!pipeline.stages.some((s) => s.key === p.stage)) {
           throw new BadRequestException(
             `unknown stage "${p.stage}" - valid stages: ${pipeline.stages.map((s) => s.key).join(", ")}`,
@@ -475,6 +618,19 @@ export class DealsController {
       );
       if (!updated) throw new NotFoundException("deal not found");
 
+      // Linking a contact to a deal with no account fills the account from the
+      // contact (doc 23, F2). Only an EMPTY slot, and only when this request did
+      // not set the account itself - an account a person chose is never replaced.
+      if (p.contactId && p.accountId === undefined) {
+        const inherited = await this.contactAccount(client, p.contactId);
+        if (inherited) {
+          await client.query(`UPDATE deals SET account_id = $2 WHERE id = $1 AND account_id IS NULL`, [
+            id,
+            inherited,
+          ]);
+        }
+      }
+
       if (p.stage && previous) {
         // recordStageTransition drops a no-op move itself, so a drag that
         // lands a card back in its own column writes nothing.
@@ -503,22 +659,31 @@ export class DealsController {
           amount?: string | number | null;
           owner_user_id?: string | null;
         };
-        await enqueueAutomationEventSafely(client, orgId, "deal.stage_changed", "deal", id, {
-          dealId: id,
-          contactId: row?.contact_id ?? null,
-          accountId: row?.account_id ?? null,
-          stage: p.stage,
-          fromStage: previous.stage,
-          toStage: p.stage,
-          status: status ?? previous.status,
-          amount: row?.amount === null || row?.amount === undefined ? null : Number(row.amount),
-          dealOwnerUserId: row?.owner_user_id ?? null,
-        });
+        // Same builder the Lead Board's PATCH uses (doc 23, C2).
+        await enqueueAutomationEventSafely(
+          client,
+          orgId,
+          "deal.stage_changed",
+          "deal",
+          id,
+          dealStageChangedSubject({ ...row, id }, previous.stage, p.stage, status ?? previous.status),
+        );
       }
 
       await this.audit(client, orgId, p.stage ? "deal.stage_change" : "deal.update", id, req);
       return { deal };
     });
+  }
+
+  /** The account a contact is filed under, or null. Already org-checked by the caller. */
+  private async contactAccount(client: DbClient, contactId: string | null | undefined): Promise<string | null> {
+    if (!contactId) return null;
+    const {
+      rows: [contact],
+    } = await client.query<{ account_id: string | null }>(`SELECT account_id FROM contacts WHERE id = $1`, [
+      contactId,
+    ]);
+    return contact?.account_id ?? null;
   }
 
   private async audit(
@@ -537,7 +702,3 @@ export class DealsController {
 }
 
 /** Same validate-or-null the other CRM controllers need - see interactions.controller.ts. */
-function actorUserId(req: PrincipalRequest): string | null {
-  const parsed = z.string().uuid().safeParse(req.principal?.userId);
-  return parsed.success ? parsed.data : null;
-}
