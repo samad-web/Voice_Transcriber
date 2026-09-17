@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Copy, LogIn } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, useAlert, useToast } from "@aura/ui";
+import { Button, Card, MonoLabel, useAlert, useToast } from "@aura/ui";
 
 /**
  * The one address a customer signs in at: `<this origin>/login`.
@@ -36,21 +36,30 @@ export function useSignInUrl(): string | null {
   return url;
 }
 
-/** The URL in a copyable box plus its copy button. No card, no heading. */
+/**
+ * The URL in a copyable field with its copy button. No card, no heading.
+ *
+ * One row, themed tokens. It was a brutalist `bg-neutral-50 border-2
+ * border-black` box - a hard-coded near-white slab that stayed white on the
+ * dark theme - over a full-width upper-case button, two rows tall for one
+ * short address.
+ */
 export function SignInLink() {
   const url = useSignInUrl();
   const alert = useAlert();
   const toast = useToast();
 
   return (
-    <>
-      <div className="bg-neutral-50 border-2 border-black p-2.5 font-mono text-xs break-all">
+    <div className="flex items-center gap-2 rounded-md border border-border bg-surface py-1.5 pr-1.5 pl-3">
+      <span className="min-w-0 flex-1 font-mono text-xs break-all text-text">
         {url ?? "Loading…"}
-      </div>
+      </span>
 
-      <BrutalButton
+      <Button
+        type="button"
         variant="secondary"
-        className="w-full"
+        size="sm"
+        className="shrink-0"
         disabled={!url}
         // Sync, not `async` - same reasoning as PasswordReveal in
         // owner-accounts.tsx: React discards the return value, so an async
@@ -63,16 +72,16 @@ export function SignInLink() {
             .catch(() =>
               alert({
                 title: "Couldn't copy the sign-in link",
-                body: "Select the address above and copy it by hand.",
+                body: "Select the address beside the button and copy it by hand.",
                 tone: "danger",
               }),
             );
         }}
       >
-        <Copy className="h-4 w-4" />
-        COPY SIGN-IN LINK
-      </BrutalButton>
-    </>
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+        Copy link
+      </Button>
+    </div>
   );
 }
 
@@ -98,7 +107,7 @@ export function SignInLinkCard() {
         <MonoLabel>Client sign-in link</MonoLabel>
       </div>
 
-      <p className="text-xs text-neutral-500 font-sans font-medium leading-relaxed">
+      <p className="text-xs leading-relaxed text-text-muted">
         Send this to any customer. They sign in with the email and password created for them under{" "}
         <strong>Owner accounts</strong> on their instance - there is no public sign-up, and the
         instance is resolved from the account, so nobody can reach another client&rsquo;s data.

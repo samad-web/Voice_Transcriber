@@ -3,17 +3,9 @@
 import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff } from "lucide-react";
-import {
-  Button,
-  Card,
-  MonoLabel,
-  RowHint,
-  StatusChip,
-  useAlert,
-  useConfirm,
-  useToast,
-} from "@aura/ui";
+import { Button, RowHint, useAlert, useConfirm, useToast } from "@aura/ui";
 import { reprocessBacklogAction, setTranscriptionEnabledAction } from "./actions";
+import { MODULE_INSET, ModuleCard } from "./module-card";
 
 /**
  * How much of the untranscribed backlog to pick up when switching transcription
@@ -126,17 +118,38 @@ export function TranscriptionToggle({
   };
 
   return (
-    <Card elevated className="space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          {enabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          <MonoLabel>Transcription</MonoLabel>
-        </div>
-        <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
-      </div>
-
+    <ModuleCard
+      icon={enabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+      title="Transcription"
+      enabled={enabled}
+      action={
+        asking ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={pending}
+            onClick={() => setAsking(false)}
+          >
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant={enabled ? "secondary" : "primary"}
+            size="sm"
+            disabled={pending}
+            loading={pending}
+            aria-describedby={`${hintId}-state`}
+            onClick={enabled ? () => void disable() : () => setAsking(true)}
+          >
+            {enabled ? "Turn off transcription" : "Turn on transcription"}
+          </Button>
+        )
+      }
+    >
       {/* Wired to the button below with aria-describedby, not just placed near
-          it. A screen-reader user who tabs straight onto "Enable transcription"
+          it. A screen-reader user who tabs straight onto "Turn on transcription"
           would otherwise hear a verb and nothing about what it costs or what it
           leaves alone - which is the entire content of the decision. */}
       <RowHint kind="toggle" id={`${hintId}-state`}>
@@ -146,8 +159,10 @@ export function TranscriptionToggle({
       </RowHint>
 
       {asking ? (
-        <div className="space-y-2 rounded-md border border-border-strong bg-bg-subtle p-3">
-          <MonoLabel>How much of the backlog should be transcribed?</MonoLabel>
+        <div className={`space-y-2 ${MODULE_INSET}`}>
+          <p className="text-xs font-medium text-text">
+            How much of the backlog should be transcribed?
+          </p>
           <RowHint kind="action">
             Calls that arrived while transcription was off still have their audio. Transcribing
             them costs the same as a new call, so pick a window.
@@ -166,27 +181,8 @@ export function TranscriptionToggle({
               </button>
             ))}
           </div>
-          <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => setAsking(false)}>
-            Cancel
-          </Button>
         </div>
-      ) : (
-        <Button
-          type="button"
-          variant={enabled ? "secondary" : "primary"}
-          disabled={pending}
-          loading={pending}
-          aria-describedby={`${hintId}-state`}
-          onClick={enabled ? () => void disable() : () => setAsking(true)}
-        >
-          {enabled ? (
-            <MicOff className="h-4 w-4" aria-hidden="true" />
-          ) : (
-            <Mic className="h-4 w-4" aria-hidden="true" />
-          )}
-          {enabled ? "Disable transcription" : "Enable transcription"}
-        </Button>
-      )}
-    </Card>
+      ) : null}
+    </ModuleCard>
   );
 }

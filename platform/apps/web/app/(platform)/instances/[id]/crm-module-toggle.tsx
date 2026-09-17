@@ -3,9 +3,10 @@
 import { useId, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Handshake } from "lucide-react";
-import { Button, Card, MonoLabel, RowHint, StatusChip, useAlert, useConfirm } from "@aura/ui";
+import { Button, MonoLabel, RowHint, StatusChip, useAlert, useConfirm } from "@aura/ui";
 import { SignInLink } from "../sign-in-link";
 import { setModuleEnabledAction } from "./actions";
+import { MODULE_INSET, ModuleCard } from "./module-card";
 import type { OwnerRow } from "./owner-accounts";
 
 /**
@@ -74,15 +75,24 @@ export function CrmModuleToggle({
   };
 
   return (
-    <Card elevated className="space-y-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Handshake className="h-4 w-4" />
-          <MonoLabel>CRM</MonoLabel>
-        </div>
-        <StatusChip tone={enabled ? "solid" : "muted"}>{enabled ? "On" : "Off"}</StatusChip>
-      </div>
-
+    <ModuleCard
+      icon={<Handshake className="h-4 w-4" />}
+      title="CRM"
+      enabled={enabled}
+      action={
+        <Button
+          type="button"
+          variant={enabled ? "secondary" : "primary"}
+          size="sm"
+          disabled={pending}
+          loading={pending}
+          aria-describedby={`${hintId}-state`}
+          onClick={() => void toggle(!enabled)}
+        >
+          {enabled ? "Turn off CRM" : "Turn on CRM"}
+        </Button>
+      }
+    >
       <RowHint kind="toggle" id={`${hintId}-state`}>
         {enabled
           ? "On: this client's team has Contacts, Accounts, Deals, Tasks and the rest of the CRM."
@@ -90,18 +100,7 @@ export function CrmModuleToggle({
       </RowHint>
 
       {enabled ? <SignInDetails instanceName={instanceName} owners={owners} /> : null}
-
-      <Button
-        type="button"
-        variant={enabled ? "secondary" : "primary"}
-        disabled={pending}
-        loading={pending}
-        aria-describedby={`${hintId}-state`}
-        onClick={() => void toggle(!enabled)}
-      >
-        {enabled ? "Disable CRM" : "Enable CRM"}
-      </Button>
-    </Card>
+    </ModuleCard>
   );
 }
 
@@ -123,9 +122,9 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
   const canSignIn = owners.filter((o) => o.hasLogin && o.status === "active");
 
   return (
-    <div className="space-y-2.5 rounded-md border border-border-strong bg-bg-subtle p-3.5">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <MonoLabel>Where {instanceName} signs in</MonoLabel>
+    <div className={`space-y-3 ${MODULE_INSET}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium text-text">Where {instanceName} signs in</p>
         <StatusChip tone={canSignIn.length > 0 ? "solid" : "danger"}>
           {canSignIn.length > 0 ? `${canSignIn.length} can sign in` : "No logins yet"}
         </StatusChip>
@@ -134,11 +133,17 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
       <SignInLink />
 
       {canSignIn.length > 0 ? (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <MonoLabel>Accounts that can sign in</MonoLabel>
-          <ul className="space-y-0.5">
+          {/* Wrapping pills rather than one address per line: two or three
+              logins sit on a single row, so this panel does not stretch the
+              card next to it by a line per account. */}
+          <ul className="flex flex-wrap gap-1.5">
             {canSignIn.map((o) => (
-              <li key={o.userId} className="font-mono text-xs break-all text-text">
+              <li
+                key={o.userId}
+                className="rounded-md border border-border bg-surface px-2 py-0.5 font-mono text-xs break-all text-text"
+              >
                 {o.email}
               </li>
             ))}
@@ -149,9 +154,9 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
         // is neither a missed call nor - strictly - an error: it is a setup step
         // nobody has done yet. Neutral chrome plus a hint that says what to do
         // carries it, and leaves the palette for the four things that need it.
-        <div className="rounded-md border border-border-strong bg-surface p-2.5">
+        <div className="rounded-md border border-border bg-surface p-2.5">
           <RowHint kind="action">
-            Nobody can sign in yet. Create an account in <strong>Owner accounts</strong> above -
+            Nobody can sign in yet. Create an account in the <strong>Access</strong> section below -
             that makes the login and grants access to this instance in a single step, and shows a
             temporary password once.
           </RowHint>
@@ -159,9 +164,9 @@ function SignInDetails({ instanceName, owners }: { instanceName: string; owners:
       )}
 
       <p className="text-xs leading-relaxed text-text-muted">
-        They sign in with their email and password and land straight on this instance. The
-        instance is resolved from the sign-in itself, so there is nothing for them to pick and no
-        address that reaches another client&rsquo;s data.
+        They sign in with their email and password and land straight on this instance. It is
+        resolved from the sign-in itself, so there is nothing to pick and no address that reaches
+        another client&rsquo;s data.
       </p>
     </div>
   );

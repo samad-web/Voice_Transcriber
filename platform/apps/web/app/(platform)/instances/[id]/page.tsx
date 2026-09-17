@@ -914,12 +914,28 @@ export default async function InstanceDetailPage({
         title="Modules"
         description="What this customer's own console can see. Each switch is scoped to this tenant."
       >
-        {/* Four small on/off cards. As a 2x2 they occupy one screen instead of
-            four stacked ones, and the whole module state is one glance. */}
-        <div className="grid items-start gap-5 sm:grid-cols-2">
+        {/* Four on/off cards, 2x2, so the whole module state is one glance.
+
+            The grid stretches (no `items-start`) and ModuleCard pins each
+            button to a footer, so cards in a row share a height and their
+            headers and buttons line up.
+
+            The rows are paired by kind, which also pairs them by height.
+            Row 1 is what runs on the tenant's data - paid ASR, and WhatsApp
+            text sent to an AI provider - and both are a bare switch. Row 2 is
+            what the tenant's own console shows, and both carry a panel about
+            which of their accounts it reaches. Pairing a bare switch with a
+            panel card is what left a card-sized hole under the short one. */}
+        <div className="grid gap-5 lg:grid-cols-2">
           <TranscriptionToggle
             orgId={orgId}
             enabled={org.transcription_enabled !== false}
+            instanceName={org.name}
+          />
+          <QualificationToggle
+            orgId={orgId}
+            enabled={org.whatsapp_qualification_enabled === true}
+            retentionDays={org.qualification_retention_days ?? 90}
             instanceName={org.name}
           />
           <CallIntelToggle
@@ -935,12 +951,6 @@ export default async function InstanceDetailPage({
             instanceName={org.name}
             owners={owners}
             modules={org.enabled_modules}
-          />
-          <QualificationToggle
-            orgId={orgId}
-            enabled={org.whatsapp_qualification_enabled === true}
-            retentionDays={org.qualification_retention_days ?? 90}
-            instanceName={org.name}
           />
         </div>
       </Section>
