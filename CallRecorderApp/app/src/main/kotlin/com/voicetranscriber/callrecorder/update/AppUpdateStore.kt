@@ -40,6 +40,9 @@ object AppUpdateStore {
 
     fun pendingNotes(context: Context): String? = prefs(context).getString("notes", null)
 
+    /** When the pending build finished verifying (epoch millis), or 0 when unknown. */
+    fun readySince(context: Context): Long = prefs(context).getLong("ready_at", 0L)
+
     /**
      * The pending APK, but only when the recorded build is genuinely newer than
      * what is installed AND the file is still on disk.
@@ -61,6 +64,7 @@ object AppUpdateStore {
             .putInt("version_code", update.versionCode)
             .putString("version_name", update.versionName)
             .putString("notes", update.notes)
+            .putLong("ready_at", System.currentTimeMillis())
             .apply()
         // Everything that is not the build we just verified is dead weight - a
         // superseded download, or a `.part` from a transfer that never finished.

@@ -10,6 +10,7 @@ import com.voicetranscriber.callrecorder.platform.FcmTokenManager
 import com.voicetranscriber.callrecorder.platform.HealthWorker
 import com.voicetranscriber.callrecorder.storage.RecordingDatabase
 import com.voicetranscriber.callrecorder.update.AppUpdateWorker
+import com.voicetranscriber.callrecorder.update.AutoInstaller
 import com.voicetranscriber.callrecorder.util.ThemeManager
 
 class App : Application() {
@@ -19,6 +20,8 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // Lets the unattended updater avoid replacing the app while someone is using it.
+        registerActivityLifecycleCallbacks(AutoInstaller.activityTracker)
         // Material You: theme the app from the device wallpaper on Android 12+.
         DynamicColors.applyToActivitiesIfAvailable(this)
         // Apply the saved Light/Dark/System preference.
@@ -59,7 +62,8 @@ class App : Application() {
         //   PhoneStateReceiver handles the responsive path.
         OemIngestWorker.schedule(this)
         // - AppUpdateWorker (~6h, wifi): downloads and verifies a newer APK, then
-        //   offers it. Purely advisory - it can never stop this device recording.
+        //   installs it - unattended on Android 12+, never during a call. It can
+        //   never stop this device recording.
         AppUpdateWorker.schedule(this)
         // Self-heal the FCM push registration. No-ops (one prefs read) when the
         // server already holds this device's current token; enqueues a retry

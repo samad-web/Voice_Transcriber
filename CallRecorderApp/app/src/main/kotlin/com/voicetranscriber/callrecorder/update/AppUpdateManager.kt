@@ -14,13 +14,12 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Check → download → verify. Everything up to, but NOT including, the install:
- * handing bytes to the package installer needs a foreground window, so that
- * half lives in [UpdateInstallActivity].
+ * Check → download → verify. Everything up to, but NOT including, the install,
+ * which is [AutoInstaller] (unattended) or [UpdateInstallActivity] (tapped).
  *
- * The split is deliberate. This side is allowed to run unattended on a worker
- * and can afford to fail quietly; the install side is the only part the person
- * holding the phone ever sees, and it must be driven by their tap.
+ * The split is deliberate. This side can afford to fail quietly and retry next
+ * cycle; the install side is the one that kills the running app, so it alone
+ * decides when that is safe.
  */
 object AppUpdateManager {
 

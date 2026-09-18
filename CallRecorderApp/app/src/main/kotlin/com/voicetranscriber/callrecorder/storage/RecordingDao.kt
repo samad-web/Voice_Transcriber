@@ -55,10 +55,19 @@ interface RecordingDao {
 
     // --- Upload subsystem ---
 
-    /** Finished recordings that still need uploading (PENDING or a previously FAILED attempt). */
+    /**
+     * Finished recordings that still need uploading: PENDING, a previously FAILED
+     * attempt, or UPLOADING.
+     *
+     * UPLOADING belongs here because only one UploadWorker ever runs (a unique
+     * work chain in UploadScheduler), so a row still UPLOADING when a run starts
+     * was left by a run whose process died mid-send - killed by Android, or by an
+     * app update replacing it. Leaving it out stranded that call on the phone
+     * forever. Re-sending is safe: the idempotency key is the local row id.
+     */
     @Query(
         "SELECT * FROM recordings " +
-            "WHERE uploadState IN ('PENDING', 'FAILED') AND endedAt IS NOT NULL " +
+            "WHERE uploadState IN ('PENDING', 'UPLOADING', 'FAILED') AND endedAt IS NOT NULL " +
             "ORDER BY startedAt ASC",
     )
     suspend fun pendingUploads(): List<RecordingEntity>
@@ -66,7 +75,7 @@ interface RecordingDao {
     /** How many finished recordings are still queued for upload (device-health metric). */
     @Query(
         "SELECT COUNT(*) FROM recordings " +
-            "WHERE uploadState IN ('PENDING', 'FAILED') AND endedAt IS NOT NULL",
+            "WHERE uploadState IN ('PENDING', 'UPLOADING', 'FAILED') AND endedAt IS NOT NULL",
     )
     suspend fun countPendingUploads(): Int
 

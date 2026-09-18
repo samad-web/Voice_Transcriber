@@ -12,11 +12,13 @@ import com.voicetranscriber.callrecorder.App
 import com.voicetranscriber.callrecorder.R
 
 /**
- * The one thing the handset's user ever sees about updating: a notification
- * saying a new build is ready, whose tap goes straight to the installer.
+ * A notification saying a new build is ready, whose tap goes straight to the
+ * installer.
  *
- * Nothing here is silent or automatic. The download already happened in the
- * background; installing is a decision, and this is where it is asked for.
+ * The FALLBACK, not the normal path: on Android 12+ [AutoInstaller] installs
+ * without asking. This appears only where that cannot happen - older Android,
+ * a phone whose installer insists on a confirmation, or a build that has waited
+ * a day for a safe moment to install.
  */
 object UpdateNotification {
 

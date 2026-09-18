@@ -228,10 +228,21 @@ GET /v1/devices/me/update  (DeviceAuthGuard)
   └─ returns a presigned download URL, generated per request (bucket stays private)
         │
         ▼
-Android: ~6h wifi-only worker → download → verify SHA-256 → notification
-  → tap runs a PackageInstaller session (system confirmation every time)
-  → reports the installed version back via POST /v1/devices/me/health → devices.app_version
+Android: ~6h wifi-only worker → download → verify SHA-256
+  ├─ Android 12+: AutoInstaller commits a session with USER_ACTION_NOT_REQUIRED
+  │    - only when no call is ringing/active/recording and the app is not on screen,
+  │      otherwise retries every 30 min
+  │    - falls back to the notification if the system still wants a confirmation,
+  │      or after a day of waiting
+  ├─ Android 8-11: notification → tap runs a PackageInstaller session (system confirmation)
+  └─ reports the installed version back via POST /v1/devices/me/health → devices.app_version
 ```
+
+Unattended install needs the RUNNING build to hold
+`UPDATE_PACKAGES_WITHOUT_USER_ACTION`, so the first hop onto a build that has it
+(from 1.1.3 or older) is still a tap. Every hop after that is not. Since nobody
+confirms an install any more, publishing a build installs it on the whole fleet:
+try every build on one handset before `--publish`.
 
 The route is advisory by construction: it cannot touch `recordingEnabled`, so a
 bad release cannot take the fleet offline. `publish-app-release.js` refuses a

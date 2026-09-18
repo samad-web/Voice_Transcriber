@@ -82,6 +82,7 @@ class RecordingService : Service() {
             val cap = AudioCapturer(profile, outFile)
             cap.start()
             capturer = cap
+            isRecording = true
             // Record which source actually won the probe, so the UI can show it.
             current = current?.copy(audioSource = cap.activeSourceName)
             // Consent transparency: play a short record-announcement beep (default on).
@@ -218,6 +219,7 @@ class RecordingService : Service() {
     override fun onDestroy() {
         capturer?.stop()
         scope.cancel()
+        isRecording = false
         super.onDestroy()
     }
 
@@ -232,6 +234,16 @@ class RecordingService : Service() {
         private const val TAG = "RecordingService"
         private const val CONSENT_TONE_MS = 200
         private const val CONSENT_TONE_VOLUME = 80 // 0..100
+
+        /**
+         * True from a successful capture start until the service is destroyed -
+         * which, by design, is only after the recording's DB save has finished
+         * (see stopRecording). The unattended updater reads it: replacing the
+         * app kills this process, and with it an unsaved call.
+         */
+        @Volatile
+        var isRecording: Boolean = false
+            private set
 
         fun start(context: Context, sourceId: String, callee: String?, direction: String? = null) {
             val i = Intent(context, RecordingService::class.java).apply {

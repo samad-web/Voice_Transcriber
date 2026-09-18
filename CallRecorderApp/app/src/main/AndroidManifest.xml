@@ -7,10 +7,13 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- In-app updates. This app is sideloaded, not on Play, so nothing else can
          replace it - without this a fix means physically collecting handsets.
-         It only permits ASKING: the user still confirms every install in the
-         system dialog, and Android verifies the signature matches the installed
-         app, so this cannot be used to swap in a different app. -->
+         Android verifies the new APK is signed with the installed app's key, so
+         neither permission can be used to swap in a different app. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 12+: lets this app install ITS OWN updates without the system's
+         "Update app?" dialog (update/UpdateSession.kt has the conditions). It
+         covers self-updates only, never installing any other app. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <!-- Core capture -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -123,6 +126,18 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Unattended updates: the install outcome (explicit intent from our own
+             PendingIntent) and MY_PACKAGE_REPLACED (sent by the system to the new
+             build). Neither needs exporting - the system reaches unexported
+             receivers. -->
+        <receiver
+            android:name=".update.UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Phone-call state (native cellular calls) -->
         <receiver

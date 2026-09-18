@@ -18,9 +18,11 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Installs the APK [AppUpdateManager] already downloaded and verified. Invisible
- * - it has no layout and finishes itself; the only thing the user sees is
- * Android's own "Update app?" confirmation.
+ * Installs the APK [AppUpdateManager] already downloaded and verified, when a
+ * person taps for it: the notification ([AutoInstaller]'s fallback) or the
+ * settings sheet. Invisible - it has no layout and finishes itself. On Android
+ * 12+ the tap usually installs straight away (see [UpdateSession]); otherwise
+ * the only thing the user sees is Android's own "Update app?" confirmation.
  *
  * WHY AN ACTIVITY AND NOT A RECEIVER. `PackageInstaller` answers a commit with
  * `STATUS_PENDING_USER_ACTION` and an Intent that must be launched to show that
@@ -86,25 +88,7 @@ class UpdateInstallActivity : AppCompatActivity() {
      */
     private suspend fun commit(apk: File) {
         try {
-            val installer = packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(
-                PackageInstaller.SessionParams.MODE_FULL_INSTALL,
-            )
-            params.setAppPackageName(packageName)
-
-            val sessionId = withContext(Dispatchers.IO) {
-                val id = installer.createSession(params)
-                installer.openSession(id).use { session ->
-                    session.openWrite(SESSION_NAME, 0, apk.length()).use { output ->
-                        apk.inputStream().use { it.copyTo(output) }
-                        // fsync before close: the session is committed from the
-                        // bytes the installer can actually see on disk, and a
-                        // buffered tail would fail verification as a corrupt APK.
-                        session.fsync(output)
-                    }
-                }
-                id
-            }
+            val sessionId = withContext(Dispatchers.IO) { UpdateSession.write(this@UpdateInstallActivity, apk) }
 
             val callback = PendingIntent.getActivity(
                 this,
@@ -118,7 +102,7 @@ class UpdateInstallActivity : AppCompatActivity() {
                 PendingIntent.FLAG_UPDATE_CURRENT or mutabilityFlag(),
             )
             withContext(Dispatchers.IO) {
-                installer.openSession(sessionId).use { it.commit(callback.intentSender) }
+                UpdateSession.commit(this@UpdateInstallActivity, sessionId, callback.intentSender)
             }
         } catch (t: Throwable) {
             Log.w(TAG, "install session failed", t)
@@ -178,6 +162,5 @@ class UpdateInstallActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "UpdateInstall"
         private const val ACTION_STATUS = "com.voicetranscriber.callrecorder.INSTALL_STATUS"
-        private const val SESSION_NAME = "aura-update"
     }
 }
