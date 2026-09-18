@@ -327,6 +327,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/agents",
+    label: "AI agents",
+    icon: Sparkles,
+    title: "AI Agent Studio",
+    context: "Team",
+    // Owner and manager, for the Call procedure reason next door: an extractor
+    // decides which of the floor's calls become leads, and the people whose
+    // calls are counted should not be the ones setting the rule. The API
+    // enforces it on every route of owner-agents.controller.ts.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/productivity",
     label: "Productivity",
     icon: Gauge,
@@ -734,6 +746,8 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   // `aura` module, and a recording-only tenant with no CRM must still see it.
   "/owner/productivity": "conversations",
   "/owner/sops": "conversations",
+  // Beside Call procedure: both define how the floor's conversations are read.
+  "/owner/agents": "conversations",
   "/owner/inbox": "conversations",
   "/owner/whatsapp-leads": "conversations",
 

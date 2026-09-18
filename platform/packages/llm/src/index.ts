@@ -523,19 +523,61 @@ const AGENT_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
   required: ["name", "systemPrompt", "fields"],
 };
 
+/**
+ * The kinds of agent the studio can draft (packages/shared agent-kinds.ts).
+ * Spelled out rather than imported as a type so this package's public
+ * signature does not grow a dependency on the studio's zod schemas.
+ */
+export type AgentDraftKind = "call_extractor" | "chat_qualifier" | "reply_drafter";
+
+/** A qualifier's extra details are capped lower than an extractor's (AGENT_KIND_SPECS). */
+const QUALIFIER_MAX_DRAFT_FIELDS = 12;
+
+const FIELD_RULES =
+  "Field keys must be snake_case (lowercase letters, digits, underscores, starting " +
+  "with a letter). Every 'enum' field must list at least one non-empty enumValues " +
+  "option - an enum with no options can never be satisfied. Field types are exactly " +
+  "one of: string, number, boolean, enum, datetime, string[].";
+
+function agentDraftDomain(kind: AgentDraftKind): string {
+  switch (kind) {
+    case "chat_qualifier":
+      return (
+        "You are designing a WhatsApp enquiry qualifier for a small business's CRM. " +
+        "The platform already classifies each conversation (prospect, existing customer, " +
+        "vendor, personal, spam and so on) and extracts name, email, company and budget " +
+        "itself - do NOT add fields for those. The agent's systemPrompt is the business's " +
+        "own guidance: what the business sells, and what counts as a real enquiry for it. " +
+        `Its fields are at most ${QUALIFIER_MAX_DRAFT_FIELDS} EXTRA details worth pulling ` +
+        "out of an enquiry (for example the product asked about or the delivery city). " +
+        "Never set a field's required flag to true. " +
+        FIELD_RULES
+      );
+    case "reply_drafter":
+      return (
+        "You are designing a reply-drafting assistant for a small business's CRM. " +
+        "When a salesperson asks, it writes a suggested follow-up message to a customer " +
+        "after a call or a chat; the salesperson edits and sends it themselves. The " +
+        "agent's systemPrompt describes how replies should read: what to say, what to " +
+        "offer, what never to promise. It has NO fields - return an empty fields array."
+      );
+    default:
+      return (
+        "You are designing a call-analysis AI agent for a telecalling/CRM platform. " +
+        "An agent has a system prompt (instructions an LLM follows when reading a call " +
+        "transcript) and a list of structured fields it extracts from that transcript. " +
+        FIELD_RULES
+      );
+  }
+}
+
 function agentDraftPrompt(
   description: string,
   base?: { name: string; systemPrompt: string; fields: ExtractionField[] },
   repairNote?: string,
+  kind: AgentDraftKind = "call_extractor",
 ): string {
-  const domain =
-    "You are designing a call-analysis AI agent for a telecalling/CRM platform. " +
-    "An agent has a system prompt (instructions an LLM follows when reading a call " +
-    "transcript) and a list of structured fields it extracts from that transcript. " +
-    "Field keys must be snake_case (lowercase letters, digits, underscores, starting " +
-    "with a letter). Every 'enum' field must list at least one non-empty enumValues " +
-    "option - an enum with no options can never be satisfied. Field types are exactly " +
-    "one of: string, number, boolean, enum, datetime, string[].";
+  const domain = agentDraftDomain(kind);
 
   const baseBlock = base
     ? `\n\nStart from this EXISTING agent and modify it per the request below, ` +
@@ -545,9 +587,12 @@ function agentDraftPrompt(
     : "";
 
   const ask =
-    `\n\nOperator's request: ${description}\n\nProduce a complete agent definition: ` +
-    "a short descriptive name, a system prompt instructing the extraction, and the " +
-    "list of fields to extract.";
+    `\n\nThe author's request: ${description}\n\nProduce a complete agent definition: ` +
+    (kind === "reply_drafter"
+      ? "a short descriptive name, a system prompt describing how replies should read, " +
+        "and an empty list of fields."
+      : "a short descriptive name, a system prompt instructing the extraction, and the " +
+        "list of fields to extract.");
 
   const repair = repairNote
     ? `\n\nYour previous output was invalid: ${repairNote}. Fix it and return the ` +
@@ -585,7 +630,10 @@ function normalizeDraft(raw: unknown): unknown {
  *  hand (packages/llm has no zod dependency of its own); `fields` reuses
  *  ExtractionSchema (@aura/shared) - the exact rules a human-authored agent
  *  is held to, including "an enum field needs at least one option". */
-function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[] } {
+function parseAgentDraft(
+  raw: unknown,
+  kind: AgentDraftKind = "call_extractor",
+): { data: AgentDraft } | { errors: string[] } {
   if (typeof raw !== "object" || raw === null) return { errors: ["output is not a JSON object"] };
   const r = raw as { name?: unknown; systemPrompt?: unknown; fields?: unknown };
   const errors: string[] = [];
@@ -596,7 +644,19 @@ function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[
   const systemPrompt = typeof r.systemPrompt === "string" ? r.systemPrompt.trim() : "";
   if (!systemPrompt) errors.push('"systemPrompt" must be a non-empty string');
 
-  const fieldsParsed = ExtractionSchema.safeParse({ fields: r.fields });
+  // A drafter has no fields whatever the model returned, and a qualifier's
+  // extras are capped and never required - a required extra would fail every
+  // thread that did not mention it. Normalised rather than refused: the draft
+  // is a starting point the owner edits, not a verdict.
+  const rawFields =
+    kind === "reply_drafter"
+      ? []
+      : kind === "chat_qualifier" && Array.isArray(r.fields)
+        ? r.fields
+            .slice(0, QUALIFIER_MAX_DRAFT_FIELDS)
+            .map((f: unknown) => (typeof f === "object" && f !== null ? { ...f, required: false } : f))
+        : r.fields;
+  const fieldsParsed = ExtractionSchema.safeParse({ fields: rawFields });
   if (!fieldsParsed.success) {
     errors.push(...fieldsParsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
   }
@@ -614,7 +674,18 @@ function parseAgentDraft(raw: unknown): { data: AgentDraft } | { errors: string[
 function stubAgentDraft(input: {
   description: string;
   base?: { name: string; systemPrompt: string; fields: ExtractionField[] };
+  kind?: AgentDraftKind;
 }): AgentDraft {
+  if (input.kind === "reply_drafter") {
+    return {
+      name: (input.base?.name ?? input.description.trim().slice(0, 60)) || "Reply drafter",
+      systemPrompt: `${input.base ? `${input.base.systemPrompt}\n\n` : ""}${input.description}`.slice(
+        0,
+        4000,
+      ),
+      fields: [],
+    };
+  }
   if (input.base) {
     return {
       name: `${input.base.name} (modified)`.slice(0, 120),
@@ -666,15 +737,18 @@ function stubAgentDraft(input: {
 export async function generateAgentDraft(input: {
   description: string;
   base?: { name: string; systemPrompt: string; fields: ExtractionField[] };
+  /** Defaults to the original call extractor, so existing callers are unchanged. */
+  kind?: AgentDraftKind;
 }): Promise<AgentDraft> {
-  if (process.env.ANALYZE_STUB === "1") return stubAgentDraft(input);
+  const kind = input.kind ?? "call_extractor";
+  if (process.env.ANALYZE_STUB === "1") return stubAgentDraft({ ...input, kind });
 
   let run: (repairNote?: string) => Promise<unknown>;
 
   if (sarvamChatConfigured()) {
     run = async (repairNote?: string) => {
       const res = await sarvamChat({
-        prompt: agentDraftPrompt(input.description, input.base, repairNote),
+        prompt: agentDraftPrompt(input.description, input.base, repairNote, kind),
         jsonSchema: AGENT_DRAFT_JSON_SCHEMA,
         label: "generateAgentDraft",
       });
@@ -697,7 +771,7 @@ export async function generateAgentDraft(input: {
             contents: [
               {
                 role: "user",
-                parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote) }],
+                parts: [{ text: agentDraftPrompt(input.description, input.base, repairNote, kind) }],
               },
             ],
             config: {
@@ -712,10 +786,10 @@ export async function generateAgentDraft(input: {
     };
   }
 
-  const first = parseAgentDraft(normalizeDraft(await run()));
+  const first = parseAgentDraft(normalizeDraft(await run()), kind);
   if ("data" in first) return first.data;
 
-  const second = parseAgentDraft(normalizeDraft(await run(first.errors.join("; "))));
+  const second = parseAgentDraft(normalizeDraft(await run(first.errors.join("; "))), kind);
   if ("data" in second) return second.data;
 
   throw new Error(
@@ -1468,4 +1542,19 @@ function stubAnalyze(schema: ExtractionSchema): AnalyzeResult {
   };
 }
 
-export { qualifyWhatsAppConversation, type QualificationResult } from "./qualify";
+export {
+  qualificationSchemaFor,
+  qualifierAgentBlock,
+  qualifyWhatsAppConversation,
+  type QualificationResult,
+  type QualifierAgent,
+} from "./qualify";
+
+export {
+  draftReply,
+  finishReply,
+  replyPrompt,
+  type ReplyDraftInput,
+  type ReplyDraftResult,
+  type ReplySource,
+} from "./reply";

@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { decryptSecret, encryptSecret } from "@aura/db";
+import { decryptSecret, encryptSecret, OAuthAppChangedError, resolveOAuthClient } from "@aura/db";
 import { connectionProvider, sheetRange } from "@aura/shared";
 import { refreshAccessToken } from "../connections/email-send";
 
@@ -36,11 +36,13 @@ export interface SheetPreview {
 
 interface AccountRow {
   id: string;
+  org_id: string;
   provider: string;
   access_token: string | null;
   refresh_token: string | null;
   token_expires_at: Date | null;
   capabilities: string[];
+  oauth_client_id: string | null;
 }
 
 type Client = {
@@ -70,7 +72,18 @@ async function accessTokenFor(
   if ((!token || expired) && refresh) {
     const spec = connectionProvider(account.provider);
     if (!spec) throw new BadRequestException("this connection's provider is not configured");
-    const refreshed = await refreshAccessToken(spec, refresh, fetchImpl);
+    const app = await resolveOAuthClient(client, account.org_id, spec, {
+      issuedTo: account.oauth_client_id,
+    }).catch((err: unknown) => {
+      if (err instanceof OAuthAppChangedError) throw new BadRequestException(err.message);
+      throw err;
+    });
+    if (!app) {
+      throw new BadRequestException(
+        "your organisation's Google app is not set up any more - reconnect this account once it is",
+      );
+    }
+    const refreshed = await refreshAccessToken(app, refresh, fetchImpl);
     token = refreshed.accessToken;
     await client.query(
       `UPDATE connected_accounts
@@ -96,7 +109,8 @@ export async function previewSheet(
   fetchImpl: typeof fetch = fetch,
 ): Promise<SheetPreview> {
   const { rows } = await client.query<AccountRow>(
-    `SELECT id, provider, access_token, refresh_token, token_expires_at, capabilities
+    `SELECT id, org_id, provider, access_token, refresh_token, token_expires_at, capabilities,
+            oauth_client_id
        FROM connected_accounts
       WHERE id = $1 AND status = 'active'`,
     [input.connectedAccountId],

@@ -32,6 +32,12 @@ export interface Conversation {
    * Send button that is going to 403.
    */
   opted_out: boolean;
+  /**
+   * The org has a reply drafter switched on (migration 0121), so the composer
+   * offers "Draft reply". Only on a thread fetched one at a time; the list does
+   * not carry it.
+   */
+  reply_drafter_active?: boolean;
 }
 
 export interface ConversationMessage {
@@ -107,8 +113,14 @@ export async function fetchThreadAction(
     const data = (await res.json()) as {
       conversation: Conversation;
       messages: ConversationMessage[];
+      replyDrafterActive?: boolean;
     };
-    return { conversation: data.conversation, messages: data.messages };
+    // Folded onto the conversation so every place that stores a fetched thread
+    // carries it without being taught about it.
+    return {
+      conversation: { ...data.conversation, reply_drafter_active: data.replyDrafterActive === true },
+      messages: data.messages,
+    };
   } catch {
     return { error: "API unreachable" };
   }
@@ -192,6 +204,31 @@ export async function sendWhatsAppMessageAction(
     if (!res.ok) return { error: await apiErrorMessage(res) };
     revalidatePath("/owner/inbox");
     return { ok: true };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Ask the org's reply drafter (migration 0121) for a reply to this thread.
+ *
+ * Returns TEXT for the composer. It does not send, and nothing downstream of it
+ * does: the person edits the draft and presses Send, which goes through
+ * `sendWhatsAppMessageAction` above exactly like anything they typed.
+ */
+export async function draftReplyAction(conversationId: string): Promise<{ reply?: string; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/conversations/${conversationId}/draft-reply`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const data = (await res.json()) as { reply: string };
+    return { reply: data.reply };
   } catch {
     return { error: "API unreachable" };
   }

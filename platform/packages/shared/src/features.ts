@@ -52,6 +52,7 @@ export const FeatureKey = z.enum([
   "call_triage",
   "call_quality",
   "call_sops",
+  "agent_studio",
   "productivity",
   "inbox",
   "whatsapp_leads",
@@ -248,6 +249,20 @@ export const FEATURES: FeatureSpec[] = [
     module: "aura",
     group: "conversations",
     hrefs: ["/owner/sops"],
+    defaultEnabled: true,
+  },
+  {
+    key: "agent_studio",
+    label: "AI agent studio",
+    blurb:
+      "Building your own AI agents: what calls are read for, how WhatsApp enquiries are judged, and drafted replies.",
+    // `aura`: the extractor it edits is what turns every recorder tenant's
+    // calls into leads, which is core. Switching the studio OFF hides the page
+    // and refuses its routes; it does not stop an agent that is already running
+    // - a tidied sidebar must not quietly stop calls becoming leads.
+    module: "aura",
+    group: "conversations",
+    hrefs: ["/owner/agents"],
     defaultEnabled: true,
   },
   {

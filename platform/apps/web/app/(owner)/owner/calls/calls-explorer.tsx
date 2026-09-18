@@ -42,6 +42,7 @@ import {
   reprocessOwnerCallAction,
 } from "./actions";
 import type { Disposition } from "./actions";
+import { CallFollowUp } from "./call-follow-up";
 import { DispositionPicker } from "./disposition-picker";
 
 const STATES = [
@@ -840,6 +841,8 @@ function CallDrawer({
               ))}
             </div>
           ) : null}
+
+          {detail?.replyDrafterActive && call ? <CallFollowUp key={call.id} callId={call.id} /> : null}
 
           <div className="space-y-2 border-t border-border pt-4">
             {error ? (

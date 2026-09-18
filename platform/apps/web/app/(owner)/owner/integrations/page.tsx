@@ -89,7 +89,11 @@ export default async function IntegrationsPage() {
                   ) : null}
                   {status?.unavailable ? (
                     <span className="mt-1.5 block text-xs text-text-muted">
-                      Your provider has not set this up on this deployment yet.
+                      {/* An OAuth integration is not the platform's to set up
+                          any more (0120): the organisation brings the app. */}
+                      {spec.oauthProvider
+                        ? "Needs your organisation's own sign-in app - the account owner adds it under Connections."
+                        : "Your provider has not set this up on this deployment yet."}
                     </span>
                   ) : null}
                 </Link>

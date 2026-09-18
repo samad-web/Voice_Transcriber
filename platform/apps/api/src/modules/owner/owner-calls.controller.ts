@@ -22,6 +22,7 @@ import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard"
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
+import { AgentsService, replyDrafterActive } from "../agents/agents.service";
 
 const CreateNoteBody = z.object({
   body: z.string().min(1).max(10000),
@@ -113,6 +114,7 @@ export class OwnerCallsController {
   constructor(
     private readonly db: DbService,
     private readonly s3: S3Service,
+    private readonly agents: AgentsService,
   ) {}
 
   /** List view: filtered, paginated, newest first. */
@@ -319,8 +321,43 @@ export class OwnerCallsController {
         facts,
         sop: sop ?? null,
         transcriptRedacted: !canRead,
+        // "Draft a follow-up" is offered only where it can succeed: a drafter
+        // is on, and this reader may read the words it would paraphrase.
+        replyDrafterActive: canRead && Boolean(transcript) && (await replyDrafterActive(client)),
       };
     });
+  }
+
+  /**
+   * Draft a follow-up message from this call with the org's reply drafter
+   * (0121). Returns text for a person to copy, edit and send; sends nothing.
+   *
+   * ── GATED LIKE THE TRANSCRIPT ITSELF ────────────────────────────────────────
+   *
+   * A draft recaps what the customer said, which is the transcript in other
+   * words - the same reasoning that redacts SOP evidence above. So it needs the
+   * `call_intel` module AND the reader's transcript permission, not just a seat
+   * at the call log; without them a follow-up would be a way to read a
+   * redacted call one paraphrase at a time.
+   */
+  @Post(":id/draft-reply")
+  async draftReply(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) callId: string,
+  ) {
+    await this.db.withOrg(orgId, async (client) => {
+      if (!(await orgHasModule(client, "call_intel"))) {
+        throw new ForbiddenException("call intelligence is not enabled for this instance");
+      }
+      const { rowCount } = await client.query("SELECT 1 FROM calls WHERE id = $1", [callId]);
+      if (!rowCount) throw new NotFoundException("call not found");
+      if (!(await this.canReadTranscript(client, req.principal, orgId))) {
+        throw new ForbiddenException("drafting a follow-up needs permission to read call transcripts");
+      }
+    });
+    const draft = await this.agents.draftReply(orgId, { source: { callId } });
+    return { reply: draft.reply, provider: draft.provider };
   }
 
   /**

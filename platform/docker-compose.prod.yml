@@ -82,6 +82,14 @@ services:
   api:
     <<: *node-image
     command: ["node", "apps/api/dist/main.js"]
+    environment:
+      # The console's public address, which the OAuth redirect URI is built on
+      # (apps/api/src/modules/connections/oauth.ts). Derived from the SAME two
+      # variables the web image's NEXT_PUBLIC_BASE_PATH build arg uses below,
+      # so the address Google and Microsoft send people back to cannot drift
+      # from where the console is actually mounted. Unset, it fell back to
+      # http://localhost:3000 and every provider refused the sign-in.
+      PUBLIC_APP_URL: https://${APP_DOMAIN}${CONSOLE_BASE_PATH-/admin}
     depends_on:
       rabbitmq:
         condition: service_healthy

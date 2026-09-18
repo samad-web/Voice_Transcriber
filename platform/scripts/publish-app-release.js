@@ -2,8 +2,10 @@
  * Publish an Android APK to the fleet's self-update channel (migration 0081).
  *
  * Uploads the file to object storage, records its digest, and optionally flips
- * it live. Handsets pick it up on their next /v1/devices/me/update poll (~1h)
- * and offer it to whoever is holding the phone.
+ * it live. Handsets pick it up on their next /v1/devices/me/update poll (~6h, on
+ * wifi) and INSTALL IT WITHOUT ASKING on Android 12+ (between calls); older
+ * phones get a tap-to-install notification. So --publish is the rollout itself:
+ * install a build on one test handset by hand before publishing it.
  *
  * Runs inside the api/worker image, which already carries `pg`, the AWS SDK and
  * the same S3_* / DATABASE_URL environment the API uses:
@@ -192,7 +194,10 @@ async function main() {
 
   console.log(`sha256 ${sha256}`);
   if (has("publish")) {
-    console.log(`LIVE: v${versionName} (code ${versionCode}) - the fleet is offered it within ~1h.`);
+    console.log(
+      `LIVE: v${versionName} (code ${versionCode}) - handsets install it within ~6h ` +
+        "(unattended on Android 12+, from a notification on older phones).",
+    );
   } else {
     console.log(
       `Staged v${versionName} (code ${versionCode}). No handset sees it yet - ` +

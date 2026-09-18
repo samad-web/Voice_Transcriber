@@ -18,6 +18,7 @@ import {
 import { useRealtime } from "@/components/realtime-provider";
 import { RecordPicker } from "../record-picker";
 import {
+  draftReplyAction,
   fetchChannelTemplatesAction,
   fetchThreadAction,
   listConversationsAction,
@@ -122,6 +123,41 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
         });
       }
     });
+  }
+
+  /**
+   * Fill the composer with the reply drafter's suggestion (0121). Never sends:
+   * the draft lands in the same textarea the person types in, and Send stays
+   * theirs to press. Asks first when there is already text, because a person's
+   * half-written reply outranks a machine's.
+   */
+  const confirm = useConfirm();
+  const [drafting, setDrafting] = useState(false);
+  async function draftReply() {
+    if (!thread) return;
+    const conversationId = thread.conversation.id;
+    if (
+      composerText.trim() &&
+      !(await confirm({
+        title: "Replace what you've typed?",
+        body: "The draft replaces the text in the reply box. Nothing is sent until you press Send.",
+        confirmLabel: "Replace",
+      }))
+    ) {
+      return;
+    }
+    setDrafting(true);
+    const res = await draftReplyAction(conversationId);
+    setDrafting(false);
+    if (res.error || !res.reply) {
+      await alert({ title: "Couldn't draft a reply", body: res.error, tone: "danger" });
+      return;
+    }
+    // The person may have opened another thread while the draft was written.
+    if (selectedIdRef.current !== conversationId) return;
+    setComposerMode("text");
+    setComposerText(res.reply);
+    toast("Draft added - read it and edit before sending");
   }
 
   function send() {
@@ -530,6 +566,19 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                       {mode === "text" ? freeTextLabel(replyWindow) : "Template"}
                     </button>
                   ))}
+                  {/* Offered only when a reply drafter is switched on, and not
+                      once the window has shut - a free-text draft that can't
+                      be sent is a button that only ever disappoints. */}
+                  {thread.conversation.reply_drafter_active && replyWindow.kind !== "closed" ? (
+                    <button
+                      type="button"
+                      disabled={drafting || sending}
+                      onClick={() => void draftReply()}
+                      className="ml-auto h-8 rounded-full border border-border px-2.5 text-xs font-medium text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
+                    >
+                      {drafting ? "Drafting…" : "Draft reply"}
+                    </button>
+                  ) : null}
                 </div>
 
                 {composerMode === "text" ? (

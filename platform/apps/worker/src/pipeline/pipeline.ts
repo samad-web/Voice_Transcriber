@@ -416,12 +416,17 @@ export async function runPostAsrStages(
       );
       t = transcriptRow;
 
+      // `kind = 'call_extractor'` is load-bearing since 0121: a workspace can
+      // now hold a chat qualifier or reply drafter too, and without the filter
+      // an active drafter's empty field list would "extract" every call into
+      // nothing - no facts, no lead, and no error. The unique index on
+      // (workspace_id) for active extractors makes the LIMIT a formality.
       const {
         rows: [agentRow],
       } = await client.query<AgentRow>(
         `SELECT a.id, a.version, a.system_prompt, a.field_schema FROM agents a
           JOIN calls c ON c.workspace_id = a.workspace_id
-         WHERE c.id = $1 AND a.is_active = true
+         WHERE c.id = $1 AND a.is_active = true AND a.kind = 'call_extractor'
          ORDER BY a.version DESC LIMIT 1`,
         [callId],
       );

@@ -12,7 +12,7 @@ import {
 } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
 import { ingestIntakeLead, type IntakeSourceRow } from "./lead-intake";
-import { refreshAccessToken } from "./email-sync";
+import { oauthAppFor, refreshAccessToken } from "./email-sync";
 import { ProviderHttpError } from "./email-providers";
 
 /** The catalogue entry this sweep is gated on - see the org query below. */
@@ -68,11 +68,13 @@ interface SourceRow extends IntakeSourceRow {
 
 interface AccountRow {
   id: string;
+  org_id: string;
   provider: string;
   access_token: string | null;
   refresh_token: string | null;
   token_expires_at: Date | null;
   capabilities: string[];
+  oauth_client_id: string | null;
 }
 
 interface SheetValues {
@@ -181,7 +183,8 @@ async function accessTokenFor(
     account.token_expires_at !== null && account.token_expires_at.getTime() < Date.now() + 60_000;
 
   if ((!token || expired) && refresh) {
-    const refreshed = await refreshAccessToken(account.provider, refresh, fetchImpl);
+    const app = await oauthAppFor(client, account);
+    const refreshed = await refreshAccessToken(app, refresh, fetchImpl);
     token = refreshed.accessToken;
     await client.query(
       `UPDATE connected_accounts
@@ -228,7 +231,8 @@ export async function syncSheetSource(
   const {
     rows: [account],
   } = await client.query<AccountRow>(
-    `SELECT id, provider, access_token, refresh_token, token_expires_at, capabilities
+    `SELECT id, org_id, provider, access_token, refresh_token, token_expires_at, capabilities,
+            oauth_client_id
        FROM connected_accounts
       WHERE id = $1 AND status = 'active'`,
     [config.connectedAccountId],
@@ -389,7 +393,12 @@ export async function runSheetsSync(fetchImpl: typeof fetch = fetch): Promise<nu
       // The error is recorded ON THE SOURCE as well as logged, because the
       // person who can fix it - "the sheet was moved to another Drive" - reads
       // the lead-sources page, not the worker's stdout.
-      const message = err instanceof ProviderHttpError ? `Google said ${err.status}` : String(err);
+      const message =
+        err instanceof ProviderHttpError
+          ? `Google said ${err.status}`
+          : err instanceof Error
+            ? err.message
+            : String(err);
       console.error(`sheets sync: source ${source.id}:`, err);
       await withOrgContext(source.org_id, (client) =>
         recordError(client as DbClient, source.id, message),
@@ -401,15 +410,14 @@ export async function runSheetsSync(fetchImpl: typeof fetch = fetch): Promise<nu
 }
 
 /**
- * Off unless a Google OAuth client is configured, and silent about it after the
- * first line - the same contract the LinkedIn and calendar sweeps use. A
- * deployment with no Google app cannot sync a sheet, and saying so once at boot
- * beats a failure per source per tick.
+ * Always on. It used to stay off unless the PLATFORM had a Google OAuth app,
+ * but organisations now bring their own (migration 0120), so the deployment's
+ * environment says nothing about whether any tenant can sync. It costs nothing
+ * when idle: a sheet source can only exist after somebody connected a Google
+ * account, which needed an app to begin with, and a source whose app has since
+ * gone records that on itself rather than failing silently.
  */
 export function startSheetsSync(): NodeJS.Timeout | null {
-  if (!process.env.GOOGLE_OAUTH_CLIENT_ID || !process.env.GOOGLE_OAUTH_CLIENT_SECRET) {
-    return null;
-  }
   const interval = Number(process.env.SHEETS_SYNC_INTERVAL_MS ?? 5 * 60 * 1000);
   let running = false;
   return setInterval(() => {

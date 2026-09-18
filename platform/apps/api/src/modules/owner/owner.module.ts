@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AgentsModule } from "../agents/agents.module";
 import { RolesModule } from "../roles/roles.module";
 import { CallSopsController } from "./call-sops.controller";
 import { OwnerCallsController } from "./owner-calls.controller";
@@ -28,7 +29,8 @@ import { SupabaseAdminService } from "./supabase-admin.service";
  * why they are nevertheless two controllers.
  */
 @Module({
-  imports: [RolesModule],
+  // AgentsModule for the call drawer's reply drafter (0121).
+  imports: [RolesModule, AgentsModule],
   controllers: [
     TelecallerProductivityController,
     CallSopsController,

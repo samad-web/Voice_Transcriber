@@ -21,6 +21,8 @@ export interface ProviderView {
   capabilities: string[];
   auth: "oauth2" | "basic";
   configured: boolean;
+  /** Whose OAuth app a sign-in goes through (migration 0120); null for non-OAuth or unset. */
+  source: "organization" | "platform" | null;
   setupHint: string | null;
   fields: Array<{
     key: string;
@@ -53,10 +55,10 @@ export interface ConnectionView {
  * file, which is the same contract provider-picker.tsx has for CRM
  * connectors.
  *
- * A provider whose OAuth app the operator has not registered renders
- * disabled, with the reason. That is deliberately not hidden: "Google is
- * missing" is a support ticket, "Google needs two environment variables set"
- * is an answer.
+ * A provider with no OAuth app - neither the organisation's own (0120) nor
+ * the platform's - renders disabled, with the reason. That is deliberately not
+ * hidden: "Google is missing" is a support ticket, "your account owner adds the
+ * Google app below" is an answer.
  */
 export function ConnectionsManager({
   providers,

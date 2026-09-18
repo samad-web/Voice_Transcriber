@@ -1,8 +1,7 @@
 import { decryptSecret, encryptSecret, getAdminPool, withOrgContext } from "@aura/db";
 import type { DbClient } from "./crm-dispatch";
 import { calendarAdapter, type NormalisedEvent } from "./calendar-providers";
-import { ProviderHttpError } from "./email-providers";
-import { refreshAccessToken } from "./email-sync";
+import { needsReconnect, oauthAppFor, refreshAccessToken } from "./email-sync";
 
 /**
  * Pull each connected calendar onto the interaction timeline (PRD Layer 1).
@@ -54,6 +53,7 @@ interface ConnectionRow {
   token_expires_at: Date | null;
   calendar_cursor: string | null;
   calendar_failures: number;
+  oauth_client_id: string | null;
 }
 
 export interface CalendarSyncOutcome {
@@ -121,7 +121,8 @@ export async function syncCalendar(
     connection.token_expires_at.getTime() < Date.now() + 60_000;
 
   if ((!accessToken || expired) && refreshToken) {
-    const refreshed = await refreshAccessToken(connection.provider, refreshToken, fetchImpl);
+    const app = await oauthAppFor(client, connection);
+    const refreshed = await refreshAccessToken(app, refreshToken, fetchImpl);
     accessToken = refreshed.accessToken;
     await client.query(
       `UPDATE connected_accounts
@@ -242,7 +243,7 @@ export async function syncCalendar(
 export async function syncAllCalendars(fetchImpl: typeof fetch = fetch): Promise<number> {
   const { rows: connections } = await getAdminPool().query<ConnectionRow>(
     `SELECT id, org_id, user_id, provider, account_email, access_token, refresh_token,
-            token_expires_at, calendar_cursor, calendar_failures
+            token_expires_at, calendar_cursor, calendar_failures, oauth_client_id
        FROM connected_accounts
       WHERE status = 'active' AND calendar_failures < $1
         AND 'calendar' = ANY(capabilities)
@@ -268,7 +269,7 @@ export async function syncAllCalendars(fetchImpl: typeof fetch = fetch): Promise
         );
       }
     } catch (err) {
-      const dead = err instanceof ProviderHttpError && err.needsReconnect;
+      const dead = needsReconnect(err);
       // Only the CALENDAR counter moves, and `status` is deliberately left
       // alone: a revoked calendar scope must not park a mailbox that is still
       // working. The connection stays active and the mail sweep keeps running.

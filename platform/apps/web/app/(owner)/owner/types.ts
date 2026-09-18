@@ -311,6 +311,11 @@ export interface OwnerCallDetail {
   /** Null when no SOP is active, or the call had no speaker separation to score from. */
   sop: CallSopResult | null;
   transcriptRedacted: boolean;
+  /**
+   * A reply drafter is switched on AND this reader may read the transcript it
+   * would recap (migration 0121) - the drawer offers "Draft a follow-up" only then.
+   */
+  replyDrafterActive?: boolean;
 }
 
 export interface Telecaller {

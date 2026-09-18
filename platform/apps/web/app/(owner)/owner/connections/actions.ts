@@ -64,6 +64,74 @@ export async function connectBasicAction(input: {
   }
 }
 
+// ── The organisation's own OAuth apps (migration 0120) ─────────────────────
+
+export interface OAuthAppView {
+  provider: string;
+  label: string;
+  clientId: string | null;
+  /** Whether a secret is stored. The secret itself never reaches the console. */
+  hasSecret: boolean;
+  tenant: string | null;
+  updatedAt: string | null;
+  clientIdHint: string;
+  registerUrl: string;
+  registerLabel: string;
+  tenantField: { default: string; label: string; help: string } | null;
+  platformFallback: boolean;
+  activeConnections: number;
+}
+
+export interface OAuthAppsView {
+  redirectUri: string;
+  apps: OAuthAppView[];
+}
+
+export interface OAuthAppDraft {
+  clientId: string;
+  /** Omitted keeps the stored secret - the API never returns it to be re-sent. */
+  clientSecret?: string;
+  tenant?: string | null;
+}
+
+/** Owner-only on the API (`@RequireOwnerRole("owner")`). */
+export async function saveOAuthAppAction(
+  provider: string,
+  draft: OAuthAppDraft,
+): Promise<ConnectionActionResult> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/connections/oauth-apps/${encodeURIComponent(provider)}`,
+      { method: "PUT", headers, cache: "no-store", body: JSON.stringify(draft) },
+    );
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    revalidatePath("/owner/connections");
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export async function removeOAuthAppAction(provider: string): Promise<ConnectionActionResult> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/connections/oauth-apps/${encodeURIComponent(provider)}`,
+      { method: "DELETE", headers, cache: "no-store" },
+    );
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    revalidatePath("/owner/connections");
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 export async function disconnectAction(id: string): Promise<ConnectionActionResult> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };

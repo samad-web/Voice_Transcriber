@@ -81,7 +81,7 @@ async function main() {
   const { rows: ctx } = await db.query(
     `SELECT (SELECT id FROM workspaces WHERE org_id=$1 LIMIT 1) ws,
             (SELECT id FROM devices WHERE org_id=$1 LIMIT 1) dev,
-            (SELECT id FROM agents WHERE org_id=$1 AND is_active LIMIT 1) ag`,
+            (SELECT id FROM agents WHERE org_id=$1 AND is_active AND kind='call_extractor' LIMIT 1) ag`,
     [ORG],
   );
   const { ws, dev, ag } = ctx[0];

@@ -46,6 +46,7 @@ export * from "./integrations";
 export * from "./linkedin";
 export * from "./whatsapp-qualification";
 export * from "./call-sops";
+export * from "./agent-kinds";
 export * from "./features";
 export * from "./staff";
 export * from "./realtime";

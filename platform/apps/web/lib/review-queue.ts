@@ -115,6 +115,10 @@ export interface ReviewQualification {
   extracted_budget: number | null;
   extracted_notes: string | null;
   provider: string | null;
+  /** Extra details from the tenant's chat qualifier (0121); `{}` for the built-in prompt. */
+  facts?: Record<string, unknown> | null;
+  /** The chat qualifier that judged it, when one did. */
+  agent_name?: string | null;
   created_at: string;
   peer_address: string;
   peer_label: string | null;

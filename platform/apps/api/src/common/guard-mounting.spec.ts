@@ -41,6 +41,7 @@ import { HealthController } from "../health/health.controller";
 import { AdminController } from "../modules/admin/admin.controller";
 import { OperatorsController } from "../modules/admin/operators.controller";
 import { AgentsController } from "../modules/agents/agents.controller";
+import { OwnerAgentsController } from "../modules/agents/owner-agents.controller";
 import { AnalyticsController } from "../modules/analytics/analytics.controller";
 import { SearchController } from "../modules/analytics/search.controller";
 import { ApiKeysController } from "../modules/auth/apikeys.controller";
@@ -127,6 +128,7 @@ import { RecycleBinController } from "../modules/recycle-bin/recycle-bin.control
 import { SavedViewsController } from "../modules/saved-views/saved-views.controller";
 import { OptOutsController } from "../modules/conversations/opt-outs.controller";
 import { PaymentSettingsController } from "../modules/invoices/payment-settings.controller";
+import { OAuthAppsController } from "../modules/connections/oauth-apps.controller";
 import { SetupController } from "../modules/owner/setup.controller";
 import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
@@ -149,6 +151,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   AdminController,
   OperatorsController,
   AgentsController,
+  OwnerAgentsController,
   AnalyticsController,
   SearchController,
   BillingController,
@@ -337,6 +340,11 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // credentials, so "may edit an invoice" is the wrong question to ask about
   // them.
   PaymentSettingsController,
+  // The organisation's own Google/Microsoft OAuth apps (migration 0120). Owner
+  // ONLY, same weight as the payment gateway: the app decides whose consent
+  // screen the whole team signs in through, and replacing it disconnects every
+  // account made through the old one. Its secret is write-only.
+  OAuthAppsController,
   // The client's own handsets (migration 0096). Mounts OwnerRoleGuard with
   // EVERY persona listed rather than omitting the decorator, because the real
   // gate is a per-person capability (`memberships.can_pair_devices`) that
@@ -661,6 +669,24 @@ const OWNER_ROLE_ROUTES = [
   // account this business's money settles into.
   "GET /owner/payment-settings",
   "PUT /owner/payment-settings",
+  // Owner alone: an organisation's OAuth app (0120) - see OAuthAppsController.
+  "GET /connections/oauth-apps",
+  "PUT /connections/oauth-apps/:provider",
+  "DELETE /connections/oauth-apps/:provider",
+  // The tenant's own AI Agent Studio (0121). Owner or manager on every route,
+  // reads included: an extractor decides which of the floor's calls become
+  // leads, so it is the SOP argument again - the people being counted do not
+  // write the rule that counts them. See OwnerAgentsController.
+  "GET /owner/agents",
+  "GET /owner/agents/samples",
+  "GET /owner/agents/:id",
+  "POST /owner/agents",
+  "POST /owner/agents/generate",
+  "POST /owner/agents/test",
+  "POST /owner/agents/:id/versions",
+  "POST /owner/agents/:id/activate",
+  "POST /owner/agents/:id/deactivate",
+  "POST /owner/agents/:id/archive",
   "GET /owner/lead-routing",
   "POST /owner/lead-routing/rules",
   "PATCH /owner/lead-routing/rules/:id",
@@ -695,6 +721,11 @@ const OWNER_ROLE_ROUTES = [
   // call, which is a decision about somebody else's pipeline.
   "POST /owner/calls/:id/disposition",
   "POST /owner/calls/:id/reprocess",
+  // A follow-up drafted by the tenant's reply drafter (0121). Returns text and
+  // sends nothing; class-level owner/manager, plus call_intel and the reader's
+  // own recordings_listen checked in the handler, because a draft recaps the
+  // transcript.
+  "POST /owner/calls/:id/draft-reply",
   // The vocabulary itself. GET carries no @RequireOwnerRole - every
   // surface showing a call needs the labels to render a chip, and a
   // telecaller reading a bare key helps nobody. Defining the list is
@@ -866,6 +897,10 @@ const CRM_PERMISSION_ROUTES = [
   // permission. Reading, routing, claiming and closing - never sending.
   "GET /conversations",
   "GET /conversations/:id",
+  // A POST, but not a send: it returns reply TEXT for the composer (0121), and
+  // the person still sends through whatsapp-send.controller.ts. conversation:view
+  // with record scope, the same predicate as reading the thread it drafts from.
+  "POST /conversations/:id/draft-reply",
   "PATCH /conversations/:id",
   // Mounted from the class and INERT on this one: it declares no
   // `@RequireCrmPermission`, and CrmPermissionsGuard returns true when the
@@ -1134,7 +1169,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 395 routes, partitioned 338 tenant / 29 cross-tenant / 8 device / 19 unguarded", () => {
+  it("has 410 routes, partitioned 353 tenant / 29 cross-tenant / 8 device / 19 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -1220,8 +1255,14 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // permissions grid, two for the feature switchboard, and the scorecard.
     // All tenant-scoped and all OwnerRoleGuard'd; see OWNER_ROLE_ROUTES, which
     // says what each one is for.
-    expect(ROUTES).toHaveLength(395);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(395);
+    // 398: adds the organisation's own OAuth apps (0120) - GET, PUT and DELETE
+    // under /connections/oauth-apps. Tenant-scoped and owner-only.
+    // 408: adds the tenant's own AI Agent Studio (0121) - ten routes under
+    // /owner/agents, all tenant-scoped and owner-or-manager.
+    // 410: the reply drafter's two surfaces (0121) - POST conversations/:id/draft-reply
+    // and POST owner/calls/:id/draft-reply. Both return text and send nothing.
+    expect(ROUTES).toHaveLength(410);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(410);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1242,17 +1283,17 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(338);
+    expect(tenantScoped).toHaveLength(353);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(395);
+    ).toBe(410);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 359 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 374 principal routes", () => {
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -1260,7 +1301,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(359);
+    expect(principalRoutes).toHaveLength(374);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

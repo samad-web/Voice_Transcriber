@@ -13,7 +13,13 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { connectionProvider } from "@aura/shared";
-import { decryptSecret, encryptSecret } from "@aura/db";
+import {
+  decryptSecret,
+  encryptSecret,
+  OAuthAppChangedError,
+  resolveOAuthClient,
+  type OAuthAppQueryable,
+} from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
@@ -127,9 +133,10 @@ export class OutboundMailController {
         token_expires_at: Date | null;
         config: Record<string, string> | null;
         secret: string | null;
+        oauth_client_id: string | null;
       }>(
         `SELECT id, provider, account_email, display_name, access_token, refresh_token,
-                token_expires_at, config, secret
+                token_expires_at, config, secret, oauth_client_id
            FROM connected_accounts
           WHERE user_id = $2 AND status = 'active' AND 'email' = ANY(capabilities)
             AND ($1::uuid IS NULL OR id = $1::uuid)
@@ -172,7 +179,7 @@ export class OutboundMailController {
       // `config`, and has nothing to refresh - so `usableToken` is not on its
       // path at all rather than being taught to return a password.
       const smtp = connection.provider === "imap" ? smtpSettings(connection) : undefined;
-      const accessToken = smtp ? "" : await this.usableToken(client, connection);
+      const accessToken = smtp ? "" : await this.usableToken(client, orgId, connection);
 
       const result = await sendMessage(
         connection.provider,
@@ -248,13 +255,15 @@ export class OutboundMailController {
    * one failure mode worth spending a round trip to avoid.
    */
   private async usableToken(
-    client: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+    client: OAuthAppQueryable,
+    orgId: string,
     connection: {
       id: string;
       provider: string;
       access_token: string | null;
       refresh_token: string | null;
       token_expires_at: Date | null;
+      oauth_client_id: string | null;
     },
   ): Promise<string> {
     const current = decryptSecret(connection.access_token);
@@ -269,7 +278,21 @@ export class OutboundMailController {
       throw new BadRequestException("this mailbox needs reconnecting before it can send");
     }
 
-    const refreshed = await refreshAccessToken(spec, refresh);
+    // Only the app that issued the refresh token can redeem it - see
+    // resolveOAuthClient's `issuedTo`.
+    const app = await resolveOAuthClient(client, orgId, spec, {
+      issuedTo: connection.oauth_client_id,
+    }).catch((err: unknown) => {
+      if (err instanceof OAuthAppChangedError) throw new BadRequestException(err.message);
+      throw err;
+    });
+    if (!app) {
+      throw new BadRequestException(
+        `${spec.label} is not set up for your organisation any more - reconnect this mailbox once it is`,
+      );
+    }
+
+    const refreshed = await refreshAccessToken(app, refresh);
     await client.query(
       `UPDATE connected_accounts
           SET access_token = $2,

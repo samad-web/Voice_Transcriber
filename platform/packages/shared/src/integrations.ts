@@ -67,6 +67,13 @@ export interface IntegrationSpec {
    */
   requiresEnv: string[];
   /**
+   * The connection provider (connection-providers.ts) whose OAuth app this
+   * signs in through. An organisation that stored its own app for that
+   * provider (org_oauth_apps, 0120) does not need `requiresEnv` - those are
+   * only the PLATFORM's fallback app.
+   */
+  oauthProvider?: string;
+  /**
    * Does it SEND anything outward on its own? Every entry here is `false`, and
    * the field exists so that stays deliberate: safety rule 3 says nothing
    * automated sends, and an integration that changed the answer would have to
@@ -137,6 +144,7 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     href: "/owner/lead-sources",
     module: null,
     requiresEnv: ["GOOGLE_OAUTH_CLIENT_ID"],
+    oauthProvider: "google",
     autoSends: false,
   },
   {
@@ -213,6 +221,7 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     href: "/owner/connections",
     module: null,
     requiresEnv: ["GOOGLE_OAUTH_CLIENT_ID"],
+    oauthProvider: "google",
     autoSends: false,
   },
   {
@@ -223,6 +232,7 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     href: "/owner/connections",
     module: null,
     requiresEnv: ["MICROSOFT_OAUTH_CLIENT_ID"],
+    oauthProvider: "microsoft",
     autoSends: false,
   },
   {

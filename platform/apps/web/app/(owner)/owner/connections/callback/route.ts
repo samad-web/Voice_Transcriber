@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { consoleUrl } from "@/lib/console-url";
 import { getOwner } from "@/lib/owner-context";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 
@@ -18,7 +19,9 @@ import { API_URL, orgHeaders } from "@/lib/server-api";
  */
 
 function back(request: Request, params: Record<string, string>): NextResponse {
-  const url = new URL("/owner/connections", new URL(request.url).origin);
+  // Through consoleUrl, not `new URL(path, origin)`: a redirect does not get
+  // the /admin basePath on its own - see lib/console-url.ts.
+  const url = consoleUrl(new URL(request.url).origin, "/owner/connections");
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return NextResponse.redirect(url);
 }
@@ -73,7 +76,7 @@ export async function GET(request: Request) {
 
     // The API re-validates redirectPath as same-site before returning it, so
     // this cannot be pointed off-origin by anything stored earlier.
-    const target = new URL(data.redirectPath ?? "/owner/connections", new URL(request.url).origin);
+    const target = consoleUrl(new URL(request.url).origin, data.redirectPath ?? "/owner/connections");
     if (data.connection?.account_email) {
       target.searchParams.set("connected", data.connection.account_email);
     }

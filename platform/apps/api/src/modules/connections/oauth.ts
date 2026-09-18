@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { ResolvedOAuthClient } from "@aura/db";
 import type { ConnectionProviderSpec } from "@aura/shared";
 
 /**
@@ -9,22 +10,15 @@ import type { ConnectionProviderSpec } from "@aura/shared";
  * without standing up a provider.
  */
 
-/** Where providers send the browser back. Must match the app registration exactly. */
+/**
+ * Where providers send the browser back. Must match the app registration
+ * exactly - and every organisation registering its own app (migration 0120)
+ * pastes this same value, which is why the owner console shows it verbatim
+ * rather than making anybody work it out.
+ */
 export function redirectUri(): string {
   const base = process.env.PUBLIC_APP_URL ?? "http://localhost:3000";
   return `${base.replace(/\/+$/, "")}/owner/connections/callback`;
-}
-
-/** Is this provider's registered app actually configured on this deployment? */
-export function oauthClient(
-  spec: ConnectionProviderSpec,
-  env: NodeJS.ProcessEnv = process.env,
-): { clientId: string; clientSecret: string } | null {
-  if (!spec.oauth) return null;
-  const clientId = env[spec.oauth.clientIdEnv]?.trim();
-  const clientSecret = env[spec.oauth.clientSecretEnv]?.trim();
-  if (!clientId || !clientSecret) return null;
-  return { clientId, clientSecret };
 }
 
 /**
@@ -44,13 +38,15 @@ export function newState(): string {
 
 export function buildAuthorizeUrl(
   spec: ConnectionProviderSpec,
-  clientId: string,
+  client: ResolvedOAuthClient,
   state: string,
   challenge: string | null,
 ): string {
   if (!spec.oauth) throw new Error(`${spec.id} is not an oauth provider`);
-  const url = new URL(spec.oauth.authorizeUrl);
-  url.searchParams.set("client_id", clientId);
+  // The resolved app's URL, not the catalogue's: an organisation's Microsoft
+  // app may be pinned to its own directory.
+  const url = new URL(client.authorizeUrl);
+  url.searchParams.set("client_id", client.clientId);
   url.searchParams.set("redirect_uri", redirectUri());
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", spec.oauth.scopes.join(" "));
@@ -75,7 +71,7 @@ export interface TokenResponse {
 
 export async function exchangeCode(
   spec: ConnectionProviderSpec,
-  client: { clientId: string; clientSecret: string },
+  client: ResolvedOAuthClient,
   code: string,
   verifier: string | null,
   fetchImpl: typeof fetch = fetch,
@@ -90,7 +86,7 @@ export async function exchangeCode(
   });
   if (verifier) body.set("code_verifier", verifier);
 
-  const res = await fetchImpl(spec.oauth.tokenUrl, {
+  const res = await fetchImpl(client.tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
     body: body.toString(),

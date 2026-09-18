@@ -24,16 +24,25 @@ vi.mock("@aura/db", () => ({
 }));
 
 vi.mock("./email-sync", () => ({
+  oauthAppFor: vi.fn().mockResolvedValue({
+    clientId: "1-org.apps.googleusercontent.com",
+    clientSecret: "secret",
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    source: "organization",
+  }),
   refreshAccessToken: vi.fn().mockResolvedValue({ accessToken: "fresh", expiresIn: 3600 }),
 }));
 
 const ACCOUNT = {
   id: "acc-1",
+  org_id: "org-1",
   provider: "google",
   access_token: "token",
   refresh_token: "refresh",
   token_expires_at: null,
   capabilities: ["email", "sheets"],
+  oauth_client_id: "1-org.apps.googleusercontent.com",
 };
 
 const SOURCE = {

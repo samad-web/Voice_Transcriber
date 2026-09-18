@@ -101,6 +101,8 @@ interface QualificationRow {
   extracted_company: string | null;
   extracted_budget: string | null;
   extracted_notes: string | null;
+  /** The tenant chat qualifier's extra details (0121). `{}` for the built-in prompt. */
+  facts: Record<string, unknown> | null;
   peer_address: string;
   peer_label: string | null;
   contact_id: string | null;
@@ -164,9 +166,13 @@ export class ConversationQualificationController {
                 q.extracted_budget, q.extracted_notes,
                 q.provider, q.model, q.lead_id,
                 q.reviewed_by_user_id, q.reviewed_at, q.created_at,
+                q.facts, q.agent_id, q.agent_version, a.name AS agent_name,
                 c.peer_address, c.peer_label, c.last_inbound_at
            FROM conversation_qualifications q
            JOIN conversations c ON c.id = q.conversation_id
+           -- The chat qualifier version that judged this thread (0121), so the
+           -- card can say whose rules it was read by. LEFT: most rows predate it.
+           LEFT JOIN agents a ON a.id = q.agent_id AND a.version = q.agent_version
           WHERE ${where.join(" AND ")}
           ORDER BY q.score DESC, q.created_at DESC
           LIMIT $${params.length}`,
@@ -224,7 +230,7 @@ export class ConversationQualificationController {
         // leads from one thread.
         `SELECT q.id, q.conversation_id, q.status, q.disposition, q.score,
                 q.extracted_name, q.extracted_email, q.extracted_company,
-                q.extracted_budget, q.extracted_notes,
+                q.extracted_budget, q.extracted_notes, q.facts,
                 c.peer_address, c.peer_label, c.contact_id, c.workspace_id
            FROM conversation_qualifications q
            JOIN conversations c ON c.id = q.conversation_id
@@ -251,6 +257,10 @@ export class ConversationQualificationController {
         company: patch.company ?? row.extracted_company,
         notes: patch.notes ?? row.extracted_notes,
         value: patch.value ?? (row.extracted_budget === null ? null : Number(row.extracted_budget)),
+        // The tenant chat qualifier's extra details ride onto the lead as facts,
+        // the same column a call extractor's details land in. Only what the
+        // reviewer saw on the card - the worker kept valid values alone.
+        facts: row.facts && Object.keys(row.facts).length > 0 ? row.facts : null,
         sourceChannel: "whatsapp",
         workspaceId: row.workspace_id,
       });

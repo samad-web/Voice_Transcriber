@@ -23,6 +23,7 @@ import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { AgentsService, replyDrafterActive } from "../agents/agents.service";
 
 /**
  * The inbox (migrations 0055/0056).
@@ -34,7 +35,8 @@ import { DbService } from "../../db/db.service";
  *
  * ── THERE IS NO SEND ROUTE HERE, ON PURPOSE ─────────────────────────────
  *
- * Reading, routing, claiming and closing are all this controller does.
+ * Reading, routing, claiming and closing are all this controller does - plus
+ * drafting reply TEXT for a person to edit and send themselves (0121).
  * WhatsApp sending (Kailash gap Milestone 3, `whatsapp-send.controller.ts`)
  * is a deliberately SEPARATE, narrow controller - one recipient read from the
  * conversation itself, a signed-in human required, off by default behind
@@ -79,7 +81,10 @@ const CONVERSATION_COLUMNS = `c.id, c.workspace_id, c.channel, c.peer_address, c
 @Controller("conversations")
 @UseGuards(AdminKeyGuard, TenantGuard, CrmPermissionsGuard)
 export class ConversationsController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly agents: AgentsService,
+  ) {}
 
   @Get()
   @RequireCrmPermission("conversation", "view")
@@ -183,8 +188,40 @@ export class ConversationsController {
           LIMIT 500`,
         [id],
       );
-      return { conversation, messages };
+      // Whether to offer "Draft reply" in the composer (0121).
+      const replyDrafter = await replyDrafterActive(client);
+      return { conversation, messages, replyDrafterActive: replyDrafter };
     });
+  }
+
+  /**
+   * Draft a reply to this thread with the org's switched-on reply drafter.
+   *
+   * Returns TEXT for the composer and nothing else - it is not a send route,
+   * so the header's claim above still holds. The person edits the draft and
+   * sends it through `whatsapp-send.controller.ts` like anything they typed.
+   *
+   * `conversation:view` with record scope, the same predicate the thread read
+   * uses: a draft is built from the messages, so anyone who may draft may
+   * already read them, and nobody else may.
+   */
+  @Post(":id/draft-reply")
+  @RequireCrmPermission("conversation", "view")
+  async draftReply(
+    @OrgId() orgId: string,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @RecordScope() recordScope: CrmRecordScope,
+  ) {
+    await this.db.withOrg(orgId, async (client) => {
+      const scoped = scopeClause("conversation", recordScope, 2, "c");
+      const { rowCount } = await client.query(
+        `SELECT 1 FROM conversations c WHERE c.id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        scoped ? [id, recordScope.userId] : [id],
+      );
+      if (!rowCount) throw new NotFoundException("conversation not found");
+    });
+    const draft = await this.agents.draftReply(orgId, { source: { conversationId: id } });
+    return { reply: draft.reply, provider: draft.provider };
   }
 
   @Patch(":id")

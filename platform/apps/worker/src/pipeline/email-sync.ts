@@ -1,5 +1,13 @@
 import { connectionProvider } from "@aura/shared";
-import { decryptSecret, encryptSecret, getAdminPool, withOrgContext } from "@aura/db";
+import {
+  decryptSecret,
+  encryptSecret,
+  getAdminPool,
+  OAuthAppChangedError,
+  resolveOAuthClient,
+  withOrgContext,
+  type ResolvedOAuthClient,
+} from "@aura/db";
 import type { DbClient } from "./crm-dispatch";
 import {
   emailAdapter,
@@ -54,6 +62,7 @@ interface ConnectionRow {
   sync_cursor: string | null;
   last_synced_at: Date | null;
   sync_failures: number;
+  oauth_client_id: string | null;
 }
 
 export interface SyncOutcome {
@@ -65,6 +74,41 @@ export interface SyncOutcome {
 }
 
 /**
+ * The OAuth app a connection must refresh through (migration 0120).
+ *
+ * The organisation's own app, or the platform's - but when the connection
+ * recorded which app issued its tokens, ONLY that one, because a refresh token
+ * is bound to its client ID. Throws OAuthAppChangedError when that app is
+ * gone, which the sweeps treat as "park it, reconnect needed".
+ */
+export async function oauthAppFor(
+  client: DbClient,
+  connection: { org_id: string; provider: string; oauth_client_id: string | null },
+): Promise<ResolvedOAuthClient> {
+  const spec = connectionProvider(connection.provider);
+  if (!spec?.oauth) {
+    throw new Error(`${connection.provider} cannot refresh - not an oauth provider`);
+  }
+  const app = await resolveOAuthClient(client, connection.org_id, spec, {
+    issuedTo: connection.oauth_client_id,
+  });
+  if (!app) {
+    throw new Error(
+      `${spec.label} has no sign-in app set up for this organisation - the account owner adds ` +
+        "one under Connections",
+    );
+  }
+  return app;
+}
+
+/** True for a failure no retry can fix - the connection has to be signed in again. */
+export function needsReconnect(err: unknown): boolean {
+  return (
+    (err instanceof ProviderHttpError && err.needsReconnect) || err instanceof OAuthAppChangedError
+  );
+}
+
+/**
  * Exchange a refresh token for a fresh access token.
  *
  * Access tokens last about an hour, so without this every connection breaks
@@ -72,25 +116,18 @@ export interface SyncOutcome {
  * they can see.
  */
 export async function refreshAccessToken(
-  provider: string,
+  app: ResolvedOAuthClient,
   refreshToken: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ accessToken: string; expiresIn: number | null; refreshToken: string | null }> {
-  const spec = connectionProvider(provider);
-  if (!spec?.oauth) throw new Error(`${provider} cannot refresh - not an oauth provider`);
-
-  const clientId = process.env[spec.oauth.clientIdEnv];
-  const clientSecret = process.env[spec.oauth.clientSecretEnv];
-  if (!clientId || !clientSecret) throw new Error(`${provider} is not configured on this deployment`);
-
-  const res = await fetchImpl(spec.oauth.tokenUrl, {
+  const res = await fetchImpl(app.tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      client_id: clientId,
-      client_secret: clientSecret,
+      client_id: app.clientId,
+      client_secret: app.clientSecret,
     }).toString(),
   });
   if (!res.ok) {
@@ -154,7 +191,8 @@ export async function syncConnection(
     connection.token_expires_at !== null && connection.token_expires_at.getTime() < Date.now() + 60_000;
 
   if ((!accessToken || expired) && refreshToken) {
-    const refreshed = await refreshAccessToken(connection.provider, refreshToken, fetchImpl);
+    const app = await oauthAppFor(client, connection);
+    const refreshed = await refreshAccessToken(app, refreshToken, fetchImpl);
     accessToken = refreshed.accessToken;
     await client.query(
       `UPDATE connected_accounts
@@ -252,7 +290,7 @@ export async function syncConnection(
 export async function syncAllMailboxes(fetchImpl: typeof fetch = fetch): Promise<number> {
   const { rows: connections } = await getAdminPool().query<ConnectionRow>(
     `SELECT id, org_id, user_id, provider, account_email, access_token, refresh_token,
-            token_expires_at, sync_cursor, last_synced_at, sync_failures
+            token_expires_at, sync_cursor, last_synced_at, sync_failures, oauth_client_id
        FROM connected_accounts
       WHERE status = 'active' AND sync_failures < $1
         AND 'email' = ANY(capabilities)
@@ -279,7 +317,8 @@ export async function syncAllMailboxes(fetchImpl: typeof fetch = fetch): Promise
     } catch (err) {
       // A dead token is parked immediately rather than after five tries -
       // retrying a revoked grant never succeeds and only burns rate limit.
-      const dead = err instanceof ProviderHttpError && err.needsReconnect;
+      // Nor does refreshing through an app that has since been replaced.
+      const dead = needsReconnect(err);
       await getAdminPool().query(
         `UPDATE connected_accounts
             SET sync_failures = $2, last_error = $3, status = $4

@@ -18,10 +18,17 @@ export default async function AgentsPage({
   const { org } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 
-  const [data, workspaces] = await Promise.all([
+  const [response, workspaces] = await Promise.all([
     apiGetAs<{ agents: AgentRow[] }>("/v1/agents", orgId),
     workspacesFor(orgId),
   ]);
+  // Call extractors only. Chat qualifiers and reply drafters (0121) are built by
+  // the tenant in their own studio, have no fields for this page's builder or
+  // sandbox to show, and "Set as Active" here would be a second, less careful
+  // way to switch one on.
+  const data = response
+    ? { agents: response.agents.filter((a) => (a.kind ?? "call_extractor") === "call_extractor") }
+    : null;
 
   return (
     <>

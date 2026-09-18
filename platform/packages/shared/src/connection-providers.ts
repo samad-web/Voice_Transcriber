@@ -62,15 +62,37 @@ export interface ConnectionProviderSpec {
     /** Whether to use PKCE. Microsoft requires it for SPA-style clients; harmless elsewhere. */
     pkce: boolean;
     /**
-     * Env vars holding the registered app's credentials. A provider whose
-     * variables are unset is reported as `configured: false` and cannot be
-     * connected - the same degrade-don't-fail shape migration 0042 uses for
-     * pg_trgm. Nobody can register an OAuth app on the operator's behalf, so
-     * the software has to be honest about not being set up rather than
-     * throwing when somebody clicks Connect.
+     * Env vars holding the PLATFORM's registered app - the fallback for an
+     * organisation that has not brought its own (org_oauth_apps, migration
+     * 0120). With neither, the provider is reported as `configured: false` and
+     * cannot be connected - the same degrade-don't-fail shape migration 0042
+     * uses for pg_trgm.
      */
     clientIdEnv: string;
     clientSecretEnv: string;
+
+    /**
+     * What a client ID from this provider looks like, checked when an
+     * organisation saves its own app. The commonest setup mistake is pasting
+     * the secret (or Microsoft's "Secret ID") into the client ID box, and it
+     * is far kinder to say so at save time than to fail the first sign-in
+     * with the provider's own error page.
+     */
+    clientIdPattern: string;
+    clientIdHint: string;
+
+    /** Where the app is registered, so the setup form can link straight there. */
+    registerUrl: string;
+    registerLabel: string;
+
+    /**
+     * A directory segment in BOTH endpoint URLs that an organisation may
+     * narrow. Microsoft's `common` accepts any work or personal account, but a
+     * client that registers a single-tenant app in its own Entra directory
+     * must sign in against that directory - `common` refuses a single-tenant
+     * app outright (AADSTS50194). Absent for providers with no such concept.
+     */
+    tenant?: { default: string; label: string; help: string };
   };
 
   /** basic only - the fields the connect form collects. */
@@ -106,6 +128,10 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
       pkce: true,
       clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
       clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
+      clientIdPattern: "^[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com$",
+      clientIdHint: "Ends in .apps.googleusercontent.com.",
+      registerUrl: "https://console.cloud.google.com/auth/clients",
+      registerLabel: "Google Cloud Console",
     },
   },
   {
@@ -130,6 +156,18 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
       pkce: true,
       clientIdEnv: "MICROSOFT_OAUTH_CLIENT_ID",
       clientSecretEnv: "MICROSOFT_OAUTH_CLIENT_SECRET",
+      clientIdPattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      clientIdHint: "The Application (client) ID from the app's Overview - a GUID.",
+      registerUrl:
+        "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      registerLabel: "Microsoft Entra admin center",
+      tenant: {
+        default: "common",
+        label: "Directory (tenant) ID",
+        help:
+          "Leave blank if the app accepts any Microsoft account. If you registered it for your " +
+          "organisation only, paste the Directory (tenant) ID from its Overview page.",
+      },
     },
   },
   {
@@ -178,6 +216,57 @@ export const CONNECTION_PROVIDERS: ConnectionProviderSpec[] = [
 export function connectionProvider(id: string): ConnectionProviderSpec | undefined {
   return CONNECTION_PROVIDERS.find((p) => p.id === id);
 }
+
+/**
+ * A Microsoft directory: `common`/`organizations`/`consumers`, a tenant GUID,
+ * or a verified domain. Strict because the value is spliced into the PATH of
+ * the authorize and token URLs - anything looser would let a stored value
+ * point the token exchange, client secret and all, somewhere else.
+ */
+export const DIRECTORY_TENANT =
+  /^(?:common|organizations|consumers|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z0-9-]+(?:\.[a-z0-9-]+)+)$/i;
+
+/**
+ * The authorize and token URLs for one app registration.
+ *
+ * Only providers that declare `tenant` accept one; for them a blank tenant
+ * keeps the catalogue default. Throws on a malformed tenant rather than
+ * quietly falling back to `common`, which would send a single-tenant app's
+ * users to an endpoint that refuses them with no hint as to why.
+ */
+export function oauthEndpoints(
+  spec: ConnectionProviderSpec,
+  tenant?: string | null,
+): { authorizeUrl: string; tokenUrl: string } {
+  if (!spec.oauth) throw new Error(`${spec.id} is not an oauth provider`);
+  const { authorizeUrl, tokenUrl } = spec.oauth;
+  const wanted = tenant?.trim();
+  if (!spec.oauth.tenant || !wanted) return { authorizeUrl, tokenUrl };
+  if (!DIRECTORY_TENANT.test(wanted)) throw new Error(`not a valid directory: ${wanted}`);
+
+  const segment = `/${spec.oauth.tenant.default}/`;
+  return {
+    authorizeUrl: authorizeUrl.replace(segment, `/${wanted}/`),
+    tokenUrl: tokenUrl.replace(segment, `/${wanted}/`),
+  };
+}
+
+/**
+ * An organisation's own OAuth app, as the owner console submits it.
+ *
+ * `clientSecret` is optional because the secret is WRITE-ONLY: the API never
+ * returns it, so a form cannot re-send it. Omitted means "keep the stored
+ * one" - which is what lets somebody fix a directory ID without going back to
+ * Google or Microsoft for a secret they can no longer see. The API still
+ * demands one when there is nothing stored, or when the client ID changes (a
+ * different app's secret is never the old one).
+ */
+export const OAuthAppInput = z.object({
+  clientId: z.string().trim().min(8).max(300),
+  clientSecret: z.string().trim().min(8).max(500).optional(),
+  tenant: z.string().trim().max(120).nullish(),
+});
+export type OAuthAppInput = z.infer<typeof OAuthAppInput>;
 
 /** The connect form's payload for a `basic` provider. */
 export const BasicConnectionInput = z.object({

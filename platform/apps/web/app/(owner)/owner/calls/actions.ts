@@ -195,3 +195,25 @@ export async function setCallDispositionAction(
     return { error: "API unreachable" };
   }
 }
+
+/**
+ * A follow-up message drafted from this call by the org's reply drafter
+ * (migration 0121). Returns text for the person to copy and edit - it sends
+ * nothing, and there is no send path behind it.
+ */
+export async function draftCallFollowUpAction(callId: string): Promise<{ reply?: string; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/calls/${callId}/draft-reply`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const data = (await res.json()) as { reply: string };
+    return { reply: data.reply };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}

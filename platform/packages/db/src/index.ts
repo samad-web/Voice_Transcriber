@@ -9,6 +9,7 @@ import { Pool, type PoolClient } from "pg";
 export type { PoolClient } from "pg";
 
 export * from "./secrets";
+export * from "./oauth-apps";
 export * from "./ssrf-guard";
 export * from "./lead-routing";
 export * from "./crm-projection";

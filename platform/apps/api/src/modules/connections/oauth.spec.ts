@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { connectionProvider, type ConnectionProviderSpec } from "@aura/shared";
+import type { ResolvedOAuthClient } from "@aura/db";
+import { connectionProvider, oauthEndpoints, type ConnectionProviderSpec } from "@aura/shared";
 import {
   buildAuthorizeUrl,
   emailFromIdToken,
   exchangeCode,
   newState,
-  oauthClient,
   pkcePair,
   redirectUri,
   safeRedirectPath,
@@ -20,33 +20,18 @@ const google = connectionProvider("google") as ConnectionProviderSpec;
 const microsoft = connectionProvider("microsoft") as ConnectionProviderSpec;
 const imap = connectionProvider("imap") as ConnectionProviderSpec;
 
-describe("oauthClient", () => {
-  it("reports a provider unconfigured when its variables are unset", () => {
-    expect(oauthClient(google, {} as NodeJS.ProcessEnv)).toBeNull();
-  });
-
-  it("treats a blank or whitespace value as unset", () => {
-    const env = { GOOGLE_OAUTH_CLIENT_ID: "  ", GOOGLE_OAUTH_CLIENT_SECRET: "x" };
-    expect(oauthClient(google, env as NodeJS.ProcessEnv)).toBeNull();
-  });
-
-  it("needs BOTH halves - an id without a secret is not configured", () => {
-    const env = { GOOGLE_OAUTH_CLIENT_ID: "id" };
-    expect(oauthClient(google, env as NodeJS.ProcessEnv)).toBeNull();
-  });
-
-  it("returns the pair once both are set", () => {
-    const env = { GOOGLE_OAUTH_CLIENT_ID: "id", GOOGLE_OAUTH_CLIENT_SECRET: "secret" };
-    expect(oauthClient(google, env as NodeJS.ProcessEnv)).toEqual({
-      clientId: "id",
-      clientSecret: "secret",
-    });
-  });
-
-  it("is null for a provider that does not use OAuth at all", () => {
-    expect(oauthClient(imap, {} as NodeJS.ProcessEnv)).toBeNull();
-  });
-});
+/**
+ * A resolved app for the catalogue's default endpoints. Which app gets resolved
+ * - an organisation's own or the platform's - is @aura/db's oauth-apps.test.ts;
+ * this file only cares that the handshake uses whatever it was handed.
+ */
+function app(
+  spec: ConnectionProviderSpec,
+  clientId = "client-123",
+  tenant: string | null = null,
+): ResolvedOAuthClient {
+  return { clientId, clientSecret: "secret", ...oauthEndpoints(spec, tenant), source: "organization" };
+}
 
 describe("pkcePair", () => {
   it("derives the challenge as base64url(sha256(verifier))", () => {
@@ -70,7 +55,7 @@ describe("newState", () => {
 });
 
 describe("buildAuthorizeUrl", () => {
-  const url = () => new URL(buildAuthorizeUrl(google, "client-123", "state-abc", "challenge-xyz"));
+  const url = () => new URL(buildAuthorizeUrl(google, app(google), "state-abc", "challenge-xyz"));
 
   it("sends the registered redirect_uri, never one from a caller", () => {
     expect(url().searchParams.get("redirect_uri")).toBe(redirectUri());
@@ -84,7 +69,7 @@ describe("buildAuthorizeUrl", () => {
   });
 
   it("omits PKCE parameters entirely when there is no challenge", () => {
-    const bare = new URL(buildAuthorizeUrl(google, "c", "s", null));
+    const bare = new URL(buildAuthorizeUrl(google, app(google, "c"), "s", null));
     expect(bare.searchParams.has("code_challenge")).toBe(false);
     expect(bare.searchParams.has("code_challenge_method")).toBe(false);
   });
@@ -99,13 +84,22 @@ describe("buildAuthorizeUrl", () => {
   });
 
   it("works for any catalogue entry, not just Google", () => {
-    const ms = new URL(buildAuthorizeUrl(microsoft, "c", "s", "ch"));
+    const ms = new URL(buildAuthorizeUrl(microsoft, app(microsoft, "c"), "s", "ch"));
     expect(ms.origin).toBe("https://login.microsoftonline.com");
     expect(ms.searchParams.get("scope")).toContain("offline_access");
   });
 
+  it("sends the browser to the organisation's own directory when its app names one", () => {
+    const tenant = "72f988bf-86f1-41af-91ab-2d7cd011db47";
+    const ms = new URL(buildAuthorizeUrl(microsoft, app(microsoft, "c", tenant), "s", "ch"));
+    expect(ms.pathname).toBe(`/${tenant}/oauth2/v2.0/authorize`);
+    expect(ms.searchParams.get("client_id")).toBe("c");
+  });
+
   it("refuses to build one for a non-OAuth provider", () => {
-    expect(() => buildAuthorizeUrl(imap, "c", "s", null)).toThrow(/not an oauth provider/);
+    expect(() => buildAuthorizeUrl(imap, app(google, "c"), "s", null)).toThrow(
+      /not an oauth provider/,
+    );
   });
 });
 
@@ -155,7 +149,7 @@ describe("emailFromIdToken", () => {
 });
 
 describe("exchangeCode", () => {
-  const client = { clientId: "id", clientSecret: "secret" };
+  const client: ResolvedOAuthClient = { ...app(google, "id"), clientSecret: "secret" };
 
   it("posts the code, the registered redirect and the verifier as form data", async () => {
     let captured: { url: string; body: URLSearchParams } | null = null;

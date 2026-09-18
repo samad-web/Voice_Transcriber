@@ -224,8 +224,8 @@ async function bootstrap() {
   //
   // Reads only, through a Google account the tenant connects themselves, and
   // does not import a sheet's history unless somebody asks: connecting a sheet
-  // must not retroactively create three thousand leads dated today. Off with
-  // no Google OAuth app configured.
+  // must not retroactively create three thousand leads dated today. Always on
+  // now that each organisation brings its own Google app (0120).
   const sheets = startSheetsSync();
   const linkedin = startLinkedInSweep();
   const asr = sarvamAsrConfigured()

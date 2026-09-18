@@ -95,10 +95,16 @@ export class IntegrationsController {
 
           `SELECT provider, enabled, (key_id IS NOT NULL) AS configured
              FROM payment_gateway_config`,
+
+          // The organisation's own Google/Microsoft apps (0120). Which ones
+          // exist, never what they hold.
+          `SELECT provider FROM org_oauth_apps`,
         ].join(";\n"),
       )) as unknown as { rows: Record<string, unknown>[] }[];
 
-      const [orgRes, messagingRes, sourcesRes, metaRes, linkedinRes, accountsRes, payRes] = batch;
+      const [orgRes, messagingRes, sourcesRes, metaRes, linkedinRes, accountsRes, payRes, appsRes] =
+        batch;
+      const ownApps = new Set((appsRes.rows as Array<{ provider: string }>).map((r) => r.provider));
 
       const modules = (orgRes.rows[0]?.enabled_modules as string[] | null) ?? [];
       const messaging = messagingRes.rows as Array<{
@@ -185,7 +191,11 @@ export class IntegrationsController {
         // Read from THIS process's environment, which is the API's. Every
         // variable listed is one the API or the worker needs, and they share a
         // deployment - so an operator who set it for one set it for both.
-        const unavailable = spec.requiresEnv.some((key) => !process.env[key]);
+        //
+        // An organisation that brought its own OAuth app for the provider
+        // (0120) needs none of the platform's variables for it.
+        const ownApp = spec.oauthProvider !== undefined && ownApps.has(spec.oauthProvider);
+        const unavailable = !ownApp && spec.requiresEnv.some((key) => !process.env[key]);
         return {
           id: spec.id,
           connected: state.connected,

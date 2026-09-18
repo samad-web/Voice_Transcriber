@@ -1,6 +1,6 @@
-import { connectionProvider, type ConnectionProviderSpec } from "@aura/shared";
+import type { ResolvedOAuthClient } from "@aura/db";
+import { connectionProvider } from "@aura/shared";
 import { sendSmtpMessage, type SmtpConfig } from "./smtp";
-import { oauthClient } from "./oauth";
 
 /**
  * Sending mail from a user's own connected mailbox (PRD Layer 1).
@@ -192,16 +192,17 @@ export async function sendMessage(
  * deliberately network-free. It sits next to `exchangeCode` in this module
  * instead - the other half of the same handshake, against the same endpoint,
  * with the same client credentials.
+ *
+ * Takes the RESOLVED app (@aura/db's resolveOAuthClient) rather than looking
+ * one up: which app may refresh a token depends on the organisation and on
+ * the app the connection was made through, and only the caller has both.
  */
 export async function refreshAccessToken(
-  spec: ConnectionProviderSpec,
+  client: ResolvedOAuthClient,
   refreshToken: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ accessToken: string; expiresIn: number | null; refreshToken: string | null }> {
-  const client = oauthClient(spec);
-  if (!spec.oauth || !client) throw new Error(`${spec.id} is not configured on this deployment`);
-
-  const res = await fetchImpl(spec.oauth.tokenUrl, {
+  const res = await fetchImpl(client.tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
     body: new URLSearchParams({

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button, FormField, Input, StatusChip } from "@aura/ui";
+import { formatTestValue, humanizeKey } from "@/lib/agent-studio";
 import type { ReviewQualification } from "@/lib/review-queue";
 import { approveQualificationAction, rejectQualificationAction } from "../whatsapp-leads/actions";
 import { ReviewCardFrame, type ReviewCardProps } from "./review-card";
@@ -56,6 +57,10 @@ export function WhatsAppReviewCard({ item, waiting, onResolved, onFailed }: Revi
   const [edits, setEdits] = useState<Edits>({});
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const details = Object.entries(q.facts ?? {}).flatMap(([key, value]) => {
+    const text = formatTestValue(value);
+    return text === null ? [] : [[key, text] as const];
+  });
 
   const approve = async () => {
     setBusy(true);
@@ -106,6 +111,21 @@ export function WhatsAppReviewCard({ item, waiting, onResolved, onFailed }: Revi
       {q.provider === "heuristic" ? (
         <p className="mt-1 text-xs text-text-muted">Read by keywords only - no language model is configured.</p>
       ) : null}
+
+      {/* The tenant's own chat qualifier's extra details (0121). Shown read-only:
+          they travel onto the lead as facts when it is approved, and the
+          conversation link below is where to check them. */}
+      {details.length > 0 ? (
+        <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 rounded-md bg-bg-subtle px-3 py-2 text-sm sm:grid-cols-2">
+          {details.map(([key, value]) => (
+            <div key={key} className="flex min-w-0 gap-2">
+              <dt className="shrink-0 text-text-muted">{humanizeKey(key)}:</dt>
+              <dd className="min-w-0 truncate text-text">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {q.agent_name ? <p className="mt-1 text-xs text-text-subtle">Judged by your agent “{q.agent_name}”.</p> : null}
 
       {mode === "edit" ? (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">

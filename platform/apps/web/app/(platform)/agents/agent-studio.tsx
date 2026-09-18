@@ -14,6 +14,8 @@ import {
 
 export interface AgentRow {
   id: string;
+  /** Migration 0121. This studio authors call extractors only; see page.tsx. */
+  kind?: "call_extractor" | "chat_qualifier" | "reply_drafter";
   name: string;
   version: number;
   is_active: boolean;

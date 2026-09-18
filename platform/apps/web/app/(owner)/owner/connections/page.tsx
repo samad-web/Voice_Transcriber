@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import type { OAuthAppsView } from "./actions";
 import { ConnectionsManager, type ConnectionView, type ProviderView } from "./connections-manager";
+import { OAuthAppsPanel } from "./oauth-apps-panel";
 
 export const metadata: Metadata = { title: "Connections" };
 
@@ -22,9 +24,16 @@ export default async function ConnectionsPage({
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/connections");
   const { connected, error } = await searchParams;
-  const [catalogue, mine] = await Promise.all([
+  const owner = await getOwner();
+  const [catalogue, mine, oauthApps] = await Promise.all([
     ownerGet<{ providers: ProviderView[] }>("/v1/connections/providers"),
     ownerGet<{ connections: ConnectionView[] }>("/v1/connections"),
+    // Owner-only on the API, which is the gate. Asked only for an owner so a
+    // manager's every visit is not a logged 403; null (not asked, or refused)
+    // means the panel is not rendered.
+    owner?.membership.ownerRole === "owner"
+      ? ownerGet<OAuthAppsView>("/v1/connections/oauth-apps")
+      : Promise.resolve(null),
   ]);
 
   if (!catalogue) {
@@ -55,6 +64,7 @@ export default async function ConnectionsPage({
         initialConnected={connected ?? null}
         initialError={error ?? null}
       />
+      {oauthApps ? <OAuthAppsPanel data={oauthApps} /> : null}
     </>
   );
 }

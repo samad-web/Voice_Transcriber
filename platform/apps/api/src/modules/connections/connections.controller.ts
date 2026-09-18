@@ -19,7 +19,12 @@ import {
   connectionProvider,
   type ConnectionProviderSpec,
 } from "@aura/shared";
-import { encryptSecret } from "@aura/db";
+import {
+  encryptSecret,
+  OAuthAppChangedError,
+  platformOAuthClient,
+  resolveOAuthClient,
+} from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -29,7 +34,6 @@ import {
   emailFromIdToken,
   exchangeCode,
   newState,
-  oauthClient,
   pkcePair,
   safeRedirectPath,
 } from "./oauth";
@@ -79,29 +83,51 @@ export class ConnectionsController {
   constructor(private readonly db: DbService) {}
 
   /**
-   * The catalogue, with each entry marked configured or not.
+   * The catalogue, with each entry marked configured or not FOR THIS ORG.
    *
-   * An OAuth provider needs a registered app, and only the operator can
-   * create one. Reporting `configured: false` lets the console explain that
-   * instead of offering a Connect button that dead-ends - the same
-   * degrade-and-say-so shape 0042 uses for pg_trgm.
+   * An OAuth provider needs a registered app: the organisation's own
+   * (org_oauth_apps, 0120) or, failing that, the platform's. Reporting
+   * `configured: false` lets the console explain that instead of offering a
+   * Connect button that dead-ends - the same degrade-and-say-so shape 0042
+   * uses for pg_trgm. Only the existence of an app is read here; its secret is
+   * never selected, let alone decrypted, to answer a yes/no question.
    */
   @Get("providers")
-  providers() {
+  async providers(@OrgId() orgId: string) {
+    const ownApps = await this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query<{ provider: string }>(
+        `SELECT provider FROM org_oauth_apps WHERE org_id = $1`,
+        [orgId],
+      );
+      return new Set(rows.map((r) => r.provider));
+    });
+
     return {
-      providers: CONNECTION_PROVIDERS.map((spec) => ({
-        id: spec.id,
-        label: spec.label,
-        blurb: spec.blurb,
-        capabilities: spec.capabilities,
-        auth: spec.auth,
-        fields: spec.fields ?? [],
-        configured: spec.auth === "basic" ? true : oauthClient(spec) !== null,
-        setupHint:
-          spec.auth === "oauth2" && oauthClient(spec) === null && spec.oauth
-            ? `Set ${spec.oauth.clientIdEnv} and ${spec.oauth.clientSecretEnv} to enable this.`
-            : null,
-      })),
+      providers: CONNECTION_PROVIDERS.map((spec) => {
+        const source =
+          spec.auth !== "oauth2"
+            ? null
+            : ownApps.has(spec.id)
+              ? ("organization" as const)
+              : platformOAuthClient(spec)
+                ? ("platform" as const)
+                : null;
+        const configured = spec.auth === "basic" || source !== null;
+        return {
+          id: spec.id,
+          label: spec.label,
+          blurb: spec.blurb,
+          capabilities: spec.capabilities,
+          auth: spec.auth,
+          fields: spec.fields ?? [],
+          configured,
+          source,
+          setupHint: configured
+            ? null
+            : `Your organisation's ${spec.label} app has not been added yet. The account owner ` +
+              "adds it under Organisation sign-in apps on this page.",
+        };
+      }),
     };
   }
 
@@ -133,23 +159,27 @@ export class ConnectionsController {
     if (spec.auth !== "oauth2") {
       throw new BadRequestException(`${spec.label} does not use OAuth - use POST /connections`);
     }
-    const client = oauthClient(spec);
-    if (!client) {
-      throw new BadRequestException(
-        `${spec.label} is not configured on this deployment. ${
-          spec.oauth ? `Set ${spec.oauth.clientIdEnv} and ${spec.oauth.clientSecretEnv}.` : ""
-        }`,
-      );
-    }
-
     const state = newState();
     const pkce = spec.oauth?.pkce ? pkcePair() : null;
 
     return this.db.withOrg(orgId, async (db) => {
+      const client = await resolveOAuthClient(db, orgId, spec);
+      if (!client) {
+        throw new BadRequestException(
+          `${spec.label} is not set up for your organisation yet - the account owner adds its ` +
+            "app under Organisation sign-in apps on the Connections page.",
+        );
+      }
+
       await db.query(
+        // oauth_client_id pins the app for the round trip: if the owner
+        // replaces it while somebody is on the consent screen, the code that
+        // comes back belongs to the OLD app and must not be redeemed against
+        // the new one.
         `INSERT INTO oauth_authorizations
-           (state, org_id, user_id, provider, code_verifier, redirect_path, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now() + ($7 || ' minutes')::interval)`,
+           (state, org_id, user_id, provider, code_verifier, redirect_path, expires_at,
+            oauth_client_id)
+         VALUES ($1, $2, $3, $4, $5, $6, now() + ($7 || ' minutes')::interval, $8)`,
         [
           state,
           orgId,
@@ -158,9 +188,10 @@ export class ConnectionsController {
           pkce?.verifier ?? null,
           safeRedirectPath(parsed.data.redirectPath),
           String(STATE_TTL_MINUTES),
+          client.clientId,
         ],
       );
-      return { authorizeUrl: buildAuthorizeUrl(spec, client.clientId, state, pkce?.challenge ?? null) };
+      return { authorizeUrl: buildAuthorizeUrl(spec, client, state, pkce?.challenge ?? null) };
     });
   }
 
@@ -185,11 +216,13 @@ export class ConnectionsController {
         provider: string;
         code_verifier: string | null;
         redirect_path: string | null;
+        oauth_client_id: string | null;
         expired: boolean;
       }>(
         `DELETE FROM oauth_authorizations
           WHERE state = $1
-        RETURNING user_id, provider, code_verifier, redirect_path, (expires_at < now()) AS expired`,
+        RETURNING user_id, provider, code_verifier, redirect_path, oauth_client_id,
+                  (expires_at < now()) AS expired`,
         [parsed.data.state],
       );
       return row ?? null;
@@ -203,8 +236,19 @@ export class ConnectionsController {
     }
 
     const spec = requireProvider(pending.provider);
-    const client = oauthClient(spec);
-    if (!client) throw new BadRequestException(`${spec.label} is not configured`);
+    const client = await this.db
+      .withOrg(orgId, (db) =>
+        resolveOAuthClient(db, orgId, spec, { issuedTo: pending.oauth_client_id }),
+      )
+      .catch((err: unknown) => {
+        if (err instanceof OAuthAppChangedError) {
+          throw new BadRequestException(
+            `your organisation's ${spec.label} app was changed while you were signing in - start again`,
+          );
+        }
+        throw err;
+      });
+    if (!client) throw new BadRequestException(`${spec.label} is not set up for your organisation`);
 
     const token = await exchangeCode(spec, client, parsed.data.code, pending.code_verifier);
     const accountEmail = emailFromIdToken(token.id_token) ?? `${spec.id}-account`;
@@ -216,22 +260,38 @@ export class ConnectionsController {
       } = await db.query(
         `INSERT INTO connected_accounts
            (org_id, user_id, provider, capabilities, account_email, scopes,
-            access_token, refresh_token, token_expires_at, status)
+            access_token, refresh_token, token_expires_at, status, oauth_client_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
                  CASE WHEN $9::int IS NULL THEN NULL ELSE now() + ($9 || ' seconds')::interval END,
-                 'active')
+                 'active', $10)
          ON CONFLICT (org_id, user_id, provider, lower(account_email))
          DO UPDATE SET
            access_token   = EXCLUDED.access_token,
            -- Providers omit the refresh token on re-consent. Keeping the
            -- existing one is the difference between a reconnect that works
-           -- and one that silently expires an hour later.
-           refresh_token  = COALESCE(EXCLUDED.refresh_token, connected_accounts.refresh_token),
+           -- and one that silently expires an hour later - but ONLY when the
+           -- reconnect went through the same app. A refresh token belongs to
+           -- the client ID that issued it, so after a change of app the old
+           -- one is dead weight and keeping it would guarantee a failure. A
+           -- row from before 0120 (NULL) is not known to differ, so it keeps
+           -- the old behaviour.
+           refresh_token  = CASE
+             WHEN connected_accounts.oauth_client_id IS NOT NULL
+              AND connected_accounts.oauth_client_id <> EXCLUDED.oauth_client_id
+               THEN EXCLUDED.refresh_token
+             ELSE COALESCE(EXCLUDED.refresh_token, connected_accounts.refresh_token)
+           END,
            token_expires_at = EXCLUDED.token_expires_at,
            scopes         = EXCLUDED.scopes,
            capabilities   = EXCLUDED.capabilities,
+           oauth_client_id = EXCLUDED.oauth_client_id,
            status         = 'active',
-           last_error     = NULL
+           last_error     = NULL,
+           -- A connection parked because its app was replaced is healthy
+           -- again the moment it reconnects; stale counters would keep the
+           -- sweeps skipping it.
+           sync_failures     = 0,
+           calendar_failures = 0
          RETURNING ${CONNECTION_COLUMNS}`,
         [
           orgId,
@@ -243,6 +303,7 @@ export class ConnectionsController {
           encryptSecret(token.access_token),
           encryptSecret(token.refresh_token ?? null),
           token.expires_in ?? null,
+          client.clientId,
         ],
       );
       await audit(db, orgId, "connection.connect", connection.id, req);

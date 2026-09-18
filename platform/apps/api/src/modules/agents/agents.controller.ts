@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -11,12 +10,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { ExtractionSchema } from "@aura/shared";
-import { analyzeTranscript, generateAgentDraft } from "@aura/llm";
+import { ExtractionSchema, StoredExtractionSchema } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
-import { DbService } from "../../db/db.service";
+import { AgentsService } from "./agents.service";
 
 const AgentBody = z.object({
   workspaceId: z.string().uuid(),
@@ -29,7 +27,10 @@ const AgentBody = z.object({
 
 const NewVersionBody = AgentBody.omit({ workspaceId: true, name: true });
 const ActivateBody = z.object({ version: z.number().int().positive() });
-const TestBody = z.object({ callId: z.string().uuid(), version: z.number().int().positive().optional() });
+const TestBody = z.object({
+  callId: z.string().uuid(),
+  version: z.number().int().positive().optional(),
+});
 const GenerateBody = z.object({
   description: z.string().min(1).max(2000),
   /** Draft a MODIFICATION of this agent per `description`, instead of a
@@ -39,50 +40,47 @@ const GenerateBody = z.object({
   baseVersion: z.number().int().positive().optional(),
 });
 
+const actorOf = (req: PrincipalRequest) => ({ userId: req.principal?.userId ?? "dev-admin" });
+
 /**
+ * The OPERATOR's Agent Studio - any tenant, on the admin key.
+ *
  * Agents are versioned and immutable (design doc §4): creating is v1, editing
- * inserts a new version, activation flips is_active. Analyze resolves the
- * active agent per workspace. TODO: instance.default_agent_id routing.
+ * inserts a new version, activation flips is_active. Every write goes through
+ * `AgentsService`, which the tenant's own studio (owner-agents.controller.ts)
+ * shares, so the two consoles cannot disagree about what switching an agent on
+ * does. This surface only ever writes call extractors - the kinds 0121 added
+ * are authored by the tenant, and their request shapes live on that controller.
+ * TODO: instance.default_agent_id routing.
  */
 @Controller("agents")
 @UseGuards(AdminKeyGuard, TenantGuard)
 export class AgentsController {
-  constructor(private readonly db: DbService) {}
+  constructor(private readonly agents: AgentsService) {}
 
   @Post()
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = AgentBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const a = parsed.data;
-
-    return this.db.withOrg(orgId, async (client) => {
-      const ws = await client.query("SELECT 1 FROM workspaces WHERE id = $1", [a.workspaceId]);
-      if (ws.rowCount === 0) throw new NotFoundException("workspace not found in this org");
-
-      if (a.activate) {
-        await client.query(
-          "UPDATE agents SET is_active = false WHERE workspace_id = $1",
-          [a.workspaceId],
-        );
-      }
-      const {
-        rows: [agent],
-      } = await client.query(
-        `INSERT INTO agents (org_id, workspace_id, name, version, system_prompt, field_schema, labels, is_active)
-         VALUES ($1, $2, $3, 1, $4, $5, $6, $7)
-         RETURNING id, name, version, is_active, created_at`,
-        [orgId, a.workspaceId, a.name, a.systemPrompt, JSON.stringify(a.fieldSchema), JSON.stringify(a.labels), a.activate],
-      );
-      await client.query(
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'agent.create', 'agent', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", agent.id],
-      );
-      return agent;
-    });
+    return this.agents.create(
+      orgId,
+      actorOf(req),
+      {
+        kind: "call_extractor",
+        name: a.name,
+        purpose: "",
+        systemPrompt: a.systemPrompt,
+        fields: a.fieldSchema.fields,
+        leadRules: {},
+        config: {},
+        labels: a.labels,
+      },
+      { workspaceId: a.workspaceId, activate: a.activate },
+    );
   }
 
-  /** Editing = new immutable version. */
+  /** Editing = new immutable version. Lead rules, purpose and config carry forward. */
   @Post(":id/versions")
   async newVersion(
     @OrgId() orgId: string,
@@ -93,47 +91,13 @@ export class AgentsController {
     const parsed = NewVersionBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const a = parsed.data;
-
-    return this.db.withOrg(orgId, async (client) => {
-      const {
-        rows: [latest],
-      } = await client.query(
-        `SELECT workspace_id, name, max(version) AS version FROM agents
-          WHERE id = $1 GROUP BY workspace_id, name`,
-        [agentId],
-      );
-      if (!latest) throw new NotFoundException("agent not found");
-
-      if (a.activate) {
-        await client.query("UPDATE agents SET is_active = false WHERE workspace_id = $1", [
-          latest.workspace_id,
-        ]);
-      }
-      const {
-        rows: [agent],
-      } = await client.query(
-        `INSERT INTO agents (id, org_id, workspace_id, name, version, system_prompt, field_schema, labels, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id, name, version, is_active, created_at`,
-        [
-          agentId,
-          orgId,
-          latest.workspace_id,
-          latest.name,
-          Number(latest.version) + 1,
-          a.systemPrompt,
-          JSON.stringify(a.fieldSchema),
-          JSON.stringify(a.labels),
-          a.activate,
-        ],
-      );
-      await client.query(
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'agent.new_version', 'agent', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", agentId, JSON.stringify({ version: agent.version })],
-      );
-      return agent;
-    });
+    return this.agents.newVersion(
+      orgId,
+      actorOf(req),
+      agentId,
+      { systemPrompt: a.systemPrompt, fields: a.fieldSchema.fields, labels: a.labels },
+      { activate: a.activate },
+    );
   }
 
   @Post(":id/activate")
@@ -145,87 +109,30 @@ export class AgentsController {
   ) {
     const parsed = ActivateBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-
-    return this.db.withOrg(orgId, async (client) => {
-      const {
-        rows: [target],
-      } = await client.query("SELECT workspace_id FROM agents WHERE id = $1 AND version = $2", [
-        agentId,
-        parsed.data.version,
-      ]);
-      if (!target) throw new NotFoundException("agent version not found");
-      await client.query("UPDATE agents SET is_active = false WHERE workspace_id = $1", [
-        target.workspace_id,
-      ]);
-      const {
-        rows: [agent],
-      } = await client.query(
-        `UPDATE agents SET is_active = true WHERE id = $1 AND version = $2
-         RETURNING id, name, version, is_active`,
-        [agentId, parsed.data.version],
-      );
-      await client.query(
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'agent.activate', 'agent', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", agentId, JSON.stringify({ version: parsed.data.version })],
-      );
-      return agent;
-    });
+    return this.agents.activate(orgId, actorOf(req), agentId, parsed.data.version);
   }
 
   @Get()
   async list(@OrgId() orgId: string) {
-    return this.db.withOrg(orgId, async (client) => {
-      const { rows } = await client.query(
-        // system_prompt is included so the web Studio's "Start from" picker
-        // can clone an existing agent's prompt client-side, from this one
-        // list call, without a per-agent round trip.
-        `SELECT id, workspace_id, name, version, system_prompt, field_schema, labels, is_active, created_at
-           FROM agents ORDER BY name, version DESC`,
-      );
-      return { agents: rows };
-    });
+    // system_prompt is included so the web Studio's "Start from" picker
+    // can clone an existing agent's prompt client-side, from this one
+    // list call, without a per-agent round trip. Every kind is returned, with
+    // `kind` on each row; archived agents are not.
+    return { agents: await this.agents.listVersions(orgId) };
   }
 
   /**
-   * Draft a new agent definition from a free-text description - the Studio's
-   * "describe it and it is created accordingly" path - WITHOUT persisting
-   * it, same non-persisting-preview contract as `:id/test` below. When
-   * `baseAgentId` is given, drafts a MODIFICATION of that agent instead of a
-   * fresh one (the "start from an existing agent" clone path, expressed as a
-   * description rather than hand-edited) - its current prompt/fields are
-   * read through `withOrg`, so a caller can never read another tenant's
-   * agent by id. The operator reviews/edits the draft client-side; saving it
-   * still goes through the ordinary `POST /agents` above.
+   * Draft a new agent definition from a free-text description, WITHOUT
+   * persisting it - same non-persisting-preview contract as `:id/test` below.
+   * When `baseAgentId` is given, drafts a MODIFICATION of that agent. Its
+   * current definition is read through `withOrg`, so a caller can never read
+   * another tenant's agent by id.
    */
   @Post("generate")
   async generate(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = GenerateBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { description, baseAgentId, baseVersion } = parsed.data;
-
-    return this.db.withOrg(orgId, async (client) => {
-      let base: { name: string; systemPrompt: string; fields: z.infer<typeof ExtractionSchema>["fields"] } | undefined;
-      if (baseAgentId) {
-        const {
-          rows: [agent],
-        } = await client.query(
-          baseVersion
-            ? "SELECT name, system_prompt, field_schema FROM agents WHERE id = $1 AND version = $2"
-            : "SELECT name, system_prompt, field_schema FROM agents WHERE id = $1 ORDER BY version DESC LIMIT 1",
-          baseVersion ? [baseAgentId, baseVersion] : [baseAgentId],
-        );
-        if (!agent) throw new NotFoundException("base agent not found");
-        base = {
-          name: agent.name,
-          systemPrompt: agent.system_prompt,
-          fields: ExtractionSchema.parse(agent.field_schema).fields,
-        };
-      }
-
-      const draft = await generateAgentDraft({ description, base });
-      return draft;
-    });
+    return this.agents.draft(orgId, { kind: "call_extractor", ...parsed.data });
   }
 
   /**
@@ -243,25 +150,13 @@ export class AgentsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const { callId, version } = parsed.data;
 
-    return this.db.withOrg(orgId, async (client) => {
-      const {
-        rows: [agent],
-      } = await client.query(
-        version
-          ? "SELECT system_prompt, field_schema, version FROM agents WHERE id = $1 AND version = $2"
-          : "SELECT system_prompt, field_schema, version FROM agents WHERE id = $1 ORDER BY version DESC LIMIT 1",
-        version ? [agentId, version] : [agentId],
-      );
-      if (!agent) throw new NotFoundException("agent not found");
-
-      const {
-        rows: [transcript],
-      } = await client.query("SELECT text FROM transcripts WHERE call_id = $1", [callId]);
-      if (!transcript) throw new NotFoundException("no transcript for that call");
-
-      const schema = ExtractionSchema.parse(agent.field_schema);
-      const result = await analyzeTranscript(agent.system_prompt, schema, transcript.text);
-      return { agentVersion: agent.version, ...result };
+    const agent = await this.agents.storedVersion(orgId, agentId, version);
+    const result = await this.agents.testExtractor(orgId, {
+      systemPrompt: agent.system_prompt,
+      fields: StoredExtractionSchema.parse(agent.field_schema ?? { fields: [] }).fields,
+      leadRules: agent.lead_rules ?? {},
+      callId,
     });
+    return { agentVersion: agent.version, ...result };
   }
 }

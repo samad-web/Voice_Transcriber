@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AgentsModule } from "../agents/agents.module";
 import { PublicApiModule } from "../public-api/public-api.module";
 import { ConversationsController } from "./conversations.controller";
 import { ConversationsService } from "./conversations.service";
@@ -25,7 +26,8 @@ import { WhatsAppSendController } from "./whatsapp-send.controller";
  * call the lead intake engine made in 0078.
  */
 @Module({
-  imports: [PublicApiModule],
+  // AgentsModule for the reply drafter behind POST conversations/:id/draft-reply (0121).
+  imports: [PublicApiModule, AgentsModule],
   controllers: [
     ConversationQualificationController,
     ConversationsController,
