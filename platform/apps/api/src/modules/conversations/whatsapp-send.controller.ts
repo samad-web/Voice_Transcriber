@@ -18,6 +18,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { visibleThread } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { sendWasiMessage, WasiSendError } from "./wasi-client";
@@ -91,6 +92,11 @@ export class WhatsAppSendController {
       // A rep scoped to `owned` conversations may only send into their own -
       // same predicate ConversationsController applies on view/update.
       const scoped = scopeClause("conversation", recordScope, 2);
+      const lookupParams: unknown[] = scoped ? [conversationId, recordScope.userId] : [conversationId];
+      // Private threads (0125) send only from their owner: the reply goes out
+      // on that person's own phone number, and nobody else may speak as them.
+      lookupParams.push(userId.data);
+      const visible = visibleThread("", lookupParams.length);
       const {
         rows: [convo],
       } = await client.query<{
@@ -107,8 +113,8 @@ export class WhatsAppSendController {
         `SELECT id, peer_address, messaging_channel_id, channel, last_inbound_at
            FROM conversations
           WHERE id = $1 AND channel IN ('whatsapp', 'instagram', 'facebook')
-            ${scoped ? `AND ${scoped}` : ""}`,
-        scoped ? [conversationId, recordScope.userId] : [conversationId],
+            ${scoped ? `AND ${scoped}` : ""} AND ${visible}`,
+        lookupParams,
       );
       if (!convo) throw new NotFoundException("conversation not found");
       if (!convo.messaging_channel_id) {
@@ -205,7 +211,7 @@ export class WhatsAppSendController {
       }
       if (isPersonal && !channel.api_key) {
         throw new BadRequestException(
-          "this personal WhatsApp number is not linked yet - pair it on the WhatsApp setup page first",
+          "this personal WhatsApp number is not linked yet - link it from My WhatsApp at the top of your Inbox first",
         );
       }
 

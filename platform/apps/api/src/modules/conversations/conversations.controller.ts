@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -21,6 +22,7 @@ import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-perm
 import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
 import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
+import { ThreadViewer, visibleThread } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { AgentsService, replyDrafterActive } from "../agents/agents.service";
@@ -45,8 +47,29 @@ import { AgentsService, replyDrafterActive } from "../agents/agents.service";
  * shipped. Safety rule 3 is a property of that other controller's shape, not
  * of this file pretending sending doesn't exist.
  */
+/**
+ * `c.id = $1`, narrowed twice: by the grid's record scope (may this ROLE see
+ * the thread) and by privacy (0125 - is it somebody else's own number).
+ * One builder for every single-thread read, so the two can never be applied
+ * to one route and forgotten on its neighbour.
+ */
+function threadLookup(
+  id: string,
+  recordScope: CrmRecordScope,
+  viewer: string | null,
+): { clause: string; params: unknown[] } {
+  const params: unknown[] = [id];
+  const scoped = scopeClause("conversation", recordScope, 2, "c");
+  if (scoped) params.push(recordScope.userId);
+  params.push(viewer);
+  const clause = ["c.id = $1", scoped, visibleThread("c", params.length)]
+    .filter(Boolean)
+    .join(" AND ");
+  return { clause, params };
+}
+
 const CONVERSATION_COLUMNS = `c.id, c.workspace_id, c.channel, c.peer_address, c.peer_label,
-  c.contact_id, c.status, c.assigned_user_id, c.messaging_channel_id,
+  c.contact_id, c.status, c.assigned_user_id, c.messaging_channel_id, c.private_to_user_id,
   c.last_message_at, c.last_inbound_at, c.unread_count, c.created_at, c.updated_at,
   /*
    * The PROVIDER behind the thread, for the composer's 24-hour window notice
@@ -92,6 +115,7 @@ export class ConversationsController {
     @OrgId() orgId: string,
     @Query() query: unknown,
     @RecordScope() recordScope: CrmRecordScope,
+    @ThreadViewer() viewer: string | null,
   ) {
     const parsed = ConversationListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -125,6 +149,11 @@ export class ConversationsController {
 
     const owned = scopeFilter("conversation", recordScope, "c");
     if (owned) add(owned.sql, owned.value);
+    // Somebody's private threads (0125) never reach anybody else's list,
+    // whatever their grid says. The count below shares `where`, so it cannot
+    // disagree with the page about how many threads exist.
+    params.push(viewer);
+    where.push(visibleThread("c", params.length));
 
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
@@ -159,9 +188,10 @@ export class ConversationsController {
     @OrgId() orgId: string,
     @Param("id", new ParseUUIDPipe()) id: string,
     @RecordScope() recordScope: CrmRecordScope,
+    @ThreadViewer() viewer: string | null,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      const scoped = scopeClause("conversation", recordScope, 2, "c");
+      const { clause, params } = threadLookup(id, recordScope, viewer);
       const {
         rows: [conversation],
       } = await client.query(
@@ -169,9 +199,11 @@ export class ConversationsController {
            FROM conversations c
            LEFT JOIN contacts k ON k.id = c.contact_id
            LEFT JOIN messaging_channels mc ON mc.id = c.messaging_channel_id
-          WHERE c.id = $1 ${scoped ? `AND ${scoped}` : ""}`,
-        scoped ? [id, recordScope.userId] : [id],
+          WHERE ${clause}`,
+        params,
       );
+      // Somebody else's private thread is a 404, not a 403: saying "forbidden"
+      // would confirm that a private conversation with this id exists.
       if (!conversation) throw new NotFoundException("conversation not found");
 
       // `sent_by_name` so a reply reads "Logesh sent a WhatsApp message" on the
@@ -211,16 +243,19 @@ export class ConversationsController {
     @OrgId() orgId: string,
     @Param("id", new ParseUUIDPipe()) id: string,
     @RecordScope() recordScope: CrmRecordScope,
+    @ThreadViewer() viewer: string | null,
   ) {
     await this.db.withOrg(orgId, async (client) => {
-      const scoped = scopeClause("conversation", recordScope, 2, "c");
+      const { clause, params } = threadLookup(id, recordScope, viewer);
       const { rowCount } = await client.query(
-        `SELECT 1 FROM conversations c WHERE c.id = $1 ${scoped ? `AND ${scoped}` : ""}`,
-        scoped ? [id, recordScope.userId] : [id],
+        `SELECT 1 FROM conversations c WHERE ${clause}`,
+        params,
       );
       if (!rowCount) throw new NotFoundException("conversation not found");
     });
-    const draft = await this.agents.draftReply(orgId, { source: { conversationId: id } });
+    const draft = await this.agents.draftReply(orgId, {
+      source: { conversationId: id, viewerUserId: viewer },
+    });
     return { reply: draft.reply, provider: draft.provider };
   }
 
@@ -231,6 +266,7 @@ export class ConversationsController {
     @Param("id", new ParseUUIDPipe()) id: string,
     @Body() body: unknown,
     @RecordScope() recordScope: CrmRecordScope,
+    @ThreadViewer() viewer: string | null,
   ) {
     const parsed = ConversationPatch.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -262,14 +298,30 @@ export class ConversationsController {
 
       const scoped = scopeClause("conversation", recordScope, params.length + 1);
       if (scoped) params.push(recordScope.userId);
-      const {
-        rows: [updated],
-      } = await client.query(
-        `UPDATE conversations SET ${sets.join(", ")}
-          WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}
-        RETURNING id, status, assigned_user_id, contact_id, unread_count`,
-        params,
-      );
+      params.push(viewer);
+      const visible = visibleThread("", params.length);
+      let updated: Record<string, unknown> | undefined;
+      try {
+        ({
+          rows: [updated],
+        } = await client.query(
+          `UPDATE conversations SET ${sets.join(", ")}
+            WHERE id = $1 ${scoped ? `AND ${scoped}` : ""} AND ${visible}
+          RETURNING id, status, assigned_user_id, contact_id, unread_count`,
+          params,
+        ));
+      } catch (err) {
+        // 0125: a private thread stays assigned to the person whose number it
+        // arrived on. Handing it to a colleague would not show it to them -
+        // they still could not read it - so the database refuses, and this
+        // says why instead of surfacing a constraint name.
+        if ((err as { constraint?: string })?.constraint === "conversations_private_is_assigned_to_owner") {
+          throw new ConflictException(
+            "this chat arrived on your own WhatsApp number, so it stays with you and cannot be assigned to someone else",
+          );
+        }
+        throw err;
+      }
       if (!updated) throw new NotFoundException("conversation not found");
       return updated;
     });
@@ -320,11 +372,14 @@ export class ConversationsController {
     }
 
     return this.db.withOrg(orgId, async (client) => {
+      // The same person the whole route is keyed on is the viewer: a manager
+      // cannot release an opt-out through a colleague's private thread, since
+      // doing it would mean acting on a conversation they may not read.
       const {
         rows: [convo],
       } = await client.query<{ channel: string; peer_address: string }>(
-        `SELECT channel, peer_address FROM conversations WHERE id = $1`,
-        [id],
+        `SELECT channel, peer_address FROM conversations WHERE id = $1 AND ${visibleThread("", 2)}`,
+        [id, userId.data],
       );
       if (!convo) throw new NotFoundException("conversation not found");
 

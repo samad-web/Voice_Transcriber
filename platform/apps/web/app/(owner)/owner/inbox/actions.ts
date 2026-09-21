@@ -17,6 +17,12 @@ export interface Conversation {
   status: ConversationStatus;
   assigned_user_id: string | null;
   messaging_channel_id: string | null;
+  /**
+   * Set when the thread arrived on somebody's own WhatsApp number (0125). The
+   * API returns such a thread only to that person, so a non-null value here
+   * always means "yours, and nobody else's".
+   */
+  private_to_user_id: string | null;
   last_message_at: string | null;
   last_inbound_at: string | null;
   unread_count: number;

@@ -45,6 +45,14 @@ export function OptOutReviewCard({ item, waiting, onResolved, onFailed }: Review
         <blockquote className="border-l-2 border-border-strong pl-3 text-sm break-words text-text">
           {item.message_body}
         </blockquote>
+      ) : item.source_private ? (
+        // Not "no longer stored" - it is stored, and it is not this reviewer's
+        // to read. Saying which is the difference between a data problem and
+        // a privacy rule working (0125).
+        <p className="text-xs text-text-muted">
+          This arrived on a colleague&rsquo;s own WhatsApp number, so the message is visible only to
+          them. The opt-out still applies to everyone.
+        </p>
       ) : (
         <p className="text-xs text-text-muted">The message that raised this is no longer stored.</p>
       )}

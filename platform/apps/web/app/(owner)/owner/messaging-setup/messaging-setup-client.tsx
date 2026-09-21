@@ -4,7 +4,6 @@ import { useEffect, useState, useTransition } from "react";
 import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { providerSpec, readChannel } from "@aura/shared";
 import { MetaChannelDialog } from "./meta-channel-dialog";
-import { PersonalWhatsAppPanel } from "./personal-whatsapp-panel";
 import {
   createWasiChannelAction,
   listChannelsAction,
@@ -71,16 +70,18 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
             </div>
           </div>
 
+          {/* Personal numbers moved to the inbox (0125): each person links their
+              own, and its chats are private to them - so an organisation-wide
+              control here would be the wrong owner for the thing. Kept as a
+              pointer rather than removed, because this is where people were
+              told to look. */}
           <div className="border-t border-border pt-4">
-            <p className="text-sm font-medium text-text">Your own WhatsApp number</p>
+            <p className="text-sm font-medium text-text">Personal WhatsApp numbers</p>
             <p className="mt-1 max-w-prose text-sm leading-relaxed text-text-muted">
-              An ordinary WhatsApp account, linked the way WhatsApp Web links one — a code you type
-              into your phone, or a QR you scan. No Meta approval and no waiting, but no templates
-              either, and messages can only be sent while a conversation is live.
+              Each person links their own WhatsApp number from{" "}
+              <span className="font-medium text-text">Inbox → My WhatsApp</span>, without needing
+              anyone&rsquo;s approval. Chats on a personal number are visible only to that person.
             </p>
-            <div className="mt-2">
-              <PersonalWhatsAppPanel onChanged={refresh} />
-            </div>
           </div>
         </div>
       </Card>

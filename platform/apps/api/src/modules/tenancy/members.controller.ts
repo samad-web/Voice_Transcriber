@@ -16,6 +16,7 @@ import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
+import { retirePersonalChannel } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -246,6 +247,8 @@ export class MembersController {
         orgId,
       ]);
       if ((res.rowCount ?? 0) === 0) throw new NotFoundException("member not found in this org");
+      // Their own WhatsApp number stops delivering here (0125).
+      await retirePersonalChannel(client, orgId, userId);
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)

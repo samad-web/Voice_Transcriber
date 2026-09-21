@@ -29,7 +29,7 @@ SELECT set_config('app.org_id', :'org', true);
 -- ─────────────────────────────────────────────────────────────────────────
 INSERT INTO conversations (org_id, channel, peer_address, peer_label, last_message_at, last_inbound_at)
 VALUES (:'org', 'whatsapp', '919999900001', 'Verify Person', now(), now())
-ON CONFLICT (org_id, channel, peer_address) DO UPDATE SET last_inbound_at = now()
+ON CONFLICT (org_id, channel, peer_address) WHERE private_to_user_id IS NULL DO UPDATE SET last_inbound_at = now()
 RETURNING 'thread' AS step, id \gset thread_
 
 INSERT INTO conversation_messages (org_id, conversation_id, direction, channel, body, occurred_at)

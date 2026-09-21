@@ -16,6 +16,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
+import { threadViewerOf } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { type AgentWrite, AgentsService } from "./agents.service";
@@ -233,7 +234,11 @@ export class OwnerAgentsController {
       throw new BadRequestException("Choose a call or a conversation to draft a reply for.");
     }
     return this.agents.draftReply(orgId, {
-      source: callId ? { callId } : { conversationId: conversationId! },
+      // The author's own private threads may be test material; a colleague's
+      // may not - the service resolves the thread for this viewer only (0125).
+      source: callId
+        ? { callId }
+        : { conversationId: conversationId!, viewerUserId: threadViewerOf(req) },
       definition: { instructions: definition.instructions, config: definition.config },
       // The studio has not checked transcript access; the service does, for a call.
       transcriptReaderUserId: req.principal?.userId ?? "",

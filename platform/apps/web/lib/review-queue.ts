@@ -133,6 +133,12 @@ export interface ReviewOptOut {
   contact_id: string | null;
   message_body: string | null;
   message_at: string | null;
+  /**
+   * The message that raised this arrived on a colleague's own WhatsApp number
+   * (0125), so its text and thread are withheld from this reviewer. The
+   * opt-out itself still applies to the whole business.
+   */
+  source_private?: boolean;
   created_at: string;
 }
 

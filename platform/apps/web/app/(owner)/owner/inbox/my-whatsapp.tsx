@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Lock } from "lucide-react";
 import {
   Button,
   Dialog,
   ErrorBanner,
   FormField,
   Input,
+  MonoLabel,
   RowHint,
   StatusChip,
   useAlert,
@@ -20,37 +23,44 @@ import {
   startPersonalWhatsAppAction,
   type PersonalWhatsAppPairing,
   type PersonalWhatsAppStatus,
-} from "./actions";
+} from "./my-whatsapp-actions";
 
 /**
- * Linking an ordinary WhatsApp number, without leaving the console.
+ * My WhatsApp - linking the signed-in person's OWN number (migration 0125).
+ *
+ * ── WHY IT LIVES IN THE INBOX ───────────────────────────────────────────────
+ *
+ * A personal number is somebody's own phone, so they link it themselves, with
+ * nobody's permission, from the page where its chats will appear. It used to
+ * sit on WhatsApp Setup, one per organisation, which a telecaller cannot even
+ * open - so the people whose phones these are could never link them.
+ *
+ * ── PRIVATE, AND SAYING SO ──────────────────────────────────────────────────
+ *
+ * Chats that arrive on this number are visible to this person alone: not a
+ * manager, not the owner. The API enforces it on every read
+ * (common/private-threads.ts); this card's job is to say it plainly BEFORE
+ * somebody links, because it is the thing they will want to know first.
  *
  * ── WHY A PAIRING CODE AND NOT A QR BY DEFAULT ──────────────────────────────
  *
- * Both are offered; the code leads. The people doing this are at a desk with
- * their phone next to them, and a QR asks them to hold a phone camera up to a
- * monitor - which fails on a second monitor, on a laptop turned away, and for
- * anyone who has to fetch their glasses. Eight characters typed into
- * WhatsApp → Linked devices works in every one of those cases.
+ * Both are offered; the code leads. The person is at a desk with their phone
+ * beside them, and a QR asks them to hold a camera up to a monitor - which
+ * fails on a second screen and for anyone who has to fetch their glasses.
+ * Eight characters typed into WhatsApp → Linked devices works everywhere.
  *
  * ── WHY IT POLLS ────────────────────────────────────────────────────────────
  *
  * Pairing finishes on the PHONE, and nothing in this browser hears about it.
- * The alternative to polling is a socket held open per attempt for a flow that
- * lasts well under a minute. The API also records Evolution's `CONNECTION`
- * webhook, so there is a durable trail of when a number linked or dropped -
- * this is just what lets the screen in front of somebody move on.
- *
- * The poll stops on success, on dialog close, and after a hard ceiling. A
- * pairing screen that polls forever because somebody wandered off is a request
- * every three seconds against the relay until the tab is closed.
+ * The poll stops on success, on dialog close, and after a hard ceiling.
  */
 
 /** Long enough for somebody to find the phone and type; short enough to stop. */
 const POLL_MS = 3000;
 const POLL_CEILING = 100; // ~5 minutes
 
-export function PersonalWhatsAppPanel({ onChanged }: { onChanged: () => void }) {
+export function MyWhatsApp() {
+  const router = useRouter();
   const [status, setStatus] = useState<PersonalWhatsAppStatus | null>(null);
   const [open, setOpen] = useState(false);
   const alert = useAlert();
@@ -65,53 +75,67 @@ export function PersonalWhatsAppPanel({ onChanged }: { onChanged: () => void }) 
     void load();
   }, [load]);
 
-  // Nothing is known yet. Deliberately renders nothing rather than a disabled
-  // button that might be about to become enabled - a control that flickers
-  // between states on load reads as broken.
+  // Nothing is known yet. Renders nothing rather than a button that might be
+  // about to change - a control that flickers between states on load reads as
+  // broken.
   if (!status) return null;
 
   if (!status.available) {
+    // Plain words, no variable names: the person reading this is a telecaller,
+    // and "EVOLUTION_ADMIN_API_KEY" is a sentence they cannot act on.
     return (
-      <RowHint kind="blocked">
-        This deployment has no WhatsApp relay configured, so a personal number cannot be linked
-        here. Your provider sets EVOLUTION_BASE_URL and EVOLUTION_ADMIN_API_KEY.
-      </RowHint>
+      <div className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
+        <MonoLabel>My WhatsApp</MonoLabel>
+        <span>Linking your own WhatsApp number is not available on this workspace yet.</span>
+      </div>
     );
   }
 
+  const privacy = (
+    <p className="flex items-start gap-1.5 text-xs text-text-muted">
+      <Lock aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        Chats on your number are visible only to you - not to your manager or the business owner.
+      </span>
+    </p>
+  );
+
   if (status.connected) {
     return (
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusChip tone="solid">Linked</StatusChip>
-          <span className="font-mono text-xs text-text-muted">{status.number}</span>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <MonoLabel>My WhatsApp</MonoLabel>
+            <StatusChip tone="solid">Linked</StatusChip>
+            <span className="font-mono text-xs text-text-muted">{status.number}</span>
+          </div>
+          {privacy}
         </div>
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => void (async () => {
-            const ok = await confirm({
-              title: "Unlink this WhatsApp number?",
-              body: "Messages will stop arriving in the inbox and you will not be able to reply from Aura. The conversations already here are kept. You can link it again at any time.",
-              tone: "danger",
-              confirmLabel: "Unlink",
-              // Destructive but recoverable, which is exactly the case the
-              // confirm dialog's own docblock names for opting out: nothing is
-              // deleted, the correspondence stays, and re-linking is two
-              // clicks. Making somebody type CONFIRM here is the friction that
-              // teaches people to type it without reading.
-              requireTyped: false,
-            });
-            if (!ok) return;
-            const res = await disconnectPersonalWhatsAppAction();
-            if (res.error) {
-              await alert({ title: "Couldn't unlink it", body: res.error, tone: "danger" });
-              return;
-            }
-            toast("WhatsApp unlinked");
-            await load();
-            onChanged();
-          })()}
+          onClick={() =>
+            void (async () => {
+              const ok = await confirm({
+                title: "Unlink your WhatsApp number?",
+                body: "New messages will stop arriving here and you will not be able to reply from Aura. Your existing chats stay, still visible only to you. You can link it again at any time.",
+                tone: "danger",
+                confirmLabel: "Unlink",
+                // Reversible and nothing is deleted - the case the confirm
+                // dialog's own docblock names for skipping typed confirmation.
+                requireTyped: false,
+              });
+              if (!ok) return;
+              const res = await disconnectPersonalWhatsAppAction();
+              if (res.error) {
+                await alert({ title: "Couldn't unlink it", body: res.error, tone: "danger" });
+                return;
+              }
+              toast("WhatsApp unlinked");
+              await load();
+              router.refresh();
+            })()
+          }
         >
           Unlink
         </Button>
@@ -121,19 +145,28 @@ export function PersonalWhatsAppPanel({ onChanged }: { onChanged: () => void }) 
 
   return (
     <>
-      <div className="space-y-2">
-        {/* The number is not linked, and if we know WHY that is worth saying -
-            "no longer linked" is a different situation from "never linked",
-            and only one of them means somebody unlinked it on the phone. */}
-        {status.number ? (
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusChip tone="outline">Not linked</StatusChip>
-            <span className="font-mono text-xs text-text-muted">{status.number}</span>
+            <MonoLabel>My WhatsApp</MonoLabel>
+            {/* "No longer linked" is a different situation from "never
+                linked", and only one of them means somebody unlinked it on
+                the phone - so the number is shown when we know it. */}
+            {status.number ? (
+              <>
+                <StatusChip tone="outline">Not linked</StatusChip>
+                <span className="font-mono text-xs text-text-muted">{status.number}</span>
+              </>
+            ) : null}
           </div>
-        ) : null}
-        {status.detail ? <p className="text-xs text-text-muted">{status.detail}</p> : null}
+          <p className="text-sm text-text-muted">
+            Link your own WhatsApp number to read and reply to its chats right here.
+          </p>
+          {privacy}
+          {status.detail ? <p className="text-xs text-text-muted">{status.detail}</p> : null}
+        </div>
         <Button variant="secondary" onClick={() => setOpen(true)}>
-          {status.number ? "Link it again" : "Link a personal number"}
+          {status.number ? "Link it again" : "Link my WhatsApp"}
         </Button>
       </div>
 
@@ -143,7 +176,7 @@ export function PersonalWhatsAppPanel({ onChanged }: { onChanged: () => void }) 
         onLinked={() => {
           setOpen(false);
           void load();
-          onChanged();
+          router.refresh();
         }}
       />
     </>
@@ -174,7 +207,7 @@ function PairDialog({
 
   // The kit's <Dialog> never unmounts its children, so without this a second
   // attempt opens showing the last attempt's code - which somebody would type
-  // in, and it would not work. Same trap the two dialogs next door document.
+  // in, and it would not work.
   useEffect(() => {
     if (!open) {
       stopPolling();
@@ -188,7 +221,7 @@ function PairDialog({
   }, [open, stopPolling]);
 
   // Stop polling if this unmounts mid-flight - otherwise the callback fires
-  // against a dead component and, worse, keeps hitting the relay.
+  // against a dead component and keeps hitting the relay.
   useEffect(() => stopPolling, [stopPolling]);
 
   const beginPolling = useCallback(() => {
@@ -244,7 +277,7 @@ function PairDialog({
         ) : (
           <>
             <FormField
-              label="WhatsApp number"
+              label="Your WhatsApp number"
               name="phone"
               required
               hint="The number on the phone you are about to link, with the country code."
@@ -277,12 +310,16 @@ function PairDialog({
               </div>
             </FormField>
 
+            <RowHint kind="action">
+              Chats on this number will be visible only to you. Nobody else in your team - including
+              managers and the business owner - can read them.
+            </RowHint>
+
             {/*
               Stated before they commit, not after. This is an unofficial route
               to WhatsApp - it is how WhatsApp Web works, driven from a server -
               and Meta can rate-limit or ban an account for traffic that looks
-              like bulk messaging. Somebody linking their own phone is entitled
-              to know that before they do it, not in a help article afterwards.
+              like bulk messaging.
             */}
             <RowHint kind="blocked">
               This links your account the same way WhatsApp Web does, which Meta does not
@@ -323,9 +360,8 @@ function PairingInstructions({
 
       {method === "code" && pairing.pairingCode ? (
         <div className="rounded-md border border-border bg-bg-subtle p-4 text-center">
-          {/* Tracking-wide and large: this is read off a screen and typed into
-              a phone, character by character, usually by somebody holding the
-              phone in the other hand. */}
+          {/* Tracking-wide and large: read off a screen and typed into a
+              phone, character by character, usually one-handed. */}
           <p className="font-mono text-2xl tracking-[0.3em] text-text">{pairing.pairingCode}</p>
           <p className="mt-2 text-xs text-text-muted">Enter this in WhatsApp on your phone.</p>
         </div>
@@ -333,25 +369,24 @@ function PairingInstructions({
 
       {method === "qr" && pairing.qrImage ? (
         <div className="flex justify-center rounded-md border border-border bg-white p-4">
-          {/* Always on white, whatever the console theme. A QR inverted by a
-              dark background does not scan.
-
-              A plain <img>, not next/image: the source is a `data:` URI minted
-              per pairing attempt, so there is nothing for the image optimiser
-              to fetch, cache or resize. */}
+          {/* Always on white, whatever the console theme: a QR inverted by a
+              dark background does not scan. A plain <img>: the source is a
+              data: URI minted per attempt, nothing to fetch or resize. */}
           <img src={pairing.qrImage} alt="WhatsApp pairing QR code" className="h-56 w-56" />
         </div>
       ) : null}
 
       {method === "qr" && !pairing.qrImage && pairing.qrCode ? (
         <div className="rounded-md border border-border bg-bg-subtle p-3">
-          <p className="font-mono text-xs break-all text-text-muted">{pairing.qrCode}</p>
+          <p className="break-all font-mono text-xs text-text-muted">{pairing.qrCode}</p>
         </div>
       ) : null}
 
+      {pairing.detail ? <p className="text-xs text-text-muted">{pairing.detail}</p> : null}
+
       <RowHint kind="action">
-        Waiting for your phone. This page will update by itself once the link is confirmed — it
-        usually takes a few seconds.
+        Waiting for your phone. This updates by itself once the link is confirmed - it usually
+        takes a few seconds.
       </RowHint>
     </div>
   );

@@ -19,6 +19,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { ThreadViewer, visibleThread } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { CrmIngestService } from "../public-api/crm-ingest.service";
@@ -123,6 +124,7 @@ export class ConversationQualificationController {
     @OrgId() orgId: string,
     @Query() query: unknown,
     @RecordScope() recordScope: CrmRecordScope,
+    @ThreadViewer() viewer: string | null,
   ) {
     const parsed = QueueQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -156,6 +158,11 @@ export class ConversationQualificationController {
       params.push(recordScope.userId);
       where.push(scoped);
     }
+    // A verdict on somebody's private thread (0125) is theirs to act on. The
+    // extracted name, budget and notes are read out of their conversation, so
+    // showing the card to anyone else would show the conversation by summary.
+    params.push(viewer);
+    where.push(visibleThread("c", params.length));
     params.push(q.limit);
 
     return this.db.withOrg(orgId, async (client) => {
@@ -234,9 +241,9 @@ export class ConversationQualificationController {
                 c.peer_address, c.peer_label, c.contact_id, c.workspace_id
            FROM conversation_qualifications q
            JOIN conversations c ON c.id = q.conversation_id
-          WHERE q.id = $1 AND q.org_id = $2
+          WHERE q.id = $1 AND q.org_id = $2 AND ${visibleThread("c", 3)}
           FOR UPDATE OF q`,
-        [id, orgId],
+        [id, orgId, userId.data],
       );
       if (!row) throw new NotFoundException("no such qualification");
       if (row.status !== "pending") {
@@ -316,7 +323,14 @@ export class ConversationQualificationController {
         `UPDATE conversation_qualifications
             SET status = 'rejected', reviewed_by_user_id = $3, reviewed_at = now(),
                 rationale = COALESCE($4, rationale)
-          WHERE id = $1 AND org_id = $2 AND status = 'pending'`,
+          WHERE id = $1 AND org_id = $2 AND status = 'pending'
+            -- Only on a thread the reviewer may see (0125): rejecting a
+            -- colleague's private lead unseen would be deciding it for them.
+            AND EXISTS (
+              SELECT 1 FROM conversations c
+               WHERE c.id = conversation_qualifications.conversation_id
+                 AND ${visibleThread("c", 3)}
+            )`,
         [id, orgId, userId.data, parsed.data.reason ?? null],
       );
       if (!rowCount) throw new NotFoundException("no such pending qualification");

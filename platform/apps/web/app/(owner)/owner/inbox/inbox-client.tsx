@@ -410,6 +410,9 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
                     <span className="uppercase">{t.channel}</span>
+                    {/* Grey, not a state hue (console-palette.test.ts): privacy is
+                        a property of the thread, not one of the four states. */}
+                    {t.private_to_user_id ? <StatusChip tone="outline">Only you</StatusChip> : null}
                     {t.contact_id === null ? <StatusChip tone="muted">Unmatched</StatusChip> : null}
                     <span className="ml-auto tabular-nums">{formatWhen(t.last_message_at)}</span>
                   </div>
@@ -438,6 +441,11 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                 <p className="mt-0.5 text-xs text-text-muted">
                   {thread.conversation.peer_address} · {thread.conversation.channel}
                 </p>
+                {thread.conversation.private_to_user_id ? (
+                  <p className="mt-1 text-xs text-text-muted">
+                    This chat arrived on your own WhatsApp number, so only you can see it.
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusChip tone={thread.conversation.status === "closed" ? "muted" : "solid"}>

@@ -32,6 +32,7 @@ import {
   type LeadRules,
 } from "@aura/shared";
 import { orgHasModule } from "../../common/org-modules";
+import { visibleThread } from "../../common/private-threads";
 import { isUniqueViolation } from "../../common/pg-errors";
 import { DbService } from "../../db/db.service";
 import { type AgentVersionRow, summarizeAgents } from "./agent-summaries";
@@ -200,6 +201,9 @@ export class AgentsService {
                 (SELECT count(*)::int FROM conversation_messages m WHERE m.conversation_id = c.id) AS message_count
            FROM conversations c
           WHERE c.channel = 'whatsapp' AND c.last_inbound_at IS NOT NULL
+            -- Never somebody's own number (0125). The studio is an owner's and
+            -- manager's tool, and a private chat is not theirs to test with.
+            AND c.private_to_user_id IS NULL
           ORDER BY c.last_inbound_at DESC
           LIMIT 25`,
       );
@@ -500,7 +504,9 @@ export class AgentsService {
         );
       }
       const { rowCount } = await client.query(
-        "SELECT 1 FROM conversations WHERE id = $1 AND channel = 'whatsapp'",
+        // Private threads (0125) are refused as test material exactly as the
+        // samples list never offers them - a pasted id must not get around it.
+        "SELECT 1 FROM conversations WHERE id = $1 AND channel = 'whatsapp' AND private_to_user_id IS NULL",
         [input.conversationId],
       );
       if (!rowCount) throw new NotFoundException("That WhatsApp conversation was not found.");
@@ -555,7 +561,13 @@ export class AgentsService {
   async draftReply(
     orgId: string,
     input: {
-      source: { callId: string } | { conversationId: string };
+      /**
+       * A conversation source names WHO is drafting (0125). Required, not
+       * optional, so no caller can forget it: a private thread is resolved
+       * only for its owner, here in the service, because the studio's test run
+       * accepts any conversation id and has no thread check of its own.
+       */
+      source: { callId: string } | { conversationId: string; viewerUserId: string | null };
       definition?: { instructions: string; config: ReplyDrafterConfig };
       /**
        * Set by a caller that has NOT already checked transcript access - the
@@ -636,8 +648,8 @@ export class AgentsService {
         `SELECT c.channel, COALESCE(k.display_name, c.peer_label) AS customer
            FROM conversations c
            LEFT JOIN contacts k ON k.id = c.contact_id
-          WHERE c.id = $1`,
-        [input.source.conversationId],
+          WHERE c.id = $1 AND ${visibleThread("c", 2)}`,
+        [input.source.conversationId, input.source.viewerUserId],
       );
       if (!conversation) throw new NotFoundException("That conversation was not found.");
       const { rows } = await client.query<{

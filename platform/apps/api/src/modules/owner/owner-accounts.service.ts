@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { OwnerRole } from "@aura/shared";
+import { retirePersonalChannel } from "../../common/private-threads";
 import { DbService } from "../../db/db.service";
 import { SupabaseAdminService } from "./supabase-admin.service";
 
@@ -251,6 +252,8 @@ export class OwnerAccountsService {
       if ((res.rowCount ?? 0) === 0) {
         throw new NotFoundException("member not found in this instance");
       }
+      // Their own WhatsApp number stops delivering here (0125).
+      await retirePersonalChannel(client, orgId, userId);
 
       // Any session already issued to them is bound to this org; drop it so
       // revocation is immediate rather than "at token expiry".

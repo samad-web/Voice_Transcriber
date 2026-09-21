@@ -723,6 +723,13 @@ const OWNER_ROLE_ROUTES = [
   // the guard and then check the per-person pairing grant in the handler;
   // revoke is the one route with a real persona requirement, because retiring
   // a working phone mid-shift is not delegable.
+  // A person's OWN WhatsApp number (0125). The four personas who have an
+  // inbox to read its chats in; every route acts only on the caller's own
+  // channel, found by owner_user_id - see WhatsAppPairingController.
+  "GET /messaging/whatsapp-personal",
+  "POST /messaging/whatsapp-personal",
+  "GET /messaging/whatsapp-personal/poll",
+  "DELETE /messaging/whatsapp-personal",
   "GET /owner/devices",
   "POST /owner/devices/pairing-token",
   // The pairing dialog's "has the phone used it yet" (0124). Every persona,

@@ -40,6 +40,11 @@ export interface ResolvedChannel {
    * encrypted.
    */
   config: Record<string, unknown>;
+  /**
+   * The person a personal number belongs to (0125), or null for a business
+   * channel. Non-null makes every thread this channel creates PRIVATE to them.
+   */
+  ownerUserId: string | null;
 }
 
 export interface IngestResult {
@@ -105,8 +110,9 @@ export class ConversationsService {
       provider: string;
       forward_secret: string | null;
       config: Record<string, unknown> | null;
+      owner_user_id: string | null;
     }>(
-      `SELECT id, org_id, workspace_id, channel, provider, forward_secret, config
+      `SELECT id, org_id, workspace_id, channel, provider, forward_secret, config, owner_user_id
          FROM messaging_channels
         WHERE webhook_token = $1 AND status = 'active'`,
       [token],
@@ -121,6 +127,7 @@ export class ConversationsService {
       provider: row.provider,
       forwardSecret: row.forward_secret,
       config: row.config ?? {},
+      ownerUserId: row.owner_user_id,
     };
   }
 
@@ -159,14 +166,25 @@ export class ConversationsService {
       // ── the thread ────────────────────────────────────────────────────
       // ON CONFLICT DO UPDATE rather than DO NOTHING because we always need
       // the id back, and a plain DO NOTHING returns no row when it collides.
+      //
+      // Private or shared (0125). A message on somebody's own number opens or
+      // reuses THEIR thread with this customer, keyed on the person as well as
+      // the peer - so a customer who writes to two reps' phones is two private
+      // threads, never one thread both reps read. It is assigned to its owner
+      // at birth, because the grid's "own records" scope reads the assignee
+      // and the owner must always be able to see their own chat.
+      const privateTo = channel.ownerUserId;
+      const conflictTarget = privateTo
+        ? "(org_id, channel, peer_address, private_to_user_id) WHERE private_to_user_id IS NOT NULL"
+        : "(org_id, channel, peer_address) WHERE private_to_user_id IS NULL";
       const {
         rows: [conversation],
       } = await client.query<{ id: string; contact_id: string | null }>(
         `INSERT INTO conversations
            (org_id, workspace_id, messaging_channel_id, channel, peer_address, peer_label,
-            last_message_at, last_inbound_at, unread_count)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 1)
-         ON CONFLICT (org_id, channel, peer_address) DO UPDATE
+            last_message_at, last_inbound_at, unread_count, private_to_user_id, assigned_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 1, $8::uuid, $8::uuid)
+         ON CONFLICT ${conflictTarget} DO UPDATE
             SET last_message_at = GREATEST(conversations.last_message_at, EXCLUDED.last_message_at),
                 last_inbound_at = GREATEST(conversations.last_inbound_at, EXCLUDED.last_inbound_at),
                 unread_count    = conversations.unread_count + 1,
@@ -186,6 +204,7 @@ export class ConversationsService {
           msg.peerAddress,
           msg.peerLabel ?? null,
           msg.occurredAt ?? new Date(),
+          privateTo,
         ],
       );
 

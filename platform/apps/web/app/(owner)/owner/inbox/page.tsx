@@ -6,7 +6,15 @@ import { getOwner, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { ChannelBar } from "../channel-bar";
 import { Inbox } from "./inbox-client";
+import { MyWhatsApp } from "./my-whatsapp";
 import type { Conversation } from "./actions";
+
+/**
+ * Who gets the My WhatsApp card (0125) - the same four personas the API's
+ * WhatsAppPairingController admits. Deciding it here only avoids offering a
+ * card the API would refuse; the controller is the actual gate.
+ */
+const LINKS_OWN_WHATSAPP = new Set(["owner", "manager", "telecaller", "sales"]);
 
 export const metadata: Metadata = { title: "Inbox" };
 
@@ -42,6 +50,15 @@ export default async function InboxPage() {
         <LoadFailure what="the inbox" failure={unmatched} />
       ) : (
         <div className="space-y-4">
+          {/* A person's own number, linked by them, with its chats private to
+              them. Above the queue because it is where their private threads
+              come from, and linking it is the first thing a new rep does. */}
+          {owner && LINKS_OWN_WHATSAPP.has(owner.membership.ownerRole) ? (
+            <Card>
+              <MyWhatsApp />
+            </Card>
+          ) : null}
+
           {unmatched.data.total > 0 ? (
             // One tile rather than a full-width card: it is the page's only
             // headline number, and the sentence that used to sit under it was

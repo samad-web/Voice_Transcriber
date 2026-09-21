@@ -567,7 +567,7 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
  * jumps as the code appears, expires, or is replaced.
  *
  * Always on white, whatever the console theme: a QR inverted by a dark
- * background does not scan (the same rule personal-whatsapp-panel.tsx states).
+ * background does not scan (the same rule inbox/my-whatsapp.tsx states).
  */
 function QrPanel({
   phase,

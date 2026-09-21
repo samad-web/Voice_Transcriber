@@ -5,8 +5,10 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Post,
+  Req,
   ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
@@ -14,6 +16,9 @@ import { z } from "zod";
 import { decryptSecret, encryptSecret } from "@aura/db";
 import { normalizePeerAddress } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
+import { threadViewerOf } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import {
@@ -57,11 +62,22 @@ import {
  * business flow that would refuse them. Two controllers, two flows, and the
  * account kind decides which, is what makes that mistake unavailable.
  *
- * ── SELF-SERVE, AND WHAT GUARDS IT INSTEAD OF AN OPERATOR ───────────────────
+ * ── ONE NUMBER PER PERSON, AND ITS CHATS ARE THEIRS (0125) ──────────────────
  *
- * Unlike the Wasi path there is no `organizations.whatsapp_provider` gate: any
- * tenant whose console has the Messaging setup page may link a number. What
- * bounds it is that linking is per-org, reversible from the same page, and
+ * A personal number is somebody's own phone, so it is linked BY that person,
+ * FROM their own inbox, with no owner in the loop - and every thread that
+ * arrives on it is private to them (see common/private-threads.ts). This
+ * controller therefore acts only ever on the CALLER's own channel: every route
+ * resolves the signed-in person and finds the row by `owner_user_id`. There is
+ * no route that takes somebody else's id, so there is no way to link, read or
+ * unlink a colleague's number through it.
+ *
+ * Personas: the four who have an inbox to read the chats in. Marketing has no
+ * inbox (nav.ts), and a linked number whose chats its owner can never open is
+ * a trap, not a feature.
+ *
+ * Unlike the Wasi path there is no `organizations.whatsapp_provider` gate. What
+ * bounds it is that linking is per-person, reversible from the same card, and
  * carries the ban warning at the moment of pairing rather than in a footnote.
  *
  * ── NOTHING HERE SENDS ──────────────────────────────────────────────────────
@@ -105,7 +121,8 @@ interface PairingView {
 }
 
 @Controller("messaging/whatsapp-personal")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@RequireOwnerRole("owner", "manager", "telecaller", "sales")
 export class WhatsAppPairingController {
   constructor(private readonly db: DbService) {}
 
@@ -118,9 +135,10 @@ export class WhatsAppPairingController {
    * the page renders, not an error it handles.
    */
   @Get()
-  async status(@OrgId() orgId: string) {
+  async status(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
+    const me = requirePerson(req);
     const admin = evolutionAdminFromEnv();
-    const channel = await this.personalChannel(orgId);
+    const channel = await this.personalChannel(orgId, me);
 
     if (!channel) {
       return {
@@ -185,7 +203,8 @@ export class WhatsAppPairingController {
    * idempotent on an existing name).
    */
   @Post()
-  async start(@OrgId() orgId: string, @Body() body: unknown) {
+  async start(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+    const me = requirePerson(req);
     const parsed = StartBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const input = parsed.data;
@@ -202,7 +221,7 @@ export class WhatsAppPairingController {
     const phone = normalizePeerAddress("whatsapp", input.phone);
     if (!phone) throw new BadRequestException("that does not look like a usable phone number");
 
-    const existing = await this.personalChannel(orgId);
+    const existing = await this.personalChannel(orgId, me);
     if (existing && existing.api_key && (existing.api_base_url ?? admin.baseUrl)) {
       // Already linked and still live? Then this is a no-op, not a re-pair.
       // Re-pairing a working number would drop the session and interrupt a
@@ -214,7 +233,7 @@ export class WhatsAppPairingController {
         });
         if (live.connected && live.loggedIn) {
           throw new ConflictException(
-            "a personal WhatsApp number is already linked here - disconnect it before linking another",
+            "your WhatsApp number is already linked - unlink it before linking another",
           );
         }
       } catch (err) {
@@ -223,13 +242,15 @@ export class WhatsAppPairingController {
       }
     }
 
-    // One instance per org, named from the org id so a human looking at the
-    // relay's instance list can tell whose it is. Never named from the phone
-    // number - a number can move between tenants, an org id cannot.
-    const instanceName = existing?.config?.evolutionInstance ?? `aura-${orgId}`;
+    // One instance per PERSON per org (0125), named from both ids so a human
+    // looking at the relay's instance list can tell whose it is, and so the
+    // same person in two organisations gets two instances rather than one
+    // session serving both. Never named from the phone number - a number can
+    // move between people, an id cannot.
+    const instanceName = existing?.config?.evolutionInstance ?? `aura-${orgId}-${me}`;
     const token = existing?.api_key ? (decryptSecret(existing.api_key) ?? newToken()) : newToken();
 
-    const channelId = await this.upsertChannel(orgId, {
+    const channelId = await this.upsertChannel(orgId, me, {
       id: existing?.id ?? null,
       phone,
       displayName: input.displayName ?? null,
@@ -286,9 +307,10 @@ export class WhatsAppPairingController {
    * the two agree, and this one is what the page can act on immediately.
    */
   @Get("poll")
-  async poll(@OrgId() orgId: string): Promise<PairingView> {
+  async poll(@OrgId() orgId: string, @Req() req: PrincipalRequest): Promise<PairingView> {
+    const me = requirePerson(req);
     const admin = evolutionAdminFromEnv();
-    const channel = await this.personalChannel(orgId);
+    const channel = await this.personalChannel(orgId, me);
     if (!channel || !channel.api_key) {
       return { connected: false, number: null, channelId: null, detail: "Nothing is being linked." };
     }
@@ -338,10 +360,11 @@ export class WhatsAppPairingController {
    * `messaging_channel_id ON DELETE SET NULL`.
    */
   @Delete()
-  async disconnect(@OrgId() orgId: string) {
+  async disconnect(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
+    const me = requirePerson(req);
     const admin = evolutionAdminFromEnv();
-    const channel = await this.personalChannel(orgId);
-    if (!channel) throw new ConflictException("no personal WhatsApp number is linked here");
+    const channel = await this.personalChannel(orgId, me);
+    if (!channel) throw new ConflictException("you have no WhatsApp number linked");
 
     const baseUrl = channel.api_base_url ?? admin?.baseUrl;
     if (channel.api_key && baseUrl) {
@@ -372,7 +395,8 @@ export class WhatsAppPairingController {
 
   /* ── helpers ──────────────────────────────────────────────────────────── */
 
-  private async personalChannel(orgId: string): Promise<PersonalChannelRow | null> {
+  /** The CALLER's own personal channel - never anybody else's (0125). */
+  private async personalChannel(orgId: string, ownerUserId: string): Promise<PersonalChannelRow | null> {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [row],
@@ -380,8 +404,9 @@ export class WhatsAppPairingController {
         `SELECT id, inbound_address, api_key, api_base_url, config, status
            FROM messaging_channels
           WHERE org_id = $1 AND channel = 'whatsapp' AND provider = 'evolution'
-          ORDER BY created_at ASC LIMIT 1`,
-        [orgId],
+            AND owner_user_id = $2
+          LIMIT 1`,
+        [orgId, ownerUserId],
       );
       return row ?? null;
     });
@@ -389,6 +414,7 @@ export class WhatsAppPairingController {
 
   private async upsertChannel(
     orgId: string,
+    ownerUserId: string,
     input: {
       id: string | null;
       phone: string;
@@ -416,7 +442,7 @@ export class WhatsAppPairingController {
                   config = config || $7::jsonb,
                   status = 'active',
                   updated_at = now()
-            WHERE id = $1 AND org_id = $2
+            WHERE id = $1 AND org_id = $2 AND owner_user_id = $8
           RETURNING id`,
           [
             input.id,
@@ -426,6 +452,7 @@ export class WhatsAppPairingController {
             encryptSecret(input.token),
             input.baseUrl,
             config,
+            ownerUserId,
           ],
         );
         return updated.id;
@@ -437,8 +464,8 @@ export class WhatsAppPairingController {
         } = await client.query<{ id: string }>(
           `INSERT INTO messaging_channels
              (org_id, channel, provider, inbound_address, display_name,
-              api_key, api_base_url, config, webhook_token)
-           VALUES ($1, 'whatsapp', 'evolution', $2, $3, $4, $5, $6::jsonb, $7)
+              api_key, api_base_url, config, webhook_token, owner_user_id)
+           VALUES ($1, 'whatsapp', 'evolution', $2, $3, $4, $5, $6::jsonb, $7, $8)
            RETURNING id`,
           [
             orgId,
@@ -448,6 +475,7 @@ export class WhatsAppPairingController {
             input.baseUrl,
             config,
             newToken(),
+            ownerUserId,
           ],
         );
         return created.id;
@@ -528,6 +556,22 @@ interface PersonalChannelRow {
   api_base_url: string | null;
   config: { evolutionInstance?: string } | null;
   status: "active" | "disabled";
+}
+
+/**
+ * The signed-in person this request acts for. A caller with no seat of its
+ * own - the bare admin key, the operator console - has no phone to link, and
+ * would otherwise create a channel that belongs to nobody and whose chats
+ * nobody could ever read.
+ */
+function requirePerson(req: PrincipalRequest): string {
+  const me = threadViewerOf(req);
+  if (!me) {
+    throw new ForbiddenException(
+      "linking a WhatsApp number needs a signed-in person - it becomes that person's own number",
+    );
+  }
+  return me;
 }
 
 /** 32 bytes of CSPRNG. Same rule as the webhook token: never derived. */
