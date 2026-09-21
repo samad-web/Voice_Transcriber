@@ -61,6 +61,9 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts \
 # symlinks pnpm just created, so each package needs its dist beside its
 # package.json.
 COPY --from=builder /app/apps/api/dist        apps/api/dist
+# Fonts the call-insights PDF embeds (Noto Sans + Tamil/Devanagari, OFL).
+# Found at runtime by walking up from dist/, so they sit beside it.
+COPY --from=builder /app/apps/api/assets      apps/api/assets
 COPY --from=builder /app/apps/worker/dist     apps/worker/dist
 COPY --from=builder /app/packages/db/dist     packages/db/dist
 COPY --from=builder /app/packages/llm/dist    packages/llm/dist

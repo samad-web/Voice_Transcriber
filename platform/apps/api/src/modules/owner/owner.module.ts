@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AgentsModule } from "../agents/agents.module";
 import { RolesModule } from "../roles/roles.module";
+import { CallInsightsController } from "./call-insights.controller";
 import { CallSopsController } from "./call-sops.controller";
 import { OwnerCallsController } from "./owner-calls.controller";
 import { CallTriageController } from "./call-triage.controller";
@@ -32,6 +33,7 @@ import { SupabaseAdminService } from "./supabase-admin.service";
   // AgentsModule for the call drawer's reply drafter (0121).
   imports: [RolesModule, AgentsModule],
   controllers: [
+    CallInsightsController,
     TelecallerProductivityController,
     CallSopsController,
     OwnerCallsController,

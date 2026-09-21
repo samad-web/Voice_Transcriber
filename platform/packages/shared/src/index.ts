@@ -59,3 +59,4 @@ export * from "./opt-out";
 export * from "./setup-readiness";
 export * from "./stage-packs";
 export * from "./list-views";
+export * from "./call-insights";

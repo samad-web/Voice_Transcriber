@@ -50,6 +50,7 @@ export const FeatureKey = z.enum([
   // ── Conversations ──
   "call_log",
   "call_triage",
+  "call_insights",
   "call_quality",
   "call_sops",
   "agent_studio",
@@ -225,6 +226,19 @@ export const FEATURES: FeatureSpec[] = [
     group: "conversations",
     hrefs: ["/owner/calls/triage"],
     requires: ["call_log"],
+    defaultEnabled: true,
+  },
+  {
+    key: "call_insights",
+    label: "Call insights",
+    blurb: "The floor-wide read of every call - volume, missed calls, outcomes, quality - with a PDF report.",
+    // `call_intel`, like the call log: the page is an aggregate of the AI read
+    // of each call (sentiment, outcome, intent), which is exactly what that
+    // module entitles a tenant to see. No `requires`: the report stands on its
+    // own, and its links into the call log simply vanish with that page.
+    module: "call_intel",
+    group: "conversations",
+    hrefs: ["/owner/insights"],
     defaultEnabled: true,
   },
   {

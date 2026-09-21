@@ -118,6 +118,7 @@ import { CallTriageController } from "../modules/owner/call-triage.controller";
 import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
 import { IntegrationsController } from "../modules/owner/integrations.controller";
 import { TelecallerProductivityController } from "../modules/owner/telecaller-productivity.controller";
+import { CallInsightsController } from "../modules/owner/call-insights.controller";
 import { CallSopsController } from "../modules/owner/call-sops.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
 import { IntakeWebhookController } from "../modules/lead-intake/intake-webhook.controller";
@@ -169,6 +170,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   IntegrationsController,
   TelecallerProductivityController,
   CallSopsController,
+  CallInsightsController,
   OwnerController,
   OwnerTeamController,
   OwnerRolesController,
@@ -567,6 +569,13 @@ const OWNER_ROLE_ROUTES = [
   // not happen is a telecaller reading the floor's. The narrowing comes from
   // OwnerScopeGuard, which is never inert.
   "GET /owner/productivity",
+  // Call insights: the floor-wide read of every call, and the same read as a
+  // PDF. Owner/manager at class level - a REAL requirement, unlike the
+  // productivity read above, because it ranks named colleagues and summarises
+  // the whole floor's conversations (the call log's own restriction). The PDF
+  // is audited as an export.
+  "GET /owner/call-insights",
+  "GET /owner/call-insights/pdf",
   // The SOP surface (0091). Every route here declares a real requirement: an
   // SOP is the DEFINITION of the measure, it has no owner to narrow rows by,
   // and a telecaller editing the rules they are scored against is the one shape
@@ -1261,8 +1270,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // /owner/agents, all tenant-scoped and owner-or-manager.
     // 410: the reply drafter's two surfaces (0121) - POST conversations/:id/draft-reply
     // and POST owner/calls/:id/draft-reply. Both return text and send nothing.
-    expect(ROUTES).toHaveLength(410);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(410);
+    // 412: call insights' two (`GET /owner/call-insights` and its `/pdf`),
+    // tenant-scoped and OwnerRoleGuard'd - see OWNER_ROLE_ROUTES.
+    expect(ROUTES).toHaveLength(412);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(412);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1283,17 +1294,19 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    expect(tenantScoped).toHaveLength(353);
+    // 355: plus call insights' JSON read and its PDF export.
+    expect(tenantScoped).toHaveLength(355);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(410);
+    ).toBe(412);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 374 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 376 principal routes", () => {
+    // 376: 374 plus call insights' read and PDF export.
     // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
@@ -1301,7 +1314,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(374);
+    expect(principalRoutes).toHaveLength(376);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

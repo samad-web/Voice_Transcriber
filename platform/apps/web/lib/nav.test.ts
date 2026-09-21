@@ -176,8 +176,9 @@ describe("ownerNavItemsFor - callIntelEnabled", () => {
     // what calls were about and is gated on the same module. Listed here
     // explicitly rather than imported from nav.ts, so adding a page to the
     // gate has to be a deliberate edit in two places instead of a filter that
-    // silently absorbs it.
-    const callIntel = ["/owner/calls", "/owner/calls/triage"];
+    // silently absorbs it. Call insights joined them: it is an aggregate of
+    // the same AI read.
+    const callIntel = ["/owner/calls", "/owner/calls/triage", "/owner/insights"];
     const withIt = hrefs("owner", false, true, true).filter((h) => !callIntel.includes(h));
     expect(withIt).toEqual(hrefs("owner", false, true, false));
   });

@@ -539,6 +539,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/insights",
+    label: "Call insights",
+    icon: BarChart3,
+    title: "Call insights",
+    context: "Conversations",
+    // Owner/manager, matching the API: the page summarises the whole floor's
+    // conversations and ranks named colleagues - the call log's restriction
+    // and the staff scorecard's, for their reasons. A rep's own numbers are on
+    // Productivity, which narrows rows instead of refusing the page.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/calls/triage",
     label: "Unmatched calls",
     icon: Unlink,
@@ -644,7 +656,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
  */
 // The triage queue reads the same calls the log does, so it goes with it: a
 // recorder-only tenant offered "unmatched calls" would open an empty page.
-const CALL_INTEL_GATED_HREFS = ["/owner/calls", "/owner/calls/triage"];
+const CALL_INTEL_GATED_HREFS = ["/owner/calls", "/owner/calls/triage", "/owner/insights"];
 
 const CRM_GATED_HREFS = [
   "/owner/deals",
@@ -737,6 +749,11 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
 
   "/owner/calls": "conversations",
   "/owner/call-quality": "conversations",
+  // Beside the call log it summarises, NOT under Insights with Reports - the
+  // same reasoning as Productivity below: Insights is CRM-promoted and every
+  // member is CRM-gated, while this page is `call_intel`, and a recorder
+  // tenant with no CRM must still find it.
+  "/owner/insights": "conversations",
   // Beside the call log, NOT under Insights with Reports - and the nav test is
   // what forced the question. Insights is a CRM_PRIMARY_SECTION whose every
   // member is CRM-gated, so filing an ungated page there made "the promoted
