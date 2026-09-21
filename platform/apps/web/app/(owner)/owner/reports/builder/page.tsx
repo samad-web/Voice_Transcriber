@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import { LocalTime } from "@/components/local-time";
 import { NewReportLauncher } from "./new-report-launcher";
 import type { CatalogueEntry, DatasetRow, ReportRow, TemplateRow } from "./types";
@@ -20,26 +21,21 @@ export const metadata: Metadata = { title: "Report builder" };
 export default async function ReportBuilderPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/reports/builder");
-  const [reports, templates, datasets] = await Promise.all([
-    ownerGet<{ reports: ReportRow[] }>("/v1/report-builder"),
+  const [result, templates, datasets] = await Promise.all([
+    ownerTry<{ reports: ReportRow[] }>("/v1/report-builder"),
     ownerGet<{ templates: TemplateRow[] }>("/v1/report-builder/templates"),
     ownerGet<{ datasets: DatasetRow[]; catalogue: CatalogueEntry[] }>("/v1/report-datasets"),
   ]);
 
-  if (!reports) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Report builder" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer, or your role does not grant access to deal data.
-            Reports read the same records the pipeline does, so both are gated together.
-          </p>
-        </Card>
+        <LoadFailure what="the report builder" failure={result} />
       </>
     );
   }
+  const reports = result.data;
 
   return (
     <>

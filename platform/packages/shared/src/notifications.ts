@@ -61,6 +61,17 @@ export const NotificationKind = z.enum([
    * WhatsApp thread the qualification sweep scored as a prospect (0109).
    */
   "review_pending",
+  /**
+   * A platform operator tried to open this org's call content and was refused
+   * (migration 0122). Raised on the FIRST blocked attempt; the repeats that
+   * follow from one console page bump a counter instead of ringing again.
+   *
+   * Goes to the org's designated call-access administrator, or to every member
+   * holding the `owner` persona when none is named. This is the one kind whose
+   * subject is the vendor rather than the customer's own work, which is
+   * exactly why it cannot be turned off.
+   */
+  "call_access_requested",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

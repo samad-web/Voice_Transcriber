@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, ownerTry } from "@/lib/owner-context";
 import type { BoardColumn, Project, Stage } from "../types";
 import { FilterLink } from "../filter-link";
 import { Board } from "./board";
@@ -28,24 +29,20 @@ export default async function BoardPage({
 
   // Concurrent, and the catalogue is allowed to fail on its own: losing the
   // filter row is survivable, losing the board is not.
-  const [data, projects] = await Promise.all([
-    ownerGet<BoardResponse>(`/v1/leads/board?${query}`),
+  const [result, projects] = await Promise.all([
+    ownerTry<BoardResponse>(`/v1/leads/board?${query}`),
     ownerGet<{ projects: Project[] }>("/v1/projects"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Lead Board" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="the lead board" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   const catalogue = projects?.projects ?? [];
 

@@ -129,6 +129,11 @@ describe("AdminKeyGuard", () => {
         recordingsExport: true,
         viaAdminKey: true,
         ownerRole: null,
+        // 0122: the bare admin key names no operator. Only the operator
+        // console adds `x-operator-email`, and CallAccessGuard refuses a gated
+        // org's call content when it is absent - there is nobody to attribute
+        // an access request to.
+        operatorEmail: null,
       });
       // The cross-tenant admin endpoints legitimately send no org header, so
       // the existence check must not fire (admin-key.guard.ts:67).

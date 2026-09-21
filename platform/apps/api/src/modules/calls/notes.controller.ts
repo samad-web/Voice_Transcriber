@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -21,9 +22,16 @@ const CreateNoteBody = z.object({
 });
 
 /** Reviewer notes attached to a call (§4 Call Explorer). Separate controller so
- * the device-facing CallsController stays focused; shares the /v1/calls prefix. */
+ * the device-facing CallsController stays focused; shares the /v1/calls prefix.
+ *
+ * `@CallContent()` at the class, covering both routes: a note is somebody
+ * writing down what was said on the call, so it is call content by any reading
+ * that matters to the person who was recorded. Gating the transcript and
+ * leaving the prose about it open would be a distinction only the schema
+ * cares about. */
 @Controller("calls")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, CallAccessGuard)
+@CallContent()
 export class NotesController {
   constructor(private readonly db: DbService) {}
 

@@ -32,13 +32,14 @@ export default async function OperatorsPage() {
 
   return (
     <>
-      <PageHeader title="Superadmins" />
+      <PageHeader title="Superadmins" context="Platform" />
 
       <Card>
         <MonoLabel>How access works</MonoLabel>
         <p className="mt-2 text-sm text-text-muted">
           Three things let an account into this console: the{" "}
-          <span className="font-medium text-text">root operator</span> address, the deployment&rsquo;s{" "}
+          <span className="font-medium text-text">root operator</span> address, the
+          deployment&rsquo;s{" "}
           <code className="rounded bg-bg-subtle px-1 py-0.5 font-mono text-xs">
             PLATFORM_OPERATOR_EMAILS
           </code>{" "}

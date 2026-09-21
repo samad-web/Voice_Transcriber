@@ -143,6 +143,9 @@ export function adminKeyPrincipal(overrides: Partial<Principal> = {}): Principal
     recordingsExport: true,
     viaAdminKey: true,
     ownerRole: null,
+    // The bare admin key names no operator - the operator console adds
+    // `x-operator-email` on top (0122). Override it for a gated-route case.
+    operatorEmail: null,
     ...overrides,
   };
 }
@@ -161,6 +164,8 @@ export function sessionPrincipal(overrides: Partial<Principal> = {}): Principal 
     recordingsExport: false,
     viaAdminKey: false,
     ownerRole: null,
+    // A session belongs to a member, never to a platform operator.
+    operatorEmail: null,
     ...overrides,
   };
 }

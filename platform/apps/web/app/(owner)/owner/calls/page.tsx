@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import type { OwnerCall, Telecaller } from "../types";
 import { CallsExplorer } from "./calls-explorer";
 import type { Disposition } from "./actions";
@@ -72,27 +73,23 @@ export default async function CallsPage({
   // Concurrent, and the telecaller list is optional: it only supplies the
   // handset filter, so an outage there should cost that one chip row rather
   // than the log itself.
-  const [data, overview, dispositions] = await Promise.all([
-    ownerGet<ListResponse>(`/v1/owner/calls?${query}`),
+  const [result, overview, dispositions] = await Promise.all([
+    ownerTry<ListResponse>(`/v1/owner/calls?${query}`),
     ownerGet<{ telecallers: Telecaller[] }>("/v1/owner/overview?days=30"),
     // Optional in the same way: with no vocabulary the drawer simply shows no
     // outcome buttons, rather than the log failing to render.
     ownerGet<{ dispositions: Disposition[] }>("/v1/owner/call-dispositions"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Calls" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="the call log" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

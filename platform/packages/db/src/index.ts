@@ -13,6 +13,7 @@ export * from "./oauth-apps";
 export * from "./ssrf-guard";
 export * from "./lead-routing";
 export * from "./crm-projection";
+export * from "./lead-stage-history";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 

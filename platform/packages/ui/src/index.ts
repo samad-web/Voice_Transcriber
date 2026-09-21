@@ -31,6 +31,7 @@ export type { InputProps } from "./input";
 export { PasswordInput } from "./password-input";
 export { Select } from "./select";
 export type { SelectProps } from "./select";
+export type { ControlSize } from "./control-styles";
 export { Checkbox } from "./checkbox";
 export type { CheckboxProps } from "./checkbox";
 export { Radio, RadioGroup } from "./radio";
@@ -51,6 +52,8 @@ export {
 } from "./table";
 export { Dialog } from "./dialog";
 export type { DialogProps } from "./dialog";
+export { Popover } from "./popover";
+export type { PopoverAlign, PopoverProps } from "./popover";
 export { ConfirmProvider, useConfirm, CONFIRM_WORD, typedWordFor } from "./confirm";
 export type { ConfirmOptions } from "./confirm";
 export { DropZone } from "./drop-zone";

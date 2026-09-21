@@ -9,6 +9,7 @@ import {
 
 /** A fully working Wasi channel - every other case below is this minus one fact. */
 const HEALTHY: ChannelFacts = {
+  provider: "wasi",
   status: "active",
   hasApiKey: true,
   hasForwardSecret: true,
@@ -142,6 +143,53 @@ describe("readChannel", () => {
       expect(r.readiness).toBe("incomplete");
     });
   });
+
+  /*
+   * ── The reading is the PROVIDER's, not Wasi's ───────────────────────────
+   *
+   * Every case above is a Wasi channel, because Wasi was the only provider
+   * when this module was written and the logic quietly assumed it everywhere.
+   * These pin the two places that assumption was false.
+   */
+  describe("per-provider", () => {
+    it("does not claim a personal channel is losing replies for want of a forward secret", () => {
+      // The false CRITICAL. A personal relay authenticates on the webhook token
+      // in the URL; a forward secret is optional hardening, and its absence is
+      // the normal working state. Told otherwise, an owner goes hunting in
+      // Evolution's admin panel for a secret that is not there to find.
+      const r = readChannel({ ...HEALTHY, provider: "evolution", hasForwardSecret: false });
+      expect(r.readiness).toBe("connected");
+      expect(r.canReceive).toBe(true);
+      expect(channelAlert(r, "My phone")).toBeNull();
+    });
+
+    it("still calls a Wasi channel with no forward secret send-only", () => {
+      // The same fact, the opposite verdict, and both are right. Wasi signs
+      // every delivery and Aura drops what it cannot verify, so this one
+      // genuinely cannot receive.
+      const r = readChannel({ ...HEALTHY, provider: "wasi", hasForwardSecret: false });
+      expect(r.readiness).toBe("send_only");
+      expect(r.canReceive).toBe(false);
+    });
+
+    it("offers no check button on a provider that has no probe", () => {
+      // Meta's own APIs. The verify route cannot ask them anything, and it used
+      // to record `provider_error` when asked to - which classified as
+      // "unreachable" and put a standing false "No answer" on healthy channels.
+      const r = readChannel({ ...HEALTHY, provider: "waba", lastProbeOutcome: null });
+      expect(r.readiness).toBe("unverified");
+      expect(r.action).toBeNull();
+      expect(channelAlert(r, "Business number")).toBeNull();
+    });
+
+    it("treats an unrecognised provider as needing no forward secret", () => {
+      // Fail towards silence. A provider the table has never heard of cannot be
+      // asserted to be dropping deliveries, and a critical alert is the wrong
+      // thing to invent about a channel nobody has taught the system about.
+      const r = readChannel({ ...HEALTHY, provider: "something-new", hasForwardSecret: false });
+      expect(r.readiness).toBe("connected");
+    });
+  });
 });
 
 describe("channelAlert", () => {
@@ -155,6 +203,7 @@ describe("channelAlert", () => {
     // The one that would destroy the alert's credibility: it would fire on
     // every new channel, so people would learn it means nothing.
     const fresh: ChannelFacts = {
+      provider: "wasi",
       status: "active",
       hasApiKey: true,
       hasForwardSecret: true,

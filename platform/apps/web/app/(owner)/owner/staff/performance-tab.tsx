@@ -1,5 +1,6 @@
 import { Card, MonoLabel } from "@aura/ui";
-import { ownerGet } from "@/lib/owner-context";
+import { LoadFailure } from "@/components/load-failure";
+import { ownerTry } from "@/lib/owner-context";
 import { PerformanceTable } from "./performance-table";
 import type { PerformanceResponse } from "./types";
 
@@ -19,18 +20,12 @@ export async function PerformanceTab() {
   const from = new Date(to.getTime() - 29 * 24 * 60 * 60 * 1000);
   const range = `from=${from.toISOString().slice(0, 10)}&to=${to.toISOString().slice(0, 10)}`;
 
-  const data = await ownerGet<PerformanceResponse>(`/v1/owner/staff/performance?${range}`);
+  const result = await ownerTry<PerformanceResponse>(`/v1/owner/staff/performance?${range}`);
 
-  if (!data) {
-    return (
-      <Card>
-        <MonoLabel>Data unavailable</MonoLabel>
-        <p className="mt-2 text-sm text-text-muted">
-          The platform API did not answer. If this persists, contact your provider.
-        </p>
-      </Card>
-    );
+  if (!result.ok) {
+    return <LoadFailure what="staff performance" failure={result} />;
   }
+  const data = result.data;
 
   const unlinked = data.staff.filter((row) => !row.linked);
 

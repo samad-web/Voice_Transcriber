@@ -16,7 +16,9 @@ import { z } from "zod";
 import { decryptSecret, encryptSecret } from "@aura/db";
 import {
   ConversationChannel,
+  MessagingProvider,
   normalizePeerAddress,
+  providerSpec,
   type ChannelProbeOutcome,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
@@ -24,6 +26,7 @@ import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { listWasiTemplates, probeWasiChannel } from "./wasi-client";
+import { evolutionAdminFromEnv, probeEvolutionChannel } from "./evolution-client";
 import { listWabaTemplates } from "./meta-send";
 
 /** The one method of the pg client this controller's helpers need. */
@@ -42,7 +45,22 @@ type PgQuery = <R extends Record<string, unknown> = Record<string, unknown>>(
  */
 const ChannelInput = z.object({
   channel: ConversationChannel,
-  provider: z.string().min(1).max(60).default("evolution"),
+  /**
+   * A closed set now, and no default.
+   *
+   * This was `z.string().min(1).max(60).default("evolution")`, which is two
+   * problems. Any string at all could be stored, so a typo'd provider produced
+   * a channel that every downstream branch quietly declined to handle - it
+   * could not send, its window was never computed, and its health read as
+   * whatever the Wasi-shaped default happened to be. And the DEFAULT was
+   * `evolution`, so a caller who omitted the field got a personal-number
+   * channel, which is precisely the misrouting this change exists to end:
+   * a business number must never land on the personal transport by omission.
+   *
+   * Required, therefore. Every caller in the tree already sends it, and a
+   * missing provider is a question, not something to guess an answer to.
+   */
+  provider: MessagingProvider,
   inboundAddress: z.string().min(3).max(320),
   displayName: z.string().max(200).optional(),
   apiKey: z.string().max(500).optional(),
@@ -244,12 +262,78 @@ export class MessagingChannelsController {
       );
       if (!channel) throw new NotFoundException("channel not found");
 
-      // Nothing to probe. Recorded all the same, so the page can say when it
-      // last looked rather than staying blank forever on a half-built channel.
-      if (channel.provider !== "wasi" || !channel.api_key || !channel.api_base_url) {
+      /*
+       * ── Which probe, if any ─────────────────────────────────────────────
+       *
+       * This used to read `provider !== "wasi"` and record `provider_error`
+       * for everything else. That was wrong in two directions at once. A
+       * healthy WABA channel - a provider with no probe to run - was recorded
+       * as an error, which `readChannel` classifies as "unreachable" and the
+       * watchdog then raised as a standing "the provider did not answer"
+       * warning about a channel with nothing wrong with it. And a personal
+       * channel, which DOES have a perfectly good status endpoint, was never
+       * probed at all.
+       *
+       * The provider table says which probe each one takes.
+       */
+      const probeKind = providerSpec(channel.provider)?.probe ?? "none";
+
+      if (probeKind === "none") {
+        // Not an error and not a failure - a provider we cannot ask. Recording
+        // `ok` would be a lie and `provider_error` was the bug; the honest move
+        // is to change nothing and say so, leaving the channel `unverified`,
+        // which readChannel() renders without an action button for this case.
+        //
+        // Re-read rather than projecting the row we already have: that query
+        // selected `api_key` to decide what to do with it, and CHANNEL_COLUMNS
+        // exists precisely so a secret is absent by construction rather than
+        // deleted on the way out. One extra round trip on a rare path is the
+        // cheaper side of that trade.
+        const {
+          rows: [full],
+        } = await client.query(
+          `SELECT ${CHANNEL_COLUMNS} FROM messaging_channels WHERE id = $1 AND org_id = $2`,
+          [id, orgId],
+        );
+        if (!full) throw new NotFoundException("channel not found");
+        return {
+          probe: { outcome: null, detail: null },
+          channel: withWebhookPath(full),
+          checked: false,
+          reason:
+            "This provider offers no way to check stored credentials without sending a message, so nothing was changed.",
+        };
+      }
+
+      if (!channel.api_key) {
         return this.recordProbe(client, orgId, id, {
           outcome: "provider_error",
-          detail: "This channel has no API key or host URL stored, so there is nothing to check.",
+          detail: "This channel has no API key stored, so there is nothing to check.",
+        });
+      }
+
+      if (probeKind === "evolution_status") {
+        // A personal number. `api_base_url` is the Evolution host; it is
+        // stored per channel rather than read from the environment so a
+        // tenant moved to a different instance does not need a redeploy.
+        const baseUrl = channel.api_base_url ?? evolutionAdminFromEnv()?.baseUrl;
+        if (!baseUrl) {
+          return this.recordProbe(client, orgId, id, {
+            outcome: "provider_error",
+            detail: "This deployment has no Evolution host configured, so there is nothing to check.",
+          });
+        }
+        const probe = await probeEvolutionChannel({
+          baseUrl,
+          token: decryptSecret(channel.api_key) ?? "",
+        });
+        return this.recordProbe(client, orgId, id, probe);
+      }
+
+      if (!channel.api_base_url) {
+        return this.recordProbe(client, orgId, id, {
+          outcome: "provider_error",
+          detail: "This channel has no host URL stored, so there is nothing to check.",
         });
       }
 

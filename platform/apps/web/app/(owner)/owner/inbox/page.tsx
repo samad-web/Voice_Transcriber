@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel, StatCard } from "@aura/ui";
+import { Card, StatCard } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { ChannelBar } from "../channel-bar";
 import { Inbox } from "./inbox-client";
@@ -28,7 +29,7 @@ export default async function InboxPage() {
   // OwnerRoleGuard is the actual gate; this only avoids showing a dead one.
   const owner = await getOwner();
 
-  const unmatched = await ownerGet<{ conversations: Conversation[]; total: number }>(
+  const unmatched = await ownerTry<{ conversations: Conversation[]; total: number }>(
     "/v1/conversations?unmatchedOnly=true&limit=1",
   );
 
@@ -37,16 +38,11 @@ export default async function InboxPage() {
       <PageHeader title="Inbox" context="Pipeline" />
       <ChannelBar />
 
-      {unmatched === null ? (
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+      {!unmatched.ok ? (
+        <LoadFailure what="the inbox" failure={unmatched} />
       ) : (
         <div className="space-y-4">
-          {unmatched.total > 0 ? (
+          {unmatched.data.total > 0 ? (
             // One tile rather than a full-width card: it is the page's only
             // headline number, and the sentence that used to sit under it was
             // doing two jobs - saying what the number counts, and explaining
@@ -56,9 +52,9 @@ export default async function InboxPage() {
             <div className="grid gap-4 sm:grid-cols-[minmax(0,20rem)_1fr] sm:items-center">
               <StatCard
                 label="Unclaimed"
-                value={unmatched.total}
+                value={unmatched.data.total}
                 context={
-                  unmatched.total === 1
+                  unmatched.data.total === 1
                     ? "thread matches no contact"
                     : "threads match no contact"
                 }

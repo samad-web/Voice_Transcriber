@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "Response & Follow-ups" };
 
@@ -110,22 +111,23 @@ interface AgingReport {
 export default async function SlaReportsPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/reports/sla");
-  const [response, compliance, aging] = await Promise.all([
-    ownerGet<ResponseTimeReport>("/v1/reports/response-time"),
+  const [responseResult, compliance, aging] = await Promise.all([
+    ownerTry<ResponseTimeReport>("/v1/reports/response-time"),
     ownerGet<ComplianceReport>("/v1/reports/followup-compliance"),
     ownerGet<AgingReport>("/v1/reports/lead-aging"),
   ]);
 
-  if (!response && !compliance && !aging) {
+  // The response-time report is the one whose reason is kept (`ownerTry`),
+  // because it is the one the page-wide failure below is reported from. It
+  // still degrades to null like the other two, so each section keeps its own
+  // `NotPermitted` state rather than the page blanking on one report.
+  const response = responseResult.ok ? responseResult.data : null;
+
+  if (!responseResult.ok && !compliance && !aging) {
     return (
       <>
         <PageHeader title="Response & Follow-ups" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="response-time SLAs" failure={responseResult} />
       </>
     );
   }

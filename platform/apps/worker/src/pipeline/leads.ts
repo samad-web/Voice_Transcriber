@@ -9,6 +9,7 @@ import {
   stageAfter,
   type LeadQualification,
 } from "@aura/shared";
+import { isLeadStageMove, recordLeadStageTransition } from "@aura/db";
 import { confidenceScore, type DbClient } from "./crm-dispatch";
 
 /**
@@ -210,9 +211,30 @@ export async function upsertLead(
     }
   }
 
+  // The card as it stood before this call, LOCKED until the transaction ends,
+  // so the automatic advance can go in the stage ledger with a truthful "from".
+  //
+  // A separate statement on purpose. Folded into the upsert as a CTE it looks
+  // like one round trip saved, and it is wrong: Postgres evaluates a CTE that
+  // only RETURNING references AFTER the row has been written, and FOR UPDATE
+  // then skips a row "updated by this command" - so the prior read comes back
+  // empty. Without FOR UPDATE it reads the pre-statement snapshot instead,
+  // which two concurrent calls to the same number can both see, recording the
+  // same advance twice. The lock is what makes the second call wait and read
+  // the first one's result. This is the worker, not a request - one round
+  // trip here costs nobody a slower page.
+  const {
+    rows: [prior],
+  } = await client.query<{ stage: string; status: string }>(
+    `SELECT stage, status FROM leads
+      WHERE workspace_id = $1 AND contact_number_hash = $2
+        FOR UPDATE`,
+    [row.workspace_id, hash],
+  );
+
   const {
     rows: [lead],
-  } = await client.query<{ id: string; created: boolean }>(
+  } = await client.query<{ id: string; created: boolean; stage: string; status: string }>(
     `INSERT INTO leads
        (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
         contact_number_last3, title, stage, score, value_num, summary, facts,
@@ -274,9 +296,41 @@ export async function upsertLead(
        agent_version = EXCLUDED.agent_version,
        call_count    = EXCLUDED.call_count,
        last_activity_at = GREATEST(leads.last_activity_at, EXCLUDED.last_activity_at)
-     RETURNING id, (xmax = 0) AS created`,
+     RETURNING id, (xmax = 0) AS created, stage, status`,
     params,
   );
+
+  // The one automatic move, into the lead's stage ledger (0075). `automation`,
+  // never `console`: 0093's trigger counts a console move as a person
+  // answering the lead, and a second call arriving is not somebody answering.
+  // A newly created lead is not a move - it has no "from".
+  //
+  // Inside its own SAVEPOINT because this function runs in the pipeline's
+  // shared write transaction: a failed statement there would abort everything
+  // after it (the CRM projection, dispatch) and a try/catch alone cannot undo
+  // that. The ledger describes the board; it must never be what stops a call
+  // reaching COMPLETE.
+  const move = prior && {
+    fromStage: prior.stage,
+    toStage: lead.stage,
+    fromStatus: prior.status,
+    toStatus: lead.status,
+  };
+  if (!lead.created && move && isLeadStageMove(move)) {
+    await client.query("SAVEPOINT lead_stage_ledger");
+    try {
+      await recordLeadStageTransition(client, orgId, {
+        leadId: lead.id,
+        ...move,
+        source: "automation",
+        actorLabel: "automation: second qualified call",
+      });
+      await client.query("RELEASE SAVEPOINT lead_stage_ledger");
+    } catch (err) {
+      await client.query("ROLLBACK TO SAVEPOINT lead_stage_ledger");
+      console.error(`lead ${lead.id}: stage ledger write failed (non-blocking):`, err);
+    }
+  }
 
   return {
     leadId: lead.id,

@@ -43,6 +43,8 @@
  * used for a network hiccup.
  */
 
+import { inboundNeedsForwardSecret, providerSpec } from "./messaging-providers";
+
 /** What a probe against the provider found. Stored, because it is a measurement. */
 export const CHANNEL_PROBE_OUTCOMES = [
   /** The provider answered and accepted our credentials. */
@@ -66,11 +68,32 @@ export function isChannelProbeOutcome(v: unknown): v is ChannelProbeOutcome {
  * `messaging_channels` row; nothing here requires a second query.
  */
 export interface ChannelFacts {
+  /**
+   * Which provider carries this channel (`waba`, `wasi`, `evolution`, `meta`).
+   *
+   * REQUIRED, and that is deliberate rather than convenient. Every reading
+   * below used to be computed as though every channel were a Wasi channel,
+   * because Wasi was the only provider when this was written. That produced two
+   * standing falsehoods: a personal channel was told - critically - that its
+   * replies were being discarded over a forward secret it does not need, and a
+   * healthy WABA channel was told the provider had not answered a probe that is
+   * never run against it. Making this optional would have left both in place
+   * for every call site that did not happen to be updated; making it required
+   * turned them into compile errors.
+   */
+  provider: string | null;
   /** The operator switch. 'disabled' wins over everything else. */
   status: "active" | "disabled";
   /** An outbound credential is stored (never the value - only whether). */
   hasApiKey: boolean;
-  /** The provider's webhook-signing secret is stored. Without it, inbound is dropped. */
+  /**
+   * The provider's webhook-signing secret is stored.
+   *
+   * What its ABSENCE means depends entirely on the provider, which is why
+   * `provider` above is required. On Wasi it means every delivery is dropped;
+   * on a personal relay it is an optional hardening step and its absence is the
+   * normal working state. See `inboundNeedsForwardSecret`.
+   */
   hasForwardSecret: boolean;
   /** When the last probe ran. Null means it has never been probed. */
   lastProbeAt: string | null;
@@ -220,12 +243,39 @@ const READING: Record<ChannelReadiness, Omit<ChannelReading, "readiness">> = {
  */
 export function readChannel(facts: ChannelFacts): ChannelReading {
   const readiness = classify(facts);
-  return { readiness, ...READING[readiness] };
+  const reading = { readiness, ...READING[readiness] };
+
+  // ── Do not offer a button that cannot do anything ─────────────────────────
+  //
+  // `unverified` normally means "press Check and find out". For a provider with
+  // no probe - Meta's own APIs, where the credential is a long-lived
+  // system-user token and the only real test is a Graph call Aura does not
+  // otherwise make - there is nothing behind that button. Saying so is better
+  // than a control that records a result nobody can act on, which is what
+  // produced the false "No answer" on every healthy WABA channel.
+  if (readiness === "unverified" && providerSpec(facts.provider)?.probe === "none") {
+    return {
+      ...reading,
+      detail:
+        "The credentials are saved. This provider offers no way to check them without sending something, so they are proven by the first real message either way.",
+      action: null,
+    };
+  }
+  return reading;
 }
 
 function classify(facts: ChannelFacts): ChannelReadiness {
   if (facts.status === "disabled") return "disabled";
   if (!facts.hasApiKey) return "incomplete";
+
+  // Whether a missing forward secret is a FAULT at all is the provider's
+  // question, not this function's. Only a provider that signs every delivery
+  // and is dropped without one (`hmac_required`, i.e. Wasi) can be send-only
+  // for want of a secret. A personal relay authenticates on the webhook token
+  // in the URL and receives perfectly well with no secret configured - calling
+  // that "replies are being discarded" was false, and it was raised at
+  // CRITICAL severity, which is how a real alert gets trained into noise.
+  const secretSatisfied = facts.hasForwardSecret || !inboundNeedsForwardSecret(facts.provider);
 
   switch (facts.lastProbeOutcome) {
     case "credentials_rejected":
@@ -237,12 +287,12 @@ function classify(facts: ChannelFacts): ChannelReadiness {
       // The probe only ever proves the SEND half - it is an outbound call with
       // our key. Inbound is proven by a different fact entirely, and conflating
       // them is what let a send-only channel look finished.
-      return facts.hasForwardSecret ? "connected" : "send_only";
+      return secretSatisfied ? "connected" : "send_only";
     case null:
     case undefined:
       // Never probed. A missing forward secret is still worth saying, because
       // it is knowable without any network call at all.
-      return facts.hasForwardSecret ? "unverified" : "send_only";
+      return secretSatisfied ? "unverified" : "send_only";
   }
 }
 

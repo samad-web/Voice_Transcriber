@@ -2,7 +2,17 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Dialog, FormField, Input, Radio, RadioGroup, useAlert, useConfirm } from "@aura/ui";
+import {
+  Button,
+  Dialog,
+  ErrorBanner,
+  FormField,
+  Input,
+  Radio,
+  RadioGroup,
+  useAlert,
+  useConfirm,
+} from "@aura/ui";
 import type { StagePack } from "@aura/shared";
 import { applyStagePackAction, stagePackCatalogueAction } from "./stage-pack-actions";
 
@@ -40,6 +50,7 @@ export function StagePackPicker({ pipelineId }: { pipelineId: string }) {
   // a new suggestion may move the selection; after, it must not - re-suggesting
   // under somebody who has already chosen is the control fighting its user.
   const [pickedByHand, setPickedByHand] = useState(false);
+  const [catalogueError, setCatalogueError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
   const alert = useAlert();
@@ -54,7 +65,15 @@ export function StagePackPicker({ pipelineId }: { pipelineId: string }) {
     const timer = setTimeout(() => {
       start(async () => {
         const res = await stagePackCatalogueAction(describe);
-        if (!res.packs) return;
+        // A bare `return` here left the picker on its previous state - or, on
+        // first open, on none at all - with nothing said. Since this re-runs on
+        // a debounce as somebody types, a modal per failed keystroke would be
+        // worse than the bug; the banner below says it once and stays.
+        if (!res.packs) {
+          setCatalogueError(res.error ?? "The board templates could not be loaded.");
+          return;
+        }
+        setCatalogueError(null);
         setPacks(res.packs);
         if (!pickedByHand) setChosen(res.suggestedId ?? null);
       });
@@ -124,8 +143,14 @@ export function StagePackPicker({ pipelineId }: { pipelineId: string }) {
             />
           </FormField>
 
+          {catalogueError ? <ErrorBanner>{catalogueError}</ErrorBanner> : null}
+
           {packs === null ? (
-            <p className="text-sm text-text-muted">Loading the options…</p>
+            // Only honest while nothing has failed - otherwise "Loading…" sits
+            // there forever on a request that already came back.
+            catalogueError ? null : (
+              <p className="text-sm text-text-muted">Loading the options…</p>
+            )
           ) : (
             <RadioGroup legend="Board">
               {packs.map((pack) => (

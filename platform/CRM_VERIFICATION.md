@@ -275,10 +275,10 @@ read by nothing. A role configured to see only its own records saw every record 
 
 Set up once:
 
-1. `/roles` -> pick a tenant -> create a role `sales_rep`. Tick **view / create / edit** on
-   contact, deal and task. In the new **Which records** column choose **Only their own** for all
-   three. Save.
-2. `/team` -> assign that CRM role to a test user. Note their user id.
+1. `/client-config?tab=roles` -> pick a client -> create a role `sales_rep`. Tick
+   **view / create / edit** on contact, deal and task. In the new **Which records** column choose
+   **Only their own** for all three. Save. (`/roles` still works; it redirects here.)
+2. The **Team** tab on the same page -> assign that CRM role to a test user. Note their user id.
 3. Give them one thing to own, so "sees nothing" and "sees only theirs" are distinguishable:
 
 ```sql

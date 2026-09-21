@@ -30,6 +30,8 @@
  * Adapted from DeskcommCRM (MIT, Rafael Melgaco), `lib/channels/janela.ts`.
  */
 
+import { providerSpec } from "./messaging-providers";
+
 /** Meta's session window. Not configurable, so not a setting. */
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -68,18 +70,30 @@ export type MessagingWindow =
  * and so does anyone reselling it. A relay that bridges a personal handset does
  * not, because there is no Business API in the path.
  *
+ * ── THIS USED TO NAME A PROVIDER THAT DOES NOT EXIST ────────────────────────
+ *
+ * The set was written by hand as `["wasi", "meta_cloud"]`. There has never been
+ * a channel with provider `meta_cloud` - Meta's Cloud API is stored as `waba`
+ * (see messaging-channels.controller.ts and 0098). So the window was applied to
+ * Wasi and silently NOT to the direct Cloud API, which is the provider that
+ * enforces it hardest: a rep outside the window got no warning here, typed a
+ * reply, and collected Meta's error 131047 instead. The unit test pinned
+ * `meta_cloud` as windowed, so the gap read as covered.
+ *
+ * Derived from the provider table now, so the question is answered in the same
+ * place every other per-provider question is answered and a name cannot drift
+ * out of step with the value actually stored in the column.
+ *
  * An unknown provider is treated as UNRESTRICTED rather than as restricted.
  * Both defaults are wrong sometimes and the failure modes are not symmetric: a
  * false "closed" puts a countdown and a warning on a conversation that has
  * neither, and trains people to ignore the badge that matters; a false "open"
- * costs one rejected send with a clear reason from Wasi, which the composer
- * already surfaces.
+ * costs one rejected send with a clear reason from the provider, which the
+ * composer already surfaces.
  */
-const WINDOWED_PROVIDERS = new Set(["wasi", "meta_cloud"]);
-
 export function channelHasWindow(channel: string, provider: string | null | undefined): boolean {
   if (channel !== "whatsapp") return false;
-  return WINDOWED_PROVIDERS.has((provider ?? "").toLowerCase());
+  return providerSpec((provider ?? "").toLowerCase())?.hasSessionWindow ?? false;
 }
 
 /**

@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
 import { BreadcrumbLeaf } from "@/components/breadcrumbs";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { activitySourceFor } from "@/lib/crm-activity";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
 import { ContactActivity } from "../../contact-activity";
 import { ContactDetails } from "../../contact-details";
 import { CustomFieldEditor } from "../../custom-field-editor";
@@ -46,30 +47,36 @@ export default async function ContactDetailPage({
   // `GET /contacts/:id/deals` are separately permission-gated (contact:view vs
   // deal:view), so a role that may see people but not pipeline still gets a
   // working page instead of a blanket 403.
-  const [detail, dealsResponse, owner] = await Promise.all([
-    ownerGet<{ contact: Contact }>(`/v1/contacts/${id}`),
+  const [result, dealsResponse, owner] = await Promise.all([
+    ownerTry<{ contact: Contact }>(`/v1/contacts/${id}`),
     ownerGet<{ deals: Deal[] }>(`/v1/contacts/${id}/deals`),
     getOwner(),
   ]);
 
-  // ownerGet collapses every failure - network error, 404, 500 - to `null`
-  // with no way to tell them apart (see api-result.ts's `unwrap`), so this
-  // mirrors every list page in this area rather than reaching for `notFound()`,
-  // which would misreport a transient API outage as "this contact does not exist".
-  if (!detail || !owner) {
+  // `ownerTry` keeps the failures apart - network error, 403, 404, 500 - so the
+  // banner below can say which one happened. Still not `notFound()`, which
+  // would misreport a transient API outage as "this contact does not exist",
+  // and this mirrors every list page in this area.
+  if (!result.ok || !owner) {
     return (
       <>
         <PageHeader title="Contact" context="Contact" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        {/* A null `owner` is the signed-out case, which `ownerTry` has already
+            classified as `auth` on the same `getOwner()` - so `result` is
+            always the failed arm here, and the first ternary branch is
+            unreachable. It exists so this narrows for TypeScript. */}
+        <LoadFailure
+          what="this contact"
+          failure={
+            result.ok
+              ? { ok: false, kind: "auth", status: 401, message: "Not signed in to a workspace." }
+              : result
+          }
+        />
       </>
     );
   }
-  const { contact } = detail;
+  const { contact } = result.data;
   const deals = dealsResponse?.deals ?? [];
 
   const [activity, lead] = await Promise.all([

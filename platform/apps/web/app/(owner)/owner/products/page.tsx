@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerTry, requireFeature } from "@/lib/owner-context";
 import { ProductsClient } from "./products-client";
 import type { Product } from "./actions";
 
@@ -38,21 +39,17 @@ export default async function ProductsPage({
   if (sp.q) query.set("q", sp.q);
   if (offset > 0) query.set("offset", String(offset));
 
-  const data = await ownerGet<ListResponse>(`/v1/products?${query}`);
+  const result = await ownerTry<ListResponse>(`/v1/products?${query}`);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Products" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your products" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

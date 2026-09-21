@@ -3,6 +3,7 @@ import {
   OWNER_ROLE_ADMINS,
   channelAlert,
   channelHasGoneQuiet,
+  providerSpec,
   readChannel,
   type ChannelProbeOutcome,
 } from "@aura/shared";
@@ -160,7 +161,15 @@ async function checkOne(channel: WatchedChannel, probe: ProbeFn): Promise<void> 
     channel.last_probe_at === null ||
     Date.now() - channel.last_probe_at.getTime() > PROBE_STALE_MS;
 
-  if (stale && channel.provider === "wasi" && channel.api_key && channel.api_base_url) {
+  // Only providers that HAVE a probe get one. Gated on the provider table
+  // rather than on `provider === "wasi"`, which is what this said when Wasi was
+  // the only thing to probe: a personal channel is probed through Evolution's
+  // own status endpoint, and Meta's APIs have no probe at all and must not be
+  // asked for one - the verify route answers `provider_error` for a channel it
+  // cannot check, and that became a standing "No answer" warning on channels
+  // with nothing wrong with them.
+  const probeKind = providerSpec(channel.provider)?.probe ?? "none";
+  if (stale && probeKind !== "none" && channel.api_key) {
     // The endpoint writes last_probe_* itself, so there is nothing to persist
     // here - and only one place that can write a measurement.
     const result = await probe(channel.org_id, channel.id);
@@ -168,6 +177,7 @@ async function checkOne(channel: WatchedChannel, probe: ProbeFn): Promise<void> 
   }
 
   const reading = readChannel({
+    provider: channel.provider,
     status: channel.status,
     hasApiKey: channel.api_key !== null,
     hasForwardSecret: channel.has_forward_secret,

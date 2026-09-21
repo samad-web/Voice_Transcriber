@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 import { TranscriptionClient } from "./transcription-client";
 
 export const metadata: Metadata = { title: "Transcription" };
@@ -44,22 +45,17 @@ export default async function TranscriptionPage() {
   const role = owner.membership.ownerRole;
   if (role !== "owner" && role !== "manager") redirect("/owner");
 
-  const org = await ownerGet<OrgTranscription>("/v1/org");
+  const orgResult = await ownerTry<OrgTranscription>("/v1/org");
 
   return (
     <>
       <PageHeader title="Transcription" context="Settings" />
 
-      {!org ? (
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+      {!orgResult.ok ? (
+        <LoadFailure what="transcription settings" failure={orgResult} />
       ) : (
         <>
-          {org.transcription_enabled === false ? (
+          {orgResult.data.transcription_enabled === false ? (
             // Worth saying outright rather than letting somebody tune a
             // glossary that nothing will read. The switch is the provider's
             // (migration 0014), so the fix is a conversation, not a control.
@@ -73,9 +69,9 @@ export default async function TranscriptionPage() {
           ) : null}
 
           <TranscriptionClient
-            asrLanguage={org.asr_language}
-            asrMode={org.asr_mode}
-            vocabulary={org.vocabulary ?? []}
+            asrLanguage={orgResult.data.asr_language}
+            asrMode={orgResult.data.asr_mode}
+            vocabulary={orgResult.data.vocabulary ?? []}
             // Managers read the page; only an Owner or Manager may save, and
             // both are already the only personas that reach it. Passed
             // explicitly anyway so the component never has to infer it.

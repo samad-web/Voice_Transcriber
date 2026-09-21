@@ -1,5 +1,5 @@
-import { Card, MonoLabel } from "@aura/ui";
-import { ownerGet } from "@/lib/owner-context";
+import { LoadFailure } from "@/components/load-failure";
+import { ownerTry } from "@/lib/owner-context";
 import { RolesGrid } from "./roles-grid";
 import type { RolesResponse } from "./types";
 
@@ -31,18 +31,12 @@ import type { RolesResponse } from "./types";
  * if the repair were behind the thing being repaired.
  */
 export async function RolesTab({ canEdit }: { canEdit: boolean }) {
-  const data = await ownerGet<RolesResponse>("/v1/owner/roles");
+  const result = await ownerTry<RolesResponse>("/v1/owner/roles");
 
-  if (!data) {
-    return (
-      <Card>
-        <MonoLabel>Data unavailable</MonoLabel>
-        <p className="mt-2 text-sm text-text-muted">
-          The platform API did not answer. If this persists, contact your provider.
-        </p>
-      </Card>
-    );
+  if (!result.ok) {
+    return <LoadFailure what="roles and permissions" failure={result} />;
   }
+  const data = result.data;
 
   return (
     <>

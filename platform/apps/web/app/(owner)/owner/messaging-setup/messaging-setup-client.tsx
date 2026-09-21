@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import { providerSpec, readChannel } from "@aura/shared";
 import { MetaChannelDialog } from "./meta-channel-dialog";
-import { readChannel } from "@aura/shared";
+import { PersonalWhatsAppPanel } from "./personal-whatsapp-panel";
 import {
   createWasiChannelAction,
   listChannelsAction,
@@ -36,23 +37,51 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
 
   return (
     <div className="space-y-4">
-      {/* Two routes to WhatsApp, and the difference is worth stating rather
-          than leaving somebody to work it out from two similar buttons. Meta's
-          own API needs an approved business number and gives templates and a
-          24-hour reply window; a BSP-relayed personal number needs neither and
-          has neither. Instagram and Messenger exist only on the Meta side. */}
+      {/*
+        ── THE SPLIT IS BY ACCOUNT KIND, NOT BY VENDOR ───────────────────────
+
+        This card used to offer "Connect through Meta" beside "Connect WhatsApp
+        via Wasi" and describe the SECOND as the ordinary-number option that
+        "needs no Meta approval and has no templates". Both halves of that were
+        false: Wasi is a Business Solution Provider, so a number connected
+        through it IS a WhatsApp Business Account, with Embedded Signup,
+        approved templates and the 24-hour window. Anyone who wanted to use
+        their own phone picked that button and was routed into a business flow
+        that could never accept them.
+
+        So the question the page asks first is now which KIND of account this
+        is, and the vendors sit underneath the answer.
+      */}
       <Card>
         <MonoLabel>{channels.length === 0 ? "No channel yet" : "Add a channel"}</MonoLabel>
-        <p className="mt-2 max-w-prose text-sm leading-relaxed text-text-muted">
-          Connect a WhatsApp Business number, an Instagram account or a Facebook Page directly
-          through Meta — or relay an ordinary WhatsApp number through Wasi, which needs no Meta
-          approval and has no templates.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => setMetaOpen(true)}>Connect through Meta</Button>
-          <Button variant="secondary" onClick={() => setCreateOpen(true)}>
-            Connect WhatsApp via Wasi
-          </Button>
+
+        <div className="mt-3 space-y-4">
+          <div>
+            <p className="text-sm font-medium text-text">A business number</p>
+            <p className="mt-1 max-w-prose text-sm leading-relaxed text-text-muted">
+              Your verified WhatsApp Business number, through Meta — directly, or resold by Wasi.
+              Both give you approved templates, and both are bound by Meta&rsquo;s 24-hour reply
+              window. Instagram and Facebook Messenger connect here too.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button onClick={() => setMetaOpen(true)}>Connect through Meta</Button>
+              <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+                Connect through Wasi
+              </Button>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <p className="text-sm font-medium text-text">Your own WhatsApp number</p>
+            <p className="mt-1 max-w-prose text-sm leading-relaxed text-text-muted">
+              An ordinary WhatsApp account, linked the way WhatsApp Web links one — a code you type
+              into your phone, or a QR you scan. No Meta approval and no waiting, but no templates
+              either, and messages can only be sent while a conversation is live.
+            </p>
+            <div className="mt-2">
+              <PersonalWhatsAppPanel onChanged={refresh} />
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -67,6 +96,7 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
            * half and the receive half separately, because they fail separately.
            */
           const reading = readChannel({
+            provider: c.provider,
             status: c.status,
             hasApiKey: c.has_api_key,
             hasForwardSecret: c.has_forward_secret,
@@ -82,8 +112,13 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
                 <p className="text-sm font-medium text-text">
                   {c.display_name ?? c.inbound_address}
                 </p>
+                {/* The provider's LABEL, not the stored enum, and the kind of
+                    account beside it. "via wasi" told an owner nothing about
+                    whether the thing they were looking at was their business
+                    number or their own phone - which is the first question
+                    anybody has on this page. */}
                 <p className="mt-0.5 text-xs text-text-muted">
-                  {c.inbound_address} · via {c.provider}
+                  {c.inbound_address} · {providerSpec(c.provider)?.label ?? c.provider}
                 </p>
               </div>
               <StatusChip tone={reading.tone}>{reading.label}</StatusChip>
@@ -107,21 +142,33 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               </p>
             </div>
 
-            <div className="mt-3 space-y-2 rounded-md border border-border bg-surface-hover p-3 text-xs">
-              <p className="font-medium text-text">Webhook URL for Wasi's "CRM Inbound Forwarding"</p>
-              <p className="break-all font-mono text-text-muted">
-                {typeof window !== "undefined" ? window.location.origin : ""}
-                {c.webhook_path}
-              </p>
-              <p className="text-text-muted">
-                Paste this into the client's page in Wasi's admin panel (Clients → this client →
-                CRM Inbound Forwarding), tick all four events, and save. Wasi will show a secret -
-                paste it below.
-              </p>
-              <Button variant="secondary" size="sm" onClick={() => setSecretDialogFor(c.id)}>
-                Enter forward secret
-              </Button>
-            </div>
+            {/*
+              Wasi ONLY. This block was rendered on every channel, so a Meta
+              channel and a personal number both displayed instructions to go
+              and paste a URL into "Wasi's admin panel" and enter a forward
+              secret - a panel their owner has no account for, for a secret
+              that does not exist. A personal number's webhook is registered by
+              Aura at pairing time and needs nothing from anybody; Meta's is
+              entered on the Meta app dashboard with the verify token the
+              connect dialog already showed.
+            */}
+            {c.provider === "wasi" ? (
+              <div className="mt-3 space-y-2 rounded-md border border-border bg-surface-hover p-3 text-xs">
+                <p className="font-medium text-text">Webhook URL for Wasi&rsquo;s &ldquo;CRM Inbound Forwarding&rdquo;</p>
+                <p className="break-all font-mono text-text-muted">
+                  {typeof window !== "undefined" ? window.location.origin : ""}
+                  {c.webhook_path}
+                </p>
+                <p className="text-text-muted">
+                  Paste this into the client&rsquo;s page in Wasi&rsquo;s admin panel (Clients → this
+                  client → CRM Inbound Forwarding), tick all four events, and save. Wasi will show a
+                  secret - paste it below.
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => setSecretDialogFor(c.id)}>
+                  Enter forward secret
+                </Button>
+              </div>
+            ) : null}
 
             <div className="mt-3 flex flex-wrap gap-2">
               {/*
@@ -131,30 +178,38 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
                 condition that is often temporary, and a forward secret that
                 does not exist yet is the NORMAL order of operations.
               */}
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={pending}
-                onClick={() =>
-                  start(async () => {
-                    const res = await verifyChannelAction(c.id);
-                    // Only an unreachable Aura API is an error here. A refused
-                    // key is the answer, and it belongs on the card - putting
-                    // it in a modal would hide the finding behind an "error".
-                    if (res.error) {
-                      await alert({
-                        title: "Couldn't run the check",
-                        body: res.error,
-                        tone: "danger",
-                      });
-                      return;
-                    }
-                    refresh();
-                  })
-                }
-              >
-                {pending ? "Checking…" : "Check this number"}
-              </Button>
+              {/*
+                Only where there is something to ask. Meta's APIs have no probe
+                Aura can run without sending a message, and the verify route now
+                says so rather than recording an error - so offering the button
+                here would be a control whose only outcome is "nothing changed".
+              */}
+              {providerSpec(c.provider)?.probe !== "none" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() =>
+                    start(async () => {
+                      const res = await verifyChannelAction(c.id);
+                      // Only an unreachable Aura API is an error here. A refused
+                      // key is the answer, and it belongs on the card - putting
+                      // it in a modal would hide the finding behind an "error".
+                      if (res.error) {
+                        await alert({
+                          title: "Couldn't run the check",
+                          body: res.error,
+                          tone: "danger",
+                        });
+                        return;
+                      }
+                      refresh();
+                    })
+                  }
+                >
+                  {pending ? "Checking…" : "Check this number"}
+                </Button>
+              ) : null}
               <Button
                 variant="secondary"
                 size="sm"

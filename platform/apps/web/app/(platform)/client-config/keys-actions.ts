@@ -52,7 +52,7 @@ export async function createApiKeyAction(
       return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
     const data = (await res.json()) as CreatedKey;
-    revalidatePath("/api-keys");
+    revalidatePath("/client-config");
     return data;
   } catch {
     return { error: "API unreachable - is the API running?" };
@@ -75,7 +75,7 @@ export async function revokeApiKeyAction(
       cache: "no-store",
     });
     if (!res.ok) return { error: `API ${res.status}` };
-    revalidatePath("/api-keys");
+    revalidatePath("/client-config");
     return {};
   } catch {
     return { error: "API unreachable" };

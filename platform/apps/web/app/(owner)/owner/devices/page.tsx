@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, ownerTry } from "@/lib/owner-context";
 import { DevicesClient } from "./devices-client";
 import type { DevicesResponse, FleetHealthResponse } from "./actions";
 
@@ -33,24 +33,20 @@ export const metadata: Metadata = { title: "Handsets" };
  * somebody opens when they are already having trouble with a phone.
  */
 export default async function DevicesPage() {
-  const [data, fleetHealth] = await Promise.all([
-    ownerGet<DevicesResponse>("/v1/owner/devices"),
+  const [result, fleetHealth] = await Promise.all([
+    ownerTry<DevicesResponse>("/v1/owner/devices"),
     ownerGet<FleetHealthResponse>("/v1/devices/fleet-health"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Handsets" context="Settings" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your devices" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

@@ -16,9 +16,19 @@ function hoursAgo(n: number): string {
 }
 
 describe("channelHasWindow", () => {
-  it("applies to WhatsApp through a Business Solution Provider", () => {
+  it("applies to every WABA provider, however the WABA is reached", () => {
+    // `waba` is the one that matters most and the one this used to miss. The
+    // set was hand-written as `["wasi", "meta_cloud"]`, and `meta_cloud` is not
+    // a value any channel has ever held - Meta's Cloud API is stored as `waba`.
+    // So the window was enforced for the reseller and skipped for the direct
+    // API, and THIS TEST pinned the fictional name, which is what made the gap
+    // look covered for two releases.
+    expect(channelHasWindow("whatsapp", "waba")).toBe(true);
     expect(channelHasWindow("whatsapp", "wasi")).toBe(true);
-    expect(channelHasWindow("whatsapp", "meta_cloud")).toBe(true);
+  });
+
+  it("does not apply to a personal account - there is no Business API in the path", () => {
+    expect(channelHasWindow("whatsapp", "evolution")).toBe(false);
   });
 
   it("does not apply to the other media", () => {
@@ -30,8 +40,8 @@ describe("channelHasWindow", () => {
     // Both defaults are wrong sometimes and the costs are not equal. A false
     // "closed" puts a countdown on conversations that have none and teaches
     // people to ignore the badge; a false "open" costs one rejected send with
-    // a reason Wasi states plainly.
-    expect(channelHasWindow("whatsapp", "evolution")).toBe(false);
+    // a reason the provider states plainly.
+    expect(channelHasWindow("whatsapp", "meta_cloud")).toBe(false);
     expect(channelHasWindow("whatsapp", null)).toBe(false);
   });
 });

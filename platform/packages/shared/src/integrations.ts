@@ -84,11 +84,16 @@ export interface IntegrationSpec {
 
 export const INTEGRATIONS: IntegrationSpec[] = [
   // ── Messaging ─────────────────────────────────────────────────────────────
+  // Two WhatsApp rows, and the split is by ACCOUNT KIND rather than by vendor.
+  // Which providers roll up into each is `providersForKind` in
+  // whatsapp-providers.ts, not a list written out again here - see the note in
+  // integrations.controller.ts about `wasi` having been filed under the wrong
+  // one of these two for two releases.
   {
     id: "whatsapp_waba",
     label: "WhatsApp Business API",
     category: "messaging",
-    blurb: "Your verified business number, through Meta's Cloud API. Templates and all.",
+    blurb: "Your verified business number, direct through Meta or via Wasi. Templates and all.",
     href: "/owner/messaging-setup",
     module: "crm",
     requiresEnv: [],
@@ -98,7 +103,7 @@ export const INTEGRATIONS: IntegrationSpec[] = [
     id: "whatsapp_personal",
     label: "WhatsApp (personal number)",
     category: "messaging",
-    blurb: "Pair an ordinary WhatsApp account by QR. No Meta approval, no templates.",
+    blurb: "Link an ordinary WhatsApp account by QR or pairing code. No Meta approval, no templates.",
     href: "/owner/messaging-setup",
     module: "crm",
     requiresEnv: [],

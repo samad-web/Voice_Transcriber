@@ -13,6 +13,7 @@ import { z } from "zod";
 import { ExtractionSchema, StoredExtractionSchema } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { AgentsService } from "./agents.service";
 
@@ -141,6 +142,11 @@ export class AgentsController {
    * the pipeline, so what you test is what runs.
    */
   @Post(":id/test")
+  // Reads a stored call's transcript and hands it to an LLM, returning what it
+  // extracted. That is call content arriving by a slightly longer route, so it
+  // carries the same gate the transcript itself does (0122).
+  @UseGuards(AdminKeyGuard, TenantGuard, CallAccessGuard)
+  @CallContent()
   async test(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) agentId: string,

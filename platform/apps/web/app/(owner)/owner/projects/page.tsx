@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerTry, requireFeature } from "@/lib/owner-context";
 import type { Project } from "../types";
 import { ProjectsClient } from "./projects-client";
 
@@ -10,21 +10,17 @@ export const metadata: Metadata = { title: "Projects" };
 export default async function ProjectsPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/projects");
-  const data = await ownerGet<{ projects: Project[] }>("/v1/projects");
+  const result = await ownerTry<{ projects: Project[] }>("/v1/projects");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Projects" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your projects" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, MonoLabel } from "@aura/ui";
 import { BreadcrumbLeaf } from "@/components/breadcrumbs";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { CustomFieldEditor } from "../../custom-field-editor";
 import { InteractionTimeline } from "../../interaction-timeline";
 import { LinkedRecords } from "../../linked-records";
@@ -27,27 +28,22 @@ export default async function AccountDetailPage({
 }) {
   const { id } = await params;
 
-  const detail = await ownerGet<{ account: Account; contacts: Contact[] }>(`/v1/accounts/${id}`);
+  const result = await ownerTry<{ account: Account; contacts: Contact[] }>(`/v1/accounts/${id}`);
 
-  // ownerGet collapses every failure - network error, 404, 500 - to `null`
-  // with no way to tell them apart (see api-result.ts's `unwrap`), so this
-  // mirrors every list page in this area (leads, contacts, deals, accounts,
-  // board, duplicates) rather than reaching for `notFound()`, which would
-  // misreport a transient API outage as "this account does not exist".
-  if (!detail) {
+  // `ownerTry` keeps the failures apart - network error, 404, 500 - so the
+  // banner below can say which one happened. Still not `notFound()`, which
+  // would misreport a transient API outage as "this account does not exist",
+  // and this mirrors every list page in this area (leads, contacts, deals,
+  // accounts, board, duplicates).
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Account" context="Account" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="this account" failure={result} />
       </>
     );
   }
-  const { account, contacts } = detail;
+  const { account, contacts } = result.data;
 
   const phone = account.phone_prefix
     ? `${account.phone_prefix}…`

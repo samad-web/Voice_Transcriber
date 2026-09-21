@@ -18,6 +18,7 @@ import { z } from "zod";
 import { CreateCallRequest } from "@aura/shared";
 import { publishPipeline } from "@aura/queue";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { PermissionsGuard, RequirePermission } from "../../common/permissions.guard";
 import { principalHasPermission, type PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
@@ -341,7 +342,8 @@ export class CallsController {
    * instance join is part of the contract, not an optimisation.
    */
   @Get()
-  @UseGuards(AdminKeyGuard, TenantGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, CallAccessGuard)
+  @CallContent()
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListCallsQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -423,7 +425,8 @@ export class CallsController {
    * stay visible to any tenant member, same as before this change.
    */
   @Get(":id")
-  @UseGuards(AdminKeyGuard, TenantGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, CallAccessGuard)
+  @CallContent()
   async detail(
     @Req() req: PrincipalRequest,
     @OrgId() orgId: string,
@@ -489,8 +492,15 @@ export class CallsController {
    * recording is itself a privacy event. 404 when no audio exists.
    */
   @Get(":id/audio")
-  @UseGuards(AdminKeyGuard, TenantGuard, PermissionsGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, PermissionsGuard, CallAccessGuard)
   @RequirePermission("recordings:listen")
+  // The two are not redundant. `recordings:listen` asks whether a TENANT
+  // MEMBER may hear a recording - and is inert for console traffic, because
+  // `principalHasPermission` waves through any `viaAdminKey` caller and the
+  // whole web tier holds the admin key. `@CallContent()` asks the question
+  // that one cannot: whether the CUSTOMER has agreed to let the vendor listen
+  // at all. See call-access.guard.ts.
+  @CallContent()
   async audio(
     @Req() req: PrincipalRequest,
     @OrgId() orgId: string,

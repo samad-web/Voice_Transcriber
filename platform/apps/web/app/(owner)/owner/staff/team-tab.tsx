@@ -1,6 +1,7 @@
 import { OWNER_ROLE_DESCRIPTIONS, OWNER_ROLE_LABELS, OwnerRole } from "@aura/shared";
 import { Card, MonoLabel } from "@aura/ui";
-import { ownerGet } from "@/lib/owner-context";
+import { LoadFailure } from "@/components/load-failure";
+import { ownerTry } from "@/lib/owner-context";
 import { InviteForm, TeamCounts } from "./invite-form";
 import { TeamTable } from "./team-table";
 import type { TeamResponse } from "./types";
@@ -34,18 +35,12 @@ export async function TeamTab({
   role: OwnerRole;
   selfUserId: string | null;
 }) {
-  const data = await ownerGet<TeamResponse>("/v1/owner/team");
+  const result = await ownerTry<TeamResponse>("/v1/owner/team");
 
-  if (!data) {
-    return (
-      <Card>
-        <MonoLabel>Data unavailable</MonoLabel>
-        <p className="mt-2 text-sm text-text-muted">
-          The platform API did not answer. If this persists, contact your provider.
-        </p>
-      </Card>
-    );
+  if (!result.ok) {
+    return <LoadFailure what="your team" failure={result} />;
   }
+  const data = result.data;
 
   // Headcount by persona - "how many users do we have" answered on the page
   // that manages them, in the enum's own order so the list does not reshuffle

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { viewHref, viewQueryFrom } from "@/lib/list-views";
 import { DUE_WINDOWS, DUE_WINDOW_LABEL } from "@/lib/next-actions";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { FilterSearch, FilterSelect, ListFilterForm } from "../list-filters";
 import { loadMembers } from "../list-data";
@@ -66,8 +67,8 @@ export default async function TasksPage({
   const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
   const offset = Math.max(0, Number(one(params.offset)) || 0);
 
-  const [overdue, members, views] = await Promise.all([
-    ownerGet<{ tasks: Task[]; total: number }>("/v1/tasks?overdue=1&limit=100"),
+  const [overdueResult, members, views] = await Promise.all([
+    ownerTry<{ tasks: Task[]; total: number }>("/v1/tasks?overdue=1&limit=100"),
     loadMembers(),
     loadSavedViews("tasks"),
   ]);
@@ -83,13 +84,8 @@ export default async function TasksPage({
     <>
       <PageHeader title="Tasks" context="Pipeline" />
 
-      {overdue === null ? (
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+      {!overdueResult.ok ? (
+        <LoadFailure what="tasks" failure={overdueResult} />
       ) : (
         <>
           <SavedViewsBar list="tasks" views={views} current={current} allLabel="Open tasks" />
@@ -109,13 +105,13 @@ export default async function TasksPage({
 
             <Card>
               <MonoLabel>Overdue</MonoLabel>
-              <p className="mt-2 text-3xl font-semibold text-text tabular-nums">{overdue.total}</p>
+              <p className="mt-2 text-3xl font-semibold text-text tabular-nums">{overdueResult.data.total}</p>
               <p className="mt-1 text-xs text-text-muted">
-                {overdue.total === 0 ? "Nothing is past its due date." : "Open tasks past their due date."}
+                {overdueResult.data.total === 0 ? "Nothing is past its due date." : "Open tasks past their due date."}
               </p>
-              {overdue.tasks.length > 0 ? (
+              {overdueResult.data.tasks.length > 0 ? (
                 <ul className="mt-3 space-y-1.5">
-                  {overdue.tasks.slice(0, 8).map((task) => (
+                  {overdueResult.data.tasks.slice(0, 8).map((task) => (
                     <li key={task.id} className="text-xs break-words text-text-muted">
                       <span className="font-medium text-danger-text tabular-nums">{task.due_on}</span> {task.title}
                     </li>

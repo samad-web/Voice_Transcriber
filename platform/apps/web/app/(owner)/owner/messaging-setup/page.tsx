@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { ChannelBar } from "../channel-bar";
 import { ConnectMethod } from "./connect-method";
@@ -21,24 +21,20 @@ export default async function MessagingSetupPage() {
   // Both in one pass. The signup panel's readiness depends on the same channel
   // rows the form below renders, and fetching them sequentially would put a
   // second Mumbai->Seoul round trip in front of a page that already has one.
-  const [data, signup] = await Promise.all([
-    ownerGet<{ channels: MessagingChannel[] }>("/v1/messaging/channels"),
+  const [result, signup] = await Promise.all([
+    ownerTry<{ channels: MessagingChannel[] }>("/v1/messaging/channels"),
     embeddedSignupConfigAction(),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="WhatsApp Setup" context="Settings" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your WhatsApp setup" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

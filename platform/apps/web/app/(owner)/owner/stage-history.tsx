@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MonoLabel } from "@aura/ui";
+import { InlineListSkeleton } from "@/components/skeletons";
 import { fetchStageHistoryAction, type StageTransitionRow } from "./crm-actions";
 import type { Stage } from "./types";
 
@@ -38,7 +39,7 @@ export function StageHistory({ dealId, stages }: { dealId: string; stages: Stage
     return (
       <div className="space-y-2">
         <MonoLabel>Stage history</MonoLabel>
-        <p className="text-xs text-text-muted">Loading…</p>
+        <InlineListSkeleton rows={3} twoLine={false} label="Loading stage history" />
       </div>
     );
   }

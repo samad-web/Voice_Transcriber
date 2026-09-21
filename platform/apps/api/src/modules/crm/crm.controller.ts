@@ -25,6 +25,7 @@ import {
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -432,6 +433,13 @@ export class CrmController {
 
   /** Recent deliveries for one integration - the operator's debugging view. */
   @Get("integrations/:id/deliveries")
+  // `crm_sync_log.request_body` is the payload the worker POSTed to the
+  // tenant's own CRM, and that payload carries the transcript text, the call
+  // intelligence, every extracted fact, the full remote number and a presigned
+  // recording URL (crm-dispatch.ts). A debugging view over it is a transcript
+  // reader wearing a different name, so it takes the same gate (0122).
+  @UseGuards(AdminKeyGuard, TenantGuard, CallAccessGuard)
+  @CallContent()
   async deliveries(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

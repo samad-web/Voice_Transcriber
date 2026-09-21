@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { operatorGate } from "@/lib/operator-gate";
-import { apiGetAs } from "@/lib/server-api";
+import { operatorCaller } from "@/lib/operator-guard";
+import { apiTry } from "@/lib/server-api";
+import { CallAccessRequest } from "./call-access-request";
 import { resolveTenantScope } from "@/lib/tenant-scope";
 import { CallsExplorer, type CallRow } from "./calls-explorer";
 
@@ -32,10 +34,21 @@ export default async function CallsPage({
   // rather than silently filtering to something the operator did not ask for.
   const onlyFollowUps = followUp === "true";
 
-  const data = await apiGetAs<{ calls: CallRow[]; total: number }>(
+  // `apiTry`, not `apiGetAs`: a refusal has to be distinguishable from an
+  // empty log. Collapsing the call-access gate (0122) into `null` would render
+  // "No calls yet" over a tenant with thousands of them, and send whoever saw
+  // it looking for a pipeline fault that does not exist.
+  //
+  // `operatorCaller()` names who is asking. Without it the API sees the root
+  // admin key with nobody behind it and refuses outright, because an access
+  // request nobody's name is on is one the customer cannot answer.
+  const result = await apiTry<{ calls: CallRow[]; total: number }>(
     `/v1/calls?limit=${PAGE_SIZE}&offset=${offset}${onlyFollowUps ? "&followUp=true" : ""}`,
     orgId,
+    await operatorCaller(),
   );
+  const data = result.ok ? result.data : null;
+  const accessBlocked = !result.ok && result.status === 403;
 
   /** Keeps the active view when paging, so page 2 of the follow-ups is still follow-ups. */
   const hrefWith = (p: number) =>
@@ -80,7 +93,13 @@ export default async function CallsPage({
         ))}
       </div>
 
-      {data === null ? (
+      {accessBlocked ? (
+        <CallAccessRequest
+          orgId={orgId}
+          tenantName={activeTenant?.name ?? "this customer"}
+          message={!result.ok ? result.message : ""}
+        />
+      ) : data === null ? (
         <Card>
           <MonoLabel>API offline</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">

@@ -61,8 +61,7 @@ const STOCK_PALETTE =
  * The rule being enforced is "do not re-implement the state chip without its
  * glyph", not "never name a colour".
  */
-const HAND_ROLLED_CHIP =
-  /\bbg-(danger|success|orange|outgoing)-subtle\b[^"'`]*\btext-\1-text\b/;
+const HAND_ROLLED_CHIP = /\bbg-(danger|success|orange|outgoing)-subtle\b[^"'`]*\btext-\1-text\b/;
 
 const GRADIENT = /var\(--brand-gradient\)/;
 
@@ -81,7 +80,6 @@ const LEGACY_STOCK_PALETTE = [
   "app/(platform)/operators/operators-manager.tsx",
   "app/(platform)/agents/agent-sandbox.tsx",
   "app/(platform)/agents/agent-studio.tsx",
-  "app/(platform)/api-keys/api-keys-manager.tsx",
   "app/(platform)/instances/enrollment-credentials.tsx",
   "app/(platform)/instances/new/instance-form.tsx",
   "app/(platform)/instances/new/page.tsx",
@@ -91,10 +89,8 @@ const LEGACY_STOCK_PALETTE = [
   "app/(platform)/instances/[id]/owner-accounts.tsx",
   "app/(platform)/instances/[id]/policy-form.tsx",
   "app/(platform)/leads/page.tsx",
-  "app/(platform)/loading.tsx",
   "app/(platform)/search/search-explorer.tsx",
   "app/(platform)/slots/page.tsx",
-  "app/(platform)/team/team-manager.tsx",
   "app/(platform)/usage/page.tsx",
 ];
 

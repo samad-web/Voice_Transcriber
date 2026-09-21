@@ -20,12 +20,14 @@ import {
   ConsolePanel,
   Input,
   MonoLabel,
+  Skeleton,
   StatusChip,
   useAlert,
   useConfirm,
   useToast,
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
+import { LoadingRegion } from "@/components/skeletons";
 import {
   deleteIntegrationAction,
   listDeliveriesAction,
@@ -624,7 +626,18 @@ function DeliveryLog({
       </div>
 
       {rows === null ? (
-        <p className="py-4 text-center text-sm text-text-muted">Loading…</p>
+        <LoadingRegion label="Loading deliveries" className="space-y-1.5">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 rounded-md border border-border bg-surface p-2.5"
+            >
+              <Skeleton className="h-5 w-14 shrink-0 rounded-full" />
+              <Skeleton className="h-3 w-16 shrink-0" />
+              <Skeleton className="h-3 flex-1" />
+            </div>
+          ))}
+        </LoadingRegion>
       ) : rows.length === 0 ? (
         <p className="py-4 text-center text-sm text-text-muted">No deliveries yet</p>
       ) : (

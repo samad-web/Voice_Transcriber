@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Lock } from "lucide-react";
-import { MonoLabel, StatusChip } from "@aura/ui";
+import { MonoLabel, Skeleton, StatusChip } from "@aura/ui";
+import { LoadingRegion } from "@/components/skeletons";
 import { fetchLeadCallAction } from "./actions";
 import { num, type LeadCall, type LeadCallDetail } from "./types";
 
@@ -130,13 +131,36 @@ export function CallTranscript({ leadId, call }: { leadId: string; call: LeadCal
               {error}
             </p>
           ) : detail === null ? (
-            <p className="text-xs text-text-muted">Loading…</p>
+            <TranscriptSkeleton />
           ) : (
             <TranscriptBody detail={detail} />
           )}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * What `TranscriptBody` looks like before it lands: the summary paragraph, then
+ * the transcript lines under a rule. Shared by both drawers for the same reason
+ * the body is, and kept next to it so the two change together.
+ */
+export function TranscriptSkeleton() {
+  return (
+    <LoadingRegion label="Loading transcript" className="space-y-2">
+      <div className="space-y-1.5">
+        <Skeleton className="h-2.5 w-28" />
+        <Skeleton className="h-3.5 w-full" />
+        <Skeleton className="h-3.5 w-2/3" />
+      </div>
+      <div className="space-y-1.5 border-t border-border pt-2">
+        <Skeleton className="h-2.5 w-20" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-5/6" />
+        <Skeleton className="h-3 w-4/5" />
+      </div>
+    </LoadingRegion>
   );
 }
 

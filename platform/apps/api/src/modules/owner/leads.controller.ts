@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { recordLeadStageTransition } from "@aura/db";
 import {
   BulkAssignLeadsInput,
   LeadSourceChannel,
@@ -785,11 +786,22 @@ export class LeadsController {
       // and the read filter would then hide the evidence from them. Scoping
       // the read without the write is the worse of the two half-measures.
       const owned = ownerScopeFilter("lead", scope, "");
+      const ownedAnd = owned ? ` AND ${owned.sql.replace(/\$\?/g, "$19")}` : "";
 
       const {
-        rows: [lead],
+        rows: [updated],
       } = await client.query(
-        `UPDATE leads SET
+        // `prior` reads the card's stage BEFORE this write, for the stage
+        // ledger below - in the same statement, so it costs no extra round
+        // trip. FOR UPDATE so a move racing this one cannot hand the ledger a
+        // stale "from": the lock waits for the other write and then reads it.
+        `WITH prior AS (
+           SELECT stage AS prior_stage, status AS prior_status
+             FROM leads
+            WHERE id = $1${ownedAnd}
+              FOR UPDATE
+         )
+         UPDATE leads SET
            stage       = COALESCE($2, stage),
            status      = COALESCE($3, status),
            -- Only restamp when the card actually changed column.
@@ -820,11 +832,13 @@ export class LeadsController {
            -- Working a lead IS activity: without this a card the owner is
            -- actively progressing would age out of the retention sweep.
            last_activity_at = now()
-         WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$19")}` : ""}
+          FROM prior
+         WHERE id = $1${ownedAnd}
          RETURNING id, stage, status, title, value_num, next_action, notes, contact_name,
                    telecaller_device_id, project_id, project_source,
                    temperature, temperature_source,
-                   stage_changed_at, last_activity_at`,
+                   stage_changed_at, last_activity_at,
+                   prior.prior_stage, prior.prior_status`,
         [
           leadId,
           p.stage ?? null,
@@ -854,7 +868,26 @@ export class LeadsController {
       );
       // Same 404-not-403 reasoning as detail(): a scoped persona editing
       // somebody else's lead must not be told the lead exists.
-      if (!lead) throw new NotFoundException("lead not found");
+      if (!updated) throw new NotFoundException("lead not found");
+      const { prior_stage: priorStage, prior_status: priorStatus, ...lead } = updated as Record<string, unknown>;
+
+      // The lead's own stage ledger (0075). In the main transaction, not the
+      // non-blocking propagation below: this is the lead's history rather than
+      // a copy of it on another record, and a move the ledger silently missed
+      // is exactly the bug this call fixes. `console` because this endpoint is
+      // only ever a person - which is also what lets 0093's trigger count the
+      // move as the lead's first response.
+      if (p.stage) {
+        await recordLeadStageTransition(client, orgId, {
+          leadId,
+          fromStage: (priorStage as string | null) ?? null,
+          toStage: String(lead.stage),
+          fromStatus: (priorStatus as string | null) ?? null,
+          toStatus: String(lead.status),
+          source: "console",
+          changedBy: actorUserId(req),
+        });
+      }
 
       // Keep the dual-written deal in step, exactly as the stage move below
       // does - and under the same human-owns-it rule, so this write is the

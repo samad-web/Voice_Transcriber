@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Dialog, ErrorBanner, Input, Select, useAlert } from "@aura/ui";
+import { Button, Dialog, ErrorBanner, Input, Select, Skeleton, useAlert } from "@aura/ui";
+import { LoadingRegion } from "@/components/skeletons";
 import {
   bulkTagAction,
   createTagAction,
@@ -121,7 +122,12 @@ export function TagDialog({
       {loadError ? (
         <ErrorBanner>{loadError}</ErrorBanner>
       ) : tags === null ? (
-        <p className="text-sm text-text-muted">Loading…</p>
+        <LoadingRegion label="Loading tags" className="space-y-1.5">
+          <div className="flex h-5 items-center">
+            <Skeleton className="h-3.5 w-8" />
+          </div>
+          <Skeleton className="h-9.5 w-full rounded-sm" />
+        </LoadingRegion>
       ) : tags.length === 0 && !canCreate ? (
         <p className="text-sm text-text-muted">
           This workspace has no tags yet. Ask an owner or manager to add the first one.

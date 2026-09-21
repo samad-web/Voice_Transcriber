@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { ErrorBanner, StatusChip, useAlert } from "@aura/ui";
+import { InlineListSkeleton } from "@/components/skeletons";
 import {
   actOnStepAction,
   fetchDueAction,
@@ -117,7 +118,9 @@ export function Outreach() {
       {tab === "due" ? (
         <ul className="mt-4 space-y-2">
           {due === null ? (
-            <li className="text-sm text-text-muted">Loading…</li>
+            <li>
+              <InlineListSkeleton rows={3} trailing="chip" label="Loading due steps" />
+            </li>
           ) : due.length === 0 ? (
             <li className="rounded-md border border-border p-4 text-sm text-text-muted">
               Nothing is due. Steps appear here as their hour arrives.
@@ -193,7 +196,9 @@ export function Outreach() {
       ) : (
         <ul className="mt-4 space-y-2">
           {journeys === null ? (
-            <li className="text-sm text-text-muted">Loading…</li>
+            <li>
+              <InlineListSkeleton rows={3} trailing="chip" label="Loading follow-ups" />
+            </li>
           ) : journeys.length === 0 ? (
             <li className="rounded-md border border-border p-4 text-sm text-text-muted">
               {tab === "active" ? "Nobody is being chased right now." : "Nothing finished yet."}

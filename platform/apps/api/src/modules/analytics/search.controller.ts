@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -14,9 +15,16 @@ import { DbService } from "../../db/db.service";
  * Full-text transcript search (§4.2). Uses the precomputed `transcripts.tsv`
  * column and the 'simple' config so results are language-agnostic. RLS keeps
  * matches scoped to the caller's org via the join to `calls`.
+ *
+ * `@CallContent()` (0122), and of every route in the product this is the one
+ * that most needed it: `ts_headline` returns VERBATIM transcript text, fifty
+ * snippets at a time, and until now the route asked only that the caller hold
+ * the admin key and name an org. An operator who could not open a single call
+ * could read across every call in the tenant by searching for a common word.
  */
 @Controller("search")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, CallAccessGuard)
+@CallContent()
 export class SearchController {
   constructor(private readonly db: DbService) {}
 

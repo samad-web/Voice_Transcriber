@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Input } from "@aura/ui";
+import { useEffect, useId, useRef, useState } from "react";
+import { Input, Popover } from "@aura/ui";
 import { resolveRecordAction, searchRecordsAction, type RecordOption } from "./crm-actions";
 
 /** Long enough that typing a name doesn't fire a request per keystroke. */
@@ -42,7 +42,9 @@ export function RecordPicker({
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState<RecordOption[] | null>(null);
   const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
 
   // Resolve the stored id to something a person recognises.
   useEffect(() => {
@@ -74,21 +76,60 @@ export function RecordPicker({
     return () => clearTimeout(timer);
   }, [objectType, query, open]);
 
+  // Reset the highlight whenever the result set changes underneath it, or the
+  // arrow keys would be steering an index into a list that has since changed.
   useEffect(() => {
-    if (!open) return;
-    const onClick = (event: MouseEvent) => {
-      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
+    setActive(0);
+  }, [options]);
+
+  // Pressing "Change" on a resolved value swaps the whole compact view out for
+  // this field, so the field has to take focus itself - the button that was
+  // clicked no longer exists to hand it on.
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
   }, [open]);
+
+  const choose = (option: RecordOption) => {
+    setSelected(option);
+    onChange(option.id);
+    setOpen(false);
+  };
+
+  /**
+   * Arrow keys, Enter, Escape.
+   *
+   * This picker had no keyboard affordance and no ARIA at all - no `role`, no
+   * `aria-expanded`, no `aria-activedescendant` - so a screen reader announced
+   * a plain text box and gave no indication that a list had appeared beneath
+   * it, let alone how to reach one. It is the same combobox that
+   * components/global-search.tsx already implements correctly, so this follows
+   * that file rather than inventing a second pattern.
+   *
+   * Escape is handled here as well as by Popover: this returns focus to the
+   * field and stops the keystroke, which is what a combobox should do, and the
+   * capture-phase listener in Popover closing the panel is the same outcome.
+   */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      if (open) setOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setOpen(true);
+      if (!options || options.length === 0) return;
+      setActive((i) =>
+        event.key === "ArrowDown"
+          ? (i + 1) % options.length
+          : (i - 1 + options.length) % options.length,
+      );
+      return;
+    }
+    if (event.key === "Enter" && open && options?.[active]) {
+      event.preventDefault();
+      choose(options[active]);
+    }
+  };
 
   if (value && !open) {
     return (
@@ -125,53 +166,74 @@ export function RecordPicker({
     );
   }
 
-  return (
-    <div className="relative" ref={box}>
-      <Input
-        value={query}
-        disabled={disabled}
-        placeholder={`Search ${objectType}s…`}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
-      />
+  const optionId = (index: number) => `${listId}-option-${index}`;
 
-      {open ? (
-        <ul className="absolute z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-surface shadow-lg">
-          {options === null ? (
-            <li className="px-3 py-2 text-xs text-text-muted">Searching…</li>
-          ) : options.length === 0 ? (
-            <li className="px-3 py-2 text-xs text-text-muted">
-              {/* Distinguishes "nothing matches" from "you can't see any",
-                  which for a scoped role are very different situations. */}
-              No {objectType}s you can see match that.
+  return (
+    <Popover
+      open={open}
+      onDismiss={() => setOpen(false)}
+      align="stretch"
+      className="max-h-56 overflow-y-auto"
+      trigger={
+        <Input
+          ref={inputRef}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={open && options?.[active] ? optionId(active) : undefined}
+          aria-label={`Search ${objectType}s`}
+          autoComplete="off"
+          value={query}
+          disabled={disabled}
+          placeholder={`Search ${objectType}s…`}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+        />
+      }
+    >
+      <ul id={listId} role="listbox" aria-label={`Matching ${objectType}s`}>
+        {options === null ? (
+          // `role="presentation"`: a listbox may only contain options and
+          // groups, and "Searching…" is neither - it is status, not a choice.
+          <li role="presentation" className="px-3 py-2 text-xs text-text-muted">
+            Searching…
+          </li>
+        ) : options.length === 0 ? (
+          <li role="presentation" className="px-3 py-2 text-xs text-text-muted">
+            {/* Distinguishes "nothing matches" from "you can't see any",
+                which for a scoped role are very different situations. */}
+            No {objectType}s you can see match that.
+          </li>
+        ) : (
+          options.map((option, i) => (
+            <li
+              key={option.id}
+              id={optionId(i)}
+              role="option"
+              aria-selected={i === active}
+              // onMouseDown, not onClick: mousedown fires before the input
+              // blurs, so the selection lands instead of the panel closing out
+              // from under the pointer. Same reason global-search uses it.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                choose(option);
+              }}
+              onMouseEnter={() => setActive(i)}
+              className={`cursor-pointer px-3 py-2 ${i === active ? "bg-surface-hover" : ""}`}
+            >
+              <span className="block truncate text-xs font-medium text-text">{option.label}</span>
+              {option.detail ? (
+                <span className="block truncate text-xs text-text-muted">{option.detail}</span>
+              ) : null}
             </li>
-          ) : (
-            options.map((option) => (
-              <li key={option.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelected(option);
-                    onChange(option.id);
-                    setOpen(false);
-                  }}
-                  className="block w-full px-3 py-2 text-left hover:bg-surface-hover"
-                >
-                  <span className="block truncate text-xs font-medium text-text">
-                    {option.label}
-                  </span>
-                  {option.detail ? (
-                    <span className="block truncate text-xs text-text-muted">{option.detail}</span>
-                  ) : null}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      ) : null}
-    </div>
+          ))
+        )}
+      </ul>
+    </Popover>
   );
 }

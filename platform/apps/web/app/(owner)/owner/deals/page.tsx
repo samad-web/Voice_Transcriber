@@ -3,12 +3,14 @@ import Link from "next/link";
 import { LayoutGrid, Rows3 } from "lucide-react";
 import { Card, EmptyState, MonoLabel } from "@aura/ui";
 import { OWNER_ROLE_ADMINS } from "@aura/shared";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
+import type { ApiResult } from "@/lib/api-result";
 import { normaliseStaleAfterDays } from "@/lib/deal-staleness";
 import { viewQueryFrom } from "@/lib/list-views";
 import { formatDateRange } from "@/lib/report-dashboard";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import type { Deal, DealBoardColumn, Stage } from "../types";
 import { FilterLink } from "../filter-link";
@@ -107,13 +109,14 @@ export default async function DealsPage({
   // What a saved view of this screen would keep - see lib/list-views.ts.
   const viewQuery = viewQueryFrom("deals", sp);
 
-  const [list, owner, views] = await Promise.all([
-    ownerGet<{ pipelines: PipelineSummary[] }>("/v1/pipelines"),
+  const [listResult, owner, views] = await Promise.all([
+    ownerTry<{ pipelines: PipelineSummary[] }>("/v1/pipelines"),
     getOwner(),
     loadSavedViews("deals"),
   ]);
-  if (!list) return <Unavailable />;
-  const savedViews = <SavedViewsBar list="deals" views={views} current={viewQuery} allLabel="All deals" />;
+  if (!listResult.ok) return <Unavailable failure={listResult} />;
+  const list = listResult.data;
+  const savedViews =<SavedViewsBar list="deals" views={views} current={viewQuery} allLabel="All deals" />;
 
   const pipelines = list.pipelines;
   const active = pipelines.filter((p) => p.status === "active");
@@ -229,12 +232,13 @@ export default async function DealsPage({
     if (state.status) query.set("status", state.status);
     if (state.createdFrom) query.set("createdFrom", state.createdFrom);
     if (state.createdTo) query.set("createdTo", state.createdTo);
-    const [rows, members, tags] = await Promise.all([
-      ownerGet<{ deals: Deal[]; total: number }>(`/v1/deals?${query}`),
+    const [rowsResult, members, tags] = await Promise.all([
+      ownerTry<{ deals: Deal[]; total: number }>(`/v1/deals?${query}`),
       loadMembers(),
       loadTags(),
     ]);
-    if (!rows) return <Unavailable />;
+    if (!rowsResult.ok) return <Unavailable failure={rowsResult} />;
+    const rows = rowsResult.data;
 
     const stages: Stage[] = Array.isArray(selected.stages) ? selected.stages : [];
     return (
@@ -319,10 +323,11 @@ export default async function DealsPage({
     );
   }
 
-  const data = await ownerGet<DealBoardResponse>(
+  const result = await ownerTry<DealBoardResponse>(
     `/v1/deals/board?perStage=50&pipelineId=${encodeURIComponent(selected.id)}`,
   );
-  if (!data) return <Unavailable />;
+  if (!result.ok) return <Unavailable failure={result} />;
+  const data = result.data;
 
   return (
     <>
@@ -371,16 +376,11 @@ function ViewToggle({ state }: { state: DealsState }) {
   );
 }
 
-function Unavailable() {
+function Unavailable({ failure }: { failure: Extract<ApiResult<unknown>, { ok: false }> }) {
   return (
     <>
       <PageHeader title="Deals" context="Pipeline" />
-      <Card>
-        <MonoLabel>Data unavailable</MonoLabel>
-        <p className="mt-2 text-sm text-text-muted">
-          The platform API did not answer. If this persists, contact your provider.
-        </p>
-      </Card>
+      <LoadFailure what="deals" failure={failure} />
     </>
   );
 }

@@ -95,6 +95,20 @@ export const crossTenantHeaders = {
 export interface Caller {
   ownerRole?: OwnerRole | null;
   userId?: string | null;
+  /**
+   * WHICH platform operator is asking (migration 0122).
+   *
+   * Only the operator console sets this, and only it should: the API's
+   * `CallAccessGuard` reads it to decide whose call-access grant to look up,
+   * and to put a name on the request it raises when there is none. Sending it
+   * alongside `userId` would be incoherent - a request is either a tenant's
+   * own person or the vendor, never both - so `orgHeaders` below emits it only
+   * when no `userId` is present.
+   *
+   * It authorizes nothing by itself. Naming an operator with no grant denies
+   * exactly as naming nobody does.
+   */
+  operatorEmail?: string | null;
 }
 
 /**
@@ -107,6 +121,13 @@ export const orgHeaders = (orgId: string, caller?: Caller) => ({
   "x-org-id": orgId,
   ...(caller?.ownerRole ? { "x-caller-owner-role": caller.ownerRole } : {}),
   ...(caller?.userId ? { "x-caller-user-id": caller.userId } : {}),
+  // Only when no tenant user is named. `x-caller-user-id` is what tells the
+  // API this is a tenant's own console request, and CallAccessGuard treats
+  // such a request as none of its business; sending both would claim to be a
+  // member and the vendor at once, and the guard would believe the first.
+  ...(caller?.operatorEmail && !caller?.userId
+    ? { "x-operator-email": caller.operatorEmail }
+    : {}),
 });
 
 /**

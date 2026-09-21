@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import { CallQualityManager } from "./call-quality-manager";
 import { DispositionsEditor } from "./dispositions-editor";
 import type { CallIntegrityFlag } from "./actions";
@@ -24,24 +24,20 @@ export default async function CallQualityPage() {
   await requireFeature("/owner/call-quality");
   // Concurrent, and the vocabulary is optional: an outage there costs the
   // outcome editor, not the review queue this page exists for.
-  const [data, dispositions] = await Promise.all([
-    ownerGet<ListResponse>("/v1/call-integrity-flags?status=open&limit=50"),
+  const [result, dispositions] = await Promise.all([
+    ownerTry<ListResponse>("/v1/call-integrity-flags?status=open&limit=50"),
     ownerGet<{ dispositions: Disposition[] }>("/v1/owner/call-dispositions"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Call Quality" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="the review queue" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

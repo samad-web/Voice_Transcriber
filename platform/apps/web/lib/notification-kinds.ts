@@ -16,7 +16,7 @@ export interface NotificationKindSpec {
   label: string;
   /** What choosing Instant or Digest for this kind actually affects. */
   description: string;
-  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check";
+  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert";
   /**
    * Somebody has to DO something, not merely know something. These are what
    * the bell's "Needs action" tab shows.
@@ -25,6 +25,15 @@ export interface NotificationKindSpec {
 }
 
 export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> = {
+  // First in the order deliberately: of everything the bell can say, this is
+  // the only one whose subject is somebody outside the business reaching for
+  // the business's own recordings.
+  call_access_requested: {
+    label: "Call access requested",
+    description: "Someone outside your team asked to view your call logs and recordings.",
+    icon: "shield-alert",
+    needsAction: true,
+  },
   lead_assigned: {
     label: "Lead assigned",
     description: "A lead was routed to you.",

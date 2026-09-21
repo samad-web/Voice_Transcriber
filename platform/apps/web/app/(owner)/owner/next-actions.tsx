@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, ErrorBanner, MonoLabel, useAlert } from "@aura/ui";
 import { URGENCY_TONE, countByUrgency, localToday, prioritise } from "@/lib/next-actions";
 import { useRealtime } from "@/components/realtime-provider";
+import { InlineListSkeleton } from "@/components/skeletons";
 import { fetchTasksAction, updateTaskAction } from "./crm-actions";
 import { TaskRow } from "./task-row";
 import type { Task } from "./types";
@@ -119,7 +120,7 @@ export function NextActions({ canViewTeam }: { canViewTeam: boolean }) {
       {error ? <ErrorBanner>{error}</ErrorBanner> : null}
 
       {tasks === null || today === null ? (
-        <p className="py-4 text-sm text-text-muted">Loading…</p>
+        <InlineListSkeleton rows={4} lead="check" label="Loading next actions" />
       ) : ordered.length === 0 ? (
         <p className="rounded-md border border-dashed border-border py-6 text-center text-sm text-text-muted">
           {scope === "mine" ? "Nothing waiting on you - you are clear." : "No open follow-ups on the team."}

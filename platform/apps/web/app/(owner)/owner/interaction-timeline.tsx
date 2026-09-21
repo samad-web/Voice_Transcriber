@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Mail, MessageSquare, Phone, StickyNote } from "lucide-react";
 import { Button, ErrorBanner, MonoLabel } from "@aura/ui";
+import { InlineListSkeleton } from "@/components/skeletons";
 import { interactionToActivity } from "@/lib/activity";
 import { ActorAvatar, ActorKindLabel } from "./actor-badge";
 import { fetchInteractionsAction, type TimelineParent } from "./crm-actions";
@@ -103,7 +104,7 @@ export function InteractionTimeline({
       {loadError ? <ErrorBanner>{loadError}</ErrorBanner> : null}
 
       {rows === null ? (
-        <p className="py-3 text-xs text-text-muted">Loading…</p>
+        <InlineListSkeleton rows={3} lead="avatar" label="Loading activity" />
       ) : rows.length === 0 ? (
         <p className="py-3 text-xs text-text-muted">Nothing on the timeline yet</p>
       ) : (

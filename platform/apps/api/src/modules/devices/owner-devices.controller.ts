@@ -150,10 +150,10 @@ export class OwnerDevicesController {
 
       const {
         rows: [token],
-      } = await client.query<{ expires_at: string }>(
+      } = await client.query<{ id: string; expires_at: string }>(
         `INSERT INTO enrollment_tokens (org_id, instance_id, token_hash, expires_at, max_uses)
          VALUES ($1, $2, $3, now() + make_interval(mins => $4), $5)
-         RETURNING expires_at`,
+         RETURNING id, expires_at`,
         [orgId, instanceId, tokenHash, PAIRING_TTL_MINUTES, PAIRING_MAX_USES],
       );
 
@@ -166,6 +166,10 @@ export class OwnerDevicesController {
       );
 
       return {
+        // The row id, not the secret. The dialog watches this pairing with it
+        // (`GET pairing-token/:id`); on its own it enrols nothing, because
+        // `/devices/register` matches on the token HASH.
+        pairingId: token.id,
         instanceId,
         // The field is named `adminKey` because that is what the handset's
         // activation screen and `EnrollmentCredentials`' QR payload already
@@ -174,6 +178,75 @@ export class OwnerDevicesController {
         adminKey: rawToken,
         expiresAt: token.expires_at,
         maxUses: PAIRING_MAX_USES,
+      };
+    });
+  }
+
+  /**
+   * Has a phone used this pairing code yet?
+   *
+   * What the pairing dialog asks while its QR is on screen - on every `device`
+   * change signal, and on a slow timer in case the signal never arrives. The
+   * answer is one of three states, and `paired` wins over `expired`: a phone
+   * that enrolled at minute nine is paired, whatever the clock says now.
+   *
+   * ── NO CAPABILITY CHECK, ON PURPOSE ─────────────────────────────────────
+   *
+   * Unlike `mint`, this does not read `can_pair_devices`. It creates nothing,
+   * and what it can return - a handset's label, its instance, when it joined -
+   * is a subset of `GET /owner/devices`, which every persona may already read.
+   * Gating it would cost a second round trip to the database on every tick of
+   * a dialog that only a person allowed to pair could have opened anyway.
+   *
+   * The answer is read from `devices.enrollment_token_id` (0124), never from
+   * "a device appeared on this instance recently": two people pairing two
+   * phones on the same desk would otherwise each see the other's handset.
+   */
+  @Get("pairing-token/:id")
+  async pairingStatus(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [row],
+      } = await client.query<{
+        expires_at: string;
+        expired: boolean;
+        instance_name: string;
+        device_id: string | null;
+        label: string | null;
+        paired_at: string | null;
+      }>(
+        `SELECT t.expires_at, t.expires_at <= now() AS expired,
+                i.name AS instance_name,
+                d.id AS device_id, d.label, d.created_at AS paired_at
+           FROM enrollment_tokens t
+           JOIN instances i ON i.id = t.instance_id
+           LEFT JOIN LATERAL (
+             SELECT id, label, created_at
+               FROM devices
+              WHERE enrollment_token_id = t.id
+              ORDER BY created_at DESC
+              LIMIT 1
+           ) d ON true
+          WHERE t.id = $1 AND t.org_id = $2`,
+        [id, orgId],
+      );
+      if (!row) throw new NotFoundException("no such pairing in this workspace");
+
+      if (row.device_id) {
+        return {
+          state: "paired" as const,
+          expiresAt: row.expires_at,
+          device: {
+            id: row.device_id,
+            label: row.label,
+            instanceName: row.instance_name,
+            pairedAt: row.paired_at,
+          },
+        };
+      }
+      return {
+        state: row.expired ? ("expired" as const) : ("waiting" as const),
+        expiresAt: row.expires_at,
       };
     });
   }

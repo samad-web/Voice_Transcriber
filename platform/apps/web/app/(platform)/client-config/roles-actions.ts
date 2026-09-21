@@ -3,14 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { requireOperator } from "@/lib/operator-guard";
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
-import type { PermissionGrant, PermissionGrantRow, Role } from "./types";
+import type { PermissionGrant, PermissionGrantRow, Role } from "./roles-types";
 
 /**
- * Server actions for the roles/permissions admin console (CRM Phase 1,
- * E0.4). Same shape as (platform)/crm/actions.ts and (platform)/
- * custom-fields/actions.ts - `requireOperator()` is the first statement of
- * every export; see lib/operator-guard.ts for why that can't live in the
- * layout instead.
+ * Server actions for a client's roles/permissions (CRM Phase 1, E0.4). Same
+ * shape as (platform)/crm/actions.ts and (platform)/custom-fields/actions.ts -
+ * `requireOperator()` is the first statement of every export; see
+ * lib/operator-guard.ts for why that can't live in the layout instead.
  */
 
 async function call<T>(
@@ -43,7 +42,7 @@ async function call<T>(
 }
 
 function refresh() {
-  revalidatePath("/roles");
+  revalidatePath("/client-config");
 }
 
 export async function createRoleAction(input: {

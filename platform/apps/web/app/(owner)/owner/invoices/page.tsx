@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  Card,
   EmptyState,
-  MonoLabel,
   StatusChip,
   Table,
   TableBody,
@@ -12,9 +10,10 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
 import type { Invoice, InvoiceStatus, PaymentSettings } from "./actions";
 import { PaymentSettingsCard } from "./payment-settings";
@@ -67,7 +66,7 @@ export default async function InvoicesPage({
   if (status) query.set("status", status);
   if (offset > 0) query.set("offset", String(offset));
 
-  const data = await ownerGet<ListResponse>(`/v1/invoices?${query}`);
+  const result = await ownerTry<ListResponse>(`/v1/invoices?${query}`);
 
   // Owner-only on the API, so a manager gets null here and simply does not see
   // the card - the same split the route enforces, rather than a second copy of
@@ -76,19 +75,15 @@ export default async function InvoicesPage({
   // round trip to Seoul would cost more than the query does.
   const settings = await ownerGet<{ settings: PaymentSettings }>("/v1/owner/payment-settings");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Invoices" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="invoices" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

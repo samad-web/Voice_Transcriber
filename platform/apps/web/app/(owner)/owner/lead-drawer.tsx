@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { LEAD_TEMPERATURE_LABELS, LEAD_TEMPERATURE_ORDER } from "@aura/shared";
+import { InlineListSkeleton } from "@/components/skeletons";
 import { fetchLeadAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
 import { ProjectChip } from "./project-chip";
@@ -366,7 +367,7 @@ export function LeadDrawer({
           <div className="space-y-2">
             <MonoLabel>Call history</MonoLabel>
             {calls === null ? (
-              <p className="py-3 text-xs text-text-muted">Loading…</p>
+              <InlineListSkeleton rows={2} label="Loading call history" />
             ) : calls.length === 0 ? (
               <p className="py-3 text-xs text-text-muted">No calls on record</p>
             ) : (

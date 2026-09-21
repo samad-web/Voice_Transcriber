@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel, StatCard } from "@aura/ui";
+import { Card, StatCard } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { ChannelBar } from "../channel-bar";
 import { Outreach } from "./outreach-client";
@@ -22,28 +23,23 @@ export default async function OutreachPage() {
   // proving the data behind it exists.
   await requireOwnerFeature("outreach");
 
-  const due = await ownerGet<{ due: DueStep[] }>("/v1/outreach/due?limit=100");
+  const result = await ownerTry<{ due: DueStep[] }>("/v1/outreach/due?limit=100");
 
   return (
     <>
       <PageHeader title="Outreach" context="Pipeline" />
       <ChannelBar />
 
-      {due === null ? (
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+      {!result.ok ? (
+        <LoadFailure what="outreach cadences" failure={result} />
       ) : (
         <div className="space-y-4">
           <div className="grid gap-4 sm:max-w-xs">
             <StatCard
               label="Due now"
-              value={due.due.length}
+              value={result.data.due.length}
               context={
-                due.due.length === 0
+                result.data.due.length === 0
                   ? "nothing owed - steps appear as their hour arrives"
                   : "follow-ups whose hour has come, oldest first"
               }

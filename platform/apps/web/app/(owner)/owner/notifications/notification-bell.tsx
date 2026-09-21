@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   AlarmClock,
@@ -13,13 +13,18 @@ import {
   Hourglass,
   Inbox,
   Plug,
+  ShieldAlert,
   UserPlus,
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { Button, useToast } from "@aura/ui";
+import { Button, Popover, useToast } from "@aura/ui";
 import { useRealtime } from "@/components/realtime-provider";
-import { describeDelivery, notificationKindSpec, type NotificationKindSpec } from "@/lib/notification-kinds";
+import {
+  describeDelivery,
+  notificationKindSpec,
+  type NotificationKindSpec,
+} from "@/lib/notification-kinds";
 import {
   fetchNotificationsAction,
   markAllNotificationsReadAction,
@@ -51,6 +56,7 @@ const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
   plug: Plug,
   alarm: AlarmClock,
   "clipboard-check": ClipboardCheck,
+  "shield-alert": ShieldAlert,
 };
 
 type Tab = "all" | "action";
@@ -86,7 +92,6 @@ export function NotificationBell() {
   const [tab, setTab] = useState<Tab>("all");
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const panel = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
   const load = useCallback(() => {
@@ -118,28 +123,16 @@ export function NotificationBell() {
    */
   useRealtime(["notification", "task"], load);
 
-  // Click-away and Escape, because a panel that only closes via its own
-  // button is a panel people end up trapped under on a phone.
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (event: MouseEvent) => {
-      if (panel.current && !panel.current.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // Click-away, Escape and focus restoration now come from Popover - a panel
+  // that only closes via its own button is a panel people end up trapped under
+  // on a phone, and that reasoning is the same for every popover in the app.
 
   const markOne = (id: string) => {
     // Optimistic: the badge should drop the instant it is clicked, not after
     // a round trip the user is already navigating away from.
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, read_at: new Date().toISOString() } : r)));
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, read_at: new Date().toISOString() } : r)),
+    );
     setUnread((n) => Math.max(0, n - 1));
     startTransition(async () => {
       const res = await markNotificationReadAction(id);
@@ -167,7 +160,9 @@ export function NotificationBell() {
     });
   };
 
-  const actionable = rows.filter((r) => r.read_at === null && notificationKindSpec(r.kind).needsAction);
+  const actionable = rows.filter(
+    (r) => r.read_at === null && notificationKindSpec(r.kind).needsAction,
+  );
   const shown = tab === "action" ? actionable : rows;
   const tabs: Array<[Tab, string]> = [
     ["all", "All"],
@@ -175,131 +170,150 @@ export function NotificationBell() {
   ];
 
   return (
-    <div className="relative" ref={panel}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-text-muted transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-text"
-      >
-        <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
-        {unread > 0 ? (
-          <span className="absolute -top-0.5 -right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg tabular-nums">
-            {unread > 9 ? "9+" : unread}
-          </span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-surface shadow-lg">
-          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-            <span className="text-xs font-medium text-text">Notifications</span>
-            {unread > 0 ? (
-              <Button type="button" variant="ghost" size="sm" onClick={markAll} loading={pending}>
-                Mark all read
-              </Button>
-            ) : null}
-          </div>
-
-          <div role="tablist" aria-label="Filter notifications" className="flex gap-1 border-b border-border px-2 py-1.5">
-            {tabs.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={tab === key}
-                onClick={() => setTab(key)}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors duration-150 ease-out ${
-                  tab === key ? "bg-text text-bg" : "text-text-muted hover:bg-surface-hover hover:text-text"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {shown.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-text-muted">
-              {tab === "action" ? "Nothing needs you right now" : "Nothing new"}
-            </p>
-          ) : (
-            <ul className="max-h-96 divide-y divide-border overflow-y-auto">
-              {shown.map((row) => {
-                const spec = notificationKindSpec(row.kind);
-                const Icon = ICONS[spec.icon];
-                const content = (
-                  <span className="flex items-start gap-2">
-                    {row.read_at === null ? (
-                      <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                    ) : (
-                      <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0" />
-                    )}
-                    <Icon aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" />
-                    <span className="min-w-0">
-                      <span className="block text-[11px] font-medium tracking-wide text-text-muted uppercase">
-                        {spec.label}
-                      </span>
-                      <span className="block text-xs font-medium break-words text-text">{row.title}</span>
-                      {row.body ? (
-                        <span className="mt-0.5 block text-xs break-words text-text-muted">{row.body}</span>
-                      ) : null}
-                    </span>
-                  </span>
-                );
-
-                return (
-                  <li key={row.id}>
-                    {row.link_path ? (
-                      <Link
-                        href={row.link_path}
-                        onClick={() => {
-                          if (row.read_at === null) markOne(row.id);
-                          setOpen(false);
-                        }}
-                        className="block px-3 py-2.5 hover:bg-surface-hover"
-                      >
-                        {content}
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => row.read_at === null && markOne(row.id)}
-                        className="block w-full px-3 py-2.5 text-left hover:bg-surface-hover"
-                      >
-                        {content}
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          {held > 0 && nextDeliveryAt ? (
-            <p className="border-t border-border px-3 py-2 text-xs text-text-muted">
-              {held} more held for your digest, arriving {describeDelivery(nextDeliveryAt, new Date())}.
-            </p>
+    <Popover
+      open={open}
+      onDismiss={() => setOpen(false)}
+      align="end"
+      className="w-80"
+      trigger={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          // `aria-haspopup` was the one thing this trigger was missing that the
+          // workspace switcher already had: without it a screen reader
+          // announces a button that expands, but not into what.
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-text-muted transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-text"
+        >
+          <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
+          {unread > 0 ? (
+            <span className="absolute -top-0.5 -right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg tabular-nums">
+              {unread > 9 ? "9+" : unread}
+            </span>
           ) : null}
+        </button>
+      }
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <span className="text-xs font-medium text-text">Notifications</span>
+        {unread > 0 ? (
+          <Button type="button" variant="ghost" size="sm" onClick={markAll} loading={pending}>
+            Mark all read
+          </Button>
+        ) : null}
+      </div>
 
-          <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs">
-            <Link
-              href="/owner/review"
-              onClick={() => setOpen(false)}
-              className="text-text-muted underline hover:text-text"
-            >
-              Review queue
-            </Link>
-            <Link
-              href="/owner/notifications"
-              onClick={() => setOpen(false)}
-              className="text-text-muted underline hover:text-text"
-            >
-              Notification settings
-            </Link>
-          </div>
-        </div>
+      <div
+        role="tablist"
+        aria-label="Filter notifications"
+        className="flex gap-1 border-b border-border px-2 py-1.5"
+      >
+        {tabs.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors duration-150 ease-out ${
+              tab === key
+                ? "bg-text text-bg"
+                : "text-text-muted hover:bg-surface-hover hover:text-text"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+        <p className="px-3 py-6 text-center text-xs text-text-muted">
+          {tab === "action" ? "Nothing needs you right now" : "Nothing new"}
+        </p>
+      ) : (
+        <ul className="max-h-96 divide-y divide-border overflow-y-auto">
+          {shown.map((row) => {
+            const spec = notificationKindSpec(row.kind);
+            const Icon = ICONS[spec.icon];
+            const content = (
+              <span className="flex items-start gap-2">
+                {row.read_at === null ? (
+                  <span
+                    aria-hidden="true"
+                    className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                  />
+                ) : (
+                  <span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0" />
+                )}
+                <Icon aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-muted" />
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-medium tracking-wide text-text-muted uppercase">
+                    {spec.label}
+                  </span>
+                  <span className="block text-xs font-medium break-words text-text">
+                    {row.title}
+                  </span>
+                  {row.body ? (
+                    <span className="mt-0.5 block text-xs break-words text-text-muted">
+                      {row.body}
+                    </span>
+                  ) : null}
+                </span>
+              </span>
+            );
+
+            return (
+              <li key={row.id}>
+                {row.link_path ? (
+                  <Link
+                    href={row.link_path}
+                    onClick={() => {
+                      if (row.read_at === null) markOne(row.id);
+                      setOpen(false);
+                    }}
+                    className="block px-3 py-2.5 hover:bg-surface-hover"
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => row.read_at === null && markOne(row.id)}
+                    className="block w-full px-3 py-2.5 text-left hover:bg-surface-hover"
+                  >
+                    {content}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {held > 0 && nextDeliveryAt ? (
+        <p className="border-t border-border px-3 py-2 text-xs text-text-muted">
+          {held} more held for your digest, arriving {describeDelivery(nextDeliveryAt, new Date())}.
+        </p>
       ) : null}
-    </div>
+
+      <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs">
+        <Link
+          href="/owner/review"
+          onClick={() => setOpen(false)}
+          className="text-text-muted underline hover:text-text"
+        >
+          Review queue
+        </Link>
+        <Link
+          href="/owner/notifications"
+          onClick={() => setOpen(false)}
+          className="text-text-muted underline hover:text-text"
+        >
+          Notification settings
+        </Link>
+      </div>
+    </Popover>
   );
 }

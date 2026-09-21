@@ -112,12 +112,29 @@ export async function restoreCallAction(callId: string): Promise<ActionResult> {
  * nothing came back", which is recoverable, rather than throwing inside a
  * modal.
  */
+/**
+ * Candidate leads this call might belong to.
+ *
+ * ── WHY THE FAILURE ARMS CHANGED ───────────────────────────────────────────
+ *
+ * All three of them used to `return { leads: [] }` - not signed in, a non-2xx,
+ * and a thrown fetch alike. An empty array is not "we could not look"; it is
+ * "we looked and there is nothing", and the dialog above renders that as
+ * "No leads matched. Close this and press Create lead instead." So a failed
+ * search actively instructed the operator to create a lead that very probably
+ * already existed, and the duplicate it produced was indistinguishable from a
+ * real one afterwards. That is a silent failure that writes bad data, which is
+ * the worst kind this console had.
+ *
+ * `{ leads?, error? }` is the shape ~180 other actions in this app already
+ * return, so the call site branches the same way as everywhere else.
+ */
 export async function searchCandidatesAction(
   callId: string,
   q: string,
-): Promise<{ leads: CandidateLead[] }> {
+): Promise<{ leads?: CandidateLead[]; error?: string }> {
   const headers = await ownerHeaders();
-  if (!headers) return { leads: [] };
+  if (!headers) return { error: "Not signed in as an instance owner" };
 
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
@@ -126,9 +143,9 @@ export async function searchCandidatesAction(
       `${API_URL}/v1/owner/call-triage/${callId}/candidates?${params.toString()}`,
       { headers, cache: "no-store" },
     );
-    if (!res.ok) return { leads: [] };
+    if (!res.ok) return { error: `The lead search failed (HTTP ${res.status}).` };
     return (await res.json()) as { leads: CandidateLead[] };
   } catch {
-    return { leads: [] };
+    return { error: "Could not reach the API to search leads." };
   }
 }

@@ -96,12 +96,29 @@ interface FakeDbOptions {
   created?: boolean;
   inserts?: Recorded[];
   noHashUpdates?: Recorded[];
+  /** The card before this call, as the locked prior read returns it. */
+  prior?: { stage: string; status: string } | null;
+  /** The card after the upsert. */
+  after?: { stage: string; status: string };
+  transitions?: Recorded[];
+  /** Every statement, in order - for asserting ordering and savepoints. */
+  log?: string[];
+  /** Make the ledger insert throw, as a failed statement would. */
+  ledgerFails?: boolean;
 }
 
 function fakeDb(opts: FakeDbOptions = {}): DbClient {
   const callRows = "call" in opts ? (opts.call ? [opts.call] : []) : [CALL_ROW];
   return {
     query: async <R = Record<string, unknown>>(sql: string, params?: unknown[]) => {
+      opts.log?.push(sql.replace(/\s+/g, " ").trim());
+      if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT)\b/.test(sql)) {
+        return { rows: [] as R[], rowCount: 0 };
+      }
+      if (sql.includes("FOR UPDATE")) {
+        const rows = opts.prior ? [opts.prior] : [];
+        return { rows: rows as R[], rowCount: rows.length };
+      }
       if (sql.includes("JOIN organizations o")) {
         return { rows: callRows as R[], rowCount: callRows.length };
       }
@@ -113,10 +130,22 @@ function fakeDb(opts: FakeDbOptions = {}): DbClient {
         opts.noHashUpdates?.push({ sql, params: params ?? [] });
         return { rows: [] as R[], rowCount: 1 };
       }
+      if (sql.includes("INSERT INTO lead_stage_transitions")) {
+        if (opts.ledgerFails) throw new Error("simulated ledger failure");
+        opts.transitions?.push({ sql, params: params ?? [] });
+        return { rows: [] as R[], rowCount: 1 };
+      }
       if (sql.includes("INSERT INTO leads")) {
         opts.inserts?.push({ sql, params: params ?? [] });
         return {
-          rows: [{ id: "lead-1", created: opts.created ?? true }] as R[],
+          rows: [
+            {
+              id: "lead-1",
+              created: opts.created ?? true,
+              stage: opts.after?.stage ?? "new",
+              status: opts.after?.status ?? "open",
+            },
+          ] as R[],
           rowCount: 1,
         };
       }
@@ -199,6 +228,104 @@ describe("upsertLead", () => {
     // from THIS org's lead_stages rather than hardcoded to new/contacted.
     expect(inserts[0].params[7]).toBe("new");
     expect(inserts[0].params[19]).toBe("contacted");
+  });
+
+  /**
+   * The automatic advance is a real stage move, so it goes in the lead's stage
+   * ledger (0075) - labelled `automation`, because 0093's trigger treats a
+   * `console` row as a person answering the lead and a second call arriving is
+   * not that. Before this, nothing wrote the ledger at all.
+   */
+  it("writes the automatic advance to the lead's stage ledger as automation", async () => {
+    const transitions: Recorded[] = [];
+    await upsertLead(
+      fakeDb({
+        created: false,
+        prior: { stage: "new", status: "open" },
+        after: { stage: "contacted", status: "open" },
+        transitions,
+      }),
+      ORG_ID,
+      CALL_ID,
+    );
+    expect(transitions).toHaveLength(1);
+    expect(transitions[0].params).toEqual([
+      ORG_ID,
+      "lead-1",
+      "new",
+      "contacted",
+      "open",
+      "open",
+      null,
+      "automation: second qualified call",
+      "automation",
+    ]);
+  });
+
+  it("writes nothing to the ledger when the call did not move the card", async () => {
+    const transitions: Recorded[] = [];
+    await upsertLead(
+      fakeDb({
+        created: false,
+        prior: { stage: "negotiation", status: "open" },
+        after: { stage: "negotiation", status: "open" },
+        transitions,
+      }),
+      ORG_ID,
+      CALL_ID,
+    );
+    expect(transitions).toHaveLength(0);
+  });
+
+  it("does not treat a newly created lead as a move", async () => {
+    const transitions: Recorded[] = [];
+    await upsertLead(fakeDb({ created: true, prior: null, transitions }), ORG_ID, CALL_ID);
+    expect(transitions).toHaveLength(0);
+  });
+
+  /**
+   * The prior read is its OWN statement, locked, and runs BEFORE the upsert.
+   * Folded into the upsert as a CTE it was evaluated after the row was
+   * written and FOR UPDATE skipped it - the ledger recorded nothing. Caught
+   * against a real database, which is why this ordering is pinned here.
+   */
+  it("locks and reads the card's prior stage in a separate statement before the upsert", async () => {
+    const log: string[] = [];
+    await upsertLead(fakeDb({ log, created: false, prior: { stage: "new", status: "open" } }), ORG_ID, CALL_ID);
+    const read = log.findIndex((s) => /FROM leads WHERE workspace_id = \$1 AND contact_number_hash = \$2 FOR UPDATE$/.test(s));
+    const upsert = log.findIndex((s) => s.startsWith("INSERT INTO leads"));
+    expect(read).toBeGreaterThan(-1);
+    expect(upsert).toBeGreaterThan(read);
+    expect(log[upsert]).not.toMatch(/WITH prior/);
+  });
+
+  it("keeps a failed ledger write inside its savepoint, so the pipeline's transaction survives", async () => {
+    const log: string[] = [];
+    const result = await upsertLead(
+      fakeDb({
+        log,
+        created: false,
+        prior: { stage: "new", status: "open" },
+        after: { stage: "contacted", status: "open" },
+        ledgerFails: true,
+      }),
+      ORG_ID,
+      CALL_ID,
+    );
+    expect(result).toEqual({ leadId: "lead-1", created: false, reason: "updated" });
+    expect(log).toContain("SAVEPOINT lead_stage_ledger");
+    expect(log).toContain("ROLLBACK TO SAVEPOINT lead_stage_ledger");
+    expect(log).not.toContain("RELEASE SAVEPOINT lead_stage_ledger");
+  });
+
+  it("spends no savepoint on a call that moved nothing", async () => {
+    const log: string[] = [];
+    await upsertLead(
+      fakeDb({ log, created: false, prior: { stage: "qualified", status: "open" }, after: { stage: "qualified", status: "open" } }),
+      ORG_ID,
+      CALL_ID,
+    );
+    expect(log.some((s) => s.startsWith("SAVEPOINT"))).toBe(false);
   });
 
   it("rates the lead from the call, and never lets a null rating erase an earlier one", async () => {

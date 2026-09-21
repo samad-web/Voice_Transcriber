@@ -1,4 +1,5 @@
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
+import { getPrincipal, isOperator } from "@/lib/owner-context";
 
 /**
  * The one fetch every Server Action in `app/(platform)/**\/actions.ts` makes.
@@ -23,10 +24,20 @@ export async function call<T>(
   path: string,
   init: { method: string; body?: unknown; orgId?: string },
 ): Promise<{ data?: T; error?: string; status?: number; rawBody?: unknown }> {
+  // Who is asking, for the call-access gate (0122). Resolved here rather than
+  // at ~30 call sites because every action in `(platform)` already opens with
+  // `requireOperator()`, so the principal is a fact this helper can derive
+  // instead of one each caller has to remember to pass - and forgetting it on
+  // a call route would look exactly like the customer having refused.
+  // `getPrincipal` is React-`cache()`d, so this costs one resolution per
+  // request no matter how many actions run.
+  const principal = await getPrincipal().catch(() => null);
+  const operatorEmail = isOperator(principal) ? (principal?.email ?? null) : null;
+
   try {
     const res = await fetch(`${API_URL}${path}`, {
       method: init.method,
-      headers: init.orgId ? orgHeaders(init.orgId) : adminHeaders,
+      headers: init.orgId ? orgHeaders(init.orgId, { operatorEmail }) : adminHeaders,
       cache: "no-store",
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });

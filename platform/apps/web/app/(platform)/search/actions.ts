@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOperator } from "@/lib/operator-guard";
+import { operatorCaller, requireOperator } from "@/lib/operator-guard";
 import { adminHeaders, API_URL, orgHeaders } from "@/lib/server-api";
 
 export interface SearchResult {
@@ -37,9 +37,21 @@ export async function searchTranscriptsAction(
   if (!query) return { results: [] };
   try {
     const res = await fetch(`${API_URL}/v1/search?q=${encodeURIComponent(query)}`, {
-      headers: orgId ? orgHeaders(orgId) : adminHeaders,
+      // Transcript search returns verbatim call content, so it carries the
+      // call-access gate (0122) and has to say which operator is asking.
+      headers: orgId ? orgHeaders(orgId, await operatorCaller()) : adminHeaders,
       cache: "no-store",
     });
+    if (res.status === 403) {
+      // The gate, not a bug. Says so plainly rather than as "API 403", which
+      // reads as an outage and sends somebody looking in the wrong place.
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      return {
+        error:
+          body.message ??
+          "This tenant's call recordings need its administrator's approval before they can be searched.",
+      };
+    }
     if (!res.ok) return { error: `API ${res.status}` };
     const data = (await res.json()) as { results?: SearchResult[] };
     return { results: data.results ?? [] };

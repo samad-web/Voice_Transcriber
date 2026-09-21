@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
 import type { LeadRoutingMatch, LeadRoutingStrategy, ShareReality } from "@aura/shared";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { LeadRoutingClient } from "./lead-routing-client";
 
@@ -69,21 +69,17 @@ export default async function LeadRoutingPage() {
   // the data behind it exists.
   await requireOwnerFeature("lead_routing");
 
-  const data = await ownerGet<RoutingOverview>("/v1/owner/lead-routing");
+  const result = await ownerTry<RoutingOverview>("/v1/owner/lead-routing");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Lead routing" context="Settings" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="lead routing" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

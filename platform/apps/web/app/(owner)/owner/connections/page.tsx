@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import type { OAuthAppsView } from "./actions";
 import { ConnectionsManager, type ConnectionView, type ProviderView } from "./connections-manager";
 import { OAuthAppsPanel } from "./oauth-apps-panel";
@@ -25,8 +25,8 @@ export default async function ConnectionsPage({
   await requireFeature("/owner/connections");
   const { connected, error } = await searchParams;
   const owner = await getOwner();
-  const [catalogue, mine, oauthApps] = await Promise.all([
-    ownerGet<{ providers: ProviderView[] }>("/v1/connections/providers"),
+  const [result, mine, oauthApps] = await Promise.all([
+    ownerTry<{ providers: ProviderView[] }>("/v1/connections/providers"),
     ownerGet<{ connections: ConnectionView[] }>("/v1/connections"),
     // Owner-only on the API, which is the gate. Asked only for an owner so a
     // manager's every visit is not a logged 403; null (not asked, or refused)
@@ -36,19 +36,15 @@ export default async function ConnectionsPage({
       : Promise.resolve(null),
   ]);
 
-  if (!catalogue) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Connections" context="Your account" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your connections" failure={result} />
       </>
     );
   }
+  const catalogue = result.data;
 
   return (
     <>

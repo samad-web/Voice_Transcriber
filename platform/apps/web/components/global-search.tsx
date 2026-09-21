@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Contact, Handshake, Loader2, MessageSquareText, Search, X } from "lucide-react";
+import { ErrorBanner, Popover } from "@aura/ui";
 import {
   SEARCH_MIN_CHARS,
   highlightParts,
@@ -48,11 +49,14 @@ type Status = "idle" | "loading" | "done" | "error";
  * ARIA: the input is a combobox owning a listbox, with the highlighted option
  * exposed through aria-activedescendant so focus never leaves the input.
  */
-export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: { placeholder?: string }) {
+export function GlobalSearch({
+  placeholder = "Search contacts, deals, notes",
+}: {
+  placeholder?: string;
+}) {
   const router = useRouter();
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [response, setResponse] = useState<GlobalSearchResponse | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -73,7 +77,10 @@ export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: 
     setStatus("loading");
     const run = async () => {
       try {
-        const res = await fetch(searchUrl(trimmed), { signal: controller.signal, cache: "no-store" });
+        const res = await fetch(searchUrl(trimmed), {
+          signal: controller.signal,
+          cache: "no-store",
+        });
         if (!res.ok) throw new Error(`search ${res.status}`);
         const body = (await res.json()) as GlobalSearchResponse;
         setResponse(body);
@@ -97,7 +104,8 @@ export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: 
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing =
-        target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "");
+        target?.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "");
       const combo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
       if (combo || (event.key === "/" && !typing)) {
         event.preventDefault();
@@ -110,15 +118,10 @@ export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: 
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Click-away.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  // Click-away and Escape now come from Popover. Escape is still handled in
+  // `onKeyDown` below as well, because this field has a SECOND Escape
+  // behaviour Popover knows nothing about: once the list is closed, a further
+  // Escape clears the query.
 
   const go = (hit: SearchHit) => {
     setOpen(false);
@@ -136,7 +139,9 @@ export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: 
       event.preventDefault();
       setOpen(true);
       if (hits.length === 0) return;
-      setActive((i) => (event.key === "ArrowDown" ? (i + 1) % hits.length : (i - 1 + hits.length) % hits.length));
+      setActive((i) =>
+        event.key === "ArrowDown" ? (i + 1) % hits.length : (i - 1 + hits.length) % hits.length,
+      );
       return;
     }
     if (event.key === "Enter" && open && hits[active]) {
@@ -150,130 +155,157 @@ export function GlobalSearch({ placeholder = "Search contacts, deals, notes" }: 
   let index = -1;
 
   return (
-    <div ref={rootRef} className="relative w-full min-w-0">
-      <Search
-        className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-muted"
-        aria-hidden="true"
-      />
-      <input
-        ref={inputRef}
-        type="search"
-        role="combobox"
-        aria-label="Search contacts, deals and activity notes"
-        aria-expanded={showPanel}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={showPanel && hits[active] ? optionId(active) : undefined}
-        value={query}
-        placeholder={placeholder}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={onKeyDown}
-        autoComplete="off"
-        spellCheck={false}
-        className="h-9 w-full rounded-sm border border-border-strong bg-surface pr-16 pl-9 text-sm text-text transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle [&::-webkit-search-cancel-button]:hidden"
-      />
-      <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-1">
-        {status === "loading" ? (
-          <Loader2 className="h-4 w-4 animate-spin text-text-muted" aria-label="Searching" />
-        ) : null}
-        {query ? (
-          <button
-            type="button"
-            onClick={() => {
-              setQuery("");
-              inputRef.current?.focus();
+    <Popover
+      // Keyed on `showPanel`, not `open`: the field is "open" from the moment
+      // it takes focus, but the results only exist once the query is long
+      // enough, and it is the results the popover is.
+      open={showPanel}
+      onDismiss={() => setOpen(false)}
+      align="stretch"
+      anchorClassName="w-full min-w-0"
+      className="max-h-[min(28rem,70dvh)] overflow-y-auto"
+      // The input keeps its own focus handling: `go()` deliberately blurs and
+      // navigates, and pulling focus back to the search box as the next route
+      // mounts would drag the viewport back to the header.
+      restoreFocus={false}
+      trigger={
+        <>
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-muted"
+            aria-hidden="true"
+          />
+          <input
+            ref={inputRef}
+            type="search"
+            role="combobox"
+            aria-label="Search contacts, deals and activity notes"
+            aria-expanded={showPanel}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={showPanel && hits[active] ? optionId(active) : undefined}
+            value={query}
+            placeholder={placeholder}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setOpen(true);
             }}
-            aria-label="Clear search"
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text"
-          >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        ) : (
-          <kbd className="hidden rounded border border-border px-1.5 text-[10px] text-text-muted sm:inline">/</kbd>
-        )}
-      </div>
-
-      {showPanel ? (
-        <div className="absolute right-0 left-0 z-50 mt-2 max-h-[min(28rem,70dvh)] overflow-y-auto rounded-md border border-border bg-surface shadow-lg">
-          <ul id={listId} role="listbox" aria-label="Search results" className="py-1">
-            {response?.groups.map((group) => {
-              const Icon = KIND_ICON[group.kind];
-              return (
-                <li key={group.kind} role="presentation">
-                  {/* Hidden from assistive tech: the group below carries the same
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKeyDown}
+            autoComplete="off"
+            spellCheck={false}
+            className="h-9 w-full rounded-sm border border-border-strong bg-surface pr-16 pl-9 text-sm text-text transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle [&::-webkit-search-cancel-button]:hidden"
+          />
+          <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-1">
+            {status === "loading" ? (
+              <Loader2 className="h-4 w-4 animate-spin text-text-muted" aria-label="Searching" />
+            ) : null}
+            {query ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  inputRef.current?.focus();
+                }}
+                aria-label="Clear search"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : (
+              <kbd className="hidden rounded border border-border px-1.5 text-[10px] text-text-muted sm:inline">
+                /
+              </kbd>
+            )}
+          </div>
+        </>
+      }
+    >
+      <ul id={listId} role="listbox" aria-label="Search results" className="py-1">
+        {response?.groups.map((group) => {
+          const Icon = KIND_ICON[group.kind];
+          return (
+            <li key={group.kind} role="presentation">
+              {/* Hidden from assistive tech: the group below carries the same
                       name, and a listbox may only contain options and groups. */}
-                  <p
-                    aria-hidden="true"
-                    className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase"
-                  >
-                    {group.label}
-                  </p>
-                  <ul role="group" aria-label={group.label}>
-                    {group.hits.map((hit) => {
-                      index += 1;
-                      const i = index;
-                      const selected = i === active;
-                      return (
-                        <li
-                          key={`${hit.kind}-${hit.id}`}
-                          id={optionId(i)}
-                          role="option"
-                          aria-selected={selected}
-                          onMouseEnter={() => setActive(i)}
-                          // mousedown, not click: click fires after the input's
-                          // blur, and nothing here should race that.
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            go(hit);
-                          }}
-                          className={`flex cursor-pointer items-start gap-2.5 px-3 py-2 ${
-                            selected ? "bg-surface-hover" : ""
-                          }`}
-                        >
-                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-text">
-                              <Highlighted text={hit.title} query={trimmed} />
-                            </span>
-                            {hit.subtitle ? (
-                              <span className="block truncate text-xs text-text-muted">
-                                <Highlighted text={hit.subtitle} query={trimmed} />
-                              </span>
-                            ) : null}
+              <p
+                aria-hidden="true"
+                className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase"
+              >
+                {group.label}
+              </p>
+              <ul role="group" aria-label={group.label}>
+                {group.hits.map((hit) => {
+                  index += 1;
+                  const i = index;
+                  const selected = i === active;
+                  return (
+                    <li
+                      key={`${hit.kind}-${hit.id}`}
+                      id={optionId(i)}
+                      role="option"
+                      aria-selected={selected}
+                      onMouseEnter={() => setActive(i)}
+                      // mousedown, not click: click fires after the input's
+                      // blur, and nothing here should race that.
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        go(hit);
+                      }}
+                      className={`flex cursor-pointer items-start gap-2.5 px-3 py-2 ${
+                        selected ? "bg-surface-hover" : ""
+                      }`}
+                    >
+                      <Icon
+                        className="mt-0.5 h-4 w-4 shrink-0 text-text-muted"
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-text">
+                          <Highlighted text={hit.title} query={trimmed} />
+                        </span>
+                        {hit.subtitle ? (
+                          <span className="block truncate text-xs text-text-muted">
+                            <Highlighted text={hit.subtitle} query={trimmed} />
                           </span>
-                          {hit.meta ? (
-                            <span className="shrink-0 text-xs text-text-muted tabular-nums">{hit.meta}</span>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              );
-            })}
-          </ul>
+                        ) : null}
+                      </span>
+                      {hit.meta ? (
+                        <span className="shrink-0 text-xs text-text-muted tabular-nums">
+                          {hit.meta}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
 
-          {status === "done" && hits.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-text-muted">
-              No contacts, deals or notes match “{trimmed}”
-            </p>
-          ) : null}
-          {status === "error" ? (
-            <p className="px-3 py-6 text-center text-xs text-text-muted">Search is unavailable right now</p>
-          ) : null}
-          {status === "done" && response && response.unavailable.length > 0 ? (
-            <p className="border-t border-border px-3 py-2 text-xs text-text-muted">
-              Couldn’t search {response.unavailable.map((k) => KIND_NOUN[k]).join(" or ")} - results may be
-              incomplete.
-            </p>
-          ) : null}
+      {status === "done" && hits.length === 0 ? (
+        <p className="px-3 py-6 text-center text-xs text-text-muted">
+          No contacts, deals or notes match “{trimmed}”
+        </p>
+      ) : null}
+      {/* Was the same muted grey as "no matches" one line above - so a search
+          that FAILED and a search that found nothing were the same sentence in
+          the same colour, and the reader concluded the record does not exist.
+          ErrorBanner is `role="alert"` and carries the error tone. */}
+      {status === "error" ? (
+        <div className="p-2">
+          <ErrorBanner>Search is unavailable right now. Your records are unaffected.</ErrorBanner>
         </div>
       ) : null}
-    </div>
+      {status === "done" && response && response.unavailable.length > 0 ? (
+        <div className="p-2 pt-0">
+          <ErrorBanner>
+            Couldn’t search {response.unavailable.map((k) => KIND_NOUN[k]).join(" or ")} - these
+            results may be incomplete.
+          </ErrorBanner>
+        </div>
+      ) : null}
+    </Popover>
   );
 }
 

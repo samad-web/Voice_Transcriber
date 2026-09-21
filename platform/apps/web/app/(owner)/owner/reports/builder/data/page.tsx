@@ -1,31 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import type { CatalogueEntry, DatasetRow } from "../types";
 import { DataSourcesClient } from "./data-sources-client";
 
 export const metadata: Metadata = { title: "Report data sources" };
 
 export default async function DataSourcesPage() {
-  const data = await ownerGet<{ datasets: DatasetRow[]; catalogue: CatalogueEntry[] }>(
+  const result = await ownerTry<{ datasets: DatasetRow[]; catalogue: CatalogueEntry[] }>(
     "/v1/report-datasets",
   );
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Data sources" context="Report builder" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer, or your role does not grant access to deal data.
-          </p>
-        </Card>
+        <LoadFailure what="your data sources" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

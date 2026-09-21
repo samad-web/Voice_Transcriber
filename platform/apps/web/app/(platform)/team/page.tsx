@@ -1,49 +1,28 @@
-import { Card, MonoLabel } from "@aura/ui";
-import { PageHeader } from "@/components/page-header";
-import { TenantSwitcher } from "@/components/tenant-switcher";
-import { operatorGate } from "@/lib/operator-gate";
-import { apiGetAs } from "@/lib/server-api";
-import { resolveTenantScope } from "@/lib/tenant-scope";
-import { TeamManager, type CrmRole, type Member, type Workspace } from "./team-manager";
+import { redirect } from "next/navigation";
 
-export default async function TeamPage({
+/**
+ * Team moved into Client Configuration, where it is one of three tabs beside
+ * Roles and API keys - because a client's team is a client-level asset, not a
+ * platform one. See ../client-config/page.tsx for the reasoning.
+ *
+ * Kept as a redirect rather than deleted, for the same reason
+ * `(owner)/owner/team/page.tsx` was: "the Team page" is what people have
+ * bookmarked and what they will type, and a 404 for a page that moved is a
+ * support conversation where one extra hop is not.
+ *
+ * `?org=` is carried through, so a link to one client's team still lands on that
+ * client rather than silently on the dev org.
+ *
+ * Permanent in intent but written as an ordinary redirect: Next's permanent
+ * variant is cached by the browser indefinitely, which is a promise worth making
+ * about a URL that has been retired, not about one that has been moved into a
+ * tab it could plausibly move back out of.
+ */
+export default async function TeamRedirect({
   searchParams,
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
-  const blocked = await operatorGate();
-  if (blocked) return blocked;
-
   const { org } = await searchParams;
-  const { tenants, orgId } = await resolveTenantScope(org);
-
-  const [members, workspaces, roles] = await Promise.all([
-    apiGetAs<{ members: Member[] }>("/v1/members", orgId),
-    apiGetAs<{ workspaces: Workspace[] }>("/v1/workspaces", orgId),
-    apiGetAs<{ roles: CrmRole[] }>("/v1/roles", orgId),
-  ]);
-
-  return (
-    <>
-      <PageHeader title="Team Management" />
-
-      <TenantSwitcher tenants={tenants} activeOrgId={orgId} basePath="/team" />
-
-      {members === null && workspaces === null ? (
-        <Card>
-          <MonoLabel>API offline</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
-          </p>
-        </Card>
-      ) : (
-        <TeamManager
-          members={members?.members ?? []}
-          workspaces={workspaces?.workspaces ?? []}
-          roles={roles?.roles ?? []}
-          orgId={orgId}
-        />
-      )}
-    </>
-  );
+  redirect(`/client-config?tab=team${org ? `&org=${encodeURIComponent(org)}` : ""}`);
 }

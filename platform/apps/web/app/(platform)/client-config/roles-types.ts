@@ -1,4 +1,4 @@
-/** Shapes returned by /v1/roles - CRM Phase 1 foundation (E0.4). */
+/** Shapes returned by /v1/roles for one client - CRM Phase 1 foundation (E0.4). */
 
 import type { PermissionAction, PermissionObjectType, PermissionScope } from "@aura/shared";
 

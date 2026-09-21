@@ -262,7 +262,7 @@ function PasswordReveal({ email, password }: { email: string; password: string }
       <BrutalButton
         variant="secondary"
         className="w-full"
-        // Sync, not `async` - see api-keys-manager.tsx: React discards an event
+        // Sync, not `async` - see client-config/keys-manager.tsx: React discards an event
         // handler's return value, so an async onClick turns a rejected
         // clipboard write (insecure origin, denied permission) into an
         // unhandled rejection. This password is shown once and never

@@ -13,8 +13,24 @@
  * 23 routes that already render this component picked up the new look for
  * free. The gradient stays a *wash*, not a fill - this sits above dense
  * tables and forms all day, not a hero section seen once.
+ *
+ * `description` is one sentence of what the page is FOR, under the title - for a
+ * page whose purpose is not obvious from its name (Call access: "Nobody outside
+ * your team can open your call logs..."). It exists because the alternative was
+ * stuffing that sentence into `context`, which is the 12px UPPERCASE eyebrow and
+ * turns a sentence into a wall of capitals. Optional and rare: most titles need
+ * no explaining, and a loader must pass the same text or the header grows by a
+ * line on arrival (console-loading.test.ts checks it).
  */
-export function PageHeader({ title, context }: { title: string; context?: string }) {
+export function PageHeader({
+  title,
+  context,
+  description,
+}: {
+  title: string;
+  context?: string;
+  description?: string;
+}) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-bg-subtle px-5 py-5 sm:px-7 sm:py-6">
       <div
@@ -37,6 +53,9 @@ export function PageHeader({ title, context }: { title: string; context?: string
           <h2 className="mt-1 truncate text-3xl font-extrabold tracking-tight text-text sm:text-4xl">
             {title}
           </h2>
+          {description ? (
+            <p className="mt-2 max-w-2xl text-sm text-text-muted">{description}</p>
+          ) : null}
         </div>
       </div>
     </div>

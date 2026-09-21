@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwnerBranding, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwnerBranding, ownerTry, requireFeature } from "@/lib/owner-context";
 import { BrandingForm, type BrandingView } from "./branding-client";
 
 export const metadata: Metadata = { title: "Branding" };
@@ -18,25 +18,20 @@ export const metadata: Metadata = { title: "Branding" };
  * Defaulted to "" per field because the form below is a set of plain controlled
  * inputs, and a controlled <input> cannot take null.
  *
- * The `ownerGet` call remains only to tell "API is down" apart from "org has no
+ * The `ownerTry` call remains only to tell "API is down" apart from "org has no
  * branding" - `getOwnerBranding` answers `{}` to both, and rendering an empty
  * form over a dead API would invite someone to save into the void.
  */
 export default async function BrandingPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/branding");
-  const org = await ownerGet<{ id: string }>("/v1/org");
+  const result = await ownerTry<{ id: string }>("/v1/org");
 
-  if (!org) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Branding" context="Settings" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your branding" failure={result} />
       </>
     );
   }

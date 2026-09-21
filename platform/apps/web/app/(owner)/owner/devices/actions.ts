@@ -61,11 +61,27 @@ export interface FleetHealthResponse {
 
 /** Shown once. The raw token exists only in this response - only its hash is stored. */
 export interface PairingToken {
+  /** The token's row id - what the dialog watches. Not a secret: it enrols nothing. */
+  pairingId: string;
   instanceId: string;
   adminKey: string;
   expiresAt: string;
   maxUses: number;
 }
+
+/**
+ * Where one pairing code stands (`GET /v1/owner/devices/pairing-token/:id`).
+ *
+ * `paired` carries the handset that used it, so the dialog can name the phone
+ * it just watched arrive rather than saying "a device".
+ */
+export type PairingStatus =
+  | { state: "waiting" | "expired"; expiresAt: string }
+  | {
+      state: "paired";
+      expiresAt: string;
+      device: { id: string; label: string | null; instanceName: string; pairedAt: string };
+    };
 
 export async function mintPairingTokenAction(
   instanceId?: string,
@@ -82,6 +98,32 @@ export async function mintPairingTokenAction(
     });
     if (!res.ok) return { error: await apiErrorMessage(res) };
     return { token: (await res.json()) as PairingToken };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Has a phone used this code yet. Called by the open pairing dialog - on each
+ * `device` change signal, and on a slow timer in case the signal is lost.
+ *
+ * An error is returned rather than thrown: this runs on a timer, and a single
+ * failed tick (a redeploy, a blip to the database) must leave the QR on screen
+ * and try again, not tear the dialog down.
+ */
+export async function pairingStatusAction(
+  pairingId: string,
+): Promise<{ status?: PairingStatus; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/owner/devices/pairing-token/${encodeURIComponent(pairingId)}`,
+      { headers, cache: "no-store" },
+    );
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    return { status: (await res.json()) as PairingStatus };
   } catch {
     return { error: "API unreachable" };
   }

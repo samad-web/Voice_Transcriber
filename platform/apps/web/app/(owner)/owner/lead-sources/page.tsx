@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
 import type { LeadSourceKind } from "@aura/shared";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
 import { LeadSourcesClient } from "./lead-sources-client";
 import { SheetsPanel } from "./sheets-panel";
@@ -67,25 +67,32 @@ export interface LinkedInStatus {
 export default async function LeadSourcesPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/lead-sources");
-  const [sources, catalogue, linkedin] = await Promise.all([
-    ownerGet<{ sources: LeadSourceRow[] }>("/v1/lead-sources"),
-    ownerGet<{ channels: CatalogueChannel[] }>("/v1/lead-sources/catalogue"),
+  const [sourcesResult, catalogueResult, linkedin] = await Promise.all([
+    ownerTry<{ sources: LeadSourceRow[] }>("/v1/lead-sources"),
+    ownerTry<{ channels: CatalogueChannel[] }>("/v1/lead-sources/catalogue"),
     ownerGet<LinkedInStatus>("/v1/linkedin/status"),
   ]);
 
-  if (!sources || !catalogue) {
+  // Two guards rather than one `||`: each result carries its own reason, and a
+  // single branch could only show one of them.
+  if (!sourcesResult.ok) {
     return (
       <>
         <PageHeader title="Lead sources" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="lead sources" failure={sourcesResult} />
       </>
     );
   }
+  if (!catalogueResult.ok) {
+    return (
+      <>
+        <PageHeader title="Lead sources" context="Pipeline" />
+        <LoadFailure what="the channel catalogue" failure={catalogueResult} />
+      </>
+    );
+  }
+  const sources = sourcesResult.data;
+  const catalogue = catalogueResult.data;
 
   return (
     <>

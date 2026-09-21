@@ -17,5 +17,15 @@ export const inputClass = `${BASE} text-base sm:text-sm font-sans`;
 /** Same control, monospaced - used for ids, tokens and typed confirmations. */
 export const monoInputClass = `${BASE} text-base sm:text-sm font-mono`;
 
-/** Select/dropdown: the design uses the smaller uppercase label styling. */
-export const selectClass = `${BASE} text-base sm:text-xs font-bold uppercase`;
+/*
+ * `selectClass` was here. Every dropdown in the console now renders through
+ * @aura/ui's `Select`, so there is no longer a second answer to "what does a
+ * dropdown look like" - which is the whole reason it is gone rather than
+ * deprecated. Do not reintroduce it: a `<select>` styled by a class string in
+ * this file is invisible to `app/console-palette.test.ts`, which scans only
+ * .tsx under app/, components/ and packages/ui/src. That blind spot is how
+ * `bg-neutral-50` reached eleven files without the ratchet ever seeing it.
+ *
+ * For a dense table row, `Select` takes `size="sm"` - that is what the two
+ * hand-rolled `text-[10px]` pickers in the team grid became.
+ */

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { viewHref, viewQueryFrom } from "@/lib/list-views";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { loadMembers, loadTags } from "../list-data";
 import { FilterSearch, FilterSelect, ListFilterForm } from "../list-filters";
@@ -57,26 +57,22 @@ export default async function ContactsPage({
 
   // Concurrent, and only the list itself can fail the page: the option lists
   // and saved views degrade to empty (list-options.ts, saved-views/load.ts).
-  const [data, members, tags, views] = await Promise.all([
-    ownerGet<ListResponse>(`/v1/contacts?${query}`),
+  const [result, members, tags, views] = await Promise.all([
+    ownerTry<ListResponse>(`/v1/contacts?${query}`),
     loadMembers(),
     loadTags(),
     loadSavedViews("contacts"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Contacts" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="contacts" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

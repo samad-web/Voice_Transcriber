@@ -17,6 +17,7 @@ import {
   Button,
   ConsolePanel,
   MonoLabel,
+  Skeleton,
   StatusChip,
   TableBody,
   TableCell,
@@ -27,6 +28,7 @@ import {
   useToast,
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
+import { LoadingRegion } from "@/components/skeletons";
 import {
   addCallNoteAction,
   getCallAudioAction,
@@ -503,7 +505,29 @@ export function CallsExplorer({
 
               <div className="space-y-6 p-6">
                 {loading ? (
-                  <p className="py-8 text-center text-sm text-text-muted">Loading call detail…</p>
+                  <LoadingRegion label="Loading call detail" className="space-y-6">
+                    <div className="space-y-2.5">
+                      <Skeleton className="h-2.5 w-14" />
+                      <div className="flex flex-wrap gap-2">
+                        <Skeleton className="h-6 w-20 rounded-full" />
+                        <Skeleton className="h-6 w-28 rounded-full" />
+                        <Skeleton className="h-6 w-24 rounded-full" />
+                      </div>
+                      <Skeleton className="h-3 w-3/5" />
+                    </div>
+                    <div className="space-y-3">
+                      <Skeleton className="h-2.5 w-24" />
+                      <Skeleton className="h-20 w-full rounded-md" />
+                    </div>
+                    <div className="space-y-3">
+                      <Skeleton className="h-2.5 w-20" />
+                      <div className="space-y-2.5">
+                        <Skeleton className="h-14 w-4/5 rounded-md" />
+                        <Skeleton className="ml-auto h-14 w-3/5 rounded-md" />
+                        <Skeleton className="h-14 w-2/3 rounded-md" />
+                      </div>
+                    </div>
+                  </LoadingRegion>
                 ) : error ? (
                   <p className="rounded-md border border-danger bg-danger-subtle p-3 text-sm font-medium text-danger-text">
                     {error}

@@ -16,13 +16,27 @@ export function TenantSwitcher({
   activeOrgId,
   basePath,
   label = "Viewing tenant",
+  extraQuery,
 }: {
   tenants: TenantOption[];
   activeOrgId: string;
+  /** Path only - the query is built here, so this must carry no `?`. */
   basePath: string;
   label?: string;
+  /**
+   * Query params to keep across a tenant switch, beside `org`.
+   *
+   * Needed by a page whose state lives in the URL: /client-config holds its
+   * active tab there, and without this, switching client from the API Keys tab
+   * would silently drop you back on Team.
+   */
+  extraQuery?: Record<string, string>;
 }) {
   if (tenants.length <= 1) return null;
+
+  const suffix = Object.entries(extraQuery ?? {})
+    .map(([k, v]) => `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("");
 
   return (
     <div className="space-y-2">
@@ -31,7 +45,7 @@ export function TenantSwitcher({
         {tenants.map((t) => (
           <Link
             key={t.id}
-            href={`${basePath}?org=${t.id}`}
+            href={`${basePath}?org=${t.id}${suffix}`}
             aria-current={t.id === activeOrgId ? "page" : undefined}
             className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
               // "Selected" is a sanctioned accent use (doc 16 §1.1). Everything

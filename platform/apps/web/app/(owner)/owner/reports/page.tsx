@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { normaliseStaleAfterDays } from "@/lib/deal-staleness";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerGet, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import {
   REPORT_RANGES,
@@ -184,7 +185,7 @@ export default async function ReportsPage({
   const days = `days=${range}`;
 
   const [
-    pipeline,
+    pipelineResult,
     conversion,
     performance,
     attainment,
@@ -194,7 +195,7 @@ export default async function ReportsPage({
     aging,
     pipelines,
   ] = await Promise.all([
-    ownerGet<PipelineReport>("/v1/reports/pipeline"),
+    ownerTry<PipelineReport>("/v1/reports/pipeline"),
     ownerGet<ConversionReport>(`/v1/reports/conversion?${days}`),
     ownerGet<PerformanceReport>(`/v1/reports/performance?${days}`),
     ownerGet<AttainmentReport>("/v1/targets/attainment"),
@@ -204,6 +205,12 @@ export default async function ReportsPage({
     ownerGet<LeadAgingReport>("/v1/reports/lead-aging"),
     ownerGet<{ pipelines: PipelineListItem[] }>("/v1/pipelines"),
   ]);
+
+  // The pipeline report is the one whose reason is kept (`ownerTry`), because
+  // it is the one the page-wide failure below is reported from. It still
+  // degrades to null like the other eight, so every card keeps its own
+  // "not available" state rather than the page blanking on one report.
+  const pipeline = pipelineResult.ok ? pipelineResult.data : null;
 
   // Stale deals on the SAME pipeline the pipeline report chose, at that
   // pipeline's own threshold - the query the Deals table's "Idle N+ days"
@@ -220,16 +227,11 @@ export default async function ReportsPage({
 
   const closed = conversion?.summary ? conversion.summary.won + conversion.summary.lost : 0;
 
-  if (!pipeline && !conversion && !performance) {
+  if (!pipelineResult.ok && !conversion && !performance) {
     return (
       <>
         <PageHeader title="Reports" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your reports" failure={pipelineResult} />
       </>
     );
   }

@@ -27,6 +27,7 @@ import {
   looksLikeTemplateSample,
   suggestMapping,
 } from "@aura/shared";
+import { FormFieldsSkeleton, LoadingRegion, TableBlockSkeleton } from "@/components/skeletons";
 import {
   fetchImportErrorsAction,
   fetchImportErrorsCsvAction,
@@ -663,7 +664,9 @@ function MappingStep({
       </p>
 
       {loading ? (
-        <p className="mt-4 text-sm text-text-muted">Reading your columns…</p>
+        <LoadingRegion label="Reading your columns" className="mt-4 grid gap-4 sm:grid-cols-2">
+          <FormFieldsSkeleton fields={targetFields.length} submit={false} />
+        </LoadingRegion>
       ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {targetFields.map((tf) => (
@@ -814,7 +817,9 @@ function ResultsStep({
             </Button>
           </div>
           {rowErrors === null ? (
-            <p className="mt-2 text-sm text-text-muted">Loading…</p>
+            <LoadingRegion label="Loading failed rows" className="mt-2">
+              <TableBlockSkeleton columns={["num", "text"]} rows={4} />
+            </LoadingRegion>
           ) : (
             <Table caption="Failed rows" className="mt-2">
               <TableHead>

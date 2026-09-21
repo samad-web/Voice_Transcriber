@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { FlaskConical, Play } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import { testAgentAction, type AgentTestResult } from "./actions";
 import type { AgentRow } from "./agent-studio";
@@ -56,14 +56,14 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
           <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
             Agent
           </label>
-          <select className={inputClass} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+          <Select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
             {agents.length === 0 ? <option value="">No agents</option> : null}
             {agents.map((a) => (
               <option key={`${a.id}-${a.version}`} value={a.id}>
                 {a.name} (v{a.version})
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">

@@ -2,7 +2,17 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { Button, Card, Dialog, EmptyState, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import {
+  Button,
+  Card,
+  Dialog,
+  EmptyState,
+  ErrorBanner,
+  Input,
+  MonoLabel,
+  StatusChip,
+  useAlert,
+} from "@aura/ui";
 import {
   createLeadFromCallAction,
   dismissCallAction,
@@ -272,13 +282,33 @@ function LinkDialog({
 }) {
   const [q, setQ] = useState("");
   const [leads, setLeads] = useState<CandidateLead[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
 
+  /*
+   * Both search paths below used to do `setLeads(res.leads)` and never look at
+   * `res.error`. On a failure `res.leads` is undefined, which rendered NEITHER
+   * the candidate rows nor the "No leads matched" line - an empty dialog that
+   * reads as "this call has nothing to link to". The operator's next move is
+   * then Create lead, producing a duplicate of a lead that already exists and
+   * that the search simply failed to fetch. Silent, and it corrupts data.
+   *
+   * The reason goes in an ErrorBanner inside the dialog rather than a modal
+   * alert: this dialog is itself a modal, and stacking one on another to report
+   * a failed search would take two dismissals to get back to the search box the
+   * person is trying to use. ErrorBanner is still `role="alert"` and still
+   * announced - it is the surface the kit reserves for exactly this.
+   */
   const search = (term: string) => {
     startTransition(async () => {
       const res = await searchCandidatesAction(call.id, term);
-      setLeads(res.leads);
+      if (res.error) {
+        setSearchError(res.error);
+        return;
+      }
+      setSearchError(null);
+      setLeads(res.leads ?? []);
     });
   };
 
@@ -289,7 +319,13 @@ function LinkDialog({
   useEffect(() => {
     let live = true;
     void searchCandidatesAction(call.id, "").then((res) => {
-      if (live) setLeads(res.leads);
+      if (!live) return;
+      if (res.error) {
+        setSearchError(res.error);
+        return;
+      }
+      setSearchError(null);
+      setLeads(res.leads ?? []);
     });
     return () => {
       live = false;
@@ -328,7 +364,13 @@ function LinkDialog({
           </Button>
         </div>
 
-        {leads && leads.length === 0 ? (
+        {searchError ? <ErrorBanner>Couldn&rsquo;t search leads: {searchError}</ErrorBanner> : null}
+
+        {/* Only when the search actually succeeded and returned nothing. The
+            `searchError` guard is what stops a failed search claiming there is
+            no matching lead - the sentence below tells the operator to create
+            one, and acting on it after a failure creates a duplicate. */}
+        {!searchError && leads && leads.length === 0 ? (
           <p className="text-sm text-text-muted">
             No leads matched. Close this and press Create lead instead — it makes one from the
             call&rsquo;s own contact details.

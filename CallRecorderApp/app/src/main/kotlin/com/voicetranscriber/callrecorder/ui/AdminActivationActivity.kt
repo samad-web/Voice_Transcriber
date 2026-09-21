@@ -25,6 +25,10 @@ class AdminActivationActivity : AppCompatActivity() {
     private lateinit var binding: ActivityAdminActivationBinding
     private var statusText: String = ""
 
+    // One enrollment at a time. A scan now activates by itself, so a tap on
+    // Activate a moment later must not spend a second use of a one-use code.
+    private var enrolling = false
+
     // QR scanner (Paytm-style animated viewfinder) - returns the JSON the web
     // activation page encodes into the code.
     private val scanLauncher = registerForActivityResult(
@@ -65,23 +69,56 @@ class AdminActivationActivity : AppCompatActivity() {
 
     /**
      * The web activation QR encodes {"v":1,"instanceId":"...","adminKey":"..."}
-     * (and optionally "serverUrl"). Fill the fields; the admin still confirms
-     * the server URL and taps Activate.
+     * (and optionally "serverUrl"). Fill the fields, then - when nothing about
+     * the scan needs a human to look at it - activate straight away, the way
+     * WhatsApp links a device the moment its QR is read. The console's pairing
+     * dialog is watching for exactly that moment and moves on by itself.
+     *
+     * The confirm step stays for the two cases where it earns its tap:
+     *  - the code names a DIFFERENT server than this phone is set up for. The
+     *    owner console never sends one; an operator-issued code may, and a QR
+     *    that silently repoints a phone at another host is the thing the
+     *    confirm step exists to catch.
+     *  - the phone is already activated. Enrolling again makes it a new device
+     *    on the server, which should be a decision, not a side effect of
+     *    pointing the camera at a screen.
      */
     private fun applyScannedPayload(raw: String) {
-        try {
-            val json = JSONObject(raw)
-            json.optString("instanceId").takeIf { it.isNotBlank() }?.let { binding.instanceId.setText(it) }
-            json.optString("adminKey").takeIf { it.isNotBlank() }?.let { binding.adminKey.setText(it) }
-            json.optString("serverUrl").takeIf { it.isNotBlank() }?.let { binding.serverUrl.setText(it) }
-            statusText = getString(R.string.admin_scanned_confirm)
+        val json = try {
+            JSONObject(raw)
         } catch (e: Exception) {
             statusText = getString(R.string.admin_scan_unrecognized)
+            renderState()
+            return
+        }
+
+        val instance = json.optString("instanceId").trim()
+        val key = json.optString("adminKey").trim()
+        val scannedUrl = json.optString("serverUrl").trim()
+        if (instance.isEmpty() || key.isEmpty()) {
+            statusText = getString(R.string.admin_scan_unrecognized)
+            renderState()
+            return
+        }
+
+        val currentUrl = binding.serverUrl.text?.toString()?.trim().orEmpty()
+        val repoints = scannedUrl.isNotEmpty() && scannedUrl.trimEnd('/') != currentUrl.trimEnd('/')
+
+        binding.instanceId.setText(instance)
+        binding.adminKey.setText(key)
+        if (scannedUrl.isNotEmpty()) binding.serverUrl.setText(scannedUrl)
+
+        when {
+            repoints -> statusText = getString(R.string.admin_scanned_confirm)
+            ActivationStore.isActivated(this) ->
+                statusText = getString(R.string.admin_scanned_already_activated)
+            else -> activate()
         }
         renderState()
     }
 
     private fun activate() {
+        if (enrolling) return
         val url = binding.serverUrl.text?.toString()?.trim().orEmpty()
         val instance = binding.instanceId.text?.toString()?.trim().orEmpty()
         val key = binding.adminKey.text?.toString()?.trim().orEmpty()
@@ -90,6 +127,8 @@ class AdminActivationActivity : AppCompatActivity() {
             renderState()
             return
         }
+        enrolling = true
+        binding.activateBtn.isEnabled = false
         statusText = getString(R.string.admin_enrolling)
         renderState()
         lifecycleScope.launch {
@@ -97,6 +136,9 @@ class AdminActivationActivity : AppCompatActivity() {
                 ActivationManager.enroll(this@AdminActivationActivity, url, instance, key)
             } catch (e: Exception) {
                 getString(R.string.admin_activation_failed, e.message)
+            } finally {
+                enrolling = false
+                binding.activateBtn.isEnabled = true
             }
             renderState()
         }

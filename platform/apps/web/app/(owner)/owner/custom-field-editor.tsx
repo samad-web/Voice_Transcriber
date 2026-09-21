@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Sparkles } from "lucide-react";
 import { Button, Checkbox, Input, MonoLabel, Select, useAlert, useToast } from "@aura/ui";
+import { FormFieldsSkeleton, LoadingRegion } from "@/components/skeletons";
 import {
   fetchCustomFieldsAction,
   saveCustomFieldsAction,
@@ -102,7 +103,9 @@ export function CustomFieldEditor({
     return (
       <div className="space-y-3">
         <MonoLabel>{title}</MonoLabel>
-        <p className="py-2 text-xs text-text-muted">Loading…</p>
+        <LoadingRegion label="Loading fields" className="space-y-3">
+          <FormFieldsSkeleton fields={3} submit={false} />
+        </LoadingRegion>
       </div>
     );
   }

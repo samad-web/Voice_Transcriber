@@ -133,6 +133,34 @@ export class MessagingWebhookController {
       }
     }
 
+    /*
+     * ── Evolution delivers more than messages ───────────────────────────────
+     *
+     * Its envelope is `{event, instance, data}` and the subscription this
+     * product asks for (evolution-client.ts) is MESSAGE plus CONNECTION.
+     * Without this branch a CONNECTION event - the one that says a phone
+     * finished pairing, or that somebody removed Aura from Linked Devices -
+     * fell through to `adaptInbound`, which found no sender and answered
+     * "unrecognised payload shape". True, useless, and it discarded the only
+     * unsolicited signal Aura ever gets that a personal number has dropped.
+     *
+     * Recorded rather than acted on: the pairing page polls Evolution directly
+     * for the authoritative answer, and two writers of one status field is how
+     * they disagree. This is the audit trail, and it is what makes "when did
+     * this number drop" answerable after the fact.
+     */
+    const envelope = body as { event?: unknown; data?: unknown };
+    if (typeof envelope.event === "string" && envelope.event.toUpperCase() !== "MESSAGE") {
+      await this.db.withOrg(channel.orgId, (client) =>
+        client.query(
+          `INSERT INTO messaging_channel_events (org_id, messaging_channel_id, event, payload)
+           VALUES ($1, $2, $3, $4::jsonb)`,
+          [channel.orgId, channel.id, envelope.event, JSON.stringify(envelope.data ?? {})],
+        ),
+      );
+      return { stored: true, reason: "logged" };
+    }
+
     const adapted = adaptInbound(channel.channel, body);
     if (!adapted) {
       // Parsed nothing usable. Accepted-but-not-stored, deliberately - see

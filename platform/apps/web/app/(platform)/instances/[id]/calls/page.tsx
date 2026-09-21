@@ -5,6 +5,7 @@ import { Card, EmptyState, MonoLabel, StatCard } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
 import { operatorGate } from "@/lib/operator-gate";
+import { operatorCaller } from "@/lib/operator-guard";
 import { apiGetAs } from "@/lib/server-api";
 import { CallsExplorer, type CallRow } from "../../../calls/calls-explorer";
 
@@ -76,7 +77,14 @@ export default async function InstanceCallsPage({
   const statsQuery = instanceId ? `?instanceId=${instanceId}` : "";
 
   const [list, instanceList, overview] = await Promise.all([
-    apiGetAs<{ calls: CallRow[]; total: number }>(`/v1/calls?${query.toString()}`, orgId),
+    // The call log is gated on the tenant's own administrator (0122); the
+    // instance list and the aggregates beside it are not, so only this one
+    // names the operator.
+    apiGetAs<{ calls: CallRow[]; total: number }>(
+      `/v1/calls?${query.toString()}`,
+      orgId,
+      await operatorCaller(),
+    ),
     apiGetAs<{ instances: InstanceRow[] }>("/v1/instances", orgId),
     apiGetAs<Overview>(`/v1/analytics/overview${statsQuery}`, orgId),
   ]);

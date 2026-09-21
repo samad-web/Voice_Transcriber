@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { RecycleBinClient } from "./recycle-bin-client";
 import type { BinResponse } from "./actions";
 
@@ -18,21 +18,17 @@ export const metadata: Metadata = { title: "Recycle bin" };
  * The API gates it to owner and manager, and the nav entry matches.
  */
 export default async function RecycleBinPage() {
-  const data = await ownerGet<BinResponse>("/v1/owner/recycle-bin");
+  const result = await ownerTry<BinResponse>("/v1/owner/recycle-bin");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Recycle bin" context="Settings" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="the recycle bin" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

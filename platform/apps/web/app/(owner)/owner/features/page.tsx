@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { FEATURE_GROUPS, type FeatureGroup, type FeatureState } from "@aura/shared";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerTry } from "@/lib/owner-context";
 import { FeatureBoard } from "./feature-board";
 
 export const metadata: Metadata = { title: "Features" };
@@ -56,21 +56,17 @@ export default async function FeaturesPage() {
   // missing" before raising it as a bug.
   if (role !== "owner" && role !== "manager") redirect("/owner");
 
-  const data = await ownerGet<{ features: FeatureRow[] }>("/v1/owner/features");
+  const result = await ownerTry<{ features: FeatureRow[] }>("/v1/owner/features");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Features" context="Workspace" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="your features" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   const byGroup = FEATURE_GROUPS.map((group) => ({
     ...group,

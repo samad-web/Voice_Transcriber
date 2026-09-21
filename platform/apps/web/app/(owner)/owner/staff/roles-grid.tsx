@@ -3,7 +3,17 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { isPermissionEnforced } from "@aura/shared";
-import { Button, Card, Input, MonoLabel, Select, StatusChip, useAlert, useToast } from "@aura/ui";
+import {
+  Button,
+  Card,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { createRoleAction, deleteRoleAction, saveRolePermissionsAction } from "./roles-actions";
 import type { RoleRow } from "./types";
 
@@ -156,6 +166,7 @@ function RoleEditor({
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const set = (object: string, action: string, value: "none" | "all" | "owned") => {
     setGrid((prev) => ({ ...prev, [object]: { ...prev[object], [action]: value } }));
@@ -191,8 +202,23 @@ function RoleEditor({
   };
 
   const remove = () => {
-    if (!window.confirm(`Delete the role "${role.name}"?`)) return;
     startTransition(async () => {
+      // Keeps the default type-DELETE gate. A role is not a row: deleting one
+      // changes what every member holding it is allowed to do, and the grid
+      // cannot show who that is from here. The consequence goes in the body
+      // because the old one-line `window.confirm` stated none of it.
+      if (
+        !(await confirm({
+          title: `Delete the role "${role.name}"?`,
+          body:
+            "Anyone currently assigned this role loses the permissions it grants. " +
+            "This cannot be undone - you would have to recreate the role and reassign it.",
+          confirmLabel: "Delete role",
+          tone: "danger",
+        }))
+      ) {
+        return;
+      }
       const res = await deleteRoleAction(role.id);
       if (res.error) {
         await alert({ title: `Couldn't delete ${role.name}`, body: res.error, tone: "danger" });

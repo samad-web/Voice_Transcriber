@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { decryptSecret } from "@aura/db";
-import { orgPlanIncludesWhatsapp } from "@aura/shared";
+import { isPersonalWhatsApp, orgPlanIncludesWhatsapp, providerSpec } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
@@ -21,6 +21,7 @@ import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { sendWasiMessage, WasiSendError } from "./wasi-client";
+import { EvolutionError, evolutionAdminFromEnv, sendEvolutionText } from "./evolution-client";
 import { MetaSendError, sendMetaDirect, sendWhatsAppCloud } from "./meta-send";
 import { replyWindow } from "./meta-messaging";
 
@@ -169,12 +170,43 @@ export class WhatsAppSendController {
       if (!channel || channel.status !== "active") {
         throw new BadRequestException("this org's messaging channel is not configured or not active");
       }
-      const isMeta = channel.provider === "waba" || channel.provider === "meta";
-      if (!isMeta && channel.provider !== "wasi") {
+      /*
+       * ── Three transports, chosen from the provider table ────────────────
+       *
+       * `evolution` used to be refused here outright - "sending through
+       * evolution is not supported" - while the worker has been sending
+       * through exactly that transport for funnel nudges the whole time. So a
+       * tenant could receive WhatsApp on a personal number, see the thread in
+       * the inbox, and have no way to answer it from the console.
+       *
+       * The three differ in what carries the message and in whether templates
+       * exist at all. Everything above this point - the opt-out check, the
+       * human caller, the permission, the record scope, the daily cap - is
+       * identical for all of them and deliberately runs first.
+       */
+      const spec = providerSpec(channel.provider);
+      if (!spec) {
         throw new BadRequestException(`sending through ${channel.provider} is not supported`);
       }
-      if (!isMeta && (!channel.api_key || !channel.api_base_url || !channel.config?.wasiClientId)) {
+      const isMeta = channel.provider === "waba" || channel.provider === "meta";
+      const isPersonal = isPersonalWhatsApp(channel.provider);
+
+      if (message.type === "template" && !spec.hasTemplates) {
+        // Refused here rather than at the transport, because the reason is a
+        // property of the account and not a failure of the send: a personal
+        // WhatsApp account has no approved templates and no way to get any.
+        // Meta's approval process does not apply to it.
+        throw new BadRequestException(
+          "this is a personal WhatsApp number, which has no approved templates - send a plain reply instead",
+        );
+      }
+      if (channel.provider === "wasi" && (!channel.api_key || !channel.api_base_url || !channel.config?.wasiClientId)) {
         throw new BadRequestException("this org's WhatsApp channel is missing its Wasi credentials");
+      }
+      if (isPersonal && !channel.api_key) {
+        throw new BadRequestException(
+          "this personal WhatsApp number is not linked yet - pair it on the WhatsApp setup page first",
+        );
       }
 
       // ── The 24-hour window ────────────────────────────────────────────────
@@ -276,6 +308,33 @@ export class WhatsAppSendController {
             message.body,
           );
           outcome = { externalId: out.externalId, status: "sent" };
+        } else if (isPersonal) {
+          // A personal number, through the tenant's OWN Evolution instance -
+          // the instance token is on the channel row, not in the environment.
+          // The worker's sender reads process-level credentials and therefore
+          // sends as the platform's single shared account; this one sends as
+          // the business's own linked phone, which is the whole point of
+          // giving each org an instance.
+          if (message.type === "template") {
+            throw new BadRequestException("a personal WhatsApp number has no templates");
+          }
+          const baseUrl = channel.api_base_url ?? evolutionAdminFromEnv()?.baseUrl;
+          if (!baseUrl) {
+            throw new BadRequestException(
+              "this deployment has no Evolution host configured, so a personal number cannot send",
+            );
+          }
+          const out = await sendEvolutionText(
+            { baseUrl, token: decryptSecret(channel.api_key) ?? "" },
+            convo.peer_address,
+            message.body,
+          );
+          // No provider-side queue: Evolution hands the message to WhatsApp
+          // synchronously and answers with the id or an error. `sent` is what
+          // acceptance means here, and the webhook has no status events to
+          // correct it with - unlike a WABA, a linked device is not told
+          // whether the recipient read it unless read receipts are on.
+          outcome = { externalId: out.externalId, status: "sent" };
         } else {
           const result = await sendWasiMessage(
             {
@@ -292,6 +351,13 @@ export class WhatsAppSendController {
       } catch (err) {
         if (err instanceof WasiSendError) {
           throw new BadRequestException(`Wasi refused the send: ${err.message}`);
+        }
+        // Evolution's own words, for the same reason Meta's and Wasi's are
+        // kept: "not logged in" and "that number is not on WhatsApp" are two
+        // different jobs for two different people, and a generic failure
+        // sends whoever reads it to guess which.
+        if (err instanceof EvolutionError) {
+          throw new BadRequestException(`WhatsApp refused the send: ${err.message}`);
         }
         // Meta's own words - "more than 24 hours have passed since the customer
         // last replied", "Template name does not exist in the translation" -

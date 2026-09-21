@@ -1,51 +1,19 @@
-import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
-import { PageHeader } from "@/components/page-header";
-import { TenantSwitcher } from "@/components/tenant-switcher";
-import { operatorGate } from "@/lib/operator-gate";
-import { apiGetAs } from "@/lib/server-api";
-import { resolveTenantScope } from "@/lib/tenant-scope";
-import { RolesManager } from "./roles-manager";
-import type { Role } from "./types";
-
-export const metadata: Metadata = { title: "Roles - Aura" };
+import { redirect } from "next/navigation";
 
 /**
- * Roles & permissions admin - CRM Phase 1, E0.4. Same tenant-scoping shape
- * as (platform)/crm and (platform)/custom-fields. Schema-only phase: this
- * page lets an operator define custom roles and edit any role's permission
- * grid, but nothing here is enforced yet and no role can be assigned to a
- * real membership - see roles.controller.ts's header.
+ * Roles moved into Client Configuration, where it is one of three tabs beside
+ * Team and API keys. `roles.org_id` is on every row and the system roles are
+ * seeded per tenant, so there was never a platform-wide set of roles for this
+ * page to have been about. See ../client-config/page.tsx.
+ *
+ * Kept as a redirect, `?org=` carried through, and deliberately not Next's
+ * permanent variant - see ../team/page.tsx for both reasons.
  */
-export default async function RolesPage({
+export default async function RolesRedirect({
   searchParams,
 }: {
   searchParams: Promise<{ org?: string }>;
 }) {
-  const blocked = await operatorGate();
-  if (blocked) return blocked;
-
   const { org } = await searchParams;
-  const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
-
-  const data = await apiGetAs<{ roles: Role[] }>("/v1/roles", orgId);
-
-  return (
-    <>
-      <PageHeader title="Roles" context={activeTenant?.name ?? "Workspace"} />
-
-      <TenantSwitcher tenants={tenants} activeOrgId={orgId} basePath="/roles" />
-
-      {data === null ? (
-        <Card>
-          <MonoLabel>API offline</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API - start it with <code>pnpm --filter @aura/api dev</code>.
-          </p>
-        </Card>
-      ) : (
-        <RolesManager roles={data.roles} orgId={orgId} />
-      )}
-    </>
-  );
+  redirect(`/client-config?tab=roles${org ? `&org=${encodeURIComponent(org)}` : ""}`);
 }

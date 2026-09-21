@@ -130,6 +130,10 @@ export class ApiKeyGuard implements CanActivate {
       recordingsExport: false,
       viaAdminKey: false,
       ownerRole: null,
+      // An API key is a headless credential belonging to a tenant, never to a
+      // platform operator - so there is no operator to name, and the
+      // call-access gate treats it as it treats any other non-operator.
+      operatorEmail: null,
     };
 
     // TenantGuard reads `principal.orgId`, so the org this request is pinned to

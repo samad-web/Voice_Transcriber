@@ -2,15 +2,30 @@
 
 import { useState, useTransition } from "react";
 import { Plus, Trash2, UserPlus, Users } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm } from "@aura/ui";
+import {
+  Button,
+  Card,
+  Checkbox,
+  FormField,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  useAlert,
+  useConfirm,
+} from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
-import { inputClass, selectClass } from "@/lib/form";
 import {
   addMemberAction,
   createWorkspaceAction,
   removeMemberAction,
   updateMemberAction,
-} from "./actions";
+} from "./team-actions";
 
 export interface Member {
   userId: string;
@@ -32,7 +47,7 @@ export interface Workspace {
   created_at: string;
 }
 
-/** A row from `GET /v1/roles` - system-seeded or operator-defined. */
+/** A row from `GET /v1/roles` - system-seeded or client-defined. */
 export interface CrmRole {
   id: string;
   key: string;
@@ -58,6 +73,32 @@ function roleTone(role: string): "solid" | "muted" | "outline" {
   return "muted";
 }
 
+/** Head strip shared by the two panels - matches the instance page's TablePanel. */
+const PANEL_HEAD =
+  "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-bg-subtle px-5 py-3";
+
+/**
+ * One client's people: who they are, what tier they hold, which permission role
+ * they are enforced against, and what they may do with a recording.
+ *
+ * ── THEMED, AS OF THE client-config CONSOLIDATION ──────────────────────────
+ *
+ * This component was one of the operator console's pre-v2 holdouts and was
+ * written entirely in stock Tailwind - `border-black`, `bg-white`,
+ * `bg-neutral-100`, `text-neutral-400`. Those are fixed values, so in dark mode
+ * it rendered black rules and a near-white table on a #0a0a0a page: the member
+ * names were legible only because `text-black` happened to sit on a `bg-white`
+ * the component also hard-coded, and every border around them disappeared into
+ * the surface. It now spends only semantic tokens, which are redefined under
+ * `prefers-color-scheme: dark` and by `[data-theme]`, so it follows the toggle
+ * like the rest of the console. It is off `console-palette.test.ts`'s backlog.
+ *
+ * The form controls moved to the kit's `Input`/`Select`/`Checkbox` rather than
+ * `lib/form.ts`'s `inputClass`: that helper is itself hard-coded
+ * (`border-black bg-neutral-50 text-black`), which is invisible to the palette
+ * ratchet because the ratchet scans `.tsx` only. Ten other pages still use it -
+ * they are a separate migration, not this one.
+ */
 export function TeamManager({
   members,
   workspaces,
@@ -162,46 +203,55 @@ export function TeamManager({
     });
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       {/* Members */}
-      <div className="lg:col-span-2 space-y-6">
-        <Card elevated className="overflow-hidden p-0">
-          <div className="p-5 border-b-2 border-black flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
-              Members
-            </h4>
+      <div className="space-y-6 lg:col-span-2">
+        <Card className="overflow-hidden p-0">
+          <div className={PANEL_HEAD}>
+            <div className="flex items-center gap-2">
+              <span aria-hidden="true" className="text-text-muted">
+                <Users className="h-4 w-4" />
+              </span>
+              <span className="text-sm font-medium text-text">Members</span>
+            </div>
+            <span className="text-xs text-text-muted tabular-nums">
+              {members.length} {members.length === 1 ? "person" : "people"}
+            </span>
           </div>
           {members.length === 0 ? (
-            <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-10 text-center">
-              No members yet
-            </p>
+            <p className="px-5 py-10 text-center text-sm text-text-muted">No members yet</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left border-collapse">
-                <thead>
-                  <tr className="bg-neutral-100 border-b-2 border-black font-mono text-[10px] text-black font-bold uppercase tracking-wider">
-                    <th className="py-3.5 px-5">Member</th>
-                    <th className="py-3.5 px-4">Role</th>
-                    <th className="py-3.5 px-4">CRM Role</th>
-                    <th className="py-3.5 px-4">Permissions</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Members"
+              className="overflow-x-auto"
+            >
+              <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                <caption className="sr-only">Members of this client</caption>
+                <TableHead>
+                  <tr>
+                    <TableHeaderCell>Member</TableHeaderCell>
+                    <TableHeaderCell>Role</TableHeaderCell>
+                    <TableHeaderCell>CRM Role</TableHeaderCell>
+                    <TableHeaderCell>Permissions</TableHeaderCell>
+                    <TableHeaderCell className="text-right">Actions</TableHeaderCell>
                   </tr>
-                </thead>
-                <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                </TableHead>
+                <TableBody>
                   {members.map((m) => (
-                    <tr key={m.userId} className="hover:bg-neutral-50">
-                      <td className="py-4 px-5">
-                        <span className="font-display font-bold text-black block">
-                          {m.name ?? "Unnamed"}
-                        </span>
-                        <span className="text-[10px] font-mono text-neutral-400">{m.email}</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex flex-col gap-1.5 items-start">
+                    <TableRow key={m.userId}>
+                      <TableCell>
+                        <span className="block font-medium text-text">{m.name ?? "Unnamed"}</span>
+                        <span className="font-mono text-xs text-text-muted">{m.email}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col items-start gap-1.5">
                           <StatusChip tone={roleTone(m.role)}>{m.role}</StatusChip>
-                          <select
-                            className="text-[10px] font-mono font-bold uppercase border border-black bg-white px-1 py-0.5 rounded-none focus:outline-none"
+                          <Select
+                            aria-label={`Tenant role for ${m.name ?? m.email}`}
+                            size="sm"
+                            className="min-w-[10rem]"
                             value={m.role}
                             disabled={pending}
                             onChange={(e) => changeRole(m.userId, e.target.value)}
@@ -211,17 +261,19 @@ export function TeamManager({
                                 {r}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         </div>
-                      </td>
-                      <td className="py-4 px-4">
+                      </TableCell>
+                      <TableCell>
                         {/* Which permission grid this member is enforced against
                             on the CRM routes. Separate from the column beside it:
                             that one is the legacy tenant role every other guard
                             still reads, and changing one must not change the
                             other. */}
-                        <select
-                          className="text-[10px] font-mono font-bold uppercase border border-black bg-white px-1 py-0.5 rounded-none focus:outline-none"
+                        <Select
+                          aria-label={`CRM role for ${m.name ?? m.email}`}
+                          size="sm"
+                          className="min-w-[10rem]"
                           value={m.roleId ?? ""}
                           disabled={pending}
                           onChange={(e) => changeCrmRole(m.userId, e.target.value)}
@@ -233,14 +285,16 @@ export function TeamManager({
                               {r.is_system ? "" : " (custom)"}
                             </option>
                           ))}
-                        </select>
-                      </td>
-                      <td className="py-4 px-4">
+                        </Select>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex flex-wrap gap-1.5">
                           <button
                             type="button"
                             disabled={pending}
                             onClick={() => togglePerm(m, "recordingsListen")}
+                            className="rounded-sm disabled:opacity-40"
+                            aria-pressed={m.recordingsListen}
                             title="Toggle listen permission"
                           >
                             <StatusChip tone={m.recordingsListen ? "solid" : "outline"}>
@@ -251,6 +305,8 @@ export function TeamManager({
                             type="button"
                             disabled={pending}
                             onClick={() => togglePerm(m, "recordingsExport")}
+                            className="rounded-sm disabled:opacity-40"
+                            aria-pressed={m.recordingsExport}
                             title="Toggle export permission"
                           >
                             <StatusChip tone={m.recordingsExport ? "solid" : "outline"}>
@@ -258,123 +314,94 @@ export function TeamManager({
                             </StatusChip>
                           </button>
                         </div>
-                      </td>
-                      <td className="py-4 px-4 text-right">
+                      </TableCell>
+                      <TableCell className="text-right">
                         <button
                           onClick={() => void remove(m.userId)}
                           disabled={pending}
-                          className="p-1.5 text-black hover:text-white hover:bg-black rounded-none border border-transparent hover:border-black disabled:opacity-40"
-                          aria-label="Remove member"
+                          className="rounded-md border border-transparent p-1.5 text-text-muted transition-colors duration-150 ease-out hover:border-border hover:bg-surface-hover hover:text-text disabled:opacity-40"
+                          aria-label={`Remove ${m.name ?? m.email}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
+                </TableBody>
               </table>
             </div>
           )}
         </Card>
 
         {/* Add member */}
-        <Card elevated className="space-y-4">
+        <Card className="space-y-4">
           <div className="flex items-center gap-2">
-            <UserPlus className="h-4 w-4" />
-            <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
-              Add Member
-            </h4>
+            <span aria-hidden="true" className="text-text-muted">
+              <UserPlus className="h-4 w-4" />
+            </span>
+            <span className="text-sm font-medium text-text">Add member</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-                Email
-              </label>
-              <input
-                className={inputClass}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <FormField label="Email" name="member-email">
+              <Input
+                type="email"
                 placeholder="person@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-                Name
-              </label>
-              <input
-                className={inputClass}
+            </FormField>
+            <FormField label="Name" name="member-name">
+              <Input
                 placeholder="Full name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-                Role
-              </label>
-              <select className={selectClass} value={role} onChange={(e) => setRole(e.target.value)}>
+            </FormField>
+            <FormField label="Role" name="member-role">
+              <Select value={role} onChange={(e) => setRole(e.target.value)}>
                 {ROLES.map((r) => (
                   <option key={r} value={r}>
                     {r}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div className="flex items-end gap-4 pb-1">
-              <label className="flex items-center gap-2 text-xs font-mono font-bold uppercase cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 border-2 border-black rounded-none"
-                  checked={listen}
-                  onChange={(e) => setListen(e.target.checked)}
-                />
-                Listen
-              </label>
-              <label className="flex items-center gap-2 text-xs font-mono font-bold uppercase cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 border-2 border-black rounded-none"
-                  checked={exportPerm}
-                  onChange={(e) => setExportPerm(e.target.checked)}
-                />
-                Export
-              </label>
+              </Select>
+            </FormField>
+            <div className="flex flex-wrap items-end gap-4 pb-1">
+              <Checkbox
+                label="Listen"
+                checked={listen}
+                onChange={(e) => setListen(e.target.checked)}
+              />
+              <Checkbox
+                label="Export"
+                checked={exportPerm}
+                onChange={(e) => setExportPerm(e.target.checked)}
+              />
             </div>
           </div>
 
           <div className="flex items-center justify-end">
-            <BrutalButton
-              shadow
-              disabled={pending || !email.trim()}
-              onClick={addMember}
-            >
+            <Button type="button" onClick={addMember} loading={pending} disabled={!email.trim()}>
               <Plus className="h-4 w-4" />
-              {pending ? "SAVING…" : "ADD MEMBER"}
-            </BrutalButton>
+              Add member
+            </Button>
           </div>
         </Card>
       </div>
 
       {/* Workspaces */}
       <div className="space-y-6">
-        <Card elevated className="space-y-4">
+        <Card className="space-y-4">
           <MonoLabel>Workspaces</MonoLabel>
           <div className="space-y-3">
             {workspaces.length === 0 ? (
-              <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-6 text-center">
-                No workspaces yet
-              </p>
+              <p className="py-6 text-center text-sm text-text-muted">No workspaces yet</p>
             ) : (
               workspaces.map((w) => (
-                <div
-                  key={w.id}
-                  className="p-3.5 rounded-none border-2 border-neutral-200 bg-white"
-                >
-                  <span className="font-display font-black text-black text-sm block uppercase tracking-tight">
-                    {w.name}
-                  </span>
-                  <span className="text-[10px] font-mono text-neutral-400 font-bold">
+                <div key={w.id} className="rounded-md border border-border bg-surface p-3.5">
+                  <span className="block font-medium text-text">{w.name}</span>
+                  <span className="font-mono text-xs text-text-muted">
                     {w.id.slice(0, 8)} · <LocalTime iso={w.created_at} mode="date" />
                   </span>
                 </div>
@@ -382,25 +409,25 @@ export function TeamManager({
             )}
           </div>
 
-          <div className="space-y-2 border-t-2 border-neutral-200 pt-4">
-            <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-              New Workspace
-            </label>
-            <input
-              className={inputClass}
-              placeholder="e.g. West Coast Sales"
-              value={wsName}
-              onChange={(e) => setWsName(e.target.value)}
-            />
-            <BrutalButton
+          <div className="space-y-2 border-t border-border pt-4">
+            <FormField label="New workspace" name="workspace-name">
+              <Input
+                placeholder="e.g. West Coast Sales"
+                value={wsName}
+                onChange={(e) => setWsName(e.target.value)}
+              />
+            </FormField>
+            <Button
+              type="button"
               variant="secondary"
               className="w-full"
-              disabled={pending || !wsName.trim()}
               onClick={createWorkspace}
+              loading={pending}
+              disabled={!wsName.trim()}
             >
               <Plus className="h-4 w-4" />
-              {pending ? "CREATING…" : "CREATE WORKSPACE"}
-            </BrutalButton>
+              Create workspace
+            </Button>
           </div>
         </Card>
       </div>

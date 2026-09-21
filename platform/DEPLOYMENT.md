@@ -327,8 +327,8 @@ The response contains `adminKey` **once** — it is stored only as a hash. That 
 instance id is what the activation QR encodes.
 
 Then set `DEV_ORG_ID` / `DEV_WORKSPACE_ID` in `.env.production` to that org and rebuild the
-web image. The console's per-tenant pages (dashboard, calls, agents, search, usage, team,
-api-keys, crm) still resolve their org from those variables rather than from the signed-in
+web image. The console's per-tenant pages (dashboard, calls, agents, search, usage,
+client-config, crm) still resolve their org from those variables rather than from the signed-in
 session; only `/instances` is genuinely multi-tenant. See §7.
 
 Finally, give the customer their own login: **Instances → \<customer\> → Owner Logins → Create

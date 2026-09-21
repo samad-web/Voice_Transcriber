@@ -90,11 +90,14 @@ Owner pages never consult `?org=` at all — the org comes only from the verifie
   /instances/[id]            → single-tenant control panel (policy, ASR settings, transcription toggle,
                                erasure, owner-login management, key/device management, embedded CRM, audit log, delete)
   /instances/[id]/calls      → per-tenant call log (reuses the calls explorer) with pipeline-status filter chips
-  /team                      → members + roles/permissions + workspaces, per selected tenant
-  /api-keys                  → API key issuance/revocation, per selected tenant
+  /client-config             → one client's Team / Roles & permissions / API keys, as three tabs
+                               (?tab=team|roles|keys), per selected client. Replaced the three
+                               top-level /team, /roles and /api-keys pages: all three are org_id
+                               rows, so they are client-level assets, not platform ones.
   /usage                     → metering (calls/minutes/tokens/devices vs. plan limits) + Stripe invoice links
 
 Legacy redirects (next.config.ts): /devices → /instances, /devices/activation → /instances/new, /compliance → /instances
+Retired-route redirects (page.tsx): /team → /client-config?tab=team, /roles → ?tab=roles, /api-keys → ?tab=keys (each preserves ?org=)
 ```
 
 Every `page.tsx` is a server component that fetches its own data; nearly every interactive piece (`*-explorer.tsx`, `*-manager.tsx`, `*-form.tsx`, drawers, the Kanban board, sidebar/mobile nav) is a client component wired to `"use server"` action files that call the API and `revalidatePath(...)` afterward.
@@ -103,7 +106,7 @@ Every `page.tsx` is a server component that fetches its own data; nearly every i
 
 - **Root layout** (`app/layout.tsx`) only sets up fonts (Inter / Space Grotesk / JetBrains Mono via `next/font/google`) and the base background/text color — no nav lives here.
 - Each route group supplies its own shell: `<Sidebar>` (desktop, fixed rail) + `<MobileNav>` (slide-in drawer, `motion/react`), both driven by a shared `area: "platform" | "owner"` prop rather than passing icon-bearing nav arrays through server→client props (icons are components and can't cross that boundary as RSC props).
-- **Platform nav** (9 items): Platform Hub, Call Log Explorer, Search, AI Agent Studio, Instances, CRM Integrations, Team, API Keys, Usage.
+- **Platform nav**, grouped into five headings by `PLATFORM_NAV_SECTIONS` (`lib/nav.ts` is the source of truth — this list goes stale, and did): *Call intelligence* (Call Log Explorer, Search, AI Agent Studio) · *Growth* (Funnel Leads, Booking Slots) · *Clients* (Instances, Configuration, Usage) · *CRM setup* (CRM Integrations, Custom Fields, Automations, Targets) · *Access* (Superadmins), with Platform Hub alone above the first heading. "Access" holds only our own staff; a client's people, roles and keys are theirs and sit under *Clients*.
 - **Owner nav** (3 items only, deliberately narrow): Dashboard, Lead Board, All Leads — an owner literally cannot navigate to an operator-only route because it's not in their nav array, on top of the layout-level redirect.
 - Both groups define a `loading.tsx` that renders the *real* page title immediately (via longest-prefix nav matching on the pathname) with skeleton content underneath, so a nav click doesn't sit on a blank screen while the target page's server fetch runs.
 - `<TenantSwitcher>` renders nothing for single-tenant operators and a row of tenant-name links (`?org=<id>`) once there's more than one — used on every tenant-scoped operator page.

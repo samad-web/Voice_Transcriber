@@ -92,6 +92,9 @@ export class AuthService {
         recordingsExport: row.recordings_export,
         viaAdminKey: false,
         ownerRole: parseOwnerRole(row.owner_role),
+        // A login belongs to a member of this org; a platform operator holds
+        // no membership and mints no session here.
+        operatorEmail: null,
       },
     };
   }
@@ -299,6 +302,10 @@ export class AuthService {
       recordingsExport: row.recordings_export,
       viaAdminKey: false,
       ownerRole: parseOwnerRole(row.owner_role),
+      // A bearer session belongs to a member of this org, never to a platform
+      // operator - an operator has no membership and so resolves no session
+      // here at all. Null is the fact, not a placeholder.
+      operatorEmail: null,
     };
   }
 

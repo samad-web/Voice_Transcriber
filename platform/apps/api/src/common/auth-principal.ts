@@ -17,6 +17,25 @@ export interface Principal {
    * membership predates personas.
    */
   ownerRole: OwnerRole | null;
+  /**
+   * WHICH platform operator is behind an admin-key request, when one is
+   * (migration 0122). Null for a tenant's own console user, for a Bearer
+   * session, and for any script holding the bare admin key.
+   *
+   * A platform operator has no `users` row - they are a Supabase auth account
+   * with no membership - so `userId` cannot name them and this carries their
+   * email instead. `CallAccessGuard` needs it to attribute an access request
+   * to a person; with no value it has nobody to attribute to and refuses,
+   * which is the fail-closed direction.
+   *
+   * Caller-asserted, like `x-caller-user-id`, and trusted on the same
+   * grounds: the web tier is the only holder of the admin key and it is
+   * forwarding an identity it resolved server-side from a verified Supabase
+   * session moments earlier. It grants nothing on its own - naming an
+   * operator only ever decides WHOSE grant is looked up, and a grant that
+   * does not exist denies exactly as an absent header does.
+   */
+  operatorEmail: string | null;
 }
 
 export interface PrincipalRequest extends Request {

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Card, MonoLabel, Skeleton } from "@aura/ui";
+import { Card, Skeleton } from "@aura/ui";
 import { OWNER_ROLE_ADMINS } from "@aura/shared";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { viewQueryFrom } from "@/lib/list-views";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
 import { SavedViewsBar } from "../saved-views/saved-views-bar";
 import { loadSavedViews } from "../saved-views/load";
 import type { Lead, Project, Stage } from "../types";
@@ -76,26 +77,22 @@ export default async function LeadsPage({
   // outage should cost the filter row, not the whole leads page. `?? []`
   // rather than a failure branch - the table renders fine without it. Same for
   // the roster and the saved views.
-  const [data, projects, team, views] = await Promise.all([
-    ownerGet<ListResponse>(`/v1/leads?${query}`),
+  const [result, projects, team, views] = await Promise.all([
+    ownerTry<ListResponse>(`/v1/leads?${query}`),
     ownerGet<{ projects: Project[] }>("/v1/projects"),
     canReassign ? ownerGet<{ telecallers: TelecallerOption[] }>("/v1/owner/team") : Promise.resolve(null),
     loadSavedViews("leads"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="All Leads" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="leads" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

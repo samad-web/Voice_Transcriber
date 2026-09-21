@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowRight, Building2 } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, useAlert } from "@aura/ui";
+import { BrutalButton, Card, MonoLabel, Select, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import { EnrollmentCredentials } from "../enrollment-credentials";
 import { createTenantAction, type ProvisionResult } from "./actions";
@@ -91,17 +91,13 @@ export function InstanceForm() {
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
               Consent Policy
             </label>
-            <select
-              className={inputClass}
-              value={consentPolicy}
-              onChange={(e) => setConsentPolicy(e.target.value)}
-            >
+            <Select value={consentPolicy} onChange={(e) => setConsentPolicy(e.target.value)}>
               {CONSENT_POLICIES.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">

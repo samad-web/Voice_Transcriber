@@ -52,7 +52,7 @@ export function EnrollmentCredentials({
       .catch(() => setQrDataUrl(null));
   }, [result.instanceId, result.adminKey, serverUrl]);
 
-  // Sync, not `async` - see api-keys-manager.tsx: an async onClick hands React a
+  // Sync, not `async` - see client-config/keys-manager.tsx: an async onClick hands React a
   // promise it discards, so a rejected clipboard write would only ever appear as
   // an unhandled rejection. The admin key is shown once, so a failed copy has to
   // say so rather than pass for a successful one.

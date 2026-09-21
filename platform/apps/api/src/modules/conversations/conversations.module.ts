@@ -8,6 +8,7 @@ import { MessagingChannelsController } from "./messaging-channels.controller";
 import { MessagingWebhookController } from "./messaging-webhook.controller";
 import { ConversationQualificationController } from "./conversation-qualification.controller";
 import { OptOutsController } from "./opt-outs.controller";
+import { WhatsAppPairingController } from "./whatsapp-pairing.controller";
 import { WhatsAppSendController } from "./whatsapp-send.controller";
 
 /**
@@ -33,6 +34,12 @@ import { WhatsAppSendController } from "./whatsapp-send.controller";
     ConversationsController,
     MessagingChannelsController,
     EmbeddedSignupController,
+    // The two WhatsApp CONNECT flows, kept apart because they reach different
+    // kinds of account: EmbeddedSignup connects a WhatsApp Business Account
+    // through Meta/Wasi, WhatsAppPairing links an ordinary personal number as
+    // a WhatsApp Web device. One page used to offer both as if they were two
+    // vendors of one thing, and described the WABA one as the personal option.
+    WhatsAppPairingController,
     MessagingWebhookController,
     WhatsAppSendController,
     OptOutsController,

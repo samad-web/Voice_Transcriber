@@ -3,8 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AGENT_KIND_ORDER, AGENT_KIND_SPECS, type AgentKind } from "@aura/shared";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 
 export const metadata: Metadata = { title: "AI Agent Studio" };
 
@@ -49,21 +50,17 @@ export default async function AgentStudioPage() {
   const role = owner.membership.ownerRole;
   if (role !== "owner" && role !== "manager") redirect("/owner");
 
-  const data = await ownerGet<StudioResponse>("/v1/owner/agents");
+  const result = await ownerTry<StudioResponse>("/v1/owner/agents");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="AI Agent Studio" context="Conversations" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The studio could not be loaded. Try again in a moment.
-          </p>
-        </Card>
+        <LoadFailure what="saved agents" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   const byKind = (kind: AgentKind) => data.agents.filter((a) => a.kind === kind);
   const workspaceName = new Map(data.workspaces.map((w) => [w.id, w.name]));

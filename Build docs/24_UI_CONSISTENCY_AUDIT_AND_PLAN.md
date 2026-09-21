@@ -354,3 +354,168 @@ resolve the reported bug. Struck `app/(platform)/instances/page.tsx` from `conso
 cleaned file stays listed). Verified: `tsc --noEmit` clean, `console-palette.test.ts` 7/7 (18 files
 now remain on the ratchet, down from 19). Not screenshotted in dark mode — no dev server running in
 this session; do that before closing this out, since the whole point of the report was a visual bug.
+
+### Run log — 2026-09-19 (dropdown standardization + error presentation)
+
+Two dimensions this doc had not covered: **dropdowns** (§4 Phase B's method, applied to a new
+primitive family) and **error presentation**, which turned out not to be a presentation problem at
+all.
+
+**Dropdowns — the cause was in a `.ts` file the ratchet cannot see.** All 15 raw `<select>`
+elements across 7 files now render through `@aura/ui`'s `Select`. They were not each hand-rolled:
+6 of the 7 files pulled `selectClass`/`inputClass` from `apps/web/lib/form.ts`, whose `BASE` is
+`border-2 border-black bg-neutral-50 rounded-none` — v1 brutalist, and `bg-neutral-50` is a stock
+Tailwind colour. It never tripped `console-palette.test.ts` because that suite scans only `.tsx`
+under `app/`, `components/` and `packages/ui/src`; a `.ts` file in `lib/` exporting class strings is
+outside all three. **That blind spot fed eleven files.** `selectClass` is deleted, with a comment in
+`form.ts` recording why it must not come back. Worth considering whether the suite should scan
+`lib/**/*.ts` for the same patterns — not done here, since it would likely surface more than this.
+
+**`Select`/`Input` gained a real `size` prop.** The team grid held two dropdowns hand-rolled at
+`text-[10px] px-1 py-0.5` because the kit offered nothing between "full-width form control" and
+"write your own", and passing a smaller `className` would have hit the ordering trap doc 22 §4
+records against `Card` — `cx()` is a plain join, so `text-xs` does not replace `text-sm`, it merely
+joins it and loses. Padding and type size moved out of `CONTROL_BASE` into `CONTROL_SIZES`
+(`sm`/`md`), so the token is swapped rather than overridden and there is no tie to break. `md` is
+byte-identical to the previous `CONTROL_BASE`, so no existing call site moves. `size` shadows the
+native attribute on both elements (character width on `<input>`, visible rows on `<select>`);
+nothing in either app passed it, and it buys the same `size="sm"` spelling `Button` already uses.
+
+**A source file contained two literal NUL bytes.** `app/(platform)/instances/[id]/asr-settings.tsx`
+wrote `terms.join("<NUL>")` — a deliberate collision-proof array comparison, but as raw NULs rather
+than the escape. `file` reports the source as binary data, so ripgrep skips it silently: **two of
+the fifteen `<select>`s were invisible to code search**, and to two independent audit passes over
+this exact question. Replaced with ` ` escapes at byte level (read_bytes/replace/write_bytes,
+per the encoding rules this repo has been bitten by before). Likely cause, reproduced accidentally
+while fixing it: writing that escape inside a tool call whose argument is JSON decodes it straight
+back to a raw NUL. Any file whose `<select>`/class audit matters is worth checking with
+`file <path>` rather than trusting a grep to have seen it.
+
+**Errors — the presentation was a symptom; the data layer was the cause.** The brief was to route
+errors through prominent standardized alerts. The audit found the console already does this well for
+*actions* (`useAlert` at 118 bindings / 246 invocations). What it could not do was report a *load*
+failure, and the reason was structural: `ownerGet`/`apiGetAs` collapse every outcome — 403, 500,
+dead socket — to `null` (207 reads do this against 5 that use the reason-preserving `apiTry`). The
+51 hand-written "Data unavailable" cards were therefore not merely duplicated, they were
+*incapable* of saying what happened. Several guessed, and guessed wrong in a way that matters:
+`reports/builder/data` and `calls/triage` both told the reader their role might not grant access,
+on every failure including a plain outage.
+
+Added `ownerTry()` (`lib/owner-context.ts`), the `ownerGet` counterpart that keeps `ApiResult`, and
+`components/load-failure.tsx`, which renders the reason per `ApiErrorKind` — a different headline
+and remedy for auth / forbidden / notfound / server / network, the server's own message only for the
+two kinds where it is actionable, and a sign-in link on `auth`. It wraps `ErrorBanner`, so it is
+`role="alert"` and carries the error tone — **orange, not red**, per state.tsx; a failed panel
+painted red would compete with the missed-call count. **All 36 owner pages are migrated; a grep for
+"Data unavailable" across `app/(owner)` now returns zero.** Reads that deliberately degrade
+(option lists, saved views, rollups) were left on `ownerGet` on purpose.
+
+**`apps/web` had no `error.tsx` and no `not-found.tsx` — none, anywhere.** Every uncaught throw fell
+to Next's built-in error page, and all 16 `notFound()` calls to its default 404: unstyled, unthemed,
+no way back. Both added at `app/`, above the route groups. The 404 stays deliberately vague about
+why, because `notFound()` is what the tenant guards call and confirming that a record exists but
+belongs to another workspace would leak isolation. The error page shows `digest`, not
+`error.message`, which React replaces in production anyway.
+
+**Silent failures fixed** (the ones that showed as success or as "nothing here"):
+- `calls/triage/actions.ts` — `searchCandidatesAction` returned `{ leads: [] }` on all three failure
+  arms. An empty array is "we looked and found nothing", so the dialog rendered "No leads matched.
+  Close this and press Create lead instead" — a failed search instructing the operator to create a
+  duplicate of a lead that already existed. Now returns `{ leads?, error? }` like the other ~180
+  actions; the dialog shows an `ErrorBanner` and suppresses the create-lead advice.
+- `inbox-client.tsx` — the unread badge was zeroed whether or not the mark-read write succeeded.
+- `deals/stage-pack-picker.tsx` — a bare `return` on failure left "Loading the options…" forever.
+- `tenant-context-switcher.tsx` — a failed workspace switch was a 4-second **toast**. Which tenant
+  you are in decides what every figure on the next screen means; it is now a modal, per feedback.tsx.
+- The three `window.confirm` sites (`staff/team-table.tsx` ×2, `staff/roles-grid.tsx`) are on
+  `useConfirm()`. Their justifying comment — "this table is not inside a ConfirmProvider" — was
+  factually wrong: the provider is at `app/layout.tsx:55` and the same component already called
+  `useAlert()`. Suspend takes `requireTyped: false` (reversible); remove and delete-role keep the
+  DELETE gate. `window.confirm` is now absent from `apps/web`.
+
+Per-field validation was deliberately **not** collapsed into modals: a modal cannot say which of four
+fields is wrong once dismissed, and inline text next to the field is what WCAG 3.3.1 asks for. The
+rule applied is "every failure raises a modal, and field errors also stay inline".
+
+Verified: `tsc --noEmit` clean across everything in scope, `packages/ui` typecheck clean,
+`console-palette.test.ts` 7/7, `next lint --max-warnings=0` clean for every file touched. **Not
+screenshotted** — no dev server in this session, and `LoadFailure` has five visual arms that have
+never been seen rendered. Do that before treating this as closed.
+
+⚠️ **Concurrent work.** This ran while another developer was refactoring `app/(platform)` in the same
+working tree — `{api-keys,roles,team}/*` moving into `client-config/`, plus a new
+`messaging-setup/personal-whatsapp-panel.tsx` and API changes. Their `(platform)` files were left
+alone apart from the `<select>` swaps agreed up front, which do not touch `font-display` or
+`BrutalButton`. Type errors currently present in `client-config/`, `personal-whatsapp-panel.tsx`,
+`lib/notification-kinds.ts`, `components/skeletons.test.ts` and `app/zz-gallery.tmp.test.ts` are
+theirs, not from this work. That last one looks like a scratch file that should not be committed.
+
+**Not done, tracked:** the remaining reasonless reads outside `(owner)` (`(platform)`'s 14 cards,
+which leak `pnpm --filter @aura/api dev` to production operators, and its own `DataUnavailable`
+component); `reports/page.tsx` and `reports/sla/page.tsx`'s local `NotPermitted()` cards, still
+`ownerGet`-null-driven; the ~9 remaining swallowed call-site failures from the audit
+(`board.tsx`, `calls-explorer.tsx` notes, the CRM delivery retries in `integration-card.tsx`);
+`print/page.tsx:80-84`, which still reports an API failure to the user as "this report does not
+exist". ~~And the four hand-rolled dropdown panels.~~ — **done, see the run log below.**
+
+### Run log — 2026-09-19, continued (the four dropdown panels, and `Popover`)
+
+The item left tracked above. `packages/ui/src/popover.tsx` is new, and all four anchored panels —
+`tenant-context-switcher`, `global-search`, `notification-bell`, `record-picker` — now render
+through it. A grep for an absolutely-positioned `shadow-lg` panel, and for
+`addEventListener("mousedown")`, both return **zero** across `apps/web`.
+
+**What they had actually converged on was the chrome, and only the chrome.** All four spelled
+`rounded-md border border-border bg-surface shadow-lg` identically — and then diverged on
+everything invisible in a screenshot: `z-50 / z-50 / z-50 / z-40`, `mt-2 / mt-2 / mt-2 / mt-1`,
+Escape on a document listener in three but only on the input's own `onKeyDown` in the fourth,
+`aria-haspopup` on one of four, no ARIA whatsoever on another — and **none of the four returned
+focus to its trigger on close**, so dismissing the bell with Escape left focus on `<body>` and the
+next Tab started from the top of the document (WCAG 2.4.3). That is the case for a primitive: the
+part that was copied stayed consistent, and every part that had to be *remembered* drifted.
+
+**`Popover` owns position, chrome and dismissal. It does not own content semantics.** No listbox
+role, no roving tabindex, no arrow keys — the four panels hold a workspace list, a tablist, grouped
+search hits and search results, and the right ARIA for each belongs to the content. select.tsx is
+already on record that a hand-rolled listbox is the most common source of keyboard and
+screen-reader regressions; baking one in here would have made three of the four fight it. It is
+also explicitly **not** a modal: no focus trap, no inert background. That is `Dialog`, and trapping
+focus in a bell popover is how you get an icon nobody can tab past.
+
+Escape is handled in the **capture** phase, matching `tooltip.tsx`'s reasoning — a popover inside a
+Dialog has to swallow Escape before the dialog does, or dismissing the popover closes the dialog
+underneath it. Dismissal is on `mousedown`, not `click`, so a drag-to-select that ends outside the
+panel does not dismiss it and the panel is gone before the next control takes focus.
+
+**Focus restoration is conditional, and that is the subtle part.** It hands focus back only when
+focus is still inside the popover or has gone loose to `<body>`. If the dismissal happened because
+the person clicked some other control, focus is already correctly there and stealing it back would
+make that click appear to do nothing. `global-search` opts out entirely (`restoreFocus={false}`):
+`go()` deliberately blurs and navigates, and pulling focus to the search box as the next route
+mounts would drag the viewport back to the header.
+
+One bug found and fixed in `Popover` itself before it shipped: `onDismiss` is an inline arrow at
+every call site, so it is a new function each render. With it in the effect's deps the effect re-ran
+on every render while open and recaptured the focus target from whatever had focus *then* — by which
+point that is something inside the panel, so restoration would have handed focus back to the panel
+it had just closed. It is held in a ref, with the effect keyed on `open` alone.
+
+**`record-picker` gained the accessibility it never had.** It was a text box with an absolutely
+positioned `<ul>` and **no `role`, no `aria-expanded`, no `aria-activedescendant`, no keyboard
+path** — a screen reader announced a plain text field and gave no indication a list had appeared
+beneath it. It is now the same combobox `global-search` already implements (arrow keys, Enter,
+`aria-activedescendant`, `role="option"`, `onMouseDown` so selection beats the input's blur), rather
+than a second invented pattern. `notification-bell` gained the `aria-haspopup` it was missing.
+
+**One error surface fixed in passing**, from the tracked list above: `global-search` rendered
+"Search is unavailable right now" in the same muted grey, in the same position, as "No contacts,
+deals or notes match X" — a failed search and an empty result were the same sentence in the same
+colour, so the reader concluded the record did not exist. Both it and the partial-failure line are
+now `ErrorBanner`.
+
+Verified: `packages/ui` typecheck clean, `apps/web` typecheck clean in scope,
+`console-palette.test.ts` 7/7, `next lint --max-warnings=0` clean for all five files, and prettier
+applied to the files whose JSX nesting changed. **Not screenshotted, and this one wants it more than
+the last batch**: four panels' positioning changed anchor mechanism at once, and the keyboard paths
+(Escape inside a Dialog, focus return, the picker's new arrow keys) are behaviour no test here
+covers. Open the owner console and exercise all four before treating this as closed.

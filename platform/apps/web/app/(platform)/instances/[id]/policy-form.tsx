@@ -2,8 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ShieldCheck } from "lucide-react";
-import { BrutalButton, Card, useAlert, useToast } from "@aura/ui";
-import { selectClass } from "@/lib/form";
+import { BrutalButton, Card, Input, Select, useAlert, useToast } from "@aura/ui";
 import { updatePolicyAction } from "./actions";
 
 export function PolicyForm({
@@ -62,41 +61,35 @@ export function PolicyForm({
         <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
           Consent Regime
         </label>
-        <select
-          className={selectClass}
-          value={consentPolicy}
-          onChange={(e) => setConsentPolicy(e.target.value)}
-        >
+        <Select value={consentPolicy} onChange={(e) => setConsentPolicy(e.target.value)}>
           <option value="none">Bypass (allowed jurisdictions)</option>
           <option value="tone">Tone beep</option>
           <option value="tone_and_tts">Tone + TTS announcement</option>
           <option value="prohibited">Prohibited (fleet lockout)</option>
-        </select>
+        </Select>
       </div>
 
       <div className="space-y-1.5">
         <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
           On Consent Failure
         </label>
-        <select
-          className={selectClass}
-          value={onConsentFailure}
-          onChange={(e) => setOnConsentFailure(e.target.value)}
-        >
+        <Select value={onConsentFailure} onChange={(e) => setOnConsentFailure(e.target.value)}>
           <option value="do_not_record">Do not record</option>
           <option value="record_and_flag">Record &amp; flag</option>
-        </select>
+        </Select>
       </div>
 
       <div className="space-y-1.5">
         <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
           Retention (days)
         </label>
-        <input
+        {/* Was wearing `selectClass` - the uppercase-bold *dropdown* styling on a
+            numeric field. Not a dropdown, so it takes Input, which shares the
+            same CONTROL_BASE edge the Select above it now uses. */}
+        <Input
           type="number"
           min={1}
           max={3650}
-          className={selectClass}
           value={retentionDays}
           onChange={(e) => setRetentionDays(e.target.value)}
         />

@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  Card,
   EmptyState,
-  MonoLabel,
   StatusChip,
   Table,
   TableBody,
@@ -12,9 +10,10 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerTry, requireFeature } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
 import { NewQuotationDialog } from "./new-quotation-dialog";
 import type { Quotation, QuotationStatus } from "./actions";
@@ -61,21 +60,17 @@ export default async function QuotationsPage({
   if (status) query.set("status", status);
   if (offset > 0) query.set("offset", String(offset));
 
-  const data = await ownerGet<ListResponse>(`/v1/quotations?${query}`);
+  const result = await ownerTry<ListResponse>(`/v1/quotations?${query}`);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Quotations" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="quotations" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

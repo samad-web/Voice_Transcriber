@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 import { TriageQueue } from "./triage-queue";
 import type { TriageCounts, UnmatchedCall } from "./actions";
 
@@ -54,23 +54,19 @@ export default async function CallTriagePage({
   // (organizations.connected_call_seconds, 0090). A two-second ring-out has
   // nothing in it to triage, and leaving them in makes the queue mostly noise
   // on a floor that dials a lot.
-  const data = await ownerGet<TriageResponse>(
+  const result = await ownerTry<TriageResponse>(
     `/v1/owner/call-triage?status=${status}&minSeconds=15&limit=100`,
   );
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Unmatched calls" context="Conversations" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer, or call intelligence is not enabled on this instance.
-          </p>
-        </Card>
+        <LoadFailure what="unmatched calls" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

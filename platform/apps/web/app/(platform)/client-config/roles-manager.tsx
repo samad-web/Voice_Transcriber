@@ -16,7 +16,7 @@ import {
   createRoleAction,
   fetchRolePermissionsAction,
   saveRolePermissionsAction,
-} from "./actions";
+} from "./roles-actions";
 import {
   PERMISSION_ACTIONS,
   PERMISSION_OBJECT_TYPES,
@@ -24,17 +24,17 @@ import {
   type PermissionObjectType,
   type PermissionScope,
   type Role,
-} from "./types";
+} from "./roles-types";
 
 /** "objectType:action" - the grid's addressing scheme, and the shape of the Set below. */
 type GrantKey = `${PermissionObjectType}:${PermissionAction}`;
 const grantKey = (o: PermissionObjectType, a: PermissionAction): GrantKey => `${o}:${a}`;
 
 /**
- * Define custom roles and edit ANY role's permission grid - including a
- * system role's, which is the point: an operator adjusting what "Viewer"
- * can see is normal, renaming or archiving the row itself is not (roles.
- * controller.ts rejects that).
+ * Define this client's custom roles and edit ANY of their roles' permission
+ * grid - including a system role's, which is the point: an operator adjusting
+ * what "Viewer" can see for a client is normal, renaming or archiving the row
+ * itself is not (roles.controller.ts rejects that).
  *
  * Both halves are now live. The checkboxes are enforced by
  * `CrmPermissionsGuard`; the "Which records" column is enforced by a predicate

@@ -24,7 +24,8 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
-import { CallReadChips, TranscriptBody, humanize } from "../call-intel";
+import { InlineListSkeleton } from "@/components/skeletons";
+import { CallReadChips, TranscriptBody, TranscriptSkeleton, humanize } from "../call-intel";
 import {
   formatDuration,
   num,
@@ -850,7 +851,7 @@ function CallDrawer({
                 {error}
               </p>
             ) : detail === null ? (
-              <p className="text-xs text-text-muted">Loading…</p>
+              <TranscriptSkeleton />
             ) : (
               <TranscriptBody detail={detail} />
             )}
@@ -860,7 +861,7 @@ function CallDrawer({
           <div className="space-y-2 border-t border-border pt-4">
             <MonoLabel>Notes</MonoLabel>
             {notes === null ? (
-              <p className="text-xs text-text-muted">Loading…</p>
+              <InlineListSkeleton rows={2} label="Loading notes" />
             ) : notes.length === 0 ? (
               <p className="text-xs text-text-muted">No notes yet</p>
             ) : (

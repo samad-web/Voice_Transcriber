@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
-import { INTEGRATIONS, type IntegrationStatus } from "@aura/shared";
+import { INTEGRATIONS, providersForKind, type IntegrationStatus } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
@@ -55,9 +55,10 @@ export class IntegrationsController {
         [
           `SELECT enabled_modules FROM organizations LIMIT 1`,
 
-          // Messaging, split by provider family. `waba` is Meta's Cloud API;
-          // `wasi`/`evolution` are the paired-handset kind. They are different
-          // products with different rules and the hub says so.
+          // Messaging, split by provider family. `waba` and `wasi` both reach a
+          // WhatsApp Business Account - one direct, one through a Business
+          // Solution Provider; `evolution` is the paired-handset kind. They are
+          // different products with different rules and the hub says so.
           // No last_error here: messaging_channels does not carry one - a
           // provider failure surfaces on the message, not the channel - so the
           // hub reports connectedness for these and nothing more, rather than
@@ -153,8 +154,20 @@ export class IntegrationsController {
         string,
         { count: number; connected: boolean; lastError: string | null }
       > = {
-        whatsapp_waba: byChannel("whatsapp", ["waba"]),
-        whatsapp_personal: byChannel("whatsapp", ["wasi", "evolution"]),
+        // ── The split that was backwards ──────────────────────────────────
+        //
+        // `wasi` was listed under PERSONAL. It is not: Wasi is the operator's
+        // own Business Solution Provider - Meta Embedded Signup, a real WABA,
+        // approved templates, the 24-hour window. A business connecting its
+        // verified number through Wasi lit up the "personal number" row and
+        // left "WhatsApp Business API" reading as not connected, which is the
+        // exact inverse of the truth.
+        //
+        // Taken from the provider table now instead of a hand-written array,
+        // so a new transport is a row there rather than a string somebody has
+        // to remember to add in this file.
+        whatsapp_waba: byChannel("whatsapp", providersForKind("waba")),
+        whatsapp_personal: byChannel("whatsapp", providersForKind("personal")),
         instagram: byChannel("instagram"),
         facebook_messenger: byChannel("facebook"),
 

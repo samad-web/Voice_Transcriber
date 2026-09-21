@@ -29,6 +29,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 import { FcmService } from "../../fcm/fcm.service";
+import { RealtimeService } from "../realtime/realtime.service";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
 const SetTelecallerBody = z.object({
@@ -179,6 +180,7 @@ export class DevicesController {
     private readonly db: DbService,
     private readonly s3: S3Service,
     private readonly fcm: FcmService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -221,7 +223,7 @@ export class DevicesController {
 
     const refreshToken = randomBytes(32).toString("base64url");
 
-    return this.db.withOrg(token.org_id, async (client) => {
+    const enrolled = await this.db.withOrg(token.org_id, async (client) => {
       // Guard against concurrent use of the same key
       const used = await client.query(
         `UPDATE enrollment_tokens
@@ -234,13 +236,16 @@ export class DevicesController {
         throw new UnauthorizedException("enrollment key exhausted");
       }
 
+      // `enrollment_token_id` (0124) is what lets the owner console's pairing
+      // dialog see THIS phone arrive on THAT code, rather than guessing from
+      // "a device appeared on the same instance just now".
       const {
         rows: [device],
       } = await client.query(
         `INSERT INTO devices
            (org_id, instance_id, label, public_key, fingerprint, capture_capability,
-            refresh_token_hash, status, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', now())
+            refresh_token_hash, status, last_seen_at, enrollment_token_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', now(), $8)
          RETURNING id, status, created_at`,
         [
           token.org_id,
@@ -250,6 +255,7 @@ export class DevicesController {
           req.deviceFingerprint,
           req.captureCapability ?? null,
           sha256(refreshToken),
+          token.id,
         ],
       );
 
@@ -267,6 +273,21 @@ export class DevicesController {
       // Shown once; the device stores it in its Keystore-backed token store.
       return { deviceId: device.id, refreshToken };
     });
+
+    // Announced here, and only after the transaction above has committed. The
+    // global interceptor cannot do it: this route is unauthenticated apart from
+    // the token in the body, so no guard ever resolved a tenant for it to read.
+    // This signal is what moves an open pairing dialog from "scan this code"
+    // to "connected" the moment the phone lands, instead of on its next poll.
+    this.realtime.publish({
+      orgId: token.org_id,
+      topic: "device",
+      action: "created",
+      id: enrolled.deviceId,
+      at: new Date().toISOString(),
+    });
+
+    return enrolled;
   }
 
   /** Step 1 of device auth: hand out a short-lived nonce to sign. */

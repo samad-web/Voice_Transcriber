@@ -1,12 +1,22 @@
 import { PageHeader } from "@/components/page-header";
-import { SearchTableSkeleton } from "@/components/skeletons";
+import { TableBlockSkeleton, TabsSkeleton, ToolbarSkeleton } from "@/components/skeletons";
 
-/** Mirrors contacts/page.tsx: search box, then a 6-column table (Name, Email, Phone, Calls, Lead score, Last activity). */
+/**
+ * Mirrors contacts/page.tsx: the saved-views strip (only its "All contacts" tab;
+ * a user's own views join it after the fetch), a search box and three selects
+ * (Owner, Came in through, Sort; a Tag select joins them for a tenant that has
+ * tags), then an 8-column table with row selection: a checkbox, Name, Email,
+ * Owner, Tags, Calls, Lead score, Last activity.
+ */
 export default function ContactsLoading() {
   return (
     <>
       <PageHeader title="Contacts" context="Pipeline" />
-      <SearchTableSkeleton columns={6} />
+      <TabsSkeleton tabs={1} />
+      <ToolbarSkeleton search selects={3} />
+      <TableBlockSkeleton
+        columns={["check", "primary", "text", "text", "chip", "num", "num", "date"]}
+      />
     </>
   );
 }

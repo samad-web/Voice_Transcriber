@@ -116,7 +116,8 @@
     <string name="admin_enrolling">Enrolling…</string>
     <string name="admin_activation_failed">Activation failed: %1$s</string>
     <string name="admin_enrollment_cleared">Enrollment cleared.</string>
-    <string name="admin_scanned_confirm">Scanned instance + key. Confirm the server URL, then Activate.</string>
+    <string name="admin_scanned_confirm">Scanned. This code is for a different server - check the URL, then tap Activate.</string>
+    <string name="admin_scanned_already_activated">Scanned. This phone is already activated - tap Activate to enrol it again as a new device.</string>
     <string name="admin_scan_unrecognized">Unrecognized QR (expected the activation code from the web app).</string>
 
     <!-- In-app updates -->

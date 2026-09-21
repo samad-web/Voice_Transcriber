@@ -97,6 +97,19 @@ export class AdminKeyGuard implements CanActivate {
       const callerUserId = z.string().uuid().safeParse(firstHeader(req.headers["x-caller-user-id"]));
       const callerOwnerRole = OwnerRole.safeParse(firstHeader(req.headers["x-caller-owner-role"]));
 
+      // `x-operator-email` (0122) names WHICH platform operator is asking, for
+      // the call-access gate. Same "trusted fact" category as the two above -
+      // it decides whose grant is looked up and authorizes nothing by itself,
+      // so an unrecognised address denies exactly as an absent one does.
+      // Lower-cased here so the guard's lookup and the request row it writes
+      // agree on one spelling of a person.
+      const operatorEmail = z
+        .string()
+        .trim()
+        .email()
+        .max(320)
+        .safeParse(firstHeader(req.headers["x-operator-email"]));
+
       req.principal = {
         userId: callerUserId.success ? callerUserId.data : "admin-key",
         orgId: orgId ?? "",
@@ -105,6 +118,7 @@ export class AdminKeyGuard implements CanActivate {
         recordingsExport: true,
         viaAdminKey: true,
         ownerRole: callerOwnerRole.success ? callerOwnerRole.data : null,
+        operatorEmail: operatorEmail.success ? operatorEmail.data.toLowerCase() : null,
       };
       return true;
     }

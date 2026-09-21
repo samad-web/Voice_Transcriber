@@ -17,8 +17,10 @@ import {
   DEV_USER_ID,
   DEV_WORKSPACE_ID,
   apiGetAs,
+  apiTry,
   crossTenantHeaders,
 } from "@/lib/server-api";
+import type { ApiResult } from "@/lib/api-result";
 import { readActiveOrgPreference } from "@/lib/active-org";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { getSessionUser } from "@/lib/supabase/server";
@@ -468,6 +470,41 @@ export async function ownerGet<T>(path: string): Promise<T | null> {
   const owner = await getOwner();
   if (!owner) return null;
   return apiGetAs<T>(path, owner.membership.orgId, {
+    ownerRole: owner.membership.ownerRole,
+    userId: owner.userId,
+  });
+}
+
+/**
+ * `ownerGet` that keeps the reason. The counterpart to `apiTry`.
+ *
+ * ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+ *
+ * `ownerGet` returns `T | null`, and 163 call sites read that `null` as "show
+ * the Data unavailable card". The card is therefore unable to say anything
+ * about what happened, because by the time it renders the only surviving
+ * record of a 403-vs-500-vs-dead-socket is a `console.warn` on the server. An
+ * owner looking at an empty page has no way to tell "you don't have access to
+ * this" from "the API is down", and neither does the person they ring about
+ * it. That is the failure this fixes, and it is why the fix is here rather
+ * than in the card: presentation cannot recover information the data layer
+ * already discarded.
+ *
+ * Signed-out is returned as `auth` rather than a separate shape, so a page
+ * branches on one thing. It is the honest classification: no principal means
+ * no credentials, which is exactly what a 401 means.
+ */
+export async function ownerTry<T>(path: string): Promise<ApiResult<T>> {
+  const owner = await getOwner();
+  if (!owner) {
+    return {
+      ok: false,
+      kind: "auth",
+      status: 401,
+      message: "Not signed in to a workspace.",
+    };
+  }
+  return apiTry<T>(path, owner.membership.orgId, {
     ownerRole: owner.membership.ownerRole,
     userId: owner.userId,
   });

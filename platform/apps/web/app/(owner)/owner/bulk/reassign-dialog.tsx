@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Dialog, ErrorBanner, Select, useAlert } from "@aura/ui";
+import { Button, Dialog, ErrorBanner, Select, Skeleton, useAlert } from "@aura/ui";
+import { LoadingRegion } from "@/components/skeletons";
 import {
   bulkReassignAction,
   fetchAssigneeOptionsAction,
@@ -115,7 +116,12 @@ export function ReassignDialog({
       {loadError ? (
         <ErrorBanner>{loadError}</ErrorBanner>
       ) : options === null ? (
-        <p className="text-sm text-text-muted">Loading…</p>
+        <LoadingRegion label="Loading people" className="space-y-1.5">
+          <div className="flex h-5 items-center">
+            <Skeleton className="h-3.5 w-16" />
+          </div>
+          <Skeleton className="h-9.5 w-full rounded-sm" />
+        </LoadingRegion>
       ) : (
         <>
           <label htmlFor="bulk-reassign-target" className="text-sm font-medium text-text">

@@ -396,8 +396,14 @@ describe("platformNavSections", () => {
     expect(sectionOf("/leads")).toBe("growth");
     expect(sectionOf("/instances")).toBe("clients");
     expect(sectionOf("/usage")).toBe("clients");
+    // A client's team, roles and keys. It reaching "clients" rather than
+    // "access" IS the consolidation - see PLATFORM_SECTION_OF's note.
+    expect(sectionOf("/client-config")).toBe("clients");
     expect(sectionOf("/targets")).toBe("setup");
-    expect(sectionOf("/api-keys")).toBe("access");
+    // Access holds exactly one page now, and it is the one that must be pinned:
+    // it is also the only page reachable by the fallback, so if its map entry is
+    // ever dropped this assertion is what notices.
+    expect(sectionOf("/operators")).toBe("access");
   });
 });
 

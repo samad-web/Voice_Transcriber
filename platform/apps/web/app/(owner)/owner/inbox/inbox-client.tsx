@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   Button,
   ErrorBanner,
+  Select,
   StatusChip,
   useAlert,
   useConfirm,
@@ -274,8 +275,14 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
       // Zero the badge only if there was one - an unread_count already at 0
       // does not need a round trip every time somebody clicks a thread.
       if (res.conversation.unread_count > 0) {
-        await updateConversationAction(id, { markRead: true });
+        // The badge is zeroed only if the write actually succeeded. It used to
+        // be zeroed unconditionally with the result discarded, so a failed
+        // mark-read left the list showing "0 unread" for a thread the server
+        // still holds as unread - the count came back on the next reload, and
+        // in between, anyone working the inbox by badge skipped it.
+        const marked = await updateConversationAction(id, { markRead: true });
         if (selectedIdRef.current !== id) return;
+        if (marked.error) return;
         setThreads((prev) =>
           prev ? prev.map((t) => (t.id === id ? { ...t, unread_count: 0 } : t)) : prev,
         );
@@ -590,10 +597,11 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                     className="mt-2 w-full resize-none rounded-md border border-border-strong bg-surface p-2.5 text-sm text-text placeholder:text-text-muted"
                   />
                 ) : (
-                  <select
+                  <Select
+                    aria-label="Approved template"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    className="mt-2 h-9 w-full rounded-md border border-border-strong bg-surface px-2.5 text-sm text-text"
+                    className="mt-2"
                   >
                     <option value="">
                       {templates === null ? "Loading templates…" : "Choose an approved template"}
@@ -605,7 +613,7 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                           {t.name}
                         </option>
                       ))}
-                  </select>
+                  </Select>
                 )}
 
                 <div className="mt-2">

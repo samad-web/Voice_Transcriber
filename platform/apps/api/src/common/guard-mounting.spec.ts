@@ -49,6 +49,8 @@ import { AuthController } from "../modules/auth/auth.controller";
 import { BillingController } from "../modules/billing/billing.controller";
 import { CallsController } from "../modules/calls/calls.controller";
 import { NotesController } from "../modules/calls/notes.controller";
+import { CallAccessController } from "../modules/call-access/call-access.controller";
+import { OwnerCallAccessController } from "../modules/call-access/owner-call-access.controller";
 import { CrmController } from "../modules/crm/crm.controller";
 import { AccountsController } from "../modules/crm-objects/accounts.controller";
 import { CallIntegrityController } from "../modules/crm-objects/call-integrity.controller";
@@ -87,6 +89,7 @@ import { EmbeddedSignupController } from "../modules/conversations/embedded-sign
 import { MessagingChannelsController } from "../modules/conversations/messaging-channels.controller";
 import { MessagingWebhookController } from "../modules/conversations/messaging-webhook.controller";
 import { ConversationQualificationController } from "../modules/conversations/conversation-qualification.controller";
+import { WhatsAppPairingController } from "../modules/conversations/whatsapp-pairing.controller";
 import { WhatsAppSendController } from "../modules/conversations/whatsapp-send.controller";
 import { TagsController } from "../modules/tags/tags.controller";
 import { MarketingSourcesController } from "../modules/tags/marketing-sources.controller";
@@ -158,6 +161,8 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   BillingController,
   CallsController,
   NotesController,
+  CallAccessController,
+  OwnerCallAccessController,
   CrmController,
   AppDownloadController,
   DevicesController,
@@ -238,6 +243,13 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // for the same reason: this is org CONFIGURATION - which number this tenant
   // has connected - not a CRM record with a PermissionObjectType.
   EmbeddedSignupController,
+  // The OTHER connect flow (GET/POST/DELETE /messaging/whatsapp-personal plus
+  // GET .../poll). Same org-CONFIGURATION tier as the two above, and separate
+  // from EmbeddedSignup because it reaches a different KIND of account: that
+  // one connects a WhatsApp Business Account through Meta or Wasi, this one
+  // links an ordinary personal number as a WhatsApp Web device. Nothing here
+  // sends - pairing establishes a session and subscribes a webhook.
+  WhatsAppPairingController,
   MessagingWebhookController,
   // The outbound half, added for Wasi (migration 0061). See
   // whatsapp-send.controller.ts's header for why it's a separate class
@@ -547,10 +559,56 @@ const OPERATOR_ONLY_ROUTES = [
   "GET /instances/:id",
   "DELETE /instances/:id",
   "POST /instances/:id/keys",
+  // The operator's side of the call-access gate (0122). Guarded for the
+  // opposite reason the instance routes are: not to keep a tenant OUT of an
+  // operator surface, but to stop a tenant's own console reaching the surface
+  // where the vendor ASKS - an owner who could approve through here would be
+  // approving their own vendor's request, which is the one thing the gate
+  // exists to prevent. Deciding lives on OwnerCallAccessController.
+  "GET /call-access/mine",
+  "POST /call-access/requests",
+  "POST /call-access/requests/:id/otp",
+  "POST /call-access/requests/:id/redeem",
 ];
 
 /** §2.3 - one route on the whole platform. */
 const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
+
+/**
+ * 0122 - every route that hands a human CALL CONTENT, and is therefore gated
+ * on the tenant's own administrator having agreed to let a platform operator
+ * see it.
+ *
+ * This list is the whole feature. A call route that is added without
+ * `@CallContent()` is a hole in it, and the only thing that catches that is
+ * this assertion failing - which it will, because the route lands in no bucket
+ * and moves the totals below.
+ *
+ * What is deliberately NOT here:
+ *   - every `/owner/*` call route. OwnerRoleGuard resolves a persona from
+ *     `memberships` and refuses a bare admin-key caller outright, so an
+ *     operator cannot reach them at all. Double-gating them would add a second
+ *     answer to "why can't I see this call" for no extra safety.
+ *   - `GET /devices/me/calls/:callId`, which is device-authenticated: the
+ *     handset reading back its own call, with no operator anywhere near it.
+ *   - the write routes (`reprocess`, `reprocess-backlog`). They spend money
+ *     and they move a call through the pipeline; they return no content.
+ */
+const CALL_CONTENT_ROUTES = [
+  "GET /calls",
+  "GET /calls/:id",
+  "GET /calls/:id/audio",
+  "GET /calls/:id/notes",
+  "POST /calls/:id/notes",
+  // Verbatim transcript snippets, fifty at a time - the widest call-content
+  // read in the product.
+  "GET /search",
+  // Runs an extractor over a stored transcript and returns what it found.
+  "POST /agents/:id/test",
+  // `crm_sync_log.request_body` holds the transcript, the facts, the full
+  // number and a presigned recording URL.
+  "GET /crm/integrations/:id/deliveries",
+];
 
 /** §2.4 - two controllers. */
 const OWNER_ROLE_ROUTES = [
@@ -667,6 +725,9 @@ const OWNER_ROLE_ROUTES = [
   // a working phone mid-shift is not delegable.
   "GET /owner/devices",
   "POST /owner/devices/pairing-token",
+  // The pairing dialog's "has the phone used it yet" (0124). Every persona,
+  // like the list it is a subset of - see the handler.
+  "GET /owner/devices/pairing-token/:id",
   "POST /owner/devices/:id/revoke",
   // The setup checklist (migration 0095). The read is owner-or-manager, the
   // dismiss is owner alone: silencing a tenant-wide notice permanently is a
@@ -779,6 +840,22 @@ const OWNER_ROLE_ROUTES = [
   // Moving a batch of leads onto somebody else. Owner/manager for the same
   // reason a routing rule is: it decides who works - and who earns on - them.
   "POST /leads/reassign",
+  // ── The customer's side of the call-access gate (0122) ──
+  //
+  // The list is owner-or-manager; every DECISION is owner alone. This is the
+  // one place in the product where a tenant decides something about its
+  // VENDOR rather than about its own work, and a manager who could grant the
+  // vendor its recordings would be making that call on the business's behalf.
+  //
+  // `settings` carries the gate toggle itself, and it exists ONLY here - there
+  // is deliberately no operator-side route that can write it. A vendor able to
+  // switch off the gate protecting the customer from the vendor has not built
+  // a gate.
+  "GET /owner/call-access",
+  "POST /owner/call-access/:id/approve",
+  "POST /owner/call-access/:id/deny",
+  "POST /owner/call-access/:id/revoke",
+  "PUT /owner/call-access/settings",
 ];
 
 /**
@@ -1178,7 +1255,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 410 routes, partitioned 353 tenant / 29 cross-tenant / 8 device / 19 unguarded", () => {
+  it("has 423 routes, partitioned 366 tenant / 29 cross-tenant / 8 device / 19 unguarded", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -1270,10 +1347,24 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // /owner/agents, all tenant-scoped and owner-or-manager.
     // 410: the reply drafter's two surfaces (0121) - POST conversations/:id/draft-reply
     // and POST owner/calls/:id/draft-reply. Both return text and send nothing.
-    // 412: call insights' two (`GET /owner/call-insights` and its `/pdf`),
+    // 419: the call-access gate's nine (0122) - four on the operator's side
+    // (OperatorOnlyGuard: ask, check, request a code, redeem one) and five on
+    // the customer's (OwnerRoleGuard: the queue, approve, deny, revoke, and
+    // the gate's own settings). All tenant-scoped: an access request is about
+    // exactly one org, and there is deliberately no cross-tenant view of who
+    // has been asking for what.
+    // 423: personal-WhatsApp pairing's four (`/messaging/whatsapp-personal`).
+    // Nothing to do with the gate above - that controller was already in the
+    // tree and already imported here, but its routes had never reached these
+    // totals, so this suite was red before 0122 arrived. Listed separately
+    // rather than folded into the previous number, because a count that
+    // quietly absorbs unfinished work stops being worth reading.
+    // 425: call insights' two (`GET /owner/call-insights` and its `/pdf`),
     // tenant-scoped and OwnerRoleGuard'd - see OWNER_ROLE_ROUTES.
-    expect(ROUTES).toHaveLength(412);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(412);
+    // 426: the handset pairing dialog's status read (0124),
+    // `GET /owner/devices/pairing-token/:id`. Tenant-scoped, OwnerRoleGuard'd.
+    expect(ROUTES).toHaveLength(426);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(426);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1294,27 +1385,37 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 191: the AI Agent Studio's POST /agents/generate (plain
     // AdminKeyGuard+TenantGuard, same tier as the rest of AgentsController -
     // a preview endpoint like POST /agents/:id/test, not a CRM-object route).
-    // 355: plus call insights' JSON read and its PDF export.
-    expect(tenantScoped).toHaveLength(355);
+    // 362: plus the call-access gate's nine (0122).
+    // 366: plus personal-WhatsApp pairing's four - GET/POST/DELETE
+    // messaging/whatsapp-personal and GET .../poll. Org configuration, the
+    // same tier as the channels and Embedded Signup controllers beside it.
+    // 368: plus call insights' JSON read and its PDF export.
+    // 369: plus the handset pairing dialog's status read (0124).
+    expect(tenantScoped).toHaveLength(369);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(412);
+    ).toBe(426);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 376 principal routes", () => {
-    // 376: 374 plus call insights' read and PDF export.
-    // 241 tenant-scoped + 24 cross-tenant. `TenantGuard` reads
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 390 principal routes", () => {
+    // 390 = 361 tenant-scoped principal + 29 cross-tenant; the newest is the
+    // handset pairing dialog's status read (0124). 389 before it, of which
+    // the last two were call insights' read and PDF export. 387 before them. This number was
+    // left at 374 when the call-access gate (0122) added nine routes and the
+    // total above was updated without it, so the suite was already failing
+    // here before personal-WhatsApp pairing added its four. Both are counted
+    // in now. `TenantGuard` reads
     // `req.principal`, which only `AdminKeyGuard` writes, so the order is a
     // correctness requirement and not a style - tenant.guard.spec.ts's
     // chain-order block shows the reversed pair 401s a perfectly valid
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(376);
+    expect(principalRoutes).toHaveLength(390);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -1438,7 +1539,30 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
-  it("mounts OperatorOnlyGuard on exactly the instance routes, after TenantGuard", () => {
+  it("mounts CallAccessGuard on exactly the call-content routes, after TenantGuard", () => {
+    // THE assertion the call-access gate (0122) rests on.
+    //
+    // A gate is only worth what its least-guarded route is worth, and the
+    // failure mode is not a broken test - it is a new call endpoint shipped
+    // next year by somebody who never read the guard, through which a
+    // customer's recordings leave while the feature still reports itself as
+    // enforced. Reflecting over the real Nest metadata is what makes that a
+    // red build instead.
+    const gated = ROUTES.filter((r) => r.guards.includes("CallAccessGuard"));
+    expect(sorted(gated.map((r) => r.route))).toEqual(sorted(CALL_CONTENT_ROUTES));
+
+    for (const { route, guards } of gated) {
+      // It reads `req.principal` (AdminKeyGuard) and `req.tenantOrgId`
+      // (TenantGuard) and queries the org's gate setting with both. Running it
+      // first would 401 every request rather than gate anything.
+      expect([route, guards.indexOf("CallAccessGuard") > guards.indexOf("TenantGuard")]).toEqual([
+        route,
+        true,
+      ]);
+    }
+  });
+
+  it("mounts OperatorOnlyGuard on exactly the instance and call-access routes, after TenantGuard", () => {
     // A route that LOSES this guard reopens the gap it closed: enrollment-token
     // minting reachable by any tenant console user. A route that GAINS it
     // unexpectedly is a silent lockout of the operator console.
@@ -1492,13 +1616,22 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   });
 
   it("pins GET /calls/:id/audio as the full four-guard chain", () => {
-    // The single most-guarded route on the platform and the only consumer of
-    // PermissionsGuard. Spelled out in full because the chain IS the contract:
-    // authenticate, scope to a tenant, then check the recordings grant.
+    // The single most-guarded route on the platform. Spelled out in full
+    // because the chain IS the contract: authenticate, scope to a tenant,
+    // check the member's recordings grant, then check the CUSTOMER agreed to
+    // let the vendor listen at all.
+    //
+    // The last two are not redundant, and the order they are read in is the
+    // clearest statement of why. `PermissionsGuard` answers a question about a
+    // tenant's own member - and answers it with an unconditional yes for
+    // anything holding the admin key, which is every console request
+    // (`principalHasPermission`). `CallAccessGuard` answers the question that
+    // one structurally cannot ask: whether this recording is ours to play.
     expect(byRoute.get("GET /calls/:id/audio")?.guards).toEqual([
       "AdminKeyGuard",
       "TenantGuard",
       "PermissionsGuard",
+      "CallAccessGuard",
     ]);
   });
 

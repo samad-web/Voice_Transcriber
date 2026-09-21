@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button, ErrorBanner, Input, MonoLabel, useAlert } from "@aura/ui";
+import { InlineListSkeleton } from "@/components/skeletons";
 import { localToday, prioritise } from "@/lib/next-actions";
 import { createTaskAction, fetchTasksAction, updateTaskAction } from "./crm-actions";
 import { TaskRow } from "./task-row";
@@ -143,7 +144,7 @@ export function TaskList({
       {error ? <ErrorBanner>{error}</ErrorBanner> : null}
 
       {tasks === null || today === null ? (
-        <p className="py-3 text-xs text-text-muted">Loading…</p>
+        <InlineListSkeleton rows={3} lead="check" label="Loading tasks" />
       ) : ordered.length === 0 ? (
         <p className="py-3 text-xs text-text-muted">Nothing open</p>
       ) : (

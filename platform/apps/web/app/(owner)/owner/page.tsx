@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } from "lucide-react";
 import type { OwnerRole } from "@aura/shared";
-import { Card, MonoLabel, StatCard } from "@aura/ui";
+import { StatCard } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
 import type { TeamRollup as TeamRollupData } from "@/lib/team-rollup";
 import { ownerNavItemsFor } from "@/lib/nav";
-import { getOwner, ownerGet } from "@/lib/owner-context";
+import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
 import {
   ActivityChart,
   CallOutcomes,
@@ -78,26 +79,22 @@ export default async function OwnerDashboardPage({
    * would spend a round trip to render nothing.
    */
   const wantsTeam = role === "owner" || role === "manager";
-  const [data, team] = await Promise.all([
-    ownerGet<Overview>(
+  const [result, team] = await Promise.all([
+    ownerTry<Overview>(
       crmPrimary ? `/v1/owner/crm-overview?days=${days}` : `/v1/owner/overview?days=${days}`,
     ),
     wantsTeam ? ownerGet<TeamRollupData>(`/v1/reports/team?days=${days}`) : Promise.resolve(null),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Dashboard" context="Instance" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="the dashboard" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   // Next actions appears only where this reader can open Tasks at all - the same
   // persona, module and feature rule the rail applies, so the panel never

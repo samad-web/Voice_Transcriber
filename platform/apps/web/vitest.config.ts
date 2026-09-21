@@ -37,6 +37,11 @@ import { defineConfig } from "vitest/config";
 const rootDir = fileURLToPath(new URL(".", import.meta.url)).replace(/[\\/]+$/, "");
 
 export default defineConfig({
+  // tsconfig says `"jsx": "preserve"` because Next compiles JSX itself, and
+  // esbuild honours that by leaving JSX untouched - which Node cannot run. Any
+  // .tsx a test imports (the loading screens, rendered by console-loading.test)
+  // needs the automatic runtime spelled out here.
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: [
       { find: /^@\//, replacement: `${rootDir}/` },

@@ -40,7 +40,7 @@ export async function addMemberAction(
       const body = await res.json().catch(() => ({}));
       return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
-    revalidatePath("/team");
+    revalidatePath("/client-config");
     return {};
   } catch {
     return { error: "API unreachable - is the API running?" };
@@ -75,7 +75,7 @@ export async function updateMemberAction(
       const body = await res.json().catch(() => ({}));
       return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
-    revalidatePath("/team");
+    revalidatePath("/client-config");
     return {};
   } catch {
     return { error: "API unreachable" };
@@ -98,7 +98,7 @@ export async function removeMemberAction(
       cache: "no-store",
     });
     if (!res.ok) return { error: `API ${res.status}` };
-    revalidatePath("/team");
+    revalidatePath("/client-config");
     return {};
   } catch {
     return { error: "API unreachable" };
@@ -125,7 +125,7 @@ export async function createWorkspaceAction(
       const body = await res.json().catch(() => ({}));
       return { error: `API ${res.status}: ${JSON.stringify(body.message ?? body)}` };
     }
-    revalidatePath("/team");
+    revalidatePath("/client-config");
     return {};
   } catch {
     return { error: "API unreachable - is the API running?" };

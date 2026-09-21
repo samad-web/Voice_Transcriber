@@ -88,3 +88,23 @@ export async function requireMax(): Promise<Principal> {
   if (!isOperator(principal) || !isMax(principal)) throw new NotAuthorizedError();
   return principal as Principal;
 }
+
+/**
+ * The `Caller` an operator-side fetch should carry, for the call-access gate
+ * (migration 0122).
+ *
+ * `apiGetAs`/`apiTry` take a plain `Caller` and cannot resolve a session
+ * themselves, so the pages that read CALL CONTENT - the call log, the instance
+ * call log, transcript search - pass this. Without it the API sees the root
+ * admin key with nobody behind it, and `CallAccessGuard` refuses a gated org
+ * outright, because an access request nobody's name is on cannot be answered.
+ *
+ * Returns an empty object rather than throwing when the caller is not an
+ * operator: this is a decoration on a request, not a gate. The gate is
+ * `requireOperator()` / `operatorGate()`, which every such page already runs.
+ */
+export async function operatorCaller(): Promise<{ operatorEmail?: string | null }> {
+  const principal = await getPrincipal();
+  if (!isOperator(principal)) return {};
+  return { operatorEmail: principal?.email ?? null };
+}

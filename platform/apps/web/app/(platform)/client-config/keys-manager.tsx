@@ -2,10 +2,25 @@
 
 import { useState, useTransition } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useConfirm, useToast } from "@aura/ui";
+import {
+  Button,
+  Card,
+  Checkbox,
+  FormField,
+  Input,
+  MonoLabel,
+  StatusChip,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
-import { inputClass } from "@/lib/form";
-import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./actions";
+import { createApiKeyAction, revokeApiKeyAction, type CreatedKey } from "./keys-actions";
 
 export interface ApiKey {
   id: string;
@@ -40,6 +55,36 @@ const SCOPE_CHOICES: Array<{ value: string; label: string; hint: string }> = [
   },
 ];
 
+/** Head strip shared with team-manager.tsx and the instance page's TablePanel. */
+const PANEL_HEAD =
+  "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-bg-subtle px-5 py-3";
+
+/**
+ * One client's API keys.
+ *
+ * ── THEMED, AS OF THE client-config CONSOLIDATION ──────────────────────────
+ *
+ * Restyled onto semantic tokens for the same reason as team-manager.tsx beside
+ * it: both were pre-v2 holdouts in stock Tailwind, and once they became two tabs
+ * of one page, a dark-mode reader would have got one themed tab and two that
+ * painted black rules on a black page. It is off `console-palette.test.ts`'s
+ * backlog.
+ *
+ * Two colour choices worth stating, because this file is the console's only
+ * legitimate use of either:
+ *
+ *  - the secret box uses the `terminal` ramp (`bg-terminal`,
+ *    `text-terminal-log`, `border-terminal-border`), which is a FIXED dark
+ *    surface in both themes by design - it was `bg-black text-green-400`, and
+ *    the point of a terminal-looking box is that it looks the same everywhere.
+ *    The tokens carry the contrast figures; the raw hexes did not.
+ *  - "Copy now" stays the kit's `StatusChip tone="danger"` and the card keeps a
+ *    danger border, now as the `border-danger` token rather than
+ *    `border-red-600`. Red means MISSED in this console (packages/ui/src/
+ *    state.tsx) and this is not a missed call - but re-deciding what hue "you
+ *    will never see this secret again" deserves is a colour-rule question, not a
+ *    dark-mode one, so the intent is preserved verbatim and left for that pass.
+ */
 export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string }) {
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<string[]>([]);
@@ -109,36 +154,42 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       {/* Key list */}
       <div className="lg:col-span-2">
-        <Card elevated className="overflow-hidden p-0">
-          <div className="p-5 border-b-2 border-black flex items-center gap-2">
-            <KeyRound className="h-4 w-4" />
-            <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
-              API Keys
-            </h4>
+        <Card className="overflow-hidden p-0">
+          <div className={PANEL_HEAD}>
+            <div className="flex items-center gap-2">
+              <span aria-hidden="true" className="text-text-muted">
+                <KeyRound className="h-4 w-4" />
+              </span>
+              <span className="text-sm font-medium text-text">API keys</span>
+            </div>
+            <span className="text-xs text-text-muted tabular-nums">
+              {keys.length} {keys.length === 1 ? "key" : "keys"}
+            </span>
           </div>
           {keys.length === 0 ? (
-            <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-10 text-center">
-              No API keys yet - create one to authenticate integrations
+            <p className="px-5 py-10 text-center text-sm text-text-muted">
+              No API keys yet - create one to authenticate this client&apos;s integrations
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left border-collapse">
-                <thead>
-                  <tr className="bg-neutral-100 border-b-2 border-black font-mono text-[10px] text-black font-bold uppercase tracking-wider">
-                    <th className="py-3.5 px-5">Key</th>
-                    <th className="py-3.5 px-4">Last Used</th>
-                    <th className="py-3.5 px-4">Created</th>
-                    <th className="py-3.5 px-4 text-right">Action</th>
+            <div tabIndex={0} role="region" aria-label="API keys" className="overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                <caption className="sr-only">API keys for this client</caption>
+                <TableHead>
+                  <tr>
+                    <TableHeaderCell>Key</TableHeaderCell>
+                    <TableHeaderCell>Last used</TableHeaderCell>
+                    <TableHeaderCell>Created</TableHeaderCell>
+                    <TableHeaderCell className="text-right">Action</TableHeaderCell>
                   </tr>
-                </thead>
-                <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                </TableHead>
+                <TableBody>
                   {keys.map((k) => (
-                    <tr key={k.id} className="hover:bg-neutral-50">
-                      <td className="py-4 px-5">
-                        <span className="font-display font-bold text-black block">
+                    <TableRow key={k.id}>
+                      <TableCell>
+                        <span className="block font-medium text-text">
                           {k.name}
                           {k.active === false ? (
                             <span className="ml-2 align-middle">
@@ -146,48 +197,47 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
                             </span>
                           ) : null}
                         </span>
-                        <span className="text-[10px] font-mono text-neutral-400">
-                          {k.prefix}…
-                        </span>
+                        <span className="font-mono text-xs text-text-muted">{k.prefix}…</span>
                         {/* What it can actually do, on the row - so an audit is
                             reading this table, not cross-referencing the API. */}
                         <span className="mt-1 flex flex-wrap gap-1">
                           {(k.scopes ?? []).length === 0 ? (
-                            <span className="text-[10px] font-mono text-red-700 font-bold">
+                            <span className="font-mono text-xs font-medium text-danger">
                               no scopes - this key cannot do anything
                             </span>
                           ) : (
                             (k.scopes ?? []).map((s) => (
                               <span
                                 key={s}
-                                className="text-[10px] font-mono border border-neutral-300 px-1 py-0.5 text-neutral-600"
+                                className="rounded-sm border border-border px-1 py-0.5 font-mono text-xs text-text-muted"
                               >
                                 {s}
                               </span>
                             ))
                           )}
                         </span>
-                      </td>
-                      <td className="py-4 px-4 font-mono text-xs">
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-text-muted">
                         {k.last_used_at ? <LocalTime iso={k.last_used_at} /> : "never"}
-                      </td>
-                      <td className="py-4 px-4 font-mono text-xs">
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-text-muted">
                         <LocalTime iso={k.created_at} mode="date" />
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <BrutalButton
-                          variant="destructive"
-                          className="px-2.5 py-1.5"
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
                           disabled={pending}
                           onClick={() => void revoke(k.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Revoke
-                        </BrutalButton>
-                      </td>
-                    </tr>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
+                </TableBody>
               </table>
             </div>
           )}
@@ -196,93 +246,76 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
 
       {/* Create key */}
       <div className="space-y-6">
-        <Card elevated className="space-y-4">
-          <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
-            Create Key
-          </h4>
-          <p className="text-xs text-neutral-400 font-sans font-medium">
+        <Card className="space-y-4">
+          <span className="block text-sm font-medium text-text">Create key</span>
+          <p className="text-sm text-text-muted">
             The full secret is shown exactly once. Store it somewhere safe.
           </p>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-              Key Name
-            </label>
-            <input
-              className={inputClass}
+          <FormField label="Key name" name="key-name">
+            <Input
               placeholder="e.g. CRM Sync"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-          </div>
+          </FormField>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-              What this key may do
-            </label>
-            <p className="text-[11px] text-neutral-500 font-sans font-medium">
+            <span className="block text-sm font-medium text-text">What this key may do</span>
+            <p className="text-xs leading-relaxed text-text-muted">
               A key can only do what you tick here. It can never send messages, delete records, or
               reach call recordings or transcripts.
             </p>
             <div className="space-y-1.5 pt-1">
               {SCOPE_CHOICES.map((choice) => (
-                <label
+                <div
                   key={choice.value}
-                  className="flex gap-2.5 items-start border-2 border-neutral-200 hover:border-black p-2.5 cursor-pointer"
+                  className="rounded-md border border-border p-2.5 transition-colors duration-150 ease-out hover:border-border-strong"
                 >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 accent-black shrink-0"
+                  <Checkbox
+                    label={choice.label}
+                    description={choice.hint}
                     checked={scopes.includes(choice.value)}
                     onChange={() => toggleScope(choice.value)}
                   />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-display font-bold text-black">
-                      {choice.label}
-                    </span>
-                    <span className="block text-[10px] text-neutral-500 font-sans">
-                      {choice.hint}
-                    </span>
-                  </span>
-                </label>
+                </div>
               ))}
             </div>
           </div>
 
-          <BrutalButton
+          <Button
+            type="button"
             className="w-full"
-            shadow
-            disabled={pending || !name.trim() || scopes.length === 0}
             onClick={create}
+            loading={pending}
+            disabled={!name.trim() || scopes.length === 0}
           >
             <Plus className="h-4 w-4" />
-            {pending ? "GENERATING…" : "CREATE KEY"}
-          </BrutalButton>
+            Create key
+          </Button>
         </Card>
 
         {created?.key ? (
-          <Card elevated className="space-y-4 border-red-600">
-            <div className="flex justify-between items-start gap-2">
+          <Card className="space-y-4 border-danger">
+            <div className="flex items-start justify-between gap-2">
               <div>
-                <MonoLabel>Secret Key - shown once</MonoLabel>
-                <h4 className="text-lg font-display font-black text-black uppercase tracking-tight mt-1">
-                  {created.name}
-                </h4>
+                <MonoLabel>Secret key - shown once</MonoLabel>
+                <p className="mt-1 text-sm font-medium text-text">{created.name}</p>
               </div>
               <StatusChip tone="danger">Copy now</StatusChip>
             </div>
 
             <div className="space-y-1.5">
-              <div className="bg-black text-green-400 border-2 border-black p-2.5 font-mono text-xs break-all">
+              <div className="rounded-md border border-terminal-border bg-terminal p-2.5 font-mono text-xs break-all text-terminal-log">
                 {created.key}
               </div>
-              <BrutalButton variant="secondary" className="w-full" onClick={copyKey}>
+              <Button type="button" variant="secondary" className="w-full" onClick={copyKey}>
                 <Copy className="h-4 w-4" />
-                COPY KEY
-              </BrutalButton>
+                Copy key
+              </Button>
             </div>
 
-            <p className="text-[11px] text-neutral-600 font-sans font-medium leading-relaxed border-t-2 border-neutral-200 pt-3">
+            <p className="border-t border-border pt-3 text-xs leading-relaxed text-text-muted">
               This secret will never be shown again. If you lose it, revoke the key and create a new
               one.
             </p>

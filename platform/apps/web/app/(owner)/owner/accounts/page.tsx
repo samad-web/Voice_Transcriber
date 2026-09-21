@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  Card,
   EmptyState,
-  MonoLabel,
   Table,
   TableBody,
   TableCell,
@@ -11,10 +9,11 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { viewHref, viewQueryFrom } from "@/lib/list-views";
-import { ownerGet } from "@/lib/owner-context";
+import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { FilterSearch, FilterSelect, ListFilterForm } from "../list-filters";
 import type { FilterOption } from "../list-options";
@@ -63,24 +62,20 @@ export default async function AccountsPage({
   const query = new URLSearchParams({ limit: String(PAGE_SIZE), ...current });
   if (offset > 0) query.set("offset", String(offset));
 
-  const [data, views] = await Promise.all([
-    ownerGet<ListResponse>(`/v1/accounts?${query}`),
+  const [result, views] = await Promise.all([
+    ownerTry<ListResponse>(`/v1/accounts?${query}`),
     loadSavedViews("accounts"),
   ]);
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Accounts" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="accounts" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { Copy, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert } from "@aura/ui";
-import { inputClass, selectClass } from "@/lib/form";
+import { BrutalButton, Card, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
+import { inputClass } from "@/lib/form";
 import {
   activateAgentAction,
   createAgentAction,
@@ -221,14 +221,14 @@ export function AgentStudio({
               <label className="text-xs font-mono text-black uppercase tracking-wider font-bold flex items-center gap-1.5">
                 <Copy className="h-3 w-3" /> Start From
               </label>
-              <select className={selectClass} value={baseKey} onChange={(e) => applyBase(e.target.value)}>
+              <Select value={baseKey} onChange={(e) => applyBase(e.target.value)}>
                 <option value="">Blank</option>
                 {agents.map((agent) => (
                   <option key={`${agent.id}-${agent.version}`} value={`${agent.id}-${agent.version}`}>
                     {agent.name} (v{agent.version})
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           ) : null}
 
@@ -246,17 +246,13 @@ export function AgentStudio({
               <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
                 Workspace
               </label>
-              <select
-                className={selectClass}
-                value={workspaceId}
-                onChange={(e) => setWorkspaceId(e.target.value)}
-              >
+              <Select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
                 {workspaces.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           ) : null}
 
@@ -289,8 +285,7 @@ export function AgentStudio({
                   value={field.key}
                   onChange={(e) => updateField(i, { key: e.target.value })}
                 />
-                <select
-                  className={inputClass}
+                <Select
                   value={field.type}
                   onChange={(e) => updateField(i, { type: e.target.value as AgentFieldInput["type"] })}
                 >
@@ -299,7 +294,7 @@ export function AgentStudio({
                       {t}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <input
                   className={`${inputClass} md:col-span-2`}
                   placeholder="description for the LLM"

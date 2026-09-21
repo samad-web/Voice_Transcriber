@@ -36,18 +36,22 @@ const APP_DIR = fileURLToPath(new URL(".", import.meta.url));
 const GROUPS = ["(platform)", "(admin)"];
 
 /**
- * The 14 that call the API directly today, discovered 2026-08-16 while
+ * The pages that call the API directly today, first inventoried 2026-08-16 while
  * closing the render-path hole. NOT the source of truth - a floor, so a
  * discovery walk that silently stops finding files fails loudly instead of
- * passing vacuously. A 15th direct-calling page must not fail here; it must
- * fail on its missing guard.
+ * passing vacuously. A new direct-calling page must not fail here; it must fail
+ * on its missing guard.
+ *
+ * `/team`, `/roles` and `/api-keys` left this list when they became redirects
+ * into `/client-config` - they now fetch nothing and gate nothing, which is
+ * correct: the destination gates. Only the one page that replaced them reads.
  */
 const KNOWN_DIRECT_CALL_PAGES = [
   "(admin)/admin/page.tsx",
   "(platform)/agents/page.tsx",
-  "(platform)/api-keys/page.tsx",
   "(platform)/automations/page.tsx",
   "(platform)/calls/page.tsx",
+  "(platform)/client-config/page.tsx",
   "(platform)/crm/page.tsx",
   "(platform)/custom-fields/page.tsx",
   "(platform)/dashboard/page.tsx",
@@ -59,13 +63,31 @@ const KNOWN_DIRECT_CALL_PAGES = [
   // it. Listed here so its `operatorGate()` reads as deliberate rather than as
   // the inconsistency this suite is looking for.
   "(platform)/operators/page.tsx",
-  "(platform)/roles/page.tsx",
+  // Joined the list when DIRECT_API_CALL learned about `resolveTenantScope`. It
+  // reads the platform-wide tenant list on the render path and had no gate at
+  // all - see the note in its own header.
+  "(platform)/search/page.tsx",
   "(platform)/targets/page.tsx",
-  "(platform)/team/page.tsx",
   "(platform)/usage/page.tsx",
 ];
 
-const DIRECT_API_CALL = /\bapiGetAs\s*[<(]|\bapiGetAdmin\s*[<(]/;
+/**
+ * Reading the API from a page's own render path.
+ *
+ * `apiTry` is the reason-preserving sibling of `apiGetAs` (lib/api-result.ts) and
+ * pages are migrating onto it one at a time, so it has to be here or the first
+ * page to finish migrating quietly leaves this suite's scope.
+ *
+ * `resolveTenantScope` is here because of what it reads: `/v1/admin/tenants`,
+ * the list of every customer on the platform, on the cross-tenant credential. A
+ * page that calls it has already reached further than any per-tenant call does,
+ * and `client-config/page.tsx` calls ONLY it - delegating each tab's own reads to
+ * a child server component. Without this alternative that page classified as
+ * "makes no direct API call", which put it in the exempt bucket at the bottom of
+ * this file and turned its correct `operatorGate()` into a failure.
+ */
+const DIRECT_API_CALL =
+  /\bapiGetAs\s*[<(]|\bapiGetAdmin\s*[<(]|\bapiTry\s*[<(]|\bresolveTenantScope\s*\(/;
 const GUARD_CALL = /\boperatorGate\s*\(\s*\)/;
 const GUARD_IMPORT =
   /import\s*\{[^}]*\boperatorGate\b[^}]*\}\s*from\s*["']@\/lib\/operator-gate["']/;

@@ -12,7 +12,6 @@ import {
   Gauge,
   Handshake,
   Inbox,
-  KeyRound,
   Languages,
   Layers,
   LayoutGrid,
@@ -42,6 +41,7 @@ import {
   Undo2,
   Unlink,
   Upload,
+  UserCog,
   Users,
   Workflow,
   type LucideIcon,
@@ -97,6 +97,16 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Instances",
     context: "Platform",
   },
+  // One client's team, roles and API keys. These were three top-level entries
+  // under an "Access" heading, which said they were platform entities; all three
+  // are per-org rows behind RLS. See app/(platform)/client-config/page.tsx.
+  {
+    href: "/client-config",
+    label: "Configuration",
+    icon: UserCog,
+    title: "Client Configuration",
+    context: "Client",
+  },
   { href: "/crm", label: "CRM Integrations", icon: Plug, title: "CRM Integrations" },
   {
     href: "/custom-fields",
@@ -109,7 +119,7 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/targets",
     label: "Targets",
     icon: Target,
-    title: "Sales Targets",
+    title: "Targets",
     context: "Platform",
   },
   {
@@ -119,21 +129,18 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Automations",
     context: "Platform",
   },
-  {
-    href: "/roles",
-    label: "Roles",
-    icon: ShieldCheck,
-    title: "Roles",
-    context: "Platform",
-  },
-  { href: "/team", label: "Team", icon: Users, title: "Team Management" },
-  { href: "/api-keys", label: "API Keys", icon: KeyRound, title: "API Keys" },
   { href: "/usage", label: "Usage", icon: BarChart3, title: "Usage & Billing" },
   // Visible to every operator, writable only by the root (migration 0089).
   // Deliberately not hidden from the rest: knowing who else administers the
   // platform is not a privilege, and a list nobody can see is a list nobody
   // audits.
-  { href: "/operators", label: "Superadmins", icon: ShieldCheck, title: "Superadmins", context: "Platform" },
+  {
+    href: "/operators",
+    label: "Superadmins",
+    icon: ShieldCheck,
+    title: "Superadmins",
+    context: "Platform",
+  },
 ];
 
 /**
@@ -331,7 +338,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     label: "AI agents",
     icon: Sparkles,
     title: "AI Agent Studio",
-    context: "Team",
+    // "Conversations", not "Team": it is filed under that section (OWNER_SECTION_OF
+    // below) and its page's own header says so.
+    context: "Conversations",
     // Owner and manager, for the Call procedure reason next door: an extractor
     // decides which of the floor's calls become leads, and the people whose
     // calls are counted should not be the ones setting the rule. The API
@@ -445,7 +454,8 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     href: "/owner/lead-sources",
     label: "Lead Sources",
     icon: Inbox,
-    title: "Lead Sources",
+    // Sentence case, as the page's own header (and every other owner page) has it.
+    title: "Lead sources",
     context: "Pipeline",
     // Not a telecaller's or a rep's decision: a source carries a credential
     // and decides who new business is assigned to. Marketing joins because
@@ -634,6 +644,22 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // business runs, not about how it presents itself.
     ownerRoles: ["owner", "manager"],
   },
+  {
+    href: "/owner/call-access",
+    label: "Call access",
+    icon: ShieldCheck,
+    title: "Call access",
+    context: "Settings",
+    // Owner and manager may LOOK; only an owner may decide, which the API
+    // enforces with `@RequireOwnerRole("owner")` rather than this list.
+    //
+    // Deliberately NOT behind a feature key or the `call_intel` module
+    // (0122). Both are provisioning - what the vendor has switched on for
+    // this tenant - and a control over whether the vendor may read the
+    // tenant's recordings must not be something the vendor can hide. A
+    // revocation the customer cannot reach is not a revocation.
+    ownerRoles: ["owner", "manager"],
+  },
 ];
 
 /**
@@ -737,6 +763,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/staff": "workspace",
   "/owner/superfone": "conversations",
   "/owner/transcription": "workspace",
+  "/owner/call-access": "workspace",
   "/owner/board": "pipeline",
   "/owner/leads": "pipeline",
   "/owner/tasks": "pipeline",
@@ -1082,9 +1109,13 @@ export function ownerNavItemsFor(
  *                       the agent that reads them
  *   Growth              Aura's OWN sales: marketing-site enquiries and the
  *                       diary their demo calls are booked into
- *   Clients             the tenants those enquiries became, and what each uses
+ *   Clients             the tenants those enquiries became, what each uses, and
+ *                       each one's own people, roles and keys
  *   CRM setup           how one tenant's CRM is wired and measured
- *   Access              who and what may get in
+ *   Access              who may administer the PLATFORM - one page, and the
+ *                       distinction it draws is the point. A client's team and
+ *                       credentials are theirs and live under Clients; this
+ *                       section is our own staff.
  *
  * Growth and Clients are separate on purpose even though one feeds the other:
  * a funnel lead is not a tenant yet, and every page under Clients spans
@@ -1111,8 +1142,13 @@ const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
   "/slots": "growth",
 
   "/instances": "clients",
-  // Beside Instances, not under Access with API Keys: the page is one tenant's
-  // consumption and bill, which is a question about a client, not a credential.
+  // A client's people, their roles and their API keys - all three `org_id`
+  // columns, so all three are questions about a client. They used to be three
+  // entries under Access, which read as platform administration and is what this
+  // consolidation set right.
+  "/client-config": "clients",
+  // Beside Instances, not under Access: the page is one tenant's consumption and
+  // bill, which is a question about a client, not a credential.
   "/usage": "clients",
 
   "/crm": "setup",
@@ -1122,9 +1158,12 @@ const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
   // the CRM, not using it, which the operator console never does.
   "/targets": "setup",
 
-  "/team": "access",
-  "/roles": "access",
-  "/api-keys": "access",
+  // Filed explicitly, not left to the fallback. Superadmins is now the ONLY
+  // member of this section, and an unfiled page silently joins the last group -
+  // so with it unfiled, "Access" would have been a heading rendered entirely by
+  // accident, and nav.test.ts's "none over nothing" case would have passed on
+  // the fallback rather than on the map.
+  "/operators": "access",
 };
 
 /** The operator nav as the sidebar renders it, Platform Hub above the first heading. */
@@ -1238,7 +1277,9 @@ export function messagingChannelsFor(
   entitlement?: Entitlement,
 ): MessagingChannel[] {
   const allowed = new Set(
-    ownerNavItemsFor(role, crmPrimary, crmEnabled, callIntelEnabled, entitlement).map((i) => i.href),
+    ownerNavItemsFor(role, crmPrimary, crmEnabled, callIntelEnabled, entitlement).map(
+      (i) => i.href,
+    ),
   );
   return MESSAGING_CHANNELS.filter((c) => allowed.has(c.href));
 }

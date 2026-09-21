@@ -309,6 +309,124 @@ export async function createMetaChannelAction(input: {
   }
 }
 
+/* ── Personal WhatsApp: linking an ordinary number ───────────────────────────
+ *
+ * The other connect flow, and deliberately not part of the ones above. Those
+ * connect a WhatsApp Business Account - through Meta directly, or through Wasi
+ * as a Business Solution Provider - and both mean approval, templates and the
+ * 24-hour window. This links an ordinary personal account the way WhatsApp Web
+ * does, which is the only mechanism that exists for a number Meta has no API
+ * for. See whatsapp-pairing.controller.ts.
+ */
+
+export interface PersonalWhatsAppStatus {
+  /** The DEPLOYMENT can offer this at all - distinct from "you have not done it". */
+  available: boolean;
+  connected: boolean;
+  number: string | null;
+  channelId: string | null;
+  detail: string | null;
+}
+
+export interface PersonalWhatsAppPairing {
+  connected: boolean;
+  pairingCode?: string | null;
+  qrImage?: string | null;
+  qrCode?: string | null;
+  number: string | null;
+  channelId: string | null;
+  detail: string | null;
+}
+
+/**
+ * Returns a fully "not available" shape rather than an error when the API is
+ * unreachable, exactly as `embeddedSignupConfigAction` does and for the same
+ * reason: the rest of this page works, and replacing a whole screen with
+ * "API 500" because one panel could not load is the worse failure.
+ */
+export async function personalWhatsAppStatusAction(): Promise<PersonalWhatsAppStatus> {
+  const offline: PersonalWhatsAppStatus = {
+    available: false,
+    connected: false,
+    number: null,
+    channelId: null,
+    detail: null,
+  };
+  const headers = await ownerHeaders();
+  if (!headers) return offline;
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/whatsapp-personal`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return offline;
+    return (await res.json()) as PersonalWhatsAppStatus;
+  } catch {
+    return offline;
+  }
+}
+
+export async function startPersonalWhatsAppAction(input: {
+  phone: string;
+  method: "code" | "qr";
+}): Promise<{ pairing?: PersonalWhatsAppPairing; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/whatsapp-personal`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    return { pairing: (await res.json()) as PersonalWhatsAppPairing };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Polled while the person is at their phone.
+ *
+ * Never returns an error shape: a failed poll is one missed tick, and the
+ * caller simply tries again. Surfacing "API unreachable" mid-pairing would put
+ * a red banner over a flow that is about to succeed on the next request.
+ */
+export async function pollPersonalWhatsAppAction(): Promise<{ connected: boolean }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { connected: false };
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/whatsapp-personal/poll`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { connected: false };
+    const body = (await res.json()) as { connected?: boolean };
+    if (body.connected) revalidatePath("/owner/messaging-setup");
+    return { connected: Boolean(body.connected) };
+  } catch {
+    return { connected: false };
+  }
+}
+
+export async function disconnectPersonalWhatsAppAction(): Promise<{ ok?: true; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/whatsapp-personal`, {
+      method: "DELETE",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    revalidatePath("/owner/messaging-setup");
+    return { ok: true };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 /** Pull the approved template list off Meta into `message_templates`. */
 export async function syncWabaTemplatesAction(
   channelId: string,

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Card, MonoLabel } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, requireFeature } from "@/lib/owner-context";
+import { ownerTry, requireFeature } from "@/lib/owner-context";
 import type { DuplicateMatch } from "../types";
 import { DuplicatesManager } from "./duplicates-manager";
 
@@ -20,21 +20,17 @@ interface ListResponse {
 export default async function DuplicatesPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/duplicates");
-  const data = await ownerGet<ListResponse>("/v1/merge/duplicates?status=pending");
+  const result = await ownerTry<ListResponse>("/v1/merge/duplicates?status=pending");
 
-  if (!data) {
+  if (!result.ok) {
     return (
       <>
         <PageHeader title="Duplicates" context="Pipeline" />
-        <Card>
-          <MonoLabel>Data unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The platform API did not answer. If this persists, contact your provider.
-          </p>
-        </Card>
+        <LoadFailure what="duplicates" failure={result} />
       </>
     );
   }
+  const data = result.data;
 
   return (
     <>

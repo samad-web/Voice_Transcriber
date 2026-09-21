@@ -8,7 +8,17 @@ import {
   OwnerRole,
   ownerRoleSeesAllRecords,
 } from "@aura/shared";
-import { Button, Card, Input, MonoLabel, Select, StatusChip, useAlert, useToast } from "@aura/ui";
+import {
+  Button,
+  Card,
+  Input,
+  MonoLabel,
+  Select,
+  StatusChip,
+  useAlert,
+  useConfirm,
+  useToast,
+} from "@aura/ui";
 import { removeTeamMemberAction, resetTeamPasswordAction, setTeamMemberAction } from "./actions";
 import {
   assignStaffRoleAction,
@@ -246,9 +256,16 @@ function Row({
  *
  * Removal asks first. Everything else on this page is a reversible edit - set
  * the persona back and the change is undone - but revoking access deletes the
- * membership and, if it was their last one, the login itself. `window.confirm`
- * rather than the kit's ConfirmProvider only because this table is not inside
- * one; the point is that the click is not the last word.
+ * membership and, if it was their last one, the login itself.
+ *
+ * These used `window.confirm`, justified here by "this table is not inside a
+ * ConfirmProvider". That was simply untrue: the provider is mounted at
+ * app/layout.tsx, above every route group, and the `useAlert()` two lines into
+ * RowActions below was already proving the tree was reachable. On top of the
+ * reasons confirm.tsx gives for not using the native dialog at all, browsers
+ * let a user tick "prevent this page from creating more dialogues", which
+ * silently turns every later confirm into `false` - a guard the guarded party
+ * can switch off.
  *
  * Neither button is the security boundary: `POST /v1/owner/team/:id/password`
  * and `DELETE /v1/owner/team/:id` both carry `@RequireOwnerRole("owner")`, and
@@ -259,6 +276,7 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
   const [pending, startTransition] = useTransition();
   const [password, setPassword] = useState<string | null>(null);
   const alert = useAlert();
+  const confirm = useConfirm();
 
   const reset = () => {
     setPassword(null);
@@ -287,16 +305,25 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
    */
   const toggleStatus = () => {
     const suspending = member.status !== "suspended";
-    if (
-      suspending &&
-      !window.confirm(
-        `Suspend ${member.email}? They stop being able to sign in. Every lead, call and ` +
-          `follow-up stays assigned to them, and you can reinstate them at any time.`,
-      )
-    ) {
-      return;
-    }
     startTransition(async () => {
+      if (
+        suspending &&
+        // `requireTyped: false`: suspension is reversible by the button right
+        // next to it, and confirm.tsx reserves the type-DELETE gate for
+        // actions whose data is gone afterwards. Asking someone to type DELETE
+        // to suspend is how they learn to type it without reading.
+        !(await confirm({
+          title: `Suspend ${member.email}?`,
+          body:
+            "They stop being able to sign in. Every lead, call and follow-up stays assigned " +
+            "to them, and you can reinstate them at any time.",
+          confirmLabel: "Suspend",
+          tone: "danger",
+          requireTyped: false,
+        }))
+      ) {
+        return;
+      }
       const res = await setStaffStatusAction(member.userId, suspending ? "suspended" : "active");
       if (res.error) {
         await alert({
@@ -311,15 +338,21 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
   };
 
   const remove = () => {
-    if (
-      !window.confirm(
-        `Remove ${member.email} from this workspace? Their login is deleted and cannot be ` +
-          `restored - suspend them instead if this might be temporary.`,
-      )
-    ) {
-      return;
-    }
     startTransition(async () => {
+      // No `requireTyped` override, so this keeps the default DELETE gate:
+      // the login is destroyed and cannot be restored.
+      if (
+        !(await confirm({
+          title: `Remove ${member.email} from this workspace?`,
+          body:
+            "Their login is deleted and cannot be restored - suspend them instead if this " +
+            "might be temporary.",
+          confirmLabel: "Remove",
+          tone: "danger",
+        }))
+      ) {
+        return;
+      }
       const res = await removeTeamMemberAction(member.userId);
       if (res.error) {
         await alert({

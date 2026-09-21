@@ -19,7 +19,7 @@
  * call in `(platform)/layout.tsx` gates RENDERING and never runs on an
  * invocation, so the layout cannot stand in for any of this.
  *
- * The files are DISCOVERED, never listed. A hard-coded list of the eight that
+ * The files are DISCOVERED, never listed. A hard-coded list of the ones that
  * exist today would pass forever no matter what anyone added next to them.
  */
 import { readdirSync, readFileSync } from "node:fs";
@@ -31,19 +31,20 @@ import { blankNonCode, bodyBraceAfter, matchDelimiter } from "@/lib/test-support
 /** This test file lives at the root of the route group it polices. */
 const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
 
-/** The eight that exist today. NOT the source of truth - a floor, so that a
+/** A sample of what exists today. NOT the source of truth - a floor, so that a
  *  discovery walk which silently stops finding files fails loudly instead of
- *  passing vacuously. A ninth file must not fail here; it must fail on its
+ *  passing vacuously. A new file must not fail here; it must fail on its
  *  missing guard. */
 const KNOWN_ACTION_FILES = [
   "agents/actions.ts",
-  "api-keys/actions.ts",
   "calls/actions.ts",
+  "client-config/keys-actions.ts",
+  "client-config/roles-actions.ts",
+  "client-config/team-actions.ts",
   "crm/actions.ts",
   "instances/[id]/actions.ts",
   "instances/new/actions.ts",
   "search/actions.ts",
-  "team/actions.ts",
 ];
 
 const GUARD_CALL = /\brequireOperator\s*\(\s*\)/;
@@ -51,12 +52,29 @@ const NETWORK_CALL = /\bfetch\s*\(/;
 const GUARD_IMPORT =
   /import\s*\{[^}]*\brequireOperator\b[^}]*\}\s*from\s*["']@\/lib\/operator-guard["']/;
 
+/**
+ * `actions.ts` AND `<something>-actions.ts`.
+ *
+ * The suffix form matters as much as the bare name and used to be invisible
+ * here. `(owner)` already names files that way wherever one directory holds
+ * several action modules (`crm-actions.ts`, `stale-actions.ts`,
+ * `disposition-actions.ts`, a dozen more), and the moment that convention
+ * reached this group - `client-config` holds three, one per tab - a file matched
+ * by `name === "actions.ts"` alone would have been a `"use server"` module full
+ * of live POST endpoints that this entire suite never looked at. Silently: the
+ * walk would still find plenty of files, so nothing would go red.
+ *
+ * That is the exact failure this suite was written to prevent, so the pattern is
+ * deliberately wider than today's tree needs.
+ */
+const ACTION_FILE = /^(?:actions|[A-Za-z0-9_$-]+-actions)\.ts$/;
+
 function findActionFiles(dir: string, prefix = ""): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) found.push(...findActionFiles(join(dir, entry.name), rel));
-    else if (entry.name === "actions.ts") found.push(rel);
+    else if (ACTION_FILE.test(entry.name)) found.push(rel);
   }
   return found.sort();
 }
