@@ -83,6 +83,8 @@ interface LoadOptions {
   devUserId?: string;
   /** Raw `DEV_OWNER_ROLE` - the local-dev persona override (Phase 8). */
   devOwnerRole?: string;
+  /** Raw `DEV_ENABLED_MODULES` - the local-dev module override. */
+  devEnabledModules?: string;
 }
 
 /**
@@ -103,6 +105,7 @@ async function load(options: LoadOptions) {
   vi.stubEnv("DEV_WORKSPACE_ID", DEV_WORKSPACE_ID);
   vi.stubEnv("DEV_USER_ID", options.devUserId ?? "");
   vi.stubEnv("DEV_OWNER_ROLE", options.devOwnerRole ?? "");
+  vi.stubEnv("DEV_ENABLED_MODULES", options.devEnabledModules ?? "");
 
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
@@ -382,6 +385,40 @@ describe("getPrincipal", () => {
       devOwnerRole: "supreme-leader",
     });
     expect((await nonsense.getPrincipal())?.membership?.ownerRole).toBe("owner");
+  });
+
+  /**
+   * The module override, so `call_intel` pages can be seen on a laptop. Same
+   * shape as the persona override: unset means the old hard-coded pair, and
+   * a name that is not a module is dropped rather than trusted.
+   */
+  it("gives the dev console the modules DEV_ENABLED_MODULES names", async () => {
+    const withIntel = await load({
+      operatorEmails: "",
+      authEnabled: false,
+      session: null,
+      devEnabledModules: "aura, crm,call_intel,crm,root",
+    });
+    expect((await withIntel.getPrincipal())?.membership?.enabledModules).toEqual(["aura", "crm", "call_intel"]);
+
+    const unset = await load({ operatorEmails: "", authEnabled: false, session: null });
+    expect((await unset.getPrincipal())?.membership?.enabledModules).toEqual(["aura", "crm"]);
+
+    const junk = await load({ operatorEmails: "", authEnabled: false, session: null, devEnabledModules: "root,admin" });
+    expect((await junk.getPrincipal())?.membership?.enabledModules).toEqual(["aura", "crm"]);
+  });
+
+  it("NEVER lets DEV_ENABLED_MODULES reach a principal built from a real session", async () => {
+    const real = await load({
+      operatorEmails: OPERATOR_EMAIL,
+      authEnabled: true,
+      session: { id: SUPABASE_SUBJECT, email: OWNER_EMAIL },
+      devEnabledModules: "aura,crm,call_intel,wasi",
+    });
+    contextOk(real.fetchMock, { memberships: [rawMembership()] });
+    const modules = (await real.getPrincipal())?.membership?.enabledModules ?? [];
+    expect(modules).not.toContain("call_intel");
+    expect(modules).not.toContain("wasi");
   });
 
   /**

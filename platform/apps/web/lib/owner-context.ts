@@ -5,6 +5,7 @@ import {
   type FeatureKey,
   type FeatureOverrides,
   type OwnerRole,
+  OrgModule,
   enabledFeatures,
   featureForPath,
   parseBranding,
@@ -228,6 +229,26 @@ function devOwnerRole(): OwnerRole {
   return resolveOwnerRole(process.env.DEV_OWNER_ROLE);
 }
 
+/**
+ * The modules the local-dev console acts as holding - `DEV_ENABLED_MODULES`,
+ * comma-separated, defaulting to the `aura,crm` this branch always hard-coded.
+ *
+ * Same reasoning, and the same boundary, as devOwnerRole above: without it
+ * every `call_intel` page (the call log, call insights) is a 404 on a laptop,
+ * because the synthetic membership never held that module - a page that can
+ * only be reasoned about, never seen. Unknown names are dropped rather than
+ * trusted, and it only applies where there is no session at all; a real
+ * session reads its modules from the org, and the API checks them again
+ * regardless.
+ */
+function devEnabledModules(): string[] {
+  const requested = (process.env.DEV_ENABLED_MODULES ?? "")
+    .split(",")
+    .map((m) => m.trim())
+    .filter((m) => OrgModule.safeParse(m).success);
+  return requested.length ? [...new Set(requested)] : ["aura", "crm"];
+}
+
 export const getPrincipal = cache(async (): Promise<Principal | null> => {
   const user = await getSessionUser();
 
@@ -246,8 +267,9 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       recordingsListen: true,
       recordingsExport: true,
       workspaceId: DEV_WORKSPACE_ID,
-      // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally - 0072's backfill.
-      enabledModules: ["aura", "crm"],
+      // DEV_ORG_ID already has CRM (roles/pipeline) seeded locally - 0072's
+      // backfill. DEV_ENABLED_MODULES widens it; see devEnabledModules.
+      enabledModules: devEnabledModules(),
       // No overrides locally: the catalogue's defaults are every feature on,
       // so a laptop with no database rows renders the whole console. This
       // branch exists so the console is usable without a Supabase project, and
