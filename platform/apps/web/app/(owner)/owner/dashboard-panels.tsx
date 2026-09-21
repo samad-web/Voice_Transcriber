@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, MonoLabel, RowHint, StateChip, StatusChip, STATE_TONE } from "@aura/ui";
 import type { ConsoleState } from "@aura/ui";
+import { formatDay } from "@/lib/report-dashboard";
 import { TelecallerName } from "./telecaller-name";
 import { formatDuration, formatValue, num, relativeTime, type Overview, type Stage } from "./types";
 
@@ -276,6 +277,17 @@ export function CallOutcomes({
   );
 }
 
+/**
+ * "13 Sep" for a chart day, read from the same local date parts as the axis
+ * label under it, so the two can never name different days. Worded through
+ * the Reports page's fixed month table rather than Intl, whose ICU builds
+ * disagree ("Sep" / "Sept").
+ */
+function dayLabel(date: Date): string {
+  const pad = (v: number) => String(v).padStart(2, "0");
+  return formatDay(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`);
+}
+
 export function ActivityChart({
   byDay,
   days,
@@ -288,6 +300,8 @@ export function ActivityChart({
   title?: string;
 }) {
   const maxDay = Math.max(...byDay.map((d) => Math.max(d.calls, d.leads)), 1);
+  const leadNoun = leadLabel.toLowerCase();
+  const n = byDay.length;
   return (
     <Card elevated className="space-y-4">
       <MonoLabel>{title ?? `Calls and new leads - last ${days} days`}</MonoLabel>
@@ -295,31 +309,79 @@ export function ActivityChart({
         <p className="py-10 text-center text-sm text-text-muted">No activity in this window</p>
       ) : (
         <>
-          <div className="flex h-40 items-end gap-1">
-            {byDay.map((d) => (
-              <div key={d.day} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div className="flex h-32 w-full items-end justify-center gap-0.5">
-                  <div
-                    title={`${d.calls} calls`}
-                    className="w-1/2 rounded-t-sm bg-border-strong"
-                    style={{ height: `${(d.calls / maxDay) * 100}%` }}
-                  />
-                  <div
-                    title={`${d.leads} ${leadLabel.toLowerCase()}`}
-                    // Two greys, not grey and blue. The pair was already
-                    // carrying its own legend and its own title attributes, so
-                    // the hue was never the thing distinguishing them - and
-                    // blue means "outgoing" now.
-                    className="w-1/2 rounded-t-sm bg-text"
-                    style={{ height: `${(d.leads / maxDay) * 100}%` }}
-                  />
+          {/*
+            Hover shows the day's numbers. The whole column is the hit target,
+            not the painted bar: a quiet day's bar is a few pixels tall and a
+            day with no leads has no lead bar at all, so a tooltip bound to the
+            bar (the native `title` this replaced) was unreachable exactly where
+            the number was most worth reading.
+
+            The plot is hidden from assistive tech because the table after it
+            carries the same figures in a form a screen reader can walk, and
+            thirty focusable columns would be a keyboard trap.
+          */}
+          <div aria-hidden="true" className="flex h-40 items-end gap-1">
+            {byDay.map((d, i) => {
+              const date = new Date(d.day);
+              // Tooltips at the edges open inward so they never leave the card.
+              const align =
+                i < n / 3 ? "left-0" : i >= (2 * n) / 3 ? "right-0" : "left-1/2 -translate-x-1/2";
+              return (
+                <div key={d.day} className="group flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div className="relative flex h-32 w-full items-end justify-center gap-0.5 rounded-sm transition-colors duration-150 ease-out group-hover:bg-surface-hover">
+                    <div
+                      className="w-1/2 rounded-t-sm bg-border-strong"
+                      style={{ height: `${(d.calls / maxDay) * 100}%` }}
+                    />
+                    <div
+                      // Two greys, not grey and blue. The pair carries its own
+                      // legend and tooltip, so the hue was never the thing
+                      // distinguishing them - and blue means "outgoing" now.
+                      className="w-1/2 rounded-t-sm bg-text"
+                      style={{ height: `${(d.leads / maxDay) * 100}%` }}
+                    />
+                    <span
+                      className={`pointer-events-none invisible absolute bottom-full z-10 mb-1 w-max rounded-md border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted shadow-md group-hover:visible ${align}`}
+                    >
+                      <span className="block font-medium text-text">{dayLabel(date)}</span>
+                      <span className="mt-1 flex items-center gap-1.5 tabular-nums">
+                        <span className="h-2 w-2 rounded-sm bg-border-strong" />
+                        <span className="font-semibold text-text">{d.calls}</span>
+                        {d.calls === 1 ? "call" : "calls"}
+                      </span>
+                      <span className="flex items-center gap-1.5 tabular-nums">
+                        <span className="h-2 w-2 rounded-sm bg-text" />
+                        <span className="font-semibold text-text">{d.leads}</span>
+                        {d.leads === 1 ? leadNoun.replace(/s$/, "") : leadNoun}
+                      </span>
+                    </span>
+                  </div>
+                  <span className="w-full truncate text-center text-xs text-text-muted tabular-nums">
+                    {date.toLocaleDateString(undefined, { day: "numeric" })}
+                  </span>
                 </div>
-                <span className="w-full truncate text-center text-xs text-text-muted tabular-nums">
-                  {new Date(d.day).toLocaleDateString(undefined, { day: "numeric" })}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
+          <table className="sr-only">
+            <caption>{title ?? `Calls and new leads - last ${days} days`}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Day</th>
+                <th scope="col">Calls</th>
+                <th scope="col">{leadLabel}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byDay.map((d) => (
+                <tr key={d.day}>
+                  <th scope="row">{dayLabel(new Date(d.day))}</th>
+                  <td>{d.calls}</td>
+                  <td>{d.leads}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
           <div className="flex items-center gap-4 border-t border-border pt-3">
             <span className="flex items-center gap-1.5 text-xs text-text-muted">
               <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-border-strong" /> Calls
