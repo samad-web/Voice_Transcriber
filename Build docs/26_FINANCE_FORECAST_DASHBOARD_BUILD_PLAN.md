@@ -340,6 +340,11 @@ first time.
    tab of **S15 Finance settings** and returns to S1 when saved:
    1. **Business profile** (`?tab=business`): legal name, trade name, GSTIN, state, PAN, address,
       base currency, financial-year start month, default payment terms.
+      - **Superseded by doc 27 §4.3 (2026-09-21).** These fields are now a core page,
+        `/owner/account/business`, stored in `org_business_profile`. This tab links there, and
+        `billing_settings` keeps only default payment terms, numbering, taxes and documents.
+      - Doc 27 §0.4 also notes that migrations 0124 and 0125 are now taken, so this plan's §9
+        numbers need re-taking when it's built.
       - GSTIN is validated for format and checksum, and its first two digits must match the chosen
         state.
    2. **Numbering** (`?tab=numbering`): prefix per document type, with a live preview such as
@@ -1179,6 +1184,12 @@ is marked "NO_LOADER". Page gates apply in the order of §4.4.
 | **public** `/pay/thanks`, `/pay/cancelled` | public app | public | F0 | none | anonymous | none | — |
 
 ### 8.4 URL state contract
+
+> **Superseded in part by doc 28 (2026-09-22).** The `?back=` parameter and `safeBackHref` below
+> are replaced by the console-wide header Back button (doc 28 §3) and the shared
+> `safeConsolePath` (doc 28 §3.6). Finance detail screens must not add `?back=`. The header Back
+> already returns to the exact list state the reader came from. The rest of this section
+> (the period model and the list state in the URL) stands.
 
 All list and report state lives in the URL, so every view can be bookmarked, shared and saved as a
 view. No finance screen keeps filter state in client memory.
