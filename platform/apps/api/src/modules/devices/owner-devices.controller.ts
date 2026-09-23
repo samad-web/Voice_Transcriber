@@ -19,6 +19,8 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { FcmService } from "../../fcm/fcm.service";
+import { lockDevice, restoreDevice } from "./device-rebind";
 
 /**
  * The client's own handsets: see them, pair a new one, retire an old one
@@ -83,7 +85,10 @@ const MintBody = z.object({
 // route added here cannot quietly escape the persona check entirely.
 @RequireOwnerRole("owner", "manager", "telecaller", "sales", "marketing")
 export class OwnerDevicesController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly fcm: FcmService,
+  ) {}
 
   /**
    * This tenant's handsets.
@@ -100,6 +105,13 @@ export class OwnerDevicesController {
         `SELECT d.id, d.label, d.status, d.os_version AS "osVersion",
                 d.app_version AS "appVersion", d.capture_capability AS "captureCapability",
                 d.created_at AS "pairedAt",
+                d.removed_at AS "removedAt",
+                d.relinked_at AS "relinkedAt",
+                -- Whether a reinstall of this phone can come back by itself
+                -- (0130). False for every handset still on a build older than
+                -- 1.1.6, which is what an owner needs to know before relying
+                -- on it.
+                (d.recovery_secret_hash IS NOT NULL) AS "selfRecovery",
                 i.name AS "instanceName",
                 t.display_name AS "telecallerName",
                 (SELECT max(c.started_at) FROM calls c WHERE c.device_id = d.id) AS "lastCallAt",
@@ -214,17 +226,31 @@ export class OwnerDevicesController {
         device_id: string | null;
         label: string | null;
         paired_at: string | null;
+        recovered: boolean | null;
+        telecaller_name: string | null;
+        call_count: number | null;
       }>(
+        // `recovered` (0130): the row is older than the code, so this code
+        // brought an existing handset back rather than adding one. Ordered by
+        // `enrollment_token_id` alone would not say which - a rebind rewrites
+        // that column onto an old row, and its created_at stays where it was.
         `SELECT t.expires_at, t.expires_at <= now() AS expired,
                 i.name AS instance_name,
-                d.id AS device_id, d.label, d.created_at AS paired_at
+                d.id AS device_id, d.label,
+                COALESCE(d.relinked_at, d.created_at) AS paired_at,
+                d.created_at < t.created_at AS recovered,
+                d.telecaller_name,
+                d.call_count
            FROM enrollment_tokens t
            JOIN instances i ON i.id = t.instance_id
            LEFT JOIN LATERAL (
-             SELECT id, label, created_at
-               FROM devices
-              WHERE enrollment_token_id = t.id
-              ORDER BY created_at DESC
+             SELECT dv.id, dv.label, dv.created_at, dv.relinked_at,
+                    COALESCE(tc.display_name, dv.telecaller_name) AS telecaller_name,
+                    (SELECT count(*)::int FROM calls c WHERE c.device_id = dv.id) AS call_count
+               FROM devices dv
+               LEFT JOIN telecallers tc ON tc.id = dv.telecaller_id
+              WHERE dv.enrollment_token_id = t.id
+              ORDER BY dv.created_at DESC
               LIMIT 1
            ) d ON true
           WHERE t.id = $1 AND t.org_id = $2`,
@@ -241,6 +267,9 @@ export class OwnerDevicesController {
             label: row.label,
             instanceName: row.instance_name,
             pairedAt: row.paired_at,
+            recovered: row.recovered === true,
+            telecallerName: row.telecaller_name,
+            callCount: row.call_count ?? 0,
           },
         };
       }
@@ -286,7 +315,129 @@ export class OwnerDevicesController {
     });
   }
 
+  /**
+   * Bring a retired handset back (0130) - the "I retired the wrong phone" undo.
+   *
+   * Owner and manager only, the same tier as retiring: whoever may take a phone
+   * off the floor may put it back, and a delegated pairer may not, because
+   * restoring a wiped phone is the one action here that re-arms a handset an
+   * owner may have written off as stolen.
+   *
+   * Nothing on the phone has to happen. It still holds its key; its next check-in
+   * succeeds, and the push below makes that check-in happen now rather than at
+   * the next hourly poll. If the app has since been uninstalled, restoring does
+   * no harm - re-pairing that phone then lands on this same row.
+   */
+  @Post(":id/restore")
+  @RequireOwnerRole("owner", "manager")
+  async restore(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    const restored = await this.db.withOrg(orgId, async (client) => {
+      const result = await restoreDevice(client, id);
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'device.restore', 'device', $3, $4)`,
+        [
+          orgId,
+          req.principal?.userId ?? "owner-console",
+          id,
+          JSON.stringify({ previousStatus: result.previousStatus, wasRemoved: result.wasRemoved }),
+        ],
+      );
+      return result;
+    });
+    return { ...restored, woken: await this.wake(orgId, id) };
+  }
+
+  /**
+   * A pairing code bound to ONE existing handset (0130).
+   *
+   * For the phone that cannot find its own way back: factory-reset, re-flashed
+   * from a debug build to the release one (a different signing key changes the
+   * hardware id), or replaced outright for the same telecaller. Whatever phone
+   * scans this takes the named row over - its id, its telecaller, its history -
+   * and the phone that held it before is signed out at its next check-in.
+   *
+   * That last clause is why this is owner-or-manager and not merely `canPair`.
+   * Pairing adds a handset; this moves a person's identity onto a different
+   * phone, which is the same weight as retiring one.
+   *
+   * Same shape and the same constants as `pairing-token`, so the console's
+   * pairing dialog (which watches `GET pairing-token/:id`) needs no second mode.
+   */
+  @Post(":id/relink-token")
+  @RequireOwnerRole("owner", "manager")
+  async relinkToken(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      const device = await lockDevice(client, id);
+      if (!device) throw new NotFoundException("no such handset in this workspace");
+
+      const rawToken = randomBytes(32).toString("base64url");
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+      const {
+        rows: [token],
+      } = await client.query<{ id: string; expires_at: string }>(
+        `INSERT INTO enrollment_tokens
+           (org_id, instance_id, token_hash, expires_at, max_uses, relink_device_id)
+         VALUES ($1, $2, $3, now() + make_interval(mins => $4), $5, $6)
+         RETURNING id, expires_at`,
+        [orgId, device.instance_id, tokenHash, PAIRING_TTL_MINUTES, PAIRING_MAX_USES, id],
+      );
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'device.relink_token.create', 'device', $3, $4)`,
+        [
+          orgId,
+          req.principal?.userId ?? "owner-console",
+          id,
+          JSON.stringify({ status: device.status, instanceId: device.instance_id }),
+        ],
+      );
+
+      return {
+        pairingId: token.id,
+        instanceId: device.instance_id,
+        adminKey: rawToken,
+        expiresAt: token.expires_at,
+        maxUses: PAIRING_MAX_USES,
+        relinkDeviceId: id,
+      };
+    });
+  }
+
   // ── helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Push a config refresh so a restored phone re-enables now, not at its next
+   * hourly poll. Best-effort, and never throws: the restore has already
+   * committed, and a push that could not be sent must not turn a completed undo
+   * into a 500 that invites a second one. Same contract as the operator
+   * controller's pushConfigRefresh.
+   */
+  private async wake(orgId: string, deviceId: string): Promise<boolean> {
+    try {
+      const {
+        rows: [device],
+      } = await this.db.withOrg(orgId, (client) =>
+        client.query<{ fcm_token: string | null }>(
+          "SELECT fcm_token FROM devices WHERE id = $1",
+          [deviceId],
+        ),
+      );
+      if (!device?.fcm_token) return false;
+      return await this.fcm.sendToDevice(device.fcm_token, { action: "config_refresh" });
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * What this caller may do, derived from `memberships` alone.

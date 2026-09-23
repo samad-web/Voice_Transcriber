@@ -17,6 +17,7 @@ import {
   useToast,
 } from "@aura/ui";
 import { enrollmentQrPayload } from "@aura/shared";
+import { Time } from "@/components/org-time";
 import { useRealtime, useRealtimeStatus } from "@/components/realtime-provider";
 import {
   mintPairingTokenAction,
@@ -284,9 +285,14 @@ export function DevicesClient({
                     {device.osVersion ? ` · Android ${device.osVersion}` : ""}
                     {" · "}
                     {device.callCount} call{device.callCount === 1 ? "" : "s"}
-                    {device.lastCallAt
-                      ? ` · last ${new Date(device.lastCallAt).toLocaleDateString()}`
-                      : " · no calls yet"}
+                    {device.lastCallAt ? (
+                      <>
+                        {" · last "}
+                        <Time iso={device.lastCallAt} mode="date" />
+                      </>
+                    ) : (
+                      " · no calls yet"
+                    )}
                   </p>
                 </div>
                 {data.canRevoke && device.status === "active" && (

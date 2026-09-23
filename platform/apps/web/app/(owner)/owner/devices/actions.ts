@@ -22,6 +22,12 @@ export interface OwnerDevice {
   appVersion: string | null;
   captureCapability: string | null;
   pairedAt: string;
+  /** Set when the handset was removed from the fleet (0087). */
+  removedAt: string | null;
+  /** When a returning phone last took this handset back (0130). */
+  relinkedAt: string | null;
+  /** A reinstall of this phone reconnects by itself - false until it runs 1.1.6+. */
+  selfRecovery: boolean;
   instanceName: string;
   telecallerName: string | null;
   lastCallAt: string | null;
@@ -67,6 +73,8 @@ export interface PairingToken {
   adminKey: string;
   expiresAt: string;
   maxUses: number;
+  /** Present on a re-link code: the handset whichever phone scans it becomes. */
+  relinkDeviceId?: string;
 }
 
 /**
@@ -80,7 +88,16 @@ export type PairingStatus =
   | {
       state: "paired";
       expiresAt: string;
-      device: { id: string; label: string | null; instanceName: string; pairedAt: string };
+      device: {
+        id: string;
+        label: string | null;
+        instanceName: string;
+        pairedAt: string;
+        /** The code brought an existing handset back rather than adding one (0130). */
+        recovered: boolean;
+        telecallerName: string | null;
+        callCount: number;
+      };
     };
 
 export async function mintPairingTokenAction(
@@ -144,6 +161,53 @@ export async function revokeDeviceAction(id: string): Promise<{ error?: string }
     // step, and the banner lives in the layout rather than on this page.
     revalidatePath("/owner", "layout");
     return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Undo a retire (0130). The phone still holds its key, so it re-enables at its
+ * next check-in - which the API triggers with a push rather than waiting for
+ * the hourly poll.
+ */
+export async function restoreDeviceAction(id: string): Promise<{ error?: string; woken?: boolean }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/devices/${encodeURIComponent(id)}/restore`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const body = (await res.json()) as { woken?: boolean };
+    revalidatePath("/owner", "layout");
+    return { woken: body.woken === true };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * A pairing code bound to one existing handset (0130): whichever phone scans
+ * it takes that handset over - its id, its telecaller, its call history. Same
+ * shape as a pairing code, so the same dialog watches it.
+ */
+export async function mintRelinkTokenAction(
+  deviceId: string,
+): Promise<{ token?: PairingToken; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/owner/devices/${encodeURIComponent(deviceId)}/relink-token`,
+      { method: "POST", headers, cache: "no-store" },
+    );
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    return { token: (await res.json()) as PairingToken };
   } catch {
     return { error: "API unreachable" };
   }

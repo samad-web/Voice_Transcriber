@@ -5,6 +5,7 @@ import {
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -19,7 +20,15 @@ import {
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import * as jwt from "jsonwebtoken";
 import { z } from "zod";
-import { AppUpdateResponse, DeviceConfig, DeviceRegisterRequest } from "@aura/shared";
+import {
+  AppUpdateResponse,
+  DeviceConfig,
+  DeviceRecoverRequest,
+  DeviceRecoveryProvisionRequest,
+  DeviceRegisterRequest,
+  DeviceRegisterResponse,
+  judgeSecretRecovery,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
@@ -30,6 +39,20 @@ import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 import { FcmService } from "../../fcm/fcm.service";
 import { RealtimeService } from "../realtime/realtime.service";
+import {
+  findReturningDevice,
+  hardwareHashFor,
+  lockDevice,
+  rebindDevice,
+  restoreDevice,
+} from "./device-rebind";
+
+/**
+ * The one refusal `POST /devices/recover` gives anybody who has not proven the
+ * secret. Unknown device, wrong secret, malformed secret: all identical, so the
+ * route cannot be used to learn which device ids exist.
+ */
+const RECOVERY_REFUSED = "recovery refused";
 
 const ChallengeBody = z.object({ deviceId: z.string().uuid() });
 const SetTelecallerBody = z.object({
@@ -187,6 +210,15 @@ export class DevicesController {
    * Device enrollment - the activation gate (design doc §3.2). Called by the
    * Android admin screen with the instance ID + one-time admin key. A device
    * that has not completed this flow can never record.
+   *
+   * ── A PHONE THAT HAS BEEN HERE BEFORE GETS ITS OLD ROW BACK (0130) ────────
+   *
+   * The token still authorises everything; what changes is which row it lands
+   * on. A re-link token names one row outright, and otherwise the handset's
+   * hardware hash finds the row this phone used to be. Either way the row is
+   * rebound - new key, same id - so the telecaller, the call history and the
+   * leads carry straight on, instead of a stranger appearing beside a silent
+   * "active" ghost. See device-rebind.ts for what is and is not reclaimable.
    */
   @Post("register")
   // 10/min per IP (checklist 08 §0.7). Enrollment is unauthenticated apart from
@@ -208,8 +240,13 @@ export class DevicesController {
     const admin = this.db.adminPool();
     const {
       rows: [token],
-    } = await admin.query(
-      `SELECT id, org_id
+    } = await admin.query<{
+      id: string;
+      org_id: string;
+      instance_id: string;
+      relink_device_id: string | null;
+    }>(
+      `SELECT id, org_id, instance_id, relink_device_id
          FROM enrollment_tokens
         WHERE instance_id = $1
           AND token_hash = $2
@@ -222,6 +259,8 @@ export class DevicesController {
     }
 
     const refreshToken = randomBytes(32).toString("base64url");
+    const recoverySecret = randomBytes(32).toString("base64url");
+    const hardwareHash = hardwareHashFor(token.org_id, req.hardwareId);
 
     const enrolled = await this.db.withOrg(token.org_id, async (client) => {
       // Guard against concurrent use of the same key
@@ -236,6 +275,48 @@ export class DevicesController {
         throw new UnauthorizedException("enrollment key exhausted");
       }
 
+      const returning = await findReturningDevice(client, token, hardwareHash);
+      if (returning) {
+        const { device, method } = returning;
+        const { installEpoch, newInstall } = await rebindDevice(client, device, {
+          publicKey: req.publicKey,
+          fingerprint: req.deviceFingerprint,
+          label: req.label ?? null,
+          captureCapability: req.captureCapability ?? null,
+          refreshTokenHash: sha256(refreshToken),
+          recoverySecretHash: sha256(recoverySecret),
+          previousRecoverySecretHash: null,
+          hardwareHash,
+          enrollmentTokenId: token.id,
+        });
+
+        await client.query(
+          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+           VALUES ($1, 'device', $2, 'device.recover', 'device', $2, $3)`,
+          [
+            token.org_id,
+            device.id,
+            JSON.stringify({
+              method,
+              previousStatus: device.status,
+              wasRemoved: device.removed_at !== null,
+              previousFingerprint: device.fingerprint,
+              fingerprint: req.deviceFingerprint,
+              newInstall,
+              installEpoch,
+            }),
+          ],
+        );
+
+        return {
+          deviceId: device.id,
+          refreshToken,
+          recoverySecret,
+          recovered: true,
+          telecallerName: device.telecaller_name,
+        };
+      }
+
       // `enrollment_token_id` (0124) is what lets the owner console's pairing
       // dialog see THIS phone arrive on THAT code, rather than guessing from
       // "a device appeared on the same instance just now".
@@ -244,8 +325,9 @@ export class DevicesController {
       } = await client.query(
         `INSERT INTO devices
            (org_id, instance_id, label, public_key, fingerprint, capture_capability,
-            refresh_token_hash, status, last_seen_at, enrollment_token_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', now(), $8)
+            refresh_token_hash, status, last_seen_at, enrollment_token_id,
+            hardware_hash, recovery_secret_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', now(), $8, $9, $10)
          RETURNING id, status, created_at`,
         [
           token.org_id,
@@ -256,6 +338,8 @@ export class DevicesController {
           req.captureCapability ?? null,
           sha256(refreshToken),
           token.id,
+          hardwareHash,
+          sha256(recoverySecret),
         ],
       );
 
@@ -271,7 +355,13 @@ export class DevicesController {
       );
 
       // Shown once; the device stores it in its Keystore-backed token store.
-      return { deviceId: device.id, refreshToken };
+      return {
+        deviceId: device.id as string,
+        refreshToken,
+        recoverySecret,
+        recovered: false,
+        telecallerName: null as string | null,
+      };
     });
 
     // Announced here, and only after the transaction above has committed. The
@@ -282,12 +372,245 @@ export class DevicesController {
     this.realtime.publish({
       orgId: token.org_id,
       topic: "device",
-      action: "created",
+      action: enrolled.recovered ? "updated" : "created",
       id: enrolled.deviceId,
       at: new Date().toISOString(),
     });
 
-    return enrolled;
+    return this.enrollmentResponse(enrolled);
+  }
+
+  /**
+   * A reinstalled app reclaiming its row with no QR (0130).
+   *
+   * The secret comes back from Google Block Store, which keeps it through an
+   * uninstall when the phone has Google backup on. It is the only thing that
+   * authorises this route, so judgeSecretRecovery (@aura/shared, pinned by its
+   * tests) insists on the same phone and a still-active row before anything is
+   * rebound. Everything else - a phone the owner retired, a different phone
+   * holding a copied secret - is sent back to a person with a pairing code.
+   *
+   * The secret is replaced on every success, and the old one is honoured only
+   * as a retry by the exact key it was replaced for.
+   */
+  @Post("recover")
+  // Same limit and same reasoning as `register`: unauthenticated apart from a
+  // credential in the body, so it is where guessing would happen - though a
+  // 256-bit secret makes guessing moot, the limit keeps each attempt from being
+  // a free admin-pool query.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async recover(@Body() body: unknown) {
+    const parsed = DeviceRecoverRequest.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const req = parsed.data;
+
+    // Pre-auth, like `authenticate`: the org is unknown until the device is.
+    const {
+      rows: [known],
+    } = await this.db
+      .adminPool()
+      .query<{ org_id: string }>(`SELECT org_id FROM devices WHERE id = $1`, [req.deviceId]);
+    if (!known) throw new UnauthorizedException(RECOVERY_REFUSED);
+
+    const refreshToken = randomBytes(32).toString("base64url");
+    const recoverySecret = randomBytes(32).toString("base64url");
+    const hardwareHash = hardwareHashFor(known.org_id, req.hardwareId);
+
+    const outcome = await this.db.withOrg(known.org_id, async (client) => {
+      const device = await lockDevice(client, req.deviceId);
+      if (!device) return { refused: "bad_secret" as const };
+
+      const verdict = judgeSecretRecovery({
+        presentedSecretHash: sha256(req.recoverySecret),
+        currentSecretHash: device.recovery_secret_hash,
+        previousSecretHash: device.recovery_secret_prev_hash,
+        presentedPublicKey: req.publicKey,
+        storedPublicKey: device.public_key,
+        status: device.status,
+        removed: device.removed_at !== null,
+        presentedHardwareHash: hardwareHash,
+        storedHardwareHash: device.hardware_hash,
+      });
+
+      if (!verdict.ok) {
+        // A proven secret refused for status or hardware is worth a line in
+        // the trail: someone holding this phone's credential tried to come
+        // back and could not. A wrong secret is not - it is noise, and
+        // recording it would let anyone write to a tenant's audit log.
+        if (verdict.reason !== "bad_secret") {
+          await client.query(
+            `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+             VALUES ($1, 'device', $2, 'device.recover_refused', 'device', $2, $3)`,
+            [
+              known.org_id,
+              device.id,
+              JSON.stringify({ reason: verdict.reason, fingerprint: req.deviceFingerprint }),
+            ],
+          );
+        }
+        return { refused: verdict.reason };
+      }
+
+      const { installEpoch, newInstall } = await rebindDevice(client, device, {
+        publicKey: req.publicKey,
+        fingerprint: req.deviceFingerprint,
+        label: req.label ?? null,
+        captureCapability: req.captureCapability ?? null,
+        refreshTokenHash: sha256(refreshToken),
+        recoverySecretHash: sha256(recoverySecret),
+        // Fresh: the secret just spent becomes the one a lost-response retry
+        // may present. Retry: that is already what `prev` holds - keep it.
+        previousRecoverySecretHash:
+          verdict.mode === "fresh" ? device.recovery_secret_hash : device.recovery_secret_prev_hash,
+        hardwareHash,
+        enrollmentTokenId: null,
+      });
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'device', $2, 'device.recover', 'device', $2, $3)`,
+        [
+          known.org_id,
+          device.id,
+          JSON.stringify({
+            method: "recovery_secret",
+            mode: verdict.mode,
+            previousFingerprint: device.fingerprint,
+            fingerprint: req.deviceFingerprint,
+            newInstall,
+            installEpoch,
+          }),
+        ],
+      );
+
+      return {
+        enrolled: {
+          deviceId: device.id,
+          refreshToken,
+          recoverySecret,
+          recovered: true,
+          telecallerName: device.telecaller_name,
+        },
+      };
+    });
+
+    if ("refused" in outcome) {
+      if (outcome.refused === "bad_secret") throw new UnauthorizedException(RECOVERY_REFUSED);
+      // The caller has proven the secret, so it is told why - the phone has to
+      // tell the person holding it what to do next, and the two answers need
+      // different people: "ask your admin to restore it" vs "get a new code".
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: outcome.refused,
+        message:
+          outcome.refused === "unlinked"
+            ? "this handset was unlinked by an admin - ask them to restore it"
+            : "this looks like a different phone - ask an admin for a re-link code",
+      });
+    }
+
+    this.realtime.publish({
+      orgId: known.org_id,
+      topic: "device",
+      action: "updated",
+      id: outcome.enrolled.deviceId,
+      at: new Date().toISOString(),
+    });
+
+    return this.enrollmentResponse(outcome.enrolled);
+  }
+
+  /**
+   * An enrolled handset asking for a recovery secret (0130) - how the fleet
+   * already in the field becomes recoverable without anyone re-pairing it.
+   * The app calls this once per device id after taking the update, stores the
+   * answer in Block Store, and reports its hardware hash at the same time so a
+   * later QR re-pair can find this row.
+   *
+   * Replaces any earlier secret outright: the caller holds the Keystore key, so
+   * it IS the phone the secret protects.
+   */
+  @Post("me/recovery")
+  @UseGuards(DeviceAuthGuard)
+  // Authenticated by a signed device token and called about once per phone,
+  // from a fleet that shares one NAT address - same reasoning as fcm-token.
+  @SkipThrottle()
+  async provisionRecovery(@Req() req: DeviceRequest, @Body() body: unknown) {
+    const parsed = DeviceRecoveryProvisionRequest.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { deviceId, orgId } = req.device;
+    const recoverySecret = randomBytes(32).toString("base64url");
+
+    const { rowCount } = await this.db.withOrg(orgId, (client) =>
+      client.query(
+        `UPDATE devices
+            SET recovery_secret_hash = $2,
+                recovery_secret_prev_hash = NULL,
+                hardware_hash = COALESCE($3, hardware_hash)
+          WHERE id = $1 AND status = 'active' AND removed_at IS NULL`,
+        [deviceId, sha256(recoverySecret), hardwareHashFor(orgId, parsed.data.hardwareId)],
+      ),
+    );
+    // The token is fifteen minutes old at most, so the device was active a
+    // moment ago; an owner retired it since. Arming recovery for a retired
+    // phone would hand it a way back that the retire was meant to close.
+    if (!rowCount) throw new ConflictException("device is not active - recovery not armed");
+    return { recoverySecret };
+  }
+
+  /**
+   * Undo a logout, a wipe or a remove - the operator's side of "unlinked by
+   * mistake" (0130). The owner console has the same action on
+   * `POST /owner/devices/:id/restore`; both run restoreDevice.
+   *
+   * The phone still holds its key (a wipe is honoured by closing the gate, not
+   * by destroying it), so its next check-in succeeds. The push makes that next
+   * check-in happen now.
+   */
+  @Post(":id/restore")
+  @UseGuards(AdminKeyGuard, TenantGuard, OrgRoleGuard)
+  @RequireOrgRole("org_admin")
+  async restore(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    const restored = await this.db.withOrg(orgId, async (client) => {
+      const result = await restoreDevice(client, id);
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'device.restore', 'device', $3, $4)`,
+        [
+          orgId,
+          req.principal?.userId ?? "dev-admin",
+          id,
+          JSON.stringify({ previousStatus: result.previousStatus, wasRemoved: result.wasRemoved }),
+        ],
+      );
+      return result;
+    });
+    const pinged = await this.pushConfigRefresh(orgId, id);
+    return { ...restored, status: "active" as const, pinged };
+  }
+
+  /**
+   * Both enrollment routes answer in this one shape. `telecallerName` is
+   * spread-or-nothing, not null - see DeviceRegisterResponse.
+   */
+  private enrollmentResponse(e: {
+    deviceId: string;
+    refreshToken: string;
+    recoverySecret: string;
+    recovered: boolean;
+    telecallerName: string | null;
+  }) {
+    return DeviceRegisterResponse.parse({
+      deviceId: e.deviceId,
+      refreshToken: e.refreshToken,
+      recoverySecret: e.recoverySecret,
+      recovered: e.recovered,
+      ...(e.telecallerName ? { telecallerName: e.telecallerName } : {}),
+    });
   }
 
   /** Step 1 of device auth: hand out a short-lived nonce to sign. */
