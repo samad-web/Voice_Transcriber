@@ -1,11 +1,7 @@
 import { Card, Skeleton } from "@aura/ui";
+import { DateRangeBarSkeleton, DateRangeSummarySkeleton } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
-import {
-  ChartCardSkeleton,
-  StatGridSkeleton,
-  TableBlockSkeleton,
-  ToolbarSkeleton,
-} from "@/components/skeletons";
+import { ChartCardSkeleton, StatGridSkeleton, TableBlockSkeleton } from "@/components/skeletons";
 
 /** The label on the left of a report card, and its Export CSV link on the right. */
 function ReportHead({ exportLink = true }: { exportLink?: boolean }) {
@@ -29,8 +25,8 @@ function FootnoteSkeleton({ lines }: { lines: number }) {
 }
 
 /**
- * Mirrors reports/page.tsx, top to bottom: the date-range pills with the range
- * printed beside them; six metric cards; the pipeline-by-stage and leads-per-day
+ * Mirrors reports/page.tsx, top to bottom: the shared date-range control and
+ * the line of dates under it; six metric cards; the pipeline-by-stage and leads-per-day
  * charts side by side; the against-target meters (only a tenant with targets set
  * has them); then the report cards - forecast by stage (a table), conversion
  * funnel (bars), rep performance (a table, its task chips and a note) and
@@ -41,10 +37,8 @@ export default function ReportsLoading() {
     <>
       <PageHeader title="Reports" context="Pipeline" />
 
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <ToolbarSkeleton pills={3} />
-        <Skeleton className="h-3 w-32" />
-      </div>
+      <DateRangeBarSkeleton />
+      <DateRangeSummarySkeleton />
 
       {/* MetricCard is a plain bordered card, not the filled KPI tile, and has no icon. */}
       <StatGridSkeleton count={6} columns={3} tone="plain" icons={false} />

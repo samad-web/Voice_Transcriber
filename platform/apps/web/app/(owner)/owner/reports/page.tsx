@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { DEFAULT_TIME_ZONE, todayIn } from "@aura/shared";
+import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
+import {
+  DEFAULT_RANGE_DAYS,
+  parseDateWindow,
+  rangePresets,
+  resolveDateWindow,
+  windowTitle,
+} from "@/lib/date-range";
 import { normaliseStaleAfterDays } from "@/lib/deal-staleness";
-import { ownerGet, ownerTry } from "@/lib/owner-context";
+import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import {
-  REPORT_RANGES,
   closedDealsHref,
   formatDateRange,
   formatDuration,
@@ -15,11 +23,8 @@ import {
   leadsArrivedHref,
   openDealsHref,
   openLeadsHref,
-  parseReportRange,
-  reportsHref,
   staleDealsHref,
 } from "@/lib/report-dashboard";
-import { FilterLink } from "../filter-link";
 import { formatValue } from "../types";
 import { CommissionPlansClient } from "./commission-plans-client";
 import type { CommissionPlan } from "./commission-actions";
@@ -181,8 +186,15 @@ export default async function ReportsPage({
   // proving the data behind it exists.
   await requireOwnerFeature("reports");
 
-  const range = parseReportRange((await searchParams).range);
-  const days = `days=${range}`;
+  // `?range=` is what this page wrote before it shared the date control;
+  // bookmarks of it still open the range they were saved on.
+  const { window, invalid } = parseDateWindow(await searchParams, { legacyDaysKey: "range" });
+  // The reports API resolves `days` against a UTC today, so a preset is sent
+  // as the workspace's own dates instead (see lib/date-range.ts).
+  const owner = await getOwner();
+  const zone = owner?.membership.reportingTimezone ?? DEFAULT_TIME_ZONE;
+  const requested = resolveDateWindow(window, todayIn(zone));
+  const days = new URLSearchParams(requested).toString();
 
   const [
     pipelineResult,
@@ -242,18 +254,18 @@ export default async function ReportsPage({
 
       {/* The one filter row, above everything it scopes (dataviz: filters sit
           in a single row above the charts, never inside a card). */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <nav aria-label="Date range" className="flex flex-wrap items-center gap-1.5">
-          {REPORT_RANGES.map((r) => (
-            <FilterLink key={r} active={r === range} href={reportsHref(r)}>
-              Last {r} days
-            </FilterLink>
-          ))}
-        </nav>
-        {conversion ? (
-          <p className="text-xs text-text-muted tabular-nums">{formatDateRange(conversion.from, conversion.to)}</p>
-        ) : null}
-      </div>
+      <DateRangeBar
+        path="/owner/reports"
+        presets={rangePresets("/owner/reports", window)}
+        from={conversion?.from ?? requested.from}
+        to={conversion?.to ?? requested.to}
+      />
+      {invalid ? <DateRangeNotice fallbackDays={DEFAULT_RANGE_DAYS} /> : null}
+      <DateRangeSummary
+        from={conversion?.from ?? requested.from}
+        to={conversion?.to ?? requested.to}
+        zone={zone}
+      />
 
       <section aria-label="Key metrics" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
@@ -332,7 +344,7 @@ export default async function ReportsPage({
         <Card>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold text-text">New leads per day</h2>
-            <span className="text-xs text-text-muted">Last {range} days</span>
+            <span className="text-xs text-text-muted">{windowTitle(window, responseTime ?? undefined)}</span>
           </div>
           {!responseTime ? (
             <NotPermitted />

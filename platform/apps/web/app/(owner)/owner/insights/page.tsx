@@ -1,20 +1,21 @@
 import type { Metadata } from "next";
-import Form from "next/form";
-import { Button, Card, Input, MonoLabel } from "@aura/ui";
+import { Card, MonoLabel } from "@aura/ui";
 import {
   type CallInsightsReport,
   callInsightsHighlights,
   callInsightsParams,
   formatReportRange,
 } from "@aura/shared";
+import { DateRangeBar, DateRangeSummary } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
-import { INSIGHT_PRESETS, insightsHref, isPreset, parseInsightsSearch } from "@/lib/call-insights";
+import { INSIGHT_PRESETS, parseInsightsSearch } from "@/lib/call-insights";
+import { rangePresets } from "@/lib/date-range";
 import { getOwner, ownerFeatures, ownerGet } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
-import { FilterLink } from "../filter-link";
 import {
   AboutFigures,
   AttentionCard,
+  CallbacksCard,
   ConversationCard,
   HoursCard,
   Highlights,
@@ -87,7 +88,12 @@ export default async function CallInsightsPage({
   }
   // The attention list links to the call log only when that page exists for
   // this workspace - a link into a switched-off feature is a link to a 404.
-  const callLogHref = owner && ownerFeatures(owner).has("call_log") ? "/owner/calls" : null;
+  // It carries the report's own dates, so it opens on the calls this report
+  // is about rather than the whole log.
+  const callLogHref =
+    owner && ownerFeatures(owner).has("call_log")
+      ? `/owner/calls?${new URLSearchParams({ from: report.range.from, to: report.range.to })}`
+      : null;
 
   return (
     <>
@@ -98,34 +104,13 @@ export default async function CallInsightsPage({
       </p>
 
       {/* The one control row, above everything it scopes. */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-3">
-          <nav aria-label="Date range" className="flex flex-wrap items-center gap-1.5">
-            {INSIGHT_PRESETS.map((days) => (
-              <FilterLink key={days} active={isPreset(window, days)} href={insightsHref({ kind: "relative", days })}>
-                Last {days} days
-              </FilterLink>
-            ))}
-          </nav>
-          {/* A GET form through next/form, so the custom range is a URL -
-              bookmarkable, shareable, and basePath-aware without JavaScript
-              of our own. */}
-          <Form action="/owner/insights" className="flex flex-wrap items-end gap-2">
-            <label className="space-y-1 text-xs text-text-muted">
-              <span className="block">From</span>
-              <Input type="date" name="from" defaultValue={report.range.from} required className="w-40" />
-            </label>
-            <label className="space-y-1 text-xs text-text-muted">
-              <span className="block">To</span>
-              <Input type="date" name="to" defaultValue={report.range.to} required className="w-40" />
-            </label>
-            <Button type="submit" variant="secondary" size="sm">
-              Show range
-            </Button>
-          </Form>
-        </div>
-        <PdfDownload window={window} />
-      </div>
+      <DateRangeBar
+        path="/owner/insights"
+        presets={rangePresets("/owner/insights", window, { presets: INSIGHT_PRESETS })}
+        from={report.range.from}
+        to={report.range.to}
+        aside={<PdfDownload window={window} />}
+      />
 
       {invalid ? (
         <Card>
@@ -137,11 +122,12 @@ export default async function CallInsightsPage({
         </Card>
       ) : null}
 
-      <p className="text-xs text-text-muted tabular-nums">
-        <span className="font-medium text-text">{formatReportRange(report.range.from, report.range.to)}</span>
-        {" · "}compared with {formatReportRange(report.previousRange.from, report.previousRange.to)}
-        {" · "}times in {report.org.timezone}
-      </p>
+      <DateRangeSummary
+        from={report.range.from}
+        to={report.range.to}
+        parts={[`compared with ${formatReportRange(report.previousRange.from, report.previousRange.to)}`]}
+        zone={report.org.timezone}
+      />
 
       <KpiTiles report={report} />
       <Highlights lines={callInsightsHighlights(report)} />
@@ -151,6 +137,8 @@ export default async function CallInsightsPage({
         <HoursCard report={report} />
         <ConversationCard report={report} />
       </div>
+
+      <CallbacksCard report={report} callLogHref={callLogHref} />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <QualityCard report={report} />

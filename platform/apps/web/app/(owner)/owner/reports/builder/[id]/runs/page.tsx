@@ -31,11 +31,6 @@ export default async function RunsPage({ params }: { params: Promise<{ id: strin
   return (
     <>
       <PageHeader title="Run history" context="Report builder" />
-      <div className="-mt-2">
-        <Link href={`/owner/reports/builder/${id}`} className="text-xs text-accent-text hover:underline">
-          ← Back to the report
-        </Link>
-      </div>
 
       <Card>
         <MonoLabel>Runs</MonoLabel>

@@ -2,18 +2,20 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, EmptyState, MonoLabel } from "@aura/ui";
+import { DEFAULT_TIME_ZONE, todayIn } from "@aura/shared";
+import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
+import {
+  DEFAULT_RANGE_DAYS,
+  dateWindowHref,
+  parseDateWindow,
+  rangePresets,
+  resolveDateWindow,
+} from "@/lib/date-range";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import type { ProductivityResponse, TelecallerProductivityRow } from "./types";
 
 export const metadata: Metadata = { title: "Productivity" };
-
-/** Presets rather than a date picker: these are the three ranges anyone asks for. */
-const RANGES = [
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
-] as const;
 
 const SORTS = [
   { key: "calls", label: "Calls" },
@@ -22,17 +24,6 @@ const SORTS = [
   { key: "sop", label: "SOP adherence" },
   { key: "name", label: "Name" },
 ] as const;
-
-/**
- * Dates in the org's own reporting timezone would be the correct thing to send,
- * and this tier does not know it. Sending UTC dates is safe because the API
- * compares them against a `date` column the worker already derived in the org's
- * zone - the range can be off by a few hours at its edges on a 90-day window,
- * which is why the presets are ranges and not "yesterday".
- */
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
 
 function hhmm(seconds: number | null | undefined): string {
   if (seconds == null) return "—";
@@ -81,14 +72,18 @@ export default async function ProductivityPage({
   if (!owner) redirect("/dashboard");
 
   const sp = await searchParams;
-  const days = Number(Array.isArray(sp.days) ? sp.days[0] : sp.days) || 30;
+  const { window, invalid } = parseDateWindow(sp);
   const sort = String(Array.isArray(sp.sort) ? sp.sort[0] : (sp.sort ?? "calls"));
 
-  const to = new Date();
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  // The API takes dates only, and compares them with a `date` the worker
+  // derived in the org's zone - so they are the org's dates too, counted from
+  // its own today rather than this server's UTC one.
+  const zone = owner.membership.reportingTimezone ?? DEFAULT_TIME_ZONE;
+  const requested = resolveDateWindow(window, todayIn(zone));
   const data = await ownerGet<ProductivityResponse>(
-    `/v1/owner/productivity?from=${isoDate(from)}&to=${isoDate(to)}&sort=${encodeURIComponent(sort)}`,
+    `/v1/owner/productivity?${new URLSearchParams({ ...requested, sort })}`,
   );
+  const shown = { from: data?.from ?? requested.from, to: data?.to ?? requested.to };
 
   const rows: TelecallerProductivityRow[] = data?.telecallers ?? [];
   const benchmarks = data?.benchmarks;
@@ -100,31 +95,25 @@ export default async function ProductivityPage({
 
       {/* Range and sort as links, not a client component: the API already
           sorts, so shipping JavaScript to re-sort a list the server ordered
-          would be a bundle for nothing. */}
+          would be a bundle for nothing. The range is the shared control; a
+          new range keeps the sort, and a new sort keeps the range. */}
+      <DateRangeBar
+        path="/owner/productivity"
+        presets={rangePresets("/owner/productivity", window, { keep: { sort } })}
+        from={shown.from}
+        to={shown.to}
+        keep={{ sort }}
+      />
+      {invalid ? <DateRangeNotice fallbackDays={DEFAULT_RANGE_DAYS} /> : null}
+      <DateRangeSummary from={shown.from} to={shown.to} zone={zone} />
+
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex items-center gap-2">
-          <MonoLabel>Range</MonoLabel>
-          {RANGES.map((r) => (
-            <Link
-              key={r.days}
-              href={`/owner/productivity?days=${r.days}&sort=${sort}`}
-              aria-current={r.days === days ? "page" : undefined}
-              className={
-                r.days === days
-                  ? "rounded-md border border-border bg-bg-subtle px-2.5 py-1 text-sm font-medium text-text"
-                  : "rounded-md px-2.5 py-1 text-sm text-text-muted hover:text-text"
-              }
-            >
-              {r.label}
-            </Link>
-          ))}
-        </div>
         <div className="flex items-center gap-2">
           <MonoLabel>Sort</MonoLabel>
           {SORTS.map((s) => (
             <Link
               key={s.key}
-              href={`/owner/productivity?days=${days}&sort=${s.key}`}
+              href={dateWindowHref("/owner/productivity", window, { keep: { sort: s.key } })}
               aria-current={s.key === sort ? "page" : undefined}
               className={
                 s.key === sort

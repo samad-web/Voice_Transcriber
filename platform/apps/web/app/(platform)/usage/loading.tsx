@@ -9,7 +9,7 @@ import {
 /**
  * Mirrors usage/page.tsx: the header (its title is static, only the eyebrow is
  * the tenant's name), the client switcher, the billing-period chip, four KPI
- * tiles, then two side-by-side cards - plan limits (two labelled meters) and
+ * tiles, then two side-by-side cards - storage (a size and one meter) and
  * invoices (an invoice / period / amount / status table).
  */
 export default function UsageLoading() {
@@ -28,17 +28,14 @@ export default function UsageLoading() {
       <StatGridSkeleton count={4} columns={4} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card elevated className="space-y-4">
-          <Skeleton className="h-3 w-24" />
-          {[0, 1].map((i) => (
-            <div key={i} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-3 w-14" />
-                <Skeleton className="h-3 w-28" />
-              </div>
-              <Skeleton className="h-2 w-full rounded-full" />
-            </div>
-          ))}
+        {/* The Storage vital (doc 27 §6.4): label and count, the size, a meter. */}
+        <Card elevated className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-28" />
+          </div>
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="h-2 w-full rounded-full" />
         </Card>
 
         <Card elevated className="space-y-4">

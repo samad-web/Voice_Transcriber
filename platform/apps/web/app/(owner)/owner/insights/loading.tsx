@@ -1,4 +1,5 @@
 import { Card, Skeleton } from "@aura/ui";
+import { DateRangeBarSkeleton, DateRangeSummarySkeleton } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
 import { ContentCardSkeleton } from "@/components/skeletons";
 
@@ -74,23 +75,8 @@ export default function CallInsightsLoading() {
       <PageHeader title="Call insights" context="Conversations" />
       <Skeleton className="-mt-2 h-3.5 w-[40rem] max-w-full" />
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-1.5">
-            <Skeleton className="h-8 w-24 rounded-full" />
-            <Skeleton className="h-8 w-28 rounded-full" />
-            <Skeleton className="h-8 w-28 rounded-full" />
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <Skeleton className="h-9.5 w-40 rounded-sm" />
-            <Skeleton className="h-9.5 w-40 rounded-sm" />
-            <Skeleton className="h-8 w-24 rounded-full" />
-          </div>
-        </div>
-        <Skeleton className="h-8 w-64 rounded-full" />
-      </div>
-
-      <Skeleton className="h-3 w-80 max-w-full" />
+      <DateRangeBarSkeleton aside="w-64" />
+      <DateRangeSummarySkeleton />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 8 }, (_, i) => (

@@ -16,6 +16,7 @@ import {
 import {
   type CallInsightsReport,
   QUALITY_BANDS,
+  callbackKpis,
   callInsightsKpis,
   countChange,
   formatCallLength,
@@ -26,9 +27,11 @@ import {
   formatReportDate,
   formatShare,
   formatTalkTime,
+  formatWait,
   outcomeLabel,
   pointChange,
   ratio,
+  recordableCalls,
   sentimentLabel,
   volumeSeries,
 } from "@aura/shared";
@@ -253,6 +256,95 @@ export function HoursCard({ report }: { report: Report }) {
   );
 }
 
+// ── Missed calls & call-backs ───────────────────────────────────────────────
+
+/**
+ * What became of the period's missed calls (0133) - the half of the red number
+ * a manager can still do something about. The same figures, in the same words,
+ * as the PDF's section of the same name.
+ *
+ * Rendered only when something was missed: the tile above already says 0, and
+ * a card of dashes under it would say it again.
+ */
+export function CallbacksCard({ report, callLogHref }: { report: Report; callLogHref: string | null }) {
+  const cb = report.callbacks;
+  if (cb.missed === 0) return null;
+  const k = callbackKpis(cb);
+  const facts: Array<{ label: string; value: string; note?: string }> = [
+    { label: "Missed calls", value: formatCount(cb.missed), note: cb.noNumber ? `${formatCount(cb.noNumber)} with no number` : undefined },
+    { label: "Recovered", value: formatShare(k.recoveredRate), note: `${formatCount(cb.returned)} of ${formatCount(k.returnable)} with a number` },
+    { label: "Called back by the team", value: formatShare(k.calledBackRate), note: `${formatCount(cb.calledBack)} calls` },
+    { label: "Recovered within an hour", value: formatShare(k.withinHourRate), note: `${formatCount(cb.withinHour)} calls` },
+    { label: "Median wait", value: formatWait(cb.medianMinutes), note: cb.returned ? "From the missed call to the one that reached them" : undefined },
+    { label: "Still waiting", value: formatCount(cb.waitingCallers), note: cb.waitingCallers === 1 ? "caller" : "callers" },
+  ];
+  // The list's own filter in the call log, over the report's dates.
+  const waitingHref = callLogHref ? `${callLogHref}&missed=waiting` : null;
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <CardHead
+          title="Missed calls & call-backs"
+          detail="Recovered means a later call reached the person - a call back from the team, or the customer ringing again and getting through"
+        />
+        {waitingHref && cb.waitingCallers > 0 ? (
+          <Link href={waitingHref} className="text-xs font-medium text-accent-text hover:underline">
+            Open the not-called-back list
+          </Link>
+        ) : null}
+      </div>
+
+      <dl className="mt-3 grid gap-x-8 text-sm sm:grid-cols-2 xl:grid-cols-3">
+        {facts.map((f) => (
+          <div key={f.label} className="flex items-baseline justify-between gap-3 border-b border-border py-1.5">
+            <dt className="min-w-0 text-text-muted">
+              {f.label}
+              {f.note ? <span className="block text-[11px] text-text-subtle">{f.note}</span> : null}
+            </dt>
+            <dd className="shrink-0 text-right font-medium whitespace-nowrap text-text tabular-nums">{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {cb.waiting.length > 0 ? (
+        <div className="mt-5">
+          <MonoLabel>Still waiting for a call back</MonoLabel>
+          <ul className="mt-2 divide-y divide-border">
+            {cb.waiting.map((person) => (
+              <li key={person.callId} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 text-sm">
+                <span className="min-w-0">
+                  <span className="font-medium text-text">{person.contact}</span>
+                  <span className="text-text-muted">
+                    {" · "}last missed {callTime(person.lastMissedAt, report.org.timezone)}
+                    {person.attempts > 1 ? ` · ${formatCount(person.attempts)} tries` : ""}
+                    {person.telecaller ? ` · rang ${person.telecaller}` : ""}
+                  </span>
+                </span>
+                {person.leadId ? (
+                  <Link
+                    href={`/owner/leads?focus=${person.leadId}`}
+                    className="shrink-0 text-xs font-medium text-text underline underline-offset-2 hover:text-accent"
+                  >
+                    {person.leadTitle ?? "View lead"}
+                  </Link>
+                ) : (
+                  <span className="shrink-0 text-xs text-text-subtle">No lead yet</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {cb.waitingCallers > cb.waiting.length ? (
+            <p className="mt-2 text-xs text-text-muted">
+              The {formatCount(cb.waiting.length)} most recent of {formatCount(cb.waitingCallers)} callers still waiting.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 // ── The AI read ─────────────────────────────────────────────────────────────
 
 export function ConversationCard({ report }: { report: Report }) {
@@ -263,7 +355,7 @@ export function ConversationCard({ report }: { report: Report }) {
         <CardHead title="What the calls were about" detail="From the AI read of each call" />
         <EmptyState
           title="No AI read yet"
-          description="None of the calls in this period has been analysed - they were missed, are still processing, or were not transcribed."
+          description="None of the recorded calls in this period has been analysed - they are still processing, failed, or were not transcribed. Missed calls have no recording to read."
         />
       </Card>
     );
@@ -272,7 +364,7 @@ export function ConversationCard({ report }: { report: Report }) {
     <Card>
       <CardHead
         title="What the calls were about"
-        detail={`From the AI read of ${formatCount(c.analyzed)} of ${formatCount(c.total)} calls (${formatShare(ratio(c.analyzed, c.total))}) · shares are of analysed calls`}
+        detail={`From the AI read of ${formatCount(c.analyzed)} of ${formatCount(recordableCalls(c))} recorded calls (${formatShare(ratio(c.analyzed, recordableCalls(c)))}) · shares are of analysed calls`}
       />
       {/* Stacked, not side by side: this card is half the page from xl, and
           two ranked lists in a quarter of a page each leave no room for bars. */}
@@ -583,6 +675,11 @@ export function AboutFigures({ report }: { report: Report }) {
       <summary className="cursor-pointer font-medium text-text">How these figures are measured</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-text-muted">
         <li>Missed is an incoming call with no talk time; answered is an incoming call with talk time. Connect rate is calls with talk time out of all calls.</li>
+        <li>
+          Missed calls come from each handset&rsquo;s call log and have no recording. One is recovered by the first later call that reached the
+          person - a call back from the team, or the customer ringing again and getting through - at any time up to now. Numbers are matched on
+          their last ten digits, so +91 and 0 prefixes do not split one person in two.
+        </li>
         <li>
           Calls that could not be processed still count as calls, but have no AI read. Sentiment, result, reasons, quality and escalation risk come
           from the automatic analysis of each transcript, so their shares use analysed calls as the base.

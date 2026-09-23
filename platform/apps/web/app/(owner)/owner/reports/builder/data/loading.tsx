@@ -78,12 +78,7 @@ export default function DataSourcesLoading() {
     <>
       <PageHeader title="Data sources" context="Report builder" />
 
-      {/* A bare link in a plain div: the line box is the page's 16px body, not the link's 12px. */}
-      <div className="-mt-2 flex h-6 items-center">
-        <Skeleton className="h-3 w-20" />
-      </div>
-
-      <div className="max-w-3xl">
+      <div className="-mt-2 max-w-3xl">
         <Line box="sm" bar="h-3.5 w-full" />
         <Line box="sm" bar="h-3.5 w-full" />
         <Line box="sm" bar="h-3.5 w-1/2" />

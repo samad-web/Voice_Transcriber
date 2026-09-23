@@ -105,9 +105,6 @@ export default async function ReportBuilderDetailPage({
       <BreadcrumbLeaf label={detail.report.name} />
       <PageHeader title={detail.report.name} context="Report builder" />
       <div className="-mt-2 flex flex-wrap items-center gap-3 text-xs">
-        <Link href="/owner/reports/builder" className="text-accent-text hover:underline">
-          ← All reports
-        </Link>
         <Link
           href={`/owner/reports/builder/${id}/runs`}
           className="text-accent-text hover:underline"

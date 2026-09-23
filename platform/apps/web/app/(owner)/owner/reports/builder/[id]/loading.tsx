@@ -1,8 +1,8 @@
 import { Card, Skeleton } from "@aura/ui";
 import { CanvasTileSkeleton, PageHeaderSkeleton } from "@/components/skeletons";
 
-/** The four `text-xs` links under the header: all reports, run history, data sources, dashboard. */
-const LINK_W = ["w-20", "w-16", "w-18", "w-28"] as const;
+/** The three `text-xs` links under the header: run history, data sources, dashboard. */
+const LINK_W = ["w-16", "w-18", "w-28"] as const;
 
 /** The add-a-widget buttons: Chart, Metric, Table, Note, Divider. */
 const ADD_W = ["w-18", "w-20", "w-18", "w-16", "w-20"] as const;
@@ -36,7 +36,7 @@ function PageTabSkeleton({ active, bar }: { active: boolean; bar: string }) {
 }
 
 /**
- * Mirrors reports/builder/[id]/page.tsx and the ReportEditor it mounts: the four
+ * Mirrors reports/builder/[id]/page.tsx and the ReportEditor it mounts: the three
  * links under the header (the title is the report's name, so it is a skeleton);
  * the editor's own stack - a toolbar card (the report name with its status chip,
  * undo and redo, the design and palette dropdowns, PDF, fullscreen and share,

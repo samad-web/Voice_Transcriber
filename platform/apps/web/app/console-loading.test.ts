@@ -60,6 +60,12 @@ const CONSOLE_GROUPS = ["(owner)", "(platform)", "(admin)", "(dashboard)"];
 const NO_LOADER: Record<string, string> = {
   "(owner)/owner/team":
     "redirects to /owner/staff before rendering anything - there is nothing to wait for",
+  // Doc 28 (Q8): a person's own mailbox is the Integrations store's Mine view
+  // now; the old URL is kept for bookmarks. Its sign-in callback does not move.
+  "(owner)/owner/connections": "redirects to /owner/integrations?view=mine before rendering anything",
+  // Doc 27: the account menu links to each section directly; the bare URL is
+  // a redirect to Profile for anybody who types it.
+  "(owner)/owner/account": "redirects to /owner/account/profile before rendering anything",
   // The three operator pages folded into /client-config (one page, three tabs).
   // Each old URL is kept as a bare redirect for bookmarks; the loader that matters
   // is client-config's own.

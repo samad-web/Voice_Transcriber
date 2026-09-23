@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { DEFAULT_TIME_ZONE, todayIn } from "@aura/shared";
+import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
+import { parseDateWindow, rangePresets, resolveDateWindow } from "@/lib/date-range";
+import { getOwner, ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
+
+/**
+ * 90 days, not the 30 every other report opens on: it is the window this page
+ * always showed (the API's own default), and a work queue that shrank to a
+ * month on the day the date control arrived would look like the floor caught up.
+ */
+const SLA_DEFAULT_DAYS = 90;
 
 export const metadata: Metadata = { title: "Response & Follow-ups" };
 
@@ -108,12 +118,25 @@ interface AgingReport {
  * is decoration. So each section ends in a LIST of the actual records behind
  * the worst number in it.
  */
-export default async function SlaReportsPage() {
+export default async function SlaReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/reports/sla");
+
+  // Sent as the workspace's own dates: the reports API resolves `days`
+  // against a UTC today (see lib/date-range.ts).
+  const { window, invalid } = parseDateWindow(await searchParams, { defaultDays: SLA_DEFAULT_DAYS });
+  const owner = await getOwner();
+  const zone = owner?.membership.reportingTimezone ?? DEFAULT_TIME_ZONE;
+  const requested = resolveDateWindow(window, todayIn(zone));
+  const range = new URLSearchParams(requested).toString();
+
   const [responseResult, compliance, aging] = await Promise.all([
-    ownerTry<ResponseTimeReport>("/v1/reports/response-time"),
-    ownerGet<ComplianceReport>("/v1/reports/followup-compliance"),
+    ownerTry<ResponseTimeReport>(`/v1/reports/response-time?${range}`),
+    ownerGet<ComplianceReport>(`/v1/reports/followup-compliance?${range}`),
     ownerGet<AgingReport>("/v1/reports/lead-aging"),
   ]);
 
@@ -135,6 +158,21 @@ export default async function SlaReportsPage() {
   return (
     <>
       <PageHeader title="Response & Follow-ups" context="Pipeline" />
+
+      {/* The one period control, above both windowed sections. Lead aging
+          below is a snapshot of now and ignores it, and says so. */}
+      <DateRangeBar
+        path="/owner/reports/sla"
+        presets={rangePresets("/owner/reports/sla", window, { defaultDays: SLA_DEFAULT_DAYS })}
+        from={response?.from ?? requested.from}
+        to={response?.to ?? requested.to}
+      />
+      {invalid ? <DateRangeNotice fallbackDays={SLA_DEFAULT_DAYS} /> : null}
+      <DateRangeSummary
+        from={response?.from ?? requested.from}
+        to={response?.to ?? requested.to}
+        zone={response?.timezone ?? zone}
+      />
 
       {/* ── Response time ─────────────────────────────────────────────── */}
       <SectionHeading

@@ -5,8 +5,8 @@ import { PageHeader } from "@/components/page-header";
 const RUN_W = ["w-44", "w-40", "w-48", "w-44", "w-40", "w-48"] as const;
 
 /**
- * Mirrors reports/builder/[id]/runs/page.tsx: the back link tucked under the
- * header, then one card holding the "Runs" label, a short explanation of what a
+ * Mirrors reports/builder/[id]/runs/page.tsx: one card holding the "Runs"
+ * label, a short explanation of what a
  * run freezes and a divided list of runs, each a timestamp with a status chip
  * and a scheduled/manual chip.
  */
@@ -14,9 +14,6 @@ export default function RunHistoryLoading() {
   return (
     <>
       <PageHeader title="Run history" context="Report builder" />
-      <div className="-mt-2 flex h-4 items-center">
-        <Skeleton className="h-3 w-32" />
-      </div>
 
       <Card>
         <div className="flex h-4 items-center">

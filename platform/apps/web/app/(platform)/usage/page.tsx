@@ -1,6 +1,7 @@
 import { Clock, Cpu, FileText, Phone, Smartphone } from "lucide-react";
-import { Card, MonoLabel, ProgressBar, StatCard, StatusChip } from "@aura/ui";
+import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
+import { StorageVital, storageFromOrg, type OrgStorageFields } from "@/components/storage-vital";
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
@@ -39,15 +40,6 @@ function n(value: number | null | undefined) {
   return (value ?? 0).toLocaleString();
 }
 
-function pct(used: number | null | undefined, limit: number | null | undefined) {
-  if (!limit || limit <= 0) return 0;
-  return ((used ?? 0) / limit) * 100;
-}
-
-function formatLimit(value: number | null | undefined) {
-  return value == null ? "unlimited" : value.toLocaleString();
-}
-
 function formatPeriod(period: UsageData["period"]): string | null {
   if (!period) return null;
   if (typeof period === "string") return period;
@@ -73,9 +65,10 @@ export default async function UsagePage({
   const { org } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 
-  const [usage, billing] = await Promise.all([
+  const [usage, billing, orgRow] = await Promise.all([
     apiGetAs<UsageData>("/v1/usage", orgId),
     apiGetAs<{ invoices: Invoice[] }>("/v1/billing/invoices", orgId),
+    apiGetAs<OrgStorageFields & { status: string }>("/v1/org", orgId),
   ]);
 
   const periodLabel = usage ? formatPeriod(usage.period) : null;
@@ -109,7 +102,7 @@ export default async function UsagePage({
             <StatCard
               label="Calls Processed"
               value={n(usage.metrics.calls)}
-              context={`of ${formatLimit(usage.limits.callsPerMonth)} / month`}
+              context="this billing period"
               icon={<Phone className="h-5 w-5" />}
             />
             <StatCard
@@ -133,34 +126,16 @@ export default async function UsagePage({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card elevated className="space-y-4">
-              <MonoLabel>Plan Limits</MonoLabel>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-mono font-bold uppercase tracking-wider">
-                  <span className="text-black">Calls</span>
-                  <span className="text-neutral-500">
-                    {n(usage.metrics.calls)} / {formatLimit(usage.limits.callsPerMonth)}
-                  </span>
-                </div>
-                <ProgressBar
-                  percent={pct(usage.metrics.calls, usage.limits.callsPerMonth)}
-                  tone={pct(usage.metrics.calls, usage.limits.callsPerMonth) >= 90 ? "danger" : "solid"}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-mono font-bold uppercase tracking-wider">
-                  <span className="text-black">Tokens</span>
-                  <span className="text-neutral-500">
-                    {n(tokensUsed)} / {formatLimit(usage.limits.tokensPerMonth)}
-                  </span>
-                </div>
-                <ProgressBar
-                  percent={pct(tokensUsed, usage.limits.tokensPerMonth)}
-                  tone={pct(tokensUsed, usage.limits.tokensPerMonth) >= 90 ? "danger" : "solid"}
-                />
-              </div>
+            {/* Storage, not "Plan Limits" (doc 27 §6.4). The old card drew a meter
+                against a hard-coded 50,000 calls a month - a limit nobody set,
+                which read as a real one to whoever opened this page. The one
+                real per-tenant limit is the storage quota; without one this
+                shows usage alone. */}
+            <Card elevated className="overflow-hidden p-0">
+              <StorageVital
+                storage={orgRow ? storageFromOrg(orgRow) : null}
+                retentionPaused={orgRow ? orgRow.status !== "active" : false}
+              />
             </Card>
 
             <Card elevated className="space-y-4">

@@ -1,4 +1,5 @@
 import { Card, Skeleton } from "@aura/ui";
+import { DateRangeBarSkeleton, DateRangeSummarySkeleton } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
 import { TableBlockSkeleton, type Col } from "@/components/skeletons";
 
@@ -82,7 +83,8 @@ function ReportCard({
 }
 
 /**
- * Mirrors reports/sla/page.tsx: three stacked sections under one header.
+ * Mirrors reports/sla/page.tsx: the shared date-range control and its line of
+ * dates, then three stacked sections.
  * Lead response time (4 KPI cards, the speed-bands table, by-telecaller, and
  * the leads waiting for a first response), Follow-up compliance (4 KPI cards,
  * by-assignee, overdue now) and Lead aging (5 age-bucket cards, the oldest open
@@ -93,6 +95,9 @@ export default function SlaReportsLoading() {
   return (
     <>
       <PageHeader title="Response & Follow-ups" context="Pipeline" />
+
+      <DateRangeBarSkeleton />
+      <DateRangeSummarySkeleton />
 
       <SectionHeading noteW="w-80" />
       <StatCards count={4} grid="sm:grid-cols-2 xl:grid-cols-4" />

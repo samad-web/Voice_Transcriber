@@ -52,9 +52,6 @@ export default async function RunDetailPage({
     <>
       <PageHeader title="Report run" context="Report builder" />
       <div className="-mt-2 flex flex-wrap items-center gap-3 text-xs">
-        <Link href={`/owner/reports/builder/${id}/runs`} className="text-accent-text hover:underline">
-          ← All runs
-        </Link>
         <Link href={`/owner/reports/builder/${id}`} className="text-accent-text hover:underline">
           Open the live report
         </Link>
