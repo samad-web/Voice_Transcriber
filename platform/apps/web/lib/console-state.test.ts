@@ -104,6 +104,13 @@ describe("STATE_TONE - the palette itself", () => {
     expect(STATE_TONE.error.dot).toBe("bg-orange");
   });
 
+  it("draws chart marks in the same hues - answered one validated step darker (Build docs/29 §4.1)", () => {
+    expect(STATE_TONE.missed.mark).toBe("bg-danger");
+    expect(STATE_TONE.answered.mark).toBe("bg-mark-answered");
+    expect(STATE_TONE.outgoing.mark).toBe("bg-outgoing");
+    expect(STATE_TONE.error.mark).toBe("bg-orange");
+  });
+
   it("spends no BRANDABLE token - white-labelling must not rewrite the alphabet", () => {
     // The one that actually bit: `outgoing` used to be `bg-accent`, and the
     // accent is replaced wholesale by a tenant's own hex (branding.ts). A
@@ -123,7 +130,7 @@ describe("STATE_TONE - the palette itself", () => {
     const PREFIXES = ["bg-", "text-", "border-"];
     for (const state of CONSOLE_STATES) {
       const tone = STATE_TONE[state];
-      const classes = `${tone.chip} ${tone.dot} ${tone.text}`.split(/[\s/]+/);
+      const classes = `${tone.chip} ${tone.dot} ${tone.mark} ${tone.text}`.split(/[\s/]+/);
       for (const token of BRANDABLE) {
         const spent = classes.filter((c) =>
           PREFIXES.some(

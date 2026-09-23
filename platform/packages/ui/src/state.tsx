@@ -59,6 +59,16 @@ export interface StateTone {
   chip: string;
   /** A bare marker - the leading rule on a row, a legend swatch. */
   dot: string;
+  /**
+   * A CHART mark - a stacked segment, a bar, a heat cell (Build docs/29 §4.1).
+   * Separate from `dot` because a chart puts the states SIDE BY SIDE as a
+   * series, and there they must also pass the categorical checks: equal
+   * loudness and colour-blind separation. They do in light mode; in dark mode
+   * the chip green (#22C55E) is far lighter than its neighbours and
+   * out-shouts them, so answered draws its marks one step darker. Every
+   * other state's mark is its dot.
+   */
+  mark: string;
   /** For a value that must carry its own state (a count, a duration). */
   text: string;
   /** Distinct silhouette, so the state survives greyscale and colour blindness. */
@@ -75,6 +85,7 @@ export const STATE_TONE: Record<ConsoleState, StateTone> = {
     label: "Missed",
     chip: "border-danger-text/30 bg-danger-subtle text-danger-text",
     dot: "bg-danger",
+    mark: "bg-danger",
     text: "text-danger-text",
     // A slashed ring - "this did not happen". The only glyph with a stroke
     // crossing its own body, which is what makes it readable at 10px.
@@ -90,6 +101,7 @@ export const STATE_TONE: Record<ConsoleState, StateTone> = {
     label: "Answered",
     chip: "border-success-text/30 bg-success-subtle text-success-text",
     dot: "bg-success",
+    mark: "bg-mark-answered",
     text: "text-success-text",
     // Filled disc - the densest mark in the set, "it completed".
     glyph: <circle cx="5" cy="5" r="3.6" fill="currentColor" />,
@@ -102,6 +114,7 @@ export const STATE_TONE: Record<ConsoleState, StateTone> = {
     // an unbranded console is unchanged.
     chip: "border-outgoing-text/30 bg-outgoing-subtle text-outgoing-text",
     dot: "bg-outgoing",
+    mark: "bg-outgoing",
     text: "text-outgoing-text",
     // Arrow leaving to the top-right. Directional, so it cannot be confused
     // with any of the four static shapes even at a glance.
@@ -121,6 +134,7 @@ export const STATE_TONE: Record<ConsoleState, StateTone> = {
     label: "Error",
     chip: "border-orange-text/30 bg-orange-subtle text-orange-text",
     dot: "bg-orange",
+    mark: "bg-orange",
     text: "text-orange-text",
     // Triangle - the only pointed solid, and the shape every warning sign on
     // every road in the world already uses.
@@ -131,6 +145,7 @@ export const STATE_TONE: Record<ConsoleState, StateTone> = {
     label: "",
     chip: "border-border bg-surface-hover text-text",
     dot: "bg-text-subtle",
+    mark: "bg-text-subtle",
     text: "text-text",
     // Bar - informational, no valence.
     glyph: <rect x="1.5" y="4" width="7" height="2" rx="1" fill="currentColor" />,
@@ -247,6 +262,15 @@ const PIPELINE: Record<string, PipelineStage> = {
   COMPLETE: {
     phase: "settled",
     label: "Complete",
+    hint: "",
+  },
+  // A missed call from the handset's call log (0133). Settled, not "off":
+  // nothing was switched off and nothing is coming - there was never audio.
+  // No hint, because the row's own Missed chip and call-back line already say
+  // what happened and what to do.
+  NO_AUDIO: {
+    phase: "settled",
+    label: "No recording",
     hint: "",
   },
   TRANSCRIPTION_OFF: {

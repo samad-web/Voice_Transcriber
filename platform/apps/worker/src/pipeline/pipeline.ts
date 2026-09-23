@@ -839,7 +839,11 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
            FROM usage_events
           WHERE org_id = $1
             AND kind IN ('asr_minutes', 'asr_minutes_diarized')
-            AND occurred_at >= date_trunc('month', now())`,
+            -- The platform's UTC month, said explicitly: withOrgContext now runs
+            -- on the org's clock (Build docs/30), and the budget month is a
+            -- billing contract, not a reporting view. plan-usage.controller.ts
+            -- reads the same window for its meter.
+            AND occurred_at >= date_trunc('month', now(), 'UTC')`,
         [orgId],
       );
       return Number(usage?.minutes ?? 0);

@@ -5,10 +5,14 @@ import {
   brandingCssVars,
   browserTitleFor,
   seesSetupChecklist,
+  setupGuideOpen,
   type SetupState,
 } from "@aura/shared";
+import { BackButton } from "@/components/back-button";
 import { BreadcrumbProvider, OwnerBreadcrumbs } from "@/components/breadcrumbs";
 import { ConsoleHeader } from "@/components/console-header";
+import { NavHistoryProvider } from "@/components/nav-history-provider";
+import { OrgTimeProvider } from "@/components/org-time";
 import { GlobalSearch } from "@/components/global-search";
 import { MobileNav } from "@/components/mobile-nav";
 import { TenantContextSwitcher, type TenantChip } from "@/components/tenant-context-switcher";
@@ -161,11 +165,23 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   //
   // Only when both say yes does the layout spend one round trip - during
   // onboarding, which is exactly when it earns it.
+  //
+  // Doc 27 added the setup GUIDE (the sidebar's "Finish your setup - X of N"),
+  // which reads the same endpoint and closes on its own two stamps (0129). So
+  // the call is made while EITHER is still open, and not once both are closed -
+  // the same "costs nothing once finished" bargain, twice.
+  const guideOpen = setupGuideOpen(owner.membership);
   const needsSetup =
-    !owner.membership.setupCompletedAt && seesSetupChecklist(owner.membership.ownerRole);
+    seesSetupChecklist(owner.membership.ownerRole) && (!owner.membership.setupCompletedAt || guideOpen);
   const setup = needsSetup
     ? (await ownerGet<{ setup: SetupState | null }>("/v1/owner/setup"))?.setup ?? null
     : null;
+  // The 0106 banner only while its OWN stamp is unset. Existing tenants were
+  // backfilled as complete, and business_profile (new, required) must not
+  // bring the banner back for them just because the guide fetched the state.
+  const showSetupBanner = Boolean(setup && !setup.complete && !owner.membership.setupCompletedAt);
+  const setupProgress =
+    setup && guideOpen && !setup.guideComplete ? { done: setup.done, total: setup.total } : null;
 
   // The header's tenant context. Built from the memberships the session
   // already resolved - no extra request - and only ever offering tenants this
@@ -176,6 +192,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
     .map(tenantChip);
 
   return (
+    // Outermost, so every time under it - the header's notification bell as
+    // much as the page - is read in the workspace's own zone (Build docs/30).
+    <OrgTimeProvider zone={owner.membership.reportingTimezone}>
     <RealtimeProvider enabled={realtimeEnabled}>
     <div
       className="min-h-dvh flex flex-col md:flex-row"
@@ -184,6 +203,21 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
       // never raw tenant input.
       style={{ ...brandVars, ...(background ? { backgroundColor: background } : {}) } as React.CSSProperties}
     >
+      {/* Both providers wrap the rail and the phone bar as well as the page
+          column: the phone bar draws a Back button too, and Back names each
+          history entry after the page's own <BreadcrumbLeaf> (doc 28 §3.4). */}
+      <BreadcrumbProvider>
+      <NavHistoryProvider
+        area="owner"
+        orgId={owner.membership.orgId}
+        ownerNav={{
+          ownerRole: owner.membership.ownerRole,
+          crmPrimary,
+          crmEnabled,
+          callIntelEnabled,
+          entitlement,
+        }}
+      >
       <Sidebar
         email={owner.email}
         area="owner"
@@ -195,6 +229,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         title={company}
         subtitle="Sales Pipeline"
         logoUrl={branding.logoUrl}
+        name={owner.name}
+        storage={owner.membership.storage}
+        setupProgress={setupProgress}
       />
       <MobileNav
         email={owner.email}
@@ -208,8 +245,10 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         subtitle="Sales Pipeline"
         logoUrl={branding.logoUrl}
         accentColor={currentTenant.accent.swatch}
+        name={owner.name}
+        storage={owner.membership.storage}
+        setupProgress={setupProgress}
       />
-      <BreadcrumbProvider>
       <div className="flex min-w-0 flex-1 flex-col">
       <ConsoleHeader
         accentColor={currentTenant.accent.swatch}
@@ -221,6 +260,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           />
         }
         search={<GlobalSearch />}
+        back={<BackButton />}
         actions={
           // The bell sits in the layout rather than on a page, so an assignment
           // reaches somebody wherever they happen to be in the console. The live
@@ -248,7 +288,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         {/* Above the tenant's own banner and above the page: it is the first
             thing a new client should read, and the last thing they should have
             to scroll for. */}
-        {setup && !setup.complete ? (
+        {setup && showSetupBanner ? (
           <SetupGate setup={setup} canDismiss={owner.membership.ownerRole === "owner"} />
         ) : null}
         {branding.bannerUrl ? (
@@ -269,8 +309,10 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         {children}
       </main>
       </div>
+      </NavHistoryProvider>
       </BreadcrumbProvider>
     </div>
     </RealtimeProvider>
+    </OrgTimeProvider>
   );
 }

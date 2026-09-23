@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BreadcrumbLeaf } from "@/components/breadcrumbs";
 import { PageHeader } from "@/components/page-header";
@@ -26,10 +25,6 @@ export default async function InvoiceDetailPage({
     <>
       <BreadcrumbLeaf label={invoice.invoice_number} />
       <PageHeader title={invoice.invoice_number} context="Pipeline" />
-
-      <Link href="/owner/invoices" className="text-xs text-text-muted hover:text-text">
-        ← All invoices
-      </Link>
 
       <InvoiceDetail invoice={invoice} items={items} payments={payments} />
     </>

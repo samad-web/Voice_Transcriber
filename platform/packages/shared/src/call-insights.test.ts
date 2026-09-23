@@ -6,6 +6,7 @@ import {
   CallInsightsQuery,
   type CallInsightsReport,
   type CallInsightsTotals,
+  callbackKpis,
   callInsightsFilename,
   callInsightsHighlights,
   callInsightsKpis,
@@ -24,6 +25,7 @@ import {
   isCalendarDate,
   pointChange,
   ratio,
+  recordableCalls,
   volumeSeries,
 } from "./call-insights";
 
@@ -78,6 +80,16 @@ function report(over: Partial<CallInsightsReport> = {}): CallInsightsReport {
     risk: { calls: 0, categories: [] },
     people: [],
     attention: [],
+    callbacks: {
+      missed: 0,
+      noNumber: 0,
+      returned: 0,
+      calledBack: 0,
+      withinHour: 0,
+      medianMinutes: null,
+      waitingCallers: 0,
+      waiting: [],
+    },
     ...over,
   };
 }
@@ -280,6 +292,60 @@ describe("callInsightsHighlights", () => {
       4,
     );
     expect(lines).toHaveLength(4);
-    expect(lines[3]).toMatch(/^Only 30% of calls have an AI read/);
+    // 60 analysed of 180 RECORDABLE - the 20 missed calls have no audio and
+    // could never have had a read, so they are not in the base.
+    expect(lines[3]).toMatch(/^Only 33% of recorded calls have an AI read/);
+  });
+
+  it("says what became of the missed calls, and who is still waiting", () => {
+    const lines = callInsightsHighlights(
+      report({
+        current: totals({ total: 120, answered: 30, missed: 12, analyzed: 100 }),
+        previous: totals({ total: 110 }),
+        callbacks: {
+          ...report().callbacks,
+          missed: 12,
+          noNumber: 2,
+          returned: 7,
+          calledBack: 5,
+          withinHour: 4,
+          medianMinutes: 38,
+          waitingCallers: 3,
+        },
+      }),
+    );
+    expect(lines[2]).toBe(
+      "7 of 10 missed calls with a number were recovered (70%), 5 by calling back; median wait 38m. 3 callers are still waiting for a call back.",
+    );
+  });
+
+  it("says plainly when nobody has been rung back", () => {
+    const lines = callInsightsHighlights(
+      report({
+        current: totals({ total: 20, answered: 5, missed: 4, analyzed: 16 }),
+        previous: totals({ total: 20 }),
+        callbacks: { ...report().callbacks, missed: 4, waitingCallers: 1 },
+      }),
+    );
+    expect(lines[2]).toBe(
+      "None of the 4 missed calls with a number has been returned yet. 1 caller is still waiting for a call back.",
+    );
+  });
+});
+
+describe("coverage and callbacks", () => {
+  it("measures AI-read coverage against calls that could have been recorded", () => {
+    const k = callInsightsKpis(totals({ total: 100, answered: 30, missed: 20, analyzed: 60 }));
+    expect(k.analyzedShare).toBeCloseTo(0.75);
+    expect(recordableCalls(totals({ total: 5, missed: 5 }))).toBe(0);
+  });
+
+  it("rates recovery against missed calls that carried a number", () => {
+    const k = callbackKpis({ ...report().callbacks, missed: 12, noNumber: 2, returned: 7, calledBack: 5, withinHour: 4 });
+    expect(k.returnable).toBe(10);
+    expect(k.recoveredRate).toBeCloseTo(0.7);
+    expect(k.calledBackRate).toBeCloseTo(0.5);
+    expect(k.withinHourRate).toBeCloseTo(0.4);
+    expect(callbackKpis(report().callbacks).recoveredRate).toBeNull();
   });
 });

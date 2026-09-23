@@ -466,18 +466,28 @@ export async function sweepAutomationTriggers(): Promise<number> {
       WHERE trigger = 'task.overdue' AND status = 'active' AND deleted_at IS NULL`,
   );
   for (const rule of overdueRules) {
+    // "Overdue" is decided on the ORG's calendar (Build docs/30): this sweep
+    // runs on the admin pool, outside withOrgContext, so `current_date` here
+    // was the database's UTC date and an Indian floor's tasks went overdue at
+    // 05:30 in the morning. `z.today` is the same date org_reporting_today()
+    // gives the dashboard, so the automation and the overdue count agree; the
+    // dedupe key uses it too, so "once per task per day" means the org's day.
     const { rowCount } = await pool.query(
-      `INSERT INTO automation_events (org_id, trigger, subject_type, subject_id, payload, dedupe_key)
+      `WITH z AS (
+         SELECT (now() AT TIME ZONE COALESCE(o.reporting_timezone, 'Asia/Kolkata'))::date AS today
+           FROM organizations o WHERE o.id = $1
+       )
+       INSERT INTO automation_events (org_id, trigger, subject_type, subject_id, payload, dedupe_key)
        SELECT t.org_id, 'task.overdue', 'task', t.id,
               jsonb_build_object(
                 'taskId', t.id, 'dealId', t.deal_id, 'contactId', t.contact_id,
                 'accountId', t.account_id, 'taskAssigneeUserId', t.assignee_user_id,
-                'idleDays', (current_date - t.due_on)
+                'idleDays', (z.today - t.due_on)
               ),
-              'task.overdue:' || t.id || ':' || to_char(now(), 'YYYY-MM-DD')
-         FROM tasks t
+              'task.overdue:' || t.id || ':' || to_char(z.today, 'YYYY-MM-DD')
+         FROM tasks t, z
         WHERE t.org_id = $1 AND t.status = 'open'
-          AND t.due_on IS NOT NULL AND t.due_on < current_date
+          AND t.due_on IS NOT NULL AND t.due_on < z.today
        ON CONFLICT (org_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
       [rule.org_id],
     );

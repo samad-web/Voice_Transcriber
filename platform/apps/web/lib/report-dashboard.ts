@@ -1,9 +1,8 @@
 import { viewHref } from "./list-views";
 
 /**
- * The Reports dashboard's pure parts (CRM dashboard, Phase 6): the date range,
- * how its numbers are worded, and - the part that matters - the link each
- * number opens.
+ * The Reports dashboard's pure parts (CRM dashboard, Phase 6): how its numbers
+ * are worded, and - the part that matters - the link each number opens.
  *
  * ── EVERY NUMBER IS A FILTER ────────────────────────────────────────────────
  *
@@ -15,19 +14,7 @@ import { viewHref } from "./list-views";
  * `createdFrom` comments in deals.controller.ts and leads.controller.ts).
  */
 
-export const REPORT_RANGES = [7, 30, 90] as const;
-export type ReportRange = (typeof REPORT_RANGES)[number];
-export const DEFAULT_REPORT_RANGE: ReportRange = 30;
-
-export function parseReportRange(value: string | string[] | undefined): ReportRange {
-  const raw = Number(Array.isArray(value) ? value[0] : value);
-  return (REPORT_RANGES as readonly number[]).includes(raw) ? (raw as ReportRange) : DEFAULT_REPORT_RANGE;
-}
-
-/** `/owner/reports`, keeping the range unless it is the default. */
-export function reportsHref(range: ReportRange): string {
-  return range === DEFAULT_REPORT_RANGE ? "/owner/reports" : `/owner/reports?range=${range}`;
-}
+// The date range itself is lib/date-range.ts, shared with every report screen.
 
 /**
  * A FRACTION as a percentage: 0.4167 -> "42%". Null (nothing to divide by) -> "-".

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import { getOrgTimeZone } from "@/lib/org-time";
 import { ownerGet } from "@/lib/owner-context";
 import type { Conversation } from "./inbox/actions";
 import type { Invoice } from "./invoices/actions";
@@ -47,13 +48,14 @@ export async function LinkedRecords({
   showConversations?: boolean;
 }) {
   const q = query(parent);
-  const [quotations, invoices, deals, conversations] = await Promise.all([
+  const [quotations, invoices, deals, conversations, zone] = await Promise.all([
     ownerGet<{ quotations: Quotation[] }>(`/v1/quotations?${q}`),
     ownerGet<{ invoices: Invoice[] }>(`/v1/invoices?${q}`),
     showDeals ? ownerGet<{ deals: Deal[] }>(`/v1/deals?${q}`) : Promise.resolve(null),
     showConversations && "contactId" in parent
       ? ownerGet<{ conversations: Conversation[] }>(`/v1/conversations?contactId=${parent.contactId}&limit=10`)
       : Promise.resolve(null),
+    getOrgTimeZone(),
   ]);
 
   return (
@@ -111,7 +113,7 @@ export async function LinkedRecords({
               <span className="flex items-center justify-between gap-2">
                 <span className="truncate text-xs font-medium text-text capitalize">{thread.channel}</span>
                 <span className="text-xs text-text-muted tabular-nums">
-                  {relativeTime(thread.last_message_at)}
+                  {relativeTime(thread.last_message_at, zone)}
                 </span>
               </span>
               <span className="mt-0.5 block truncate text-xs text-text-muted">

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { formatDateKey } from "@aura/shared";
 import {
   EmptyState,
   StatusChip,
@@ -134,9 +135,8 @@ export default async function QuotationsPage({
                     {formatMoney(quotation.total, quotation.currency)}
                   </TableCell>
                   <TableCell className="text-text-muted">
-                    {quotation.valid_until
-                      ? new Date(quotation.valid_until).toLocaleDateString()
-                      : "-"}
+                    {/* A calendar date (DATE column): no zone, or it slips a day west of UTC. */}
+                    {quotation.valid_until ? formatDateKey(quotation.valid_until.slice(0, 10)) : "-"}
                   </TableCell>
                 </TableRow>
               ))}

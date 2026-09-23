@@ -20,6 +20,7 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { Time } from "@/components/org-time";
 import {
   createPaymentLinkAction,
   updateInvoiceAction,
@@ -359,10 +360,10 @@ export function InvoiceDetail({
                         {formatMoney(payment.amount, payment.currency)}
                       </TableCell>
                       <TableCell className="text-text-muted">
-                        {new Date(payment.created_at).toLocaleString()}
+                        <Time iso={payment.created_at} mode="datetime" />
                       </TableCell>
                       <TableCell className="text-text-muted">
-                        {payment.captured_at ? new Date(payment.captured_at).toLocaleString() : "-"}
+                        {payment.captured_at ? <Time iso={payment.captured_at} mode="datetime" /> : "-"}
                       </TableCell>
                     </TableRow>
                   ))}

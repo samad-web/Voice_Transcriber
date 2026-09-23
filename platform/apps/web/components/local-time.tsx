@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatInZone, fullStamp, useOptionalOrgTimeZone } from "./org-time";
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -22,11 +23,22 @@ function isoStable(iso: string, mode: TimeMode): string {
 }
 
 /**
- * Absolute timestamp rendered in the viewer's local time - without a hydration
- * mismatch. The server (and the very first client render) emit a deterministic
- * UTC string; after mount we swap to the browser's locale/timezone. A bare
- * `new Date(iso).toLocaleString()` in a Client Component mismatches whenever the
- * server locale/timezone differs from the browser's, which React flags loudly.
+ * An absolute timestamp, without a hydration mismatch.
+ *
+ * ── IN THE OWNER CONSOLE: THE WORKSPACE'S CLOCK (Build docs/30) ─────────────
+ *
+ * Under the owner layout's OrgTimeProvider this renders in the org's
+ * reporting zone, and renders the same text on the server and in the browser -
+ * so there is no swap and no flash, and every colleague reads the same time
+ * wherever their laptop happens to be. That is what upgraded all of this
+ * component's call sites at once; their props did not change.
+ *
+ * ── ELSEWHERE: THE VIEWER'S OWN CLOCK ───────────────────────────────────────
+ *
+ * The operator console has no single workspace - one row is one tenant, the
+ * next row another - so outside a provider this keeps its original behaviour:
+ * a deterministic UTC string on the server and the first paint, then the
+ * browser's locale and zone after mount.
  */
 export function LocalTime({
   iso,
@@ -37,8 +49,10 @@ export function LocalTime({
   className?: string;
   mode?: TimeMode;
 }) {
+  const zone = useOptionalOrgTimeZone();
   const [local, setLocal] = useState<string | null>(null);
   useEffect(() => {
+    if (zone) return;
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return;
     setLocal(
@@ -48,7 +62,15 @@ export function LocalTime({
           ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
           : d.toLocaleString(),
     );
-  }, [iso, mode]);
+  }, [iso, mode, zone]);
+
+  if (zone) {
+    return (
+      <time className={className} dateTime={iso} title={fullStamp(iso, zone)}>
+        {formatInZone(iso, mode, zone)}
+      </time>
+    );
+  }
   return (
     <time className={className} dateTime={iso} suppressHydrationWarning>
       {local ?? isoStable(iso, mode)}

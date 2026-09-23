@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import { Time } from "@/components/org-time";
 import { resolveCallIntegrityFlagAction, type CallIntegrityFlag } from "./actions";
 
 const FLAG_LABEL: Record<CallIntegrityFlag["flag_type"], string> = {
@@ -77,7 +78,7 @@ export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }
             <div className="flex items-center justify-between gap-2">
               <MonoLabel>{FLAG_LABEL[flag.flag_type]}</MonoLabel>
               <StatusChip tone="outline">
-                {new Date(flag.created_at).toLocaleDateString()}
+                <Time iso={flag.created_at} mode="date" />
               </StatusChip>
             </div>
 
@@ -87,9 +88,12 @@ export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }
               {flag.call_remote_name || flag.call_started_at ? (
                 <span>
                   Call: {flag.call_remote_name ?? "Unknown caller"}
-                  {flag.call_started_at
-                    ? ` · ${new Date(flag.call_started_at).toLocaleString()}`
-                    : ""}
+                  {flag.call_started_at ? (
+                    <>
+                      {" · "}
+                      <Time iso={flag.call_started_at} mode="datetime" />
+                    </>
+                  ) : null}
                 </span>
               ) : null}
               {flag.deal_name ? <span>Deal: {flag.deal_name}</span> : null}

@@ -13,6 +13,7 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { viewHref, viewQueryFrom } from "@/lib/list-views";
+import { getOrgTimeZone } from "@/lib/org-time";
 import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { FilterSearch, FilterSelect, ListFilterForm } from "../list-filters";
@@ -62,9 +63,10 @@ export default async function AccountsPage({
   const query = new URLSearchParams({ limit: String(PAGE_SIZE), ...current });
   if (offset > 0) query.set("offset", String(offset));
 
-  const [result, views] = await Promise.all([
+  const [result, views, zone] = await Promise.all([
     ownerTry<ListResponse>(`/v1/accounts?${query}`),
     loadSavedViews("accounts"),
+    getOrgTimeZone(),
   ]);
 
   if (!result.ok) {
@@ -128,7 +130,7 @@ export default async function AccountsPage({
                         : "-"}
                   </TableCell>
                   <TableCell className="text-text-muted tabular-nums">
-                    {relativeTime(account.last_activity_at)}
+                    {relativeTime(account.last_activity_at, zone)}
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { GripVertical, Hourglass, Phone } from "lucide-react";
 import { EmptyState, MonoLabel, useAlert } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { useFocusParam } from "../lib/use-focus-param";
 import { formatValue, num, relativeTime } from "../types";
 
@@ -98,6 +99,7 @@ export function KanbanBoard<T extends { stage: string }>({
   const [over, setOver] = useState<string | null>(null);
   const [open, setOpen] = useState<T | null>(null);
   const alert = useAlert();
+  const zone = useOrgTimeZone();
   /** Moves this board has sent but not yet had confirmed. */
   const inFlight = useRef(0);
 
@@ -404,7 +406,7 @@ export function KanbanBoard<T extends { stage: string }>({
                         </span>
                       </div>
                       <span className="mt-1 flex items-center justify-between gap-2 text-xs text-text-subtle">
-                        <span>{relativeTime(getLastActivityAt(item))}</span>
+                        <span>{relativeTime(getLastActivityAt(item), zone)}</span>
                         {stale !== null ? <StaleFlag days={stale} /> : null}
                       </span>
                     </button>

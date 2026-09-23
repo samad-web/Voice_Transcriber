@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { countByUrgency, daysBetween, dueText, prioritise, urgencyOf, type UrgencyTask } from "./next-actions";
+import {
+  countByUrgency,
+  daysBetween,
+  dueText,
+  dueWindowQuery,
+  prioritise,
+  urgencyOf,
+  workspaceToday,
+  type UrgencyTask,
+} from "./next-actions";
 
 const TODAY = "2026-09-15";
 const t = (id: string, due_on: string | null, priority: UrgencyTask["priority"] = "normal", created_at = "2026-09-01T00:00:00Z") => ({
@@ -85,5 +94,36 @@ describe("countByUrgency", () => {
       upcoming: 0,
       undated: 1,
     });
+  });
+});
+
+describe("workspaceToday", () => {
+  // 18:30Z is midnight in India: the instant the API's org_reporting_today()
+  // turns over for an IST workspace, while a UTC one is still on the 14th.
+  const IST_MIDNIGHT = "2026-09-14T18:30:00Z";
+
+  it("turns over at the workspace's midnight, not UTC's or the viewer's", () => {
+    expect(workspaceToday("Asia/Kolkata", "2026-09-14T18:29:00Z")).toBe("2026-09-14");
+    expect(workspaceToday("Asia/Kolkata", IST_MIDNIGHT)).toBe(TODAY);
+    expect(workspaceToday("UTC", IST_MIDNIGHT)).toBe("2026-09-14");
+    expect(workspaceToday("America/New_York", "2026-09-15T03:00:00Z")).toBe("2026-09-14");
+  });
+
+  it("decides overdue on that same boundary", () => {
+    const due14 = t("a", "2026-09-14");
+    expect(urgencyOf(due14, workspaceToday("Asia/Kolkata", IST_MIDNIGHT))).toBe("overdue");
+    expect(urgencyOf(due14, workspaceToday("UTC", IST_MIDNIGHT))).toBe("today");
+  });
+
+  it("feeds the Due filter the workspace's date", () => {
+    expect(dueWindowQuery("today", workspaceToday("Asia/Kolkata", IST_MIDNIGHT))).toEqual({
+      dueFrom: TODAY,
+      dueTo: TODAY,
+    });
+    expect(dueWindowQuery("overdue", workspaceToday("Asia/Kolkata", IST_MIDNIGHT))).toEqual({ dueTo: "2026-09-14" });
+  });
+
+  it("falls back to the deployment default for a zone this runtime does not know", () => {
+    expect(workspaceToday("Not/A_Zone", IST_MIDNIGHT)).toBe(TODAY);
   });
 });

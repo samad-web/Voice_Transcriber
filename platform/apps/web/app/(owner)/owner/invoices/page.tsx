@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { formatDateKey } from "@aura/shared";
 import {
   EmptyState,
   StatusChip,
@@ -153,7 +154,8 @@ export default async function InvoicesPage({
                     {formatMoney(invoice.amount_paid, invoice.currency)}
                   </TableCell>
                   <TableCell className="text-text-muted">
-                    {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "-"}
+                    {/* A calendar date (DATE column): no zone, or it slips a day west of UTC. */}
+                    {invoice.due_date ? formatDateKey(invoice.due_date.slice(0, 10)) : "-"}
                   </TableCell>
                 </TableRow>
               ))}

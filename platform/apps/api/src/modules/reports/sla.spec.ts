@@ -2,12 +2,14 @@ import {
   AGING_BUCKETS,
   RESPONSE_BUCKETS,
   agingBucket,
+  agingBucketFilters,
   compliancePct,
   mean,
   median,
   overdueDays,
   pctOf,
   responseBucket,
+  responseBucketFilters,
   tally,
 } from "./sla";
 
@@ -203,5 +205,46 @@ describe("agingBucketFilters", () => {
       // twice. Either makes the tiles stop summing to the total beside them.
       expect(AGING_BUCKETS[i].minDays).toBe((previous.maxDays ?? 0) + 1);
     }
+  });
+});
+
+/**
+ * The dashboard counts response buckets in SQL (responseBucketFilters) while
+ * the report counts them in JS (responseBucket). Two definitions of one bound
+ * is how a tile and the report it links to end up disagreeing - so each SQL
+ * condition is evaluated here, as JS, against the same minutes, and must pick
+ * exactly the bucket responseBucket() picks.
+ */
+describe("responseBucketFilters agrees with responseBucket", () => {
+  const sql = responseBucketFilters("m");
+  const conditions = [...sql.matchAll(/FILTER \(WHERE \(TRUE\) AND (.+?)\)::int AS (\w+)/g)].map(([, cond, key]) => ({
+    key,
+    test: new Function(
+      "m",
+      // SQL semantics, not JS: `NULL <= 5` is unknown (excluded) in SQL but
+      // `null <= 5` is TRUE in JS, so every comparison is guarded.
+      `return ${cond!
+        .replace(/m IS NULL/g, "m === null")
+        .replace(/m ([<>]=?) /g, "m !== null && m $1 ")
+        .replace(/ AND /g, " && ")};`,
+    ) as (m: number | null) => boolean,
+  }));
+
+  it("emits one column per bucket, in order", () => {
+    expect(conditions.map((c) => c.key)).toEqual(RESPONSE_BUCKETS.map((b) => b.key));
+  });
+
+  it.each([null, -3, 0, 4.9, 5, 5.1, 30, 30.5, 60, 61, 240, 241, 1440, 1441, 99999])("puts %p in one bucket, the same one", (m) => {
+    const hits = conditions.filter((c) => c.test(m)).map((c) => c.key);
+    expect(hits).toEqual([responseBucket(m)]);
+  });
+});
+
+describe("agingBucketFilters options", () => {
+  it("narrows and prefixes the second set without touching the first", () => {
+    expect(agingBucketFilters("age")).toContain("AS d0_3");
+    const narrowed = agingBucketFilters("age", { where: "x IS NULL", prefix: "never_" });
+    expect(narrowed).toContain("BETWEEN 0 AND 3 AND (x IS NULL))::int AS never_d0_3");
+    expect(narrowed).toContain(">= 31 AND (x IS NULL))::int AS never_d30_plus");
   });
 });

@@ -14,9 +14,16 @@ import { apiTry } from "@/lib/server-api";
  * today. A tenant whose records live in an external CRM gets another
  * `CrmSearchSource` that returns the same `GlobalSearchResponse`, chosen in
  * `searchSourceFor` - the route handler and the header component do not change.
+ *
+ * `zone` is the workspace's (Build docs/30), passed in by the route rather than
+ * looked up here, so this module never reaches for request state of its own.
  */
 export interface CrmSearchSource {
-  search(query: string, owner: Principal & { membership: OwnerMembership }): Promise<GlobalSearchResponse>;
+  search(
+    query: string,
+    owner: Principal & { membership: OwnerMembership },
+    zone: string,
+  ): Promise<GlobalSearchResponse>;
 }
 
 const PER_KIND = 5;
@@ -90,7 +97,7 @@ export function toGroup<T>(
 }
 
 export const auraSearchSource: CrmSearchSource = {
-  async search(query, owner) {
+  async search(query, owner, zone) {
     const { membership } = owner;
     const visible = new Set(
       ownerNavItemsFor(
@@ -145,7 +152,7 @@ export const auraSearchSource: CrmSearchSource = {
             id: n.id,
             title: n.subject || `${type} · ${n.contact_name}`,
             subtitle: n.subject ? `${n.contact_name} · ${n.snippet}` : n.snippet,
-            meta: relativeTime(n.occurred_at),
+            meta: relativeTime(n.occurred_at, zone),
             href: `/owner/contacts/${n.contact_id}`,
           };
         }),

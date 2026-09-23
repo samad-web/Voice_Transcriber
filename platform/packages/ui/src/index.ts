@@ -24,7 +24,7 @@ export { ConsolePanel } from "./console-panel";
 export { ProgressBar } from "./progress-bar";
 
 // ── v2 primitives ────────────────────────────────────────────────────────────
-export { Button } from "./button";
+export { Button, buttonClasses, buttonStyle } from "./button";
 export type { ButtonProps, ButtonSize, ButtonVariant } from "./button";
 export { Input } from "./input";
 export type { InputProps } from "./input";
@@ -53,7 +53,7 @@ export {
 export { Dialog } from "./dialog";
 export type { DialogProps } from "./dialog";
 export { Popover } from "./popover";
-export type { PopoverAlign, PopoverProps } from "./popover";
+export type { PopoverAlign, PopoverProps, PopoverSide } from "./popover";
 export { ConfirmProvider, useConfirm, CONFIRM_WORD, typedWordFor } from "./confirm";
 export type { ConfirmOptions } from "./confirm";
 export { DropZone } from "./drop-zone";
@@ -77,6 +77,8 @@ export { FeedbackProvider, useAlert, useToast } from "./feedback";
 export type { AlertOptions, ToastOptions } from "./feedback";
 export { Tooltip } from "./tooltip";
 export type { TooltipProps } from "./tooltip";
+export { HeaderIconButton, headerIconButtonClass } from "./header-icon-button";
+export type { HeaderIconButtonProps } from "./header-icon-button";
 export { InfoHint, InfoHintsProvider, useInfoHints } from "./info-hint";
 export type { InfoHintProps } from "./info-hint";
 

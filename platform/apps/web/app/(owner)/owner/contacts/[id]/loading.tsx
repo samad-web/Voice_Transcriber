@@ -11,8 +11,8 @@ import {
 /**
  * Mirrors contacts/[id]/page.tsx. The contact's name is the page title and isn't
  * known until the fetch resolves, so the header is a PageHeaderSkeleton. Under it
- * a row tucked against the header: the "Came in via ..." source chip, the link to
- * the original lead, and "All contacts" pushed to the right. Then the
+ * a row tucked against the header: the "Came in via ..." source chip and the link
+ * to the original lead. Then the
  * `1fr | 20rem` grid: on the left Activity (a ghost Log activity button over avatar
  * rows), Follow-ups (an add row over a list of tasks) and the Email card, which
  * is collapsed to its label and a Write an email button; on the right Details,
@@ -26,7 +26,6 @@ export default function ContactDetailLoading() {
       <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
         <Skeleton className="h-6.5 w-52 rounded-full" />
         <Skeleton className="h-3 w-32" />
-        <Skeleton className="ml-auto h-3 w-24" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">

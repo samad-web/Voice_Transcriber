@@ -1,23 +1,25 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } from "lucide-react";
-import type { OwnerRole } from "@aura/shared";
+import { resolveTimeZone, todayIn, type OwnerRole } from "@aura/shared";
 import { StatCard } from "@aura/ui";
+import { DateRangeNotice } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
+import { percentDelta, pointsDelta, rateText, share, windowLabel } from "@/lib/dashboard-charts";
+import { DEFAULT_RANGE_DAYS, dateWindowQuery, parseDateWindow, resolveDateWindow } from "@/lib/date-range";
 import type { TeamRollup as TeamRollupData } from "@/lib/team-rollup";
 import { ownerNavItemsFor } from "@/lib/nav";
 import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
-import {
-  ActivityChart,
-  CallOutcomes,
-  CampaignTable,
-  PipelineByStage,
-  RecentActivity,
-  SourceBreakdown,
-  TelecallerTable,
-  WindowPicker,
-} from "./dashboard-panels";
+import { DeltaNote } from "./_dashboard/chart-parts";
+import { LeadAging } from "./_dashboard/lead-aging";
+import { MissedHeatmap } from "./_dashboard/missed-heatmap";
+import { PipelineHealth } from "./_dashboard/pipeline-health";
+import { ResponseSpeed } from "./_dashboard/response-speed";
+import { SourceEffectiveness } from "./_dashboard/source-effectiveness";
+import { TrendChart } from "./_dashboard/trend-chart";
+import { CHANNEL_LABELS, CallOutcomes, CampaignTable, RecentActivity, TelecallerTable, WindowPicker } from "./dashboard-panels";
 import { NextActions } from "./next-actions";
 import { TeamRollup } from "./team-rollup";
 import { formatDuration, formatValue, type Overview } from "./types";
@@ -26,7 +28,7 @@ export const metadata: Metadata = { title: "Dashboard" };
 
 /**
  * The owner console's landing page - five dashboards behind one route
- * (migration 0079).
+ * (migration 0079), drawn with the redesign's charts (Build docs/29).
  *
  * ── WHY ONE ROUTE AND NOT FIVE ────────────────────────────────────────────
  *
@@ -51,14 +53,25 @@ export const metadata: Metadata = { title: "Dashboard" };
  * Rendering is therefore never the control. If this file had a bug that showed
  * a telecaller the manager composition, they would see their own numbers under
  * the wrong headings - not somebody else's data.
+ *
+ * ── EVERY FIGURE NAMES ITS CLOCK (docs/29 P1) ─────────────────────────────
+ *
+ * A tile is either NOW (open leads, pipeline value, overdue), or IN THE WINDOW
+ * (calls, new leads, closes) - the last N calendar days in the workspace's
+ * zone, today included, or a From/To range from the shared date control, as
+ * the API echoes them in `window`. "Won" used to be
+ * all-time under a 30-day picker, and the sales tile claimed "closed in this
+ * window" over an all-time count; it is now the closes in the window, the
+ * same predicate Reports uses, compared with the window before it.
  */
 export default async function OwnerDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { days: daysParam } = await searchParams;
-  const days = Math.min(365, Math.max(1, Number(daysParam) || 30));
+  // The shared date control (lib/date-range.ts): the last N days, resolved by
+  // the API in the org's calendar, or any From/To pair.
+  const { window, invalid } = parseDateWindow(await searchParams, { maxDays: 365 });
   // A6, Milestone 4: same page, same Overview shape - only which table it's
   // read from forks, behind the shadow-read flag. See lib/crm-cutover.ts.
   const crmPrimary = crmShadowReadEnabled();
@@ -68,6 +81,12 @@ export default async function OwnerDashboardPage({
   const owner = await getOwner();
   const role: OwnerRole = owner?.membership.ownerRole ?? "owner";
   const callIntel = owner?.membership.enabledModules.includes("call_intel") ?? false;
+  const windowQuery = dateWindowQuery(window);
+  // The team roll-up's API resolves `days` against a UTC today, so it is sent
+  // the workspace's own dates instead - the same days the overview counts.
+  const teamRange = new URLSearchParams(
+    resolveDateWindow(window, todayIn(resolveTimeZone(owner?.membership.reportingTimezone))),
+  );
 
   /*
    * Owners and managers also get the per-person roll-up (Phase 8). Fetched in
@@ -81,9 +100,9 @@ export default async function OwnerDashboardPage({
   const wantsTeam = role === "owner" || role === "manager";
   const [result, team] = await Promise.all([
     ownerTry<Overview>(
-      crmPrimary ? `/v1/owner/crm-overview?days=${days}` : `/v1/owner/overview?days=${days}`,
+      crmPrimary ? `/v1/owner/crm-overview?${windowQuery}` : `/v1/owner/overview?${windowQuery}`,
     ),
-    wantsTeam ? ownerGet<TeamRollupData>(`/v1/reports/team?days=${days}`) : Promise.resolve(null),
+    wantsTeam ? ownerGet<TeamRollupData>(`/v1/reports/team?${teamRange}`) : Promise.resolve(null),
   ]);
 
   if (!result.ok) {
@@ -109,12 +128,31 @@ export default async function OwnerDashboardPage({
       ).some((item) => item.href === "/owner/tasks")
     : false;
 
-  const view = { data, days, crmPrimary, role, callIntel, tasksVisible, team };
+  // The zone the numbers were COUNTED in, as the API echoed it; the
+  // membership's is the fallback for an older API (Build docs/30).
+  const zone = resolveTimeZone(data.window.timezone ?? owner?.membership.reportingTimezone);
+  // The window's length as the API counted it, and how the page words it: a
+  // preset is "30d" / "last 30 days"; a custom range is its own dates, since
+  // "last 30 days" over 1-30 June would be untrue by July.
+  const days = data.window.days ?? (window.kind === "relative" ? window.days : 30);
+  const rangeWords = window.kind === "fixed" ? windowLabel(data.window.from, data.window.to) : null;
+  const span = rangeWords ?? `${days}d`;
+  const period = rangeWords ?? undefined;
+  const view = { data, days, span, period, crmPrimary, role, callIntel, tasksVisible, team, zone };
 
   return (
     <>
       <PageHeader title={data.org.name || "Dashboard"} context={HEADER_CONTEXT[role]} />
-      <WindowPicker days={days} />
+      <WindowPicker
+        window={window}
+        // The API's echo; an API older than the echo gets the same days worked
+        // out from the org's today, so the From/To pair never opens empty.
+        from={data.window.from ?? teamRange.get("from") ?? undefined}
+        to={data.window.to ?? teamRange.get("to") ?? undefined}
+        zone={zone}
+        canChangeZone={role === "owner" || role === "manager"}
+      />
+      {invalid ? <DateRangeNotice fallbackDays={DEFAULT_RANGE_DAYS} maxDays={365} /> : null}
       {role === "telecaller" ? <TelecallerDashboard {...view} /> : null}
       {role === "sales" ? <SalesDashboard {...view} /> : null}
       {role === "marketing" ? <MarketingDashboard {...view} /> : null}
@@ -140,7 +178,12 @@ const HEADER_CONTEXT: Record<OwnerRole, string> = {
 
 interface ViewProps {
   data: Overview;
+  /** The window's length in days, as the API counted it. */
   days: number;
+  /** The window as a tile says it: "30d", or a custom range's dates. */
+  span: string;
+  /** A custom range's dates for panel subtitles; undefined = "last N days". */
+  period: string | undefined;
   crmPrimary: boolean;
   role: OwnerRole;
   /**
@@ -161,6 +204,8 @@ interface ViewProps {
    * panel, so the panel simply does not appear.
    */
   team: TeamRollupData | null;
+  /** The workspace zone every time on the page is read in (docs/30). */
+  zone: string;
 }
 
 /** Links fork on the shadow-read flag, not on the persona. */
@@ -179,52 +224,100 @@ function links(crmPrimary: boolean) {
   };
 }
 
-/** Won / (won + lost), or null when nothing has closed - never 0%. */
-function winRate(leads: Overview["leads"]): number | null {
-  const closed = leads.won + leads.lost;
-  return closed > 0 ? Math.round((leads.won / closed) * 100) : null;
+/** The call log for one calendar day - the trend's drill-down, when the reader may open it. */
+const callLogDay = (day: string) => `/owner/calls?from=${day}&to=${day}`;
+
+/**
+ * Closes IN the window - the redesign's `closed`, falling back to the all-time
+ * counts only for an API older than it (the tile then says "all time").
+ */
+function closes(data: Overview) {
+  if (data.closed) return { ...data.closed, windowed: true };
+  return { won: data.leads.won, lost: data.leads.lost, won_value: data.leads.won_value, windowed: false };
+}
+
+/** Win rate over closes: null when nothing closed - never "0%", which would claim the team loses everything. */
+function winShare(won: number, lost: number): number | null {
+  return share(won, won + lost);
+}
+
+/** A KPI tile's context: the fact on one line, the change on the next. */
+function TileContext({ fact, change }: { fact: ReactNode; change?: ReactNode }) {
+  return (
+    <>
+      <span className="block">{fact}</span>
+      {change ? <span className="mt-0.5 block">{change}</span> : null}
+    </>
+  );
+}
+
+/** The KPI deltas every persona draws from. */
+function deltas(data: Overview) {
+  const p = data.previous;
+  const c = closes(data);
+  if (!p) return { calls: null, created: null, won: null, winRate: null };
+  return {
+    calls: percentDelta(data.calls.total, p.calls),
+    created: percentDelta(data.leads.created_in_window, p.leads_created),
+    won: percentDelta(c.won, p.won),
+    winRate: pointsDelta(winShare(c.won, c.lost), winShare(p.won, p.lost)),
+  };
 }
 
 /**
- * THE OWNER — the whole business, unchanged from before personas existed.
- *
- * Deliberately identical to what shipped: an owner's dashboard was never the
- * problem this change set out to solve, and quietly redesigning the page every
- * existing customer already reads would have been an unrequested cost paid by
- * people who did not ask for it.
+ * THE OWNER — the whole business: money first, then what to do today, then
+ * what happened, where it went wrong, and who (docs/29 §2.1). Each band
+ * answers the question the band above it raises.
  */
-function OwnerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, team }: ViewProps) {
-  const { leads, calls, funnel, telecallers, byDay, stages, recent } = data;
+function OwnerDashboard({ data, days, span, period, crmPrimary, callIntel, tasksVisible, team, zone }: ViewProps) {
+  const { leads, calls, telecallers, byDay, stages, recent } = data;
   const l = links(crmPrimary);
-  const rate = winRate(leads);
+  const c = closes(data);
+  const d = deltas(data);
+  const noun = crmPrimary ? "deals" : "leads";
 
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
-          label="Open leads"
+          label={crmPrimary ? "Open deals" : "Open leads"}
           value={leads.open}
-          context={`${leads.created_in_window} new in ${days}d`}
+          context={
+            <TileContext
+              fact={`now · ${leads.created_in_window} new in ${span}`}
+              change={<DeltaNote delta={d.created} days={days} />}
+            />
+          }
           icon={<Target className="h-5 w-5" />}
         />
         <StatCard
           label="Pipeline value"
           value={formatValue(leads.pipeline_value)}
-          context={`across ${leads.open} open ${leads.open === 1 ? "lead" : "leads"}`}
+          context={`now · across ${leads.open} open ${leads.open === 1 ? noun.replace(/s$/, "") : noun}`}
           icon={<Banknote className="h-5 w-5" />}
         />
         <StatCard
-          label="Won"
-          value={leads.won}
-          context={`${rate === null ? "nothing closed yet" : `${rate}% win rate`}${
-            leads.won_value > 0 ? ` · ${formatValue(leads.won_value)}` : ""
-          }`}
+          label={c.windowed ? `Won in ${span}` : "Won (all time)"}
+          value={c.won}
+          context={
+            <TileContext
+              fact={`${c.won + c.lost === 0 ? "nothing closed" : `${rateText(c.won, c.won + c.lost)} of ${c.won + c.lost} closed`}${
+                c.won_value > 0 ? ` · ${formatValue(c.won_value)}` : ""
+              }`}
+              change={<DeltaNote delta={d.won} days={days} />}
+            />
+          }
           icon={<Trophy className="h-5 w-5" />}
         />
         <StatCard
           label="Calls"
           value={calls.total}
-          context={`${formatDuration(calls.total_seconds)} on the phone`}
+          context={
+            <TileContext
+              fact={`${formatDuration(calls.total_seconds)} on the phone`}
+              change={<DeltaNote delta={d.calls} days={days} />}
+            />
+          }
           icon={<PhoneCall className="h-5 w-5" />}
           // The one state a KPI tile carries, and only when there is one to
           // carry. On the fill it renders as a white chip with the slashed
@@ -238,21 +331,63 @@ function OwnerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, team 
 
       {tasksVisible ? <NextActions canViewTeam /> : null}
 
+      <TrendChart
+        byDay={byDay}
+        days={days}
+        title={`Calls and new ${noun}`}
+        leadNoun={noun}
+        callLogHref={callIntel ? callLogDay : undefined}
+      />
+
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <CallOutcomes
-          calls={calls}
-          days={days}
-          href={callIntel ? "/owner/calls" : undefined}
-        />
-        <ActivityChart byDay={byDay} days={days} leadLabel={crmPrimary ? "Deals" : "Leads"} />
+        <MissedHeatmap cells={data.callHeat ?? []} days={days} period={period} />
+        <CallOutcomes calls={calls} previous={data.previous} days={days} period={period} href={callIntel ? "/owner/calls" : undefined} />
       </div>
 
-      <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+      <PipelineHealth data={data} crmPrimary={crmPrimary} {...l} />
 
-      {team ? <TeamRollup data={team} days={days} /> : null}
-      <TelecallerTable telecallers={telecallers} days={days} />
-      <RecentActivity recent={recent} stages={stages} {...l} />
+      <AgingAndResponse data={data} days={days} period={period} />
+
+      {team ? <TeamRollup data={team} days={days} span={span} /> : null}
+      <TelecallerTable telecallers={telecallers} days={days} period={period} zone={zone} />
+      <RecentActivity recent={recent} stages={stages} zone={zone} {...l} />
     </>
+  );
+}
+
+/**
+ * Lead aging beside response speed - the two "who is waiting" readings. Both
+ * exist only on the leads read; on the CRM read (deals carry no first
+ * response) neither renders, rather than drawing zeros that mean "cannot
+ * answer" as if they meant "none" (the API's `triage: null` contract).
+ */
+function AgingAndResponse({
+  data,
+  days,
+  period,
+  scoped,
+  responseFirst,
+}: {
+  data: Overview;
+  days: number;
+  period?: string;
+  scoped?: boolean;
+  responseFirst?: boolean;
+}) {
+  const aging = data.triage && data.agingBuckets ? <LeadAging triage={data.triage} buckets={data.agingBuckets} scoped={scoped} /> : null;
+  const response = data.response ? <ResponseSpeed response={data.response} days={days} period={period} /> : null;
+  if (!aging && !response) return null;
+  const panels = responseFirst ? [response, aging] : [aging, response];
+  return (
+    <div className={`grid grid-cols-1 gap-5 sm:gap-6 ${aging && response ? "lg:grid-cols-2" : ""}`}>
+      {panels.filter(Boolean).map((panel, i) => (
+        // *:h-full: the two cards share a row, so the shorter one stretches to
+        // the taller rather than leaving a hole under it.
+        <div key={i} className="min-w-0 *:h-full">
+          {panel}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -261,46 +396,60 @@ function OwnerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, team 
  *
  * The difference from the owner's page is ORDER and EMPHASIS, not access: a
  * manager sees every record an owner does (their record scope is `all`). What
- * changes is that the leaderboard comes first instead of fourth, and the KPI
- * row swaps "pipeline value" - a number a manager does not control - for the
- * overdue follow-up count, which is the thing they can actually do something
- * about this afternoon.
+ * changes is that the people come first, then how fast the floor answers, and
+ * the KPI row swaps "pipeline value" - a number a manager does not control -
+ * for the overdue follow-up count, which is the thing they can actually do
+ * something about this afternoon.
  */
-function ManagerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, team }: ViewProps) {
-  const { leads, calls, funnel, telecallers, byDay, stages, recent, tasks } = data;
+function ManagerDashboard({ data, days, span, period, crmPrimary, callIntel, tasksVisible, team, zone }: ViewProps) {
+  const { leads, calls, telecallers, byDay, stages, recent, tasks } = data;
   const l = links(crmPrimary);
-  const rate = winRate(leads);
+  const c = closes(data);
+  const d = deltas(data);
+  const rate = winShare(c.won, c.lost);
   const active = telecallers.filter((t) => t.calls > 0).length;
+  const noun = crmPrimary ? "deals" : "leads";
 
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
-          label="Open leads"
+          label={crmPrimary ? "Open deals" : "Open leads"}
           value={leads.open}
-          context={`${leads.created_in_window} new in ${days}d`}
+          context={
+            <TileContext
+              fact={`now · ${leads.created_in_window} new in ${span}`}
+              change={<DeltaNote delta={d.created} days={days} />}
+            />
+          }
           icon={<Target className="h-5 w-5" />}
         />
         <StatCard
           label="Team on the phone"
           value={`${active}/${telecallers.length}`}
-          context={`${formatDuration(calls.total_seconds)} across ${calls.total} calls`}
+          context={
+            <TileContext
+              fact={`${formatDuration(calls.total_seconds)} across ${calls.total} calls`}
+              change={<DeltaNote delta={d.calls} days={days} />}
+            />
+          }
           icon={<Users className="h-5 w-5" />}
         />
         <StatCard
-          label="Win rate"
-          // A string, and one the tile has to render as prose rather than as a
-          // figure. "Not enough closed yet" is the honest answer when nothing
-          // has closed - a "0%" win rate says the team is losing, which is a
+          label={c.windowed ? `Win rate, ${span}` : "Win rate (all time)"}
+          // "Not enough closed yet" is the honest answer when nothing has
+          // closed - a "0%" win rate says the team is losing, which is a
           // different and untrue claim.
-          value={rate === null ? "Not enough closed yet" : `${rate}%`}
-          context={`${leads.won} won · ${leads.lost} lost`}
+          value={rate === null ? "Not enough closed yet" : rateText(c.won, c.won + c.lost)}
+          context={
+            <TileContext fact={`${c.won} won · ${c.lost} lost`} change={<DeltaNote delta={d.winRate} days={days} unit=" pts" />} />
+          }
           icon={<Trophy className="h-5 w-5" />}
         />
         <StatCard
           label="Overdue follow-ups"
           value={tasks.overdue}
-          context={`${tasks.open} open in total`}
+          context={`now · ${tasks.open} open in total`}
           icon={<ListChecks className="h-5 w-5" />}
         />
       </div>
@@ -312,23 +461,35 @@ function ManagerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, tea
           CRM roll-up comes before the call leaderboard because it is about
           PEOPLE and their work; the leaderboard below is about the phone
           lines, which is a different question with a different unit. */}
-      {team ? <TeamRollup data={team} days={days} /> : null}
+      {team ? <TeamRollup data={team} days={days} span={span} /> : null}
 
-      <TelecallerTable telecallers={telecallers} days={days} title="Who is on the phone" />
+      <TelecallerTable telecallers={telecallers} days={days} period={period} zone={zone} title="Who is on the phone" />
+
+      <AgingAndResponse data={data} days={days} period={period} responseFirst />
+
+      <TrendChart
+        byDay={byDay}
+        days={days}
+        title={`Calls and new ${noun} across the team`}
+        leadNoun={noun}
+        callLogHref={callIntel ? callLogDay : undefined}
+      />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        <MissedHeatmap cells={data.callHeat ?? []} days={days} period={period} />
         <CallOutcomes
           calls={calls}
+          previous={data.previous}
           days={days}
+          period={period}
           href={callIntel ? "/owner/calls" : undefined}
           label="How the floor's calls went"
         />
-        <ActivityChart byDay={byDay} days={days} leadLabel={crmPrimary ? "Deals" : "Leads"} />
       </div>
 
-      <PipelineByStage funnel={funnel} total={leads.total} crmPrimary={crmPrimary} {...l} />
+      <PipelineHealth data={data} crmPrimary={crmPrimary} {...l} />
 
-      <RecentActivity recent={recent} stages={stages} {...l} label="Latest across the team" />
+      <RecentActivity recent={recent} stages={stages} zone={zone} {...l} label="Latest across the team" />
     </>
   );
 }
@@ -339,7 +500,8 @@ function ManagerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, tea
  * Every number here is already narrowed to them by the API. The composition is
  * built around the question they actually have, which is not "how is the
  * business doing" but "what should I do next": follow-ups first, then their
- * own pipeline, then the calls they made.
+ * own pipeline and where it is stuck, then the calls they made and when they
+ * missed them.
  *
  * No pipeline VALUE anywhere on this page, and that is deliberate rather than
  * an omission. A telecaller is measured on activity and conversion; putting a
@@ -347,10 +509,11 @@ function ManagerDashboard({ data, days, crmPrimary, callIntel, tasksVisible, tea
  * rather than the next one, and the value of a lead they were handed is not a
  * number they set.
  */
-function TelecallerDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
-  const { leads, calls, funnel, byDay, stages, recent, tasks } = data;
+function TelecallerDashboard({ data, days, span, period, crmPrimary, tasksVisible, zone }: ViewProps) {
+  const { leads, calls, byDay, stages, recent, tasks } = data;
   const l = links(crmPrimary);
-  const rate = winRate(leads);
+  const c = closes(data);
+  const d = deltas(data);
 
   return (
     <>
@@ -358,13 +521,18 @@ function TelecallerDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps
         <StatCard
           label="Your open leads"
           value={leads.open}
-          context={`${leads.created_in_window} new in ${days}d`}
+          context={`now · ${leads.created_in_window} new in ${span}`}
           icon={<Target className="h-5 w-5" />}
         />
         <StatCard
           label="Your calls"
           value={calls.total}
-          context={`${formatDuration(calls.total_seconds)} on the phone`}
+          context={
+            <TileContext
+              fact={`${formatDuration(calls.total_seconds)} on the phone`}
+              change={<DeltaNote delta={d.calls} days={days} />}
+            />
+          }
           icon={<PhoneCall className="h-5 w-5" />}
           state={calls.missed > 0 ? "missed" : undefined}
           stateLabel={calls.missed > 0 ? `${calls.missed} missed` : undefined}
@@ -372,13 +540,13 @@ function TelecallerDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps
         <StatCard
           label="Follow-ups due"
           value={tasks.overdue + tasks.due_today}
-          context={`${tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}${tasks.open} open`}
+          context={`now · ${tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}${tasks.open} open`}
           icon={<ListChecks className="h-5 w-5" />}
         />
         <StatCard
-          label="You won"
-          value={leads.won}
-          context={rate === null ? "nothing closed yet" : `${rate}% win rate`}
+          label={c.windowed ? `You won, ${span}` : "You won (all time)"}
+          value={c.won}
+          context={c.won + c.lost === 0 ? "nothing closed yet" : `${rateText(c.won, c.won + c.lost)} of ${c.won + c.lost} closed`}
           icon={<Trophy className="h-5 w-5" />}
         />
       </div>
@@ -387,32 +555,31 @@ function TelecallerDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps
           opens the console to answer. */}
       {tasksVisible ? <NextActions canViewTeam={false} /> : null}
 
-      <PipelineByStage
-        funnel={funnel}
-        total={leads.total}
-        crmPrimary={crmPrimary}
-        scoped
-        {...l}
-        label="Your leads by stage"
+      <PipelineHealth data={data} crmPrimary={crmPrimary} scoped showValue={false} {...l} label="Your pipeline" />
+
+      <TrendChart
+        byDay={byDay}
+        days={days}
+        title={`Your calls and new ${crmPrimary ? "deals" : "leads"}`}
+        leadNoun={crmPrimary ? "deals" : "leads"}
       />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <CallOutcomes calls={calls} days={days} label="How your calls went" />
-        <ActivityChart
-          byDay={byDay}
-          days={days}
-          leadLabel={crmPrimary ? "Deals" : "Leads"}
-          title={`Your calls and new leads - last ${days} days`}
-        />
+        <MissedHeatmap cells={data.callHeat ?? []} days={days} period={period} label="When your inbound calls go unanswered" />
+        <CallOutcomes calls={calls} previous={data.previous} days={days} period={period} label="How your calls went" />
       </div>
 
-      <RecentActivity
-        recent={recent}
-        stages={stages}
-        {...l}
-        label="Your latest activity"
-        emptyLabel="Nothing assigned to you yet"
-      />
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        {data.triage && data.agingBuckets ? <LeadAging triage={data.triage} buckets={data.agingBuckets} scoped /> : null}
+        <RecentActivity
+          recent={recent}
+          stages={stages}
+          zone={zone}
+          {...l}
+          label="Your latest activity"
+          emptyLabel="Nothing assigned to you yet"
+        />
+      </div>
     </>
   );
 }
@@ -422,13 +589,16 @@ function TelecallerDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps
  *
  * The mirror image of the telecaller page, and the difference is the point: a
  * rep IS measured on value, so pipeline and won value lead, and talk time does
- * not appear at all. Both personas are scoped to their own records; what
+ * not appear at all - which is also why their trend draws demand only, not the
+ * call-state plot. Both personas are scoped to their own records; what
  * separates them is which of their own numbers matter.
  */
-function SalesDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
-  const { leads, funnel, byDay, stages, recent, tasks } = data;
+function SalesDashboard({ data, days, span, crmPrimary, tasksVisible, zone }: ViewProps) {
+  const { leads, byDay, stages, recent, tasks } = data;
   const l = links(crmPrimary);
-  const rate = winRate(leads);
+  const c = closes(data);
+  const d = deltas(data);
+  const rate = winShare(c.won, c.lost);
   const noun = crmPrimary ? "deals" : "leads";
 
   return (
@@ -437,54 +607,53 @@ function SalesDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
         <StatCard
           label="Your pipeline"
           value={formatValue(leads.pipeline_value)}
-          context={`across ${leads.open} open ${noun}`}
+          context={`now · across ${leads.open} open ${noun}`}
           icon={<Banknote className="h-5 w-5" />}
         />
         <StatCard
-          label="You won"
-          value={formatValue(leads.won_value)}
-          context={`${leads.won} closed in this window`}
+          label={c.windowed ? `You won, ${span}` : "You won (all time)"}
+          value={formatValue(c.won_value)}
+          // TRUE now: `closed` counts closes inside the window. It used to
+          // print "closed in this window" over an all-time count (docs/29 A4).
+          context={
+            <TileContext
+              fact={c.windowed ? `${c.won} closed in this window` : `${c.won} closed in all`}
+              change={<DeltaNote delta={d.won} days={days} />}
+            />
+          }
           icon={<Trophy className="h-5 w-5" />}
         />
         <StatCard
           label="Win rate"
-          value={rate === null ? "Not enough closed yet" : `${rate}%`}
-          context={`${leads.won} won · ${leads.lost} lost`}
+          value={rate === null ? "Not enough closed yet" : rateText(c.won, c.won + c.lost)}
+          context={<TileContext fact={`${c.won} won · ${c.lost} lost`} change={<DeltaNote delta={d.winRate} days={days} unit=" pts" />} />}
           icon={<Target className="h-5 w-5" />}
         />
         <StatCard
           label="Follow-ups due"
           value={tasks.overdue + tasks.due_today}
-          context={`${tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}${tasks.open} open`}
+          context={`now · ${tasks.overdue > 0 ? `${tasks.overdue} overdue · ` : ""}${tasks.open} open`}
           icon={<ListChecks className="h-5 w-5" />}
         />
       </div>
 
       {tasksVisible ? <NextActions canViewTeam={false} /> : null}
 
-      <PipelineByStage
-        funnel={funnel}
-        total={leads.total}
-        crmPrimary={crmPrimary}
-        scoped
-        {...l}
-        label={`Your ${noun} by stage`}
-      />
+      <PipelineHealth data={data} crmPrimary={crmPrimary} scoped {...l} label={`Your ${noun}`} />
 
-      <ActivityChart
-        byDay={byDay}
-        days={days}
-        leadLabel={crmPrimary ? "Deals" : "Leads"}
-        title={`Your new ${noun} - last ${days} days`}
-      />
+      <TrendChart byDay={byDay} days={days} title={`Your new ${noun}`} leadNoun={noun} showCalls={false} />
 
-      <RecentActivity
-        recent={recent}
-        stages={stages}
-        {...l}
-        label="Your latest activity"
-        emptyLabel={`Nothing assigned to you yet`}
-      />
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
+        {data.triage && data.agingBuckets ? <LeadAging triage={data.triage} buckets={data.agingBuckets} scoped /> : null}
+        <RecentActivity
+          recent={recent}
+          stages={stages}
+          zone={zone}
+          {...l}
+          label="Your latest activity"
+          emptyLabel={`Nothing assigned to you yet`}
+        />
+      </div>
     </>
   );
 }
@@ -495,18 +664,21 @@ function SalesDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
  * The only persona whose dashboard is a genuinely different QUESTION rather
  * than a re-cut of the same one. A marketer is not working a pipeline; they
  * are answering "which channel is worth the money", so the page leads with
- * arrivals per source and the conversion rate behind each, and the pipeline
- * appears only as the downstream result.
+ * arrivals per source and the conversion behind each, then how fast the floor
+ * picked those arrivals up, and the pipeline appears only as the downstream
+ * result.
  *
  * Their record scope is `all`, not `own` (roles.ts): nothing is assigned to a
  * marketer, so narrowing them to their own records would produce an empty page
  * by construction. They are restricted by OBJECT instead - no call transcripts,
  * no invoices, no customer inbox - which the nav and the API guards enforce.
  */
-function MarketingDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps) {
-  const { leads, funnel, byDay, bySource, byCampaign, stages, recent } = data;
+function MarketingDashboard({ data, days, span, period, crmPrimary, tasksVisible, zone }: ViewProps) {
+  const { leads, byDay, bySource, byCampaign, stages, recent } = data;
   const l = links(crmPrimary);
-  const rate = winRate(leads);
+  const c = closes(data);
+  const d = deltas(data);
+  const rate = winShare(c.won, c.lost);
   const channels = bySource.length;
   const best = [...bySource].sort((a, b) => b.won - a.won)[0];
 
@@ -514,58 +686,57 @@ function MarketingDashboard({ data, days, crmPrimary, tasksVisible }: ViewProps)
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
-          label={`New leads in ${days}d`}
+          label={`New leads in ${span}`}
           value={leads.created_in_window}
-          context={`${channels} ${channels === 1 ? "channel" : "channels"} attributed`}
+          context={
+            <TileContext
+              fact={`${channels} ${channels === 1 ? "channel" : "channels"} attributed`}
+              change={<DeltaNote delta={d.created} days={days} />}
+            />
+          }
           icon={<Megaphone className="h-5 w-5" />}
         />
         <StatCard
-          label="Converted"
-          value={rate === null ? "Not enough closed yet" : `${rate}%`}
-          context={`${leads.won} won · ${leads.lost} lost`}
+          // "Win rate", as on every other persona: won ÷ CLOSED in the window.
+          // The source panel below reports won ÷ ARRIVED as "won so far" - two
+          // numbers both called "converted" would look like a contradiction.
+          label={c.windowed ? `Win rate, ${span}` : "Win rate (all time)"}
+          value={rate === null ? "Not enough closed yet" : rateText(c.won, c.won + c.lost)}
+          context={<TileContext fact={`${c.won} won · ${c.lost} lost`} change={<DeltaNote delta={d.winRate} days={days} unit=" pts" />} />}
           icon={<Target className="h-5 w-5" />}
         />
         <StatCard
-          label="Revenue won"
-          value={formatValue(leads.won_value)}
+          label={c.windowed ? `Revenue won, ${span}` : "Revenue won (all time)"}
+          value={formatValue(c.won_value)}
           // Names the channel that CLOSED the most, not the one that delivered
           // the most - the whole reason this dashboard exists. A channel name
           // is a string on a tile whose value is a number, which is exactly
           // what the second line is for.
-          context={best && best.won > 0 ? `best channel: ${best.channel}` : "nothing closed yet"}
+          context={best && best.won > 0 ? `best channel: ${CHANNEL_LABELS[best.channel] ?? best.channel}` : "nothing closed yet"}
           icon={<Banknote className="h-5 w-5" />}
         />
         <StatCard
           label="Open pipeline"
           value={formatValue(leads.pipeline_value)}
-          context={`across ${leads.open} open leads`}
+          context={`now · across ${leads.open} open leads`}
           icon={<Trophy className="h-5 w-5" />}
         />
       </div>
 
       {tasksVisible ? <NextActions canViewTeam={false} /> : null}
 
-      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <SourceBreakdown bySource={bySource} days={days} />
-        <ActivityChart
-          byDay={byDay}
-          days={days}
-          leadLabel="Arrivals"
-          title={`Arrivals per day - last ${days} days`}
-        />
+      <SourceEffectiveness bySource={bySource} days={days} period={period} />
+
+      <div className={`grid grid-cols-1 gap-5 sm:gap-6 ${data.response ? "lg:grid-cols-2" : ""}`}>
+        <TrendChart byDay={byDay} days={days} title="Arrivals per day" leadNoun="leads" showCalls={false} />
+        {data.response ? <ResponseSpeed response={data.response} days={days} period={period} /> : null}
       </div>
 
-      <CampaignTable byCampaign={byCampaign} days={days} />
+      <CampaignTable byCampaign={byCampaign} days={days} period={period} />
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2">
-        <PipelineByStage
-          funnel={funnel}
-          total={leads.total}
-          crmPrimary={crmPrimary}
-          {...l}
-          label="What happened to them"
-        />
-        <RecentActivity recent={recent} stages={stages} {...l} label="Newest arrivals" />
+        <PipelineHealth data={data} crmPrimary={crmPrimary} {...l} label="What happened to them" />
+        <RecentActivity recent={recent} stages={stages} zone={zone} {...l} label="Newest arrivals" />
       </div>
     </>
   );

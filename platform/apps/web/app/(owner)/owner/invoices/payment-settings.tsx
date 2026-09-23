@@ -23,7 +23,14 @@ import { savePaymentSettingsAction, type PaymentSettings } from "./actions";
  * the key id without going back to Razorpay for the secret, and it is why the
  * placeholder says so rather than leaving them guessing whether blank wipes it.
  */
-export function PaymentSettingsCard({ initial }: { initial: PaymentSettings }) {
+export function PaymentSettingsCard({
+  initial,
+  onSaved,
+}: {
+  initial: PaymentSettings;
+  /** Called after a successful save - the Integrations store's connect step moves on with it. */
+  onSaved?: () => void;
+}) {
   const [keyId, setKeyId] = useState(initial.keyId ?? "");
   const [keySecret, setKeySecret] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
@@ -52,6 +59,7 @@ export function PaymentSettingsCard({ initial }: { initial: PaymentSettings }) {
       setKeySecret("");
       setWebhookSecret("");
       setOpen(false);
+      onSaved?.();
     });
   };
 

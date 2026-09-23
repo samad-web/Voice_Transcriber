@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarClock, Mail, MessageSquare, Phone, StickyNote } from "lucide-react";
 import { Button, ErrorBanner, MonoLabel } from "@aura/ui";
+import { Time, useOrgTimeZone } from "@/components/org-time";
 import { InlineListSkeleton } from "@/components/skeletons";
 import { interactionToActivity } from "@/lib/activity";
 import { ActorAvatar, ActorKindLabel } from "./actor-badge";
@@ -55,6 +56,7 @@ export function InteractionTimeline({
   // timeline rather than reporting an event, so it stays on the page.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
+  const zone = useOrgTimeZone();
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -135,9 +137,11 @@ export function InteractionTimeline({
                       </span>
                     ) : null}
                     <span className="text-xs text-text-muted tabular-nums">
-                      {upcoming
-                        ? new Date(row.occurred_at).toLocaleString()
-                        : relativeTime(row.occurred_at)}
+                      {upcoming ? (
+                        <Time iso={row.occurred_at} mode="datetime" />
+                      ) : (
+                        relativeTime(row.occurred_at, zone)
+                      )}
                       {length ? ` · ${length}` : ""}
                       {actor.via ? ` · ${actor.via}` : ""}
                     </span>

@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { Card, MonoLabel, RowHint, StateChip, StatusChip, STATE_TONE } from "@aura/ui";
 import type { ConsoleState } from "@aura/ui";
-import { formatDay } from "@/lib/report-dashboard";
+import { DateRangeBar, DateRangeSummary } from "@/components/date-range-bar";
+import { pointsDelta, rateText, share } from "@/lib/dashboard-charts";
+import { rangePresets, type DateWindow } from "@/lib/date-range";
 import { TelecallerName } from "./telecaller-name";
+import { DeltaNote } from "./_dashboard/chart-parts";
 import { formatDuration, formatValue, num, relativeTime, type Overview, type Stage } from "./types";
 
 /**
- * The panels the five persona dashboards are assembled from (migration 0079).
+ * The panels the five persona dashboards are assembled from (migration 0079),
+ * alongside the charts in ./_dashboard (Build docs/29).
  *
  * WHY THIS FILE EXISTS. `/owner` used to be one page for one audience. It is
  * now five compositions of the same underlying reading - an owner's whole-org
@@ -28,34 +32,47 @@ import { formatDuration, formatValue, num, relativeTime, type Overview, type Sta
 export const PANEL_LINK =
   "rounded-sm text-xs font-medium text-text-muted transition-colors duration-150 ease-out hover:text-text";
 
-/** The reporting window control. Identical for every persona. */
-export function WindowPicker({ days }: { days: number }) {
+/**
+ * The filter row: the reporting window, and the clock it is counted on.
+ * Identical for every persona (docs/29 §3.1), and the same control every
+ * report screen has (components/date-range-bar.tsx): the last 7/30/90 days,
+ * or any From/To range.
+ *
+ * It prints the window's DATES and the ZONE, because "30 days" alone is
+ * ambiguous twice over - does it include today, and whose midnight? The dates
+ * are the ones the API echoed from the org's own calendar, never computed
+ * here, so the label cannot disagree with the numbers under it. Owners and
+ * managers get the link that changes the zone (Build docs/30).
+ */
+export function WindowPicker({
+  window,
+  from,
+  to,
+  zone,
+  canChangeZone,
+}: {
+  window: DateWindow;
+  from?: string;
+  to?: string;
+  zone: string;
+  canChangeZone: boolean;
+}) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <MonoLabel className="mr-1">Window</MonoLabel>
-      {[7, 30, 90].map((d) => (
-        <Link
-          key={d}
-          href={`/owner?days=${d}`}
-          aria-current={d === days ? "true" : undefined}
-          // Selected = a solid NEUTRAL fill, not the brand gradient it used to
-          // carry. "Which window am I looking at" is not one of the four
-          // states (@aura/ui's state.tsx), so it does not get a hue - and the
-          // gradient's blue mid-stop sat inches from the blue that now means
-          // "outgoing" on the same screen. Inverting the pill is just as
-          // unmistakable and spends nothing from the palette. The rail keeps
-          // its gradient: it is permanent chrome and never sits beside call
-          // data.
-          className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium tabular-nums transition-colors duration-150 ease-out ${
-            d === days
-              ? "border-transparent bg-text text-bg"
-              : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
-          }`}
-        >
-          {d} days
-        </Link>
-      ))}
-    </div>
+    <>
+      <DateRangeBar path="/owner" presets={rangePresets("/owner", window)} from={from} to={to} />
+      <DateRangeSummary
+        from={from}
+        to={to}
+        zone={zone}
+        zoneAction={
+          canChangeZone ? (
+            <Link href="/owner/account/time" className={PANEL_LINK}>
+              Change
+            </Link>
+          ) : null
+        }
+      />
+    </>
   );
 }
 
@@ -93,78 +110,11 @@ export function EmptyPipeline({ crmPrimary, scoped }: { crmPrimary: boolean; sco
   );
 }
 
-export function PipelineByStage({
-  funnel,
-  total,
-  crmPrimary,
-  scoped,
-  pipelineHref,
-  pipelineLinkLabel,
-  stageHref,
-  label = "Pipeline by stage",
-}: {
-  funnel: Overview["funnel"];
-  total: number;
-  crmPrimary: boolean;
-  scoped?: boolean;
-  pipelineHref: string;
-  pipelineLinkLabel: string;
-  stageHref: (key: string) => string;
-  label?: string;
-}) {
-  const funnelMax = Math.max(...funnel.map((f) => f.count), 1);
-  return (
-    <Card elevated className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <MonoLabel>{label}</MonoLabel>
-        <Link href={pipelineHref} className={PANEL_LINK}>
-          {pipelineLinkLabel}
-        </Link>
-      </div>
-      {total === 0 ? (
-        <EmptyPipeline crmPrimary={crmPrimary} scoped={scoped} />
-      ) : (
-        <div className="space-y-2.5">
-          {funnel.map((stage) => (
-            <Link key={stage.key} href={stageHref(stage.key)} className="group block">
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-text-muted transition-colors duration-150 ease-out group-hover:text-text">
-                  {stage.label}
-                </span>
-                <span className="shrink-0 font-medium text-text tabular-nums">
-                  {stage.count}
-                  {stage.value > 0 ? (
-                    <span className="font-normal text-text-muted"> · {formatValue(stage.value)}</span>
-                  ) : null}
-                </span>
-              </div>
-              {/* aria-hidden: the bar is a picture of the count that is already
-                  written beside it in text, so announcing a second unlabelled
-                  meter would just read the row twice. */}
-              <div
-                aria-hidden="true"
-                className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-border"
-              >
-                <div
-                  // BOTH bars are neutral now. Lost was already grey - a lost
-                  // lead is a normal outcome, not a fault - and the open bars
-                  // have joined it: a stage is a category, not a state, and
-                  // under the colour rule a category gets no hue. The two
-                  // greys still separate cleanly, which is all the bar was
-                  // using colour for.
-                  className={`h-full rounded-full ${
-                    stage.terminal === "lost" ? "bg-border-strong" : "bg-text"
-                  }`}
-                  style={{ width: `${(stage.count / funnelMax) * 100}%` }}
-                />
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
+/**
+ * Bottom-to-top in the trend's stack, left-to-right here - the same order in
+ * both, validated for colour-blind separation (Build docs/29 §4.1).
+ */
+const OUTCOME_ORDER = ["answered", "outgoing", "missed"] as const;
 
 /**
  * THE ONE PANEL THAT SPENDS THE PALETTE.
@@ -184,43 +134,55 @@ export function PipelineByStage({
  * also honest about what it is: an operational problem for us, not a business
  * outcome for the reader.
  *
- * ── WHY IT IS NOT THREE MORE KPI TILES ──────────────────────────────────────
+ * ── WHAT THE REDESIGN ADDED (docs/29 §3.5) ──────────────────────────────────
  *
- * The tiles are a solid orange band. Painting states inside them means either
- * losing the hue (the tiles are already orange) or three coloured cards
- * fighting an orange row. A neutral panel gives each figure a plain white
- * ground where its colour means exactly one thing, and puts the three side by
- * side where the comparison between them is the point.
+ * One 100% bar under the figures - the proportion at a glance that three
+ * numbers cannot give, in the trend chart's own state order (a donut would
+ * hide close proportions in angles). And the missed share is now OF INBOUND:
+ * missed is a property of calls that rang in, so on a floor that is mostly
+ * outbound, "2% of all calls" hid a 20% miss rate on the phones that rang.
  */
 export function CallOutcomes({
   calls,
+  previous,
   days,
+  period,
   href,
   label = "Call outcomes",
 }: {
   calls: Overview["calls"];
+  previous?: Overview["previous"];
   days: number;
+  /** The window in words when it is not "last N days" - a custom range's dates. */
+  period?: string;
   /** The call log, when this reader is entitled to it. Omitted = no link. */
   href?: string;
   label?: string;
 }) {
-  const figures: Array<{ state: ConsoleState; value: number; caption: string }> = [
+  const inbound = calls.answered + calls.missed;
+  const figures: Array<{ state: ConsoleState; value: number; share: string; caption: string }> = [
     {
       state: "missed",
       value: calls.missed,
-      caption: "inbound, nobody picked up",
+      share: `${rateText(calls.missed, inbound)} of ${inbound} inbound`,
+      caption: "rang in, nobody picked up",
     },
     {
       state: "answered",
       value: calls.answered,
-      caption: "inbound, someone spoke",
+      share: `${rateText(calls.answered, inbound)} of ${inbound} inbound`,
+      caption: "rang in, someone spoke",
     },
     {
       state: "outgoing",
       value: calls.outgoing,
+      share: `${rateText(calls.outgoing, calls.total)} of all ${calls.total}`,
       caption: "we called them",
     },
   ];
+  const missedDelta = previous
+    ? pointsDelta(share(calls.missed, inbound), share(previous.missed, previous.answered + previous.missed))
+    : null;
 
   return (
     <Card elevated className="space-y-4">
@@ -231,7 +193,7 @@ export function CallOutcomes({
             Open call log →
           </Link>
         ) : (
-          <span className="text-xs text-text-muted tabular-nums">last {days} days</span>
+          <span className="text-xs text-text-muted tabular-nums">{period ?? `last ${days} days`}</span>
         )}
       </div>
 
@@ -242,24 +204,37 @@ export function CallOutcomes({
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">
-            {figures.map(({ state, value, caption }) => (
+            {figures.map(({ state, value, share: s, caption }) => (
               <div key={state} className="min-w-0">
                 <StateChip state={state} />
-                <p
-                  className={`mt-2 text-2xl font-semibold tabular-nums ${STATE_TONE[state].text}`}
-                >
-                  {value}
-                </p>
-                {/* The percentage is what makes the number mean anything: 40
-                    missed calls is a catastrophe on a floor doing 60 and a
-                    rounding error on one doing 4,000. */}
-                <p className="mt-0.5 text-xs text-text-muted tabular-nums">
-                  {Math.round((value / calls.total) * 100)}% of {calls.total}
-                </p>
+                <p className={`mt-2 text-2xl font-semibold ${STATE_TONE[state].text}`}>{value}</p>
+                <p className="mt-0.5 text-xs text-text-muted tabular-nums">{s}</p>
                 <p className="mt-0.5 text-xs leading-snug text-text-muted">{caption}</p>
               </div>
             ))}
           </div>
+
+          {/* The whole in one bar. aria-hidden: the three figures above are the
+              same numbers in text. The 2px gaps are the card surface, not a
+              stroke, and each segment keeps a 3px floor so a state that
+              happened is never invisible. */}
+          <div aria-hidden="true" className="flex h-2.5 gap-[2px] overflow-hidden rounded-sm">
+            {OUTCOME_ORDER.map((state) =>
+              calls[state] > 0 ? (
+                <span
+                  key={state}
+                  className={STATE_TONE[state].mark}
+                  style={{ flexGrow: calls[state], flexBasis: 0, minWidth: 3 }}
+                />
+              ) : null,
+            )}
+          </div>
+
+          {missedDelta ? (
+            <p className="text-xs text-text-muted">
+              Missed rate <DeltaNote delta={missedDelta} days={days} unit=" pts" />
+            </p>
+          ) : null}
 
           {calls.failed > 0 ? (
             <div className="border-t border-border pt-3">
@@ -278,138 +253,32 @@ export function CallOutcomes({
 }
 
 /**
- * "13 Sep" for a chart day, read from the same local date parts as the axis
- * label under it, so the two can never name different days. Worded through
- * the Reports page's fixed month table rather than Intl, whose ICU builds
- * disagree ("Sep" / "Sept").
+ * Per-person performance - a TABLE, because people are more than seven
+ * categories with exact values to compare (docs/29 §3.10). The redesign adds
+ * who is MISSING calls (G7) and a thin ink bar under each call count, scaled
+ * to the busiest person, so the ranking reads without reading every number.
  */
-function dayLabel(date: Date): string {
-  const pad = (v: number) => String(v).padStart(2, "0");
-  return formatDay(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`);
-}
-
-export function ActivityChart({
-  byDay,
-  days,
-  leadLabel = "Leads",
-  title,
-}: {
-  byDay: Overview["byDay"];
-  days: number;
-  leadLabel?: string;
-  title?: string;
-}) {
-  const maxDay = Math.max(...byDay.map((d) => Math.max(d.calls, d.leads)), 1);
-  const leadNoun = leadLabel.toLowerCase();
-  const n = byDay.length;
-  return (
-    <Card elevated className="space-y-4">
-      <MonoLabel>{title ?? `Calls and new leads - last ${days} days`}</MonoLabel>
-      {byDay.length === 0 ? (
-        <p className="py-10 text-center text-sm text-text-muted">No activity in this window</p>
-      ) : (
-        <>
-          {/*
-            Hover shows the day's numbers. The whole column is the hit target,
-            not the painted bar: a quiet day's bar is a few pixels tall and a
-            day with no leads has no lead bar at all, so a tooltip bound to the
-            bar (the native `title` this replaced) was unreachable exactly where
-            the number was most worth reading.
-
-            The plot is hidden from assistive tech because the table after it
-            carries the same figures in a form a screen reader can walk, and
-            thirty focusable columns would be a keyboard trap.
-          */}
-          <div aria-hidden="true" className="flex h-40 items-end gap-1">
-            {byDay.map((d, i) => {
-              const date = new Date(d.day);
-              // Tooltips at the edges open inward so they never leave the card.
-              const align =
-                i < n / 3 ? "left-0" : i >= (2 * n) / 3 ? "right-0" : "left-1/2 -translate-x-1/2";
-              return (
-                <div key={d.day} className="group flex min-w-0 flex-1 flex-col items-center gap-1">
-                  <div className="relative flex h-32 w-full items-end justify-center gap-0.5 rounded-sm transition-colors duration-150 ease-out group-hover:bg-surface-hover">
-                    <div
-                      className="w-1/2 rounded-t-sm bg-border-strong"
-                      style={{ height: `${(d.calls / maxDay) * 100}%` }}
-                    />
-                    <div
-                      // Two greys, not grey and blue. The pair carries its own
-                      // legend and tooltip, so the hue was never the thing
-                      // distinguishing them - and blue means "outgoing" now.
-                      className="w-1/2 rounded-t-sm bg-text"
-                      style={{ height: `${(d.leads / maxDay) * 100}%` }}
-                    />
-                    <span
-                      className={`pointer-events-none invisible absolute bottom-full z-10 mb-1 w-max rounded-md border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted shadow-md group-hover:visible ${align}`}
-                    >
-                      <span className="block font-medium text-text">{dayLabel(date)}</span>
-                      <span className="mt-1 flex items-center gap-1.5 tabular-nums">
-                        <span className="h-2 w-2 rounded-sm bg-border-strong" />
-                        <span className="font-semibold text-text">{d.calls}</span>
-                        {d.calls === 1 ? "call" : "calls"}
-                      </span>
-                      <span className="flex items-center gap-1.5 tabular-nums">
-                        <span className="h-2 w-2 rounded-sm bg-text" />
-                        <span className="font-semibold text-text">{d.leads}</span>
-                        {d.leads === 1 ? leadNoun.replace(/s$/, "") : leadNoun}
-                      </span>
-                    </span>
-                  </div>
-                  <span className="w-full truncate text-center text-xs text-text-muted tabular-nums">
-                    {date.toLocaleDateString(undefined, { day: "numeric" })}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <table className="sr-only">
-            <caption>{title ?? `Calls and new leads - last ${days} days`}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Day</th>
-                <th scope="col">Calls</th>
-                <th scope="col">{leadLabel}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byDay.map((d) => (
-                <tr key={d.day}>
-                  <th scope="row">{dayLabel(new Date(d.day))}</th>
-                  <td>{d.calls}</td>
-                  <td>{d.leads}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center gap-4 border-t border-border pt-3">
-            <span className="flex items-center gap-1.5 text-xs text-text-muted">
-              <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-border-strong" /> Calls
-            </span>
-            <span className="flex items-center gap-1.5 text-xs text-text-muted">
-              <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-text" /> {leadLabel}
-            </span>
-          </div>
-        </>
-      )}
-    </Card>
-  );
-}
-
 export function TelecallerTable({
   telecallers,
   days,
+  period,
+  zone,
   title = "Telecaller performance",
 }: {
   telecallers: Overview["telecallers"];
   days: number;
+  /** The window in words when it is not "last N days" - a custom range's dates. */
+  period?: string;
+  /** The workspace zone, for "last call" dates older than a month. */
+  zone: string;
   title?: string;
 }) {
+  const busiest = Math.max(1, ...telecallers.map((t) => t.calls));
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
         <span className="text-sm font-medium text-text">{title}</span>
-        <span className="text-xs text-text-muted tabular-nums">last {days} days</span>
+        <span className="text-xs text-text-muted tabular-nums">{period ?? `last ${days} days`}</span>
       </div>
       {telecallers.length === 0 ? (
         <p className="py-10 text-center text-sm text-text-muted">No handsets enrolled yet</p>
@@ -418,16 +287,16 @@ export function TelecallerTable({
         // (WCAG 2.1.1) - the kit's <Table> does the same, but it draws its own
         // border and this table already sits inside a bordered Card.
         <div tabIndex={0} role="region" aria-label={title} className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[820px] border-collapse text-left text-sm">
             <thead className="bg-bg-subtle">
               <tr>
-                {["Telecaller", "Calls", "Talk time", "Leads", "Won", "Pipeline", "Last call"].map(
+                {["Telecaller", "Calls", "Missed", "Talk time", "Leads", "Won", "Pipeline", "Last call"].map(
                   (heading, i) => (
                     <th
                       key={heading}
                       scope="col"
                       className={`border-b border-border px-4 py-2.5 text-xs font-medium whitespace-nowrap text-text-muted ${
-                        i > 0 && i < 6 ? "text-right" : ""
+                        i > 0 && i < 7 ? "text-right" : ""
                       }`}
                     >
                       {heading}
@@ -437,39 +306,56 @@ export function TelecallerTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {telecallers.map((t) => (
-                <tr
-                  key={t.id}
-                  className="transition-colors duration-150 ease-out hover:bg-surface-hover"
-                >
-                  <td className="px-4 py-3 align-middle text-text">
-                    <TelecallerName deviceId={t.id} name={t.telecaller_name} deviceLabel={t.label} />
-                    {t.status !== "active" ? (
-                      <StatusChip tone="muted" className="mt-1.5">
-                        {t.status}
-                      </StatusChip>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                    {t.calls}
-                  </td>
-                  <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                    {formatDuration(t.talk_seconds)}
-                  </td>
-                  <td className="px-4 py-3 text-right align-middle font-medium text-text tabular-nums">
-                    {t.leads}
-                  </td>
-                  <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                    {t.won}
-                  </td>
-                  <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
-                    {formatValue(t.pipeline_value)}
-                  </td>
-                  <td className="px-4 py-3 align-middle text-text-muted tabular-nums">
-                    {relativeTime(t.last_call_at)}
-                  </td>
-                </tr>
-              ))}
+              {telecallers.map((t) => {
+                const missed = Number(t.missed ?? 0);
+                return (
+                  <tr key={t.id} className="transition-colors duration-150 ease-out hover:bg-surface-hover">
+                    <td className="px-4 py-3 align-middle text-text">
+                      <TelecallerName deviceId={t.id} name={t.telecaller_name} deviceLabel={t.label} />
+                      {t.status !== "active" ? (
+                        <StatusChip tone="muted" className="mt-1.5">
+                          {t.status}
+                        </StatusChip>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
+                      {t.calls}
+                      <span aria-hidden="true" className="mt-1 ml-auto block h-1 w-16 rounded-full bg-border">
+                        <span
+                          className="block h-full rounded-full bg-text"
+                          style={{ width: `${t.calls > 0 ? Math.max(6, (t.calls / busiest) * 100) : 0}%` }}
+                        />
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle tabular-nums">
+                      {missed > 0 ? (
+                        <span className={`inline-flex items-center gap-1 ${STATE_TONE.missed.text}`}>
+                          <svg aria-hidden="true" viewBox="0 0 10 10" className="h-2.5 w-2.5">
+                            {STATE_TONE.missed.glyph}
+                          </svg>
+                          {missed}
+                          <span className="sr-only"> missed</span>
+                        </span>
+                      ) : (
+                        <span className="text-text-muted">0</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
+                      {formatDuration(t.talk_seconds)}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle font-medium text-text tabular-nums">
+                      {t.leads}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">{t.won}</td>
+                    <td className="px-4 py-3 text-right align-middle text-text tabular-nums">
+                      {formatValue(t.pipeline_value)}
+                    </td>
+                    <td className="px-4 py-3 align-middle text-text-muted tabular-nums">
+                      {relativeTime(t.last_call_at, zone)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -485,6 +371,7 @@ export function RecentActivity({
   allLinkLabel,
   recordHref,
   emptyLabel,
+  zone,
   label = "Latest activity",
 }: {
   recent: Overview["recent"];
@@ -493,6 +380,7 @@ export function RecentActivity({
   allLinkLabel: string;
   recordHref: (id: string) => string;
   emptyLabel: string;
+  zone: string;
   label?: string;
 }) {
   return (
@@ -516,7 +404,7 @@ export function RecentActivity({
               <div className="min-w-0">
                 <span className="block truncate font-medium text-text">{lead.title}</span>
                 <span className="text-xs text-text-muted">
-                  {lead.telecaller ?? "unassigned"} · {relativeTime(lead.last_activity_at)}
+                  {lead.telecaller ?? "unassigned"} · {relativeTime(lead.last_activity_at, zone)}
                 </span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -538,88 +426,20 @@ export function RecentActivity({
 }
 
 /**
- * Where demand arrived from - the marketing dashboard's centrepiece.
- *
- * Conversion is shown as a PERCENTAGE beside the counts rather than as a
- * second bar, because the question a marketer brings to this table is which
- * channel converts, not which is biggest: the biggest channel is usually the
- * cheapest one, and ranking by volume alone is how a channel that produces
- * nothing keeps its budget. The bar still tracks volume, so both readings are
- * available - but the number that decides anything is written out.
- */
-export function SourceBreakdown({
-  bySource,
-  days,
-}: {
-  bySource: Overview["bySource"];
-  days: number;
-}) {
-  const max = Math.max(...bySource.map((r) => r.leads), 1);
-  return (
-    <Card elevated className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <MonoLabel>Where leads came from</MonoLabel>
-        <Link href="/owner/lead-sources" className={PANEL_LINK}>
-          Lead sources →
-        </Link>
-      </div>
-      {bySource.length === 0 ? (
-        <div className="space-y-2 py-8 text-center">
-          <p className="text-sm font-medium text-text">No leads in the last {days} days</p>
-          <p className="mx-auto max-w-sm text-sm leading-relaxed text-text-muted">
-            Connect a channel on Lead sources - a web form, an inbox, Meta Lead
-            Ads or a CSV - and arrivals are attributed here automatically.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {bySource.map((row) => {
-            const rate = row.leads > 0 ? Math.round((row.won / row.leads) * 100) : 0;
-            return (
-              <div key={row.channel}>
-                <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className="truncate text-text-muted">{CHANNEL_LABELS[row.channel] ?? row.channel}</span>
-                  <span className="shrink-0 font-medium text-text tabular-nums">
-                    {row.leads}
-                    <span className="font-normal text-text-muted">
-                      {" "}
-                      · {rate}% won
-                      {row.won_value > 0 ? ` · ${formatValue(row.won_value)}` : ""}
-                    </span>
-                  </span>
-                </div>
-                <div
-                  aria-hidden="true"
-                  className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-border"
-                >
-                  <div
-                    className="h-full rounded-full bg-accent"
-                    style={{ width: `${(row.leads / max) * 100}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-/**
  * `source_channel` is a machine value on the wire (migration 0078). Rendering
  * it raw puts "meta_ads" in front of a customer, so the mapping lives here -
  * and an unknown key falls through to the raw value rather than to a blank,
  * because a channel added to the enum and forgotten here should look untidy,
  * not invisible.
  */
-const CHANNEL_LABELS: Record<string, string> = {
+export const CHANNEL_LABELS: Record<string, string> = {
   call: "Phone calls",
   web_form: "Web forms",
   email: "Email",
   whatsapp: "WhatsApp",
   meta_ads: "Meta Lead Ads",
   linkedin: "LinkedIn",
+  telephony: "Phone system (CTI)",
   import: "Imported lists",
   api: "API",
   manual: "Entered by hand",
@@ -629,15 +449,18 @@ const CHANNEL_LABELS: Record<string, string> = {
 export function CampaignTable({
   byCampaign,
   days,
+  period,
 }: {
   byCampaign: Overview["byCampaign"];
   days: number;
+  /** The window in words when it is not "last N days" - a custom range's dates. */
+  period?: string;
 }) {
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
         <span className="text-sm font-medium text-text">Top campaigns</span>
-        <span className="text-xs text-text-muted tabular-nums">last {days} days</span>
+        <span className="text-xs text-text-muted tabular-nums">{period ?? `last ${days} days`}</span>
       </div>
       {byCampaign.length === 0 ? (
         <p className="py-10 text-center text-sm text-text-muted">
@@ -686,4 +509,6 @@ export function CampaignTable({
 
 // The counts-only follow-up panel (TaskLoad) that lived here was replaced by
 // ./next-actions.tsx, which lists the follow-ups themselves in the order to
-// work them, with Done / Log call / Log message on each row.
+// work them, with Done / Log call / Log message on each row. The pipeline
+// bars, the paired activity columns and the accent source bars were replaced
+// by ./_dashboard (Build docs/29) - see that folder for why each changed form.

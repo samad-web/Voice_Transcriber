@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AgentDefinition } from "@aura/shared";
+import { AgentDefinition, formatDayMonth, formatTime } from "@aura/shared";
 import { Button, Label, Select, StatusChip } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import {
   definitionFrom,
   type EditorState,
@@ -30,14 +31,10 @@ const DISPOSITION_LABELS: Record<string, string> = {
 
 const BAND_TONE = { hot: "solid", warm: "muted", cold: "outline", junk: "outline" } as const;
 
-function conversationLabel(c: ConversationSample): string {
+function conversationLabel(c: ConversationSample, zone: string): string {
   const who = c.peer_label?.trim() || (c.peer_last3 ? `…${c.peer_last3}` : "Unknown number");
-  const when = new Date(c.last_inbound_at).toLocaleString("en-IN", {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  // Workspace clock (Build docs/30), not the viewer's browser.
+  const when = `${formatDayMonth(c.last_inbound_at, zone)}, ${formatTime(c.last_inbound_at, zone)}`;
   return [
     who,
     when,
@@ -62,6 +59,7 @@ export function QualifierTestPanel({ state }: { state: EditorState }) {
   const [busy, setBusy] = useState<"loading" | "running" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QualifierTestOutcome | null>(null);
+  const zone = useOrgTimeZone();
 
   const load = async () => {
     setBusy("loading");
@@ -125,7 +123,7 @@ export function QualifierTestPanel({ state }: { state: EditorState }) {
             >
               {conversations.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {conversationLabel(c)}
+                  {conversationLabel(c, zone)}
                 </option>
               ))}
             </Select>

@@ -57,6 +57,22 @@ describe("call insights SQL", () => {
     const sql = callInsightsBatch({ kind: "relative", days: 7 });
     expect(sql).toContain("c.direction = 'incoming' AND c.duration_s <= 0");
   });
+
+  it("looks for a callback by the match key AND the legacy hash, each on its own index", () => {
+    const sql = callInsightsBatch({ kind: "relative", days: 7 });
+    expect(sql).toContain("r.remote_number_key = c.remote_number_key");
+    expect(sql).toContain("r.remote_number_hash = c.remote_number_hash");
+    // A later MISSED call is the customer failing again, not a return.
+    expect(sql).toContain("(r.direction = 'outgoing' OR r.duration_s > 0)");
+  });
+
+  it("never hands a number key or hash back to the page", () => {
+    // The waiting list groups ON them; the final SELECT carries only the
+    // privacy-lite fragments the call log already shows.
+    const waiting = callInsightsBatch({ kind: "relative", days: 7 }).split(";\n")[STATEMENT_ORDER.indexOf("waiting")];
+    const finalSelect = waiting.slice(waiting.lastIndexOf("SELECT g.call_id"));
+    expect(finalSelect).not.toMatch(/remote_number_(key|hash)|person/);
+  });
 });
 
 describe("assembly", () => {
@@ -109,7 +125,45 @@ describe("assembly", () => {
   });
 
   it("refuses a batch whose shape does not match the statement list", () => {
-    expect(() => assembleCallInsights([{ rows: [] }])).toThrow(/expected 12 results/);
+    expect(() => assembleCallInsights([{ rows: [] }])).toThrow(/expected 14 results/);
+  });
+
+  it("assembles what became of the missed calls, and the people still waiting", () => {
+    const batch = STATEMENT_ORDER.map((key) => {
+      if (key === "meta") {
+        return { rows: [{ name: "Acme", zone: "Asia/Kolkata", from_d: "2026-06-01", to_d: "2026-06-02", span: 2, prev_from: "2026-05-30", prev_to: "2026-05-31" }] };
+      }
+      if (key === "callbacks") {
+        return {
+          rows: [{ missed: 12, no_number: 2, returned: 7, called_back: 5, within_hour: 4, median_minutes: 38.5, waiting_callers: 3 }],
+        };
+      }
+      if (key === "waiting") {
+        return {
+          rows: [
+            { call_id: "c1", attempts: 3, last_missed_at: "2026-06-02T08:00:00Z", remote_number_prefix: "98765", remote_number_last3: "210", telecaller: "Priya", lead_id: null, lead_title: null },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+    const { callbacks } = assembleCallInsights(batch);
+    expect(callbacks).toMatchObject({ missed: 12, noNumber: 2, returned: 7, calledBack: 5, withinHour: 4, medianMinutes: 38.5, waitingCallers: 3 });
+    expect(callbacks.waiting).toEqual([
+      { callId: "c1", contact: "98765…210", lastMissedAt: "2026-06-02T08:00:00.000Z", attempts: 3, telecaller: "Priya", leadId: null, leadTitle: null },
+    ]);
+  });
+
+  it("reads an org with no missed calls as zeros and no median, not as missing", () => {
+    const batch = STATEMENT_ORDER.map((key) =>
+      key === "meta"
+        ? { rows: [{ name: "Acme", zone: "Asia/Kolkata", from_d: "2026-06-01", to_d: "2026-06-01", span: 1, prev_from: "2026-05-31", prev_to: "2026-05-31" }] }
+        : { rows: [] },
+    );
+    const { callbacks } = assembleCallInsights(batch);
+    expect(callbacks).toEqual({
+      missed: 0, noNumber: 0, returned: 0, calledBack: 0, withinHour: 0, medianMinutes: null, waitingCallers: 0, waiting: [],
+    });
   });
 
   it("derives neutral as the remainder, so sentiment always adds up to analysed", () => {

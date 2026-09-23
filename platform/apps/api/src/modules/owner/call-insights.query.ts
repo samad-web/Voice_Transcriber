@@ -1,7 +1,9 @@
 import {
+  CALLBACK_WAITING_MAX,
   CALL_OUTCOMES,
   CALL_SENTIMENTS,
   type CallInsightsAttentionCall,
+  type CallInsightsCallbacks,
   type CallInsightsDay,
   type CallInsightsHour,
   type CallInsightsPerson,
@@ -13,6 +15,7 @@ import {
   humanizeKey,
   isCalendarDate,
 } from "@aura/shared";
+import { HAS_NUMBER, IS_MISSED, MISSED_CALLBACK_JOIN } from "./missed-callback-sql";
 
 /**
  * The SQL behind call insights, and the one function that turns its rows into
@@ -137,6 +140,8 @@ export const STATEMENT_ORDER = [
   "risk",
   "people",
   "attention",
+  "callbacks",
+  "waiting",
 ] as const;
 
 export function callInsightsBatch(window: CallInsightsWindow): string {
@@ -323,6 +328,69 @@ export function callInsightsBatch(window: CallInsightsWindow): string {
          AND (a.has_escalation_risk OR ci.sentiment = 'negative' OR a.quality_score < 40)
        ORDER BY risk DESC, high_risk DESC, a.quality_score ASC NULLS LAST, c.started_at DESC
        LIMIT 10`,
+
+    // What became of the range's missed calls (0133) - see
+    // missed-callback-sql.ts for what counts as a return. Returns are looked
+    // for up to NOW, not up to the range's end: a call missed on the last
+    // evening and returned the next morning was returned.
+    callbacks: `${W},
+      m AS (
+        SELECT c.started_at, ${HAS_NUMBER} AS has_number,
+               COALESCE(c.remote_number_key, c.remote_number_hash) AS person,
+               cb.returned_at, cb.return_direction
+          FROM calls c CROSS JOIN w
+          ${MISSED_CALLBACK_JOIN}
+         WHERE ${IN_WINDOW} AND ${IS_MISSED}
+      )
+      SELECT count(*)::int                                                     AS missed,
+             count(*) FILTER (WHERE NOT has_number)::int                       AS no_number,
+             count(returned_at)::int                                           AS returned,
+             count(*) FILTER (WHERE return_direction = 'outgoing')::int        AS called_back,
+             count(*) FILTER (WHERE returned_at <= started_at + interval '1 hour')::int AS within_hour,
+             round((percentile_cont(0.5) WITHIN GROUP (
+               ORDER BY EXTRACT(epoch FROM returned_at - started_at) / 60.0
+             ) FILTER (WHERE returned_at IS NOT NULL))::numeric, 1)::float     AS median_minutes,
+             count(DISTINCT person) FILTER (WHERE returned_at IS NULL AND has_number)::int AS waiting_callers
+        FROM m`,
+
+    // The people still waiting, one row each, newest miss first. Grouped on
+    // the match key so three missed calls from one customer are one line
+    // saying "3 tries", not three lines. The number key itself never leaves
+    // this statement - only the privacy-lite fragments the call log shows.
+    waiting: `${W},
+      m AS (
+        SELECT c.id, c.started_at, c.remote_name, c.remote_number_prefix,
+               c.remote_number_last3, c.lead_id,
+               COALESCE(t.display_name, d.telecaller_name, d.label) AS telecaller,
+               COALESCE(c.remote_number_key, c.remote_number_hash) AS person
+          FROM calls c CROSS JOIN w
+          LEFT JOIN telecallers t ON t.id = c.telecaller_id
+          LEFT JOIN devices d ON d.id = c.device_id
+          ${MISSED_CALLBACK_JOIN}
+         WHERE ${IN_WINDOW} AND ${IS_MISSED} AND ${HAS_NUMBER} AND cb.returned_at IS NULL
+      ),
+      g AS (
+        SELECT count(*)::int                                                        AS attempts,
+               max(started_at)                                                      AS last_missed_at,
+               (array_agg(id ORDER BY started_at DESC))[1]                          AS call_id,
+               (array_agg(remote_name ORDER BY started_at DESC)
+                  FILTER (WHERE remote_name IS NOT NULL))[1]                        AS remote_name,
+               (array_agg(remote_number_prefix ORDER BY started_at DESC))[1]        AS remote_number_prefix,
+               (array_agg(remote_number_last3 ORDER BY started_at DESC))[1]         AS remote_number_last3,
+               (array_agg(telecaller ORDER BY started_at DESC))[1]                  AS telecaller,
+               (array_agg(lead_id ORDER BY started_at DESC)
+                  FILTER (WHERE lead_id IS NOT NULL))[1]                            AS lead_id
+          FROM m
+         GROUP BY person
+         ORDER BY max(started_at) DESC
+         LIMIT ${CALLBACK_WAITING_MAX}
+      )
+      SELECT g.call_id, g.attempts, g.last_missed_at, g.remote_name,
+             g.remote_number_prefix, g.remote_number_last3, g.telecaller,
+             lead.id AS lead_id, lead.title AS lead_title
+        FROM g
+        LEFT JOIN leads lead ON lead.id = g.lead_id
+       ORDER BY g.last_missed_at DESC`,
   };
 
   return STATEMENT_ORDER.map((key) => statements[key]).join(";\n");
@@ -570,5 +638,27 @@ export function assembleCallInsights(batch: BatchResult, generatedAt: Date = new
         reasons: attentionReasons(r),
       }),
     ),
+    callbacks: toCallbacks(at("callbacks")[0], at("waiting")),
+  };
+}
+
+function toCallbacks(row: Row | undefined, waiting: Row[]): CallInsightsCallbacks {
+  return {
+    missed: n(row?.missed),
+    noNumber: n(row?.no_number),
+    returned: n(row?.returned),
+    calledBack: n(row?.called_back),
+    withinHour: n(row?.within_hour),
+    medianMinutes: nOrNull(row?.median_minutes),
+    waitingCallers: n(row?.waiting_callers),
+    waiting: waiting.map((r) => ({
+      callId: String(r.call_id),
+      contact: contactLabel(r),
+      lastMissedAt: toIso(r.last_missed_at),
+      attempts: n(r.attempts),
+      telecaller: s(r.telecaller),
+      leadId: s(r.lead_id),
+      leadTitle: s(r.lead_title),
+    })),
   };
 }

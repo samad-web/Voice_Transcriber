@@ -28,6 +28,7 @@ import {
   type LeadRoutingStrategy,
   type LeadRoutingTargetInput,
 } from "@aura/shared";
+import { Time } from "@/components/org-time";
 import {
   backfillAction,
   createRuleAction,
@@ -352,7 +353,7 @@ export function LeadRoutingClient({ overview }: { overview: RoutingOverview }) {
                 <span className="text-xs text-text-muted">{decision.reason}</span>
                 <span className="ml-auto text-xs text-text-muted">
                   {decision.trigger === "backfill" ? "distributed - " : ""}
-                  {new Date(decision.createdAt).toLocaleString()}
+                  <Time iso={decision.createdAt} mode="datetime" />
                 </span>
               </li>
             ))}
@@ -707,7 +708,7 @@ function TargetEditor({
 
       {!dirty && rule.targets.length > 0 && (
         <p className="mt-2 text-xs text-text-muted">
-          Counting since {new Date(rule.windowStartedAt).toLocaleDateString()}.
+          Counting since <Time iso={rule.windowStartedAt} mode="date" />.
         </p>
       )}
     </div>

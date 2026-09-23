@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Undo2 } from "lucide-react";
 import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { RECYCLE_BIN, daysUntilPurge } from "@aura/shared";
+import { Time } from "@/components/org-time";
 import { restoreAction, type BinItem, type BinResponse } from "./actions";
 
 /**
@@ -66,7 +67,7 @@ export function RecycleBinClient({ data }: { data: BinResponse }) {
                   <StatusChip tone="muted">{spec.label}</StatusChip>
                 </div>
                 <p className="mt-0.5 text-xs text-text-muted">
-                  Deleted {new Date(item.deletedAt).toLocaleDateString()}
+                  Deleted <Time iso={item.deletedAt} mode="date" />
                   {item.deletedBy ? ` by ${item.deletedBy}` : ""}
                   {spec.carries ? ` · still holds ${spec.carries}` : ""}
                   {" · "}

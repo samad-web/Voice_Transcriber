@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_REPORT_RANGE,
   closedDealsHref,
   fillDays,
   formatDateRange,
@@ -11,8 +10,6 @@ import {
   niceCeiling,
   openDealsHref,
   overdueTasksHref,
-  parseReportRange,
-  reportsHref,
   staleDealsHref,
 } from "./report-dashboard";
 import { viewQueryFrom } from "./list-views";
@@ -20,16 +17,7 @@ import { viewQueryFrom } from "./list-views";
 const P = "5ebb336b-4f09-4b61-8d8b-107e191bb22d";
 const queryOf = (href: string) => new URLSearchParams(href.split("?")[1] ?? "");
 
-describe("range", () => {
-  it("accepts only the offered presets and defaults to 30 days", () => {
-    expect(parseReportRange("7")).toBe(7);
-    expect(parseReportRange(["90", "7"])).toBe(90);
-    expect(parseReportRange("45")).toBe(DEFAULT_REPORT_RANGE);
-    expect(parseReportRange(undefined)).toBe(30);
-    expect(reportsHref(30)).toBe("/owner/reports");
-    expect(reportsHref(7)).toBe("/owner/reports?range=7");
-  });
-});
+// The date range itself moved to lib/date-range.ts, shared with every report.
 
 describe("formatting", () => {
   it("words a response time by its size", () => {

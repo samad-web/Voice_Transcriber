@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { intakeEndpointPath } from "@aura/shared";
-import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
+import { Card, EmptyState, MonoLabel, StatusChip, buttonClasses, buttonStyle } from "@aura/ui";
+import { Time } from "@/components/org-time";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
-import { SuperfoneConnect } from "./superfone-connect";
 
 export const metadata: Metadata = { title: "Superfone" };
 
@@ -73,10 +73,26 @@ export default async function SuperfonePage() {
   const source = sources?.sources.find((s) => s.kind === "telephony" && s.provider === "superfone");
 
   if (!source) {
+    // Connecting is the Integrations store's flow now (doc 28 §15): the same
+    // panel, then a live check that the first call arrives, then back here.
     return (
       <>
         <PageHeader title="Superfone" context="Superfone" />
-        <SuperfoneConnect origin={publicApiOrigin()} />
+        <Card className="space-y-3">
+          <MonoLabel>Connect Superfone</MonoLabel>
+          <p className="max-w-prose text-sm leading-relaxed text-text-muted">
+            Superfone gives you a webhook for your call logs. Point it at Aura and every call on your
+            virtual numbers lands here - who rang, on which number, who answered and what they marked it
+            as. Inbound calls from people you do not have yet become leads on the board.
+          </p>
+          <Link
+            href={`/owner/integrations/superfone/connect?from=${encodeURIComponent("/owner/superfone")}`}
+            className={buttonClasses()}
+            style={buttonStyle()}
+          >
+            Connect Superfone
+          </Link>
+        </Card>
       </>
     );
   }
@@ -103,9 +119,14 @@ export default async function SuperfonePage() {
           received ·{" "}
           <span className="text-text">{Number(source.lead_count ?? 0).toLocaleString()}</span>{" "}
           became leads
-          {source.last_event_at
-            ? ` · last one ${new Date(source.last_event_at).toLocaleString()}`
-            : " · none yet"}
+          {source.last_event_at ? (
+            <>
+              {" · last one "}
+              <Time iso={source.last_event_at} mode="datetime" />
+            </>
+          ) : (
+            " · none yet"
+          )}
         </p>
         {source.last_error ? <p className="text-sm text-danger-text">{source.last_error}</p> : null}
         {endpoint ? (
@@ -149,7 +170,7 @@ export default async function SuperfonePage() {
                   return (
                     <tr key={event.id}>
                       <td className="py-2 pr-3 whitespace-nowrap text-text-muted">
-                        {new Date(event.received_at).toLocaleString()}
+                        <Time iso={event.received_at} mode="datetime" />
                       </td>
                       <td className="py-2 pr-3 text-text">{str(p, "caller_phone", "from")}</td>
                       <td className="py-2 pr-3 text-text-muted">

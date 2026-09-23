@@ -84,9 +84,20 @@ function sampleReport(over: Partial<CallInsightsReport> = {}): CallInsightsRepor
         leadId: null, leadTitle: null, reasons: ["High escalation risk", "Negative sentiment", "Low quality (28/100)"],
       },
     ],
+    callbacks: {
+      missed: 37, noNumber: 3, returned: 24, calledBack: 19, withinHour: 15, medianMinutes: 42.5, waitingCallers: 2,
+      waiting: [
+        { callId: "m1", contact: "98765…210", lastMissedAt: "2026-09-20T12:40:00.000Z", attempts: 3, telecaller: "Priya", leadId: "l1", leadTitle: "Bulk order - Hosur site" },
+        { callId: "m2", contact: "Suresh", lastMissedAt: "2026-09-19T05:10:00.000Z", attempts: 1, telecaller: null, leadId: null, leadTitle: null },
+      ],
+    },
     ...over,
   };
 }
+
+const NO_CALLBACKS: CallInsightsReport["callbacks"] = {
+  missed: 0, noNumber: 0, returned: 0, calledBack: 0, withinHour: 0, medianMinutes: null, waitingCallers: 0, waiting: [],
+};
 
 const text = (pdf: Buffer) => pdf.toString("latin1");
 const pages = (pdf: Buffer) => (text(pdf).match(/\/Type \/Page\b(?!s)/g) ?? []).length;
@@ -148,10 +159,37 @@ describe("renderCallInsightsPdf", () => {
       risk: { calls: 0, categories: [] },
       people: [],
       attention: [],
+      callbacks: NO_CALLBACKS,
     });
     const pdf = await renderCallInsightsPdf(empty);
     expect(text(pdf).startsWith("%PDF-")).toBe(true);
     expect(text(pdf)).not.toMatch(/NaN|Infinity/);
+  });
+
+  it("carries a call-back section when calls were missed, and none when nothing was", async () => {
+    const hasBookmark = (pdf: Buffer, title: string) =>
+      text(pdf).includes(title) ||
+      text(pdf).toLowerCase().includes(Buffer.from(`﻿${title}`, "utf16le").swap16().toString("hex"));
+    expect(hasBookmark(await renderCallInsightsPdf(sampleReport()), "Missed calls & call-backs")).toBe(true);
+    expect(
+      hasBookmark(await renderCallInsightsPdf(sampleReport({ callbacks: NO_CALLBACKS })), "Missed calls & call-backs"),
+    ).toBe(false);
+  });
+
+  it("drops the waiting list - which names people - from a copy without individual calls", async () => {
+    // The only Tamil text in this report is a waiting caller's name, so the
+    // Tamil face is embedded exactly when that list is drawn.
+    const report = sampleReport({
+      org: { name: "Acme", timezone: "Asia/Kolkata" },
+      people: [],
+      attention: [],
+      callbacks: {
+        ...sampleReport().callbacks,
+        waiting: [{ callId: "m1", contact: "முருகன்", lastMissedAt: "2026-09-20T12:40:00.000Z", attempts: 2, telecaller: null, leadId: null, leadTitle: null }],
+      },
+    });
+    expect(text(await renderCallInsightsPdf(report))).toContain("NotoSansTamil");
+    expect(text(await renderCallInsightsPdf(report, { includeCalls: false }))).not.toContain("NotoSansTamil");
   });
 
   it("paginates a year and a long team table", async () => {

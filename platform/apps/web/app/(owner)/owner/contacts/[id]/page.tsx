@@ -115,9 +115,6 @@ export default async function ContactDetailPage({
             Open the original lead
           </Link>
         ) : null}
-        <Link href="/owner/contacts" className="ml-auto text-xs text-text-muted hover:text-text">
-          ← All contacts
-        </Link>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">

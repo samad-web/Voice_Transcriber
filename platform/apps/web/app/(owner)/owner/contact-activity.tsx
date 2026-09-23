@@ -12,6 +12,7 @@ import {
   StickyNote,
 } from "lucide-react";
 import { Button, ErrorBanner, MonoLabel, StateChip, callState } from "@aura/ui";
+import { fullStamp, useOrgTimeZone } from "@/components/org-time";
 import {
   INTERACTION_LIMIT_MAX,
   interactionToActivity,
@@ -241,6 +242,7 @@ function ActivityRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const zone = useOrgTimeZone();
   const Icon = CHANNEL_ICON[item.channel];
   const length = duration(item.durationS);
   const long = (item.body?.length ?? 0) > 220;
@@ -262,8 +264,8 @@ function ActivityRow({
             <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-text-muted" />
             <span className={automated ? "text-text-muted" : "font-medium"}>{item.summary}</span>
           </p>
-          <time dateTime={item.occurredAt} title={item.occurredAt} className="shrink-0 text-xs text-text-muted tabular-nums">
-            {relativeTime(item.occurredAt)}
+          <time dateTime={item.occurredAt} title={fullStamp(item.occurredAt, zone)} className="shrink-0 text-xs text-text-muted tabular-nums">
+            {relativeTime(item.occurredAt, zone)}
           </time>
         </div>
 

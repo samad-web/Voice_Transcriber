@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { Card, ErrorBanner, MonoLabel, useAlert } from "@aura/ui";
-import { URGENCY_TONE, countByUrgency, localToday, prioritise } from "@/lib/next-actions";
+import { URGENCY_TONE, countByUrgency, prioritise, workspaceToday } from "@/lib/next-actions";
+import { useOrgTimeZone } from "@/components/org-time";
 import { useRealtime } from "@/components/realtime-provider";
 import { InlineListSkeleton } from "@/components/skeletons";
 import { fetchTasksAction, updateTaskAction } from "./crm-actions";
@@ -22,10 +23,11 @@ const SHOWN = 8;
  * their grants reach; the API applies the same scope either way, so a rep who
  * somehow asked for the team view would still only get their own.
  *
- * Client-fetched rather than server-rendered for one reason: "overdue" and
- * "today" are the VIEWER's calendar, which only the browser knows. Rendering
- * them on the server would use the server's date and then contradict itself on
- * hydration for anyone not in the server's timezone.
+ * "Overdue" and "today" are the WORKSPACE's calendar (workspaceToday in
+ * lib/next-actions.ts) - the midnight the API's own overdue count uses, not the
+ * viewer's, so this card and the dashboard numbers beside it agree for someone
+ * travelling. It stays client-fetched: the Mine/Team flip and the realtime
+ * refresh both re-query from here.
  */
 export function NextActions({ canViewTeam }: { canViewTeam: boolean }) {
   const [scope, setScope] = useState<"mine" | "team">("mine");
@@ -35,6 +37,7 @@ export function NextActions({ canViewTeam }: { canViewTeam: boolean }) {
   const [today, setToday] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const alert = useAlert();
+  const zone = useOrgTimeZone();
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -55,10 +58,10 @@ export function NextActions({ canViewTeam }: { canViewTeam: boolean }) {
   }, [scope]);
 
   useEffect(() => {
-    setToday(localToday());
+    setToday(workspaceToday(zone));
     setTasks(null);
     return load();
-  }, [load]);
+  }, [load, zone]);
 
   // A task assigned to you elsewhere in the console appears without a reload.
   useRealtime(["task"], load);

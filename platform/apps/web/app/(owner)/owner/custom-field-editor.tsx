@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Sparkles } from "lucide-react";
 import { Button, Checkbox, Input, MonoLabel, Select, useAlert, useToast } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { FormFieldsSkeleton, LoadingRegion } from "@/components/skeletons";
 import {
   fetchCustomFieldsAction,
@@ -46,6 +47,7 @@ export function CustomFieldEditor({
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+  const zone = useOrgTimeZone();
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -150,7 +152,7 @@ export function CustomFieldEditor({
                     and a rep about to quote it deserves to know which. */}
                 {field.source === "extraction" && !(field.key in drafts) ? (
                   <span
-                    title={`Extracted by AI${field.updatedAt ? ` ${relativeTime(field.updatedAt)}` : ""}`}
+                    title={`Extracted by AI${field.updatedAt ? ` ${relativeTime(field.updatedAt, zone)}` : ""}`}
                     className="inline-flex items-center"
                   >
                     <Sparkles className="h-3 w-3 text-text-subtle" aria-label="Extracted by AI" />
@@ -166,7 +168,7 @@ export function CustomFieldEditor({
                 />
                 {field.source === "human" && field.updatedBy ? (
                   <p className="mt-1 text-xs text-text-subtle">
-                    {field.updatedBy} · {relativeTime(field.updatedAt)}
+                    {field.updatedBy} · {relativeTime(field.updatedAt, zone)}
                   </p>
                 ) : null}
               </dd>

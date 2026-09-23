@@ -12,6 +12,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { staleDays } from "@/lib/deal-staleness";
 import { StaleFlag } from "../board/kanban-board";
 import { BulkActionBar } from "../bulk/bulk-action-bar";
@@ -57,6 +58,7 @@ export function DealsTable({
   const [rows, setRows] = useState(initial);
   const [open, setOpen] = useState<Deal | null>(null);
   const selection = useRowSelection(rows.map((d) => d.id));
+  const zone = useOrgTimeZone();
 
   // The server re-renders with fresh rows after any navigation or revalidate;
   // follow it, but never swap the rows out from under an open drawer.
@@ -199,7 +201,7 @@ export function DealsTable({
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-text-muted tabular-nums">
                   <span className="flex items-center gap-2">
-                    {relativeTime(deal.last_activity_at)}
+                    {relativeTime(deal.last_activity_at, zone)}
                     {stale !== null ? <StaleFlag days={stale} /> : null}
                   </span>
                 </TableCell>

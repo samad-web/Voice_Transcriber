@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
 import { Button, FormField, Input, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
+import { Time, useOrgTimeZone } from "@/components/org-time";
 import { updateDealAction } from "./crm-actions";
 import { CustomFieldEditor } from "./custom-field-editor";
 import { InteractionTimeline } from "./interaction-timeline";
@@ -42,6 +43,7 @@ export function DealDrawer({
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+  const zone = useOrgTimeZone();
 
   useEffect(() => {
     if (!deal) return;
@@ -119,7 +121,7 @@ export function DealDrawer({
               </StatusChip>
               <span className="text-xs text-text-muted tabular-nums">
                 {deal.call_count} call{deal.call_count === 1 ? "" : "s"} ·{" "}
-                {relativeTime(deal.last_activity_at)}
+                {relativeTime(deal.last_activity_at, zone)}
               </span>
             </div>
           </div>
@@ -259,7 +261,7 @@ export function DealDrawer({
             <div>
               <dt className="text-text-muted">Created</dt>
               <dd className="mt-0.5 font-medium text-text tabular-nums">
-                {new Date(deal.created_at).toLocaleDateString()}
+                <Time iso={deal.created_at} mode="date" />
               </dd>
             </div>
           </dl>

@@ -4,6 +4,7 @@ import { Card, MonoLabel } from "@aura/ui";
 import { BreadcrumbLeaf } from "@/components/breadcrumbs";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
+import { getOrgTimeZone } from "@/lib/org-time";
 import { ownerTry } from "@/lib/owner-context";
 import { CustomFieldEditor } from "../../custom-field-editor";
 import { InteractionTimeline } from "../../interaction-timeline";
@@ -28,7 +29,10 @@ export default async function AccountDetailPage({
 }) {
   const { id } = await params;
 
-  const result = await ownerTry<{ account: Account; contacts: Contact[] }>(`/v1/accounts/${id}`);
+  const [result, zone] = await Promise.all([
+    ownerTry<{ account: Account; contacts: Contact[] }>(`/v1/accounts/${id}`),
+    getOrgTimeZone(),
+  ]);
 
   // `ownerTry` keeps the failures apart - network error, 404, 500 - so the
   // banner below can say which one happened. Still not `notFound()`, which
@@ -55,10 +59,6 @@ export default async function AccountDetailPage({
     <>
       <BreadcrumbLeaf label={account.name} />
       <PageHeader title={account.name} context="Account" />
-
-      <Link href="/owner/accounts" className="text-xs text-text-muted hover:text-text">
-        ← All accounts
-      </Link>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
         <div className="space-y-6">
@@ -88,7 +88,7 @@ export default async function AccountDetailPage({
               <div>
                 <dt className="text-text-muted">Last activity</dt>
                 <dd className="mt-0.5 font-medium text-text tabular-nums">
-                  {relativeTime(account.last_activity_at)}
+                  {relativeTime(account.last_activity_at, zone)}
                 </dd>
               </div>
             </dl>

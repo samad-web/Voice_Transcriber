@@ -1,4 +1,4 @@
-import type { LeadTemperature } from "@aura/shared";
+import { DEFAULT_TIME_ZONE, formatRelative, type LeadTemperature } from "@aura/shared";
 
 /** Shapes returned by /v1/owner/* and /v1/leads - shared by all three pages. */
 
@@ -76,6 +76,16 @@ export interface Lead {
    */
   assigned_telecaller_id?: string | null;
   assigned_telecaller_name?: string | null;
+  /**
+   * The "Callback" column (migration 0134): the last time a call to or from
+   * this lead went unanswered, and the last time anybody reached them - off
+   * calls already linked to this lead (`calls.lead_id`), not a live query.
+   * Feed both into `leadCallbackState` (@aura/shared) rather than reading them
+   * directly; `null` on both means the lead has never had a missed call, which
+   * is not the same as "waiting".
+   */
+  last_missed_at?: string | null;
+  last_reached_at?: string | null;
 }
 
 /** A tag as the contact and deal lists return it (migration 0057). */
@@ -260,6 +270,17 @@ export interface OwnerCall {
   /** The lead this call produced or advanced, for the link back. */
   lead_id: string | null;
   lead_title: string | null;
+  /**
+   * Missed calls only (0133). Why it was missed, per the handset's call log -
+   * null on a zero-second call that predates that. Optional so an older API
+   * that does not send them still type-checks as "not a missed call".
+   */
+  missed_reason?: string | null;
+  /** Whether the call carries a number anybody could ring back. */
+  has_number?: boolean;
+  /** The first later call that reached them, if any - see missed-callback-sql.ts. */
+  returned_at?: string | null;
+  return_direction?: string | null;
 }
 
 /**
@@ -325,6 +346,8 @@ export interface Telecaller {
   status: string;
   last_seen_at: string | null;
   calls: number;
+  /** Inbound, zero-duration calls on this handset in the window (Build docs/29 G7). */
+  missed?: number;
   talk_seconds: number;
   last_call_at: string | null;
   leads: number;
@@ -332,9 +355,87 @@ export interface Telecaller {
   pipeline_value: number;
 }
 
+/** One calendar day of the dashboard window, in the org's zone (Build docs/29 §6). */
+export interface OverviewDay {
+  /** `YYYY-MM-DD` - a calendar date, never parsed through a zone. */
+  day: string;
+  calls: number;
+  outgoing: number;
+  answered: number;
+  missed: number;
+  leads: number;
+}
+
+/** Inbound calls in one weekday × hour cell, org-local. Only non-empty cells arrive. */
+export interface CallHeatCell {
+  /** ISO weekday, 1 = Monday. */
+  dow: number;
+  hour: number;
+  inbound: number;
+  missed: number;
+}
+
+/** Open records in one stage, by whole days since they entered it (AGING_BUCKETS). */
+export interface StageAgingRow {
+  stage: string;
+  d0_3: number;
+  d4_7: number;
+  d8_15: number;
+  d16_30: number;
+  d30_plus: number;
+}
+
+export type AgingBucketKey = "d0_3" | "d4_7" | "d8_15" | "d16_30" | "d30_plus";
+
+export type ResponseBucketKey = "under_5m" | "under_30m" | "under_1h" | "under_4h" | "under_24h" | "over_24h" | "never";
+
 export interface Overview {
   org: { id: string; name: string };
-  window: { days: number };
+  /**
+   * The window the numbers were counted over, echoed by the API from the org's
+   * own calendar: the last `days` days, today included, in `timezone`.
+   * Optional so an older API still type-checks; the page falls back to days.
+   */
+  /** `custom`: a From/To pair rather than "the last N days" (`days` is then its length). */
+  window: { days: number; custom?: boolean; from?: string; to?: string; timezone?: string };
+  /** Closes IN the window (terminal status, stage_changed_at inside it) - docs/29 A4. */
+  closed?: { won: number; lost: number; won_value: number };
+  /** The equal-length window before this one, for the KPI deltas. */
+  previous?: {
+    calls: number;
+    outgoing: number;
+    answered: number;
+    missed: number;
+    leads_created: number;
+    won: number;
+    lost: number;
+    won_value: number;
+  };
+  callHeat?: CallHeatCell[];
+  stageAging?: StageAgingRow[];
+  /** AGING_BUCKETS' keys and labels, in order, as the API defines them. */
+  agingBuckets?: Array<{ key: AgingBucketKey; label: string }>;
+  /** Speed to first response vs the org's SLA. Null on the CRM read (deals have no first response). */
+  response?: {
+    sla_minutes: number;
+    leads: number;
+    responded: number;
+    within_sla: number;
+    median_minutes: number | null;
+    /** In order, with the bounds sla.ts owns - the console draws from these, never a copy. */
+    buckets: Array<{
+      key: ResponseBucketKey;
+      label: string;
+      /** Exclusive lower bound; null for the first bucket and for never. */
+      min_minutes: number | null;
+      /** Inclusive upper bound; null when open-ended (over 24 h) or never. */
+      max_minutes: number | null;
+      never: boolean;
+      count: number;
+    }>;
+    prev_leads: number;
+    prev_within_sla: number;
+  } | null;
   leads: {
     total: number;
     open: number;
@@ -370,7 +471,8 @@ export interface Overview {
   funnel: Array<Stage & { count: number; value: number }>;
   stages: Stage[];
   telecallers: Telecaller[];
-  byDay: Array<{ day: string; calls: number; leads: number }>;
+  /** Every calendar day of the window, zeros included (docs/29 A1/A2). */
+  byDay: OverviewDay[];
   recent: Array<{
     id: string;
     title: string;
@@ -417,6 +519,12 @@ export interface Overview {
     d8_15: number;
     d16_30: number;
     d30_plus: number;
+    /** The same buckets, only leads nobody has ever answered (docs/29 §3.7). */
+    never_d0_3?: number;
+    never_d4_7?: number;
+    never_d8_15?: number;
+    never_d16_30?: number;
+    never_d30_plus?: number;
   } | null;
 }
 
@@ -442,29 +550,19 @@ export function formatDuration(seconds: number): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-/** "3 days ago" without pulling in a date library. */
-export function relativeTime(iso: string | null): string {
+/**
+ * "3h ago" / "2d ago", then "8 Aug 2026" once it is a month old.
+ *
+ * `zone` is the workspace's (Build docs/30): `useOrgTimeZone()` in a Client
+ * Component, `await getOrgTimeZone()` in a Server Component. It only decides
+ * the absolute fallback's date - "3h ago" is the same everywhere - but that
+ * date used to be hard-coded to Asia/Kolkata, which was wrong for any
+ * workspace outside India. The wording and the fixed month table come from
+ * @aura/shared's formatRelative, so server and browser print the same text.
+ */
+export function relativeTime(iso: string | null, zone: string = DEFAULT_TIME_ZONE): string {
   if (!iso) return "-";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "-";
-  const diff = Date.now() - then;
-  const mins = Math.round(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  // An explicit locale AND time zone. A bare toLocaleDateString() uses
-  // whatever the machine is set to, so the server rendered "11/8/2026" and a
-  // browser "8/11/2026" for the same deal, and React threw a hydration
-  // mismatch on /owner/deals. "8 Aug 2026" is also unambiguous to read.
-  return new Date(iso).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
-  });
+  return formatRelative(iso, zone);
 }
 
 export function contactLabel(lead: Lead): string {

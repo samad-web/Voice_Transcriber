@@ -2,8 +2,19 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { X } from "lucide-react";
-import { Button, FormField, Input, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
+import {
+  Button,
+  FormField,
+  Input,
+  MonoLabel,
+  StateChip,
+  StatusChip,
+  callState,
+  useAlert,
+  useToast,
+} from "@aura/ui";
 import { LEAD_TEMPERATURE_LABELS, LEAD_TEMPERATURE_ORDER } from "@aura/shared";
+import { Time, useOrgTimeZone } from "@/components/org-time";
 import { InlineListSkeleton } from "@/components/skeletons";
 import { fetchLeadAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
@@ -60,6 +71,7 @@ export function LeadDrawer({
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+  const zone = useOrgTimeZone();
 
   const leadId = lead?.id ?? null;
 
@@ -179,7 +191,7 @@ export function LeadDrawer({
               </StatusChip>
               <span className="text-xs text-text-muted tabular-nums">
                 {lead.call_count} call{lead.call_count === 1 ? "" : "s"} ·{" "}
-                {relativeTime(lead.last_activity_at)}
+                {relativeTime(lead.last_activity_at, zone)}
               </span>
             </div>
           </div>
@@ -377,15 +389,23 @@ export function LeadDrawer({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <span className="block text-xs text-text">
-                          {new Date(call.started_at).toLocaleString()}
+                          <Time iso={call.started_at} mode="datetime" />
                         </span>
                         <span className="text-xs text-text-muted">
                           {call.direction} · {call.telecaller ?? "unknown handset"}
                         </span>
                       </div>
-                      <span className="shrink-0 text-xs text-text-muted tabular-nums">
-                        {formatDuration(call.duration_s)}
-                      </span>
+                      {/* A call this customer made that nobody picked up
+                          (0133) - on a lead, the clearest sign they are
+                          chasing. The chip rather than "0m", which reads as a
+                          very short conversation. */}
+                      {callState(call) === "missed" ? (
+                        <StateChip state="missed" className="shrink-0" />
+                      ) : (
+                        <span className="shrink-0 text-xs text-text-muted tabular-nums">
+                          {formatDuration(call.duration_s)}
+                        </span>
+                      )}
                     </div>
                     {/* Both render nothing without the `call_intel` module: the
                         API leaves the fields out, so a tenant that does not have
@@ -419,7 +439,7 @@ export function LeadDrawer({
             <div>
               <dt className="text-text-muted">First seen</dt>
               <dd className="mt-0.5 font-medium text-text tabular-nums">
-                {new Date(lead.created_at).toLocaleDateString()}
+                <Time iso={lead.created_at} mode="date" />
               </dd>
             </div>
             <div>

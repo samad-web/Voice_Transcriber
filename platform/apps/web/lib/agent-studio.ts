@@ -2,8 +2,11 @@ import {
   type AgentDefinitionInput,
   type AgentKind,
   agentFieldKey,
+  DEFAULT_TIME_ZONE,
   type ExtractionField,
   type ExtractionFieldType,
+  formatDayMonth,
+  formatTime,
   LeadRules,
   parseReplyDrafterConfig,
   type ReplyDrafterConfig,
@@ -235,8 +238,11 @@ export interface CallSampleLike {
  * The caller is named the way the call log names them (contact name, then the
  * number's visible digits) - the owner is choosing a call they remember, and a
  * picker of timestamps alone makes them guess.
+ *
+ * `zone` is the workspace's (`useOrgTimeZone()`, Build docs/30), so the time
+ * matches the call log rather than the viewer's browser.
  */
-export function callSampleLabel(call: CallSampleLike, locale = "en-IN"): string {
+export function callSampleLabel(call: CallSampleLike, zone: string = DEFAULT_TIME_ZONE): string {
   const who =
     call.remote_name?.trim() ||
     (call.remote_number_prefix
@@ -244,12 +250,7 @@ export function callSampleLabel(call: CallSampleLike, locale = "en-IN"): string 
       : null) ||
     (call.remote_number_last3 ? `…${call.remote_number_last3}` : null) ||
     "Unknown caller";
-  const when = new Date(call.started_at).toLocaleString(locale, {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const when = `${formatDayMonth(call.started_at, zone)}, ${formatTime(call.started_at, zone)}`;
   const seconds = Math.max(0, Math.round(call.duration_s ?? 0));
   const length = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
   return [who, when, length, call.telecaller].filter(Boolean).join(" · ");

@@ -42,9 +42,19 @@ import { formatValue } from "./types";
  * manager sometimes needs, and a roll-up that silently omitted a name would be
  * the wrong kind of tidy. A `<details>` element, so it costs no client JS.
  */
-export function TeamRollup({ data, days }: { data: TeamRollupData; days: number }) {
+export function TeamRollup({
+  data,
+  days,
+  span,
+}: {
+  data: TeamRollupData;
+  days: number;
+  /** The window as a tile says it - "30d", or a custom range's dates. Defaults to `${days}d`. */
+  span?: string;
+}) {
   const { members, totals } = data;
   if (members.length === 0) return null;
+  const within = span ?? `${days}d`;
 
   const carrying = members.filter((m) => m.userId === null || !isIdle(m));
   const idle = members.filter((m) => m.userId !== null && isIdle(m));
@@ -56,7 +66,7 @@ export function TeamRollup({ data, days }: { data: TeamRollupData; days: number 
         <p className="text-xs text-text-muted tabular-nums">
           {totals.people} {totals.people === 1 ? "person" : "people"} · {totals.openDeals} open{" "}
           {totals.openDeals === 1 ? "deal" : "deals"} · {formatValue(totals.openValue)} · won in{" "}
-          {days}d: {totals.wonDeals}
+          {within}: {totals.wonDeals}
         </p>
       </div>
 
@@ -66,7 +76,7 @@ export function TeamRollup({ data, days }: { data: TeamRollupData; days: number 
             key={member.userId ?? "unassigned"}
             member={member}
             totalOpenValue={totals.openValue}
-            days={days}
+            within={within}
           />
         ))}
       </ul>
@@ -100,11 +110,12 @@ function isIdle(member: TeamMember): boolean {
 function TeamRow({
   member,
   totalOpenValue,
-  days,
+  within,
 }: {
   member: TeamMember;
   totalOpenValue: number;
-  days: number;
+  /** "30d", or a custom range's dates. */
+  within: string;
 }) {
   const headline = teamHeadline(member);
   const attention = needsAttention(member);
@@ -143,7 +154,7 @@ function TeamRow({
           href={member.openDeals > 0 ? teamDealsHref(member) : undefined}
         />
         <Figure
-          label={`Won in ${days}d`}
+          label={`Won in ${within}`}
           value={`${member.wonDeals}`}
           detail={member.wonValue > 0 ? formatValue(member.wonValue) : undefined}
         />

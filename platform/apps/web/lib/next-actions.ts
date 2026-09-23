@@ -17,11 +17,16 @@
  *
  * ── "TODAY" ─────────────────────────────────────────────────────────────────
  *
- * `today` is passed in as YYYY-MM-DD, never read from a clock in here. The
- * caller decides whose today - the component uses the VIEWER's local date, the
- * same one task-list.tsx has always used, so a rep in Chennai and a manager in
- * Dubai each see the day they are living in.
+ * `today` is passed in as YYYY-MM-DD, never read from a clock in here. Whose
+ * today is the WORKSPACE's (Build docs/30 R4): components pass
+ * `workspaceToday(useOrgTimeZone())`, the browser's twin of the API's
+ * `org_reporting_today()`. The API counts overdue on that same midnight, so a
+ * rep in Chennai and a manager in Dubai see one task flip to overdue at the
+ * same moment, and the list agrees with the dashboard's count. It used to be
+ * the viewer's own browser date, which let those two disagree by a day.
  */
+
+import { todayIn, type Instant } from "@aura/shared";
 
 export type Urgency = "overdue" | "today" | "upcoming" | "undated";
 
@@ -120,7 +125,6 @@ export const URGENCY_TONE: Record<Urgency, { text: string; chip: string; rail: s
   },
 };
 
-/** Today in the viewer's own timezone, as YYYY-MM-DD. Client-side only - see the header. */
 /** `YYYY-MM-DD` shifted by whole days - calendar arithmetic, no timezone involved. */
 export function addDays(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -139,10 +143,11 @@ export const DUE_WINDOW_LABEL: Record<DueWindow, string> = {
 };
 
 /**
- * The API query for a due window, in the VIEWER's calendar: `today` is the
- * browser's date (localToday), so "Due today" means the rep's today even when
- * the server's midnight has already passed. The same buckets urgencyOf draws,
- * so a filtered list and the row colours can never disagree about a task.
+ * The API query for a due window, on the WORKSPACE calendar: `today` is
+ * workspaceToday(zone), the date the API's org_reporting_today() counts
+ * overdue against, so "Due today" here and the dashboard's due-today number
+ * are one set of tasks. The same buckets urgencyOf draws, so a filtered list
+ * and the row colours can never disagree about a task.
  */
 export function dueWindowQuery(
   window: DueWindow,
@@ -162,7 +167,11 @@ export function dueWindowQuery(
   }
 }
 
-export function localToday(now: Date = new Date()): string {
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
+/**
+ * Today on the workspace's calendar, as YYYY-MM-DD - see the header. `zone` is
+ * `useOrgTimeZone()`; the viewer's own clock is never consulted, so it reads
+ * the same in every browser.
+ */
+export function workspaceToday(zone: string, now: Instant = Date.now()): string {
+  return todayIn(zone, now);
 }

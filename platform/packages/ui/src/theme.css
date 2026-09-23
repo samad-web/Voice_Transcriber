@@ -225,6 +225,47 @@
   --color-label-steel: #f1f5f9;
   --color-label-steel-text: #334155; /* 9.9:1 */
 
+  /* ── Chart marks and ramps (Build docs/29 §4) ───────────────────────────── */
+  /*
+   * Every value here was run through the dataviz six-checks validator, light
+   * surface #FFFFFF and dark surface #171717 - not eyeballed.
+   *
+   * --color-mark-answered: the answered STATE as a chart mark. The chip green
+   * (--color-success) is #22C55E in dark mode, OKLCH L 0.72 - outside the dark
+   * categorical band and louder than the outgoing/missed marks beside it in a
+   * stack. #16A34A passes in both modes (worst adjacent CVD dE 26.7 dark,
+   * 29.9 light, stacked answered -> outgoing -> missed). Constant across modes,
+   * so it has no dark rebind. Spent only through STATE_TONE.answered.mark.
+   *
+   * The two ramps are ORDINAL (lighter = less, darker = more; in dark mode the
+   * contrast from the ground grows instead) and are MIXED FROM TOKENS, so the
+   * dark ramp is selected by the dark tokens rather than flipped. That is also
+   * why they need no dark-mode block: a custom property that references others
+   * resolves on :root against whichever --color-text/--color-surface won there.
+   *
+   *   chart-seq-1..5     grey, text mixed into surface at 34/50/66/82/100%.
+   *                      Age buckets, time in stage, de-emphasis. Light
+   *                      #A7A7A7 -> #171717, dark #5B5B5B -> #FAFAFA; both pass
+   *                      --ordinal (monotone L, adjacent dL >= 0.06, light end
+   *                      >= 2:1). A 22% start failed at 1.71:1.
+   *   chart-missed-1..4  the MISSED state's own hue as a magnitude ramp, for the
+   *                      missed-call heatmap only: danger at 50/74% into surface,
+   *                      danger, danger-text. Light #F89F94 -> #B91C1C, dark
+   *                      #7C322F -> #FCA5A5. Four steps because five cannot
+   *                      pass - the hue's lightness range is too short to keep
+   *                      every step 0.06 apart AND clear 2:1 at the light end.
+   */
+  --color-mark-answered: #16a34a;
+  --color-chart-seq-1: color-mix(in oklab, var(--color-text) 34%, var(--color-surface));
+  --color-chart-seq-2: color-mix(in oklab, var(--color-text) 50%, var(--color-surface));
+  --color-chart-seq-3: color-mix(in oklab, var(--color-text) 66%, var(--color-surface));
+  --color-chart-seq-4: color-mix(in oklab, var(--color-text) 82%, var(--color-surface));
+  --color-chart-seq-5: var(--color-text);
+  --color-chart-missed-1: color-mix(in oklab, var(--color-danger) 50%, var(--color-surface));
+  --color-chart-missed-2: color-mix(in oklab, var(--color-danger) 74%, var(--color-surface));
+  --color-chart-missed-3: var(--color-danger);
+  --color-chart-missed-4: var(--color-danger-text);
+
   /* ── Terminal surface (ConsolePanel) ────────────────────────────────────── */
   /* The raw-JSON / pipeline-log panel. It stays dark in BOTH modes on purpose -
      a monospace log panel reading as a terminal is the affordance - but it now

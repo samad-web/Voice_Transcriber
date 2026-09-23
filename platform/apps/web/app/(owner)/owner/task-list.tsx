@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button, ErrorBanner, Input, MonoLabel, useAlert } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { InlineListSkeleton } from "@/components/skeletons";
-import { localToday, prioritise } from "@/lib/next-actions";
+import { prioritise, workspaceToday } from "@/lib/next-actions";
 import { createTaskAction, fetchTasksAction, updateTaskAction } from "./crm-actions";
 import { TaskRow } from "./task-row";
 import type { Task } from "./types";
@@ -40,6 +41,7 @@ export function TaskList({
   const [today, setToday] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
+  const zone = useOrgTimeZone();
   // Inside a record's own page the record link would point at itself.
   const onRecord = Boolean(dealId || contactId || accountId);
 
@@ -60,11 +62,11 @@ export function TaskList({
   }, [dealId, contactId, accountId]);
 
   useEffect(() => {
-    // The viewer's own date, read after mount - see lib/next-actions.ts.
-    setToday(localToday());
+    // The workspace's date, the one the API counts overdue on - see lib/next-actions.ts.
+    setToday(workspaceToday(zone));
     setTasks(null);
     return load();
-  }, [load]);
+  }, [load, zone]);
 
   const add = () => {
     if (!draft.title.trim()) {

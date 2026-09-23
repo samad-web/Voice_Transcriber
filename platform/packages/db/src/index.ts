@@ -64,6 +64,14 @@ export function getPool(): Pool {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Sets the transaction's TimeZone to the org's reporting zone (see
+ * withOrgContext). `$1` is the org id - bound on the slow path, replaced by a
+ * UUID_RE-checked literal on the fast one. Exported for the test that pins it.
+ */
+export const ORG_TIME_ZONE_SQL = `SELECT set_config('TimeZone',
+  COALESCE((SELECT reporting_timezone FROM organizations WHERE id = $1::uuid), 'Asia/Kolkata'), true)`;
+
+/**
  * Run `fn` inside a transaction with `app.org_id` set transaction-locally.
  * Every tenant-scoped query MUST go through this - RLS policies filter on
  * current_setting('app.org_id') and default-deny when it is unset.
@@ -87,6 +95,27 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * rather than throwing. Nothing in the platform passes one today, but a
  * caller that did would keep working correctly and merely stay slow - the
  * failure mode of a performance change should never be a broken request.
+ *
+ * ── THE TRANSACTION RUNS ON THE WORKSPACE'S CLOCK (Build docs/30) ──────────
+ *
+ * The preamble also sets `TimeZone` to the org's `reporting_timezone`, in the
+ * SAME message - so it costs no round trip. Every tenant-scoped statement then
+ * reads time the way the people using it do: `current_date`, `ts::date`,
+ * `date_trunc('day', ts)`, `to_char(ts, ...)` and a `$1::date` compared with a
+ * timestamptz all mean the org's midnight, not UTC's. Before this, each of
+ * those quietly filed 00:00-05:29 IST under the previous day, and fixing them
+ * one call site at a time would have left the next one to be found.
+ *
+ * What it does NOT change: stored values (timestamptz is an instant), values
+ * node-postgres returns (it parses the offset), explicit `AT TIME ZONE x`
+ * conversions, or cross-org work outside this wrapper. Anything that must
+ * stay on the platform's UTC month (billing, the ASR budget) says 'UTC'
+ * explicitly - `date_trunc('month', now(), 'UTC')` - rather than relying on
+ * the session default.
+ *
+ * Read inline from `organizations` (0090) rather than via org_reporting_tz()
+ * (0132) so an API deployed ahead of its migration still boots. The zone was
+ * validated against pg_timezone_names when it was written (0090's trigger).
  */
 export async function withOrgContext<T>(
   orgId: string,
@@ -94,12 +123,16 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   const client = await getPool().connect();
   try {
-    // third arg `true` = transaction-scoped; resets automatically on COMMIT/ROLLBACK
+    // third arg `true` = transaction-scoped; resets automatically on COMMIT/ROLLBACK.
+    // The zone statement runs AFTER app.org_id is set, so RLS lets it read the org row.
     if (UUID_RE.test(orgId)) {
-      await client.query(`BEGIN; SELECT set_config('app.org_id', '${orgId}', true)`);
+      await client.query(
+        `BEGIN; SELECT set_config('app.org_id', '${orgId}', true); ${ORG_TIME_ZONE_SQL.replace("$1", `'${orgId}'`)}`,
+      );
     } else {
       await client.query("BEGIN");
       await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+      await client.query(ORG_TIME_ZONE_SQL, [orgId]);
     }
     const result = await fn(client);
     await client.query("COMMIT");

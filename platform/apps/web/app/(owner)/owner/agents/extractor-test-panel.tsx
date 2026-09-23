@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AgentDefinition } from "@aura/shared";
 import { Button, Label, Select, StatusChip } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import {
   callSampleLabel,
   definitionFrom,
@@ -30,6 +31,7 @@ import {
  * edits, not tests, and the list is a database round trip away.
  */
 export function ExtractorTestPanel({ state }: { state: EditorState }) {
+  const zone = useOrgTimeZone();
   const [calls, setCalls] = useState<CallSample[] | null>(null);
   const [callId, setCallId] = useState("");
   const [busy, setBusy] = useState<"loading" | "running" | null>(null);
@@ -103,7 +105,7 @@ export function ExtractorTestPanel({ state }: { state: EditorState }) {
             <Select id="test-call" value={callId} onChange={(e) => setCallId(e.target.value)}>
               {calls.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {callSampleLabel(c)}
+                  {callSampleLabel(c, zone)}
                 </option>
               ))}
             </Select>

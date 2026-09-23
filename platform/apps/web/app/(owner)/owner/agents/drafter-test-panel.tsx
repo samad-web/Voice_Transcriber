@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AgentDefinition } from "@aura/shared";
+import { AgentDefinition, formatDayMonth, formatTime } from "@aura/shared";
 import { Button, Label, Select } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import {
   callSampleLabel,
   definitionFrom,
@@ -20,14 +21,10 @@ import {
 
 type Source = "call" | "conversation";
 
-function conversationLabel(c: ConversationSample): string {
+function conversationLabel(c: ConversationSample, zone: string): string {
   const who = c.peer_label?.trim() || (c.peer_last3 ? `…${c.peer_last3}` : "Unknown number");
-  const when = new Date(c.last_inbound_at).toLocaleString("en-IN", {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  // Workspace clock (Build docs/30), not the viewer's browser.
+  const when = `${formatDayMonth(c.last_inbound_at, zone)}, ${formatTime(c.last_inbound_at, zone)}`;
   return `${who} · ${when}`;
 }
 
@@ -46,6 +43,7 @@ export function DrafterTestPanel({ state }: { state: EditorState }) {
   const [busy, setBusy] = useState<"loading" | "running" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DraftOutcome | null>(null);
+  const zone = useOrgTimeZone();
 
   const options = source === "call" ? calls : conversations;
 
@@ -135,12 +133,12 @@ export function DrafterTestPanel({ state }: { state: EditorState }) {
               {source === "call"
                 ? (calls ?? []).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {callSampleLabel(c)}
+                      {callSampleLabel(c, zone)}
                     </option>
                   ))
                 : (conversations ?? []).map((c) => (
                     <option key={c.id} value={c.id}>
-                      {conversationLabel(c)}
+                      {conversationLabel(c, zone)}
                     </option>
                   ))}
             </Select>

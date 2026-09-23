@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { MonoLabel } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { updateContactAction, type ContactUpdate } from "./crm-actions";
 import { InlineField } from "./inline-field";
 import { RecordPicker } from "./record-picker";
@@ -25,6 +26,7 @@ export function ContactDetails({ contact }: { contact: Contact }) {
   const [accountId, setAccountId] = useState(contact.account_id);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [nameIsHuman, setNameIsHuman] = useState(Boolean(contact.display_name_set_by_human_at));
+  const zone = useOrgTimeZone();
 
   const phone = contact.phone_prefix
     ? `${contact.phone_prefix}…`
@@ -133,7 +135,7 @@ export function ContactDetails({ contact }: { contact: Contact }) {
           <div>
             <dt className="text-text-muted">Last activity</dt>
             <dd className="mt-0.5 text-sm font-medium text-text tabular-nums">
-              {relativeTime(contact.last_activity_at)}
+              {relativeTime(contact.last_activity_at, zone)}
             </dd>
           </div>
         </div>

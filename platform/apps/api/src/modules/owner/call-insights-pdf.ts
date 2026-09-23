@@ -5,6 +5,7 @@ import PDFDocument from "pdfkit";
 import {
   type CallInsightsReport,
   type CallInsightsTotals,
+  callbackKpis,
   callInsightsHighlights,
   callInsightsKpis,
   countChange,
@@ -17,9 +18,11 @@ import {
   formatReportRange,
   formatShare,
   formatTalkTime,
+  formatWait,
   outcomeLabel,
   pointChange,
   ratio,
+  recordableCalls,
   sentimentLabel,
   volumeSeries,
 } from "@aura/shared";
@@ -422,6 +425,7 @@ export function renderCallInsightsPdf(
   drawHighlights(layout, w, report);
   drawVolume(layout, w, report);
   drawHours(layout, w, report);
+  drawCallbacks(layout, w, report, includeCalls);
   drawConversationRead(layout, w, report);
   drawQuality(layout, w, report);
   drawRisk(layout, w, report);
@@ -823,6 +827,93 @@ function drawBarList(
   return rows.length * 17;
 }
 
+/**
+ * What became of the missed calls (0133): how many were recovered, how fast,
+ * and who is still waiting. Placed straight after the hour chart, which is
+ * where the reader has just seen WHEN the calls were missed.
+ *
+ * The waiting list names people, so it follows the attention list's rule: a
+ * copy downloaded without individual calls leaves it out entirely.
+ */
+function drawCallbacks(l: Layout, w: Writer, r: CallInsightsReport, includeCalls: boolean): void {
+  const cb = r.callbacks;
+  // Nothing was missed: the KPI tile already says 0, and a section of dashes
+  // under it would only repeat that.
+  if (cb.missed === 0) return;
+  const k = callbackKpis(cb);
+  const colW = (WIDTH - 24) / 2;
+  const facts: Array<[string, string, string]> = [
+    ["Missed calls", formatCount(cb.missed), cb.noNumber ? `${formatCount(cb.noNumber)} with no number` : ""],
+    ["Recovered", formatShare(k.recoveredRate), `${formatCount(cb.returned)} of ${formatCount(k.returnable)} with a number`],
+    ["Called back by the team", formatShare(k.calledBackRate), `${formatCount(cb.calledBack)} calls`],
+    ["Recovered within an hour", formatShare(k.withinHourRate), `${formatCount(cb.withinHour)} calls`],
+    ["Median wait", formatWait(cb.medianMinutes), cb.returned ? "to recovery" : ""],
+    ["Still waiting", formatCount(cb.waitingCallers), cb.waitingCallers === 1 ? "caller" : "callers"],
+  ];
+  const rows = Math.ceil(facts.length / 2);
+  l.section(
+    "Missed calls & call-backs",
+    "Recovered = a later call reached the person: a call back from the team, or the customer ringing again and getting through",
+    rows * 15 + 4,
+  );
+  const top = l.y;
+  facts.forEach(([label, value, note], i) => {
+    const x = i < rows ? LEFT : LEFT + colW + 24;
+    const y = top + (i % rows) * 15;
+    w.line(label, x, y, { size: 8, width: 118 });
+    w.line(value, x + 120, y, { size: 8, weight: "bold", width: 52 });
+    if (note) w.line(note, x + 174, y + 0.5, { size: 7, color: SUBTLE, width: colW - 174 });
+    if (i % rows < rows - 1) {
+      l.doc.moveTo(x, y + 12.5).lineTo(x + colW, y + 12.5).lineWidth(0.4).strokeColor(RULE).stroke();
+    }
+  });
+  l.y = top + rows * 15 + 4;
+
+  if (!includeCalls || cb.waiting.length === 0) return;
+  const cols = [
+    { label: "Caller", w: 150, align: "left" as const },
+    { label: "Last missed", w: 104, align: "left" as const },
+    { label: "Tries", w: 40, align: "right" as const },
+    { label: "Rang", w: 104, align: "left" as const },
+    { label: "Lead", w: 0, align: "left" as const },
+  ];
+  cols[cols.length - 1].w = WIDTH - cols.reduce((s, c) => s + c.w, 0);
+  // Ten rows at most, so the whole table always fits on one page.
+  l.ensure(34 + cb.waiting.length * 14);
+  l.y += 10;
+  w.line("Still waiting for a call back", LEFT, l.y, { size: 8.5, weight: "bold" });
+  w.line("Most recently missed first · tries = missed calls from them nobody has returned", LEFT + 150, l.y + 0.6, {
+    size: 7.5,
+    color: MUTED,
+    width: WIDTH - 150,
+  });
+  l.y += 15;
+  let x = LEFT;
+  for (const col of cols) {
+    w.line(col.label, x, l.y, { size: 7.5, color: MUTED, width: col.w - 6, align: col.align });
+    x += col.w;
+  }
+  l.y += 12;
+  l.rule(RULE_STRONG, 0.6);
+  l.y += 4;
+  const tz = r.org.timezone;
+  for (const person of cb.waiting) {
+    const cells = [
+      person.contact,
+      formatCallTime(person.lastMissedAt, tz),
+      formatCount(person.attempts),
+      person.telecaller ?? "Not attributed",
+      person.leadTitle ?? "-",
+    ];
+    x = LEFT;
+    cells.forEach((cell, i) => {
+      w.line(cell, x, l.y, { size: 8, width: cols[i].w - 6, align: cols[i].align });
+      x += cols[i].w;
+    });
+    l.y += 14;
+  }
+}
+
 function drawConversationRead(l: Layout, w: Writer, r: CallInsightsReport): void {
   const c = r.current;
   const colW = (WIDTH - 24) / 2;
@@ -830,11 +921,12 @@ function drawConversationRead(l: Layout, w: Writer, r: CallInsightsReport): void
   const outcomes = r.outcomes.map((o) => ({ label: outcomeLabel(o.key), count: o.count }));
   const h = Math.max(barListHeight(sentiment), barListHeight(outcomes)) + 16;
 
+  const recorded = recordableCalls(c);
   l.section(
     "What the calls were about",
     c.analyzed === 0
       ? "No call in this period has an AI read yet."
-      : `From the AI read of ${formatCount(c.analyzed)} of ${formatCount(c.total)} calls (${formatShare(ratio(c.analyzed, c.total))}); shares are of analysed calls`,
+      : `From the AI read of ${formatCount(c.analyzed)} of ${formatCount(recorded)} recorded calls (${formatShare(ratio(c.analyzed, recorded))}); shares are of analysed calls`,
     h,
   );
   if (c.analyzed > 0) {
@@ -1090,6 +1182,7 @@ function drawAttention(l: Layout, w: Writer, r: CallInsightsReport): void {
 function drawNotes(l: Layout, w: Writer, r: CallInsightsReport, includeCalls: boolean): void {
   const notes = [
     "Missed = an incoming call with no talk time. Answered = an incoming call with talk time. Connect rate = calls with talk time ÷ all calls.",
+    "Missed calls come from each handset's call log and have no recording. One is recovered by the first later call that reached the person - a call back from the team, or the customer ringing again and getting through - at any time up to when this report was generated. Numbers are matched on their last ten digits, so +91 and 0 prefixes do not split one person in two.",
     "Calls that could not be processed still count as calls; they have no AI read. Sentiment, result, reasons, quality and risk come from the automatic analysis of each transcript, so their shares use analysed calls as the base.",
     "Quality is scored 0–100 per call; its criteria 0–10. Talk share and interruptions need recordings with both speakers separated.",
     `Changes compare with the ${formatCount(r.range.days)} days immediately before this range (${formatReportRange(r.previousRange.from, r.previousRange.to)}). Days and hours are in ${r.org.timezone}.`,

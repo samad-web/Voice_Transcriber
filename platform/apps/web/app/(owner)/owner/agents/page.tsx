@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AGENT_KIND_ORDER, AGENT_KIND_SPECS, type AgentKind } from "@aura/shared";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
 import { LoadFailure } from "@/components/load-failure";
+import { Time } from "@/components/org-time";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 
@@ -28,12 +29,6 @@ interface StudioResponse {
   workspaces: Array<{ id: string; name: string }>;
   qualificationEnabled: boolean;
 }
-
-const dateFormat = new Intl.DateTimeFormat("en-IN", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
 
 /**
  * The tenant's AI Agent Studio - every agent they have, grouped by what it does.
@@ -161,7 +156,7 @@ export default async function AgentStudioPage() {
                           ? `${agent.fieldCount} detail${agent.fieldCount === 1 ? "" : "s"} · `
                           : ""}
                         {agent.versionCount} version{agent.versionCount === 1 ? "" : "s"} · edited{" "}
-                        {dateFormat.format(new Date(agent.updatedAt))}
+                        <Time iso={agent.updatedAt} mode="date" />
                         {kind === "call_extractor" &&
                         data.workspaces.length > 1 &&
                         agent.workspaceId

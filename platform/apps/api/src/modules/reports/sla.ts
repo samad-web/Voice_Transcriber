@@ -93,13 +93,41 @@ export type AgingBucketKey = (typeof AGING_BUCKETS)[number]["key"];
  * frozen const, never caller input, so interpolating them is safe by
  * construction - there is no path from a request to this string.
  */
-export function agingBucketFilters(ageExpr: string): string {
+export function agingBucketFilters(ageExpr: string, opts: { where?: string; prefix?: string } = {}): string {
+  // `where` narrows every bucket (the dashboard's never-responded split) and
+  // `prefix` keeps the second set of columns from colliding with the first.
+  const extra = opts.where ? ` AND (${opts.where})` : "";
+  const prefix = opts.prefix ?? "";
   return AGING_BUCKETS.map((b) => {
     const bound =
       b.maxDays === null
         ? `${ageExpr} >= ${b.minDays}`
         : `${ageExpr} BETWEEN ${b.minDays} AND ${b.maxDays}`;
-    return `count(*) FILTER (WHERE ${bound})::int AS ${b.key}`;
+    return `count(*) FILTER (WHERE ${bound}${extra})::int AS ${prefix}${b.key}`;
+  }).join(", ");
+}
+
+/**
+ * The response buckets as SQL `count(*) FILTER` columns, one per
+ * RESPONSE_BUCKETS key - so the dashboard can count them in the same
+ * multi-statement round trip as everything else, with the bounds this file
+ * owns rather than a second copy in a GROUP BY.
+ *
+ * Mirrors `responseBucket()` exactly: a bucket holds (previous max, max], the
+ * first bucket also takes zero and negatives (a clock-skewed device), and NULL
+ * minutes is `never` - not the slowest bucket. sla.spec.ts pins the pairing.
+ * `where` narrows every bucket (the dashboard's window).
+ */
+export function responseBucketFilters(minutesExpr: string, where = "TRUE"): string {
+  let lower: number | null = null;
+  return RESPONSE_BUCKETS.map((b) => {
+    let bound: string;
+    if (b.maxMinutes === null) bound = `${minutesExpr} IS NULL`;
+    else if (lower === null) bound = `${minutesExpr} <= ${b.maxMinutes}`;
+    else if (!Number.isFinite(b.maxMinutes)) bound = `${minutesExpr} > ${lower}`;
+    else bound = `${minutesExpr} > ${lower} AND ${minutesExpr} <= ${b.maxMinutes}`;
+    if (b.maxMinutes !== null && Number.isFinite(b.maxMinutes)) lower = b.maxMinutes;
+    return `count(*) FILTER (WHERE (${where}) AND ${bound})::int AS ${b.key}`;
   }).join(", ");
 }
 

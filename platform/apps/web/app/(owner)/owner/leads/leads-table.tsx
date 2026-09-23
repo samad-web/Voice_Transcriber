@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
+import { formatWait, leadCallbackState } from "@aura/shared";
 import {
   Button,
   Input,
@@ -15,6 +16,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { formatDateRange } from "@/lib/report-dashboard";
 import { BulkActionBar } from "../bulk/bulk-action-bar";
 import { useRowSelection } from "../bulk/use-row-selection";
@@ -48,6 +50,21 @@ export interface TelecallerOption {
 }
 
 /**
+ * The "Callback" column (migration 0134). Same vocabulary as the call log's
+ * own callback line (calls-explorer.tsx's missedSummary / @aura/shared's
+ * callbackLabel) - "Called back Xm later", "Not called back yet" - so a
+ * manager reading both pages is reading one idea, not two.
+ */
+function leadCallbackLabel(lead: Lead): { text: string; waiting: boolean } | null {
+  const state = leadCallbackState(lead.last_missed_at, lead.last_reached_at);
+  if (!state) return null;
+  if (state === "waiting") return { text: "Not called back yet", waiting: true };
+  const minutes = (Date.parse(lead.last_reached_at as string) - Date.parse(lead.last_missed_at as string)) / 60_000;
+  const wait = formatWait(minutes);
+  return { text: `Called back ${wait === "under a minute" ? "within a minute" : `${wait} later`}`, waiting: false };
+}
+
+/**
  * The list view: the same leads as the board, but filterable and sortable -
  * what you use to answer "which leads has nobody touched in a fortnight?".
  *
@@ -77,6 +94,7 @@ export function LeadsTable({
 }) {
   const router = useRouter();
   const params = useSearchParams();
+  const zone = useOrgTimeZone();
   const [rows, setRows] = useState(leads);
   const selection = useRowSelection(canReassign ? rows.map((l) => l.id) : []);
   /**
@@ -373,6 +391,7 @@ export function LeadsTable({
                   <TableHeaderCell>Assigned to</TableHeaderCell>
                   <TableHeaderCell>Handset</TableHeaderCell>
                   <TableHeaderCell className="text-right">Calls</TableHeaderCell>
+                  <TableHeaderCell>Callback</TableHeaderCell>
                   {showRead ? <TableHeaderCell>Last call read</TableHeaderCell> : null}
                   <TableHeaderCell>Next action</TableHeaderCell>
                   <TableHeaderCell>Last activity</TableHeaderCell>
@@ -459,6 +478,17 @@ export function LeadsTable({
                     <TableCell className="text-text-muted">{lead.assigned_telecaller_name ?? "-"}</TableCell>
                     <TableCell className="text-text-muted">{lead.telecaller ?? "-"}</TableCell>
                     <TableCell className="text-right tabular-nums">{lead.call_count}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const cb = leadCallbackLabel(lead);
+                        if (!cb) return <span className="text-xs text-text-subtle">-</span>;
+                        return (
+                          <span className={`text-xs ${cb.waiting ? "font-medium text-text" : "text-text-muted"}`}>
+                            {cb.text}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
                     {showRead ? (
                       <TableCell>
                         {/* Renders nothing when the lead has no read yet - a
@@ -479,7 +509,7 @@ export function LeadsTable({
                       {lead.next_action ?? "-"}
                     </TableCell>
                     <TableCell className="text-text-muted tabular-nums">
-                      {relativeTime(lead.last_activity_at)}
+                      {relativeTime(lead.last_activity_at, zone)}
                     </TableCell>
                   </TableRow>
                 ))}

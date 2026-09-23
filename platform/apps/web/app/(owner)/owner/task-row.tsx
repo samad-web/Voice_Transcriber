@@ -23,8 +23,9 @@ const URGENCY_ICON: Record<Urgency, typeof Clock> = {
  * Tasks page, so "overdue" looks and reads the same wherever a task appears
  * (the tones live in lib/next-actions.ts, in one table).
  *
- * `today` comes from the parent, computed once per render in the viewer's own
- * timezone, so every row agrees on what day it is.
+ * `today` comes from the parent, computed once per render on the WORKSPACE's
+ * calendar (workspaceToday in lib/next-actions.ts), so every row agrees on
+ * what day it is - and agrees with the API's overdue count.
  */
 export function TaskRow({
   task,

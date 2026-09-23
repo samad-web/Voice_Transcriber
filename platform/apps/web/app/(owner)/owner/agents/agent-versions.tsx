@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Card, MonoLabel, StatusChip, useAlert, useConfirm, useToast } from "@aura/ui";
+import { Time } from "@/components/org-time";
 import { activateAgentAction, archiveAgentAction, deactivateAgentAction } from "./actions";
 
 export interface VersionHeader {
@@ -13,14 +14,6 @@ export interface VersionHeader {
   createdAt: string;
   fieldCount: number;
 }
-
-const dateFormat = new Intl.DateTimeFormat("en-IN", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
 
 /**
  * Every saved version, with the one running marked - and the two ways out:
@@ -134,7 +127,9 @@ export function AgentVersions({
                   <span className="text-text-muted"> · shown below</span>
                 ) : null}
               </p>
-              <p className="text-xs text-text-subtle">{dateFormat.format(new Date(v.createdAt))}</p>
+              <p className="text-xs text-text-subtle">
+                <Time iso={v.createdAt} mode="datetime" />
+              </p>
             </div>
             <div className="flex items-center gap-2">
               {v.version !== viewing ? (

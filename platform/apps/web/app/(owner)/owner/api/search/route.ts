@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveTimeZone } from "@aura/shared";
 import { SEARCH_MAX_CHARS, SEARCH_MIN_CHARS, type GlobalSearchResponse } from "@/lib/global-search";
 import { searchSourceFor } from "@/lib/crm-search";
 import { getOwner } from "@/lib/owner-context";
@@ -28,6 +29,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Not signed in as an instance owner" }, { status: 401 });
   }
 
-  const result = await searchSourceFor(owner.membership).search(query, owner);
+  // The workspace clock (Build docs/30), read off the membership already in
+  // hand - what getOrgTimeZone() returns, without resolving the session twice
+  // in a handler React's request cache does not cover.
+  const zone = resolveTimeZone(owner.membership.reportingTimezone);
+  const result = await searchSourceFor(owner.membership).search(query, owner, zone);
   return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
 }

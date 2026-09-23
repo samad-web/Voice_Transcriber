@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { dayKeyIn, formatTime } from "@aura/shared";
 import { Button, Card, EmptyState, StatusChip, useAlert } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { updateTaskAction } from "../crm-actions";
 import type { FollowupCounts, Task } from "../types";
 
@@ -19,27 +21,27 @@ const TABS: { key: Bucket; label: string }[] = [
 /**
  * The time on a follow-up, when it has one.
  *
- * Rendered in the VIEWER's timezone from the stored instant, which is the
- * whole reason `due_at` is an instant rather than a wall-clock string: a
- * manager in another country reading "15:00" would have no way to know whose
- * three o'clock it was.
+ * Rendered in the WORKSPACE's zone (Build docs/30) from the stored instant,
+ * which is the whole reason `due_at` is an instant rather than a wall-clock
+ * string: everyone on the floor reads the same "3:00 pm", wherever they sit.
  */
-function timeLabel(dueAt: string | null): string | null {
+function timeLabel(dueAt: string | null, zone: string): string | null {
   if (!dueAt) return null;
-  return new Date(dueAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatTime(dueAt, zone);
 }
 
-function dueLabel(task: Task, today: string): { text: string; late: boolean } {
+function dueLabel(task: Task, today: string, zone: string): { text: string; late: boolean } {
   if (!task.due_on) return { text: "No date", late: false };
-  const time = timeLabel(task.due_at);
+  const time = timeLabel(task.due_at, zone);
   const suffix = time ? ` at ${time}` : "";
   if (task.status === "done") {
     // The one comparison that matters on a completed row: was it closed by the
     // day it was promised for. `completed_at` is an instant and `due_on` a
-    // date, so this compares the date halves - the same rule the compliance
-    // report applies server-side, kept identical so the page and the report
-    // cannot disagree about who was late.
-    const closedOn = task.completed_at?.slice(0, 10) ?? null;
+    // date, so the instant is turned into the day it fell on in the workspace's
+    // zone - what the compliance report does server-side (`completed_at AT TIME
+    // ZONE` the org's zone), so the page and the report cannot disagree about
+    // who was late. Slicing the ISO string took the UTC day instead.
+    const closedOn = task.completed_at ? dayKeyIn(task.completed_at, zone) : null;
     if (closedOn && closedOn > task.due_on) return { text: `Closed late · ${closedOn}`, late: true };
     return { text: closedOn ? `Closed ${closedOn}` : "Closed", late: false };
   }
@@ -81,12 +83,14 @@ export function FollowupQueue({
   initial: Task[];
   counts: FollowupCounts;
   bucket: Bucket;
+  /** The WORKSPACE's today, YYYY-MM-DD - workspaceToday(zone), never the viewer's date. */
   today: string;
 }) {
   const [tasks, setTasks] = useState(initial);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const alert = useAlert();
+  const zone = useOrgTimeZone();
 
   const complete = (task: Task) => {
     setPendingId(task.id);
@@ -167,7 +171,7 @@ export function FollowupQueue({
       ) : (
         <ul className="space-y-2">
           {tasks.map((task) => {
-            const due = dueLabel(task, today);
+            const due = dueLabel(task, today, zone);
             return (
               <li key={task.id}>
                 <Card className="flex flex-wrap items-start justify-between gap-3">

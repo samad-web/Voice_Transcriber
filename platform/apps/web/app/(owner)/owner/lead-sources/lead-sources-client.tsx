@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import {
   Button,
   Card,
@@ -17,21 +18,26 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  buttonClasses,
+  buttonStyle,
   useAlert,
   useToast,
 } from "@aura/ui";
 import type { LeadSourceKind } from "@aura/shared";
-import { startOAuthRedirect } from "../lib/oauth-redirect";
+import { Time } from "@/components/org-time";
 import {
   createLeadSourceAction,
   listIntakeEventsAction,
   replayIntakeEventAction,
   rotateLeadSourceTokenAction,
-  startLinkedInConnectAction,
   updateLeadSourceAction,
   type IntakeEvent,
 } from "./actions";
 import type { CatalogueChannel, LeadSourceRow, LinkedInStatus } from "./page";
+
+/** The store's connect route for an app, remembering that the person came from here. */
+const storeDoor = (app: string) =>
+  `/owner/integrations/${app}/connect?from=${encodeURIComponent("/owner/lead-sources")}`;
 
 /**
  * The lead intake engine's console (migration 0078).
@@ -56,23 +62,29 @@ export function LeadSourcesClient({
   linkedin: LinkedInStatus;
   origin: string;
 }) {
-  const [adding, setAdding] = useState(false);
   const [openEvents, setOpenEvents] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      {/* Doors, not a form (doc 28 §15): adding a source happens in the
+          Integrations store's connect flow, which hosts the same create form
+          and brings the person back here when they press Done. */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <MonoLabel>{sources.length} source(s)</MonoLabel>
-        <Button type="button" onClick={() => setAdding((open) => !open)}>
-          {adding ? "Cancel" : "Add a source"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Link href={storeDoor("web_forms")} className={buttonClasses()} style={buttonStyle()}>
+            Add a form or inbox
+          </Link>
+          <Link href={storeDoor("cti")} className={buttonClasses({ variant: "secondary" })}>
+            Add a phone line
+          </Link>
+          <Link href={storeDoor("meta_lead_ads")} className={buttonClasses({ variant: "secondary" })}>
+            Facebook lead ads
+          </Link>
+        </div>
       </div>
 
-      {adding ? (
-        <NewSourceForm channels={channels} onDone={() => setAdding(false)} origin={origin} />
-      ) : null}
-
-      {sources.length === 0 && !adding ? (
+      {sources.length === 0 ? (
         <EmptyState
           title="No lead sources yet"
           description="Add your website form first - it takes one snippet and starts working immediately."
@@ -429,7 +441,9 @@ function EventLog({ sourceId }: { sourceId: string }) {
         <TableBody>
           {events.map((event) => (
             <TableRow key={event.id}>
-              <TableCell>{new Date(event.received_at).toLocaleString()}</TableCell>
+              <TableCell>
+                <Time iso={event.received_at} mode="datetime" />
+              </TableCell>
               <TableCell>
                 <StatusChip tone={OUTCOME_TONE[event.outcome] ?? "muted"}>{event.outcome}</StatusChip>
               </TableCell>
@@ -469,21 +483,40 @@ function summarisePayload(payload: Record<string, unknown>): string {
 
 // ── adding one ────────────────────────────────────────────────────────────
 
-function NewSourceForm({
+/**
+ * Creating a source. Exported for the Integrations store's connect flow
+ * (doc 28 §11), which hosts this form rather than keeping a second one: the
+ * store narrows it to one app's channels (`kinds`, `excludeProviders`), frames
+ * it itself (`bare`), and takes the created source on to its check step
+ * (`onCreated`) instead of the "Source created" card below.
+ */
+export function NewSourceForm({
   channels,
   onDone,
   origin,
+  kinds,
+  excludeProviders = [],
+  onCreated,
+  bare = false,
 }: {
   channels: CatalogueChannel[];
   onDone: () => void;
   origin: string;
+  kinds?: readonly LeadSourceKind[];
+  excludeProviders?: readonly string[];
+  onCreated?: (created: { id: string; url: string | null }) => void;
+  bare?: boolean;
 }) {
   // Only the channels with an endpoint or a connect flow are offered. `api` is
   // real but is set up on the API-keys page, and offering it here would send
   // somebody to create a source that does nothing.
-  const offered = channels.filter((c) => c.delivery === "browser" || c.delivery === "webhook");
+  const offered = channels
+    .filter((c) => c.delivery === "browser" || c.delivery === "webhook")
+    .filter((c) => !kinds || kinds.includes(c.id as LeadSourceKind));
+  const providersOf = (id: string) =>
+    (channels.find((c) => c.id === id)?.providers ?? []).filter((p) => !excludeProviders.includes(p.id));
   const [kind, setKind] = useState<LeadSourceKind>(offered[0]?.id ?? "web_form");
-  const [provider, setProvider] = useState("generic");
+  const [provider, setProvider] = useState(() => providersOf(offered[0]?.id ?? "web_form")[0]?.id ?? "generic");
   const [name, setName] = useState("");
   const [signingSecret, setSigningSecret] = useState("");
   const [created, setCreated] = useState<{ url: string | null } | null>(null);
@@ -491,7 +524,7 @@ function NewSourceForm({
   const alert = useAlert();
 
   const channel = channels.find((c) => c.id === kind);
-  const providers = channel?.providers ?? [];
+  const providers = providersOf(kind);
 
   const submit = () => {
     startTransition(async () => {
@@ -510,9 +543,12 @@ function NewSourceForm({
         });
         return;
       }
-      setCreated({
-        url: result.data?.endpointPath ? `${origin}/v1${result.data.endpointPath}` : null,
-      });
+      const url = result.data?.endpointPath ? `${origin}/v1${result.data.endpointPath}` : null;
+      if (onCreated && result.data) {
+        onCreated({ id: result.data.id, url });
+        return;
+      }
+      setCreated({ url });
     });
   };
 
@@ -532,16 +568,16 @@ function NewSourceForm({
     );
   }
 
-  return (
-    <Card>
-      <MonoLabel>New lead source</MonoLabel>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+  const body = (
+    <>
+      {bare ? null : <MonoLabel>New lead source</MonoLabel>}
+      <div className={`grid gap-4 sm:grid-cols-2 ${bare ? "" : "mt-4"}`}>
         <FormField label="Channel" name="kind" hint={channel?.blurb}>
           <Select
             value={kind}
             onChange={(e) => {
               setKind(e.target.value as LeadSourceKind);
-              setProvider("generic");
+              setProvider(providersOf(e.target.value)[0]?.id ?? "generic");
             }}
           >
             {offered.map((c) => (
@@ -595,12 +631,16 @@ function NewSourceForm({
         <Button type="button" loading={pending} disabled={!name.trim()} onClick={submit}>
           Create source
         </Button>
-        <Button type="button" variant="secondary" onClick={onDone}>
-          Cancel
-        </Button>
+        {bare ? null : (
+          <Button type="button" variant="secondary" onClick={onDone}>
+            Cancel
+          </Button>
+        )}
       </div>
-    </Card>
+    </>
   );
+
+  return bare ? <div>{body}</div> : <Card>{body}</Card>;
 }
 
 // ── LinkedIn ──────────────────────────────────────────────────────────────
@@ -611,34 +651,9 @@ function NewSourceForm({
  * API, so leads are polled from a connected ad account.
  */
 function LinkedInPanel({ status }: { status: LinkedInStatus }) {
-  const [pending, startTransition] = useTransition();
-  const alert = useAlert();
-
-  const connect = () => {
-    startTransition(async () => {
-      const result = await startLinkedInConnectAction();
-      if ("notConfigured" in result) {
-        await alert({
-          title: "LinkedIn isn't set up yet",
-          body: "This deployment has no LinkedIn app registered - ask your platform admin.",
-          tone: "danger",
-        });
-        return;
-      }
-      const failure = startOAuthRedirect(
-        result.data ?? { error: result.error },
-        "Could not start LinkedIn sign-in",
-      );
-      if (failure) {
-        await alert({
-          title: "Couldn't start LinkedIn sign-in",
-          body: failure,
-          tone: "danger",
-        });
-      }
-    });
-  };
-
+  // Connecting happens in the Integrations store's flow (doc 28 §15), which
+  // ends on a choose step - the step this panel never had, so a sign-in used
+  // to leave a `pending:` row here with no way to finish it.
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -650,9 +665,9 @@ function LinkedInPanel({ status }: { status: LinkedInStatus }) {
           </p>
         </div>
         {status.configured ? (
-          <Button type="button" loading={pending} onClick={connect}>
+          <Link href={storeDoor("linkedin_ads")} className={buttonClasses()} style={buttonStyle()}>
             Connect LinkedIn
-          </Button>
+          </Link>
         ) : null}
       </div>
 
@@ -680,9 +695,16 @@ function LinkedInPanel({ status }: { status: LinkedInStatus }) {
               <TableRow key={connection.id}>
                 <TableCell>
                   {connection.account_name ??
-                    (connection.account_urn.startsWith("pending:")
-                      ? "Connected - pick an ad account"
-                      : connection.account_urn)}
+                    (connection.account_urn.startsWith("pending:") ? (
+                      <Link
+                        href={`/owner/integrations/linkedin_ads/connect?step=choose&pending=${connection.id}`}
+                        className="underline underline-offset-2"
+                      >
+                        Signed in - pick an ad account
+                      </Link>
+                    ) : (
+                      connection.account_urn
+                    ))}
                 </TableCell>
                 <TableCell>
                   <StatusChip tone={connection.status === "active" ? "solid" : "danger"}>
@@ -690,9 +712,11 @@ function LinkedInPanel({ status }: { status: LinkedInStatus }) {
                   </StatusChip>
                 </TableCell>
                 <TableCell>
-                  {connection.last_synced_at
-                    ? new Date(connection.last_synced_at).toLocaleString()
-                    : "not yet"}
+                  {connection.last_synced_at ? (
+                    <Time iso={connection.last_synced_at} mode="datetime" />
+                  ) : (
+                    "not yet"
+                  )}
                 </TableCell>
               </TableRow>
             ))}

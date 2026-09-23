@@ -10,6 +10,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { BulkActionBar } from "../bulk/bulk-action-bar";
 import { useRowSelection } from "../bulk/use-row-selection";
 import { TagChips } from "../tag-chips";
@@ -25,6 +26,7 @@ import { relativeTime, type Contact } from "../types";
  */
 export function ContactsTable({ contacts, filtered }: { contacts: Contact[]; filtered: boolean }) {
   const selection = useRowSelection(contacts.map((c) => c.id));
+  const zone = useOrgTimeZone();
 
   if (contacts.length === 0) {
     return filtered ? (
@@ -98,7 +100,7 @@ export function ContactsTable({ contacts, filtered }: { contacts: Contact[]; fil
                     <span className="text-text-muted">-</span>
                   )}
                 </TableCell>
-                <TableCell className="text-text-muted tabular-nums">{relativeTime(contact.last_activity_at)}</TableCell>
+                <TableCell className="text-text-muted tabular-nums">{relativeTime(contact.last_activity_at, zone)}</TableCell>
               </TableRow>
             );
           })}

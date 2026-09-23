@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatWait } from "./missed-calls";
 
 /**
  * Call insights - the floor-wide read of every recorded call in a date range,
@@ -247,6 +248,51 @@ export interface CallInsightsAttentionCall {
   reasons: string[];
 }
 
+/** One person still waiting for a call back - their unreturned missed calls, grouped. */
+export interface CallInsightsWaitingCaller {
+  /** Their newest missed call, which is what the call log opens on. */
+  callId: string;
+  /** Contact name, else the privacy-lite number fragment - the attention list's rule. */
+  contact: string;
+  lastMissedAt: string;
+  /** Missed calls from them in the range that nobody has returned. */
+  attempts: number;
+  /** Whose handset they rang last. */
+  telecaller: string | null;
+  leadId: string | null;
+  leadTitle: string | null;
+}
+
+/**
+ * What happened after the range's missed calls (migration 0133). A missed call
+ * is RECOVERED by the first later call with the same person that reached them
+ * - ours (a call back) or theirs (they rang again and got through). The window
+ * for that return is open-ended: a call missed on the range's last evening and
+ * returned the next morning was returned, and saying otherwise would punish
+ * every report for where its range happened to end.
+ */
+export interface CallInsightsCallbacks {
+  /** Missed calls in the range - always equal to `current.missed`. */
+  missed: number;
+  /** Of those, how many carried no number, so nobody could ring them back. */
+  noNumber: number;
+  /** Recovered, by anybody. */
+  returned: number;
+  /** Recovered by OUR call - the customer did not have to chase. */
+  calledBack: number;
+  /** Recovered within an hour of the missed call. */
+  withinHour: number;
+  /** Median minutes from a missed call to its recovery; null with none recovered. */
+  medianMinutes: number | null;
+  /** Distinct people with at least one missed call nobody has returned. */
+  waitingCallers: number;
+  /** Those people, most recently missed first, capped. */
+  waiting: CallInsightsWaitingCaller[];
+}
+
+/** How many waiting callers the report lists - a prompt to open the call log, not a copy of it. */
+export const CALLBACK_WAITING_MAX = 10;
+
 export interface CallInsightsReport {
   org: { name: string; timezone: string };
   range: { from: string; to: string; days: number };
@@ -283,6 +329,7 @@ export interface CallInsightsReport {
   risk: { calls: number; categories: Array<{ category: string; label: string; calls: number; high: number }> };
   people: CallInsightsPerson[];
   attention: CallInsightsAttentionCall[];
+  callbacks: CallInsightsCallbacks;
 }
 
 // ── Derived figures ─────────────────────────────────────────────────────────
@@ -301,9 +348,19 @@ export interface CallInsightsKpis {
   avgCallSeconds: number | null;
   positiveShare: number | null;
   negativeShare: number | null;
-  /** Share of calls with an AI read - the coverage every read-based figure rests on. */
+  /**
+   * Share of RECORDABLE calls with an AI read - the coverage every read-based
+   * figure rests on. Missed calls are left out of the base: they have no audio
+   * and can never have a read, so counting them would report a floor that
+   * misses a lot of calls as a floor whose analysis is broken.
+   */
   analyzedShare: number | null;
   leadShare: number | null;
+}
+
+/** Calls that could carry a recording - every call but a missed one. */
+export function recordableCalls(t: CallVolume): number {
+  return Math.max(0, t.total - t.missed);
 }
 
 export function callInsightsKpis(t: CallInsightsTotals): CallInsightsKpis {
@@ -313,8 +370,29 @@ export function callInsightsKpis(t: CallInsightsTotals): CallInsightsKpis {
     avgCallSeconds: ratio(t.talkSeconds, t.connected),
     positiveShare: ratio(t.positive, t.analyzed),
     negativeShare: ratio(t.negative, t.analyzed),
-    analyzedShare: ratio(t.analyzed, t.total),
+    analyzedShare: ratio(t.analyzed, recordableCalls(t)),
     leadShare: ratio(t.leadLinked, t.total),
+  };
+}
+
+export interface CallbackKpis {
+  /** Missed calls somebody COULD have returned - they carry a number. */
+  returnable: number;
+  /** Recovered / returnable. */
+  recoveredRate: number | null;
+  /** Called back by us / returnable. */
+  calledBackRate: number | null;
+  /** Recovered within the hour / returnable. */
+  withinHourRate: number | null;
+}
+
+export function callbackKpis(cb: CallInsightsCallbacks): CallbackKpis {
+  const returnable = Math.max(0, cb.missed - cb.noNumber);
+  return {
+    returnable,
+    recoveredRate: ratio(cb.returned, returnable),
+    calledBackRate: ratio(cb.calledBack, returnable),
+    withinHourRate: ratio(cb.withinHour, returnable),
   };
 }
 
@@ -549,6 +627,21 @@ export function callInsightsHighlights(r: CallInsightsReport, max = 6): string[]
       sentence += ` The most, ${formatCount(peak.missed)}, came in ${formatHourSlot(peak.hour)}.`;
     }
     out.push(sentence);
+
+    // What became of them - the half of the missed-call story that is still
+    // actionable. Only when there was anything anybody could have returned.
+    const cb = r.callbacks;
+    const ck = callbackKpis(cb);
+    if (ck.returnable > 0) {
+      let recovery =
+        cb.returned > 0
+          ? `${formatCount(cb.returned)} of ${formatCount(ck.returnable)} missed calls with a number were recovered (${formatShare(ck.recoveredRate)}), ${formatCount(cb.calledBack)} by calling back; median wait ${formatWait(cb.medianMinutes)}.`
+          : `None of the ${formatCount(ck.returnable)} missed calls with a number has been returned yet.`;
+      if (cb.waitingCallers > 0) {
+        recovery += ` ${plural(cb.waitingCallers, "caller")} ${cb.waitingCallers === 1 ? "is" : "are"} still waiting for a call back.`;
+      }
+      out.push(recovery);
+    }
   }
 
   // Connect rate, only when it genuinely moved.
@@ -592,7 +685,7 @@ export function callInsightsHighlights(r: CallInsightsReport, max = 6): string[]
   if (k.analyzedShare !== null && k.analyzedShare < 0.8) {
     return [
       ...out.slice(0, Math.max(0, max - 1)),
-      `Only ${formatShare(k.analyzedShare)} of calls have an AI read (the rest were missed, failed, are still processing, or were not transcribed), so the conversation figures describe that share.`,
+      `Only ${formatShare(k.analyzedShare)} of recorded calls have an AI read (the rest failed, are still processing, or were not transcribed), so the conversation figures describe that share.`,
     ];
   }
 

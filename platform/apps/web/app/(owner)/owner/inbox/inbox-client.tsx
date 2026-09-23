@@ -11,11 +11,14 @@ import {
   useToast,
 } from "@aura/ui";
 import {
+  formatDayMonth,
   formatRemaining,
+  formatTime,
   messagingWindow,
   windowNotice,
   type MessagingWindow,
 } from "@aura/shared";
+import { useOrgTimeZone } from "@/components/org-time";
 import { useRealtime } from "@/components/realtime-provider";
 import { RecordPicker } from "../record-picker";
 import {
@@ -95,6 +98,7 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
   const [pending, start] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+  const zone = useOrgTimeZone();
 
   // Out-of-order-response guards: a rapid double-click (two threads, or the
   // same filter clicked twice) can let an older fetchThreadAction /
@@ -414,7 +418,7 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                         a property of the thread, not one of the four states. */}
                     {t.private_to_user_id ? <StatusChip tone="outline">Only you</StatusChip> : null}
                     {t.contact_id === null ? <StatusChip tone="muted">Unmatched</StatusChip> : null}
-                    <span className="ml-auto tabular-nums">{formatWhen(t.last_message_at)}</span>
+                    <span className="ml-auto tabular-nums">{formatWhen(t.last_message_at, zone)}</span>
                   </div>
                 </button>
               </li>
@@ -511,7 +515,7 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
                       ) : null}
                       <p className="text-sm whitespace-pre-wrap text-text">{m.body}</p>
                       <p className="mt-1 text-xs text-text-muted tabular-nums">
-                        {formatWhen(m.occurred_at)}
+                        {formatWhen(m.occurred_at, zone)}
                         {m.status !== "received" ? ` · ${m.status}` : ""}
                       </p>
                       {m.error ? (
@@ -660,20 +664,15 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
 }
 
 /**
- * Times are rendered from the ISO string the API returned, in the reader's own
- * locale. Not `date` columns, so the to_char convention that `tasks.due_on`
- * needs does not apply - these are genuine instants.
+ * "22 Sep, 2:30 pm" - genuine instants (not `date` columns, so the to_char
+ * convention that `tasks.due_on` needs does not apply), rendered on the
+ * workspace clock (Build docs/30) rather than the reader's browser zone.
  */
-function formatWhen(iso: string | null): string {
+function formatWhen(iso: string | null, zone: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return `${formatDayMonth(d, zone)}, ${formatTime(d, zone)}`;
 }
 
 /**

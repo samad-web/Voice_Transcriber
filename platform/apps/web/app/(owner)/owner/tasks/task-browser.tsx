@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { CheckSquare } from "lucide-react";
 import { Button, EmptyState, ErrorBanner, useAlert } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import { Pager } from "@/components/pager";
 import { useRealtime } from "@/components/realtime-provider";
 import { listPageHref } from "@/lib/list-views";
-import { DUE_WINDOWS, dueWindowQuery, localToday, prioritise, type DueWindow } from "@/lib/next-actions";
+import { DUE_WINDOWS, dueWindowQuery, prioritise, workspaceToday, type DueWindow } from "@/lib/next-actions";
 import { BulkActionBar } from "../bulk/bulk-action-bar";
 import { useRowSelection } from "../bulk/use-row-selection";
 import { fetchTasksAction, updateTaskAction } from "../crm-actions";
@@ -38,17 +39,17 @@ export interface TaskFilters {
 /**
  * The Tasks page's list: filtered by the URL, fetched in the browser.
  *
- * In the browser rather than on the server for the reason next-actions.ts
- * gives: "due today" and "overdue" are the VIEWER's calendar, and only the
- * browser knows it. The due filter is turned into date bounds here
- * (dueWindowQuery) and sent to the API, so the filter and the row colours use
- * the same "today".
+ * "Due today" and "overdue" are the WORKSPACE's calendar (workspaceToday in
+ * lib/next-actions.ts), the midnight the API's own overdue count uses. The due
+ * filter is turned into date bounds here (dueWindowQuery) and sent to the API,
+ * so the filter and the row colours use the same "today".
  *
  * "Select" switches the rows into selection mode for the bulk bar - the Done
  * checkbox and a selection checkbox never share a row.
  */
 export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset: number }) {
   const alert = useAlert();
+  const zone = useOrgTimeZone();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +61,7 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
   const { q, status = "open", who = "", due = "", priority = "", sort = "due" } = filters;
 
   const load = useCallback(() => {
-    const day = localToday();
+    const day = workspaceToday(zone);
     setToday(day);
     const window = (DUE_WINDOWS as readonly string[]).includes(due) ? dueWindowQuery(due as DueWindow, day) : {};
     let cancelled = false;
@@ -89,7 +90,7 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
     return () => {
       cancelled = true;
     };
-  }, [q, status, who, due, priority, sort, offset]);
+  }, [q, status, who, due, priority, sort, offset, zone]);
 
   useEffect(() => {
     setTasks(null);
@@ -115,7 +116,7 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
   // The default "due" sort is what-to-do-next order (next-actions.ts); any
   // other sort is the server's order, untouched.
   const ordered = tasks && today ? (sort === "due" && status === "open" ? prioritise(tasks, today) : tasks) : [];
-  // `prioritise` re-orders WITHIN the page, using the viewer's own "today". The
+  // `prioritise` re-orders WITHIN the page, using the workspace's "today". The
   // page itself is the server's `sort=due` order, so the two agree about which
   // fifty these are; the browser only decides how they read.
   const page = Math.floor(offset / PAGE_SIZE) + 1;
