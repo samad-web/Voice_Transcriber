@@ -5,6 +5,7 @@ import {
   type FeatureKey,
   type FeatureOverrides,
   type OwnerRole,
+  type StorageSummary,
   OrgModule,
   enabledFeatures,
   featureForPath,
@@ -84,10 +85,27 @@ export interface OwnerMembership {
    * trip to find out.
    */
   setupCompletedAt: string | null;
+  /**
+   * The setup GUIDE's stamps (migration 0129): every step done, or an owner
+   * hid it. While both are null the layout pays one round trip for the sidebar
+   * meter; once either is set it never does. Same bargain as setupCompletedAt.
+   */
+  guideCompletedAt: string | null;
+  guideDismissedAt: string | null;
+  /** Storage used (migration 0128), for the account menu. Null until measured. */
+  storage: StorageSummary | null;
+  /**
+   * organizations.reporting_timezone (0090), for times the console prints in
+   * the workspace's own zone (Login activity). Optional: absent from an older
+   * API, and callers fall back to Asia/Kolkata.
+   */
+  reportingTimezone?: string | null;
 }
 
 export interface Principal {
   email: string;
+  /** users.name (doc 27 §2.3), for the account menu. Null for operators and the unnamed. */
+  name?: string | null;
   subject: string;
   /** The platform `users.id` (distinct from `subject`, the Supabase sso_subject). */
   userId: string | null;
@@ -191,7 +209,12 @@ if (AUTH_ENABLED && OPERATOR_EMAILS.length === 0) {
   );
 }
 
-interface RawMembership extends Omit<OwnerMembership, "ownerRole" | "branding"> {
+interface RawMembership
+  extends Omit<OwnerMembership, "ownerRole" | "branding" | "guideCompletedAt" | "guideDismissedAt" | "storage"> {
+  /** Optional on the wire: an API deployed ahead of migrations 0128/0129 omits them. */
+  guideCompletedAt?: string | null;
+  guideDismissedAt?: string | null;
+  storage?: StorageSummary | null;
   ownerRole: string | null;
   /** Straight off the API as jsonb - `parseBranding` gives it a shape below. */
   branding: unknown;
@@ -287,9 +310,15 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       // onboarding modal about a tenant that does not exist. Clear this to
       // work on the checklist itself.
       setupCompletedAt: new Date(0).toISOString(),
+      // Same for the setup guide's sidebar meter (0129): hidden locally unless
+      // DEV_SETUP_GUIDE=1, which clears it to work on the guide itself.
+      guideCompletedAt: process.env.DEV_SETUP_GUIDE === "1" ? null : new Date(0).toISOString(),
+      guideDismissedAt: null,
+      storage: null,
     };
     return {
       email: "",
+      name: null,
       subject: "",
       // DEV_USER_ID, not null: CrmPermissionsGuard denies any principal
       // without a valid uuid userId, so leaving this null makes every
@@ -306,6 +335,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
 
   let rawMemberships: RawMembership[] = [];
   let userId: string | null = null;
+  let userName: string | null = null;
   try {
     const params = new URLSearchParams({ subject: user.id });
     if (user.email) params.set("email", user.email);
@@ -317,6 +347,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       const body = (await res.json()) as ContextResponse;
       rawMemberships = body.memberships ?? [];
       userId = body.user?.id ?? null;
+      userName = body.user?.name ?? null;
     }
   } catch {
     // API down. Fall through as an unbound session rather than a hard error -
@@ -340,6 +371,11 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     // finished", so onboarding is merely delayed by a round trip rather than
     // hidden from every new client for the length of a rolling deploy.
     setupCompletedAt: m.setupCompletedAt ?? null,
+    // An API ahead of 0129 omits these. Null means "not closed", so the
+    // layout asks rather than silently hiding a guide it cannot rule out.
+    guideCompletedAt: m.guideCompletedAt ?? null,
+    guideDismissedAt: m.guideDismissedAt ?? null,
+    storage: m.storage ?? null,
   }));
 
   // A user with several memberships (staff who own more than one tenant) sees
@@ -370,6 +406,7 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
 
   return {
     email: user.email,
+    name: userName,
     subject: user.id,
     userId,
     kind: membership && !listedOperator ? "owner" : "operator",
@@ -460,6 +497,28 @@ export async function getOwner(): Promise<(Principal & { membership: OwnerMember
   const principal = await getPrincipal();
   if (!principal?.membership) return null;
   return principal as Principal & { membership: OwnerMembership };
+}
+
+/**
+ * The persona gate every owner page opens with, BEFORE any fetch (doc 27 §8.2).
+ *
+ * It has been written inline on each page until now -
+ *   `const owner = await getOwner(); if (!owner) redirect("/dashboard");`
+ *   `if (!ROLES.includes(owner.membership.ownerRole)) redirect("/owner");`
+ * - and doc 26 §8.6 already assumes a helper of this name. Not signed in to a
+ * workspace goes to /dashboard (which routes an operator on); the wrong persona
+ * goes home.
+ *
+ * A courtesy, not security: it saves somebody a page of "Data unavailable".
+ * The API's `@RequireOwnerRole` is what actually refuses.
+ */
+export async function requireOwnerRoles(
+  roles: readonly OwnerRole[] | null,
+): Promise<Principal & { membership: OwnerMembership }> {
+  const owner = await getOwner();
+  if (!owner) redirect("/dashboard");
+  if (roles && !roles.includes(owner.membership.ownerRole)) redirect("/owner");
+  return owner;
 }
 
 /**

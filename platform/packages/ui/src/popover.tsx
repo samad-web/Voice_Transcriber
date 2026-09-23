@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { cx } from "./cx";
 
 export type PopoverAlign = "start" | "end" | "stretch";
+export type PopoverSide = "bottom" | "top";
 
 export interface PopoverProps {
   open: boolean;
@@ -18,6 +19,18 @@ export interface PopoverProps {
    * what a search box's results want, so the panel and the field line up.
    */
   align?: PopoverAlign;
+  /**
+   * Which way it opens. `bottom` (the default, and every caller before doc 27)
+   * hangs below the trigger; `top` sits above it - for a trigger pinned to the
+   * bottom of the viewport, like the account menu at the foot of the sidebar,
+   * where a downward panel would open off-screen.
+   *
+   * A prop rather than positioning classes at the call site on purpose: a
+   * caller's className cannot reliably override this file's base classes (cx
+   * is a plain join and Tailwind breaks the tie by stylesheet order), so
+   * `className="bottom-full"` beside a base `mt-2` would be a coin toss.
+   */
+  side?: PopoverSide;
   /** Panel width / max-height / padding. The chrome itself is not overridable. */
   className?: string;
   /** Positioning context. Width and `min-w-0` for the anchor, not the panel. */
@@ -82,6 +95,7 @@ export function Popover({
   trigger,
   children,
   align = "start",
+  side = "bottom",
   className = "",
   anchorClassName = "",
   restoreFocus = true,
@@ -150,11 +164,12 @@ export function Popover({
       {open ? (
         <div
           className={cx(
-            // `mt-2` and `z-50` for every popover in the product, rather than
-            // three values of each. The panel sits above sticky chrome but
-            // below Dialog, which is in the browser's top layer and outside
-            // the z-index system entirely.
-            "absolute z-50 mt-2 rounded-md border border-border bg-surface shadow-lg",
+            // One 8px gap and `z-50` for every popover in the product, rather
+            // than three values of each. The panel sits above sticky chrome
+            // but below Dialog, which is in the browser's top layer and
+            // outside the z-index system entirely.
+            "absolute z-50 rounded-md border border-border bg-surface shadow-lg",
+            side === "top" ? "bottom-full mb-2" : "mt-2",
             // Never wider than the viewport on a phone, whatever width the
             // caller asked for. Three of the four had grown this by hand.
             "max-w-[calc(100vw-2rem)]",

@@ -134,10 +134,24 @@ describe("AdminKeyGuard", () => {
         // org's call content when it is absent - there is nobody to attribute
         // an access request to.
         operatorEmail: null,
+        // Doc 27: nor does it name a person's Supabase subject. Sign-in
+        // history refuses without one rather than reading anybody's.
+        authUserId: null,
       });
       // The cross-tenant admin endpoints legitimately send no org header, so
       // the existence check must not fire (admin-key.guard.ts:67).
       expect(orgs.exists).not.toHaveBeenCalled();
+    });
+
+    it("A1b · carries a uuid x-caller-auth-id and drops anything else", async () => {
+      const SUBJECT = "6f1c2c1e-4b7a-4d3a-9f59-2f0e7c1d8a11";
+      const good = makeExecutionContext({ headers: { "x-admin-key": DEV_KEY, "x-caller-auth-id": SUBJECT } });
+      await expect(guard.canActivate(good.context)).resolves.toBe(true);
+      expect(good.req.principal?.authUserId).toBe(SUBJECT);
+
+      const bad = makeExecutionContext({ headers: { "x-admin-key": DEV_KEY, "x-caller-auth-id": "me; DROP" } });
+      await expect(guard.canActivate(bad.context)).resolves.toBe(true);
+      expect(bad.req.principal?.authUserId).toBeNull();
     });
 
     it("A2 · allows and pins the named tenant when the org exists", async () => {

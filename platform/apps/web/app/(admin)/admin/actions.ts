@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { OrgModule, WhatsAppProvider } from "@aura/shared";
+import { gbToBytes, type OrgModule, type WhatsAppProvider } from "@aura/shared";
 import { requireOperator } from "@/lib/operator-guard";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 
@@ -132,6 +132,27 @@ export async function updateProvisioningAction(
   }
 
   const res = await post(`/v1/admin/tenants/${orgId}/modules`, "PATCH", patch);
+  if (res.error) return { error: res.error };
+  revalidatePath("/admin");
+  return {};
+}
+
+/**
+ * Set or clear one tenant's storage quota (doc 27 §6.4), in GB as the operator
+ * types it. Converted with the SAME 1024 factor the meter uses (`gbToBytes`),
+ * so "10 GB" typed here is "10 GB" on the owner's meter. Display and warn
+ * only - nothing ever refuses an upload for crossing it.
+ */
+export async function setStorageQuotaAction(orgId: string, gb: number | null): Promise<ActionResult> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  if (gb !== null && (!Number.isFinite(gb) || gb <= 0)) return { error: "Enter a size in GB above zero, or clear it." };
+
+  const quotaBytes = gb === null ? null : gbToBytes(gb);
+  const res = await post(`/v1/admin/tenants/${orgId}/storage-quota`, "PATCH", { quotaBytes });
   if (res.error) return { error: res.error };
   revalidatePath("/admin");
   return {};

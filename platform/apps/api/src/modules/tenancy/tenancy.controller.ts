@@ -5,6 +5,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { hashAppLockPassword } from "../../common/app-lock-hash";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
+import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -99,7 +100,17 @@ export class TenancyController {
         `SELECT id, name, status, consent_policy, on_consent_failure, retention_days, region,
                 store_full_number, transcription_enabled, asr_language, asr_mode, vocabulary, branding,
                 enabled_modules, whatsapp_qualification_enabled, qualification_retention_days,
-                (app_lock_password_hash IS NOT NULL) AS app_lock_enabled
+                (app_lock_password_hash IS NOT NULL) AS app_lock_enabled,
+                -- Doc 27 §6.4: the operator's instance page shows a Storage
+                -- vital. The worker's hourly snapshot (0128), one row; null
+                -- until its first sweep.
+                storage_quota_bytes::text AS storage_quota_bytes,
+                (SELECT jsonb_build_object(
+                          'recordingBytes', s.recording_bytes::text,
+                          'recordingCount', s.recording_count,
+                          'dbBytesEstimate', s.db_bytes_estimate::text,
+                          'computedAt', s.computed_at)
+                   FROM org_storage_usage s WHERE s.org_id = organizations.id) AS storage_usage
            FROM organizations WHERE id = $1`,
         [orgId],
       );
@@ -107,9 +118,18 @@ export class TenancyController {
     });
   }
 
+  /**
+   * Doc 27 §4.4's fix. `@RequireOrgRole("org_admin")` alone was inert for the
+   * owner console: the admin key makes every console request `platform_admin`,
+   * which OrgRoleGuard waves through (org-role.guard.ts), so any persona's
+   * server action could repaint the workspace. OwnerRoleGuard reads the
+   * persona from `memberships` and cannot be talked past; the three personas
+   * are the ones the nav offers the Branding page to.
+   */
   @Patch("branding")
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  @RequireOwnerRole("owner", "manager", "marketing")
   async updateBranding(
     @OrgId() orgId: string,
     @Body() body: unknown,

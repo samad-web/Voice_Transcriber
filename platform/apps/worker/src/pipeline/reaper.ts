@@ -1,5 +1,6 @@
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { AUTH_EVENT_RETENTION_DAYS } from "@aura/shared";
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -11,6 +12,55 @@ const s3 = new S3Client({
   },
 });
 const BUCKET = process.env.S3_BUCKET ?? "aura-recordings";
+
+interface QueryClient {
+  query: (text: string, values?: unknown[]) => Promise<unknown>;
+}
+
+/**
+ * Delete expired calls - but only the ones whose audio is really gone.
+ *
+ * This used to swallow a failed S3 delete (`.catch(() => undefined)`) and
+ * delete the rows anyway. The object then stayed in the bucket with no row
+ * pointing at it: invisible in the console, never retried, still paid for, and
+ * - since doc 27 - never counted by the storage meter, which reads
+ * `recordings.bytes`. So a failed delete now keeps its call and recording
+ * rows, and the next run tries again. A call with no audio (no s3_key) has
+ * nothing to fail and goes as before.
+ *
+ * Exported with the S3 call injected, so a test can hand it a failing bucket.
+ */
+export async function reapCalls(
+  client: QueryClient,
+  orgId: string,
+  expired: Array<{ id: string; s3_key: string | null }>,
+  deleteObject: (key: string) => Promise<unknown>,
+): Promise<{ reaped: number; kept: number }> {
+  let reaped = 0;
+  let kept = 0;
+  for (const call of expired) {
+    if (call.s3_key) {
+      try {
+        await deleteObject(call.s3_key);
+      } catch (err) {
+        kept++;
+        console.warn(`reaper: kept call ${call.id} - its recording could not be deleted:`, err);
+        continue;
+      }
+    }
+    for (const table of ["transcripts", "ai_outputs", "call_facts", "crm_sync_log", "recordings"]) {
+      await client.query(`DELETE FROM ${table} WHERE call_id = $1`, [call.id]);
+    }
+    await client.query("DELETE FROM calls WHERE id = $1", [call.id]);
+    await client.query(
+      `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+       VALUES ($1, 'system', 'reaper', 'retention.reap', 'call', $2)`,
+      [orgId, call.id],
+    );
+    reaped++;
+  }
+  return { reaped, kept };
+}
 
 /**
  * Retention reaper (§2.6): enforces each org's retention_days across S3 +
@@ -24,6 +74,7 @@ export async function reapExpired(): Promise<number> {
   );
 
   let reaped = 0;
+  let kept = 0;
   for (const org of orgs) {
     reaped += await withOrgContext(org.id, async (client) => {
       const { rows: expired } = await client.query(
@@ -33,22 +84,10 @@ export async function reapExpired(): Promise<number> {
           LIMIT 500`,
         [org.retention_days],
       );
-      for (const call of expired) {
-        if (call.s3_key) {
-          await s3
-            .send(new DeleteObjectCommand({ Bucket: BUCKET, Key: call.s3_key }))
-            .catch(() => undefined);
-        }
-        for (const table of ["transcripts", "ai_outputs", "call_facts", "crm_sync_log", "recordings"]) {
-          await client.query(`DELETE FROM ${table} WHERE call_id = $1`, [call.id]);
-        }
-        await client.query("DELETE FROM calls WHERE id = $1", [call.id]);
-        await client.query(
-          `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-           VALUES ($1, 'system', 'reaper', 'retention.reap', 'call', $2)`,
-          [org.id, call.id],
-        );
-      }
+      const calls = await reapCalls(client, org.id, expired, (key) =>
+        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key })),
+      );
+      kept += calls.kept;
 
       // Leads age out on their OWN clock, not their source call's. A deal the
       // owner is still working must survive the recording that started it
@@ -150,10 +189,20 @@ export async function reapExpired(): Promise<number> {
         );
       }
 
-      return expired.length;
+      return calls.reaped;
     });
   }
   if (reaped > 0) console.log(`reaper: removed ${reaped} expired call(s)`);
+  if (kept > 0) console.warn(`reaper: kept ${kept} expired call(s) whose recording could not be deleted; retrying next run`);
+
+  // A person's sign-in history (0127) on its own, platform-wide clock. Not a
+  // tenant setting: the table is keyed on the person, not the org.
+  const { rowCount: pruned } = await getAdminPool().query(
+    `DELETE FROM auth_events WHERE created_at < now() - make_interval(days => $1)`,
+    [AUTH_EVENT_RETENTION_DAYS],
+  );
+  if ((pruned ?? 0) > 0) console.log(`reaper: pruned ${pruned} sign-in event(s) older than ${AUTH_EVENT_RETENTION_DAYS} days`);
+
   return reaped;
 }
 

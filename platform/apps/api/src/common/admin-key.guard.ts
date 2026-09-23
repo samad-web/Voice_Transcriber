@@ -110,6 +110,15 @@ export class AdminKeyGuard implements CanActivate {
         .max(320)
         .safeParse(firstHeader(req.headers["x-operator-email"]));
 
+      // `x-caller-auth-id` (doc 27 §5.2) is the Supabase subject of the person
+      // asking - `claims.sub` from a verified getClaims() in the web tier. Same
+      // "trusted fact" category as `x-caller-user-id`, and needed beside it
+      // because a platform operator has no `users` row for that header to name.
+      // It decides WHOSE sign-in history is read or written and nothing else;
+      // the auth-events controller refuses without it rather than reading
+      // anybody's.
+      const callerAuthId = z.string().uuid().safeParse(firstHeader(req.headers["x-caller-auth-id"]));
+
       req.principal = {
         userId: callerUserId.success ? callerUserId.data : "admin-key",
         orgId: orgId ?? "",
@@ -119,6 +128,7 @@ export class AdminKeyGuard implements CanActivate {
         viaAdminKey: true,
         ownerRole: callerOwnerRole.success ? callerOwnerRole.data : null,
         operatorEmail: operatorEmail.success ? operatorEmail.data.toLowerCase() : null,
+        authUserId: callerAuthId.success ? callerAuthId.data : null,
       };
       return true;
     }

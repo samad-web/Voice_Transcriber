@@ -19,9 +19,9 @@ const HIGHLIGHTS = [
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; signedOut?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, signedOut } = await searchParams;
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4 sm:p-6">
@@ -73,6 +73,17 @@ export default async function LoginPage({
             <h2 className="text-2xl leading-tight font-semibold text-text">Sign in</h2>
             <MonoLabel className="mt-1">Workspace access</MonoLabel>
           </div>
+
+          {signedOut === "everywhere" ? (
+            // Grey, not green: it is a fact about what just happened, not a
+            // state in the console's colour system (packages/ui/src/state.tsx).
+            <p
+              role="status"
+              className="rounded-md border border-border bg-surface-hover p-3 text-sm leading-relaxed text-text"
+            >
+              You&apos;ve been signed out on every device.
+            </p>
+          ) : null}
 
           {AUTH_ENABLED ? null : (
             <p className="rounded-md border border-warning bg-warning-subtle p-3 text-sm leading-relaxed text-warning-text">

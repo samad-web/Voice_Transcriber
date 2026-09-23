@@ -202,6 +202,14 @@ const UpdateProvisioningBody = z
   );
 
 /**
+ * PATCH /admin/tenants/:orgId/storage-quota. Whole bytes; null clears it.
+ * Capped at 1 PiB, which is a typo guard rather than a policy.
+ */
+const StorageQuotaBody = z.object({
+  quotaBytes: z.number().int().positive().max(1024 ** 5).nullable(),
+});
+
+/**
  * Platform-operator (cross-tenant) surface. These endpoints span ALL orgs, so
  * they deliberately use the RLS-bypassing admin pool rather than withOrg - there
  * is no single org context. Guarded by the same dev AdminKeyGuard for now.
@@ -385,14 +393,22 @@ export class AdminController {
       const modules: OrgModule[] = (patch.modules ?? current.enabled_modules) as OrgModule[];
       const whatsappProvider = patch.whatsappProvider ?? current.whatsapp_provider;
 
+      // Doc 27 §7.4: a module ADDED brings new setup steps with it, so a
+      // finished setup guide re-opens to show them. Only on an addition - a
+      // removal cannot create work - and never `guide_dismissed_at`: a guide
+      // an owner chose to hide stays hidden, whatever the operator sells them.
+      const previous = new Set<string>(current.enabled_modules ?? []);
+      const moduleAdded = modules.some((m) => !previous.has(m));
+
       const {
         rows: [org],
       } = await client.query(
         `UPDATE organizations
-            SET enabled_modules = $2, whatsapp_provider = $3
+            SET enabled_modules = $2, whatsapp_provider = $3,
+                guide_completed_at = CASE WHEN $4::boolean THEN NULL ELSE guide_completed_at END
           WHERE id = $1
          RETURNING id, enabled_modules, whatsapp_provider`,
-        [orgId, modules, whatsappProvider],
+        [orgId, modules, whatsappProvider, moduleAdded],
       );
 
       if (modules.includes("crm")) {
@@ -456,11 +472,73 @@ export class AdminController {
               -- table an operator lands on after clicking through.
               (SELECT count(*)::int FROM devices d
                 WHERE d.org_id = o.id AND d.removed_at IS NULL) AS device_count,
-              (SELECT count(*)::int FROM instances i WHERE i.org_id = o.id) AS instance_count
+              (SELECT count(*)::int FROM instances i WHERE i.org_id = o.id) AS instance_count,
+              -- Doc 27 §6.4: storage per tenant, from the worker's hourly
+              -- snapshot (0128) - a join, not a sum over recordings, so this
+              -- list stays one cheap query however much audio the fleet holds.
+              -- Text for the bigints, which exceed a JS number's exact range
+              -- only in theory but arrive as strings from pg regardless.
+              s.recording_bytes::text AS storage_bytes,
+              s.recording_count       AS storage_recordings,
+              s.computed_at           AS storage_computed_at,
+              o.storage_quota_bytes::text AS storage_quota_bytes
          FROM organizations o
+         LEFT JOIN org_storage_usage s ON s.org_id = o.id
         ORDER BY o.created_at DESC`,
     );
     return { tenants: rows };
+  }
+
+  /**
+   * Set or clear a tenant's storage quota (doc 27 §6.4). Bytes, 1024-based -
+   * the console's GB field converts with the same factor the meter uses.
+   *
+   * Separate from the modules PATCH on purpose: that route reconciles features
+   * against modules in one transaction, and a quota has nothing to do with
+   * either. A quota is display-and-warn only; nothing refuses an upload for
+   * crossing it.
+   *
+   * Clearing or raising it also clears `last_quota_alert_pct`, so an owner
+   * whose limit was raised is told again if they climb back past 80 %.
+   */
+  @Patch("tenants/:orgId/storage-quota")
+  async setStorageQuota(
+    @Param("orgId", ParseUUIDPipe) orgId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
+    const parsed = StorageQuotaBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const quotaBytes = parsed.data.quotaBytes;
+
+    const client = await this.db.adminPool().connect();
+    try {
+      await client.query("BEGIN");
+      const {
+        rows: [org],
+      } = await client.query<{ id: string; storage_quota_bytes: string | null }>(
+        `UPDATE organizations SET storage_quota_bytes = $2 WHERE id = $1
+         RETURNING id, storage_quota_bytes::text`,
+        [orgId, quotaBytes],
+      );
+      if (!org) throw new NotFoundException("tenant not found");
+      await client.query(
+        `UPDATE org_storage_usage SET last_quota_alert_pct = NULL WHERE org_id = $1`,
+        [orgId],
+      );
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'org.storage_quota_set', 'organization', $3, $4::jsonb)`,
+        [orgId, req.principal?.operatorEmail ?? req.principal?.userId ?? "dev-admin", orgId, JSON.stringify({ quotaBytes })],
+      );
+      await client.query("COMMIT");
+      return { orgId, quotaBytes: org.storage_quota_bytes === null ? null : Number(org.storage_quota_bytes) };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**

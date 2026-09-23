@@ -61,6 +61,18 @@ const TENANT_COLS: PanelCol[] = [
     track: "minmax(0,0.8fr)",
     cell: (r) => <Skeleton className={`h-3 ${NUM_W[(r + 2) % NUM_W.length]}`} />,
   },
+  // Storage (doc 27 §6.4): the size over a recording count.
+  {
+    track: "minmax(0,1fr)",
+    cell: (r) => (
+      <div className="space-y-1.5">
+        <Skeleton className={`h-3 ${NUM_W[(r + 1) % NUM_W.length]}`} />
+        <Skeleton className="h-2.5 w-12" />
+      </div>
+    ),
+  },
+  // Quota: the GB field.
+  { track: "minmax(0,1.2fr)", cell: () => <Skeleton className="h-8 w-24" /> },
   {
     track: "minmax(0,1fr)",
     end: true,

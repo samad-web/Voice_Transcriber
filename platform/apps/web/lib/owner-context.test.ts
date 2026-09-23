@@ -248,6 +248,9 @@ describe("isOperator", () => {
             // onboarding - but the membership shape is exact, so a fixture
             // that omits a field stops compiling when one is added.
             setupCompletedAt: null,
+            guideCompletedAt: null,
+            guideDismissedAt: null,
+            storage: null,
           },
         }),
       ),
@@ -307,6 +310,7 @@ describe("getPrincipal", () => {
     expect(principal?.memberships).toEqual([principal?.membership]);
     expect(principal).toEqual({
       email: "",
+      name: null,
       subject: "",
       userId: null,
       kind: "operator",
@@ -334,6 +338,10 @@ describe("getPrincipal", () => {
         // developer opening any page to check an unrelated change should not
         // be met by the setup modal (migration 0095).
         setupCompletedAt: "1970-01-01T00:00:00.000Z",
+        // The setup guide's meter (0129) is quiet locally for the same reason.
+        guideCompletedAt: "1970-01-01T00:00:00.000Z",
+        guideDismissedAt: null,
+        storage: null,
       },
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -664,6 +672,8 @@ describe("getPrincipal", () => {
       const principal = await getPrincipal();
       expect(principal).toEqual({
         email: OWNER_EMAIL,
+        // No context response, so no name to show (doc 27 §2.3).
+        name: null,
         subject: SUPABASE_SUBJECT,
         userId: null,
         kind: "operator",

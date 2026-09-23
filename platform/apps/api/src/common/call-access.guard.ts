@@ -282,7 +282,10 @@ async function notifyAdministrators(
         `${operatorEmail} is asking to view this organisation's call logs, recordings and ` +
         `transcripts. Nobody outside your team can see them until you approve, and any approval ` +
         `ends at the time you set.`,
-      linkPath: "/admin/owner/call-access",
+      // No basePath: the bell renders this through next/link, which adds
+      // `/admin` itself. "/admin/owner/…" became "/admin/admin/owner/…", a 404
+      // in production (doc 28 §4.4). stored-links.spec.ts now forbids the form.
+      linkPath: "/owner/call-access",
       dedupeKey: `call_access:${requestId}`,
     });
   }

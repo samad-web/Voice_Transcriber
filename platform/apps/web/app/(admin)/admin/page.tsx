@@ -1,8 +1,11 @@
-import { Activity, Building2, Server } from "lucide-react";
+import Link from "next/link";
+import { Activity, ArrowDown, Building2, Server } from "lucide-react";
 import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import { bytesToGb, formatBytes } from "@aura/shared";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin } from "@/lib/server-api";
 import { Provisioning } from "./provisioning";
+import { StorageQuotaForm } from "./storage-quota-form";
 
 /**
  * Platform-admin console (us, not customers). Gated by `(admin)/layout.tsx`
@@ -23,6 +26,10 @@ interface Tenant {
   enabled_modules: string[];
   enabled_features: string[];
   whatsapp_provider: string;
+  /** Doc 27 §6.4 - the worker's hourly snapshot (null before the first sweep) and the quota. */
+  storage_bytes?: string | null;
+  storage_recordings?: number | null;
+  storage_quota_bytes?: string | null;
 }
 
 interface HealthStage {
@@ -63,9 +70,17 @@ function stageTone(status?: string): "solid" | "muted" | "danger" {
  */
 const PANEL_HEAD = "flex items-center gap-2 border-b border-border bg-bg-subtle px-5 py-3.5";
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string }>;
+}) {
   const blocked = await operatorGate();
   if (blocked) return blocked;
+  // Doc 27 §6.4: the tenants table can be ordered by storage used, largest
+  // first - the question an operator asks before a quota conversation.
+  const { sort } = await searchParams;
+  const byStorage = sort === "storage";
 
   const [tenantData, health] = await Promise.all([
     apiGetAdmin<{ tenants: Tenant[] }>("/v1/admin/tenants"),
@@ -135,7 +150,7 @@ export default async function AdminPage() {
                 aria-label="Tenants"
                 className="overflow-x-auto"
               >
-                <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                   <caption className="sr-only">Tenants</caption>
                   <thead className="bg-bg-subtle">
                     <tr>
@@ -151,13 +166,35 @@ export default async function AdminPage() {
                       <th scope="col" className="border-b border-border px-4 py-2.5 text-xs font-medium text-text-muted">
                         Devices
                       </th>
+                      <th
+                        scope="col"
+                        aria-sort={byStorage ? "descending" : "none"}
+                        className="border-b border-border px-4 py-2.5 text-xs font-medium text-text-muted"
+                      >
+                        <Link
+                          href={byStorage ? "/admin" : "/admin?sort=storage"}
+                          className="inline-flex items-center gap-1 hover:text-text"
+                        >
+                          Storage
+                          <ArrowDown
+                            aria-hidden="true"
+                            className={byStorage ? "h-3 w-3 text-text" : "h-3 w-3 text-text-subtle"}
+                          />
+                        </Link>
+                      </th>
+                      <th scope="col" className="border-b border-border px-4 py-2.5 text-xs font-medium text-text-muted">
+                        Quota
+                      </th>
                       <th scope="col" className="border-b border-border px-4 py-2.5 text-right text-xs font-medium text-text-muted">
                         Status
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {tenantData.tenants.map((t) => (
+                    {(byStorage
+                      ? [...tenantData.tenants].sort((a, b) => Number(b.storage_bytes ?? -1) - Number(a.storage_bytes ?? -1))
+                      : tenantData.tenants
+                    ).map((t) => (
                       <tr key={t.id} className="transition-colors duration-150 ease-out hover:bg-surface-hover">
                         <td className="px-5 py-3 align-middle">
                           <span className="block text-sm font-medium text-text">{t.name}</span>
@@ -169,6 +206,24 @@ export default async function AdminPage() {
                         </td>
                         <td className="px-4 py-3 align-middle font-mono text-xs tabular-nums text-text">
                           {t.device_count.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 align-middle font-mono text-xs tabular-nums text-text">
+                          {t.storage_bytes == null ? (
+                            <span className="text-text-muted">-</span>
+                          ) : (
+                            <>
+                              {formatBytes(Number(t.storage_bytes))}
+                              <span className="block text-text-muted">
+                                {(t.storage_recordings ?? 0).toLocaleString()} rec.
+                              </span>
+                            </>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <StorageQuotaForm
+                            orgId={t.id}
+                            quotaGb={t.storage_quota_bytes ? bytesToGb(Number(t.storage_quota_bytes)) : null}
+                          />
                         </td>
                         <td className="px-4 py-3 text-right align-middle">
                           <StatusChip tone={tenantTone(t.status)}>{t.status}</StatusChip>

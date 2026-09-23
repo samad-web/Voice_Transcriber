@@ -79,6 +79,17 @@ export async function updateSession(request: NextRequest) {
   // Refresh still happens: getClaims() with no argument goes through
   // getSession(), which renews an expired access token and writes the new
   // cookies through the setAll callback above exactly as before.
+  //
+  // "Log out from all devices" (doc 27 §3.4) depends on THIS call noticing a
+  // revoked session. Today the self-hosted GoTrue signs HS256 (no
+  // GOTRUE_JWT_KEYS), so getClaims() has no public key and falls back to
+  // getUser() - a round trip, and GoTrue refuses a token whose session row the
+  // global sign-out deleted, so another browser's next navigation lands on
+  // /login. IF ASYMMETRIC JWT KEYS ARE EVER ENABLED, getClaims() verifies
+  // locally and a revoked access token keeps working until it expires
+  // (JWT_EXPIRY, 3600 s) - the sign-out-everywhere promise then needs this to
+  // become a getUser() call, or the expiry shortened. See the note in
+  // supabase/selfhost/README.md's key section.
   const { data, error } = await supabase.auth.getClaims();
   const user = error ? null : (data?.claims ?? null);
 

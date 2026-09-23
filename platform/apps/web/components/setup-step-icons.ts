@@ -1,0 +1,62 @@
+import {
+  BarChart3,
+  Bot,
+  Building2,
+  ClipboardList,
+  CreditCard,
+  FileSpreadsheet,
+  FileText,
+  FolderKanban,
+  ImagePlus,
+  Inbox,
+  KanbanSquare,
+  Languages,
+  Mail,
+  Megaphone,
+  MessageCircle,
+  Package,
+  Percent,
+  Phone,
+  Repeat,
+  Shield,
+  Shuffle,
+  Smartphone,
+  Upload,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+import type { SetupStepId } from "@aura/shared";
+
+/**
+ * One icon per setup step, shared by the 0106 modal and /owner/get-started so
+ * a step looks the same wherever it is listed. A `Record` over the enum, so a
+ * step added to the catalogue without an icon is a type error, not a blank.
+ */
+export const SETUP_STEP_ICONS: Record<SetupStepId, LucideIcon> = {
+  handset: Smartphone,
+  team: Users,
+  logo: ImagePlus,
+  business_profile: Building2,
+  call_access_phone: Phone,
+  invite_colleague: UserPlus,
+  roles: Shield,
+  commission: Percent,
+  transcription: Languages,
+  call_sop: ClipboardList,
+  agent: Bot,
+  projects: FolderKanban,
+  lead_sources: Inbox,
+  meta_ads: Megaphone,
+  whatsapp: MessageCircle,
+  mailbox: Mail,
+  lead_routing: Shuffle,
+  outreach: Repeat,
+  pipeline: KanbanSquare,
+  products: Package,
+  import: Upload,
+  quotation: FileText,
+  invoice: FileSpreadsheet,
+  billing: CreditCard,
+  report: BarChart3,
+};

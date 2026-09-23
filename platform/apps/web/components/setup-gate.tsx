@@ -2,20 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Check,
-  CreditCard,
-  ImagePlus,
-  Inbox,
-  Megaphone,
-  MessageCircle,
-  Smartphone,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import Link from "next/link";
+import { Check } from "lucide-react";
 import { Button, Dialog, StatusChip } from "@aura/ui";
-import { setupBannerDetail, type SetupStepId, type SetupState } from "@aura/shared";
+import { requiredStepsLeftText, setupBannerDetail, type SetupState } from "@aura/shared";
 import { dismissSetupAction } from "@/app/(owner)/owner/setup-actions";
+import { ReadinessPanel } from "@/components/readiness-panel";
+import { SETUP_STEP_ICONS } from "@/components/setup-step-icons";
 
 /**
  * The new-client setup checklist: a banner that stays, and a modal that asks
@@ -43,16 +36,6 @@ import { dismissSetupAction } from "@/app/(owner)/owner/setup-actions";
  * close. It can throw in a locked-down browser, so every access is guarded and
  * the failure mode is the modal opening again - annoying, never broken.
  */
-
-const ICONS: Record<SetupStepId, LucideIcon> = {
-  handset: Smartphone,
-  team: Users,
-  logo: ImagePlus,
-  billing: CreditCard,
-  whatsapp: MessageCircle,
-  lead_sources: Inbox,
-  meta_ads: Megaphone,
-};
 
 const SEEN_KEY = "aura.setup.deferred";
 
@@ -137,9 +120,10 @@ export function SetupGate({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-warning-text">
             Finish setting up your account
-            <span className="ml-2 font-normal">
-              {setup.requiredDone} of {setup.requiredTotal} done
-            </span>
+            {/* A count DOWN, not "{done} of {total}": the sidebar's setup
+                guide owns "X of N" (doc 27 §7.1), and two different "of"
+                numbers on one screen read as one of them being a bug. */}
+            <span className="ml-2 font-normal">{requiredStepsLeftText(setup)}</span>
           </p>
           {detail ? <p className="mt-0.5 text-sm text-warning-text">{detail}</p> : null}
         </div>
@@ -179,29 +163,14 @@ export function SetupGate({
           empty array for a tenant where genuinely nothing has happened yet, and
           the whole block disappears rather than rendering an empty heading.
         */}
-        {setup.readiness && setup.readiness.length > 0 ? (
-          <div className="mb-4 rounded-xl border border-border bg-surface-hover px-4 py-3">
-            <p className="text-sm font-semibold text-text">Already running</p>
-            <ul className="mt-2 space-y-1">
-              {setup.readiness.map((line) => (
-                <li key={line.id} className="flex items-start gap-2 text-sm text-text-muted">
-                  {/* Grey, not green. Nothing here is a STATE in the console's
-                      colour system - these are facts, and the functional
-                      palette reserves hue for the four states in state.tsx. */}
-                  <span
-                    aria-hidden
-                    className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-text-muted"
-                  />
-                  <span>{line.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        <ReadinessPanel lines={setup.readiness} spaced />
 
+        {/* REQUIRED steps only (doc 27 §7.4). The full guide can run to two
+            dozen rows, and two dozen rows in a dialog is a page - which is
+            what /owner/get-started is, linked below. */}
         <ul className="divide-y divide-border">
-          {setup.steps.map((step) => {
-            const Icon = ICONS[step.id];
+          {setup.steps.filter((step) => step.required).map((step) => {
+            const Icon = SETUP_STEP_ICONS[step.id];
             return (
               <li key={step.id} className="flex items-start gap-3 py-4">
                 <span
@@ -231,6 +200,11 @@ export function SetupGate({
                     {step.required && !step.done ? (
                       <StatusChip tone="danger">Required</StatusChip>
                     ) : null}
+                    {/* The viewer rule: still listed, still counted, but not
+                        offered as their job when their persona cannot do it. */}
+                    {!step.done && step.canDo === false ? (
+                      <StatusChip tone="muted">Owner only</StatusChip>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-text-muted">{step.blurb}</p>
                 </div>
@@ -238,6 +212,18 @@ export function SetupGate({
             );
           })}
         </ul>
+
+        {setup.total > 0 ? (
+          <p className="mt-4 text-sm">
+            <Link
+              href="/owner/get-started"
+              onClick={later}
+              className="font-medium text-text underline underline-offset-2 hover:text-text-muted"
+            >
+              See all {setup.total} setup steps
+            </Link>
+          </p>
+        ) : null}
 
         <p className="mt-4 text-xs text-text-muted">
           Nothing here blocks you - everything already set up works now.

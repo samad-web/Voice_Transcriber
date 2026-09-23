@@ -1,5 +1,6 @@
 import { REALTIME_HEARTBEAT_MS } from "@aura/shared";
 import { resolveListenScope } from "@/lib/realtime/scope";
+import { SESSION_RECHECK_MS, connectTimeAccessToken, sessionStillLive } from "@/lib/realtime/session-check";
 import { canServeFrom, currentSeq, eventsSince, subscribe } from "@/lib/realtime/upstream";
 
 /**
@@ -43,6 +44,12 @@ export async function GET(request: Request): Promise<Response> {
   // ring's window gets the gap replayed rather than a blind full refresh.
   const lastEventId = Number(request.headers.get("last-event-id") ?? "");
   const cursor = Number.isFinite(lastEventId) && lastEventId > 0 ? lastEventId : null;
+
+  // Doc 27 §3.4: the scope above was resolved ONCE. Keep the token it was
+  // resolved with, so the stream can ask every few minutes whether that
+  // session still exists - and close when "Log out from all devices" has
+  // ended it. Null with auth unconfigured, where there is nothing to revoke.
+  const accessToken = await connectTimeAccessToken();
 
   const encoder = new TextEncoder();
 
@@ -103,10 +110,21 @@ export async function GET(request: Request): Promise<Response> {
         write(`event: ping\ndata: {}\n\n`);
       }, REALTIME_HEARTBEAT_MS);
 
+      // A revoked session closes the stream; the client's reconnect then meets
+      // the middleware, which sends it to /login. See lib/realtime/session-check.ts.
+      const recheck = accessToken
+        ? setInterval(() => {
+            void sessionStillLive(accessToken).then((live) => {
+              if (!live) cleanup();
+            });
+          }, SESSION_RECHECK_MS)
+        : null;
+
       const close = () => {
         if (!open) return;
         open = false;
         clearInterval(heartbeat);
+        if (recheck) clearInterval(recheck);
         unsubscribe();
         try {
           controller.close();

@@ -9,6 +9,7 @@ import { S3Module } from "./s3/s3.module";
 import { FcmModule } from "./fcm/fcm.module";
 import { HealthModule } from "./health/health.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { AccountModule } from "./modules/account/account.module";
 import { TenancyModule } from "./modules/tenancy/tenancy.module";
 import { DevicesModule } from "./modules/devices/devices.module";
 import { CallsModule } from "./modules/calls/calls.module";
@@ -64,6 +65,7 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     FcmModule,
     HealthModule,
     AuthModule,
+    AccountModule,
     TenancyModule,
     DevicesModule,
     CallsModule,

@@ -134,6 +134,11 @@ import { OptOutsController } from "../modules/conversations/opt-outs.controller"
 import { PaymentSettingsController } from "../modules/invoices/payment-settings.controller";
 import { OAuthAppsController } from "../modules/connections/oauth-apps.controller";
 import { SetupController } from "../modules/owner/setup.controller";
+import { BusinessProfileController } from "../modules/owner/business-profile.controller";
+import { PlanUsageController } from "../modules/owner/plan-usage.controller";
+import { TimeSettingsController } from "../modules/owner/time-settings.controller";
+import { AccountController } from "../modules/account/account.controller";
+import { AuthEventsController } from "../modules/account/auth-events.controller";
 import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
 import { MembersController } from "../modules/tenancy/members.controller";
@@ -304,7 +309,8 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   ImportController,
   // Kailash gap Milestone 4: Meta Lead Ads capture (migration 0063).
   // MetaOAuthController mixes both regimes in one class, like TagsController
-  // does - `start` needs a signed-in tenant, `callback` is Meta's own
+  // does - `start`, the pending-choice pair and `disconnect` need a signed-in
+  // tenant (and a persona, see OWNER_ROLE_ROUTES), `callback` is Meta's own
   // browser redirect and verifies itself via a signed state token instead.
   // MetaWebhookController is entirely UNGUARDED, same class of exception as
   // messaging/webhook/:token and /webhooks/razorpay.
@@ -376,6 +382,19 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // OwnerRoleGuard owner+manager at class level, the gate the opt-out release
   // on ConversationsController already uses - see OWNER_ROLE_ROUTES.
   OptOutsController,
+  // Doc 27. The business profile and Plan & usage are OwnerRoleGuard'd (see
+  // OWNER_ROLE_ROUTES). AccountController is a person's own profile: plain
+  // AdminKeyGuard + TenantGuard, because every persona has one and "your own
+  // row" is in every WHERE clause - it takes no user id from anywhere but the
+  // verified caller header. AuthEventsController is cross-tenant: see
+  // CROSS_TENANT for why that is safe.
+  BusinessProfileController,
+  PlanUsageController,
+  AccountController,
+  AuthEventsController,
+  // Doc 30: the workspace clock. OwnerRoleGuard owner+manager on BOTH halves
+  // (see OWNER_ROLE_ROUTES) - unlike the business profile, a manager may set it.
+  TimeSettingsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -419,6 +438,13 @@ const UNGUARDED = [
   "POST /devices/register",
   "POST /devices/challenge",
   "POST /devices/authenticate",
+  // A reinstalled handset reclaiming its own row (0130). Pre-enrollment by
+  // definition - the app that would hold a device token is the thing being
+  // restored - so, like register, the credential is in the body: a 256-bit
+  // recovery secret stored hashed, replaced on every use, and honoured only on
+  // the same physical phone for a row that is still active. Every failure
+  // before the secret is proven is one identical 401, so it discloses nothing.
+  "POST /devices/recover",
   // Meta's subscription handshake (0098) - a GET on the SAME url, because that
   // is what Meta requires: it calls once with hub.mode=subscribe and expects
   // the challenge echoed as a bare body. Unguarded for the identical reason the
@@ -439,7 +465,9 @@ const UNGUARDED = [
   // days.
   "POST /webhooks/stripe",
   // Meta's own OAuth redirect lands here with no Aura credentials - verifies
-  // itself via the signed `state` param instead (meta-client.ts).
+  // itself via the signed `state` param instead (meta-client.ts). Since doc 28
+  // it answers only with a 302 into the console, to a URL built from
+  // PUBLIC_APP_URL and never from the request (common/console-redirect.ts).
   "GET /meta/oauth/callback",
   // Meta's leadgen webhook handshake + delivery (migration 0063). Same
   // resolve-then-verify shape as the other unauthenticated webhooks above.
@@ -455,7 +483,8 @@ const UNGUARDED = [
   "POST /intake/telephony/:token",
   "POST /intake/email/:token",
   // LinkedIn's OAuth redirect lands here with no Aura credentials - verifies
-  // itself via the signed `state` param, exactly like Meta's.
+  // itself via the signed `state` param, and 302s into the console, exactly
+  // like Meta's.
   "GET /linkedin/oauth/callback",
   // The handset app's public download. Unlike every other member of this list
   // it carries no token at all, and that is the point: the caller is a person
@@ -475,6 +504,10 @@ const UNGUARDED = [
 const DEVICE_AUTHED = [
   "POST /calls",
   "POST /calls/:id/complete",
+  // Missed calls from the handset's call log (0133). DeviceAuthGuard like the
+  // upload pair above: it is the same ingest, minus the audio, and it refuses a
+  // device or org that is no longer active exactly as create() does.
+  "POST /calls/missed",
   "GET /devices/me/config",
   "POST /devices/me/health",
   "POST /devices/me/events",
@@ -488,6 +521,10 @@ const DEVICE_AUTHED = [
   // like every other /devices/me route: the signed device token IS the identity,
   // and a phone has no principal to present.
   "POST /devices/me/fcm-token",
+  // The handset arming its own recovery secret (0130). DeviceAuthGuard like
+  // every /devices/me route: holding the Keystore key IS being the phone the
+  // secret protects, and the route refuses a device that is no longer active.
+  "POST /devices/me/recovery",
 ];
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
@@ -497,7 +534,16 @@ const CROSS_TENANT = [
   "POST /admin/tenants",
   "GET /admin/tenants",
   "PATCH /admin/tenants/:orgId/modules",
+  // Doc 27 §6.4: the operator's storage quota. Separate from the modules PATCH
+  // so it cannot interfere with feature reconciliation. Display and warn only.
+  "PATCH /admin/tenants/:orgId/storage-quota",
   "GET /admin/health",
+  // A person's own sign-in history (doc 27 §5). Cross-tenant because an
+  // operator has no org and a failed sign-in has no session; bound instead to
+  // the caller's own Supabase subject (`x-caller-auth-id`), which the web tier
+  // sets from a verified getClaims(). No route here names whose history to read.
+  "POST /account/auth-events",
+  "GET /account/login-activity",
   // The platform's own staff list (migration 0089). Cross-tenant for the same
   // reason /admin/tenants is: a platform operator belongs to no org, so there
   // is nothing for TenantGuard to scope to. WHICH operator is asking cannot be
@@ -736,12 +782,36 @@ const OWNER_ROLE_ROUTES = [
   // like the list it is a subset of - see the handler.
   "GET /owner/devices/pairing-token/:id",
   "POST /owner/devices/:id/revoke",
+  // Device recovery (0130): undo a retire, and mint a pairing code bound to one
+  // existing handset. Both owner-or-manager - the retire tier, not the
+  // delegable pairing capability - because each can put a person's identity
+  // back on (or onto) a phone.
+  "POST /owner/devices/:id/restore",
+  "POST /owner/devices/:id/relink-token",
   // The setup checklist (migration 0095). The read is owner-or-manager, the
   // dismiss is owner alone: silencing a tenant-wide notice permanently is a
   // decision, and a manager who could take it could hide an unfinished account
   // from the person who owns it.
   "GET /owner/setup",
   "POST /owner/setup/dismiss",
+  // The setup GUIDE (doc 27 §7.5, migration 0129). Skipping an optional step
+  // is owner or manager - the pair that sees the guide; hiding and re-opening
+  // the guide is owner alone, the same split the banner's dismiss has.
+  "POST /owner/setup/steps/:stepId/skip",
+  "DELETE /owner/setup/steps/:stepId/skip",
+  "POST /owner/setup/guide/dismiss",
+  "POST /owner/setup/guide/reopen",
+  // The business profile (doc 27 §4.3, 0126): owner edits, manager reads.
+  "GET /owner/business-profile",
+  "PUT /owner/business-profile",
+  // Plan & usage (doc 27 §6.7): owner and manager.
+  "GET /owner/plan-usage",
+  // The workspace clock (doc 30): owner and manager read AND write it.
+  "GET /owner/time-settings",
+  "PUT /owner/time-settings",
+  // Doc 27 §4.4's fix. Its OrgRoleGuard was inert for every console request
+  // (the admin key is platform_admin); the persona gate is the real one.
+  "PATCH /org/branding",
   // Owner alone on both halves: whoever holds these keys decides which bank
   // account this business's money settles into.
   "GET /owner/payment-settings",
@@ -808,10 +878,29 @@ const OWNER_ROLE_ROUTES = [
   // telecaller reading a bare key helps nobody. Defining the list is
   // owner/manager, because a disposition carries a lead-quality mapping:
   // whoever controls it controls how the board gets rated.
-  // The integration hub (0098): what this tenant can connect to, and what is
-  // connected. Owner/manager - it names the tenant's outside accounts and what
-  // has been failing on them, which is administration.
+  // The Integrations store (doc 28): what this tenant can connect to, what is
+  // connected, and one app's connections and history. Every persona - a
+  // telecaller connects their own Gmail there - but a REAL one: the class
+  // lists all five, so the guard resolves the persona from `memberships` and
+  // a bare admin key gets nothing. What each persona sees is filtered in the
+  // controller (canSeeApp).
   "GET /owner/integrations",
+  "GET /owner/integrations/:id",
+  // The store's two provider-OAuth connect flows (doc 28 §11.3, §14). Owner,
+  // manager and marketing - each app's `manageRoles` - behind the feature the
+  // app belongs to (`meta_ads`, `lead_sources`) via OrgFeatureGuard. Starting a
+  // sign-in, reading what it returned, choosing, and disconnecting are all
+  // decisions about where the team's leads come from, so a telecaller or a
+  // `sales` persona is refused here rather than only hidden from the page.
+  // Both callbacks stay in UNGUARDED: the signed state is their credential.
+  "POST /meta/oauth/start",
+  "GET /meta/oauth/pending/:id",
+  "POST /meta/oauth/pending/:id/choose",
+  "POST /meta/connections/:id/disconnect",
+  "POST /linkedin/oauth/start",
+  "GET /linkedin/connections/:id/accounts",
+  "POST /linkedin/connections/:id/account",
+  "POST /linkedin/connections/:id/disconnect",
   "GET /owner/call-dispositions",
   "POST /owner/call-dispositions",
   "PATCH /owner/call-dispositions/:id",
@@ -903,6 +992,10 @@ const ORG_ROLE_ROUTES = [
   // together: all three reach out and change what a phone in somebody's pocket
   // is doing, which is an org_admin action whatever its blast radius.
   "POST /devices/:id/ping",
+  // Undoing logout, wipe or removal (0130). org_admin with its siblings: it
+  // reverses exactly what they do, and re-arms a phone that may be in a
+  // stranger's pocket if the wipe was deliberate.
+  "POST /devices/:id/restore",
   "POST /workspaces",
 ];
 
@@ -1262,7 +1355,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 423 routes, partitioned 366 tenant / 29 cross-tenant / 8 device / 19 unguarded", () => {
+  it("has 453 routes, partitioned 390 tenant / 32 cross-tenant / 10 device / 20 unguarded / 1 internal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -1370,8 +1463,28 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // tenant-scoped and OwnerRoleGuard'd - see OWNER_ROLE_ROUTES.
     // 426: the handset pairing dialog's status read (0124),
     // `GET /owner/devices/pairing-token/:id`. Tenant-scoped, OwnerRoleGuard'd.
-    expect(ROUTES).toHaveLength(426);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(426);
+    // 439: doc 27's thirteen - a person's own profile (GET/PATCH) and phone,
+    // tenant-scoped; sign-in history's two and the storage quota, cross-tenant;
+    // the business profile's GET/PUT, Plan & usage, and the setup guide's
+    // skip/unskip/hide/reopen, all tenant-scoped and OwnerRoleGuard'd.
+    // 444: device recovery's five (0130) - POST /devices/recover (unguarded,
+    // see UNGUARDED), POST /devices/me/recovery (device-authed), the operator's
+    // POST /devices/:id/restore (OrgRoleGuard) and the owner console's
+    // restore + relink-token (OwnerRoleGuard).
+    // 445: the Integrations store's app page read, GET /owner/integrations/:id
+    // (doc 28 §10). Tenant-scoped, OwnerRoleGuard'd with every persona.
+    // 450: doc 28's store routes (2026-09-22) - Meta's pending-choice read and
+    // choose, Meta's disconnect, LinkedIn's ad-account list, and the Google /
+    // Microsoft `POST /connections/oauth/abandon`. All tenant-scoped; the first
+    // four are OwnerRoleGuard'd (see OWNER_ROLE_ROUTES), abandon is plain
+    // AdminKeyGuard + TenantGuard like the rest of ConnectionsController. The
+    // Meta and LinkedIn callbacks changed answer (a 302, not JSON), not class.
+    // 452: the workspace clock (doc 30) - GET/PUT /owner/time-settings,
+    // tenant-scoped, OwnerRoleGuard owner+manager.
+    // 453: POST /calls/missed (0133), the handset's missed calls. Device-authed,
+    // so the tenant and principal counts do not move.
+    expect(ROUTES).toHaveLength(453);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(453);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1398,18 +1511,32 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // same tier as the channels and Embedded Signup controllers beside it.
     // 368: plus call insights' JSON read and its PDF export.
     // 369: plus the handset pairing dialog's status read (0124).
-    expect(tenantScoped).toHaveLength(369);
+    // 379: plus doc 27's ten tenant-scoped routes.
+    // 382: plus device recovery's three restore/relink routes (0130).
+    // 383: plus the store's app page read (doc 28 §10).
+    // 388: plus doc 28's five store routes (see the total above).
+    // 390: plus the workspace clock's two (doc 30).
+    expect(tenantScoped).toHaveLength(390);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(426);
+    ).toBe(453);
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 390 principal routes", () => {
-    // 390 = 361 tenant-scoped principal + 29 cross-tenant; the newest is the
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 414 principal routes", () => {
+    // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
+    // workspace clock's GET/PUT /owner/time-settings (doc 30).
+    // 412 = 380 tenant-scoped principal + 32 cross-tenant, after the store's
+    // app page read (doc 28 §10) and doc 28's five store routes - all six
+    // tenant-scoped, none cross-tenant.
+    // 406 = 374 tenant-scoped principal + 32 cross-tenant, after device
+    // recovery's three restore/relink routes (0130).
+    // 403 = 371 tenant-scoped principal + 32 cross-tenant, after doc 27's
+    // thirteen (ten tenant-scoped, three cross-tenant).
+    // 390 = 361 tenant-scoped principal + 29 cross-tenant; the newest was the
     // handset pairing dialog's status read (0124). 389 before it, of which
     // the last two were call insights' read and PDF export. 387 before them. This number was
     // left at 374 when the call-access gate (0122) added nine routes and the
@@ -1422,7 +1549,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(390);
+    expect(principalRoutes).toHaveLength(414);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -1642,7 +1769,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     ]);
   });
 
-  it("pins the nineteen unguarded routes as an explicit allowlist", () => {
+  it("pins the twenty unguarded routes as an explicit allowlist", () => {
     // Inventory 13 §1.2. Each of these is unguarded for a reason recorded in
     // that section (liveness, credential minting, pre-enrollment), and
     // `POST /auth/logout` is a known finding - an anonymous DELETE on the
@@ -1650,7 +1777,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // webhook came next, and the lead intake engine's three token endpoints
     // plus LinkedIn's OAuth callback (0078) are the newest: unauthenticated for
     // the same class of reason as the messaging webhook, resolve-then-verify
-    // rather than guard-then-trust.
+    // rather than guard-then-trust. Device recovery's POST /devices/recover
+    // (0130) is the twentieth, pre-enrollment for the same reason as register.
     // A SIXTEENTH unguarded route is not a judgement call this suite can make,
     // so it fails and asks for one.
     for (const route of UNGUARDED) {

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { Injectable } from "@nestjs/common";
-import { OwnerRole } from "@aura/shared";
+import { OwnerRole, type StorageSummary } from "@aura/shared";
 import { DbService } from "../../db/db.service";
 import type { Principal } from "../../common/auth-principal";
 
@@ -11,6 +11,69 @@ function parseOwnerRole(raw: unknown): OwnerRole | null {
 }
 
 const SESSION_TTL_DAYS = 7;
+
+/**
+ * How a Supabase session becomes an org - the one query `contextFor` runs on
+ * every console navigation. $1 is the Supabase subject, $2 the email.
+ *
+ * A named constant so apps/api/verify-account-storage-setup.cjs can execute
+ * this exact text against a real database (doc 27 added the storage join and
+ * the guide stamps to it) - typecheck cannot see SQL.
+ */
+export const AUTH_CONTEXT_SQL = `WITH u AS (
+         SELECT id, email, name, status FROM users
+          WHERE ($1::text IS NOT NULL AND sso_subject = $1)
+             OR ($2::text IS NOT NULL AND lower(email) = lower($2))
+          ORDER BY (sso_subject = $1) DESC NULLS LAST
+          LIMIT 1
+       )
+       SELECT u.id AS "userId", u.email AS "userEmail", u.name AS "userName",
+              u.status AS "userStatus",
+              m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
+              m.owner_role AS "ownerRole",
+              m.recordings_listen AS "recordingsListen",
+              m.recordings_export AS "recordingsExport",
+              (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
+                ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
+              o.enabled_modules AS "enabledModules",
+              o.whatsapp_provider AS "whatsappProvider",
+              o.branding AS "branding",
+              o.setup_completed_at AS "setupCompletedAt",
+              o.guide_completed_at AS "guideCompletedAt",
+              o.guide_dismissed_at AS "guideDismissedAt",
+              -- Storage (0128): the snapshot row, never a sum over recordings.
+              o.retention_days AS "retentionDays",
+              o.reporting_timezone AS "reportingTimezone",
+              o.storage_quota_bytes::text AS "storageQuotaBytes",
+              su.recording_bytes::text AS "storageRecordingBytes",
+              su.recording_count AS "storageRecordingCount",
+              su.db_bytes_estimate::text AS "storageDbBytes",
+              su.computed_at AS "storageComputedAt",
+              -- The client's own switchboard (0101), aggregated in the same
+              -- exchange. This query runs on every navigation in the console;
+              -- a second lookup would cost ~125ms of Mumbai->Seoul flight time
+              -- per page, which is the whole reason this is one CTE already.
+              COALESCE(
+                (SELECT jsonb_object_agg(f.feature_key, f.enabled)
+                   FROM org_feature_settings f WHERE f.org_id = m.org_id),
+                '{}'::jsonb) AS "featureOverrides"
+         FROM u
+         LEFT JOIN memberships m
+           -- Suspended memberships (0102) are dropped HERE, which is what makes
+           -- suspension real rather than decorative. This is how a Supabase
+           -- session becomes an org, so a membership that does not come back is
+           -- a console the person cannot open at all - not a page they are
+           -- refused on, the whole thing. One predicate, in the one place every
+           -- console request already passes through, and it cannot be forgotten
+           -- by a route added later.
+           --
+           -- The precedent is directly below: userStatus <> 'active' already
+           -- empties this response for a platform-disabled account. This is the
+           -- same rule one level down, where a customer is allowed to apply it.
+           ON m.user_id = u.id AND m.status = 'active'
+         LEFT JOIN organizations o ON o.id = m.org_id
+         LEFT JOIN org_storage_usage su ON su.org_id = m.org_id
+        ORDER BY m.created_at ASC`;
 
 @Injectable()
 export class AuthService {
@@ -142,6 +205,21 @@ export class AuthService {
        *  that call without asking anybody. Reading it here is what makes it
        *  free. */
       setupCompletedAt: string | null;
+      /**
+       * The setup GUIDE's two stamps (doc 27 §7.4, migration 0129). Same
+       * reason as `setupCompletedAt`: while either is null the layout pays a
+       * round trip for the sidebar meter, and once one is set it never does.
+       */
+      guideCompletedAt: string | null;
+      guideDismissedAt: string | null;
+      /**
+       * Storage used, for the account menu (doc 27 §6.4) - the worker's hourly
+       * snapshot joined in, so the menu costs no request of its own. Null
+       * until the first sweep has measured this org.
+       */
+      storage: StorageSummary | null;
+      /** organizations.reporting_timezone (0090) - Login activity's clock. */
+      reportingTimezone: string;
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
@@ -157,49 +235,7 @@ export class AuthService {
     // holding no memberships must still come back as a found user, exactly as
     // it did when the membership query simply returned no rows.
     const { rows } = await this.db.adminPool().query(
-      `WITH u AS (
-         SELECT id, email, name, status FROM users
-          WHERE ($1::text IS NOT NULL AND sso_subject = $1)
-             OR ($2::text IS NOT NULL AND lower(email) = lower($2))
-          ORDER BY (sso_subject = $1) DESC NULLS LAST
-          LIMIT 1
-       )
-       SELECT u.id AS "userId", u.email AS "userEmail", u.name AS "userName",
-              u.status AS "userStatus",
-              m.org_id AS "orgId", o.name AS "orgName", o.status AS "orgStatus", m.role,
-              m.owner_role AS "ownerRole",
-              m.recordings_listen AS "recordingsListen",
-              m.recordings_export AS "recordingsExport",
-              (SELECT w.id FROM workspaces w WHERE w.org_id = m.org_id
-                ORDER BY w.created_at ASC LIMIT 1) AS "workspaceId",
-              o.enabled_modules AS "enabledModules",
-              o.whatsapp_provider AS "whatsappProvider",
-              o.branding AS "branding",
-              o.setup_completed_at AS "setupCompletedAt",
-              -- The client's own switchboard (0101), aggregated in the same
-              -- exchange. This query runs on every navigation in the console;
-              -- a second lookup would cost ~125ms of Mumbai->Seoul flight time
-              -- per page, which is the whole reason this is one CTE already.
-              COALESCE(
-                (SELECT jsonb_object_agg(f.feature_key, f.enabled)
-                   FROM org_feature_settings f WHERE f.org_id = m.org_id),
-                '{}'::jsonb) AS "featureOverrides"
-         FROM u
-         LEFT JOIN memberships m
-           -- Suspended memberships (0102) are dropped HERE, which is what makes
-           -- suspension real rather than decorative. This is how a Supabase
-           -- session becomes an org, so a membership that does not come back is
-           -- a console the person cannot open at all - not a page they are
-           -- refused on, the whole thing. One predicate, in the one place every
-           -- console request already passes through, and it cannot be forgotten
-           -- by a route added later.
-           --
-           -- The precedent is directly below: userStatus <> 'active' already
-           -- empties this response for a platform-disabled account. This is the
-           -- same rule one level down, where a customer is allowed to apply it.
-           ON m.user_id = u.id AND m.status = 'active'
-         LEFT JOIN organizations o ON o.id = m.org_id
-        ORDER BY m.created_at ASC`,
+      AUTH_CONTEXT_SQL,
       [identity.subject ?? null, identity.email ?? null],
     );
 
@@ -237,6 +273,19 @@ export class AuthService {
         // checklist it cannot rule out. The wrong direction would hide
         // onboarding from every new client for a whole rolling deploy.
         setupCompletedAt: r.setupCompletedAt ?? null,
+        guideCompletedAt: r.guideCompletedAt ?? null,
+        guideDismissedAt: r.guideDismissedAt ?? null,
+        storage: r.storageComputedAt
+          ? {
+              recordingBytes: Number(r.storageRecordingBytes ?? 0),
+              recordingCount: r.storageRecordingCount ?? 0,
+              dbBytesEstimate: r.storageDbBytes === null || r.storageDbBytes === undefined ? null : Number(r.storageDbBytes),
+              quotaBytes: r.storageQuotaBytes === null || r.storageQuotaBytes === undefined ? null : Number(r.storageQuotaBytes),
+              computedAt: new Date(r.storageComputedAt).toISOString(),
+              retentionDays: r.retentionDays ?? 90,
+            }
+          : null,
+        reportingTimezone: r.reportingTimezone ?? "Asia/Kolkata",
       }));
 
     return { memberships, user };

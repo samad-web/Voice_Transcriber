@@ -6,9 +6,12 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Lock, Menu, X } from "lucide-react";
 import { Logo } from "@aura/ui";
-import { OWNER_ROLE_LABELS, type OwnerRole } from "@aura/shared";
+import type { OwnerRole, StorageSummary } from "@aura/shared";
 import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
 import { AccountMenu } from "@/components/account-menu";
+import { BackButton } from "@/components/back-button";
+import { SetupProgress } from "@/components/setup-progress";
+import { accountCrumbsFor } from "@/lib/account-menu";
 import { OwnerRailNav } from "@/components/owner-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -43,8 +46,16 @@ export function MobileNav({
    * WHICH TENANT visible at all times. Owner console only.
    */
   accentColor,
+  /** See <Sidebar>: the account menu's name and storage line (doc 27 §2). */
+  name,
+  storage,
+  /** See <Sidebar>: the setup guide's "X of N", or null. */
+  setupProgress,
 }: {
   email?: string | null;
+  name?: string | null;
+  storage?: StorageSummary | null;
+  setupProgress?: { done: number; total: number } | null;
   area?: NavArea;
   ownerRole?: OwnerRole;
   crmPrimary?: boolean;
@@ -157,9 +168,19 @@ export function MobileNav({
             {area === "owner" ? title : "Aura"}
           </span>
           <span className="mt-0.5 block truncate text-sm font-semibold leading-tight text-text">
-            {current?.title ?? "Platform"}
+            {/* The account pages and Get started are not nav items (doc 27
+                §8.2), so the longest-prefix match would land on Dashboard;
+                their own crumb names them instead. */}
+            {(area === "owner" ? accountCrumbsFor(pathname)?.at(-1)?.label : undefined) ??
+              current?.title ??
+              "Platform"}
           </span>
         </div>
+        {/* Back lives here below `md` (doc 28 §3.1): the console header
+            scrolls away on a phone, and this bar does not. Same classes as ☰
+            beside it, so the two read as a pair. Renders nothing on Home with
+            nothing behind it. */}
+        <BackButton variant="bar" className={`${iconButton} h-10 w-10`} />
         <button
           ref={triggerRef}
           type="button"
@@ -261,10 +282,21 @@ export function MobileNav({
               </div>
 
               <div className="space-y-3 border-t border-border p-4">
+                {area === "owner" && setupProgress ? (
+                  <SetupProgress
+                    done={setupProgress.done}
+                    total={setupProgress.total}
+                    onNavigate={() => setOpen(false)}
+                  />
+                ) : null}
+
                 <AccountMenu
                   email={email}
-                  roleLabel={area === "owner" ? OWNER_ROLE_LABELS[ownerRole ?? "owner"] : undefined}
+                  name={name}
+                  area={area === "owner" ? "owner" : "platform"}
+                  ownerRole={area === "owner" ? (ownerRole ?? "owner") : undefined}
                   orgName={area === "owner" ? title : undefined}
+                  storage={area === "owner" ? storage : null}
                 />
 
                 {/* Always rendered - see the note in sidebar.tsx. On a phone this

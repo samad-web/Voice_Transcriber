@@ -31,6 +31,12 @@ export async function createClient() {
 export interface SessionUser {
   id: string;
   email: string;
+  /**
+   * `claims.session_id` - which GoTrue session this browser holds. Login
+   * activity (doc 27 §5.4) marks the row carrying it as "This session".
+   * Optional: a token minted before GoTrue added the claim has none.
+   */
+  sessionId?: string | null;
 }
 
 /**
@@ -73,5 +79,6 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const subject = data.claims.sub;
   if (!subject) return null;
   const email = typeof data.claims.email === "string" ? data.claims.email : "";
-  return { id: subject, email };
+  const sessionId = typeof data.claims.session_id === "string" ? data.claims.session_id : null;
+  return { id: subject, email, sessionId };
 }

@@ -29,6 +29,7 @@ import {
 import type { ConsoleState } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
+import { StorageVital, storageFromOrg, type OrgStorageFields } from "@/components/storage-vital";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
 import { workspacesFor } from "@/lib/tenant-scope";
@@ -67,6 +68,9 @@ interface Org {
   enabled_modules: string[];
   whatsapp_qualification_enabled: boolean;
   qualification_retention_days: number;
+  /** Doc 27 §6.4 - the worker's storage snapshot and the operator's quota. */
+  storage_quota_bytes?: OrgStorageFields["storage_quota_bytes"];
+  storage_usage?: OrgStorageFields["storage_usage"];
 }
 
 interface InstanceRow {
@@ -556,6 +560,11 @@ export default async function InstanceDetailPage({
             hint={deviceTotal === 0 ? "No handsets yet" : "Nothing flagged"}
           />
         )}
+      </div>
+      {/* A row of its own rather than a seventh cell: it carries a meter, and
+          the six-cell grid divides evenly at every breakpoint as it is. */}
+      <div className="border-t border-border">
+        <StorageVital storage={storageFromOrg(org)} retentionPaused={org.status !== "active"} />
       </div>
     </Card>
   );

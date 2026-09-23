@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock } from "lucide-react";
 import { Logo } from "@aura/ui";
-import { OWNER_ROLE_LABELS, type OwnerRole } from "@aura/shared";
+import type { OwnerRole, StorageSummary } from "@aura/shared";
 import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
 import { AccountMenu } from "@/components/account-menu";
+import { SetupProgress } from "@/components/setup-progress";
 import { OwnerRailNav } from "@/components/owner-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -36,8 +37,17 @@ export function Sidebar({
    *  owner layout; the operator rail leaves it unset and keeps the Aura mark,
    *  which is correct for a console that spans every tenant. */
   logoUrl,
+  /** users.name, for the account menu (doc 27 §2.3). */
+  name,
+  /** Storage used (0128), for the account menu. Owner console only. */
+  storage,
+  /** The setup guide's "X of N" (doc 27 §7); null while the guide is closed. */
+  setupProgress,
 }: {
   email?: string | null;
+  name?: string | null;
+  storage?: StorageSummary | null;
+  setupProgress?: { done: number; total: number } | null;
   area?: NavArea;
   ownerRole?: OwnerRole;
   crmPrimary?: boolean;
@@ -129,10 +139,19 @@ export function Sidebar({
       </div>
 
       <div className="mt-8 space-y-3 border-t border-border px-1 pt-4">
+        {/* Owner and manager only, while the guide is open - the layout
+            decides both and passes null otherwise. */}
+        {area === "owner" && setupProgress ? (
+          <SetupProgress done={setupProgress.done} total={setupProgress.total} />
+        ) : null}
+
         <AccountMenu
           email={email}
-          roleLabel={area === "owner" ? OWNER_ROLE_LABELS[ownerRole ?? "owner"] : undefined}
+          name={name}
+          area={area === "owner" ? "owner" : "platform"}
+          ownerRole={area === "owner" ? (ownerRole ?? "owner") : undefined}
           orgName={area === "owner" ? title : undefined}
+          storage={area === "owner" ? storage : null}
         />
 
         {/* ALWAYS RENDERED. This used to be `{email ? <SignOutButton /> : null}`,

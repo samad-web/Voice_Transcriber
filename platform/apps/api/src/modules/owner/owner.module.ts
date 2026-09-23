@@ -17,6 +17,9 @@ import { OwnerController } from "./owner.controller";
 import { OwnersController } from "./owners.controller";
 import { OwnerAccountsService } from "./owner-accounts.service";
 import { SetupController } from "./setup.controller";
+import { BusinessProfileController } from "./business-profile.controller";
+import { PlanUsageController } from "./plan-usage.controller";
+import { TimeSettingsController } from "./time-settings.controller";
 import { SupabaseAdminService } from "./supabase-admin.service";
 
 /**
@@ -48,6 +51,10 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     OwnerController,
     OwnersController,
     SetupController,
+    // Doc 27: the account menu's Business profile and Plan & usage pages.
+    BusinessProfileController,
+    PlanUsageController,
+    TimeSettingsController,
   ],
   providers: [OwnerAccountsService, SupabaseAdminService],
 })

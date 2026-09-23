@@ -36,3 +36,43 @@ export async function dismissSetupAction(): Promise<{ error?: string }> {
     return { error: "API unreachable" };
   }
 }
+
+/** One POST/DELETE against the setup guide's routes (doc 27 §7.5). */
+async function guideCall(path: string, method: "POST" | "DELETE"): Promise<{ error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}${path}`, { method, headers, cache: "no-store" });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    // The sidebar meter is drawn by the owner LAYOUT, so the whole route group
+    // re-renders - not just /owner/get-started.
+    revalidatePath("/owner", "layout");
+    return {};
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * Skip an optional setup step: it leaves the guide's "X of N". The API refuses
+ * a required step (409) and an unknown one (404); the id is only ever one the
+ * page rendered from the catalogue.
+ */
+export async function skipSetupStepAction(stepId: string): Promise<{ error?: string }> {
+  return guideCall(`/v1/owner/setup/steps/${encodeURIComponent(stepId)}/skip`, "POST");
+}
+
+/** Undo a skip. */
+export async function unskipSetupStepAction(stepId: string): Promise<{ error?: string }> {
+  return guideCall(`/v1/owner/setup/steps/${encodeURIComponent(stepId)}/skip`, "DELETE");
+}
+
+/** "Hide this guide" - owner only, enforced by the API. */
+export async function dismissGuideAction(): Promise<{ error?: string }> {
+  return guideCall("/v1/owner/setup/guide/dismiss", "POST");
+}
+
+/** Bring a hidden guide back - owner only, enforced by the API. */
+export async function reopenGuideAction(): Promise<{ error?: string }> {
+  return guideCall("/v1/owner/setup/guide/reopen", "POST");
+}

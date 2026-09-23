@@ -109,7 +109,26 @@ export interface Caller {
    * exactly as naming nobody does.
    */
   operatorEmail?: string | null;
+  /**
+   * The Supabase subject (`claims.sub`) of the person asking - doc 27 §5.2.
+   *
+   * Sent as `x-caller-auth-id`, and ONLY ever set from a verified getClaims()
+   * on this server, never from anything a form carried. The API binds sign-in
+   * history reads and writes to it, and it is the one identity an operator
+   * and a tenant user both have (an operator has no `users` row, so
+   * `x-caller-user-id` cannot name them).
+   */
+  authUserId?: string | null;
 }
+
+/**
+ * Headers for the person-scoped `/v1/account/*` routes that span every org
+ * (sign-in history): the admin key and the caller's own subject, no org.
+ */
+export const personHeaders = (authUserId: string | null) => ({
+  ...crossTenantHeaders,
+  ...(authUserId ? { "x-caller-auth-id": authUserId } : {}),
+});
 
 /**
  * Same admin credentials, pointed at a specific tenant. The platform operator
@@ -121,6 +140,7 @@ export const orgHeaders = (orgId: string, caller?: Caller) => ({
   "x-org-id": orgId,
   ...(caller?.ownerRole ? { "x-caller-owner-role": caller.ownerRole } : {}),
   ...(caller?.userId ? { "x-caller-user-id": caller.userId } : {}),
+  ...(caller?.authUserId ? { "x-caller-auth-id": caller.authUserId } : {}),
   // Only when no tenant user is named. `x-caller-user-id` is what tells the
   // API this is a tenant's own console request, and CallAccessGuard treats
   // such a request as none of its business; sending both would claim to be a

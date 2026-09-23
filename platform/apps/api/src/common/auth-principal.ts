@@ -36,6 +36,22 @@ export interface Principal {
    * does not exist denies exactly as an absent header does.
    */
   operatorEmail: string | null;
+  /**
+   * The Supabase Auth subject (`claims.sub`) of the PERSON behind an admin-key
+   * request, from `x-caller-auth-id` (doc 27 §5.2).
+   *
+   * The one identity that covers operators AND tenant users alike - an
+   * operator has no `users` row, so `userId` cannot name them - which is why
+   * sign-in history is keyed on it. Same "trusted fact" category as
+   * `x-caller-user-id`: only the web tier holds the admin key, and it sets
+   * this from a verified `getClaims()` moments earlier, never from a form.
+   * It authorizes nothing by itself; it only decides WHOSE history is read or
+   * written, and every read is bound to it.
+   *
+   * Optional so the many hand-built principals in tests stay valid; absent
+   * reads as "no person", the fail-closed direction.
+   */
+  authUserId?: string | null;
 }
 
 export interface PrincipalRequest extends Request {

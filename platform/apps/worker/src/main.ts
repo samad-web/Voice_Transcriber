@@ -8,6 +8,7 @@ import { startAsrPoller } from "./pipeline/asr-poll";
 import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
+import { startStorageUsageSweep } from "./pipeline/storage-usage";
 import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
 import { startCallCrmIntegritySweep } from "./pipeline/call-crm-integrity";
 import { startOutboxDrain } from "./pipeline/outbox";
@@ -27,6 +28,7 @@ import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
 import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
 import { startCallLeadLinkSweep } from "./pipeline/call-lead-link";
+import { startMissedCallLeadSweep } from "./pipeline/missed-call-leads";
 import { startFollowupReminderSweep } from "./pipeline/followup-reminders";
 import { startSheetsSync } from "./pipeline/sheets-sync";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
@@ -61,6 +63,10 @@ async function bootstrap() {
   // CRM delivery forever.
   startEnrichmentSweep();
   startReaper();
+  // Storage used per org (doc 27 §6.2): an hourly snapshot the console reads
+  // as one row, the nightly database estimate, and the in-app quota warnings.
+  // STORAGE_USAGE_INTERVAL_MS, default 1h.
+  startStorageUsageSweep();
   // A6's shadow-read burn-in check: does a lead's dual-written deal/contact
   // still agree with it? Off unless CRM_RECONCILE_ENABLED=true - see the
   // module header for why this is opt-in and why stage/status are gated
@@ -177,6 +183,13 @@ async function bootstrap() {
   // Sweep rather than trigger because neither side arrives first: a cold call
   // precedes its lead, a Meta lead precedes its calls. See the module header.
   startCallLeadLinkSweep();
+  // Unknown missed callers become leads (migration 0134). Runs after the sweep
+  // above in this list - not by a dependency between them (each opens its own
+  // org transactions on its own interval, so the ordering here is cosmetic -
+  // but reading them in this order is what the module headers assume: a
+  // caller is only "unknown" once the ordinary hash match had its chance to
+  // prove otherwise.
+  startMissedCallLeadSweep();
   // The follow-up escalation ladder (migration 0095). A missed promise used to
   // be silent - the row sat in `tasks` with a past date and the only way to
   // find out was to look. This raises an IN-APP notice to the person who owes

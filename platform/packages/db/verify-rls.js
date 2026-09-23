@@ -93,6 +93,16 @@ const NON_TENANT_TABLES = new Set([
   //                     through the admin pool; `aura_app` is revoked outright,
   //                     and so are the Supabase API roles.
   "platform_operators",
+  // auth_events         0127. A PERSON's sign-in history, which spans every
+  //                     workspace they belong to - and platform operators, who
+  //                     belong to none, have one too. The boundary is the
+  //                     person: every read is bound to the caller's own
+  //                     auth_user_id, taken from a header the web tier sets
+  //                     from a verified getClaims(). The workspace entered is
+  //                     kept as `console_org_id` for display, deliberately not
+  //                     named org_id. RLS FORCED with no policy; `aura_app` and
+  //                     the Supabase API roles revoked; admin pool only.
+  "auth_events",
 ]);
 
 /**

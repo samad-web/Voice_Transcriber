@@ -1,6 +1,7 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
+import { HeaderIconButton } from "@aura/ui";
 import { useTheme } from "@/components/theme-provider";
 
 /**
@@ -14,18 +15,16 @@ export function ThemeToggle() {
   const next = theme === "dark" ? "light" : "dark";
 
   return (
-    <button
-      type="button"
+    <HeaderIconButton
       onClick={() => setTheme(next)}
       aria-label={`Switch to ${next} mode`}
       title={`Switch to ${next} mode`}
-      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-text"
     >
       {settled && theme === "dark" ? (
         <Sun className="h-[18px] w-[18px]" aria-hidden="true" />
       ) : (
         <Moon className="h-[18px] w-[18px]" aria-hidden="true" />
       )}
-    </button>
+    </HeaderIconButton>
   );
 }
