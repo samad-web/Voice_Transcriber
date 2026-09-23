@@ -75,3 +75,6 @@ supabase/selfhost/upstream/volumes/storage/
 # audio that may carry a real customer's voice.
 *.wav
 list.txt
+
+# A one-off compiled-output snapshot kept for local recovery, not source.
+apps/api/dist-recovery/

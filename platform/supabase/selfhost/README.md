@@ -337,6 +337,16 @@ security property is unchanged — it is still verification, not `getSession()`.
 Configuring `GOTRUE_JWT_KEYS` with an asymmetric key would restore local
 verification if that ~1ms ever matters.
 
+**…and "Log out from all devices" depends on it.** The console's global
+sign-out (doc 27 §3) deletes every session row of the person; other browsers
+notice on their next navigation only because the middleware's `getClaims()`
+takes this HS256 fallback to `getUser()`, and GoTrue refuses a token whose
+session is gone. With asymmetric keys, `getClaims()` verifies locally and a
+revoked access token keeps working until `JWT_EXPIRY` (3600 s) runs out. Do not
+enable `GOTRUE_JWT_KEYS` without also moving `apps/web/lib/supabase/middleware.ts`
+to `getUser()` or shortening `JWT_EXPIRY` - the comment beside that call says
+the same.
+
 **`pg_trgm` finally installs.** `0042_fuzzy_dedupe.sql` wraps `CREATE EXTENSION`
 in an exception handler because nobody knew whether Supabase Cloud would permit
 it; self-hosted, the migration role is a real superuser, so the extension and its

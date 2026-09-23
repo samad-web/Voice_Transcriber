@@ -616,3 +616,75 @@ and self-hosting cancelled them.
 next refresh). `ADMIN_API_KEY` breaks any provisioning script that hardcodes it.
 `APP_DB_PASSWORD` needs `bootstrap-role.js` re-run *and* `APP_DATABASE_URL` updated in the same
 change, or the API loses its database.
+
+---
+
+## 9. Account menu, storage meter and setup guide (Build docs/27)
+
+Migrations **0126–0129**, applied with the normal `--migrate` step. Before applying them to
+production:
+
+* **0128 builds an index on `recordings`** (`recordings_org_uploaded`) with a plain
+  `CREATE INDEX` inside the migration transaction. That holds a lock that blocks handset upload
+  *completion* while it builds. Count the rows first, read-only, through the live container:
+
+  ```bash
+  ssh root@<vps> "docker exec -i aura-api-1 node -" <<'JS'
+  const { Client } = require("/app/packages/db/node_modules/pg");
+  const ssl = require("/app/packages/db/ssl.js");
+  (async () => {
+    const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: ssl.sslFor(process.env.DATABASE_URL) });
+    await c.connect(); await c.query("BEGIN TRANSACTION READ ONLY");
+    console.log((await c.query("SELECT count(*) FROM recordings")).rows[0]); await c.query("ROLLBACK"); await c.end();
+  })();
+  JS
+  ```
+
+  Under ~1M rows it builds in seconds. Above that, build it by hand first with
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS recordings_org_uploaded ON recordings (org_id) INCLUDE (bytes, uploaded_at) WHERE uploaded_at IS NOT NULL;`
+  and the migration's `IF NOT EXISTS` becomes a no-op.
+* **0129 shows the setup guide to existing tenants.** `guide_completed_at` / `guide_dismissed_at`
+  start NULL, so every existing owner and manager sees "Finish your setup - X of N" in the sidebar
+  after the deploy (doc 27 Q7). An owner can hide it. The required-steps *banner* stays off for
+  them (`setup_completed_at` is untouched).
+
+**New settings** (both in `.env.example` / `.env.production.example`):
+
+| Variable | Read by | Default | What |
+|---|---|---|---|
+| `STORAGE_USAGE_INTERVAL_MS` | worker | `3600000` | How often each workspace's stored recordings are measured. The console only ever reads the snapshot. |
+| `NEXT_PUBLIC_SUPPORT_CONTACT` | web, at runtime | blank | An email or `https://` URL linked from Plan & usage's "contact your account manager". Read at runtime through `env_file` - a restart applies it, no rebuild. |
+
+**Abandoned multipart uploads (doc 27 §6.5, finding 2).** A handset retry starts a fresh multipart
+upload, and FAILED_UPLOAD calls are abandoned. MinIO already cleans these up on its own: its
+`api stale_uploads_expiry` defaults to **24h**, swept every `stale_uploads_cleanup_interval`
+(**6h**). Check that nobody has changed them (read-only):
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm --entrypoint /bin/sh minio-init \
+  -c 'mc alias set local http://minio:9000 "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" >/dev/null && mc admin config get local api | tr " " "\n" | grep stale_uploads'
+```
+
+Doc 27 also proposed an `AbortIncompleteMultipartUpload` lifecycle rule after 7 days. With the
+24h default in place it is redundant, and it is a **production bucket-policy change, so it is not
+applied by `deploy.sh`** - only apply it with an explicit go-ahead, e.g. if the check above shows the
+expiry was raised or disabled:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml run --rm --entrypoint /bin/sh minio-init \
+  -c 'mc alias set local http://minio:9000 "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" >/dev/null &&
+      echo "{\"Rules\":[{\"ID\":\"abort-incomplete-multipart\",\"Status\":\"Enabled\",\"Filter\":{\"Prefix\":\"\"},\"AbortIncompleteMultipartUpload\":{\"DaysAfterInitiation\":7}}]}" |
+      mc ilm import "local/$S3_BUCKET"'
+```
+
+**What only a real Supabase can prove** (local dev has no Supabase, so no login exists there).
+Each touches production auth - use a dedicated test account, never a client's, and only with a
+go-ahead:
+
+1. **Log out from all devices**: sign in as the test account in two browsers; log out everywhere
+   in A; B's next navigation must land on `/login`, and B's open `/events` stream must close within
+   5 minutes (it re-checks its session every 5 minutes).
+2. **Password change**: the old password fails, the new one works, and a second browser is signed
+   out when "Sign out of my other devices" was ticked.
+3. **Login activity**: a sign-in appears with *your* public IP, not the proxy's. The web tier takes
+   the right-most `X-Forwarded-For` hop, which host nginx appends (`$proxy_add_x_forwarded_for`).
