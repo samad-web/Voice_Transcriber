@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Play, RefreshCw, Search, X } from "lucide-react";
+import { callbackLabel, callbackState, formatReportRange, missedReasonLabel, type CallLogSort } from "@aura/shared";
 import {
   Button,
   Input,
   MonoLabel,
   RowHint,
+  Select,
   StateChip,
   StateRule,
   StatusChip,
@@ -24,7 +26,10 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { Time, useOrgTimeZone } from "@/components/org-time";
+import { PageNav } from "@/components/page-nav";
 import { InlineListSkeleton } from "@/components/skeletons";
+import { pageState } from "@/lib/pagination";
 import { CallReadChips, TranscriptBody, TranscriptSkeleton, humanize } from "../call-intel";
 import {
   formatDuration,
@@ -58,6 +63,29 @@ const SENTIMENTS = [
   { key: "negative", label: "Negative" },
 ] as const;
 
+/**
+ * The missed-call work list (0133). "Not called back" is the one a manager
+ * opens every morning; it leaves out calls with no number, which nobody can
+ * return - see the API's ListQuery.
+ */
+const MISSED = [
+  { key: "all", label: "All missed" },
+  { key: "waiting", label: "Not called back" },
+  { key: "returned", label: "Recovered" },
+] as const;
+
+/** What became of a missed call, in the words every surface uses (@aura/shared). */
+function missedSummary(call: OwnerCall): { text: string; waiting: boolean } {
+  const cb = { returnedAt: call.returned_at ?? null, returnDirection: call.return_direction ?? null };
+  // `has_number` is absent from an API older than 0133; a number was the norm then.
+  const hasNumber = call.has_number ?? true;
+  const reason = missedReasonLabel(call.missed_reason);
+  return {
+    text: `${reason ? `${reason} · ` : ""}${callbackLabel(call.started_at, cb, hasNumber)}`,
+    waiting: callbackState(cb, hasNumber) === "waiting",
+  };
+}
+
 /** Who was on the other end, in the order a person would recognise them. */
 function contact(call: OwnerCall): string {
   if (call.remote_name) return call.remote_name;
@@ -83,6 +111,9 @@ export function CallsExplorer({
   limit,
   offset,
   dispositions,
+  range,
+  sort,
+  triageHref = null,
 }: {
   calls: OwnerCall[];
   /** For the handset filter. Empty simply drops that chip row. */
@@ -92,27 +123,45 @@ export function CallsExplorer({
   offset: number;
   /** The tenant's outcome vocabulary (0097). Empty hides the picker entirely. */
   dispositions: Disposition[];
+  /**
+   * The days the date filter covered, as the API resolved them. The filter
+   * itself is the page's shared date control, above this component.
+   */
+  range: { from: string; to: string } | null;
+  sort: CallLogSort;
+  /** The unmatched-call queue, when this workspace has it; null hides the pointer. */
+  triageHref?: string | null;
 }) {
   const router = useRouter();
   const params = useSearchParams();
+  const zone = useOrgTimeZone();
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [open, setOpen] = useState<OwnerCall | null>(null);
+  // Every filter, sort and page change is a server round trip - most of a
+  // second on production. Running it as a transition keeps the old rows on
+  // screen, dimmed, instead of a click that appears to do nothing.
+  const [pending, startTransition] = useTransition();
+  const navigate = (href: string) => startTransition(() => router.push(href));
 
-  const setParam = (key: string, value: string | null) => {
+  /** Change several parameters at once; `null` removes one. */
+  const setParams = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params.toString());
-    if (value === null || value === "") next.delete(key);
-    else next.set(key, value);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
     // Any filter change invalidates the current page.
-    if (key !== "offset") next.delete("offset");
-    router.push(`/owner/calls${next.toString() ? `?${next}` : ""}`);
+    if (!("offset" in patch)) next.delete("offset");
+    navigate(`/owner/calls${next.toString() ? `?${next}` : ""}`);
   };
+  const setParam = (key: string, value: string | null) => setParams({ [key]: value });
 
   const state = params.get("state");
   const direction = params.get("direction");
+  const missed = params.get("missed");
   const sentiment = params.get("sentiment");
   const deviceId = params.get("deviceId");
-  const page = Math.floor(offset / limit) + 1;
-  const pages = Math.max(1, Math.ceil(total / limit));
+  const { pages, first, last } = pageState(total, limit, offset);
 
   return (
     <>
@@ -212,6 +261,24 @@ export function CallsExplorer({
         </div>
       </div>
 
+      <div>
+        <MonoLabel>Missed calls</MonoLabel>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <FilterChip active={!missed} onClick={() => setParam("missed", null)}>
+            Any call
+          </FilterChip>
+          {MISSED.map((m) => (
+            <FilterChip
+              key={m.key}
+              active={missed === m.key}
+              onClick={() => setParam("missed", missed === m.key ? null : m.key)}
+            >
+              {m.label}
+            </FilterChip>
+          ))}
+        </div>
+      </div>
+
       {telecallers.length > 0 ? (
         <div>
           <MonoLabel>Telecaller</MonoLabel>
@@ -232,18 +299,55 @@ export function CallsExplorer({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-md border border-border bg-surface">
-        <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
-          <span className="text-sm font-medium text-text tabular-nums">
-            {total} call{total === 1 ? "" : "s"}
-          </span>
-          <span className="text-xs text-text-muted tabular-nums">
-            page {page} of {pages}
-          </span>
+      {/* The rows' clip is on the body below rather than on this card, so the
+          toolbar keeps its own rounded top. */}
+      <div className="rounded-md border border-border bg-surface">
+        {/* The list's controls, above the rows they act on: in what order,
+            and which page - reachable without scrolling to the foot of fifty
+            rows. The same pager repeats under the table. WHEN is the shared
+            date control at the top of the page, with the dates it covered. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 rounded-t-md border-b border-border bg-bg-subtle px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p aria-live="polite" className="text-sm font-medium text-text tabular-nums">
+              {total} call{total === 1 ? "" : "s"}
+              {pages > 1 ? (
+                <span className="font-normal text-text-muted">
+                  {" "}
+                  · showing {first}-{last}
+                </span>
+              ) : null}
+            </p>
+            <Select
+              size="sm"
+              aria-label="Order of calls"
+              value={sort}
+              onChange={(e) => setParam("sort", e.target.value === "oldest" ? "oldest" : null)}
+              className="h-8 w-36"
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </Select>
+          </div>
+          <PageNav
+            total={total}
+            pageSize={limit}
+            offset={offset}
+            onNavigate={navigate}
+            label="Pages (top)"
+          />
         </div>
 
+        <div
+          aria-busy={pending}
+          className={`overflow-hidden rounded-b-md transition-opacity duration-150 ease-out ${
+            pending ? "opacity-60" : ""
+          }`}
+        >
         {calls.length === 0 ? (
-          <p className="py-12 text-center text-sm text-text-muted">No calls match these filters.</p>
+          <p className="py-12 text-center text-sm text-text-muted">
+            No calls match these filters
+            {range ? ` for ${formatReportRange(range.from, range.to)}` : ""}.
+          </p>
         ) : (
           <div tabIndex={0} role="region" aria-label="Calls" className="overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-left text-sm">
@@ -283,9 +387,9 @@ export function CallsExplorer({
                         anyway. */}
                     <TableCell className="relative">
                       <StateRule state={callState(call)} />
-                      <span className="block text-text">{relativeTime(call.started_at)}</span>
+                      <span className="block text-text">{relativeTime(call.started_at, zone)}</span>
                       <span className="text-xs text-text-muted">
-                        {new Date(call.started_at).toLocaleString()}
+                        <Time iso={call.started_at} mode="datetime" />
                       </span>
                     </TableCell>
                     <TableCell>
@@ -296,9 +400,37 @@ export function CallsExplorer({
                           the state actually IS, and it is what a screen reader
                           and a greyscale printout get. */}
                       <StateChip state={callState(call)} className="mt-1" />
+                      {/* A missed call's next step is the whole point of
+                          showing it: was the caller rung back? Neutral text -
+                          the chip above already carries the red. */}
+                      {callState(call) === "missed" ? (
+                        <span
+                          className={`mt-1 block text-xs ${
+                            missedSummary(call).waiting ? "font-medium text-text" : "text-text-muted"
+                          }`}
+                        >
+                          {missedSummary(call).text}
+                        </span>
+                      ) : null}
+                      {/* An unanswered OUTGOING attempt (0134) - one of ours
+                          rang out. Stays "Outgoing" (blue), never "Missed"
+                          (red is reserved for the customer side), but a rep
+                          scanning the log still needs to see nobody picked
+                          up rather than reading a call that connected. */}
+                      {call.status === "NO_AUDIO" && call.direction === "outgoing" ? (
+                        <span className="mt-1 block text-xs text-text-muted">
+                          {missedReasonLabel(call.missed_reason) ?? "No answer"}
+                        </span>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatDuration(call.duration_s)}
+                      {/* "0m" on a call nobody answered reads as a very short
+                          conversation; there was none. */}
+                      {callState(call) === "missed" ? (
+                        <span className="text-text-subtle">-</span>
+                      ) : (
+                        formatDuration(call.duration_s)
+                      )}
                     </TableCell>
                     <TableCell>
                       {call.telecaller ?? <span className="text-text-subtle">-</span>}
@@ -345,30 +477,28 @@ export function CallsExplorer({
         )}
 
         {pages > 1 ? (
-          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setParam("offset", String(Math.max(0, offset - limit)))}
-            >
-              ← Previous
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={page >= pages}
-              onClick={() => setParam("offset", String(offset + limit))}
-            >
-              Next →
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+            <span className="text-xs text-text-muted tabular-nums">
+              {first}-{last} of {total}
+            </span>
+            <PageNav
+              total={total}
+              pageSize={limit}
+              offset={offset}
+              onNavigate={navigate}
+              label="Pages (bottom)"
+            />
           </div>
         ) : null}
+        </div>
       </div>
 
-      <CallDrawer call={open} onClose={() => setOpen(null)} dispositions={dispositions} />
+      <CallDrawer
+        call={open}
+        onClose={() => setOpen(null)}
+        dispositions={dispositions}
+        triageHref={triageHref}
+      />
     </>
   );
 }
@@ -458,10 +588,12 @@ function CallDrawer({
   call,
   onClose,
   dispositions,
+  triageHref,
 }: {
   call: OwnerCall | null;
   onClose: () => void;
   dispositions: Disposition[];
+  triageHref: string | null;
 }) {
   const confirm = useConfirm();
   const alert = useAlert();
@@ -578,6 +710,10 @@ function CallDrawer({
   const facts = (detail?.facts ?? []).filter(
     (f) => f.value_text !== null || f.value_num !== null || f.value_bool !== null,
   );
+  const missed = callState(call) === "missed";
+  // A missed call from the call log (0133) has no recording: no transcript to
+  // wait for, no audio to load, nothing to reprocess.
+  const noAudio = call.status === "NO_AUDIO";
 
   return (
     <>
@@ -590,13 +726,13 @@ function CallDrawer({
         <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-border bg-surface p-4 sm:p-5">
           <div className="min-w-0">
             <MonoLabel>
-              {humanize(call.direction)} · {formatDuration(call.duration_s)}
+              {humanize(call.direction)} · {missed ? "Missed" : formatDuration(call.duration_s)}
             </MonoLabel>
             <h2 className="mt-1 text-xl leading-tight font-semibold break-words text-text">
               {contact(call)}
             </h2>
             <span className="mt-1 block text-xs text-text-muted">
-              {new Date(call.started_at).toLocaleString()}
+              <Time iso={call.started_at} mode="datetime" />
               {call.telecaller ? ` · ${call.telecaller}` : ""}
             </span>
           </div>
@@ -638,6 +774,35 @@ function CallDrawer({
             >
               Lead: {call.lead_title ?? "open"}
             </Link>
+          ) : null}
+
+          {/* What became of a missed call, and where to act on it. A caller
+              with a number and no lead is exactly what the unmatched queue is
+              for: create a lead from it, link it, or wave it away. */}
+          {missed ? (
+            <section className="space-y-1.5 border-t border-border pt-4">
+              <MonoLabel>Missed call</MonoLabel>
+              <p className="text-sm text-text">{missedSummary(call).text}</p>
+              {noAudio ? (
+                <p className="text-xs text-text-muted">
+                  Nobody picked up, so there is no recording or transcript. It came from the
+                  handset&rsquo;s call log.
+                </p>
+              ) : null}
+              {!call.lead_id && (call.has_number ?? true) ? (
+                <p className="text-xs text-text-muted">
+                  No lead has this number yet.{" "}
+                  {triageHref ? (
+                    <Link
+                      href={triageHref}
+                      className="font-medium text-text underline underline-offset-2 hover:text-accent"
+                    >
+                      Create or link one from Unmatched calls
+                    </Link>
+                  ) : null}
+                </p>
+              ) : null}
+            </section>
           ) : null}
 
           {/*
@@ -845,17 +1010,19 @@ function CallDrawer({
 
           {detail?.replyDrafterActive && call ? <CallFollowUp key={call.id} callId={call.id} /> : null}
 
-          <div className="space-y-2 border-t border-border pt-4">
-            {error ? (
-              <p role="alert" className="text-xs font-medium text-danger-text">
-                {error}
-              </p>
-            ) : detail === null ? (
-              <TranscriptSkeleton />
-            ) : (
-              <TranscriptBody detail={detail} />
-            )}
-          </div>
+          {noAudio ? null : (
+            <div className="space-y-2 border-t border-border pt-4">
+              {error ? (
+                <p role="alert" className="text-xs font-medium text-danger-text">
+                  {error}
+                </p>
+              ) : detail === null ? (
+                <TranscriptSkeleton />
+              ) : (
+                <TranscriptBody detail={detail} />
+              )}
+            </div>
+          )}
 
           {/* Notes - the same `call_notes` rows the operator console writes. */}
           <div className="space-y-2 border-t border-border pt-4">
@@ -872,7 +1039,7 @@ function CallDrawer({
                       {note.body}
                     </p>
                     <p className="mt-1 text-[10px] text-text-subtle">
-                      {new Date(note.created_at).toLocaleString()}
+                      <Time iso={note.created_at} mode="datetime" />
                     </p>
                   </li>
                 ))}
@@ -898,53 +1065,55 @@ function CallDrawer({
             </Button>
           </div>
 
-          {/* Playback and reprocess. */}
-          <div className="space-y-2 border-t border-border pt-4">
-            {/* A recording is streamed from a signed URL and has no caption
-                track to point at - the transcript above is its accessible text
-                alternative. Keyed on the URL so pressing Reload swaps the
-                source instead of leaving the old one playing. */}
-            {audioUrl ? (
-              <audio
-                key={audioUrl}
-                controls
-                preload="metadata"
-                src={audioUrl}
-                className="w-full"
-              />
-            ) : null}
+          {/* Playback and reprocess - neither exists for a call with no recording. */}
+          {noAudio ? null : (
+            <div className="space-y-2 border-t border-border pt-4">
+              {/* A recording is streamed from a signed URL and has no caption
+                  track to point at - the transcript above is its accessible text
+                  alternative. Keyed on the URL so pressing Reload swaps the
+                  source instead of leaving the old one playing. */}
+              {audioUrl ? (
+                <audio
+                  key={audioUrl}
+                  controls
+                  preload="metadata"
+                  src={audioUrl}
+                  className="w-full"
+                />
+              ) : null}
 
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => void loadAudio()}
-                disabled={pending}
-              >
-                <Play aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
-                {audioUrl ? "Reload audio" : "Load audio"}
-              </Button>
-
-              {/*
-                Hidden rather than disabled while the pipeline still holds the
-                call: the API answers 409 for a non-terminal status, and a
-                button whose only outcome is an error is worse than no button.
-              */}
-              {isTerminal ? (
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => void reprocess()}
+                  onClick={() => void loadAudio()}
                   disabled={pending}
                 >
-                  <RefreshCw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
-                  {pending ? "Working…" : "Reprocess"}
+                  <Play aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                  {audioUrl ? "Reload audio" : "Load audio"}
                 </Button>
-              ) : null}
+
+                {/*
+                  Hidden rather than disabled while the pipeline still holds the
+                  call: the API answers 409 for a non-terminal status, and a
+                  button whose only outcome is an error is worse than no button.
+                */}
+                {isTerminal ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void reprocess()}
+                    disabled={pending}
+                  >
+                    <RefreshCw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                    {pending ? "Working…" : "Reprocess"}
+                  </Button>
+                ) : null}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </aside>
     </>

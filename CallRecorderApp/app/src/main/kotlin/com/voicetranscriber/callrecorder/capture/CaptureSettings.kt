@@ -113,6 +113,25 @@ class CaptureSettings(context: Context) {
         get() = prefs.getLong(KEY_OEM_INGEST_SINCE, 0L)
         set(value) = prefs.edit().putLong(KEY_OEM_INGEST_SINCE, value).apply()
 
+    /**
+     * Epoch-ms of the newest missed call the server has acknowledged - the call-log sync's
+     * cursor (MissedCallSyncWorker). 0 until the first sync, which seeds it
+     * [MISSED_BACKLOG_GRACE_MS] back. Only ever moves forward, and only after the server
+     * answers, so a failed send is re-read from the call log next time rather than lost.
+     */
+    var missedCallsSince: Long
+        get() = prefs.getLong(KEY_MISSED_SINCE, 0L)
+        set(value) = prefs.edit().putLong(KEY_MISSED_SINCE, value).apply()
+
+    /**
+     * Call-log DATEs recently sent, so the small overlap the sync re-reads behind its cursor
+     * (see MissedCallSyncWorker.OVERLAP_MS) does not cost a network call for entries the
+     * server already has. Comma-separated, newest last, capped.
+     */
+    var missedCallsRecentlySent: String
+        get() = prefs.getString(KEY_MISSED_RECENT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_MISSED_RECENT, value).apply()
+
     fun profileFor(kind: ProfileKind): CaptureProfile = when (kind) {
         ProfileKind.PHONE -> {
             // Base tries VOICE_CALL first (clean both-ends where the OEM allows it), then
@@ -183,6 +202,16 @@ class CaptureSettings(context: Context) {
          * counted and reported - see OemRecordingIngestor.ingest.
          */
         const val BACKLOG_GRACE_MS = 30L * 24 * 60 * 60 * 1000  // 30 days
+
+        /**
+         * How far back the FIRST missed-call sync reaches. Shorter than [BACKLOG_GRACE_MS] on
+         * purpose: a missed call is a to-do ("ring them back"), and a month of them landing at
+         * once would bury the unmatched-call queue in callers nobody can usefully ring now. A
+         * week still gives the owner's reports some history on the day the build lands.
+         */
+        const val MISSED_BACKLOG_GRACE_MS = 7L * 24 * 60 * 60 * 1000  // 7 days
+        private const val KEY_MISSED_SINCE = "missedCallsSince"
+        private const val KEY_MISSED_RECENT = "missedCallsRecentlySent"
         private const val KEY_VOIP = "recordVoipCalls"
         private const val KEY_ANNOUNCE = "announceRecording"
         private const val KEY_ENCRYPT = "encryptAtRest"

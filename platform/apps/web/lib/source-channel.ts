@@ -26,6 +26,11 @@ export interface SourceChannelInfo {
 
 export const SOURCE_CHANNELS: Record<LeadSourceChannel, SourceChannelInfo> = {
   call: { label: "Phone call", family: "phone", description: "A call recorded on a team handset" },
+  missed_call: {
+    label: "Missed call",
+    family: "phone",
+    description: "A call your team's handset missed, from a number nobody had a lead for yet",
+  },
   telephony: {
     label: "Phone (cloud telephony)",
     family: "phone",

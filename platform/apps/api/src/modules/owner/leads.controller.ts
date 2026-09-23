@@ -143,7 +143,15 @@ const LEAD_COLUMNS = `
   COALESCE(d.telecaller_name, d.label) AS telecaller,
   -- Whose lead it is (routing, or a person's bulk reassign), as opposed to
   -- whose handset took the call above.
-  l.assigned_telecaller_id, atc.display_name AS assigned_telecaller_name`;
+  l.assigned_telecaller_id, atc.display_name AS assigned_telecaller_name,
+  -- The "Callback" column (migration 0134): the last time this lead went
+  -- unanswered and the last time anybody reached them, off the calls already
+  -- linked to it (calls.lead_id, 0094) rather than the number-key matching
+  -- owner-calls.controller.ts uses - once a call is on the lead this is a
+  -- cheaper and equally correct source of the same fact. NULLs when the lead
+  -- has never had a missed call; @aura/shared's leadCallbackState turns the
+  -- pair into "returned" / "waiting" / nothing to show.
+  cb.last_missed_at, cb.last_reached_at`;
 
 /**
  * The joins LEAD_COLUMNS depends on. Kept beside it rather than repeated at
@@ -156,7 +164,15 @@ const LEAD_JOINS = `
   LEFT JOIN crm_projects pr ON pr.id = l.project_id
   LEFT JOIN lead_sources ls ON ls.id = l.lead_source_id
   LEFT JOIN marketing_sources ms ON ms.id = l.marketing_source_id
-  LEFT JOIN telecallers atc ON atc.id = l.assigned_telecaller_id`;
+  LEFT JOIN telecallers atc ON atc.id = l.assigned_telecaller_id
+  LEFT JOIN LATERAL (
+    SELECT max(c.started_at) FILTER (WHERE c.direction = 'incoming' AND c.duration_s <= 0)
+             AS last_missed_at,
+           max(c.started_at) FILTER (WHERE c.direction = 'outgoing'
+                                         OR (c.direction = 'incoming' AND c.duration_s > 0))
+             AS last_reached_at
+      FROM calls c WHERE c.lead_id = l.id
+  ) cb ON true`;
 
 /**
  * The AI read of the lead's most recent call - what the operator console has

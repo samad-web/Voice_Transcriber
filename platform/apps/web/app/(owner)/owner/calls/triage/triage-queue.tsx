@@ -10,9 +10,12 @@ import {
   ErrorBanner,
   Input,
   MonoLabel,
+  StateChip,
   StatusChip,
+  callState,
   useAlert,
 } from "@aura/ui";
+import { Time } from "@/components/org-time";
 import {
   createLeadFromCallAction,
   dismissCallAction,
@@ -41,8 +44,11 @@ function duration(seconds: number): string {
 /** A sensible starting title for the lead this call would create. */
 function suggestedTitle(call: UnmatchedCall): string {
   if (call.remote_name) return call.remote_name;
-  if (call.remote_number_last3) return `Call ending ${call.remote_number_last3}`;
-  return `Call on ${call.started_at.slice(0, 10)}`;
+  // A missed caller is an enquiry nobody has heard yet; saying so in the title
+  // is what tells whoever picks the lead up that the first move is a call back.
+  const kind = callState(call) === "missed" ? "Missed call" : "Call";
+  if (call.remote_number_last3) return `${kind} ending ${call.remote_number_last3}`;
+  return `${kind} on ${call.started_at.slice(0, 10)}`;
 }
 
 /**
@@ -127,9 +133,16 @@ export function TriageQueue({
                   <span className="text-sm font-medium text-text">
                     {call.remote_name ?? number(call)}
                   </span>
-                  <StatusChip tone={call.direction === "outgoing" ? "solid" : "muted"}>
-                    {call.direction === "outgoing" ? "Outgoing" : "Incoming"}
-                  </StatusChip>
+                  {/* A missed call (0133) wears the console's missed state:
+                      an unknown number that rang and got nobody is the most
+                      likely new enquiry in this whole queue. */}
+                  {callState(call) === "missed" ? (
+                    <StateChip state="missed" />
+                  ) : (
+                    <StatusChip tone={call.direction === "outgoing" ? "solid" : "muted"}>
+                      {call.direction === "outgoing" ? "Outgoing" : "Incoming"}
+                    </StatusChip>
+                  )}
                   {/* The one distinction that changes which verb applies: a call
                       with no number can never be matched automatically, so Link
                       is the only route to a lead for it. Saying so on the row
@@ -137,7 +150,8 @@ export function TriageQueue({
                   {!call.has_number ? <StatusChip tone="outline">No number</StatusChip> : null}
                 </div>
                 <p className="text-xs text-text-muted">
-                  {new Date(call.started_at).toLocaleString()} · {duration(call.duration_s)}
+                  <Time iso={call.started_at} mode="datetime" />
+                  {callState(call) === "missed" ? " · nobody picked up" : ` · ${duration(call.duration_s)}`}
                   {call.telecaller ? ` · ${call.telecaller}` : ""}
                   {call.remote_name && call.has_number ? ` · ${number(call)}` : ""}
                 </p>
@@ -393,7 +407,7 @@ function LinkDialog({
                 </span>
                 <span className="mt-0.5 block text-xs text-text-muted">
                   {lead.contact_name ?? "no name"} · last activity{" "}
-                  {new Date(lead.last_activity_at).toLocaleDateString()}
+                  <Time iso={lead.last_activity_at} mode="date" />
                 </span>
               </button>
             </li>

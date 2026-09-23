@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.google.android.material.color.DynamicColors
+import com.voicetranscriber.callrecorder.ingest.MissedCallSyncWorker
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.platform.ConfigRefreshWorker
 import com.voicetranscriber.callrecorder.platform.FcmTokenManager
@@ -61,6 +62,10 @@ class App : Application() {
         //   Safety net for anything missed while the app was killed; the per-call trigger in
         //   PhoneStateReceiver handles the responsive path.
         OemIngestWorker.schedule(this)
+        // - MissedCallSyncWorker (~15m, network): reports calls nobody picked up, read from the
+        //   call log - they have no recording, so nothing else ever sends them. The per-call
+        //   trigger in PhoneStateReceiver is the responsive path; this is the safety net.
+        MissedCallSyncWorker.schedule(this)
         // - AppUpdateWorker (~6h, wifi): downloads and verifies a newer APK, then
         //   installs it - unattended on Android 12+, never during a call. It can
         //   never stop this device recording.

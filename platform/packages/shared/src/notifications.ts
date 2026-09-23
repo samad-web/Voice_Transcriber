@@ -72,6 +72,23 @@ export const NotificationKind = z.enum([
    * exactly why it cannot be turned off.
    */
   "call_access_requested",
+  /**
+   * The workspace's stored recordings crossed 80 % or 100 % of the storage
+   * quota an operator set (doc 27 §6.6, migration 0128). Told to owners, once
+   * per threshold crossed - the sweep records the last one it sent - and
+   * never anywhere outside Aura. Uploads are not refused at 100 %; this is the
+   * whole of the quota's teeth, deliberately.
+   */
+  "storage_quota",
+  /**
+   * A missed call (migration 0134): either an existing lead's owner is told a
+   * call from their customer went unanswered, or the callback task on a lead
+   * the missed-call sweep just created for an unknown caller. NOT raised
+   * alongside `lead_assigned` for that second case - the assignment
+   * notification already says "new work", and a second bell for the same
+   * event is noise, not information.
+   */
+  "missed_call",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

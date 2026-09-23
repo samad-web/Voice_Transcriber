@@ -16,7 +16,7 @@ export interface NotificationKindSpec {
   label: string;
   /** What choosing Instant or Digest for this kind actually affects. */
   description: string;
-  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert";
+  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed";
   /**
    * Somebody has to DO something, not merely know something. These are what
    * the bell's "Needs action" tab shows.
@@ -38,6 +38,12 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     label: "Lead assigned",
     description: "A lead was routed to you.",
     icon: "inbox",
+    needsAction: true,
+  },
+  missed_call: {
+    label: "Missed call",
+    description: "A call from one of your leads went unanswered, or a missed caller was turned into one.",
+    icon: "phone-missed",
     needsAction: true,
   },
   sla_breach: {
@@ -98,6 +104,14 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     label: "Report ready",
     description: "A scheduled report finished.",
     icon: "file-text",
+    needsAction: false,
+  },
+  // Not "needs action": nothing is refused at 100 %, and the conversation it
+  // prompts is with the account manager, not a button in the console.
+  storage_quota: {
+    label: "Storage limit",
+    description: "Your stored call recordings reached 80 % or 100 % of your plan's storage.",
+    icon: "hard-drive",
     needsAction: false,
   },
 };

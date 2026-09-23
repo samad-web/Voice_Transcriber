@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, ShieldOff } from "lucide-react";
+import { formatDateTime, instantToWallTime, timeZoneShortLabel, wallTimeToInstant } from "@aura/shared";
 import { Button, Card, Input, MonoLabel, StatusChip } from "@aura/ui";
+import { useOrgTimeZone } from "@/components/org-time";
 import {
   approveCallAccessAction,
   denyCallAccessAction,
@@ -63,6 +65,7 @@ export function CallAccessClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const zone = useOrgTimeZone();
 
   const open = data.requests.filter((r) => r.status === "pending");
   const liveGrants = data.requests.filter((r) => r.live);
@@ -118,7 +121,7 @@ export function CallAccessClient({
                 <div>
                   <p className="text-sm font-semibold">{request.requested_by_email}</p>
                   <p className="text-sm opacity-70">
-                    Can see your call logs until {formatWhen(request.granted_end)}.
+                    Can see your call logs until {formatWhen(request.granted_end, zone)}.
                   </p>
                   <p className="mt-1 text-xs opacity-60">
                     Approved {request.decided_via === "otp" ? "by code" : "in the console"}
@@ -155,7 +158,7 @@ export function CallAccessClient({
                   <p className="text-xs opacity-60">{request.reason}</p>
                 </div>
                 <StatusChip tone={request.status === "approved" ? "muted" : "danger"}>
-                  {labelFor(request)}
+                  {labelFor(request, zone)}
                 </StatusChip>
               </div>
             </Card>
@@ -240,13 +243,18 @@ function PendingCard({
   pending: boolean;
   run: (fn: () => Promise<{ error?: string }>) => void;
 }) {
+  // The inputs are wall times on the WORKSPACE's clock (Build docs/30 R5), not
+  // the laptop's: an owner abroad granting access "until 18:00" means the
+  // 18:00 their team reads everywhere else in the console.
+  const zone = useOrgTimeZone();
+  const zoneHintId = useId();
   // Four hours from now, rounded to the minute - a deliberate default that is
   // not what was asked for. See the component header.
   const defaults = useMemo(() => {
-    const now = new Date();
-    const end = new Date(now.getTime() + 4 * 60 * 60 * 1000);
-    return { start: toLocalInput(now), end: toLocalInput(end) };
-  }, []);
+    const now = Date.now();
+    const end = now + 4 * 60 * 60 * 1000;
+    return { start: instantToWallTime(now, zone), end: instantToWallTime(end, zone) };
+  }, [zone]);
   const [start, setStart] = useState(defaults.start);
   const [end, setEnd] = useState(defaults.end);
 
@@ -257,8 +265,8 @@ function PendingCard({
           <p className="text-sm font-semibold">{request.requested_by_email}</p>
           <p className="mt-1 text-sm opacity-80">{request.reason}</p>
           <p className="mt-2 text-xs opacity-60">
-            They asked for {formatWhen(request.requested_start)} to{" "}
-            {formatWhen(request.requested_end)}.
+            They asked for {formatWhen(request.requested_start, zone)} to{" "}
+            {formatWhen(request.requested_end, zone)}.
             {request.attempts > 1
               ? ` They have tried to open your call logs ${request.attempts} times.`
               : ""}
@@ -270,19 +278,28 @@ function PendingCard({
 
         {canDecide ? (
           <>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1 text-xs">
                 <span className="opacity-70">Access starts</span>
                 <Input
                   type="datetime-local"
                   value={start}
+                  aria-describedby={zoneHintId}
                   onChange={(e) => setStart(e.target.value)}
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs">
                 <span className="opacity-70">Access ends</span>
-                <Input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+                <Input
+                  type="datetime-local"
+                  value={end}
+                  aria-describedby={zoneHintId}
+                  onChange={(e) => setEnd(e.target.value)}
+                />
               </label>
+              <p id={zoneHintId} className="pb-2 text-xs opacity-60">
+                Times in {timeZoneShortLabel(zone)}
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -290,15 +307,17 @@ function PendingCard({
                 disabled={pending}
                 onClick={() =>
                   run(() =>
+                    // An empty or unreadable input goes through as "", so the
+                    // action's validateCallAccessWindow answers it in a sentence.
                     approveCallAccessAction(
                       request.id,
-                      new Date(start).toISOString(),
-                      new Date(end).toISOString(),
+                      wallTimeToInstant(start, zone) ?? "",
+                      wallTimeToInstant(end, zone) ?? "",
                     ),
                   )
                 }
               >
-                Allow until {formatLocal(end)}
+                Allow until {formatWallTime(end, zone)}
               </Button>
               <Button
                 variant="secondary"
@@ -317,26 +336,21 @@ function PendingCard({
   );
 }
 
-function labelFor(request: CallAccessRequest): string {
+function labelFor(request: CallAccessRequest, zone: string): string {
   if (request.status === "denied") return "Declined";
   if (request.status === "revoked") return "Stopped";
-  if (request.status === "approved") return `Ended ${formatWhen(request.granted_end)}`;
+  if (request.status === "approved") return `Ended ${formatWhen(request.granted_end, zone)}`;
   return request.status;
 }
 
-/** `datetime-local` wants local wall-clock with no zone, trimmed to minutes. */
-function toLocalInput(at: Date): string {
-  const offset = at.getTimezoneOffset() * 60_000;
-  return new Date(at.getTime() - offset).toISOString().slice(0, 16);
+/** A `datetime-local` value, read on the workspace's clock; left as typed if it is not one. */
+function formatWallTime(value: string, zone: string): string {
+  const at = wallTimeToInstant(value, zone);
+  return at ? formatDateTime(at, zone) : value;
 }
 
-function formatLocal(value: string): string {
-  const at = new Date(value);
-  return Number.isNaN(at.getTime()) ? value : at.toLocaleString();
-}
-
-function formatWhen(value: string | null): string {
+function formatWhen(value: string | null, zone: string): string {
   if (!value) return "—";
-  const at = new Date(value);
-  return Number.isNaN(at.getTime()) ? value : at.toLocaleString();
+  const text = formatDateTime(value, zone);
+  return text === "-" ? value : text;
 }

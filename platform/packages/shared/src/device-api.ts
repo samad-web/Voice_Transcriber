@@ -7,6 +7,18 @@ import { CaptureCapability } from "./enums";
  * the Android admin screen submits them here. Recording stays disabled
  * until this flow completes.
  */
+/**
+ * What the handset sends to say which physical phone it is (0130): a SHA-256
+ * it derives from ANDROID_ID, so the raw id never leaves the phone. ANDROID_ID
+ * survives an uninstall, which is the whole point - it is how a re-scanned
+ * pairing QR finds the row this phone used to be.
+ *
+ * A routing hint, never a credential. Nothing is authorised by it alone:
+ * `register` still needs a live pairing token, and `recover` still needs the
+ * recovery secret. Optional because every build before 1.1.6 omits it.
+ */
+export const HardwareId = z.string().regex(/^[0-9a-f]{64}$/, "expected a lowercase sha256 hex digest");
+
 export const DeviceRegisterRequest = z.object({
   instanceId: z.string().uuid(),
   /** One-time admin/enrollment key: short TTL, limited use count, shown once. */
@@ -16,14 +28,58 @@ export const DeviceRegisterRequest = z.object({
   playIntegrityToken: z.string(),
   label: z.string().max(120).optional(),
   captureCapability: CaptureCapability.optional(),
+  hardwareId: HardwareId.optional(),
 });
 export type DeviceRegisterRequest = z.infer<typeof DeviceRegisterRequest>;
 
 export const DeviceRegisterResponse = z.object({
   deviceId: z.string().uuid(),
   refreshToken: z.string(),
+  /**
+   * The credential that lets THIS phone reclaim its row after a reinstall
+   * without a QR (0130). The handset keeps it in Google Block Store, never in
+   * its own preferences, and it is replaced on every use.
+   */
+  recoverySecret: z.string(),
+  /** True when the phone took back an existing row instead of adding one. */
+  recovered: z.boolean(),
+  /**
+   * Who holds this handset, so a reinstalled app can greet its telecaller by
+   * name again. Omitted rather than null when nobody is set: an absent key is
+   * the one shape Android's optString handles correctly (see DeviceConfig).
+   */
+  telecallerName: z.string().optional(),
 });
 export type DeviceRegisterResponse = z.infer<typeof DeviceRegisterResponse>;
+
+/**
+ * `POST /devices/recover` (0130): a reinstalled app reclaiming its row with the
+ * secret it read back from Block Store. No pairing token - the secret is the
+ * authorisation - so the server insists on three things before it rebinds: the
+ * secret matches, the row is still active (an owner's retire is never undone
+ * by the phone itself), and the hardware hash names the same physical phone.
+ */
+export const DeviceRecoverRequest = z.object({
+  deviceId: z.string().uuid(),
+  recoverySecret: z.string().min(32).max(128),
+  publicKey: z.string().min(64).max(2000),
+  deviceFingerprint: z.string().max(200),
+  label: z.string().max(120).optional(),
+  captureCapability: CaptureCapability.optional(),
+  hardwareId: HardwareId.optional(),
+});
+export type DeviceRecoverRequest = z.infer<typeof DeviceRecoverRequest>;
+
+/**
+ * `POST /devices/me/recovery` (0130): an ENROLLED handset asking for a recovery
+ * secret, and reporting its hardware hash. How the fleet already in the field
+ * - enrolled before recovery existed - becomes recoverable once it takes the
+ * update, without anyone re-pairing a phone.
+ */
+export const DeviceRecoveryProvisionRequest = z.object({
+  hardwareId: HardwareId.optional(),
+});
+export type DeviceRecoveryProvisionRequest = z.infer<typeof DeviceRecoveryProvisionRequest>;
 
 export const DeviceAuthRequest = z.object({
   deviceId: z.string().uuid(),
@@ -99,6 +155,89 @@ export const CreateCallResponse = z.object({
   }),
 });
 export type CreateCallResponse = z.infer<typeof CreateCallResponse>;
+
+/**
+ * POST /v1/calls/missed - calls nobody picked up, read from the handset's own
+ * call log (migration 0133).
+ *
+ * A separate route rather than a flag on CreateCallRequest, because that
+ * contract is an UPLOAD handshake: it demands bytes and a digest and answers
+ * with multipart URLs. A missed call has no audio, and bending the upload
+ * shape around "zero bytes, no parts" would teach every older client a state
+ * it was never built for.
+ *
+ * Batched, because the call log is read as a backlog: a phone that slept for a
+ * day wakes with every call it missed since, and one round trip per entry is
+ * the shape that lost uploads in the first place.
+ */
+export const MissedCallReason = z.enum([
+  /** Rang out - CallLog.Calls.MISSED_TYPE. */
+  "unanswered",
+  /** Rejected on the handset - REJECTED_TYPE. */
+  "declined",
+  /** Sent to voicemail - VOICEMAIL_TYPE. */
+  "voicemail",
+  /**
+   * An OUTGOING attempt that rang out (migration 0134) - CallLog.Calls
+   * .OUTGOING_TYPE with a zero duration. The one reason that pairs with
+   * `direction: "outgoing"` rather than "incoming"; see MissedCallEntry's
+   * refinement.
+   */
+  "no_answer",
+]);
+export type MissedCallReason = z.infer<typeof MissedCallReason>;
+
+/**
+ * Which side rang. Defaults to "incoming" - every entry before 0134 was one,
+ * and an older reading of this same call log still only ever reports those.
+ */
+export const MissedCallDirection = z.enum(["incoming", "outgoing"]);
+export type MissedCallDirection = z.infer<typeof MissedCallDirection>;
+
+/** Entries per request. The handset pages its backlog at this size. */
+export const MISSED_CALLS_BATCH_MAX = 200;
+
+export const MissedCallEntry = z
+  .object({
+    /**
+     * Stable per call-log entry - the handset sends `missed-<epoch ms>` of the
+     * entry's DATE. A replay of a batch whose response never arrived is then a
+     * no-op per entry, not a duplicate call.
+     */
+    idempotencyKey: z.string().min(1).max(80),
+    /** When it rang: the call log's DATE, as an ISO instant. */
+    startedAt: z.string().datetime({ offset: true }),
+    direction: MissedCallDirection.default("incoming"),
+    reason: MissedCallReason,
+    /** Optional, and absent rather than null - the same rule as CreateCallRequest. */
+    remoteNumber: z.string().max(40).optional(),
+    remoteName: z.string().max(120).optional(),
+  })
+  // Kept in lockstep with the DB's calls_missed_reason_shape_check (0134): a
+  // reason that does not match its own direction is rejected at the door
+  // rather than trusted to the constraint to catch, which would fail the
+  // whole batch's transaction instead of just this one entry.
+  .refine(
+    (entry) =>
+      entry.direction === "outgoing" ? entry.reason === "no_answer" : entry.reason !== "no_answer",
+    { message: "reason does not match direction", path: ["reason"] },
+  );
+export type MissedCallEntry = z.infer<typeof MissedCallEntry>;
+
+export const MissedCallsRequest = z.object({
+  calls: z.array(MissedCallEntry).min(1).max(MISSED_CALLS_BATCH_MAX),
+});
+export type MissedCallsRequest = z.infer<typeof MissedCallsRequest>;
+
+export const MissedCallsResponse = z.object({
+  /** New rows written. */
+  accepted: z.number().int(),
+  /** Entries this device had already sent - replays, not errors. */
+  duplicates: z.number().int(),
+  /** Entries refused on their own merits (a start time in the future). */
+  skipped: z.number().int(),
+});
+export type MissedCallsResponse = z.infer<typeof MissedCallsResponse>;
 
 /**
  * GET /v1/devices/me/update - the self-update channel (migration 0081).

@@ -15,7 +15,13 @@ import {
 } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
 import { z } from "zod";
-import { CreateCallRequest } from "@aura/shared";
+import {
+  CreateCallRequest,
+  MissedCallsRequest,
+  type MissedCallsResponse,
+  phoneMatchDigits,
+  storedIdempotencyKey,
+} from "@aura/shared";
 import { publishPipeline } from "@aura/queue";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
@@ -25,6 +31,53 @@ import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.gu
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
+
+const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
+
+/**
+ * The privacy-lite fragments of a counterparty number, exactly as every call
+ * row stores them: a 5-digit leading prefix for the label, the last 3, a hash
+ * for matching leads, a normalised key for matching other calls (0133), and
+ * the full digits ONLY for an org that opted in (0011) - which is what makes a
+ * CRM lead callable. Everyone else's `full` stays null.
+ *
+ * One function for both ways a call arrives (a recording, a missed-call entry)
+ * so the two can never hash the same number differently - a missed call and
+ * its callback are exactly the pair that has to match.
+ */
+export function callNumberFields(raw: string | undefined, storeFull: boolean) {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  const matchDigits = phoneMatchDigits(raw);
+  return {
+    prefix: digits ? digits.slice(0, 5) : null,
+    last3: digits.length >= 3 ? digits.slice(-3) : null,
+    hash: digits ? sha256Hex(digits) : null,
+    key: matchDigits ? sha256Hex(matchDigits) : null,
+    full: storeFull && digits ? digits : null,
+  };
+}
+
+/** A phone's clock is not ours: a missed call "starting" further ahead than this is refused, not stored. */
+const MISSED_CALL_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
+
+/** Fewer digits than this on a missed call is a placeholder, not a number (short codes do not ring in). */
+const MISSED_MIN_DIGITS = 3;
+
+/**
+ * The duration a new call row is stored with.
+ *
+ * An INCOMING call that arrives with a recording was answered - the handset
+ * records only from OFFHOOK, and a dialer's own recorder only once the call
+ * connects. But the handset divides milliseconds by 1000, so a pick-up-and-drop
+ * arrived as 0 seconds, and 0 seconds inbound is exactly what the console calls
+ * MISSED. Before 0133 those were the only "missed calls" it ever counted; now
+ * that real ones arrive from the call log, an answered call must never be
+ * mistaken for one. Clamped here rather than on the handset so the builds
+ * already in the field are corrected too.
+ */
+export function recordedCallSeconds(direction: string, durationS: number): number {
+  return direction === "incoming" ? Math.max(1, durationS) : durationS;
+}
 
 const CompleteCallBody = z.object({
   uploadId: z.string().min(1),
@@ -132,7 +185,7 @@ export class CallsController {
       const {
         rows: [ctx],
       } = await client.query(
-        `SELECT d.status AS device_status, d.telecaller_id, i.workspace_id,
+        `SELECT d.status AS device_status, d.telecaller_id, d.install_epoch, i.workspace_id,
                 o.status AS org_status, o.consent_policy, o.store_full_number
            FROM devices d
            JOIN instances i ON i.id = d.instance_id
@@ -169,6 +222,14 @@ export class CallsController {
       // received at all (see the worker's stall sweep, retry.ts), so a retry
       // against it is a genuinely fresh attempt, not a replay - it falls
       // through to the normal insert path below, same as before this existed.
+      //
+      // The key is looked up and stored NAMESPACED by the install that sent it
+      // (0130). The handset sends `local-<Room row id>`, and a phone that was
+      // reinstalled and then reclaimed its old device row restarts those ids at
+      // 1 - so without the namespace its first new recording would match the
+      // OLD install's `local-1`, be acknowledged as a retry, and never be
+      // stored. Epoch 0 (every device never taken over) leaves keys unchanged.
+      const idempotencyKey = storedIdempotencyKey(ctx.install_epoch ?? 0, call.idempotencyKey);
       const {
         rows: [existing],
       } = await client.query(
@@ -177,7 +238,7 @@ export class CallsController {
           WHERE c.device_id = $1 AND c.idempotency_key = $2 AND c.status <> 'FAILED_UPLOAD'
           ORDER BY c.created_at DESC
           LIMIT 1`,
-        [deviceId, call.idempotencyKey],
+        [deviceId, idempotencyKey],
       );
       if (existing) {
         const upload = await this.s3.createMultipartUpload(existing.s3_key, Number(existing.bytes));
@@ -194,17 +255,9 @@ export class CallsController {
             ? "played"
             : "failed";
 
-      // Keep only privacy-lite fragments of the number: a 5-digit leading prefix
-      // for the call label, the last 3, and a hash for matching.
-      const digits = (call.remoteNumber ?? "").replace(/\D/g, "");
-      const numberPrefix = digits ? digits.slice(0, 5) : null;
-      const numberLast3 = digits.length >= 3 ? digits.slice(-3) : null;
-      const numberHash = digits ? createHash("sha256").update(digits).digest("hex") : null;
+      // Keep only privacy-lite fragments of the number - see callNumberFields.
+      const number = callNumberFields(call.remoteNumber, ctx.store_full_number === true);
       const remoteName = call.remoteName?.trim() || null;
-      // The full number is retained ONLY for an org that opted in (0011), which
-      // is what makes a CRM lead callable. Everyone else keeps the fragments
-      // above and nothing more - the column stays NULL.
-      const numberFull = ctx.store_full_number && digits ? digits : null;
 
       const {
         rows: [row],
@@ -213,8 +266,8 @@ export class CallsController {
            (org_id, workspace_id, device_id, telecaller_id, direction, started_at, duration_s,
             audio_source_used, status, consent_status,
             remote_number_prefix, remote_number_last3, remote_number_hash, remote_name,
-            remote_number_full, idempotency_key)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'AWAITING_AUDIO', $9, $10, $11, $12, $13, $14, $15)
+            remote_number_full, idempotency_key, remote_number_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'AWAITING_AUDIO', $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING id`,
         [
           orgId,
@@ -226,15 +279,16 @@ export class CallsController {
           ctx.telecaller_id,
           call.direction,
           call.startedAt,
-          call.durationS,
+          recordedCallSeconds(call.direction, call.durationS),
           call.audioSourceUsed,
           consentStatus,
-          numberPrefix,
-          numberLast3,
-          numberHash,
+          number.prefix,
+          number.last3,
+          number.hash,
           remoteName,
-          numberFull,
-          call.idempotencyKey,
+          number.full,
+          idempotencyKey,
+          number.key,
         ],
       );
 
@@ -334,6 +388,115 @@ export class CallsController {
   }
 
   /**
+   * Calls nobody picked up, from the handset's call log (migration 0133), and
+   * - since 0134 - outbound attempts that rang out with nobody on the other
+   * end (`direction: "outgoing"`, `reason: "no_answer"`).
+   *
+   * Each entry becomes an ordinary `calls` row - zero seconds, no recording -
+   * born in NO_AUDIO, so it is never queued, never reprocessed and never
+   * billed as audio. An INCOMING one is what every surface that derives
+   * "missed" from direction + duration (the dashboard, call insights, the
+   * heatmap, the per-person table) counts; an OUTGOING one never is - it is
+   * our own unanswered attempt, not a missed inbound call - but both are
+   * ordinary calls to the lead-link sweep and the unmatched queue.
+   *
+   * ── WHAT IT CHECKS, AND WHAT IT DELIBERATELY DOES NOT ─────────────────────
+   *
+   * Device and org must be active - the same admission as an upload, because a
+   * logged-out or wiped handset must not keep writing into the tenant. The
+   * consent policy is NOT consulted: it governs RECORDING, and nothing here was
+   * recorded. A missed call is call-log metadata of exactly the kind every
+   * recorded call already carries (who, when, which way).
+   *
+   * ── IDEMPOTENT PER ENTRY ──────────────────────────────────────────────────
+   *
+   * The handset re-sends a batch whose response it never saw, so a replay has
+   * to be a no-op entry by entry, not a duplicate row. The key is namespaced by
+   * install exactly as create() does (0130), and the insert leans on the same
+   * unique index create() relies on - `ON CONFLICT DO NOTHING` also absorbs a
+   * key repeated inside one batch. One statement for the whole batch: the
+   * database is ~125ms away, and a phone waking with a day of missed calls
+   * must not cost a round trip per entry.
+   */
+  @Post("missed")
+  @UseGuards(DeviceAuthGuard)
+  // Not throttled, for the reason create() is not: this is ingest, a fleet
+  // shares one office IP, and a phone that slept flushes its backlog in a burst.
+  @SkipThrottle()
+  async missed(@Req() req: DeviceRequest, @Body() body: unknown): Promise<MissedCallsResponse> {
+    const parsed = MissedCallsRequest.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { deviceId, orgId } = req.device;
+
+    return this.db.withOrg(orgId, async (client) => {
+      const {
+        rows: [ctx],
+      } = await client.query(
+        `SELECT d.status AS device_status, d.telecaller_id, d.install_epoch, i.workspace_id,
+                o.status AS org_status, o.store_full_number
+           FROM devices d
+           JOIN instances i ON i.id = d.instance_id
+           JOIN organizations o ON o.id = d.org_id
+          WHERE d.id = $1`,
+        [deviceId],
+      );
+      if (!ctx || ctx.device_status !== "active" || ctx.org_status !== "active") {
+        throw new ConflictException("device or org is not active");
+      }
+
+      const horizon = Date.now() + MISSED_CALL_FUTURE_SLACK_MS;
+      const rows: Array<Record<string, string | null>> = [];
+      let skipped = 0;
+      for (const entry of parsed.data.calls) {
+        if (Date.parse(entry.startedAt) > horizon) {
+          skipped++;
+          continue;
+        }
+        // A withheld caller reaches some dialers' logs as "-1" or "-2". The handset
+        // already drops those, but an older build or an odd dialer must not turn a
+        // placeholder into a hash every withheld caller then shares.
+        const raw = (entry.remoteNumber ?? "").replace(/\D/g, "").length >= MISSED_MIN_DIGITS ? entry.remoteNumber : undefined;
+        const number = callNumberFields(raw, ctx.store_full_number === true);
+        rows.push({
+          started_at: entry.startedAt,
+          direction: entry.direction,
+          reason: entry.reason,
+          num_prefix: number.prefix,
+          num_last3: number.last3,
+          num_hash: number.hash,
+          num_key: number.key,
+          num_full: number.full,
+          remote_name: entry.remoteName?.trim() || null,
+          idem_key: storedIdempotencyKey(ctx.install_epoch ?? 0, entry.idempotencyKey),
+        });
+      }
+      if (rows.length === 0) return { accepted: 0, duplicates: 0, skipped };
+
+      const { rowCount } = await client.query(
+        `INSERT INTO calls
+           (org_id, workspace_id, device_id, telecaller_id, direction, started_at, duration_s,
+            audio_source_used, status, consent_status, missed_reason,
+            remote_number_prefix, remote_number_last3, remote_number_hash, remote_number_key,
+            remote_name, remote_number_full, idempotency_key)
+         SELECT $1, $2, $3, $4, x.direction, x.started_at, 0,
+                'call_log', 'NO_AUDIO', 'not_required', x.reason,
+                x.num_prefix, x.num_last3, x.num_hash, x.num_key,
+                x.remote_name, x.num_full, x.idem_key
+           FROM jsonb_to_recordset($5::jsonb) AS x(
+                  started_at timestamptz, direction text, reason text,
+                  num_prefix text, num_last3 text, num_hash text, num_key text, num_full text,
+                  remote_name text, idem_key text)
+         ON CONFLICT (device_id, idempotency_key)
+           WHERE status <> 'FAILED_UPLOAD' AND idempotency_key IS NOT NULL
+         DO NOTHING`,
+        [orgId, ctx.workspace_id, deviceId, ctx.telecaller_id, JSON.stringify(rows)],
+      );
+      const accepted = rowCount ?? 0;
+      return { accepted, duplicates: rows.length - accepted, skipped };
+    });
+  }
+
+  /**
    * Listing for the web Call Explorer.
    *
    * Every row carries the instance it belongs to. Without that the console
@@ -357,8 +520,9 @@ export class CallsController {
                  CASE $3::text
                    -- TRANSCRIPTION_OFF is terminal by choice, so it belongs in
                    -- neither bucket: counting it as in-flight would show work
-                   -- that is never coming.
-                   WHEN 'in_pipeline' THEN c.status NOT IN ('COMPLETE', 'TRANSCRIPTION_OFF')
+                   -- that is never coming. NO_AUDIO (0133) is a missed call
+                   -- with nothing to process, terminal from birth.
+                   WHEN 'in_pipeline' THEN c.status NOT IN ('COMPLETE', 'TRANSCRIPTION_OFF', 'NO_AUDIO')
                                        AND c.status NOT LIKE 'FAILED%'
                    WHEN 'failed'      THEN c.status LIKE 'FAILED%'
                    ELSE c.status = $3::text

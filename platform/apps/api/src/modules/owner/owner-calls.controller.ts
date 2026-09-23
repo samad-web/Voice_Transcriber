@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { publishPipeline } from "@aura/queue";
+import { CallLogDateQuery } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { orgHasModule } from "../../common/org-modules";
@@ -23,6 +24,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 import { AgentsService, replyDrafterActive } from "../agents/agents.service";
+import { HAS_NUMBER, IS_MISSED, MISSED_CALLBACK_JOIN } from "./missed-callback-sql";
 
 const CreateNoteBody = z.object({
   body: z.string().min(1).max(10000),
@@ -36,6 +38,13 @@ const ListQuery = z.object({
    */
   state: z.enum(["complete", "in_pipeline", "failed"]).optional(),
   direction: z.enum(["incoming", "outgoing"]).optional(),
+  /**
+   * Missed calls only (0133): every one, the ones still waiting for somebody
+   * to ring back, or the ones that were reached. "Waiting" leaves out a call
+   * with no number - nobody can return it, and a work list that can never be
+   * emptied is one people stop opening. See missed-callback-sql.ts.
+   */
+  missed: z.enum(["all", "waiting", "returned"]).optional(),
   sentiment: z.enum(["positive", "neutral", "negative"]).optional(),
   /** The handset, not the person - `devices.id`, as the dashboard ranks them. */
   deviceId: z.string().uuid().optional(),
@@ -49,6 +58,55 @@ const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
+// The date filter and sort (`period`, `from`/`to`, `sort`) are parsed by
+// `CallLogDateQuery` from @aura/shared, beside this: the console builds its
+// links from the same vocabulary.
+
+/**
+ * The date window, as calendar days in the org's reporting timezone.
+ *
+ * $6/$7 are an explicit `from`/`to`; $8 is a preset name, turned into days
+ * against `org_reporting_today()` - never `current_date`, which is UTC and puts
+ * an Indian floor's small hours on the wrong day. Explicit dates win.
+ *
+ * With no filter the bounds are -infinity/+infinity rather than NULL, so the
+ * predicate stays a plain range over `started_at` (NOT NULL since 0001) that
+ * the planner can use as one, instead of an `IS NULL OR` it cannot.
+ *
+ * `from_day`/`to_day` are echoed back so the console can say which dates a
+ * preset like "Last 7 days" actually covered.
+ */
+const WINDOW_CTE = `
+  WITH w AS (
+    SELECT d.from_day, d.to_day,
+           COALESCE(d.from_day::timestamp AT TIME ZONE d.zone, '-infinity'::timestamptz) AS from_at,
+           COALESCE((d.to_day + 1)::timestamp AT TIME ZONE d.zone, 'infinity'::timestamptz) AS to_at
+      FROM (
+        SELECT COALESCE($6::date, CASE $8::text
+                 WHEN 'today'      THEN t.today
+                 WHEN 'yesterday'  THEN t.today - 1
+                 WHEN 'last7'      THEN t.today - 6
+                 WHEN 'last30'     THEN t.today - 29
+                 WHEN 'last90'     THEN t.today - 89
+                 WHEN 'this_month' THEN date_trunc('month', t.today::timestamp)::date
+                 WHEN 'last_month' THEN (date_trunc('month', t.today::timestamp) - interval '1 month')::date
+               END) AS from_day,
+               COALESCE($7::date, CASE
+                 WHEN $8::text IS NULL          THEN NULL
+                 WHEN $8::text = 'yesterday'    THEN t.today - 1
+                 WHEN $8::text = 'last_month'   THEN date_trunc('month', t.today::timestamp)::date - 1
+                 ELSE t.today
+               END) AS to_day,
+               t.zone
+          FROM (
+            SELECT org_reporting_today() AS today,
+                   COALESCE((SELECT o.reporting_timezone
+                               FROM organizations o
+                              WHERE o.id = NULLIF(current_setting('app.org_id', true), '')::uuid),
+                            'Asia/Kolkata') AS zone
+          ) t
+      ) d
+  )`;
 
 /**
  * The AI read, per call. Shared by the list and the detail so a call cannot
@@ -117,12 +175,17 @@ export class OwnerCallsController {
     private readonly agents: AgentsService,
   ) {}
 
-  /** List view: filtered, paginated, newest first. */
+  /** List view: filtered by what and when, paginated, newest (or oldest) first. */
   @Get()
   async list(@OrgId() orgId: string, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { state, direction, sentiment, deviceId, q, limit, offset } = parsed.data;
+    const dates = CallLogDateQuery.safeParse(query);
+    if (!dates.success) throw new BadRequestException(dates.error.issues);
+    const { state, direction, missed, sentiment, deviceId, q, limit, offset } = parsed.data;
+    const { period, from, to, sort } = dates.data;
+    // A whitelisted keyword, never caller text - the only thing interpolated.
+    const order = sort === "oldest" ? "ASC" : "DESC";
 
     return this.db.withOrg(orgId, async (client) => {
       if (!(await orgHasModule(client, "call_intel"))) {
@@ -135,53 +198,89 @@ export class OwnerCallsController {
                  CASE $1::text
                    WHEN 'complete'    THEN c.status = 'COMPLETE'
                    WHEN 'failed'      THEN c.status LIKE 'FAILED%'
-                   WHEN 'in_pipeline' THEN c.status NOT IN ('COMPLETE', 'TRANSCRIPTION_OFF')
+                   -- NO_AUDIO (0133) is a missed call: nothing to process, ever.
+                   WHEN 'in_pipeline' THEN c.status NOT IN ('COMPLETE', 'TRANSCRIPTION_OFF', 'NO_AUDIO')
                                        AND c.status NOT LIKE 'FAILED%'
                  END)
             AND ($2::text IS NULL OR c.direction = $2::text)
             AND ($3::text IS NULL OR ci.sentiment = $3::text)
             AND ($4::uuid IS NULL OR c.device_id = $4::uuid)
-            AND ($5::text IS NULL OR c.remote_name ILIKE $5::text OR ci.summary ILIKE $5::text)`;
+            AND ($5::text IS NULL OR c.remote_name ILIKE $5::text OR ci.summary ILIKE $5::text)
+            AND ($9::text IS NULL OR (${IS_MISSED} AND
+                 CASE $9::text
+                   WHEN 'all'      THEN true
+                   WHEN 'waiting'  THEN cb.returned_at IS NULL AND ${HAS_NUMBER}
+                   WHEN 'returned' THEN cb.returned_at IS NOT NULL
+                 END))
+            AND c.started_at >= w.from_at AND c.started_at < w.to_at`;
       const filters = [
         state ?? null,
         direction ?? null,
         sentiment ?? null,
         deviceId ?? null,
         q ? `%${q}%` : null,
+        from ?? null,
+        to ?? null,
+        period ?? null,
+        missed ?? null,
       ];
 
       const { rows } = await client.query(
-        `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
+        `${WINDOW_CTE}
+         SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
                 c.remote_name, c.remote_number_prefix, c.remote_number_last3,
                 c.device_id, c.disposition_key,
                 c.device_id, COALESCE(d.telecaller_name, d.label) AS telecaller,
                 ci.intent, ci.sentiment, ci.outcome, ci.summary, ci.has_transcript,
                 ca.quality_score,
-                lead.id AS lead_id, lead.title AS lead_title
+                lead.id AS lead_id, lead.title AS lead_title,
+                c.missed_reason, ${HAS_NUMBER} AS has_number,
+                cb.returned_at, cb.return_direction
            FROM calls c
+           CROSS JOIN w
            LEFT JOIN devices d ON d.id = c.device_id
            ${READ_JOIN}
            ${LEAD_JOIN}
+           ${MISSED_CALLBACK_JOIN}
           ${where}
-          ORDER BY c.started_at DESC
-          LIMIT $6 OFFSET $7`,
+          -- The id breaks ties so a page boundary never falls between two calls
+          -- that started in the same second - jumping to page 7 and back must
+          -- show the same rows.
+          ORDER BY c.started_at ${order}, c.id ${order}
+          LIMIT $10 OFFSET $11`,
         [...filters, limit, offset],
       );
 
       const {
         rows: [count],
-      } = await client.query(
+      } = await client.query<{ total: number; range_from: string | null; range_to: string | null }>(
         // The read join is not optional in the count even though it selects
-        // nothing from it: `where` filters on ci.sentiment and ci.summary.
-        `SELECT count(*)::int AS total
+        // nothing from it: `where` filters on ci.sentiment and ci.summary -
+        // and the callback join likewise, for the missed filter's `cb`.
+        // The window's dates ride along as scalar subqueries, so they come back
+        // even when nothing matched - "no calls on 13 Sep" needs the date too.
+        `${WINDOW_CTE}
+         SELECT count(*)::int AS total,
+                (SELECT to_char(from_day, 'YYYY-MM-DD') FROM w) AS range_from,
+                (SELECT to_char(to_day, 'YYYY-MM-DD') FROM w) AS range_to
            FROM calls c
+           CROSS JOIN w
            LEFT JOIN devices d ON d.id = c.device_id
            ${READ_JOIN}
+           ${MISSED_CALLBACK_JOIN}
           ${where}`,
         filters,
       );
 
-      return { calls: rows, total: count?.total ?? 0, limit, offset };
+      return {
+        calls: rows,
+        total: count?.total ?? 0,
+        limit,
+        offset,
+        sort,
+        range:
+          count?.range_from && count.range_to ? { from: count.range_from, to: count.range_to } : null,
+      };
     });
   }
 
@@ -220,11 +319,14 @@ export class OwnerCallsController {
                 c.device_id, COALESCE(d.telecaller_name, d.label) AS telecaller,
                 ci.intent, ci.sentiment, ci.outcome, ci.summary, ci.has_transcript,
                 ca.quality_score,
-                lead.id AS lead_id, lead.title AS lead_title
+                lead.id AS lead_id, lead.title AS lead_title,
+                c.missed_reason, ${HAS_NUMBER} AS has_number,
+                cb.returned_at, cb.return_direction
            FROM calls c
            LEFT JOIN devices d ON d.id = c.device_id
            ${READ_JOIN}
            ${LEAD_JOIN}
+           ${MISSED_CALLBACK_JOIN}
           WHERE c.id = $1`,
         [callId],
       );

@@ -1,4 +1,6 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { leadTitle } from "@aura/shared";
+import { notifyMissedCallOwner } from "./missed-call-notify";
 
 /**
  * Attach calls to the leads they were about (migration 0094).
@@ -65,10 +67,28 @@ interface OrgRow {
  * to contend with. A console link racing it can only produce the same row
  * (both write the same lead_id), and the `c.lead_id IS NULL` guard means the
  * loser writes nothing.
+ *
+ * RETURNING carries just enough to drive `notifyMissedCallOwner` (migration
+ * 0134) for whichever of these links turned out to be a missed call landing
+ * on a lead that already has an owner - the common case, since most missed
+ * callers already have a lead by the time they call. It is a second, cheap
+ * pass over the SAME rows this statement already touched, not a second query
+ * over the table.
  */
+interface LinkedCall {
+  id: string;
+  lead_id: string;
+  direction: string;
+  duration_s: number;
+  status: string;
+  remote_name: string | null;
+  remote_number_prefix: string | null;
+  remote_number_last3: string | null;
+}
+
 async function linkOrg(orgId: string): Promise<number> {
   return withOrgContext(orgId, async (client) => {
-    const result = await client.query(
+    const result = await client.query<LinkedCall>(
       `UPDATE calls c
           SET lead_id          = l.id,
               lead_link_source = 'auto',
@@ -83,9 +103,33 @@ async function linkOrg(orgId: string): Promise<number> {
                  LIMIT $1
               )
           AND l.workspace_id        = c.workspace_id
-          AND l.contact_number_hash = c.remote_number_hash`,
+          AND l.contact_number_hash = c.remote_number_hash
+        RETURNING c.id, l.id AS lead_id, c.direction, c.duration_s, c.status,
+                  c.remote_name, c.remote_number_prefix, c.remote_number_last3`,
       [BATCH],
     );
+
+    for (const row of result.rows) {
+      if (row.direction !== "incoming" || row.duration_s > 0 || row.status !== "NO_AUDIO") continue;
+      // SAVEPOINT, not a bare try/catch: this all runs inside withOrgContext's
+      // one transaction, and an unguarded failure here would mark it aborted -
+      // every statement after it, including the eventual COMMIT, would then
+      // fail too, undoing the very links this tick already made. Same
+      // reasoning as upsertLead's stage-ledger write (leads.ts).
+      await client.query("SAVEPOINT missed_call_notify");
+      try {
+        await notifyMissedCallOwner(client, orgId, {
+          callId: row.id,
+          leadId: row.lead_id,
+          callerTitle: leadTitle(null, row.remote_name, row.remote_number_prefix, row.remote_number_last3),
+        });
+        await client.query("RELEASE SAVEPOINT missed_call_notify");
+      } catch (err) {
+        await client.query("ROLLBACK TO SAVEPOINT missed_call_notify");
+        console.error(`call-lead link: missed-call notify for call ${row.id}:`, err);
+      }
+    }
+
     return result.rowCount ?? 0;
   });
 }

@@ -10,15 +10,17 @@ import {
   ClipboardCheck,
   Clock,
   FileText,
+  HardDrive,
   Hourglass,
   Inbox,
+  PhoneMissed,
   Plug,
   ShieldAlert,
   UserPlus,
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { Button, Popover, useToast } from "@aura/ui";
+import { Button, HeaderIconButton, Popover, useToast } from "@aura/ui";
 import { useRealtime } from "@/components/realtime-provider";
 import {
   describeDelivery,
@@ -57,6 +59,8 @@ const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
   alarm: AlarmClock,
   "clipboard-check": ClipboardCheck,
   "shield-alert": ShieldAlert,
+  "hard-drive": HardDrive,
+  "phone-missed": PhoneMissed,
 };
 
 type Tab = "all" | "action";
@@ -176,8 +180,7 @@ export function NotificationBell() {
       align="end"
       className="w-80"
       trigger={
-        <button
-          type="button"
+        <HeaderIconButton
           onClick={() => setOpen((v) => !v)}
           // `aria-haspopup` was the one thing this trigger was missing that the
           // workspace switcher already had: without it a screen reader
@@ -185,7 +188,6 @@ export function NotificationBell() {
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
-          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-text-muted transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-text"
         >
           <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
           {unread > 0 ? (
@@ -193,7 +195,7 @@ export function NotificationBell() {
               {unread > 9 ? "9+" : unread}
             </span>
           ) : null}
-        </button>
+        </HeaderIconButton>
       }
     >
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">

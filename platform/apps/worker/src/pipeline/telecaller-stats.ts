@@ -87,6 +87,10 @@ WITH bounded AS (
    WHERE c.telecaller_id IS NOT NULL
      AND c.started_at >= $3
      AND c.started_at <  $4
+     -- A missed call (0133) is something that happened TO the handset, not
+     -- work the telecaller did: counting one would split an idle gap in two
+     -- and stretch the day's active span to whenever the phone first rang.
+     AND c.status <> 'NO_AUDIO'
 ),
 gaps AS (
   SELECT telecaller_id,

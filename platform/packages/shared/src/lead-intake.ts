@@ -73,6 +73,14 @@ export const LeadSourceChannel = z.enum([
   "api",
   "import",
   "manual",
+  // A lead the missed-call sweep created for an unknown caller (migration
+  // 0134). Also not a LeadSourceKind - there is nothing to configure, the
+  // channel exists the moment call-log permission does - and deliberately not
+  // 'call', which already means a person pressed Create Lead on the triage
+  // queue (call-triage.controller.ts). The two answer different questions:
+  // how much business almost went unanswered, versus how much a person had
+  // to rescue by hand.
+  "missed_call",
 ]);
 export type LeadSourceChannel = z.infer<typeof LeadSourceChannel>;
 

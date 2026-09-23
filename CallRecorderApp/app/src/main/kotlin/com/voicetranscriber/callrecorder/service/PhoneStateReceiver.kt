@@ -6,6 +6,7 @@ import android.content.Intent
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
+import com.voicetranscriber.callrecorder.ingest.MissedCallSyncWorker
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.ingest.OemRecordingIngestor
 import com.voicetranscriber.callrecorder.platform.ActivationStore
@@ -18,6 +19,9 @@ import com.voicetranscriber.callrecorder.recordings.SourceRegistry
  * Recording starts on OFFHOOK (call *active/attended*), never on RINGING - so an
  * unanswered incoming call is not recorded. Direction is inferred: if we saw a RINGING
  * state first it's incoming, otherwise it's an outgoing call we dialed.
+ *
+ * An unanswered call is still REPORTED, from the call log rather than from here: see
+ * MissedCallSyncWorker, which this nudges when a call that rang goes idle.
  */
 class PhoneStateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -51,11 +55,17 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 RecordingService.start(context, SourceRegistry.telephony().id, number, direction)
             }
             TelephonyManager.EXTRA_STATE_IDLE -> {
+                val rang = sawRinging
                 sawRinging = false
                 lastNumber = null
                 RecordingService.stop(context)
                 // The dialer writes its recording on hang-up; pick it up shortly after.
                 OemIngestWorker.enqueueAfterCall(context)
+                // An incoming call just ended - answered or not. If nobody picked up, the call
+                // log now holds a missed entry and nothing else will ever report it: there is
+                // no recording. Reading the log (not this broadcast) decides which it was, so
+                // an answered call costs one local query that finds nothing to send.
+                if (rang) MissedCallSyncWorker.enqueueAfterCall(context)
             }
         }
     }

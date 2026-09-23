@@ -100,17 +100,22 @@ function humanize(s: string): string {
 function statusTone(status: string): "solid" | "muted" | "outline" | "danger" {
   if (status === "COMPLETE") return "solid";
   if (status.startsWith("FAILED")) return "danger";
-  // Deliberately not transcribed - not a success, not a fault.
-  if (status === "TRANSCRIPTION_OFF") return "outline";
+  // Deliberately not transcribed - not a success, not a fault. Neither is a
+  // missed call with no recording (NO_AUDIO, 0133).
+  if (status === "TRANSCRIPTION_OFF" || status === "NO_AUDIO") return "outline";
   return "muted";
 }
 
 /** Pipeline end states - anything else means the worker still has the call.
  *  TRANSCRIPTION_OFF counts: nothing is coming, so the drawer must stop
- *  polling for a transcript that was never going to be produced. */
+ *  polling for a transcript that was never going to be produced. NO_AUDIO
+ *  likewise - a missed call never had anything to transcribe. */
 function isTerminal(status: string): boolean {
   return (
-    status === "COMPLETE" || status === "TRANSCRIPTION_OFF" || status.startsWith("FAILED")
+    status === "COMPLETE" ||
+    status === "TRANSCRIPTION_OFF" ||
+    status === "NO_AUDIO" ||
+    status.startsWith("FAILED")
   );
 }
 
@@ -836,6 +841,17 @@ export function CallsExplorer({
                           skipped. Turn transcription back on for this instance, then reprocess to
                           transcribe it.
                         </p>
+                      ) : call.status === "NO_AUDIO" ? (
+                        <p className="rounded-md border border-border bg-bg-subtle p-3 text-sm leading-relaxed text-text-muted">
+                          <span className="mb-1 block text-sm font-medium text-text">
+                            {call.direction === "outgoing"
+                              ? "Unanswered attempt - nothing was recorded"
+                              : "Missed call - nothing was recorded"}
+                          </span>
+                          {call.direction === "outgoing"
+                            ? "One of this team's own calls rang out with nobody answering. The handset reported it from its call log, so there is no audio and no transcript, and nothing to reprocess."
+                            : "Nobody picked up. The handset reported this call from its call log, so there is no audio and no transcript, and nothing to reprocess."}
+                        </p>
                       ) : (
                         <p className="py-3 text-sm text-text-muted">No transcript yet</p>
                       )}
@@ -952,8 +968,13 @@ export function CallsExplorer({
                       </div>
                     </section>
 
-                    {/* Actions */}
-                    <section className="space-y-3 border-t border-border pt-4">
+                    {/* Actions - none exist for a NO_AUDIO row, missed or an
+                        unanswered outgoing attempt alike: the API 409s a
+                        reprocess and 404s the audio either way. */}
+                    <section
+                      hidden={call.status === "NO_AUDIO"}
+                      className="space-y-3 border-t border-border pt-4"
+                    >
                       <div className="flex flex-wrap gap-3">
                         <Button type="button" disabled={pending} onClick={reprocess}>
                           <RefreshCw aria-hidden="true" className="h-4 w-4" />

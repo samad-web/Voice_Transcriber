@@ -183,6 +183,15 @@ object PlatformApi {
         request(baseUrl, "POST", "/devices/me/events", JSONObject().put("events", array), bearer = accessToken)
     }
 
+    /**
+     * POST /v1/calls/missed - call-log entries nobody picked up (server migration 0133).
+     * Idempotent per entry on the server, so a batch whose response was lost is safe to send
+     * again. Returns how many were new.
+     */
+    fun reportMissedCalls(baseUrl: String, accessToken: String, calls: JSONArray): Int =
+        request(baseUrl, "POST", "/calls/missed", JSONObject().put("calls", calls), bearer = accessToken)
+            .optInt("accepted", 0)
+
     data class CallResult(val status: String, val transcript: String?)
 
     /** POST /v1/devices/me/calls/{id} - pipeline status + transcript for a call this device uploaded. */

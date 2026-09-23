@@ -93,7 +93,7 @@ export class AnalyticsController {
       `SELECT count(*)::int                                            AS calls,
               count(*) FILTER (WHERE status = 'COMPLETE')::int         AS complete,
               count(*) FILTER (WHERE status LIKE 'FAILED%')::int       AS failed,
-              count(*) FILTER (WHERE status <> 'COMPLETE'
+              count(*) FILTER (WHERE status NOT IN ('COMPLETE', 'NO_AUDIO')
                                  AND status NOT LIKE 'FAILED%')::int   AS in_pipeline,
               COALESCE(sum(duration_s), 0)::int                        AS total_seconds
          FROM calls`,

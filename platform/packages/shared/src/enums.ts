@@ -30,6 +30,10 @@ export const CallStatus = z.enum([
   // unlike the other FAILED_* stages, retrying this one server-side cannot
   // help. Written only by the worker's stall sweep (retry.ts).
   "FAILED_UPLOAD",
+  // Nothing to process, ever (0133): a missed call from the handset's call
+  // log, which has no recording. Born terminal - never queued, never
+  // reprocessable. Written only by POST /v1/calls/missed.
+  "NO_AUDIO",
 ]);
 export type CallStatus = z.infer<typeof CallStatus>;
 

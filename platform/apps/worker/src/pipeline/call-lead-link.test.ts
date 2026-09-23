@@ -134,13 +134,89 @@ describe("runCallLeadLink - the match itself", () => {
     // Link button and this sweep would be two definitions of "responded", and
     // one of them would eventually count an inbound call.
     expect(updateSql()).not.toContain("first_responded_at");
-    expect(updateSql()).not.toContain("direction");
+    // `c.direction` is fetched via RETURNING (0134, for notifyMissedCallOwner)
+    // but must never be FILTERED or BRANCHED on here - that would be this file
+    // quietly growing its own second definition of "missed", the exact drift
+    // the comment above warns about for first_responded_at.
+    expect(updateSql()).not.toMatch(/direction\s*=/);
+    expect(updateSql()).not.toContain("WHEN");
   });
 
   it("reports how many calls it attached", async () => {
     orgQuery.mockResolvedValue({ rowCount: 7, rows: [] });
     const { runCallLeadLink } = await load();
     expect(await runCallLeadLink()).toBe(7);
+  });
+});
+
+describe("runCallLeadLink - missed-call notification (0134)", () => {
+  beforeEach(() => {
+    adminQuery.mockResolvedValue({ rows: [{ id: "org-1" }] });
+  });
+
+  const missedRow = {
+    id: "call-1",
+    lead_id: "lead-1",
+    direction: "incoming",
+    duration_s: 0,
+    status: "NO_AUDIO",
+    remote_name: null,
+    remote_number_prefix: "98765",
+    remote_number_last3: "210",
+  };
+
+  it("notifies the lead's owner only for a row that is actually a missed call", async () => {
+    orgQuery
+      .mockResolvedValueOnce({ rowCount: 1, rows: [missedRow] }) // the UPDATE ... RETURNING
+      .mockResolvedValueOnce({ rows: [] }) // SAVEPOINT
+      .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] }) // notifyMissedCallOwner's owner lookup
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] }) // the notification INSERT
+      .mockResolvedValueOnce({ rows: [] }); // RELEASE SAVEPOINT
+
+    const { runCallLeadLink } = await load();
+    await runCallLeadLink();
+
+    const sqlCalls = orgQuery.mock.calls.map((c) => String(c[0]));
+    expect(sqlCalls.some((s) => s.includes("SAVEPOINT missed_call_notify"))).toBe(true);
+    expect(sqlCalls.some((s) => s.includes("INSERT INTO notifications"))).toBe(true);
+    // The dedupe key ties the notification to this call, not to the tick -
+    // a replayed sweep must not ring the bell twice for the same event.
+    expect(sqlCalls.some((s) => s.includes("dedupe_key"))).toBe(true);
+  });
+
+  it("stays quiet for an answered call, an outgoing call, or one still mid-pipeline", async () => {
+    for (const row of [
+      { ...missedRow, duration_s: 4 }, // answered
+      { ...missedRow, direction: "outgoing" }, // our own attempt, not a missed inbound call
+      { ...missedRow, status: "TRANSCRIBING" }, // not yet terminal
+    ]) {
+      orgQuery.mockReset().mockResolvedValueOnce({ rowCount: 1, rows: [row] });
+      const { runCallLeadLink } = await load();
+      await runCallLeadLink();
+      // Exactly the one UPDATE call - no SAVEPOINT, no notification attempt.
+      expect(orgQuery).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("rolls back to the savepoint and keeps going when a notification fails", async () => {
+    orgQuery
+      .mockResolvedValueOnce({ rowCount: 2, rows: [missedRow, { ...missedRow, id: "call-2" }] })
+      .mockResolvedValueOnce({ rows: [] }) // SAVEPOINT for call-1
+      .mockRejectedValueOnce(new Error("db hiccup")) // call-1's owner lookup blows up
+      .mockResolvedValueOnce({ rows: [] }) // ROLLBACK TO SAVEPOINT for call-1
+      .mockResolvedValueOnce({ rows: [] }) // SAVEPOINT for call-2
+      .mockResolvedValueOnce({ rows: [{ user_id: "user-2" }] }) // call-2's owner lookup
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] }) // call-2's notification INSERT
+      .mockResolvedValueOnce({ rows: [] }); // RELEASE SAVEPOINT for call-2
+
+    const { runCallLeadLink } = await load();
+    // The failure is swallowed - it must not fail the whole tick, and the
+    // count already reflects rows LINKED (both calls), which happened
+    // regardless of one notification failing.
+    await expect(runCallLeadLink()).resolves.toBe(2);
+    const sqlCalls = orgQuery.mock.calls.map((c) => String(c[0]));
+    expect(sqlCalls.filter((s) => s.includes("ROLLBACK TO SAVEPOINT")).length).toBe(1);
+    expect(sqlCalls.filter((s) => s.includes("RELEASE SAVEPOINT")).length).toBe(1);
   });
 });
 
