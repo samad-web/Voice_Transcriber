@@ -1,6 +1,9 @@
+import { todayIn } from "@aura/shared";
+import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
 import { listBookingsAction } from "./actions";
 import { BookedCalls } from "./booked-calls";
+import { bookingPresets, bookingRange, parseBookingWindow } from "./booking-range";
 import { SlotCalendar } from "./slot-calendar";
 
 /**
@@ -37,14 +40,23 @@ import { SlotCalendar } from "./slot-calendar";
  */
 export const dynamic = "force-dynamic";
 
-export default async function SlotsPage() {
+export default async function SlotsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const timeZone = process.env.SCHEDULER_TIMEZONE?.trim() || "Asia/Kolkata";
+
+  // The booked list's days: the shared date control, looking forward by
+  // default (booking-range.ts), resolved to dates from the scheduler's today.
+  const { window, invalid } = parseBookingWindow(await searchParams);
+  const range = bookingRange(window, todayIn(timeZone));
 
   // Fetched server-side so the list is present in the first paint. A failure
   // here degrades to an empty list with the reason shown, rather than taking
   // the calendar down with it - the two halves of this page are independent
   // and an operator can still set availability while the join is misbehaving.
-  const { bookings, error } = await listBookingsAction(14);
+  const { bookings, error } = await listBookingsAction({ ...range, timeZone });
 
   return (
     <>
@@ -54,6 +66,12 @@ export default async function SlotsPage() {
         Who is booked in, and when you are free. Open slots are offered to qualified leads; a
         booked one shows who took it.
       </p>
+
+      {/* Scopes the booked calls below. The calendar under them keeps its own
+          month-by-month navigation - it is for setting availability. */}
+      <DateRangeBar path="/slots" presets={bookingPresets(window)} from={range.from} to={range.to} />
+      {invalid ? <DateRangeNotice fallbackDays={14} fallback="the next 14 days" /> : null}
+      <DateRangeSummary from={range.from} to={range.to} zone={timeZone} />
 
       {error ? (
         <div
@@ -68,7 +86,8 @@ export default async function SlotsPage() {
           </p>
         </div>
       ) : (
-        <BookedCalls initial={bookings ?? []} timeZone={timeZone} />
+        // Keyed on the range: a new range is a new list, not an edit of this one.
+        <BookedCalls key={`${range.from}:${range.to}`} initial={bookings ?? []} />
       )}
 
       <SlotCalendar timeZone={timeZone} />

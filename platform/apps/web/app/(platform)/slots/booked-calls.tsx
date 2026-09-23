@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
-import { listBookingsAction, markAttendanceAction, type Booking } from "./actions";
+import { markAttendanceAction, type Booking } from "./actions";
 
 /**
  * The calls that are actually booked.
@@ -18,48 +18,21 @@ import { listBookingsAction, markAttendanceAction, type Booking } from "./action
  * So this leads the page and the calendar follows it. Name, time, phone, email
  * - enough to pick up the phone without opening anything else.
  *
- * ── AND WHY IT NOW HAS A SECOND VIEW ──────────────────────────────────────
+ * ── WHICH DAYS ────────────────────────────────────────────────────────────
  *
- * Marking a call attended or missed can only happen after it has run, and this
- * list showed only what was still ahead. The two questions are genuinely
- * different jobs at different times of day - "who am I speaking to" in the
- * morning, "how did yesterday go" at the end - so they are two views rather
- * than one list with everything in it, and the buttons only appear on the
- * calls that are actually markable.
+ * The page's date control (the one every report shares) picks them: the next
+ * fortnight by default - "who am I speaking to" - or the last few days, where
+ * the calls to mark as attended or missed are, or any From/To range. The
+ * buttons only appear on calls that are actually markable, whichever days are
+ * showing. The page keys this component on the range, so a new range starts
+ * from the server's list rather than this one's edits.
  */
-export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZone: string }) {
+export function BookedCalls({ initial }: { initial: Booking[] }) {
   const [bookings, setBookings] = useState(initial);
-  const [days, setDays] = useState(14);
-  /** false = what's coming up. true = what has already run, for marking. */
-  const [past, setPast] = useState(false);
   const [pending, start] = useTransition();
   const [marking, setMarking] = useState<string | null>(null);
   const alert = useAlert();
   const toast = useToast();
-
-  // Skipped on first render - the server already fetched 14 upcoming days.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    if (!mounted) {
-      setMounted(true);
-      return;
-    }
-    start(async () => {
-      const res = await listBookingsAction(days, past);
-      if (res.error) {
-        await alert({
-          title: "Couldn't load the bookings",
-          body: res.error,
-          tone: "danger",
-        });
-        return;
-      }
-      setBookings(res.bookings ?? []);
-    });
-    // `days` and `past` are the triggers; `mounted` guards the first pass -
-    // deliberately not in the dependency list, or setting it would re-run this
-    // and refetch on mount, which is the fetch the server already did.
-  }, [days, past]);
 
   function mark(booking: Booking, outcome: "attended" | "no_show") {
     setMarking(booking.id);
@@ -101,78 +74,29 @@ export function BookedCalls({ initial, timeZone }: { initial: Booking[]; timeZon
 
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="font-semibold text-text">{past ? "Recent calls" : "Booked calls"}</p>
-          <p className="mt-0.5 text-xs text-text-muted">
-            {bookings.length === 0
-              ? past
-                ? `Nothing in the last ${days} days.`
-                : `Nothing booked in the next ${days} days.`
-              : `${bookings.length} in the ${past ? "last" : "next"} ${days} days · times in ${timeZone}`}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1">
-            {(
-              [
-                [false, "Upcoming"],
-                [true, "Recent"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setPast(value)}
-                aria-pressed={past === value}
-                className={
-                  "h-9 rounded-md px-3 text-sm font-medium transition-colors " +
-                  (past === value
-                    ? "bg-accent text-accent-fg"
-                    : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1">
-            {[7, 14, 30].map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setDays(d)}
-                aria-pressed={days === d}
-                className={
-                  "h-9 rounded-md px-3 text-sm font-medium transition-colors " +
-                  (days === d
-                    ? "bg-accent text-accent-fg"
-                    : "border border-border text-text-muted hover:bg-surface-hover hover:text-text")
-                }
-              >
-                {d}d
-              </button>
-            ))}
-          </div>
-        </div>
+      <div>
+        <p className="font-semibold text-text">Booked calls</p>
+        <p className="mt-0.5 text-xs text-text-muted">
+          {bookings.length === 0
+            ? "Nothing booked on these days."
+            : `${bookings.length} ${bookings.length === 1 ? "call" : "calls"} on these days`}
+        </p>
       </div>
 
-      {pending ? <p className="mt-3 text-xs text-text-muted">Loading…</p> : null}
+      {pending ? <p className="mt-3 text-xs text-text-muted">Saving…</p> : null}
 
-      {bookings.length === 0 && !pending ? (
+      {bookings.length === 0 ? (
         <p className="mt-4 text-sm text-text-muted">
-          {past
-            ? "Calls you have already had appear here, so you can record whether they happened."
-            : "When someone books a slot from the website it appears here, with their number and email."}
+          When someone books a slot from the website it appears here, with their number and email.
+          Calls that have already happened show up under the last few days, so you can record
+          whether they took place.
         </p>
       ) : (
         <ul className="mt-4 flex flex-col gap-2.5">
           {bookings.map((b) => {
             // A call is markable once it has started and nobody has marked it.
-            // Time is compared here rather than trusted from the view, because
-            // the "Recent" window can include a call that has not begun yet.
+            // Time is compared here rather than trusted from the list, because
+            // any range can include a call that has not begun yet.
             const started = new Date(b.starts_at).getTime() <= Date.now();
             const markable = started && !b.attendance && Boolean(b.submission_id);
 

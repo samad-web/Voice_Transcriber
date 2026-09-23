@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
+import { isCalendarDate } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -55,7 +56,22 @@ const BookedQuery = z.object({
    * from eight months ago, which reads as a backlog rather than as history.
    */
   pastDays: z.coerce.number().int().min(1).max(365).optional(),
+  /**
+   * An explicit range instead - calendar dates in `timeZone`, both or neither,
+   * at most 366 days. It wins over the four above: this is the console's date
+   * control ("Next 14 days", "Last 7 days", or any From/To), which always
+   * resolves to dates so the list and the dates printed over it agree.
+   */
+  // A real calendar day, not merely date-shaped: `2026-02-31` would otherwise
+  // reach Postgres and come back as a 500 instead of a 400.
+  from: z.string().regex(ISO_DATE).refine(isCalendarDate, "not a calendar date").optional(),
+  to: z.string().regex(ISO_DATE).refine(isCalendarDate, "not a calendar date").optional(),
 });
+
+/** Days in an inclusive `YYYY-MM-DD` range. */
+function spanDays(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+}
 
 const CreateBody = z.object({
   date: z.string().regex(ISO_DATE),
@@ -204,7 +220,31 @@ export class SlotsController {
       timeZone = "Asia/Kolkata",
       includePast = false,
       pastDays = 14,
+      from,
+      to,
     } = parsed.data;
+
+    // A range is both dates or neither, forwards, and bounded - the same
+    // guard rail `days` has, so a typo'd year cannot ask for the whole table.
+    if ((from === undefined) !== (to === undefined)) throw new BadRequestException("from and to go together");
+    if (from && to) {
+      const span = spanDays(from, to);
+      if (span < 1) throw new BadRequestException("from must not be after to");
+      if (span > 366) throw new BadRequestException("a range covers at most 366 days");
+    }
+    // The window: the explicit range in the scheduler's zone when there is
+    // one, else the rolling one this endpoint always had. One statement for
+    // both, so the columns cannot drift between them. The zone is $1 in both;
+    // each branch numbers only the parameters it uses, because Postgres
+    // refuses a parameter it cannot infer a type for.
+    const [window, params] = from
+      ? [`(s.starts_at AT TIME ZONE $1)::date BETWEEN $2::date AND $3::date`, [timeZone, from, to]]
+      : [
+          `($3::boolean OR s.starts_at > now())
+          AND (NOT $3::boolean OR s.starts_at > now() - make_interval(days => $4))
+          AND s.starts_at < now() + make_interval(days => $2)`,
+          [timeZone, days, includePast, pastDays],
+        ];
 
     const { rows } = await this.db.adminPool().query(
       `SELECT s.id,
@@ -214,8 +254,8 @@ export class SlotsController {
               s.submission_id,
               s.calendar_event_id,
               s.calendar_error,
-              to_char(s.starts_at AT TIME ZONE $2, 'Dy, DD Mon') AS day_label,
-              to_char(s.starts_at AT TIME ZONE $2, 'HH24:MI')    AS time_label,
+              to_char(s.starts_at AT TIME ZONE $1, 'Dy, DD Mon') AS day_label,
+              to_char(s.starts_at AT TIME ZONE $1, 'HH24:MI')    AS time_label,
               EXTRACT(EPOCH FROM (s.ends_at - s.starts_at))/60   AS duration_minutes,
               f.name  AS enquirer_name,
               f.email AS enquirer_email,
@@ -232,13 +272,11 @@ export class SlotsController {
          FROM marketing.booking_slots s
          LEFT JOIN marketing.funnel_submissions f ON f.id = s.submission_id
         WHERE s.status = 'booked'
-          AND ($3::boolean OR s.starts_at > now())
-          AND (NOT $3::boolean OR s.starts_at > now() - make_interval(days => $4))
-          AND s.starts_at < now() + make_interval(days => $1)
+          AND ${window}
         ORDER BY s.starts_at`,
-      [days, timeZone, includePast, pastDays],
+      params,
     );
-    return { bookings: rows, timeZone };
+    return { bookings: rows, timeZone, ...(from ? { range: { from, to } } : {}) };
   }
 
   /**

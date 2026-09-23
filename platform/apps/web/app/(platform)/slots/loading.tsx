@@ -1,6 +1,10 @@
 import { Card, Skeleton } from "@aura/ui";
+import { DateRangeBarSkeleton, DateRangeSummarySkeleton } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
 import { IntroSkeleton } from "@/components/skeletons";
+
+/** The date pills: Next 7/14/30 days, Last 7/30 days. */
+const DATE_PILLS = ["w-24", "w-28", "w-28", "w-24", "w-28"] as const;
 
 /** Complete class strings, picked by index, so Tailwind can see every one. */
 const BOOKING_NAME = ["w-40", "w-32", "w-44"] as const;
@@ -41,25 +45,12 @@ function BookingRow({ i }: { i: number }) {
 function BookedCallsSkeleton() {
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex h-6 items-center">
-            <Skeleton className="h-4 w-28" />
-          </div>
-          <div className="mt-0.5 flex h-4 items-center">
-            <Skeleton className="h-3 w-64 max-w-full" />
-          </div>
+      <div>
+        <div className="flex h-6 items-center">
+          <Skeleton className="h-4 w-28" />
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1">
-            <Skeleton className="h-9 w-24 rounded-md" />
-            <Skeleton className="h-9 w-20 rounded-md" />
-          </div>
-          <div className="flex items-center gap-1">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-9 w-12 rounded-md" />
-            ))}
-          </div>
+        <div className="mt-0.5 flex h-4 items-center">
+          <Skeleton className="h-3 w-40 max-w-full" />
         </div>
       </div>
       <div className="mt-4 flex flex-col gap-2.5">
@@ -144,9 +135,10 @@ function DaySlotsSkeleton() {
 }
 
 /**
- * Mirrors slots/page.tsx: intro copy, then the booked-calls card (title, the
- * Upcoming/Recent and 7d/14d/30d toggles, three bookings), then the diary - a
- * month grid on the left beside the selected day's slots and the add-a-slot form.
+ * Mirrors slots/page.tsx: intro copy, the shared date control (five pills:
+ * Next 7/14/30 days, Last 7/30 days) and its line of dates, then the
+ * booked-calls card (title, count, three bookings), then the diary - a month
+ * grid on the left beside the selected day's slots and the add-a-slot form.
  * The slot generator is a collapsed link under the grid until it is opened.
  */
 export default function SlotsLoading() {
@@ -154,6 +146,8 @@ export default function SlotsLoading() {
     <>
       <PageHeader title="Booking Slots" context="Platform" />
       <IntroSkeleton lines={2} />
+      <DateRangeBarSkeleton pills={DATE_PILLS} />
+      <DateRangeSummarySkeleton />
       <BookedCallsSkeleton />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <MonthGridSkeleton />

@@ -101,26 +101,23 @@ export interface BookingsResult {
 }
 
 /**
- * `includePast` is what makes attendance markable at all: a call can only be
- * marked once it has happened, and the default view deliberately shows only
- * what is still ahead. The API bounds the backward window itself (`pastDays`),
- * so "show me what needs marking" cannot turn into "show me every call ever".
+ * The booked calls on a run of calendar days in the scheduler's zone - the
+ * page's date control, resolved to dates (booking-range.ts). The API caps a
+ * range at 366 days, so "show me what needs marking" cannot turn into "show me
+ * every call ever".
  */
-export async function listBookingsAction(
-  days = 14,
-  includePast = false,
-): Promise<BookingsResult> {
+export async function listBookingsAction(range: {
+  from: string;
+  to: string;
+  timeZone: string;
+}): Promise<BookingsResult> {
   try {
     await requireOperator();
   } catch {
     return { error: "Not authorized" };
   }
   try {
-    const q = new URLSearchParams({ days: String(days) });
-    if (includePast) {
-      q.set("includePast", "true");
-      q.set("pastDays", String(days));
-    }
+    const q = new URLSearchParams(range);
     const res = await fetch(`${API_URL}/v1/admin/slots/booked?${q}`, {
       headers: crossTenantHeaders,
       cache: "no-store",
