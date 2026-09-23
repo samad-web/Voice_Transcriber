@@ -97,8 +97,8 @@ describe("ownerRailState", () => {
       primaryParentHref: "/owner/reports",
       inMore: true,
     });
-    expect(ownerRailState("/owner/team", rail)).toEqual({
-      activeHref: "/owner/team",
+    expect(ownerRailState("/owner/staff", rail)).toEqual({
+      activeHref: "/owner/staff",
       primaryParentHref: null,
       inMore: true,
     });

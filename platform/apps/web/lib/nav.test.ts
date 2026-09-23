@@ -8,6 +8,7 @@ import {
   activeChannelFor,
   messagingChannelsFor,
   ownerNavItemsFor,
+  ownerNavLabel,
   ownerNavSectionsFor,
   ownerSectionOf,
   platformNavSections,
@@ -110,7 +111,7 @@ describe("ownerNavItemsFor - crmEnabled", () => {
       "/owner/leads",
       "/owner/projects",
       "/owner/outreach",
-      "/owner/connections",
+      "/owner/integrations",
       "/owner/messaging-setup",
       "/owner/meta-ads",
       "/owner/branding",
@@ -486,14 +487,26 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
-  it("shows the Team page only to the personas the API lets read it", () => {
+  it("shows the Staff page only to the personas the API lets read it", () => {
     // owner-team.controller.ts: GET is owner-or-manager, PATCH is owner alone.
     // The rail must not offer the page to anybody the GET would refuse.
-    expect(nav("owner")).toContain("/owner/team");
-    expect(nav("manager")).toContain("/owner/team");
+    expect(nav("owner")).toContain("/owner/staff");
+    expect(nav("manager")).toContain("/owner/staff");
     for (const role of ["telecaller", "sales", "marketing"] as const) {
-      expect([role, nav(role).includes("/owner/team")]).toEqual([role, false]);
+      expect([role, nav(role).includes("/owner/staff")]).toEqual([role, false]);
     }
+  });
+
+  it("gives the Staff page one rail entry, named for who is reading", () => {
+    // /owner/team only redirects into Staff; a second entry for it meant a
+    // manager saw two links to one page.
+    const staff = (role: "owner" | "manager") =>
+      ownerNavItemsFor(role, false, true, true).filter((i) => i.href === "/owner/staff" || i.href === "/owner/team");
+    expect(staff("owner").map((i) => [i.href, i.label, i.title])).toEqual([["/owner/staff", "Staff", "Staff"]]);
+    expect(staff("manager").map((i) => [i.href, i.label, i.title])).toEqual([["/owner/staff", "Team", "Team"]]);
+    expect(ownerNavLabel("/owner/staff", "owner", "?")).toBe("Staff");
+    expect(ownerNavLabel("/owner/staff", "manager", "?")).toBe("Team");
+    expect(ownerNavLabel("/owner/nowhere", "manager", "Fallback")).toBe("Fallback");
   });
 
   it("keeps every persona narrower than the owner - a persona never adds a page", () => {

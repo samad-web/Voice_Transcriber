@@ -3,9 +3,8 @@
  *
  * A full-page redirect, not a popup: the provider's consent screen refuses to
  * render in an iframe, and a popup gets blocked as often as not. Shared by
- * connections-manager.tsx (Google/Microsoft) and meta-ads-client.tsx
- * (Facebook) - same reasoning, same one-liner, previously copy-pasted in
- * both.
+ * every sign-in the Integrations store's connect flow starts - Google,
+ * Microsoft, Facebook, LinkedIn - and the Sheets step's "connect Google first".
  *
  * Returns the message to show on failure, or null once the redirect is under
  * way (there is nothing left to render - the browser is leaving this page).

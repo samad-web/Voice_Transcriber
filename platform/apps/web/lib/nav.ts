@@ -16,7 +16,6 @@ import {
   Layers,
   LayoutGrid,
   LineChart,
-  Link2,
   ListChecks,
   ListFilter,
   Megaphone,
@@ -69,6 +68,14 @@ export interface NavItem {
   context?: string;
   /** Owner-console personas (design doc §9) that may see this item. Omitted = every persona. */
   ownerRoles?: OwnerRole[];
+  /**
+   * The name this page goes by for a given persona, where it differs - one
+   * page, one rail entry, the word each reader uses for it. Replaces both
+   * `label` and `title`, so the rail, the heading, the breadcrumb and the Back
+   * button all say the same thing. Applied by `ownerNavSectionsFor`; read a
+   * single page's name with `ownerNavLabel`.
+   */
+  roleLabels?: Partial<Record<OwnerRole, string>>;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -403,16 +410,6 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
-    href: "/owner/connections",
-    label: "Connections",
-    icon: Link2,
-    title: "Connections",
-    context: "Your account",
-    // No persona restriction: this is a person's own mailbox and calendar,
-    // not a team setting. A telecaller connecting their own email is exactly
-    // the point.
-  },
-  {
     href: "/owner/notifications",
     label: "Notifications",
     icon: Bell,
@@ -517,18 +514,6 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
-    href: "/owner/team",
-    label: "Team",
-    icon: Users,
-    title: "Team",
-    context: "Settings",
-    // Owner and manager, matching what the API allows: a manager reads the
-    // roster, only an owner changes a persona (owner-team.controller.ts). The
-    // page renders read-only for a manager rather than being hidden from
-    // them - knowing who sits where is part of running the floor.
-    ownerRoles: ["owner", "manager"],
-  },
-  {
     href: "/owner/branding",
     label: "Branding",
     icon: Palette,
@@ -589,11 +574,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     icon: Plug,
     title: "Integrations",
     context: "Workspace",
-    // Owner/manager, matching the API. This page names which of the tenant's
-    // outside accounts are joined up and which are failing, which is
-    // administration rather than day-to-day work - and it is a directory of
-    // Connections and Messaging setup, both of which carry the same tier.
-    ownerRoles: ["owner", "manager"],
+    // Every persona (doc 28, Q7). It is the store now, not an admin board: a
+    // telecaller links their own Gmail and WhatsApp here. What each persona
+    // SEES in it is filtered by the API (canSeeApp), so a telecaller's store
+    // holds their own accounts and nothing that administers the team.
   },
   {
     href: "/owner/staff",
@@ -610,6 +594,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // any of them. Every tab renders read-only for a manager rather than being
     // hidden - knowing who sits where is part of running the floor.
     ownerRoles: ["owner", "manager"],
+    // The same page, named from where each reader sits: an owner employs
+    // staff, a manager runs a team. There used to be a second "Team" entry
+    // that only redirected here, so a manager saw two links to one page.
+    roleLabels: { manager: "Team" },
   },
   {
     href: "/owner/superfone",
@@ -820,9 +808,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   // Beside Team, not under Lead connectors: this is who and what is on the
   // floor, and the pairing permission is granted on the Team page next to it.
   "/owner/devices": "workspace",
-  "/owner/team": "workspace",
   "/owner/branding": "workspace",
-  "/owner/connections": "workspace",
   "/owner/notifications": "workspace",
   // Workspace housekeeping, beside Team. Filed explicitly: it used to land here
   // only because the fallback appends unfiled pages to the last group.
@@ -951,6 +937,21 @@ function groupNav(
  * rail would have produced the same list in a different order under headings
  * that no longer described it.
  */
+/** `item` under the name `role` knows it by (`NavItem.roleLabels`). */
+function withRoleLabel(item: NavItem, role: OwnerRole): NavItem {
+  const name = item.roleLabels?.[role];
+  return name ? { ...item, label: name, title: name } : item;
+}
+
+/**
+ * One owner page's name for one persona - for a page heading, which has to
+ * say what the rail said. Falls back to `fallback` for an href with no entry.
+ */
+export function ownerNavLabel(href: string, role: OwnerRole, fallback: string): string {
+  const item = OWNER_NAV_ITEMS.find((i) => i.href === href);
+  return item ? withRoleLabel(item, role).title : fallback;
+}
+
 export function ownerNavSectionsFor(
   role: OwnerRole,
   crmPrimary = false,
@@ -966,7 +967,8 @@ export function ownerNavSectionsFor(
     // disclosure of what was said on a customer's phone call, so a caller that
     // forgets to pass it must hide the page, not reveal it.
     .filter((item) => callIntelEnabled || !CALL_INTEL_GATED_HREFS.includes(item.href))
-    .filter((item) => itemAllowedByFeatures(item.href, entitlement));
+    .filter((item) => itemAllowedByFeatures(item.href, entitlement))
+    .map((item) => withRoleLabel(item, role));
 
   const order = crmPrimary
     ? [

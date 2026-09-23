@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { buttonClasses, buttonStyle } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { McpConnection } from "./actions";
-import { MetaAdsConnect } from "./meta-ads-client";
 import { McpConnect } from "./mcp-connect";
 
 export const metadata: Metadata = { title: "Meta Lead Ads" };
@@ -25,18 +26,26 @@ export default async function MetaAdsPage() {
   return (
     <>
       <PageHeader title="Meta Lead Ads" context="Settings" />
+      {/* This page used to warn that the FIRST Page an account managed was
+          the one that got connected, with no way to choose. The store's
+          connect flow ends on a choose step now (doc 28 §11.3), so the warning
+          is gone and connecting is a door into that flow. */}
       <p className="max-w-2xl text-sm text-text-muted">
-        Connect a Facebook Page so leads submitted through its Lead Ads forms land here
-        automatically. You&rsquo;ll be sent to Facebook to sign in and grant access, then redirected
-        back once it&rsquo;s done.
+        Facebook Pages connected here send their Lead Ads form submissions straight to the board. You
+        sign in to Facebook, choose which Pages send leads, and come back here when you&rsquo;re done.
       </p>
-      <p className="max-w-2xl text-sm text-text-muted">
-        There is no page picker yet: the <strong>first</strong> Facebook Page this account manages
-        is the one that gets connected. If the account you sign in with manages more than one Page,
-        this will not let you choose which - ask your platform admin if you need a different Page
-        connected.
-      </p>
-      <MetaAdsConnect />
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href={`/owner/integrations/meta_lead_ads/connect?from=${encodeURIComponent("/owner/meta-ads")}`}
+          className={buttonClasses()}
+          style={buttonStyle()}
+        >
+          Connect Facebook Pages
+        </Link>
+        <Link href="/owner/integrations/meta_lead_ads" className={buttonClasses({ variant: "secondary" })}>
+          Connected Pages
+        </Link>
+      </div>
 
       <McpConnect initial={meta} />
     </>

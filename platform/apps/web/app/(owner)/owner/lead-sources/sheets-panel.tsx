@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import type { IntakeField } from "@aura/shared";
 import { parseSpreadsheetId } from "@aura/shared";
 import { Button, Card, Input, Label, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
@@ -88,7 +89,14 @@ function guessMapping(headers: string[]): Record<string, IntakeField> {
  * folding it into that dialog would have made the dialog answer to two
  * different jobs.
  */
-export function SheetsPanel({ sources }: { sources: LeadSourceRow[] }) {
+export function SheetsPanel({
+  sources,
+  onConnected,
+}: {
+  sources: LeadSourceRow[];
+  /** Called with the new source's id - the Integrations store's connect step moves on with it. */
+  onConnected?: (sourceId: string) => void;
+}) {
   const existing = sources.filter((s) => s.kind === "sheets");
   const [accounts, setAccounts] = useState<{ id: string; account_email: string }[]>([]);
   const [accountId, setAccountId] = useState("");
@@ -163,6 +171,7 @@ export function SheetsPanel({ sources }: { sources: LeadSourceRow[] }) {
       setUrl("");
       setName("");
       setMapping({});
+      if (result.data) onConnected?.(result.data.id);
     });
   };
 
@@ -172,10 +181,16 @@ export function SheetsPanel({ sources }: { sources: LeadSourceRow[] }) {
         <MonoLabel>Google Sheet</MonoLabel>
         <p className="max-w-prose text-sm leading-relaxed text-text-muted">
           Aura can read new rows out of one of your own spreadsheets and turn each one into a lead.
-          It needs a Google account with permission to open the sheet — connect one under{" "}
-          <a href="/owner/connections" className="underline underline-offset-2">
-            Connections
-          </a>
+          It needs a Google account with permission to open the sheet —{" "}
+          {/* next/link, not a bare <a>: a raw href skips the /admin basePath
+              and 404s in production. Into the store's Google flow, which
+              brings the person back here when they press Done. */}
+          <Link
+            href={`/owner/integrations/google_workspace/connect?from=${encodeURIComponent("/owner/lead-sources")}`}
+            className="underline underline-offset-2"
+          >
+            connect your Google account
+          </Link>
           , then come back.
         </p>
         <p className="max-w-prose text-xs text-text-muted">

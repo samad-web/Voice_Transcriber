@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import type { OwnerRole } from "@aura/shared";
+import { accountCrumbsFor } from "@/lib/account-menu";
 import { breadcrumbsFor, type Crumb } from "@/lib/breadcrumbs";
 import { ownerNavItemsFor, type Entitlement } from "@/lib/nav";
 
@@ -48,6 +49,17 @@ export function BreadcrumbLeaf({ label }: { label: string }) {
   }, [setLeaf, pathname, label]);
 
   return null;
+}
+
+/**
+ * The current page's own name, once it has supplied one - read by the trail
+ * below and by the header's Back button (components/nav-history-provider.tsx),
+ * which names each history entry after it.
+ */
+export function useLeafLabel(): string | null {
+  const context = useContext(LeafContext);
+  const pathname = usePathname();
+  return context?.leaf && context.leaf.pathname === pathname ? context.leaf.label : null;
 }
 
 /** The trail itself - presentational, usable with any list of crumbs. */
@@ -100,8 +112,9 @@ export function OwnerBreadcrumbs({
   entitlement?: Entitlement;
 }) {
   const pathname = usePathname();
-  const context = useContext(LeafContext);
   const items = ownerNavItemsFor(ownerRole, crmPrimary, crmEnabled, callIntelEnabled, entitlement);
-  const leaf = context?.leaf && context.leaf.pathname === pathname ? context.leaf.label : null;
-  return <Breadcrumbs crumbs={breadcrumbsFor(pathname, items, leaf)} />;
+  const leaf = useLeafLabel();
+  // The account pages and Get started are not in the rail (doc 27 §8.2), so
+  // the nav cannot build their trail; they carry their own.
+  return <Breadcrumbs crumbs={accountCrumbsFor(pathname) ?? breadcrumbsFor(pathname, items, leaf)} />;
 }

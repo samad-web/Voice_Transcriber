@@ -89,6 +89,33 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  *   is at least a known quantity. (WCAG 1.4.3 exempts inactive controls, so the
  *   goal here is legibility, not a ratio.)
  */
+/**
+ * The button's look, for something that is not a <button> - a `next/link`
+ * that navigates, which must be an anchor. Pair it with `buttonStyle` for the
+ * primary variant's fill. The kit does not import Next, so it hands over the
+ * look rather than a Link component; two pages were copying these strings by
+ * hand, and a copy is how a link-button stops matching the button beside it.
+ */
+export function buttonClasses({
+  variant = "primary",
+  size = "md",
+  className = "",
+}: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}): string {
+  return cx(
+    "inline-flex cursor-pointer select-none items-center justify-center rounded-full border font-medium",
+    "transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out",
+    "disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-hover disabled:text-text-subtle disabled:hover:bg-surface-hover disabled:hover:translate-y-0 disabled:hover:shadow-none",
+    SIZES[size],
+    VARIANTS[variant],
+    className,
+  );
+}
+
+/** The inline style a variant needs (primary's gradient fill), or undefined. */
+export function buttonStyle(variant: ButtonVariant = "primary"): { backgroundImage: string } | undefined {
+  return variant === "primary" ? PRIMARY_GRADIENT : undefined;
+}
+
 export function Button({
   children,
   variant = "primary",
@@ -103,7 +130,7 @@ export function Button({
   // `disabled:bg-surface-hover` outright, since inline style always wins over a
   // class for the same CSS property.
   const isDisabled = disabled || loading;
-  const style = variant === "primary" && !isDisabled ? PRIMARY_GRADIENT : undefined;
+  const style = isDisabled ? undefined : buttonStyle(variant);
 
   return (
     <button
@@ -114,14 +141,7 @@ export function Button({
       disabled={isDisabled}
       aria-busy={loading || undefined}
       style={style}
-      className={cx(
-        "inline-flex cursor-pointer select-none items-center justify-center rounded-full border font-medium",
-        "transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out",
-        "disabled:cursor-not-allowed disabled:border-border disabled:bg-surface-hover disabled:text-text-subtle disabled:hover:bg-surface-hover disabled:hover:translate-y-0 disabled:hover:shadow-none",
-        SIZES[size],
-        VARIANTS[variant],
-        className,
-      )}
+      className={buttonClasses({ variant, size, className })}
       {...rest}
     >
       {loading ? (

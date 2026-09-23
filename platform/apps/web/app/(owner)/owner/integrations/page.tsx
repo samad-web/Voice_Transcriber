@@ -1,132 +1,77 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { INTEGRATIONS, integrationsByCategory, type IntegrationStatus } from "@aura/shared";
-import { Card, MonoLabel, StatusChip } from "@aura/ui";
+import type { IntegrationStatus } from "@aura/shared";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
+import { supportHref, supportLabel } from "@/lib/support-contact";
+import { StoreBrowser } from "./store-browser";
 
 export const metadata: Metadata = { title: "Integrations" };
 
 /**
- * One page that answers both questions a customer actually asks: what can this
- * connect to, and what IS connected.
+ * The Integrations store (doc 28 Part B): one place to browse, connect, see
+ * the state of and manage every app Aura joins to.
  *
- * ── WHY THIS EXISTS WHEN EVERY ONE OF THESE WAS ALREADY REACHABLE ───────────
+ * ── WHY THIS IS NOW A PLACE TO CONNECT, NOT JUST A BOARD ────────────────────
  *
- * Google was under Connections, WhatsApp under Messaging setup, Meta lead ads
- * on their own page, a spreadsheet under Lead sources, Razorpay inside an
- * invoice. Five places, and no page that answered either question - so the
- * honest reply to a prospect asking "does it do WhatsApp" was a tour of the
- * console, and the honest reply to a customer asking "is my sheet still
- * syncing" was to go and look.
- *
- * It deliberately does NOT configure anything. Every card links to the page
- * that already owns that integration, because a second place to set up a
- * WhatsApp channel is a second place for the two to disagree.
+ * The page used to be read-only, "because a second place to set up a WhatsApp
+ * channel is a second place for the two to disagree". That concern was right,
+ * and the store keeps it by MOVING each app's connect UI into one route
+ * (`/owner/integrations/<id>/connect`) rather than copying it. The pages that
+ * used to own a Connect button - Messaging setup, Lead sources, Meta ads,
+ * Superfone, Invoices - keep their day-to-day work and link into that route.
+ * One implementation, many doors.
  *
  * ── THREE KINDS OF "NO" ─────────────────────────────────────────────────────
  *
  * Not connected is a button. Not available means the OPERATOR has not
- * configured the deployment - no Google OAuth app - and no button the customer
- * presses will help. Not on your plan is a sales conversation. They read
- * differently here because they are answered by different people, and
- * collapsing them into one grey chip is how a customer ends up in support
- * being told to reconnect something that was never available to them.
+ * configured the deployment, and no button the customer presses will help.
+ * Not on your plan is a sales conversation. Each reads differently because
+ * each is answered by a different person.
+ *
+ * Every persona opens it (Q7); the API decides what each one sees.
  */
 export default async function IntegrationsPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/integrations");
   const owner = await getOwner();
   if (!owner) redirect("/dashboard");
-  const role = owner.membership.ownerRole;
-  if (role !== "owner" && role !== "manager") redirect("/owner");
 
-  const data = await ownerGet<{ integrations: IntegrationStatus[] }>("/v1/owner/integrations");
-  const byId = new Map((data?.integrations ?? []).map((s) => [s.id, s]));
-
-  const connected = (data?.integrations ?? []).filter((s) => s.connected).length;
-  const groups = integrationsByCategory();
+  const result = await ownerTry<{ integrations: IntegrationStatus[] }>("/v1/owner/integrations");
+  const href = supportHref();
+  const support = href ? { href, label: supportLabel(href) } : null;
 
   return (
     <>
-      <PageHeader title="Integrations" context="Workspace" />
-      <p className="-mt-2 max-w-prose text-sm leading-relaxed text-text-muted">
-        Everything Aura can be joined to, and what is joined up right now.{" "}
-        <span className="text-text">
-          {connected} of {INTEGRATIONS.length} connected.
-        </span>{" "}
-        Nothing here sends anything on its own — a message goes out when a person presses send.
-      </p>
-
-      {groups.map((group) => (
-        <section key={group.category} className="space-y-2">
-          <MonoLabel>{group.label}</MonoLabel>
-          <div className="grid gap-2 md:grid-cols-2">
-            {group.items.map((spec) => {
-              const status = byId.get(spec.id);
-              return (
-                <Link
-                  key={spec.id}
-                  href={spec.href}
-                  className="block rounded-lg border border-border p-3 transition-colors hover:border-border-strong"
-                >
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-text">{spec.label}</span>
-                    <Badge status={status} />
-                  </span>
-                  <span className="mt-1 block max-w-prose text-xs leading-relaxed text-text-muted">
-                    {spec.blurb}
-                  </span>
-                  {/* The failure, on the card, in the provider's own words.
-                      A tenant whose sheet stopped syncing three weeks ago
-                      should find that out here rather than by noticing the
-                      leads stopped. */}
-                  {status?.lastError ? (
-                    <span className="mt-1.5 block text-xs text-danger-text">
-                      {status.lastError}
-                    </span>
-                  ) : null}
-                  {status?.unavailable ? (
-                    <span className="mt-1.5 block text-xs text-text-muted">
-                      {/* An OAuth integration is not the platform's to set up
-                          any more (0120): the organisation brings the app. */}
-                      {spec.oauthProvider
-                        ? "Needs your organisation's own sign-in app - the account owner adds it under Connections."
-                        : "Your provider has not set this up on this deployment yet."}
-                    </span>
-                  ) : null}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-
-      {data === null ? (
-        <Card>
-          <MonoLabel>Status unavailable</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            The list above is what Aura supports. Whether each one is connected could not be read
-            just now — the platform API did not answer.
-          </p>
-        </Card>
-      ) : null}
+      <PageHeader
+        title="Integrations"
+        context="Workspace"
+        description="Connect the apps your team already uses. Nothing here sends on its own."
+      />
+      {result.ok ? (
+        <>
+          <Summary statuses={result.data.integrations} />
+          <StoreBrowser
+            statuses={result.data.integrations}
+            role={owner.membership.ownerRole}
+            support={support}
+          />
+        </>
+      ) : (
+        <LoadFailure what="your integrations" failure={result} />
+      )}
     </>
   );
 }
 
-function Badge({ status }: { status: IntegrationStatus | undefined }) {
-  if (!status) return <StatusChip tone="outline">unknown</StatusChip>;
-  if (status.notEntitled) return <StatusChip tone="outline">not on your plan</StatusChip>;
-  if (status.unavailable) return <StatusChip tone="outline">not available</StatusChip>;
-  if (status.lastError && status.connected) return <StatusChip tone="danger">failing</StatusChip>;
-  if (status.connected) {
-    return (
-      <StatusChip tone="solid">
-        {status.count > 1 ? `${status.count} connected` : "connected"}
-      </StatusChip>
-    );
-  }
-  return <StatusChip tone="muted">not connected</StatusChip>;
+function Summary({ statuses }: { statuses: IntegrationStatus[] }) {
+  const connected = statuses.filter((s) => s.total > 0).length;
+  const attention = statuses.filter((s) => s.state === "attention").length;
+  return (
+    <p className="-mt-2 text-sm text-text-muted">
+      {connected === 0 ? "Nothing connected yet" : `${connected} connected`}
+      {attention > 0 ? ` · ${attention} ${attention === 1 ? "needs" : "need"} attention` : ""}
+    </p>
+  );
 }

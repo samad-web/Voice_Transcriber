@@ -143,27 +143,79 @@ export function verifyMetaSignature(rawBody: Buffer, header: string | undefined,
 }
 
 /**
- * Signed, stateless OAuth CSRF token: `base64url(orgId.expiry).hmac`. No new
- * table needed - the state round-trips through Meta's redirect and verifies
- * itself, the same shape a JWT would use for something this narrow.
+ * Undoes `subscribePageToLeadgen`: takes this app off the Page's webhook
+ * subscriptions, so Meta stops announcing its leads to us.
+ *
+ * Callers treat a failure as information, not as a reason to stop. A person
+ * who presses Disconnect must end up disconnected in Aura whether or not
+ * Facebook answers - the page token may already be dead, which is often WHY
+ * they are disconnecting.
  */
-export function signOAuthState(orgId: string, secret: string, ttlMs = 10 * 60 * 1000): string {
-  const payload = `${orgId}.${Date.now() + ttlMs}`;
+export async function unsubscribePage(pageId: string, pageAccessToken: string, fetchImpl: typeof fetch = fetch): Promise<void> {
+  const res = await fetchImpl(
+    `${GRAPH_BASE}/${encodeURIComponent(pageId)}/subscribed_apps?access_token=${encodeURIComponent(pageAccessToken)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Meta rejected the webhook unsubscription (${res.status}): ${detail.slice(0, 300)}`);
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/**
+ * Signed, stateless OAuth CSRF token: `base64url(orgId.expiry[.userId]).hmac`.
+ * No new table needed - the state round-trips through the provider's redirect
+ * and verifies itself, the same shape a JWT would use for something this
+ * narrow. LinkedIn's connect flow signs with the same two functions.
+ *
+ * ── WHY IT CARRIES THE PERSON ───────────────────────────────────────────────
+ *
+ * The callback has no console session - the browser is arriving from
+ * facebook.com or linkedin.com - so anything it needs to know about who began
+ * the sign-in has to travel inside the state. The org always did. The person
+ * joined it for doc 28's store: a Meta sign-in now ends on a choice only the
+ * person who signed in may make (integration_pending_choices.user_id, 0131),
+ * and both providers now record who made a connection. The old callbacks
+ * tried to read that from `req.principal`, which an unguarded route never
+ * has, so `connected_by_user_id` was never once written.
+ *
+ * Optional, and a state without it still verifies with `userId: null`, so a
+ * sign-in that was already on the consent screen when this shipped does not
+ * fail on the signature. What a caller does with the null is its own decision.
+ */
+export function signOAuthState(
+  orgId: string,
+  secret: string,
+  opts: { userId?: string | null; ttlMs?: number } = {},
+): string {
+  const { userId = null, ttlMs = 10 * 60 * 1000 } = opts;
+  // A uuid has no "." in it, which is what lets the payload split cleanly -
+  // and anything else here is a caller bug worth failing loudly on.
+  if (userId !== null && !UUID.test(userId)) throw new Error("OAuth state userId must be a uuid");
+  const payload = [orgId, String(Date.now() + ttlMs), ...(userId ? [userId] : [])].join(".");
   const encoded = Buffer.from(payload, "utf8").toString("base64url");
   const sig = createHmac("sha256", secret).update(encoded).digest("hex");
   return `${encoded}.${sig}`;
 }
 
-export function verifyOAuthState(state: string, secret: string): { orgId: string } | null {
-  const [encoded, sig] = state.split(".");
-  if (!encoded || !sig) return null;
+export function verifyOAuthState(
+  state: string,
+  secret: string,
+): { orgId: string; userId: string | null } | null {
+  const [encoded, sig, ...extra] = state.split(".");
+  if (!encoded || !sig || extra.length > 0) return null;
   const expected = createHmac("sha256", secret).update(encoded).digest("hex");
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(sig, "utf8");
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
-  const [orgId, expiryRaw] = Buffer.from(encoded, "base64url").toString("utf8").split(".");
+  const parts = Buffer.from(encoded, "base64url").toString("utf8").split(".");
+  if (parts.length !== 2 && parts.length !== 3) return null;
+  const [orgId, expiryRaw, userId] = parts;
   const expiry = Number(expiryRaw);
   if (!orgId || !Number.isFinite(expiry) || Date.now() > expiry) return null;
-  return { orgId };
+  if (userId !== undefined && !UUID.test(userId)) return null;
+  return { orgId, userId: userId ?? null };
 }

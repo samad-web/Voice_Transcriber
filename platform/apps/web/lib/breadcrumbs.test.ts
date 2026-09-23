@@ -35,11 +35,32 @@ describe("breadcrumbsFor", () => {
       { label: "Reports", href: "/owner/reports" },
       { label: "Response & Follow-ups" },
     ]);
+  });
+
+  it("climbs through the record a page belongs to, not straight to the list (route-parents.ts)", () => {
+    expect(breadcrumbsFor("/owner/reports/builder/r1/runs", ITEMS)).toEqual([
+      { label: "Home", href: "/owner" },
+      { label: "Reports", href: "/owner/reports" },
+      { label: "Report Builder", href: "/owner/reports/builder" },
+      { label: "Report", href: "/owner/reports/builder/r1" },
+      { label: "Run history" },
+    ]);
     expect(breadcrumbsFor("/owner/reports/builder/r1/runs/x", ITEMS, "Q3 pipeline")).toEqual([
       { label: "Home", href: "/owner" },
       { label: "Reports", href: "/owner/reports" },
       { label: "Report Builder", href: "/owner/reports/builder" },
+      { label: "Report", href: "/owner/reports/builder/r1" },
+      { label: "Run history", href: "/owner/reports/builder/r1/runs" },
       { label: "Q3 pipeline" },
+    ]);
+  });
+
+  it("reads a literal segment as a page, not as a record id", () => {
+    expect(breadcrumbsFor("/owner/reports/builder/data", ITEMS)).toEqual([
+      { label: "Home", href: "/owner" },
+      { label: "Reports", href: "/owner/reports" },
+      { label: "Report Builder", href: "/owner/reports/builder" },
+      { label: "Data sources" },
     ]);
   });
 

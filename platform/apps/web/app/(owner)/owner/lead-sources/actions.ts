@@ -32,7 +32,9 @@ export interface LeadSourceDraft {
  * whether leads arrive at all - so both pages that render a channel are
  * revalidated, not just this one.
  */
-const TOUCHED = ["/owner/lead-sources", "/owner/leads", "/owner/board"];
+// Superfone's page lists its own source, and the Integrations store shows
+// every source's state - both went stale after a create before.
+const TOUCHED = ["/owner/lead-sources", "/owner/leads", "/owner/board", "/owner/superfone", "/owner/integrations"];
 
 async function call<T>(
   path: string,

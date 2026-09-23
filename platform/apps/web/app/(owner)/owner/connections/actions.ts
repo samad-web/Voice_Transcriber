@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { safeConsolePath } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
 import { apiErrorMessage } from "../lib/api-error";
@@ -18,19 +19,28 @@ export interface ConnectionActionResult {
   error?: string;
 }
 
-/** Mint an authorize URL. The caller sends the browser there. */
+/**
+ * Mint an authorize URL. The caller sends the browser there.
+ *
+ * `returnTo` is where the callback lands once the provider sends the browser
+ * back - the Integrations store passes its own connect route, so the person
+ * finishes where they started (doc 28 §11.2). Checked here and again by the
+ * API: it is stored, and later becomes a redirect.
+ */
 export async function startOAuthAction(
   provider: string,
+  returnTo?: string,
 ): Promise<ConnectionActionResult & { authorizeUrl?: string }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
+  const redirectPath = safeConsolePath(returnTo, "/owner/integrations", ["/owner"]);
 
   try {
     const res = await fetch(`${API_URL}/v1/connections/oauth/start`, {
       method: "POST",
       headers,
       cache: "no-store",
-      body: JSON.stringify({ provider, redirectPath: "/owner/connections" }),
+      body: JSON.stringify({ provider, redirectPath }),
     });
     if (!res.ok) return { error: await apiErrorMessage(res) };
     const data = (await res.json()) as { authorizeUrl: string };
@@ -85,6 +95,28 @@ export interface OAuthAppView {
 export interface OAuthAppsView {
   redirectUri: string;
   apps: OAuthAppView[];
+}
+
+/** One connection provider as `GET /v1/connections/providers` describes it. */
+export interface ProviderView {
+  id: string;
+  label: string;
+  blurb: string;
+  capabilities: string[];
+  auth: "oauth2" | "basic";
+  configured: boolean;
+  /** Whose OAuth app a sign-in goes through (migration 0120); null for non-OAuth or unset. */
+  source: "organization" | "platform" | null;
+  setupHint: string | null;
+  fields: Array<{
+    key: string;
+    label: string;
+    placeholder?: string;
+    help?: string;
+    required: boolean;
+    defaultValue?: string;
+    secret?: boolean;
+  }>;
 }
 
 export interface OAuthAppDraft {

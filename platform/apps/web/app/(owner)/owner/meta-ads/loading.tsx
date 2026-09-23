@@ -30,7 +30,6 @@ function TextLines({
 }
 
 const SIGN_IN_COPY = ["h-3.5 w-full", "h-3.5 w-11/12"] as const;
-const PAGE_PICKER_COPY = ["h-3.5 w-full", "h-3.5 w-full", "h-3.5 w-3/4"] as const;
 const MCP_BLURB = ["h-3.5 w-full", "h-3.5 w-full", "h-3.5 w-11/12"] as const;
 
 /** One `FormField`: a `text-sm` label line, a 6px gap, then a 38px input. */
@@ -96,19 +95,19 @@ function McpCardSkeleton() {
 }
 
 /**
- * Mirrors meta-ads/page.tsx: two paragraphs of copy under the header (the
- * Facebook sign-in, then the no-page-picker caveat), the one "Connect Facebook
- * Page" button in the client's own `space-y-3` root, and the "Meta via MCP"
- * card - status chip, blurb, URL and token fields, three buttons, a details strip.
+ * Mirrors meta-ads/page.tsx: one paragraph of copy under the header, the two
+ * door buttons into the Integrations store (connect, and the connected Pages),
+ * and the "Meta via MCP" card - status chip, blurb, URL and token fields,
+ * three buttons, a details strip.
  */
 export default function MetaAdsLoading() {
   return (
     <>
       <PageHeader title="Meta Lead Ads" context="Settings" />
       <TextLines line="h-5" bars={SIGN_IN_COPY} className="max-w-2xl" />
-      <TextLines line="h-5" bars={PAGE_PICKER_COPY} className="max-w-2xl" />
-      <div className="space-y-3">
-        <Skeleton className="h-10 w-44 rounded-full" />
+      <div className="flex flex-wrap gap-2">
+        <Skeleton className="h-10 w-48 rounded-full" />
+        <Skeleton className="h-10 w-36 rounded-full" />
       </div>
       <McpCardSkeleton />
     </>

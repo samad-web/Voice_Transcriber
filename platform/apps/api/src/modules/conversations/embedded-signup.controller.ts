@@ -206,7 +206,11 @@ export class EmbeddedSignupController {
     const wasi: WasiChannel = {
       apiBaseUrl: channel.api_base_url,
       apiKey: decryptSecret(channel.api_key) ?? "",
-      wasiClientId: String((channel.config ?? {}).client_id ?? ""),
+      // `wasiClientId` is the key the console, the channels controller and the
+      // OTP sender all write and read. This read `client_id`, so a channel the
+      // console created handed Wasi an empty client id (doc 28 §16, 6e).
+      // `client_id` stays as a fallback for a row an older build wrote.
+      wasiClientId: String(channel.config?.wasiClientId ?? channel.config?.client_id ?? ""),
     };
 
     let result;
@@ -236,7 +240,7 @@ export class EmbeddedSignupController {
         `UPDATE messaging_channels
             SET inbound_address = COALESCE($3, inbound_address),
                 display_name    = COALESCE($4, display_name),
-                -- Merged, not replaced: client_id and anything else an
+                -- Merged, not replaced: wasiClientId and anything else an
                 -- operator put here has to survive a number being connected.
                 config          = config || $5::jsonb,
                 status          = 'active',
@@ -251,7 +255,7 @@ export class EmbeddedSignupController {
           JSON.stringify({
             waba_id: result.wabaId,
             phone_number_id: result.phoneNumberId,
-            ...(result.wasiClientId ? { client_id: result.wasiClientId } : {}),
+            ...(result.wasiClientId ? { wasiClientId: result.wasiClientId } : {}),
             connected_via: "embedded_signup",
             connected_at: new Date().toISOString(),
           }),

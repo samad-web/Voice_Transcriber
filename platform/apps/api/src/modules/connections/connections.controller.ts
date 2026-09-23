@@ -48,6 +48,10 @@ const CompleteBody = z.object({
   code: z.string().min(1).max(4000),
 });
 
+const AbandonBody = z.object({
+  state: z.string().min(1).max(200),
+});
+
 /** Everything a console needs, and no credential material whatsoever. */
 const CONNECTION_COLUMNS = `id, user_id, provider, capabilities, account_email, display_name,
   scopes, config, status, last_error, last_synced_at, token_expires_at, created_at, updated_at`;
@@ -309,6 +313,42 @@ export class ConnectionsController {
       await audit(db, orgId, "connection.connect", connection.id, req);
       return { connection, redirectPath: safeRedirectPath(pending.redirect_path) };
     });
+  }
+
+  /**
+   * The provider sent the person back WITHOUT a code - they pressed Cancel on
+   * Google's consent screen, or Microsoft refused the app.
+   *
+   * The callback page still has the state, and the state is the only thing
+   * that knows where this sign-in began. Without this route that page could
+   * only send everybody to one fixed place; with it, somebody who changed
+   * their mind lands back on the screen they started from (doc 28 §11.6).
+   *
+   * Single-use, like `complete`: the row is deleted as it is read, so an
+   * abandoned state can never be redeemed afterwards by a code that turns up
+   * late. Bound to the caller - a state issued to somebody else deletes
+   * nothing and reveals nothing, and every miss answers with the safe
+   * default rather than an error, because there is nothing for the person to
+   * do about it but carry on.
+   */
+  @Post("oauth/abandon")
+  async abandon(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
+    const parsed = AbandonBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const userId = requireCallerUserId(req);
+
+    const row = await this.db.withOrg(orgId, async (db) => {
+      const {
+        rows: [removed],
+      } = await db.query<{ redirect_path: string | null }>(
+        `DELETE FROM oauth_authorizations
+          WHERE state = $1 AND user_id = $2
+        RETURNING redirect_path`,
+        [parsed.data.state, userId],
+      );
+      return removed ?? null;
+    });
+    return { redirectPath: safeRedirectPath(row?.redirect_path) };
   }
 
   /** Connect a provider that has no OAuth - IMAP/SMTP, CalDAV. */

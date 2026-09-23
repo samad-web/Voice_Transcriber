@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { BackButton } from "@/components/back-button";
+import { BreadcrumbProvider } from "@/components/breadcrumbs";
 import { MobileNav } from "@/components/mobile-nav";
+import { NavHistoryProvider } from "@/components/nav-history-provider";
 import { NoConsoleAccess } from "@/components/no-console-access";
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
@@ -27,6 +30,12 @@ export default async function PlatformLayout({ children }: { children: React.Rea
 
   return (
     <RealtimeProvider enabled={realtimeEnabled}>
+    {/* The operator console has no breadcrumbs, so Back (doc 28 §3) is its
+        only way up from a page like /instances/<id>/calls. Its org is null:
+        operator pages carry the tenant in `?org=`, where it is already
+        visible. */}
+    <BreadcrumbProvider>
+    <NavHistoryProvider area="platform" orgId={null}>
     <div className="min-h-dvh flex flex-col md:flex-row">
       <Sidebar email={user?.email} />
       <MobileNav email={user?.email} />
@@ -37,12 +46,18 @@ export default async function PlatformLayout({ children }: { children: React.Rea
             place where "is this still live?" cannot be answered by recognising
             that your own numbers stopped moving. */}
         <div className="print-hide flex items-center justify-end gap-1">
+          {/* First in the row; below `md` the phone bar carries it instead. */}
+          <div className="hidden md:mr-1 md:flex">
+            <BackButton />
+          </div>
           <ThemeToggle />
           <RealtimeIndicator />
         </div>
         {children}
       </main>
     </div>
+    </NavHistoryProvider>
+    </BreadcrumbProvider>
     </RealtimeProvider>
   );
 }

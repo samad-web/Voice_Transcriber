@@ -1,9 +1,27 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Button, Card, Dialog, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import Link from "next/link";
+import {
+  Button,
+  Card,
+  Dialog,
+  FormField,
+  Input,
+  MonoLabel,
+  StatusChip,
+  buttonClasses,
+  buttonStyle,
+  useAlert,
+} from "@aura/ui";
 import { providerSpec, readChannel } from "@aura/shared";
-import { MetaChannelDialog } from "./meta-channel-dialog";
+import { Time } from "@/components/org-time";
+import { MetaWebhookDetails } from "./meta-webhook-details";
+import { WasiWebhookDetails } from "./wasi-webhook-details";
+
+/** The store's connect route for an app, remembering that the person came from here. */
+const storeDoor = (app: string) =>
+  `/owner/integrations/${app}/connect?from=${encodeURIComponent("/owner/messaging-setup")}`;
 import {
   createWasiChannelAction,
   listChannelsAction,
@@ -21,8 +39,6 @@ import {
  */
 export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
   const [channels, setChannels] = useState(initial);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [metaOpen, setMetaOpen] = useState(false);
   const [secretDialogFor, setSecretDialogFor] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const alert = useAlert();
@@ -62,11 +78,20 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               Both give you approved templates, and both are bound by Meta&rsquo;s 24-hour reply
               window. Instagram and Facebook Messenger connect here too.
             </p>
+            {/* Doors, not forms (doc 28 §15): connecting happens in the
+                Integrations store's connect flow, which hosts the same forms
+                these buttons used to open, and brings the person back here
+                when they press Done. */}
             <div className="mt-2 flex flex-wrap gap-2">
-              <Button onClick={() => setMetaOpen(true)}>Connect through Meta</Button>
-              <Button variant="secondary" onClick={() => setCreateOpen(true)}>
-                Connect through Wasi
-              </Button>
+              <Link href={storeDoor("whatsapp_waba")} className={buttonClasses()} style={buttonStyle()}>
+                Connect a WhatsApp number
+              </Link>
+              <Link href={storeDoor("instagram")} className={buttonClasses({ variant: "secondary" })}>
+                Instagram
+              </Link>
+              <Link href={storeDoor("facebook_messenger")} className={buttonClasses({ variant: "secondary" })}>
+                Messenger
+              </Link>
             </div>
           </div>
 
@@ -137,9 +162,13 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
                 <p className="font-mono text-xs break-all text-text-muted">{c.last_probe_detail}</p>
               ) : null}
               <p className="text-xs text-text-muted">
-                {c.last_probe_at
-                  ? `Last checked ${new Date(c.last_probe_at).toLocaleString()}`
-                  : "Never checked against the provider."}
+                {c.last_probe_at ? (
+                  <>
+                    Last checked <Time iso={c.last_probe_at} mode="datetime" />
+                  </>
+                ) : (
+                  "Never checked against the provider."
+                )}
               </p>
             </div>
 
@@ -154,21 +183,20 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
               connect dialog already showed.
             */}
             {c.provider === "wasi" ? (
-              <div className="mt-3 space-y-2 rounded-md border border-border bg-surface-hover p-3 text-xs">
-                <p className="font-medium text-text">Webhook URL for Wasi&rsquo;s &ldquo;CRM Inbound Forwarding&rdquo;</p>
-                <p className="break-all font-mono text-text-muted">
-                  {typeof window !== "undefined" ? window.location.origin : ""}
-                  {c.webhook_path}
-                </p>
-                <p className="text-text-muted">
-                  Paste this into the client&rsquo;s page in Wasi&rsquo;s admin panel (Clients → this
-                  client → CRM Inbound Forwarding), tick all four events, and save. Wasi will show a
-                  secret - paste it below.
-                </p>
-                <Button variant="secondary" size="sm" onClick={() => setSecretDialogFor(c.id)}>
-                  Enter forward secret
-                </Button>
-              </div>
+              <WasiWebhookDetails
+                path={c.webhook_path}
+                hasForwardSecret={c.has_forward_secret}
+                onEnterSecret={() => setSecretDialogFor(c.id)}
+              />
+            ) : c.provider === "waba" || c.provider === "meta" ? (
+              // Meta's half: the connect form promised this URL "on the channel
+              // once it is created", and nothing drew it (doc 28 §16, 6a).
+              // messaging-webhook.controller.ts answers Meta's one-time check
+              // at this path with the channel's own verify token.
+              <MetaWebhookDetails
+                path={c.webhook_path}
+                verifyToken={(c.config as { verifyToken?: string } | null)?.verifyToken ?? null}
+              />
             ) : null}
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -241,23 +269,6 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
         })
       )}
 
-      <MetaChannelDialog
-        open={metaOpen}
-        onClose={() => setMetaOpen(false)}
-        onCreated={() => {
-          setMetaOpen(false);
-          refresh();
-        }}
-      />
-
-      <CreateDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={() => {
-          setCreateOpen(false);
-          refresh();
-        }}
-      />
       <SecretDialog
         channelId={secretDialogFor}
         onClose={() => setSecretDialogFor(null)}
@@ -270,7 +281,8 @@ export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
   );
 }
 
-function CreateDialog({
+/** The Wasi channel form. Opened by the Integrations store's WhatsApp connect step. */
+export function CreateDialog({
   open,
   onClose,
   onCreated,
@@ -366,7 +378,8 @@ function CreateDialog({
   );
 }
 
-function SecretDialog({
+/** Wasi's forward secret, entered after the channel exists. Also used by the store's check step. */
+export function SecretDialog({
   channelId,
   onClose,
   onSaved,

@@ -15,6 +15,7 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { Time } from "@/components/org-time";
 import {
   connectMetaMcpAction,
   disconnectMcpAction,
@@ -235,9 +236,11 @@ export function McpConnect({ initial }: { initial: McpConnection | null }) {
           <div>
             <dt className="text-text-muted">Last sync</dt>
             <dd className="mt-0.5 font-medium text-text tabular-nums">
-              {connection.last_sync_at
-                ? new Date(connection.last_sync_at).toLocaleString()
-                : "Not yet"}
+              {connection.last_sync_at ? (
+                <Time iso={connection.last_sync_at} mode="datetime" />
+              ) : (
+                "Not yet"
+              )}
             </dd>
           </div>
         </dl>

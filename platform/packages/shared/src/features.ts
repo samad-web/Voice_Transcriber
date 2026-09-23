@@ -475,7 +475,10 @@ export const FEATURES: FeatureSpec[] = [
     blurb: "Each person's own mailbox and calendar, connected by them.",
     module: "aura",
     group: "workspace",
-    hrefs: ["/owner/connections"],
+    // No page of its own any more (doc 28, Q8): the mailbox apps live in the
+    // Integrations store, which hides each app whose feature is off
+    // (integrations.ts, `feature`). /owner/connections is a bare redirect.
+    hrefs: [],
     defaultEnabled: true,
   },
   {

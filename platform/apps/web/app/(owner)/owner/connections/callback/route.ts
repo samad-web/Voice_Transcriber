@@ -1,58 +1,90 @@
 import { NextResponse } from "next/server";
+import type { ConnectErrorCode } from "@aura/shared";
 import { consoleUrl } from "@/lib/console-url";
 import { getOwner } from "@/lib/owner-context";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
- * Where OAuth providers send the browser back (PRD Layer 1).
+ * Where Google and Microsoft send the browser back after sign-in.
  *
- * This URL is what gets registered in the provider's app console, so it is
- * fixed and lives in the web app rather than the API - which also keeps the
- * root ADMIN_API_KEY behind the server boundary. The browser arrives here with
- * `code` and `state`; this hands both to the API, which is the only place that
- * knows whether the state was ever issued.
+ * ── THIS PATH NEVER MOVES ───────────────────────────────────────────────────
  *
- * Everything that could go wrong ends as a redirect back to the connections
- * page with a readable message, never as a stack trace: the person looking at
- * this has just been bounced through a consent screen, and a raw 500 gives
- * them nothing to do next.
+ * `/owner/connections/callback` is the exact-match redirect URI registered in
+ * every organisation's own Google and Microsoft app (migration 0120). Moving
+ * it would break every one of them at once, silently, at the provider. The
+ * Connections PAGE became a redirect into the Integrations store; this route
+ * stays exactly where it is. What changes is where it sends people on: the
+ * `redirect_path` the API stored when the sign-in began - the store's connect
+ * step, for a sign-in the store started.
+ *
+ * ── FAILURES GO BACK TO WHERE THEY STARTED, AS A CODE ───────────────────────
+ *
+ * A person who pressed Cancel at Google used to land on a fixed page with the
+ * provider's own text in the URL. Now the callback asks the API to retire the
+ * pending sign-in and name its return path (`oauth/abandon`), and sends them
+ * there with one of the store's fixed error codes (`CONNECT_ERRORS`). Nothing
+ * the provider wrote travels in a URL.
  */
 
-function back(request: Request, params: Record<string, string>): NextResponse {
+const FALLBACK = "/owner/integrations";
+
+function redirectTo(request: Request, path: string, params: Record<string, string>): NextResponse {
   // Through consoleUrl, not `new URL(path, origin)`: a redirect does not get
   // the /admin basePath on its own - see lib/console-url.ts.
-  const url = consoleUrl(new URL(request.url).origin, "/owner/connections");
+  const url = consoleUrl(new URL(request.url).origin, path, undefined, FALLBACK);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return NextResponse.redirect(url);
 }
 
-export async function GET(request: Request) {
-  const query = new URL(request.url).searchParams;
-
-  // The user pressed Cancel, or the provider refused. `error_description` is
-  // theirs, so it is passed through as a message rather than interpreted.
-  const denied = query.get("error");
-  if (denied) {
-    return back(request, {
-      error: query.get("error_description") ?? `The provider refused the connection (${denied}).`,
-    });
-  }
-
-  const code = query.get("code");
-  const state = query.get("state");
-  if (!code || !state) {
-    return back(request, { error: "That sign-in did not complete. Please try again." });
-  }
-
+async function callerHeaders(): Promise<Record<string, string> | null> {
   const owner = await getOwner();
-  if (!owner) {
-    return back(request, { error: "Your session expired during sign-in. Please try again." });
-  }
-
-  const headers = orgHeaders(owner.membership.orgId, {
+  if (!owner) return null;
+  return orgHeaders(owner.membership.orgId, {
     ownerRole: owner.membership.ownerRole,
     userId: owner.userId,
   });
+}
+
+/** Back into the flow the sign-in came from, on its method step, with a code. */
+async function failed(request: Request, code: ConnectErrorCode, state: string | null): Promise<NextResponse> {
+  let path = FALLBACK;
+  const headers = state ? await callerHeaders() : null;
+  if (state && headers) {
+    try {
+      const res = await fetch(`${API_URL}/v1/connections/oauth/abandon`, {
+        method: "POST",
+        headers,
+        cache: "no-store",
+        body: JSON.stringify({ state }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { redirectPath?: string };
+        if (data.redirectPath) path = data.redirectPath;
+      }
+    } catch {
+      // The store is a fine place to land when the API cannot say where else.
+    }
+  }
+  // A connect route resumes at its method step; anything else just shows the code.
+  const pathname = path.split("?")[0] ?? path;
+  return redirectTo(request, path, pathname.endsWith("/connect") ? { step: "auth", error: code } : { error: code });
+}
+
+export async function GET(request: Request) {
+  const query = new URL(request.url).searchParams;
+  const state = query.get("state");
+
+  // The person pressed Cancel, or the provider refused.
+  const refused = query.get("error");
+  if (refused) {
+    return failed(request, refused === "access_denied" ? "denied" : "provider_error", state);
+  }
+
+  const code = query.get("code");
+  if (!code || !state) return failed(request, "expired", state);
+
+  const headers = await callerHeaders();
+  if (!headers) return failed(request, "expired", null);
 
   try {
     const res = await fetch(`${API_URL}/v1/connections/oauth/complete`, {
@@ -62,26 +94,24 @@ export async function GET(request: Request) {
       body: JSON.stringify({ state, code }),
     });
 
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: unknown };
-      const detail =
-        typeof body.message === "string" ? body.message : "The connection could not be completed.";
-      return back(request, { error: detail });
-    }
+    // A used, expired or foreign state is refused as 4xx; anything else is
+    // the provider or the API failing. `complete` has already consumed the
+    // state either way, so there is no return path left to ask for.
+    if (!res.ok) return failed(request, res.status < 500 ? "expired" : "provider_error", null);
 
     const data = (await res.json()) as {
       connection?: { account_email?: string };
       redirectPath?: string;
     };
 
-    // The API re-validates redirectPath as same-site before returning it, so
-    // this cannot be pointed off-origin by anything stored earlier.
-    const target = consoleUrl(new URL(request.url).origin, data.redirectPath ?? "/owner/connections");
-    if (data.connection?.account_email) {
-      target.searchParams.set("connected", data.connection.account_email);
-    }
-    return NextResponse.redirect(target);
+    // The API re-validates redirectPath as a console path before returning it,
+    // so this cannot be pointed off-origin by anything stored earlier.
+    return redirectTo(
+      request,
+      data.redirectPath ?? FALLBACK,
+      data.connection?.account_email ? { connected: data.connection.account_email } : {},
+    );
   } catch {
-    return back(request, { error: "Could not reach the platform API. Please try again." });
+    return failed(request, "provider_error", null);
   }
 }

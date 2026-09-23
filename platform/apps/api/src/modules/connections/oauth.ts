@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { ResolvedOAuthClient } from "@aura/db";
-import type { ConnectionProviderSpec } from "@aura/shared";
+import { safeConsolePath, type ConnectionProviderSpec } from "@aura/shared";
 
 /**
  * The provider-agnostic half of the OAuth handshake (PRD Layer 1).
@@ -127,14 +127,17 @@ export function emailFromIdToken(idToken: string | undefined): string | null {
 }
 
 /**
- * Only a same-site path may be returned to after a handshake.
+ * Only a place inside the owner console may be returned to after a handshake.
  *
  * The provider bounces the browser back with whatever we stored, so an
  * absolute or protocol-relative value here would be an open redirect wearing
- * an OAuth callback as a disguise.
+ * an OAuth callback as a disguise. The rules are `safeConsolePath`'s - the
+ * same ones the login form and the connect flow use - which also refuse
+ * `/\host` (browsers read it as `//host`); the check this replaced did not.
+ *
+ * The fallback is the Integrations store (doc 28 §11.3): every connect flow
+ * starts there now, and /owner/connections is on its way to being a redirect.
  */
 export function safeRedirectPath(path: string | null | undefined): string {
-  if (!path) return "/owner/connections";
-  if (!path.startsWith("/") || path.startsWith("//")) return "/owner/connections";
-  return path;
+  return safeConsolePath(path, "/owner/integrations", ["/owner"]);
 }

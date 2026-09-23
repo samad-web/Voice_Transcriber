@@ -4,8 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { ChannelBar } from "../channel-bar";
-import { ConnectMethod } from "./connect-method";
-import { embeddedSignupConfigAction } from "./actions";
+import { MessagingSetup } from "./messaging-setup-client";
 // Same name as nav.ts's channel type and a different thing entirely - this one
 // is a connected WhatsApp number. Only the local one is referenced here.
 import type { MessagingChannel } from "./actions";
@@ -13,18 +12,12 @@ import type { MessagingChannel } from "./actions";
 export const metadata: Metadata = { title: "WhatsApp Setup" };
 
 export default async function MessagingSetupPage() {
-  // Feature gate (migration 0093). Before any fetch: a page this tenant is
+  // Feature gate (migration 0101). Before any fetch: a page this tenant is
   // not provisioned for must neither cost a round trip nor 404 only after
   // proving the data behind it exists.
   await requireOwnerFeature("messaging_setup");
 
-  // Both in one pass. The signup panel's readiness depends on the same channel
-  // rows the form below renders, and fetching them sequentially would put a
-  // second Mumbai->Seoul round trip in front of a page that already has one.
-  const [result, signup] = await Promise.all([
-    ownerTry<{ channels: MessagingChannel[] }>("/v1/messaging/channels"),
-    embeddedSignupConfigAction(),
-  ]);
+  const result = await ownerTry<{ channels: MessagingChannel[] }>("/v1/messaging/channels");
 
   if (!result.ok) {
     return (
@@ -40,22 +33,25 @@ export default async function MessagingSetupPage() {
     <>
       <PageHeader title="WhatsApp Setup" context="Settings" />
       <ChannelBar />
+      {/* This said WhatsApp goes "through Wasi … rather than Meta directly"
+          while the card below offered "Connect through Meta" (doc 28 §16, 6d).
+          Both routes are real; the sentence now says so. */}
       <p className="max-w-2xl text-sm text-text-muted">
-        WhatsApp goes through Wasi - a WhatsApp Business Solution Provider - rather than Meta
-        directly. Nothing about your Meta account is stored here.
+        Your business numbers and Meta accounts, and what state each one is in. A number connects
+        directly through Meta or through Wasi, a WhatsApp Business Solution Provider - both are a
+        real WhatsApp Business Account.
       </p>
 
       {/*
-        Both routes used to be stacked here, with a paragraph apologising for
-        the order ("the rarer, more technical task"). An owner who does not
-        know what a Business Solution Provider is cannot choose between two
-        options they cannot tell apart, so ConnectMethod asks how they already
-        USE the number - a fact they have - and shows one route.
-
-        A workspace that already has a channel skips the question entirely; see
-        the component. This is a settings page, not a wizard.
+        The day-to-day half only (doc 28 §15): the channels, their checks, the
+        forward secret, switching one off. CONNECTING moved into the
+        Integrations store's connect flow - including the "how do you use this
+        number today?" question this page used to ask - and the card below
+        links there. One connect implementation, reached from here and from
+        the store alike; and Facebook's SDK no longer loads on a page that
+        only lists channels.
       */}
-      <ConnectMethod channels={data.channels} signup={signup} />
+      <MessagingSetup initial={data.channels} />
     </>
   );
 }

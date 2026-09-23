@@ -1,80 +1,82 @@
 import { Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 
-/** Complete class strings, picked by index, so the cards are not copies of one another. */
-const NAME_BAR = ["h-3.5 w-24", "h-3.5 w-32", "h-3.5 w-20", "h-3.5 w-28"] as const;
-const BADGE_BAR = [
-  "h-6 w-24 rounded-full",
-  "h-6 w-20 rounded-full",
-  "h-6 w-28 rounded-full",
-  "h-6 w-24 rounded-full",
-] as const;
-const BLURB_BAR = ["h-3 w-2/3", "h-3 w-1/2", "h-3 w-3/4", "h-3 w-3/5"] as const;
+/** Complete class strings, picked by index, so the tiles are not copies of one another. */
+const NAME_BAR = ["h-3.5 w-36", "h-3.5 w-28", "h-3.5 w-40", "h-3.5 w-32"] as const;
+const VENDOR_BAR = ["h-3 w-24", "h-3 w-20", "h-3 w-28"] as const;
+const BLURB_TAIL = ["h-3 w-2/3", "h-3 w-1/2", "h-3 w-3/4", "h-3 w-3/5"] as const;
+const CHIP_BAR = ["h-5.5 w-24 rounded-full", "", "h-5.5 w-20 rounded-full", ""] as const;
+const VIEW_CHIP = ["w-10", "w-22", "w-30", "w-14"] as const;
+const CATEGORY_CHIP = ["w-28", "w-20", "w-24", "w-18", "w-20", "w-28"] as const;
 
-/** The categories in catalogue order - Messaging, Lead sources, Payments, Telephony - with their card counts. */
-const SECTIONS = [
-  { label: "h-3 w-20", cards: 4 },
-  { label: "h-3 w-24", cards: 4 },
-  { label: "h-3 w-16", cards: 2 },
-  { label: "h-3 w-20", cards: 2 },
-] as const;
-
-/**
- * One category of integrations, as integrations/page.tsx draws it: the
- * category's label over a two-column grid of link cards, each a name with its
- * status chip and a two-line blurb.
- */
-function IntegrationSectionSkeleton({
-  label,
-  cards,
-  start,
-}: {
-  label: string;
-  cards: number;
-  start: number;
-}) {
+/** One tile, as app-tile.tsx draws it: logo, name and maker, two lines of blurb, chip and button. */
+function TileSkeleton({ i }: { i: number }) {
+  const chip = CHIP_BAR[i % CHIP_BAR.length];
   return (
-    <section className="space-y-2">
-      <Skeleton className={label} />
-      <div className="grid gap-2 md:grid-cols-2">
-        {Array.from({ length: cards }, (_, i) => (
-          <div key={i} className="rounded-lg border border-border p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Skeleton className={NAME_BAR[(start + i) % NAME_BAR.length]} />
-              <Skeleton className={BADGE_BAR[(start + i) % BADGE_BAR.length]} />
-            </div>
-            <div className="mt-2 space-y-2">
-              <Skeleton className="h-3 w-full" />
-              <Skeleton className={BLURB_BAR[(start + i) % BLURB_BAR.length]} />
-            </div>
-          </div>
-        ))}
+    <div className="flex flex-col rounded-lg border border-border bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <Skeleton className="h-10 w-10 shrink-0 rounded-lg" />
+        <div className="min-w-0 flex-1 space-y-1.5 pt-1">
+          <Skeleton className={NAME_BAR[i % NAME_BAR.length]} />
+          <Skeleton className={VENDOR_BAR[i % VENDOR_BAR.length]} />
+        </div>
       </div>
-    </section>
+      <div className="mt-3 space-y-2">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className={BLURB_TAIL[i % BLURB_TAIL.length]} />
+      </div>
+      <div className="mt-auto flex min-h-10 items-center justify-between gap-2 pt-4">
+        {chip ? <Skeleton className={chip} /> : <span />}
+        <Skeleton className="h-10 w-20 rounded-full sm:h-8" />
+      </div>
+    </div>
   );
 }
 
 /**
- * Mirrors integrations/page.tsx: a short explainer tucked up under the header,
- * then one section per category of integration (Messaging, Lead sources,
- * Payments, Telephony, Email & calendar), each a label over a two-column grid
- * of link cards - the integration's name, its connected / not connected chip
- * and a blurb. The fifth, smallest category is below the fold and left out.
+ * Mirrors integrations/page.tsx and the StoreBrowser it mounts: the one-line
+ * summary under the header, the search box beside the four view chips, the
+ * category chips, then the first category's label over the tile grid - one
+ * column, two from `md`, three from `xl`. The later categories are below the
+ * fold and left out.
  */
 export default function IntegrationsLoading() {
   return (
     <>
-      <PageHeader title="Integrations" context="Workspace" />
+      <PageHeader
+        title="Integrations"
+        context="Workspace"
+        description="Connect the apps your team already uses. Nothing here sends on its own."
+      />
 
-      <div className="-mt-2 max-w-prose space-y-2.5">
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-1/5" />
+      <div className="-mt-2 flex h-[21px] items-center">
+        <Skeleton className="h-3.5 w-40" />
       </div>
 
-      {SECTIONS.map((section, i) => (
-        <IntegrationSectionSkeleton key={i} label={section.label} cards={section.cards} start={i} />
-      ))}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <Skeleton className="h-[38px] w-full rounded-sm sm:max-w-sm" />
+          <div className="flex flex-wrap gap-1.5">
+            {VIEW_CHIP.map((w, i) => (
+              <Skeleton key={i} className={`h-10 rounded-full sm:h-7 ${w}`} />
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {CATEGORY_CHIP.map((w, i) => (
+            <Skeleton key={i} className={`h-10 rounded-full sm:h-7 ${w}`} />
+          ))}
+        </div>
+      </div>
+
+      <section className="space-y-2">
+        <Skeleton className="h-3 w-20" />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <TileSkeleton key={i} i={i} />
+          ))}
+        </div>
+      </section>
     </>
   );
 }

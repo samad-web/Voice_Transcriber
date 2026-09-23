@@ -20,7 +20,17 @@ import { createLeadSourceAction } from "../lead-sources/actions";
  * that was actually missing: a place to look that is about Superfone rather
  * than about lead sources in general.
  */
-export function SuperfoneConnect({ origin }: { origin: string }) {
+export function SuperfoneConnect({
+  origin,
+  onCreated,
+}: {
+  origin: string;
+  /**
+   * Hand the new source to the caller instead of showing the URL here - the
+   * Integrations store's connect flow shows it on its own check step.
+   */
+  onCreated?: (created: { id: string; url: string }) => void;
+}) {
   const [name, setName] = useState("Superfone");
   const [created, setCreated] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -47,7 +57,12 @@ export function SuperfoneConnect({ origin }: { origin: string }) {
         });
         return;
       }
-      setCreated(`${origin}/v1${result.data.endpointPath}`);
+      const url = `${origin}/v1${result.data.endpointPath}`;
+      if (onCreated) {
+        onCreated({ id: result.data.id, url });
+        return;
+      }
+      setCreated(url);
     });
   };
 

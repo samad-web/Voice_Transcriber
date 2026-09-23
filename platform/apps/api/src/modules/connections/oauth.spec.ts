@@ -113,13 +113,17 @@ describe("safeRedirectPath", () => {
     "//evil.example.com",
     "http://evil.example.com/x",
     "javascript:alert(1)",
+    // Browsers read `/\` as `//`; the check this helper replaced let it through.
+    "/\\evil.example.com",
+    // Outside the owner console: the callback only ever returns into it.
+    "/instances/1",
   ])("refuses %s - an open redirect wearing a callback as a disguise", (hostile) => {
-    expect(safeRedirectPath(hostile)).toBe("/owner/connections");
+    expect(safeRedirectPath(hostile)).toBe("/owner/integrations");
   });
 
-  it("falls back for null and empty", () => {
-    expect(safeRedirectPath(null)).toBe("/owner/connections");
-    expect(safeRedirectPath("")).toBe("/owner/connections");
+  it("falls back to the Integrations store for null and empty", () => {
+    expect(safeRedirectPath(null)).toBe("/owner/integrations");
+    expect(safeRedirectPath("")).toBe("/owner/integrations");
   });
 });
 

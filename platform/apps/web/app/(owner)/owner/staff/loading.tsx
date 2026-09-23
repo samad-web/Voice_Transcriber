@@ -1,5 +1,5 @@
 import { Card, Skeleton } from "@aura/ui";
-import { PageHeader } from "@/components/page-header";
+import { NavPageHeader } from "@/components/nav-page-header";
 import { IntroSkeleton, TabsSkeleton } from "@/components/skeletons";
 
 /** The headcount strip's chips ("1 Owner", "2 Manager", ...). */
@@ -125,7 +125,8 @@ function RosterSkeleton() {
 export default function StaffLoading() {
   return (
     <>
-      <PageHeader title="Staff" context="Workspace" />
+      {/* "Staff" to an owner, "Team" to a manager - the rail's word for it. */}
+      <NavPageHeader href="/owner/staff" fallback="Staff" context="Workspace" />
 
       <TabsSkeleton variant="boxed" tabs={3} />
 
