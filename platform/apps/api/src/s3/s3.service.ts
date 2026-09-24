@@ -4,6 +4,7 @@ import {
   CreateMultipartUploadCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
@@ -92,6 +93,44 @@ export class S3Service {
         },
       }),
     );
+  }
+
+  /**
+   * A single-object presigned PUT - the branding-upload equivalent of
+   * `createMultipartUpload` above, for assets (logo, favicon, sidebar icon...)
+   * that are a few KB, not a multi-minute recording, and so need neither
+   * multipart nor a long expiry. Signed with the PUBLIC client for the same
+   * reason every other browser-facing URL is: the browser PUTs directly to
+   * this address, so it has to be one the browser can reach.
+   */
+  async presignedPutUrl(key: string, contentType: string, expiresIn = 900): Promise<string> {
+    return getSignedUrl(
+      this.publicClient,
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }),
+      { expiresIn },
+    );
+  }
+
+  /**
+   * Reads a small object back on the SERVER, for `branding-assets.controller.ts`
+   * to stream to a browser that has no S3 credentials of its own and no
+   * presigned URL (a favicon or a saved logo has to keep working indefinitely,
+   * which a presigned GET's expiry cannot promise). Internal client: this runs
+   * inside the compose network like every other server-side read.
+   *
+   * Returns null for a missing key rather than throwing, so the controller can
+   * answer 404 instead of 500 for a stale or mistyped filename.
+   */
+  async getObject(key: string): Promise<{ body: Buffer; contentType?: string } | null> {
+    try {
+      const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const bytes = await object.Body?.transformToByteArray();
+      if (!bytes) return null;
+      return { body: Buffer.from(bytes), contentType: object.ContentType };
+    } catch (err) {
+      if ((err as { name?: string } | null)?.name === "NoSuchKey") return null;
+      throw err;
+    }
   }
 
   async headObject(key: string): Promise<{ bytes: number }> {

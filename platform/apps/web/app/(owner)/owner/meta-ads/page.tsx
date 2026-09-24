@@ -6,7 +6,7 @@ import { ownerGet, requireFeature } from "@/lib/owner-context";
 import type { McpConnection } from "./actions";
 import { McpConnect } from "./mcp-connect";
 
-export const metadata: Metadata = { title: "Meta Lead Ads" };
+export const metadata: Metadata = { title: "Facebook & Instagram ads" };
 
 /**
  * Connect Meta (Facebook) Lead Ads so leads submitted through a Page's
@@ -25,7 +25,7 @@ export default async function MetaAdsPage() {
 
   return (
     <>
-      <PageHeader title="Meta Lead Ads" context="Settings" />
+      <PageHeader title="Facebook & Instagram ads" context="Settings" />
       {/* This page used to warn that the FIRST Page an account managed was
           the one that got connected, with no way to choose. The store's
           connect flow ends on a choose step now (doc 28 §11.3), so the warning

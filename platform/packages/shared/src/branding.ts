@@ -17,17 +17,21 @@ import { z } from "zod";
  * That is the drift the shared package exists to prevent, and branding was the
  * one tenant-config surface still outside it.
  *
- * ── WHAT `loginBackgroundUrl` WAS ───────────────────────────────────────────
+ * ── `loginBackgroundUrl` ─────────────────────────────────────────────────────
  *
- * An eighth field, dropped here. Every tenant signs in at the SAME address -
- * `<origin>/login`, the one URL sign-in-link.tsx hands out, with no subdomain
- * and no org in the path - so the sign-in screen has no tenant to look branding
- * up for. It was a control that could never do anything when saved.
+ * Storable again, but not rendered anywhere yet. Every tenant signs in at the
+ * SAME address - `<origin>/login`, the one URL sign-in-link.tsx hands out, with
+ * no subdomain and no org in the path - so the sign-in screen has no tenant to
+ * look branding up for today. An admin can set the field and it round-trips;
+ * `/login` simply does not read it until per-tenant sign-in resolution exists.
  *
- * Dropping it from the schema does not delete anything: PATCH merges into the
- * jsonb (`branding || $2`), so a tenant who set it keeps the key, and Zod
- * strips it on read. If per-tenant sign-in URLs ever exist, the field comes
- * back and the stored values are still there.
+ * ── UPLOADS ──────────────────────────────────────────────────────────────────
+ *
+ * Every URL field can be filled two ways: paste a link to an already-hosted
+ * image, or upload one through the branding page's file picker, which asks the
+ * API for a presigned S3 PUT (`POST /org/branding/upload-url`, mirroring the
+ * call-recording pipeline in s3.service.ts) and saves back the URL the upload
+ * produced. The schema does not care which - both arrive as a plain `AssetUrl`.
  */
 
 const HEX = /^#[0-9a-fA-F]{6}$/u;
@@ -36,21 +40,58 @@ const HexColor = z.string().regex(HEX, "expected a hex colour like #2563eb");
 const AssetUrl = z.string().url().max(500);
 
 /**
- * The seven fields.
- *
- * URLs rather than uploads for the images, consistent with the original
- * `logoUrl`: there is no asset pipeline in this console and inventing one for
- * a favicon would be the tail wagging the dog. The console says so beside each
- * field rather than offering a file picker that would not work.
+ * The colour half of a saved palette - shared between the org's live branding
+ * and each entry in `presets`, so "save the current palette" is a straight
+ * subset copy rather than a reshaping.
  */
+export const BrandingPalette = z.object({
+  primaryColor: HexColor.nullish(),
+  secondaryColor: HexColor.nullish(),
+  appBackgroundColor: HexColor.nullish(),
+  textColor: HexColor.nullish(),
+  /** Explicit hover fill for the primary/accent colour - overrides the
+   *  computed `hoverShade(primaryColor)` below when set. */
+  primaryHoverColor: HexColor.nullish(),
+  /** Explicit hover fill for the secondary colour. Stored and round-tripped
+   *  through presets like every other field here, but - unlike
+   *  `primaryHoverColor` - has no CSS token yet: "secondary" only ever
+   *  appears as the brand gradient's second stop or the KPI band's seed, both
+   *  already derived surfaces, not a flat fill anything hovers over. Kept so
+   *  a saved palette captures the admin's whole intent and is ready the day a
+   *  secondary-filled control exists. */
+  secondaryHoverColor: HexColor.nullish(),
+});
+export type BrandingPalette = z.infer<typeof BrandingPalette>;
+
+/** One saved brand pattern an admin can switch to in one click. */
+export const BrandingPreset = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(80),
+  colors: BrandingPalette,
+});
+export type BrandingPreset = z.infer<typeof BrandingPreset>;
+
 export const Branding = z.object({
   logoUrl: AssetUrl.nullish(),
   faviconUrl: AssetUrl.nullish(),
   bannerUrl: AssetUrl.nullish(),
+  /** Shown in the sidebar/mobile nav in place of the full logo once it is
+   *  collapsed to an icon rail - see sidebar.tsx. Falls back to `logoUrl`,
+   *  then to the stock mark, when unset. */
+  sidebarIconUrl: AssetUrl.nullish(),
+  /** Stored, not yet rendered - see the file header. */
+  loginBackgroundUrl: AssetUrl.nullish(),
   primaryColor: HexColor.nullish(),
   secondaryColor: HexColor.nullish(),
   appBackgroundColor: HexColor.nullish(),
+  textColor: HexColor.nullish(),
+  primaryHoverColor: HexColor.nullish(),
+  secondaryHoverColor: HexColor.nullish(),
   browserTitle: z.string().max(120).nullish(),
+  /** Saved brand patterns, switched between without re-entering every field.
+   *  20 is generous headroom over what any tenant has asked for; it exists so
+   *  the jsonb column cannot grow without bound. */
+  presets: z.array(BrandingPreset).max(20).nullish(),
 });
 export type Branding = z.infer<typeof Branding>;
 
@@ -354,6 +395,23 @@ export function isUsableAppBackground(hex: string): boolean {
 }
 
 /**
+ * Is this safe to paint `--color-text` with?
+ *
+ * Unlike `appBackgroundColor`, this custom property is set once on the
+ * console root and inherited everywhere - including into dark mode, which
+ * re-binds most tokens per `prefers-color-scheme` but cannot re-bind an
+ * inline style. So the seed has to hold 4.5:1 against BOTH page grounds
+ * (paper and `DARK_PAGE`), the same two-ground test `usableKpiFill` runs, or
+ * a tenant's text colour would be illegible the moment a reader's OS prefers
+ * the mode it was not checked against.
+ */
+export function isUsableTextColor(hex: string): boolean {
+  const onPaper = contrastRatio(hex, PAPER);
+  const onDarkPage = contrastRatio(hex, DARK_PAGE);
+  return onPaper !== null && onDarkPage !== null && onPaper >= 4.5 && onDarkPage >= 4.5;
+}
+
+/**
  * The CSS custom properties one org's branding overrides, ready to spread onto
  * a `style` attribute.
  *
@@ -399,8 +457,13 @@ export function brandingCssVars(branding: Branding): Record<string, string> {
     // wrong the moment a tenant picks a light hue.
     const accent = primary as string;
     const subtle = mix(accent, PAPER, 0.92);
+    const hover = branding.primaryHoverColor?.trim();
     vars["--color-accent"] = accent;
-    vars["--color-accent-hover"] = hoverShade(accent);
+    // An explicit hover wins over the computed shade - the admin picked it on
+    // purpose - but the computed one still runs for every tenant who has not,
+    // so a saved palette missing this field degrades to what shipped before it
+    // existed rather than to no hover state at all.
+    vars["--color-accent-hover"] = hover && HEX.test(hover) ? hover : hoverShade(accent);
     vars["--color-accent-fg"] = readableOn(accent);
     vars["--color-accent-subtle"] = subtle;
     vars["--color-accent-text"] = accentTextOn(subtle, accent);
@@ -442,6 +505,11 @@ export function brandingCssVars(branding: Branding): Record<string, string> {
     // bg-subtle is the PageHeader's card ground - one step off the page, the
     // same relationship theme.css's own #fafafa has to its #ffffff.
     vars["--color-bg-subtle"] = mix(background, INK, 0.04);
+  }
+
+  const text = branding.textColor?.trim();
+  if (text && HEX.test(text) && isUsableTextColor(text)) {
+    vars["--color-text"] = text;
   }
 
   return vars;

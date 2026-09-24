@@ -81,6 +81,7 @@ describe("links", () => {
   it("lights the pill for the window showing, and none for a custom range", () => {
     const pills = rangePresets("/owner/reports", { kind: "relative", days: 7 });
     expect(pills.map((p) => [p.label, p.href, p.active])).toEqual([
+      ["Today", "/owner/reports?days=1", false],
       ["Last 7 days", "/owner/reports?days=7", true],
       ["Last 30 days", "/owner/reports", false],
       ["Last 90 days", "/owner/reports?days=90", false],

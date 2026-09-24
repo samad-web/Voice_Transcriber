@@ -25,7 +25,7 @@
 set -euo pipefail
 
 DUMP_DIR="${1:-./dump}"
-DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DB_CONTAINER="${DB_CONTAINER:-aura-supabase-db}"
 PLATFORM_DIR="${PLATFORM_DIR:-/opt/aura/platform}"
 FORCE="${FORCE:-0}"
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { DispositionColor, overQualified, QUALITY_ASSERTING_WARN_AT } from "@aura/shared";
 import { Button, Card, Input, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
 import {
@@ -38,7 +39,7 @@ const QUALITIES = [
  * foreign key for exactly this: a settings edit must not rewrite history.
  */
 export function DispositionsEditor({ initial }: { initial: Disposition[] }) {
-  const [rows, setRows] = useState(initial);
+  const [rows, setRows] = useDraftState(initial);
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
   const alert = useAlert();

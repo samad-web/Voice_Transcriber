@@ -7,8 +7,13 @@ import { AUTH_ENABLED, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
  *  `/docs` is the API reference. Its audience is a tenant's own developer,
  *  who typically has no console login at all - gating it behind one would
  *  shut out the only people it is written for, and it discloses nothing:
- *  the credential that matters is the API key, never a session. */
-const PUBLIC_PREFIXES = ["/login", "/auth", "/docs"];
+ *  the credential that matters is the API key, never a session.
+ *
+ *  `/auth` holds the Google OAuth callback, and `/invite/<token>` is where an
+ *  invited colleague lands before they have any account at all (0137). The
+ *  invite page shows details only for a live token, and joining still takes
+ *  a verified Google sign-in for the invited address. */
+const PUBLIC_PREFIXES = ["/login", "/auth", "/docs", "/invite"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));

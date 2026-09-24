@@ -3,9 +3,6 @@ import { DateRangeBarSkeleton, DateRangeSummarySkeleton } from "@/components/dat
 import { PageHeader } from "@/components/page-header";
 import { IntroSkeleton } from "@/components/skeletons";
 
-/** The date pills: Next 7/14/30 days, Last 7/30 days. */
-const DATE_PILLS = ["w-24", "w-28", "w-28", "w-24", "w-28"] as const;
-
 /** Complete class strings, picked by index, so Tailwind can see every one. */
 const BOOKING_NAME = ["w-40", "w-32", "w-44"] as const;
 const BOOKING_CONTACT = ["w-64", "w-56", "w-72"] as const;
@@ -135,18 +132,18 @@ function DaySlotsSkeleton() {
 }
 
 /**
- * Mirrors slots/page.tsx: intro copy, the shared date control (five pills:
- * Next 7/14/30 days, Last 7/30 days) and its line of dates, then the
- * booked-calls card (title, count, three bookings), then the diary - a month
- * grid on the left beside the selected day's slots and the add-a-slot form.
- * The slot generator is a collapsed link under the grid until it is opened.
+ * Mirrors slots/page.tsx: intro copy, the shared date control and its line of
+ * dates, then the booked-calls card (title, count, three bookings), then the
+ * diary - a month grid on the left beside the selected day's slots and the
+ * add-a-slot form. The slot generator is a collapsed link under the grid until
+ * it is opened.
  */
 export default function SlotsLoading() {
   return (
     <>
       <PageHeader title="Booking Slots" context="Platform" />
       <IntroSkeleton lines={2} />
-      <DateRangeBarSkeleton pills={DATE_PILLS} />
+      <DateRangeBarSkeleton />
       <DateRangeSummarySkeleton />
       <BookedCallsSkeleton />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">

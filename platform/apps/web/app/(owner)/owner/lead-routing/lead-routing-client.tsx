@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import { GripVertical, Plus, Route, Trash2 } from "lucide-react";
 import {
@@ -91,10 +92,10 @@ const BLANK: RuleDraft = {
  * a second implementation here would drift and be worse than showing nothing.
  */
 export function LeadRoutingClient({ overview }: { overview: RoutingOverview }) {
-  const [state, setState] = useState(overview);
+  const [pending, startTransition] = useTransition();
+  const [state, setState] = useServerState(overview, pending);
   const [editing, setEditing] = useState<RoutingRule | "new" | null>(null);
   const [draft, setDraft] = useState<RuleDraft>(BLANK);
-  const [pending, startTransition] = useTransition();
   /** Running total while a multi-batch distribution is in flight. */
   const [progress, setProgress] = useState<number | null>(null);
   const alert = useAlert();

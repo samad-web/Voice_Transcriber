@@ -7,7 +7,7 @@ import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 import { supportHref, supportLabel } from "@/lib/support-contact";
 import { StoreBrowser } from "./store-browser";
 
-export const metadata: Metadata = { title: "Integrations" };
+export const metadata: Metadata = { title: "Connected apps" };
 
 /**
  * The Integrations store (doc 28 Part B): one place to browse, connect, see
@@ -45,8 +45,8 @@ export default async function IntegrationsPage() {
   return (
     <>
       <PageHeader
-        title="Integrations"
-        context="Workspace"
+        title="Connected apps"
+        context="Settings"
         description="Connect the apps your team already uses. Nothing here sends on its own."
       />
       {result.ok ? (

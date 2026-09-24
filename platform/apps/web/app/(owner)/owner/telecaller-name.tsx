@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Check, Pencil, X } from "lucide-react";
 import { Button, Checkbox, Input, useAlert } from "@aura/ui";
 import { setTelecallerNameAction } from "./actions";
@@ -22,7 +23,7 @@ export function TelecallerName({
   deviceLabel: string | null;
 }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(name ?? "");
+  const [value, setValue] = useDraftState(name ?? "");
   const [reassign, setReassign] = useState(false);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();

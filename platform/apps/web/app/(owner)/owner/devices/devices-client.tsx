@@ -220,7 +220,7 @@ export function DevicesClient({
       ) : (
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <MonoLabel>Handsets</MonoLabel>
+            <MonoLabel>Phones</MonoLabel>
             {/* The one number worth putting above the fold, and only when it is
                 non-zero: a quiet fleet should look quiet, not wear a green
                 "0 need attention" badge competing with the rows below it. */}

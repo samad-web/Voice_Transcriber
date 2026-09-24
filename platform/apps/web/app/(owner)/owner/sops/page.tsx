@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { SopEditor } from "./sop-editor";
 
-export const metadata: Metadata = { title: "Call procedure" };
+export const metadata: Metadata = { title: "Call checklist" };
 
 interface SopRow {
   id: string;
@@ -49,7 +49,7 @@ export default async function SopsPage() {
 
   return (
     <>
-      <PageHeader title="Call procedure" context="Team" />
+      <PageHeader title="Call checklist" context="Settings" />
 
       <Card className="space-y-2">
         <MonoLabel>What this does</MonoLabel>

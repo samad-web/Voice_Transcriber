@@ -184,7 +184,17 @@ function logPublishFailure(err: unknown): void {
 export async function consumeEvents<T = unknown>(handler: (event: T) => void): Promise<void> {
   closed = false;
   subscriber = handler as (event: unknown) => void;
-  const ch = await getChannel();
+  let ch: amqp.Channel;
+  try {
+    ch = await getChannel();
+  } catch (err) {
+    // A broker that is down when this process boots never fires `close` - there
+    // was no connection to close - so nothing else would ever redial, and the
+    // process would serve for days receiving no events while its log said "will
+    // retry". Start the backoff loop here; it binds the subscriber on success.
+    scheduleReconnect();
+    throw err;
+  }
   // getChannel only binds when it CREATES the channel. A `publishEvent` earlier
   // in this process will have created one already, and without this the
   // subscription would never be made - the process would stay up, look healthy,

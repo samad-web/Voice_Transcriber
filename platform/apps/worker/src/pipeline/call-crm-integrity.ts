@@ -1,4 +1,5 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { announce } from "./realtime";
 
 /**
  * Does a call's own AI read agree with what the CRM ended up recording?
@@ -207,7 +208,10 @@ export async function sweepCallCrmIntegrity(): Promise<number> {
 
   let total = 0;
   for (const org of orgs) {
-    total += await withOrgContext(org.id, (client) => checkOrgIntegrity(client, org.id));
+    const flagged = await withOrgContext(org.id, (client) => checkOrgIntegrity(client, org.id));
+    total += flagged;
+    // The Call quality review queue - after the commit.
+    if (flagged > 0) announce(org.id, "call", "updated");
   }
   if (total > 0) console.log(`call-crm integrity: flagged ${total} new item(s)`);
   return total;

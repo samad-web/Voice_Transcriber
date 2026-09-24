@@ -5,7 +5,7 @@ import { ownerGet, ownerTry } from "@/lib/owner-context";
 import { DevicesClient } from "./devices-client";
 import type { DevicesResponse, FleetHealthResponse } from "./actions";
 
-export const metadata: Metadata = { title: "Handsets" };
+export const metadata: Metadata = { title: "Phones" };
 
 /**
  * Handsets (migration 0107).
@@ -41,7 +41,7 @@ export default async function DevicesPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Handsets" context="Settings" />
+        <PageHeader title="Phones" context="Settings" />
         <LoadFailure what="your devices" failure={result} />
       </>
     );
@@ -50,7 +50,7 @@ export default async function DevicesPage() {
 
   return (
     <>
-      <PageHeader title="Handsets" context="Settings" />
+      <PageHeader title="Phones" context="Settings" />
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
         The phones your telecallers call from. Calls made on a paired handset are recorded,
         transcribed and turned into leads. An owner decides who on the team may pair a new one -

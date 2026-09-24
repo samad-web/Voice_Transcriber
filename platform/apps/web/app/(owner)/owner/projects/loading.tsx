@@ -100,7 +100,7 @@ function ProjectCardSkeleton({ index }: { index: number }) {
 export default function ProjectsLoading() {
   return (
     <>
-      <PageHeader title="Projects" context="Pipeline" />
+      <PageHeader title="Projects" context="Settings" />
       <TextLines line="h-5" bars={INTRO} className="-mt-2 max-w-2xl" />
       <div className="flex items-center justify-between gap-3">
         <div className="flex h-4 items-center">

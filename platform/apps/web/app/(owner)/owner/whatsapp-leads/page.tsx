@@ -5,10 +5,9 @@ import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { getOwner } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
-import { ChannelBar } from "../channel-bar";
 import { ReviewQueueSection } from "../review/review-queue-section";
 
-export const metadata: Metadata = { title: "WhatsApp leads" };
+export const metadata: Metadata = { title: "WhatsApp chats" };
 
 /**
  * WhatsApp qualification review (migration 0080).
@@ -37,8 +36,7 @@ export default async function WhatsAppLeadsPage({
 
   return (
     <>
-      <PageHeader title="WhatsApp leads" context="Pipeline" />
-      <ChannelBar />
+      <PageHeader title="WhatsApp chats" context="Leads" />
 
       <div className="space-y-4">
         <Card>

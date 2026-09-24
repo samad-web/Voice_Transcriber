@@ -52,7 +52,7 @@ export default async function NewAgentPage({
     return (
       <>
         <BreadcrumbLeaf label={`New ${spec.label.toLowerCase()}`} />
-        <PageHeader title={`New ${spec.label.toLowerCase()}`} context="AI Agent Studio" />
+        <PageHeader title={`New ${spec.label.toLowerCase()}`} context="AI assistants" />
         <Card className="space-y-2">
           <p className="max-w-prose text-sm text-text-muted">{spec.blurb}</p>
           <p className="max-w-prose text-xs text-text-subtle">{spec.runs}</p>
@@ -105,7 +105,7 @@ export default async function NewAgentPage({
             ? `New ${spec.label.toLowerCase()}: ${template.label}`
             : `New ${spec.label.toLowerCase()}`
         }
-        context="AI Agent Studio"
+        context="AI assistants"
       />
       {template ? (
         <Card>

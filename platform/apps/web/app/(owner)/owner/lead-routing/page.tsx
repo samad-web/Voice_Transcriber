@@ -6,7 +6,7 @@ import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import { LeadRoutingClient } from "./lead-routing-client";
 
-export const metadata: Metadata = { title: "Lead routing" };
+export const metadata: Metadata = { title: "Who gets new leads" };
 
 export interface RoutingTarget {
   id: string;
@@ -74,7 +74,7 @@ export default async function LeadRoutingPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Lead routing" context="Settings" />
+        <PageHeader title="Who gets new leads" context="Settings" />
         <LoadFailure what="lead routing" failure={result} />
       </>
     );
@@ -83,7 +83,7 @@ export default async function LeadRoutingPage() {
 
   return (
     <>
-      <PageHeader title="Lead routing" context="Settings" />
+      <PageHeader title="Who gets new leads" context="Settings" />
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
         Who works each new lead. Rules run in order and the first one that
         matches wins, so put your specific rules above the catch-all. Routing

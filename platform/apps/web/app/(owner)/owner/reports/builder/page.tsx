@@ -8,7 +8,7 @@ import { LocalTime } from "@/components/local-time";
 import { NewReportLauncher } from "./new-report-launcher";
 import type { CatalogueEntry, DatasetRow, ReportRow, TemplateRow } from "./types";
 
-export const metadata: Metadata = { title: "Report builder" };
+export const metadata: Metadata = { title: "Custom reports" };
 
 /**
  * The Report Builder's front door.
@@ -30,7 +30,7 @@ export default async function ReportBuilderPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Report builder" context="Pipeline" />
+        <PageHeader title="Custom reports" context="Reports" />
         <LoadFailure what="the report builder" failure={result} />
       </>
     );
@@ -39,7 +39,7 @@ export default async function ReportBuilderPage() {
 
   return (
     <>
-      <PageHeader title="Report builder" context="Pipeline" />
+      <PageHeader title="Custom reports" context="Reports" />
       <p className="-mt-2 max-w-3xl text-sm text-text-muted">
         Build a report page from your own CRM - deals, contacts, leads, calls, tasks, campaigns and
         invoices are already available as data sources, so you can chart them without exporting

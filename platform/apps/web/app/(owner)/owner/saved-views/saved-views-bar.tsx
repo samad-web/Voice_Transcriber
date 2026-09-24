@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BookmarkPlus, Settings2 } from "lucide-react";
@@ -52,11 +53,11 @@ export function SavedViewsBar({
   const router = useRouter();
   const alert = useAlert();
   const toast = useToast();
-  const [views, setViews] = useState(initial);
+  const [pending, startTransition] = useTransition();
+  const [views, setViews] = useServerState(initial, pending);
   const [saving, setSaving] = useState(false);
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState("");
-  const [pending, startTransition] = useTransition();
 
   useEffect(() => setViews(initial), [initial]);
 

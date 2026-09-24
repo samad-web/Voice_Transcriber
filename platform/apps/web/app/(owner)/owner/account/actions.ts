@@ -114,3 +114,20 @@ export async function saveTimeZoneAction(
   revalidatePath("/owner", "layout");
   return { timezone: body.timezone, changed: body.changed };
 }
+
+/**
+ * The workspace's country and currency (Time & location). Owner only - the
+ * API decides. The country is where every phone field in the console starts,
+ * and the layout carries it, so the whole layout is revalidated.
+ */
+export async function saveRegionAction(input: {
+  country: string;
+  currency: string;
+}): Promise<AccountActionResult & { country?: string; currency?: string; changed?: boolean }> {
+  const res = await send("/v1/owner/time-settings/region", "PUT", input);
+  if (!(res instanceof Response)) return res;
+  if (!res.ok) return failure(res);
+  const body = (await res.json().catch(() => ({}))) as { country?: string; currency?: string; changed?: boolean };
+  revalidatePath("/owner", "layout");
+  return { country: body.country, currency: body.currency, changed: body.changed };
+}

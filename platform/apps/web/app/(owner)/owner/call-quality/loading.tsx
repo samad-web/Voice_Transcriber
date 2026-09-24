@@ -52,7 +52,7 @@ function OutcomeRowSkeleton() {
 export default function CallQualityLoading() {
   return (
     <>
-      <PageHeader title="Call Quality" context="Pipeline" />
+      <PageHeader title="Calls to check" context="Conversations" />
       <div className="-mt-2">
         <TextLine line="h-5" bar="h-3.5 w-full" />
         <TextLine line="h-5" bar="h-3.5 w-3/5" />

@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/page-header";
-import { ChannelStripSkeleton, EntityPickerSkeleton } from "@/components/skeletons";
+import { EntityPickerSkeleton } from "@/components/skeletons";
 
 /**
  * Mirrors import/page.tsx's opening step: the channel strip, then pick contacts,
@@ -8,8 +8,7 @@ import { ChannelStripSkeleton, EntityPickerSkeleton } from "@/components/skeleto
 export default function ImportLoading() {
   return (
     <>
-      <PageHeader title="Bulk Import" context="Pipeline" />
-      <ChannelStripSkeleton active={4} />
+      <PageHeader title="Import" context="Leads" />
       <EntityPickerSkeleton />
     </>
   );

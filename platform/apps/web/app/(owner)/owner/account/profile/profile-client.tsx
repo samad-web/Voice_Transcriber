@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Button, Card, ErrorBanner, FormField, Input, PasswordInput, useToast } from "@aura/ui";
+import { formatPhoneForDisplay } from "@aura/shared/dist/phone";
+import { PhoneInput } from "@/components/phone-input";
 import { updateNameAction, updatePhoneAction } from "../actions";
 
 export interface ProfileView {
@@ -27,17 +30,17 @@ export interface ProfileView {
 export function ProfileDetails({ profile, passwordRequired }: { profile: ProfileView; passwordRequired: boolean }) {
   const toast = useToast();
 
-  const [name, setName] = useState(profile.name ?? "");
+  const [name, setName] = useDraftState(profile.name ?? "");
   const [nameError, setNameError] = useState<string | null>(null);
   const [savingName, startName] = useTransition();
 
   const [editingPhone, setEditingPhone] = useState(false);
-  const [phone, setPhone] = useState(profile.phone ?? "");
+  const [phone, setPhone] = useDraftState(profile.phone ?? "");
   const [password, setPassword] = useState("");
   const [phoneErrors, setPhoneErrors] = useState<Record<string, string>>({});
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [savingPhone, startPhone] = useTransition();
-  const [currentPhone, setCurrentPhone] = useState(profile.phone);
+  const [currentPhone, setCurrentPhone] = useDraftState(profile.phone);
 
   const saveName = (event: React.FormEvent) => {
     event.preventDefault();
@@ -103,7 +106,7 @@ export function ProfileDetails({ profile, passwordRequired }: { profile: Profile
         </div>
         <div>
           <dt className="text-xs font-semibold tracking-wide text-text-subtle uppercase">Phone (this workspace)</dt>
-          <dd className="mt-1 text-sm text-text">{currentPhone || "Not set"}</dd>
+          <dd className="mt-1 text-sm text-text tabular-nums">{formatPhoneForDisplay(currentPhone) || "Not set"}</dd>
           {!editingPhone ? (
             <dd className="mt-1">
               <button
@@ -133,14 +136,9 @@ export function ProfileDetails({ profile, passwordRequired }: { profile: Profile
             Call-access approval codes are sent to this number, so changing it needs your password.
           </p>
           <FormField label="Phone" name="phone" className="max-w-sm" error={phoneErrors.phone}>
-            <Input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              maxLength={40}
-              autoComplete="tel"
-              placeholder="+91 98765 43210"
-            />
+            {/* A <form>, so an invalid number blocks the submit natively. The
+                number codes are texted to must be one that can receive them. */}
+            <PhoneInput value={phone} onChange={(value) => setPhone(value)} autoFocus />
           </FormField>
           {passwordRequired ? (
             <FormField label="Current password" name="phone-password" className="max-w-sm" error={phoneErrors.password}>

@@ -5,7 +5,7 @@ import { getOwner } from "@/lib/owner-context";
 import { parseReviewFilter, reviewSourcesFor } from "@/lib/review-queue";
 import { ReviewQueueSection } from "./review-queue-section";
 
-export const metadata: Metadata = { title: "Review queue" };
+export const metadata: Metadata = { title: "Needs review" };
 
 /**
  * The human-in-the-loop queue (CRM dashboard Phase 7): WhatsApp lead proposals,
@@ -29,7 +29,7 @@ export default async function ReviewPage({
 
   return (
     <>
-      <PageHeader title="Review queue" context="Pipeline" />
+      <PageHeader title="Needs review" context="Leads" />
       <ReviewQueueSection
         owner={owner}
         filter={filter}

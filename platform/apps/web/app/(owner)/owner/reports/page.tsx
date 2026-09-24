@@ -33,7 +33,7 @@ import { MetricCard } from "./metric-card";
 import { OverdueMetricCard } from "./overdue-metric-card";
 import { StageValueChart } from "./stage-value-chart";
 
-export const metadata: Metadata = { title: "Reports" };
+export const metadata: Metadata = { title: "Sales overview" };
 
 interface ResponseTimeReport {
   from: string;
@@ -242,7 +242,7 @@ export default async function ReportsPage({
   if (!pipelineResult.ok && !conversion && !performance) {
     return (
       <>
-        <PageHeader title="Reports" context="Pipeline" />
+        <PageHeader title="Sales overview" context="Reports" />
         <LoadFailure what="your reports" failure={pipelineResult} />
       </>
     );
@@ -250,7 +250,7 @@ export default async function ReportsPage({
 
   return (
     <>
-      <PageHeader title="Reports" context="Pipeline" />
+      <PageHeader title="Sales overview" context="Reports" />
 
       {/* The one filter row, above everything it scopes (dataviz: filters sit
           in a single row above the charts, never inside a card). */}
@@ -259,6 +259,7 @@ export default async function ReportsPage({
         presets={rangePresets("/owner/reports", window)}
         from={conversion?.from ?? requested.from}
         to={conversion?.to ?? requested.to}
+        today={todayIn(zone)}
       />
       {invalid ? <DateRangeNotice fallbackDays={DEFAULT_RANGE_DAYS} /> : null}
       <DateRangeSummary

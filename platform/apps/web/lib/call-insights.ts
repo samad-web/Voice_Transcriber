@@ -46,7 +46,8 @@ export function isPreset(window: CallInsightsWindow, days: number): boolean {
   return window.kind === "relative" && window.days === days;
 }
 
-export const INSIGHT_PRESETS = CALL_INSIGHT_RANGES;
+/** "Today" first, then the page's own "Last N days". */
+export const INSIGHT_PRESETS = [1, ...CALL_INSIGHT_RANGES] as const;
 
 /** `/owner/insights`, carrying the window unless it is the default. */
 export function insightsHref(window: CallInsightsWindow): string {

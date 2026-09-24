@@ -80,6 +80,33 @@ export function stageAfter(stages: LeadStages, key: string): string | null {
   return stages.slice(index + 1).find((s) => !s.terminal)?.key ?? null;
 }
 
+// ── boards (migration 0136) ─────────────────────────────────────────────
+
+/**
+ * The org's original board has no `lead_boards` row - its columns are
+ * `organizations.lead_stages` and its leads carry `board_id IS NULL`. This is
+ * what it is called until an owner renames it.
+ */
+export const MAIN_LEAD_BOARD_NAME = "Main board";
+
+/** The channels a board can be fed from. Everything else lands on the Main board. */
+export const LeadBoardChannel = z.enum(["whatsapp", "web_form", "manual"]);
+export type LeadBoardChannel = z.infer<typeof LeadBoardChannel>;
+
+export const LeadBoardName = z.string().trim().min(1).max(60);
+
+/**
+ * Where a lead moved onto a board lands: the same column when the board has
+ * one with that key, else the board's entry column.
+ *
+ * Never a guess by label. Two boards' "Qualified" columns may mean different
+ * things, and a key match is the only evidence that they are the same column -
+ * which is exactly what a board copied from another one has.
+ */
+export function stageOnBoard(stages: LeadStages, currentKey: string | null): string {
+  return currentKey && stages.some((s) => s.key === currentKey) ? currentKey : entryStage(stages);
+}
+
 // ── qualification ───────────────────────────────────────────────────────
 
 /**

@@ -9,7 +9,6 @@ import { Pager } from "@/components/pager";
 import type { ApiResult } from "@/lib/api-result";
 import { normaliseStaleAfterDays } from "@/lib/deal-staleness";
 import { viewQueryFrom } from "@/lib/list-views";
-import { formatDateRange } from "@/lib/report-dashboard";
 import { getOwner, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
 import type { Deal, DealBoardColumn, Stage } from "../types";
@@ -19,9 +18,12 @@ import { loadMembers, loadTags } from "../list-data";
 import { ownerOptions, tagOptions, withCurrent } from "../list-options";
 import { SavedViewsBar } from "../saved-views/saved-views-bar";
 import { loadSavedViews } from "../saved-views/load";
+import { DealsAdvancedFilters } from "./deals-advanced-filters";
 import { DealsBoard } from "./deals-board";
 import { DealsTable } from "./deals-table";
 import { dealsHref, parseDealsState, type DealsState } from "./deals-url";
+import { AddDealDialog } from "./add-deal-dialog";
+import { ManageBoardDialog } from "./manage-board-dialog";
 import { StagePackPicker } from "./stage-pack-picker";
 import { StaleThreshold } from "./stale-threshold";
 
@@ -125,7 +127,7 @@ export default async function DealsPage({
   if (active.length === 0 && !requested) {
     return (
       <>
-        <PageHeader title="Deals" context="Pipeline" />
+        <PageHeader title="Deals" context="Sales" />
         <Card>
           <EmptyState
             title="No pipeline set up yet"
@@ -164,7 +166,7 @@ export default async function DealsPage({
   if (requestedId && !requested) {
     return (
       <>
-        <PageHeader title="Deals" context="Pipeline" />
+        <PageHeader title="Deals" context="Sales" />
         <Card>
           <EmptyState
             title="That pipeline doesn't exist"
@@ -195,6 +197,7 @@ export default async function DealsPage({
   const current: DealsState = { ...state, pipelineId: selected.id === requestedId ? requestedId : null };
   const staleAfterDays = normaliseStaleAfterDays(selected.stale_after_days);
   const canEditThreshold = owner ? OWNER_ROLE_ADMINS.includes(owner.membership.ownerRole) : false;
+  const boardStages: Stage[] = Array.isArray(selected.stages) ? selected.stages : [];
 
   const toolbar = (
     <div className="-mt-2 flex flex-wrap items-center justify-between gap-3">
@@ -204,9 +207,15 @@ export default async function DealsPage({
       </div>
       {/* Beside the board rather than buried in a settings page: the moment
           somebody notices their columns are wrong is the moment they are
-          looking at them. It edits the pipeline on screen, not always the
-          default. */}
-      <StagePackPicker pipelineId={selected.id} />
+          looking at them. Both edit the pipeline on screen, not always the
+          default. Manage board (rename / reorder / add / remove) is owner and
+          manager only, like the idle threshold beside it; the ready-made
+          boards keep the reach they had. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {canEditThreshold ? <ManageBoardDialog pipelineId={selected.id} stages={boardStages} /> : null}
+        <StagePackPicker pipelineId={selected.id} />
+        {selected.status === "active" ? <AddDealDialog pipelineId={selected.id} stages={boardStages} /> : null}
+      </div>
     </div>
   );
   const archivedNote =
@@ -241,17 +250,21 @@ export default async function DealsPage({
     const rows = rowsResult.data;
 
     const stages: Stage[] = Array.isArray(selected.stages) ? selected.stages : [];
+    const stageChoices = [{ value: "", label: "All stages" }, ...stages.map((s) => ({ value: s.key, label: s.label }))];
+    const ownerChoices = withCurrent(ownerOptions(members), current.owner ?? undefined);
+    const tagChoices = withCurrent(tagOptions(tags), current.tagId ?? undefined);
     return (
       <>
-        <PageHeader title="Deals" context="Pipeline" />
+        <PageHeader title="Deals" context="Sales" />
         {savedViews}
         {toolbar}
         {picker}
         {archivedNote}
-        {/* Search, owner and tag as a form; stage and stale stay the chip row
-            below. `keep` carries the chips' state through a form change and the
-            form's fields through a chip click (dealsHref), so neither drops
-            the other. */}
+        {/* Search, stage, status, owner and tag as a form - all apply on
+            change, or on Enter for the search box. `keep` carries the
+            Advanced-filters state (Idle, Created) through a form change, and
+            their own links (dealsHref) carry the form's fields through, so
+            neither drops the other. */}
         <ListFilterForm
           key={dealsHref(current)}
           path="/owner/deals"
@@ -259,7 +272,6 @@ export default async function DealsPage({
           keep={{
             pipelineId: current.pipelineId,
             view: "table",
-            stage: current.stage,
             stale: current.staleOnly ? "1" : null,
             createdFrom: current.createdFrom,
             createdTo: current.createdTo,
@@ -267,48 +279,21 @@ export default async function DealsPage({
           }}
         >
           <FilterSearch defaultValue={current.q ?? undefined} placeholder="Deal name or summary" label="Search deals" />
+          <FilterSelect name="stage" label="Stage" defaultValue={current.stage} options={stageChoices} />
           <FilterSelect name="status" label="Status" defaultValue={current.status} options={STATUS_OPTIONS} />
-          <FilterSelect
-            name="owner"
-            label="Owner"
-            defaultValue={current.owner}
-            options={withCurrent(ownerOptions(members), current.owner ?? undefined)}
-          />
+          <FilterSelect name="owner" label="Owner" defaultValue={current.owner} options={ownerChoices} />
           {tags.length > 0 || current.tagId ? (
-            <FilterSelect
-              name="tagId"
-              label="Tag"
-              defaultValue={current.tagId}
-              options={withCurrent(tagOptions(tags), current.tagId ?? undefined)}
-            />
+            <FilterSelect name="tagId" label="Tag" defaultValue={current.tagId} options={tagChoices} />
           ) : null}
         </ListFilterForm>
-        <nav aria-label="Filter deals" className="flex flex-wrap items-center gap-1.5">
-          <FilterLink active={!state.stage} href={dealsHref(current, { stage: null })}>
-            All stages
-          </FilterLink>
-          {stages.map((s) => (
-            <FilterLink key={s.key} active={state.stage === s.key} href={dealsHref(current, { stage: s.key })}>
-              {s.label}
-            </FilterLink>
-          ))}
-          <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
-          <FilterLink active={state.staleOnly} href={dealsHref(current, { staleOnly: !state.staleOnly })}>
-            Idle {staleAfterDays}+ days
-          </FilterLink>
-          {/* Set by a Reports drill-down, not by a control here: shown so the
-              list never silently holds a window nobody can see, and clearable. */}
-          {state.createdFrom || state.createdTo ? (
-            <>
-              <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
-              <FilterLink active href={dealsHref(current, { createdFrom: null, createdTo: null })}>
-                Created {formatDateRange(state.createdFrom ?? state.createdTo!, state.createdTo ?? state.createdFrom!)}
-                <span aria-hidden="true" className="ml-1.5">✕</span>
-                <span className="sr-only"> - remove this filter</span>
-              </FilterLink>
-            </>
-          ) : null}
-        </nav>
+        <DealsAdvancedFilters
+          current={current}
+          staleAfterDays={staleAfterDays}
+          stageChoices={stageChoices}
+          statusChoices={STATUS_OPTIONS}
+          ownerChoices={ownerChoices}
+          tagChoices={tagChoices}
+        />
         <DealsTable deals={rows.deals} stages={stages} staleAfterDays={staleAfterDays} state={current} />
         <Pager
           total={rows.total}
@@ -331,7 +316,7 @@ export default async function DealsPage({
 
   return (
     <>
-      <PageHeader title="Deals" context="Pipeline" />
+      <PageHeader title="Deals" context="Sales" />
       {savedViews}
       {toolbar}
       <p className="-mt-2 text-sm text-text-muted">
@@ -379,7 +364,7 @@ function ViewToggle({ state }: { state: DealsState }) {
 function Unavailable({ failure }: { failure: Extract<ApiResult<unknown>, { ok: false }> }) {
   return (
     <>
-      <PageHeader title="Deals" context="Pipeline" />
+      <PageHeader title="Deals" context="Sales" />
       <LoadFailure what="deals" failure={failure} />
     </>
   );

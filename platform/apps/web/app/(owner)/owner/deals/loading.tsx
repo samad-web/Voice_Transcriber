@@ -5,7 +5,7 @@ import { KanbanSkeleton } from "@/components/skeletons";
 export default function DealsLoading() {
   return (
     <>
-      <PageHeader title="Deals" context="Pipeline" />
+      <PageHeader title="Deals" context="Sales" />
       <KanbanSkeleton columns={5} />
     </>
   );

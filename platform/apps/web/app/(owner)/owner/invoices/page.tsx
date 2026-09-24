@@ -11,6 +11,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { FilterLink } from "@/components/filter-link";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
@@ -79,7 +80,7 @@ export default async function InvoicesPage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Invoices" context="Pipeline" />
+        <PageHeader title="Invoices" context="Sales" />
         <LoadFailure what="invoices" failure={result} />
       </>
     );
@@ -88,30 +89,19 @@ export default async function InvoicesPage({
 
   return (
     <>
-      <PageHeader title="Invoices" context="Pipeline" />
+      <PageHeader title="Invoices" context="Sales" />
 
       {settings?.settings ? <PaymentSettingsCard initial={settings.settings} /> : null}
 
-      <nav className="flex flex-wrap gap-1" aria-label="Filter by status">
+      <nav className="flex flex-wrap gap-1.5" aria-label="Filter by status">
         {STATUSES.map((s) => {
           const next = new URLSearchParams();
           if (s.value) next.set("status", s.value);
           const href = next.toString() ? `/owner/invoices?${next}` : "/owner/invoices";
-          const active = s.value === status;
           return (
-            <Link
-              key={s.value || "all"}
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={
-                "inline-flex h-8 items-center rounded-full px-3 text-xs font-medium transition-colors duration-150 ease-out " +
-                (active
-                  ? "bg-text text-bg"
-                  : "border border-border-strong text-text-muted hover:bg-surface-hover hover:text-text")
-              }
-            >
+            <FilterLink key={s.value || "all"} active={s.value === status} href={href}>
               {s.label}
-            </Link>
+            </FilterLink>
           );
         })}
       </nav>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import {
   CRITERIA_FIELDS,
   CRITERIA_FIELD_OPTIONS,
@@ -64,7 +65,7 @@ export function CriteriaEditor({
    */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [criteria, setCriteria] = useState<FunnelCriteria>(initial);
+  const [criteria, setCriteria] = useDraftState<FunnelCriteria>(initial);
   const [dirty, setDirty] = useState(false);
   const [pending, start] = useTransition();
   const alert = useAlert();

@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Patch, Req, UseGuards } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { BadRequestException, Body, Controller, Get, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { ASR_LANGUAGES, ASR_MODES, Branding } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
@@ -8,6 +9,30 @@ import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { S3Service } from "../../s3/s3.service";
+
+/**
+ * What a branding image is allowed to be, for the presigned-upload endpoint
+ * below. The extension drives the stored object's key, which is why this is a
+ * map rather than a plain enum - `image/x-icon` and
+ * `image/vnd.microsoft.icon` are both "a .ico file" as far as a browser's
+ * file picker is concerned, and both need to land on the same extension.
+ */
+const BRANDING_CONTENT_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "image/x-icon": "ico",
+  "image/vnd.microsoft.icon": "ico",
+};
+
+const BrandingUploadBody = z.object({
+  kind: z.enum(["logo", "favicon", "banner", "sidebarIcon", "loginBackground"]),
+  contentType: z.enum(
+    Object.keys(BRANDING_CONTENT_TYPES) as [string, ...string[]],
+  ),
+});
 
 /**
  * Per-tenant logo/colors (Kailash gap Milestone 4). One jsonb column
@@ -18,14 +43,9 @@ import { DbService } from "../../db/db.service";
  * here. It used to be declared three times by hand - here, and again as
  * `BrandingView` and `BrandingPatch` in the console - which is exactly the
  * drift the shared package exists to stop. The console now renders its form
- * from the same definition this endpoint validates against.
- *
- * One field is gone with that move: `loginBackgroundUrl`. Every tenant signs in
- * at the same `<origin>/login` - no subdomain, no org in the path - so the
- * sign-in screen has no tenant to resolve branding for and the value could
- * never be applied. Nothing is deleted by dropping it: the UPDATE below merges,
- * so a tenant who set it keeps the key in their jsonb, and Zod strips it on
- * read.
+ * from the same definition this endpoint validates against - see branding.ts
+ * for what each field is and why `loginBackgroundUrl` round-trips without
+ * being rendered anywhere yet.
  */
 const BrandingBody = Branding;
 
@@ -89,7 +109,10 @@ const PolicyBody = z.object({
 @Controller("org")
 @UseGuards(AdminKeyGuard, TenantGuard)
 export class TenancyController {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly s3: S3Service,
+  ) {}
 
   @Get()
   async get(@OrgId() orgId: string) {
@@ -157,6 +180,40 @@ export class TenancyController {
       );
       return org;
     });
+  }
+
+  /**
+   * A presigned PUT for one branding image, mirroring `S3Service`'s existing
+   * device-upload pattern (calls.controller.ts) rather than accepting the file
+   * body here: the bytes go straight from the browser to S3, never through this
+   * process. Same guards as the PATCH above - only a persona that may change
+   * branding may mint one of these.
+   *
+   * The key is `org/<orgId>/branding/<kind>-<uuid>.<ext>` - the uuid is what
+   * makes the resulting URL safe to cache forever (a re-upload gets a new
+   * name, it never overwrites the old object in place) and what
+   * `branding-assets.controller.ts` trusts when it later serves the object
+   * back with no auth of its own: guessing a filename gets you nothing but
+   * another tenant's PUBLIC logo, which was never a secret.
+   *
+   * Returns a path, not a full URL - the browser reaches this asset through
+   * the WEB app's own `/branding-assets/...` route (a same-origin proxy to
+   * `branding-assets.controller.ts`), not this API directly, because nothing
+   * else in this console is ever loaded straight off `API_URL` from a browser.
+   */
+  @Post("branding/upload-url")
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
+  @RequireOrgRole("org_admin")
+  @RequireOwnerRole("owner", "manager", "marketing")
+  async brandingUploadUrl(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = BrandingUploadBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { kind, contentType } = parsed.data;
+    const ext = BRANDING_CONTENT_TYPES[contentType];
+    const filename = `${kind}-${randomUUID()}.${ext}`;
+    const key = `org/${orgId}/branding/${filename}`;
+    const uploadUrl = await this.s3.presignedPutUrl(key, contentType);
+    return { uploadUrl, assetPath: `/branding-assets/${orgId}/${filename}` };
   }
 
   @Patch("policy")

@@ -78,7 +78,10 @@ async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void>
         AND r.is_system
         AND (
           r.key IN ('platform_admin', 'org_admin', 'workspace_admin')
-          OR (r.key = 'workspace_member' AND a.action IN ('view', 'create', 'edit'))
+          -- Reshaping or deleting a lead board is an administrator's call, not
+          -- a telecaller's (migration 0136 applies the same split to existing orgs).
+          OR (r.key = 'workspace_member' AND a.action IN ('view', 'create', 'edit')
+              AND ot.object_type <> 'lead_board')
           OR (r.key = 'viewer' AND a.action = 'view')
         )`,
     [orgId, PermissionObjectType.options],

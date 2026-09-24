@@ -21,6 +21,8 @@ export interface TeamMember {
   status: StaffStatus;
   staffCode: string | null;
   phone: string | null;
+  /** WhatsApp number (0135) - often the same as `phone`. */
+  whatsapp: string | null;
   jobTitle: string | null;
   suspendedAt: string | null;
   /** The permission role whose grid applies (0039's `memberships.role_id`). */
@@ -50,6 +52,35 @@ export interface TeamResponse {
   members: TeamMember[];
   telecallers: TeamTelecaller[];
   roles: TeamRole[];
+}
+
+/** An invite that has not been accepted or withdrawn - `GET /v1/owner/invites` (0137). */
+export interface TeamInvite {
+  id: string;
+  email: string;
+  name: string | null;
+  ownerRole: OwnerRole;
+  status: "pending" | "expired";
+  expiresAt: string;
+  createdAt: string;
+  emailedAt: string | null;
+  invitedByName: string | null;
+}
+
+export interface InvitesResponse {
+  invites: TeamInvite[];
+  /** PLATFORM_SMTP_* is set - "Email it" would work. */
+  mailConfigured: boolean;
+  /** The API can reach GoTrue - an invite could be accepted at all. */
+  authConfigured: boolean;
+}
+
+/** What issuing or resending returns. `link` is shown once; only its hash is stored. */
+export interface IssuedInvite {
+  invite: TeamInvite;
+  link: string;
+  emailed: boolean;
+  emailError: string | null;
 }
 
 /** One role and its grants - `GET /v1/owner/roles`. */

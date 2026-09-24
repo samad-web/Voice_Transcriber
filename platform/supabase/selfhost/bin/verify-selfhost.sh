@@ -15,7 +15,7 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 ENV_FILE="${ENV_FILE:-.env.selfhost}"
-DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DB_CONTAINER="${DB_CONTAINER:-aura-supabase-db}"
 
 [ -f "$ENV_FILE" ] || { echo "FATAL: $ENV_FILE not found." >&2; exit 1; }
 

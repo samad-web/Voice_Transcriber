@@ -30,10 +30,11 @@ describe("scopeFilter", () => {
 
   it("scopes a task on EITHER end of it", () => {
     // A rep who asked a colleague to do something still needs to see it, and
-    // the assignee obviously does. Narrower than it sounds: it is still only
+    // the assignee obviously does - as does anyone else it was shared with and
+    // who has not declined it (0135). Narrower than it sounds: it is still only
     // tasks you are actually part of.
     expect(scopeFilter("task", OWNED)).toEqual({
-      sql: "(assignee_user_id = $? OR created_by = $?)",
+      sql: "(assignee_user_id = $? OR created_by = $? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = tasks.id AND ta.user_id = $? AND ta.status <> 'declined'))",
       value: USER,
     });
   });
@@ -43,7 +44,7 @@ describe("scopeFilter", () => {
     // Both branches of the task predicate must carry it, or the query is a
     // syntax error the moment two tables are joined.
     expect(scopeFilter("task", OWNED, "t")?.sql).toBe(
-      "(t.assignee_user_id = $? OR t.created_by = $?)",
+      "(t.assignee_user_id = $? OR t.created_by = $? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $? AND ta.status <> 'declined'))",
     );
   });
 
@@ -62,7 +63,7 @@ describe("scopeClause", () => {
     expect(scopeClause("deal", OWNED, 2)).toBe("owner_user_id = $2");
     // Both task branches take the SAME index - one value, two comparisons.
     expect(scopeClause("task", OWNED, 5, "t")).toBe(
-      "(t.assignee_user_id = $5 OR t.created_by = $5)",
+      "(t.assignee_user_id = $5 OR t.created_by = $5 OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $5 AND ta.status <> 'declined'))",
     );
   });
 

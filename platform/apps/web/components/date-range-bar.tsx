@@ -1,21 +1,35 @@
-import Form from "next/form";
-import type { ReactNode } from "react";
-import { Button, Card, Input, MonoLabel, Skeleton } from "@aura/ui";
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, type ReactNode } from "react";
+import { CalendarDays, ChevronDown } from "lucide-react";
+import { Button, Calendar, Card, MonoLabel, Popover, Skeleton } from "@aura/ui";
 import { formatReportRange, timeZoneLabel } from "@aura/shared";
 import type { RangePreset } from "@/lib/date-range";
-import { FilterLink } from "./filter-link";
 
 /**
  * The period control every report screen shares - the one Call insights
  * introduced (see lib/date-range.ts for the URL it reads and writes).
  *
- * Three rows, always in this order: the "Last N days" pills; a From/To pair
- * with its button; and, from `DateRangeSummary`, the dates actually showing.
- * Whatever acts on the whole period (a PDF download) sits opposite in `aside`.
+ * One trigger naming whatever is active ("Last 30 days", or the two resolved
+ * dates), opening a popover with the "Last N days" pills on the left and a
+ * custom range `Calendar` in the centre - the same shape as the Calls page's
+ * own date dropdown. It used to be an always-open row ending in a native
+ * `<input type="date">` pair; that popup is the browser's own, cannot be
+ * restyled, and read as a different, unthemed app dropped into this one.
+ * `DateRangeSummary` below still prints the dates and the zone - unchanged,
+ * and not folded in here, because two of this component's six callers
+ * (the dashboard's "Change" timezone link, Insights' "compared with…" clause)
+ * put content on that line worth keeping visible without a click.
  *
- * Server-rendered with no JavaScript of its own. The pills are links and the
- * pair is a GET form through next/form, so a custom range is a URL -
- * bookmarkable, shareable, and basePath-aware - exactly like a preset.
+ * The calendar only DRAWS a pick; Apply commits it. It used to navigate the
+ * moment a second day was clicked, which made one day unreachable without
+ * knowing to click it twice, and closed the popover with no sign of what had
+ * been chosen. Now one click is that day, a second makes it a range, and the
+ * footer names the pick before anything loads.
+ *
+ * Whatever acts on the whole period (a PDF download) sits opposite in `aside`.
  */
 export function DateRangeBar({
   path,
@@ -24,48 +38,132 @@ export function DateRangeBar({
   to,
   keep,
   aside,
-  submitLabel = "Show range",
+  today,
 }: {
-  /** The page's own path; the form submits to it. */
+  /** The page's own path; a preset or a custom range navigates here. */
   path: string;
   presets: readonly RangePreset[];
-  /** The dates on screen now - the API's echo - so the pair starts from them. */
+  /** The dates on screen now - the API's echo - so the calendar opens on them. */
   from?: string;
   to?: string;
   /** Other query parameters the page keeps across a new range (a sort, a filter). */
   keep?: Record<string, string | null | undefined>;
   aside?: ReactNode;
-  submitLabel?: string;
+  /**
+   * The org's own "today" (`todayIn(zone)`), for the calendar's today ring -
+   * never the browser's, matching every other date computation in this app.
+   * Optional and cosmetic only: a caller that has not been updated to pass it
+   * falls back to the browser's today, which cannot affect what is actually
+   * filtered (that is always the API's own echo).
+   */
+  today?: string;
 }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  /** The calendar's pick, not yet applied. Null until a day is clicked this time open. */
+  const [draft, setDraft] = useState<{ from: string; to: string } | null>(null);
+  /** Remounts the calendar on each open, so a half-picked range never survives a close. */
+  const [openCount, setOpenCount] = useState(0);
+  const active = presets.find((p) => p.active);
+  const label = active ? active.label : from && to ? formatReportRange(from, to) : "Custom range";
+
+  function applyRange(rangeFrom: string, rangeTo: string) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(keep ?? {})) if (value) params.set(key, value);
+    params.set("from", rangeFrom);
+    params.set("to", rangeTo);
+    router.push(`${path}?${params}`);
+    close();
+  }
+
+  function close() {
+    setOpen(false);
+    setDraft(null);
+  }
+
+  function toggle() {
+    if (open) return close();
+    setDraft(null);
+    setOpenCount((n) => n + 1);
+    setOpen(true);
+  }
+
+  const shown = draft ?? (from && to ? { from, to } : null);
+  const unchanged = !draft || (draft.from === from && draft.to === to && !active);
+
   return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div className="space-y-3">
-        <nav aria-label="Date range" className="flex flex-wrap items-center gap-1.5">
-          {presets.map((p) => (
-            <FilterLink key={p.key} active={p.active} href={p.href}>
-              {p.label}
-            </FilterLink>
-          ))}
-        </nav>
-        {/* Keyed on the dates so a preset click re-seeds the pair: an
-            uncontrolled field keeps whatever it last showed otherwise. */}
-        <Form key={`${from ?? ""}:${to ?? ""}`} action={path} className="flex flex-wrap items-end gap-2">
-          {Object.entries(keep ?? {}).map(([name, value]) =>
-            value ? <input key={name} type="hidden" name={name} value={value} /> : null,
-          )}
-          <label className="space-y-1 text-xs text-text-muted">
-            <span className="block">From</span>
-            <Input type="date" name="from" defaultValue={from} required className="w-40" />
-          </label>
-          <label className="space-y-1 text-xs text-text-muted">
-            <span className="block">To</span>
-            <Input type="date" name="to" defaultValue={to} required className="w-40" />
-          </label>
-          <Button type="submit" variant="secondary" size="sm">
-            {submitLabel}
-          </Button>
-        </Form>
-      </div>
+    <div className="flex flex-wrap items-center gap-3">
+      <Popover
+        open={open}
+        onDismiss={close}
+        className="w-[min(34rem,calc(100vw-2rem))] p-0"
+        trigger={
+          <button
+            type="button"
+            onClick={toggle}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            className="flex h-9.5 items-center gap-2 rounded-sm border border-border-strong bg-surface px-3 text-sm text-text transition-colors duration-150 ease-out hover:bg-surface-hover"
+          >
+            <CalendarDays className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+            <span className="font-medium whitespace-nowrap">{label}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden="true" />
+          </button>
+        }
+      >
+        <div className="flex flex-col sm:flex-row">
+          <nav
+            aria-label="Date range"
+            className="flex shrink-0 flex-col gap-0.5 border-b border-border p-2 sm:w-40 sm:border-r sm:border-b-0"
+          >
+            {presets.map((p) => (
+              <Link
+                key={p.key}
+                href={p.href}
+                onClick={close}
+                aria-current={p.active ? "true" : undefined}
+                className={`rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ease-out ${
+                  p.active ? "bg-text font-medium text-bg" : "text-text hover:bg-surface-hover"
+                }`}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="p-3">
+            <p className="mb-2 px-1 text-xs font-medium text-text-muted">Custom range</p>
+            <Calendar
+              key={openCount}
+              from={shown?.from ?? null}
+              to={shown?.to ?? null}
+              onChange={(f, t) => setDraft({ from: f, to: t })}
+              today={today ?? new Date().toISOString().slice(0, 10)}
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border px-1 pt-3">
+              <p className="text-xs text-text-muted tabular-nums" aria-live="polite">
+                {draft ? (
+                  <span className="font-medium text-text">{formatReportRange(draft.from, draft.to)}</span>
+                ) : (
+                  "Pick a day, or a start and end day"
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={close}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={unchanged}
+                  onClick={() => draft && applyRange(draft.from, draft.to)}
+                >
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Popover>
       {aside}
     </div>
   );
@@ -131,41 +229,14 @@ export function DateRangeNotice({
   );
 }
 
-/** Pill widths for "Last 7 days", "Last 30 days", "Last 90 days". */
-const PILL_WIDTHS = ["w-24", "w-28", "w-28"] as const;
-
 /**
- * DateRangeBar's loading shape, for a page's loading.tsx: the pills, the two
- * labelled fields and the button, and `aside` (a width class) opposite.
+ * DateRangeBar's loading shape, for a page's loading.tsx: the one trigger
+ * pill, and `aside` (a width class) opposite.
  */
-export function DateRangeBarSkeleton({
-  aside,
-  pills = PILL_WIDTHS,
-}: {
-  aside?: string;
-  /** One width class per pill, for a page whose presets are not the three "Last N days". */
-  pills?: readonly string[];
-}) {
+export function DateRangeBarSkeleton({ aside }: { aside?: string }) {
   return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-      <div className="space-y-3">
-        <div className="flex flex-wrap gap-1.5">
-          {pills.map((w, i) => (
-            <Skeleton key={i} className={`h-8 rounded-full ${w}`} />
-          ))}
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          {[0, 1].map((i) => (
-            <div key={i} className="space-y-1">
-              <div className="flex h-4 items-center">
-                <Skeleton className="h-3 w-8" />
-              </div>
-              <Skeleton className="h-9.5 w-40 rounded-sm" />
-            </div>
-          ))}
-          <Skeleton className="h-8 w-24 rounded-full" />
-        </div>
-      </div>
+    <div className="flex flex-wrap items-center gap-3">
+      <Skeleton className="h-9.5 w-44 rounded-sm" />
       {aside ? <Skeleton className={`h-8 rounded-full ${aside}`} /> : null}
     </div>
   );

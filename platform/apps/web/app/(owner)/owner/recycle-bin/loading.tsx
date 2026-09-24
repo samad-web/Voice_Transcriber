@@ -36,7 +36,7 @@ const META_BAR = [
 export default function RecycleBinLoading() {
   return (
     <>
-      <PageHeader title="Recycle bin" context="Settings" />
+      <PageHeader title="Deleted items" context="Settings" />
 
       <div className="-mt-2 max-w-2xl space-y-2">
         <Skeleton className="h-3 w-full" />

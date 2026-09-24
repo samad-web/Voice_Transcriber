@@ -23,7 +23,7 @@
 set -euo pipefail
 
 DUMP_DIR="${1:-./dump}"
-DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DB_CONTAINER="${DB_CONTAINER:-aura-supabase-db}"
 : "${TARGET_DATABASE_URL:?set TARGET_DATABASE_URL (the self-hosted database)}"
 
 CLOUD_FILE="$DUMP_DIR/columns-cloud.txt"

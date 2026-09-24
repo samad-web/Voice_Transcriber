@@ -72,7 +72,7 @@ function BarsSkeleton({ rows }: { rows: number }) {
 export default function CallInsightsLoading() {
   return (
     <>
-      <PageHeader title="Call insights" context="Conversations" />
+      <PageHeader title="Call summary" context="Reports" />
       <Skeleton className="-mt-2 h-3.5 w-[40rem] max-w-full" />
 
       <DateRangeBarSkeleton aside="w-64" />

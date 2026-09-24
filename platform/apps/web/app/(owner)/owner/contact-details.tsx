@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import Link from "next/link";
 import { MonoLabel } from "@aura/ui";
 import { useOrgTimeZone } from "@/components/org-time";
@@ -23,9 +24,9 @@ import { relativeTime, type Contact } from "./types";
  */
 export function ContactDetails({ contact }: { contact: Contact }) {
   const [locked, setLocked] = useState(false);
-  const [accountId, setAccountId] = useState(contact.account_id);
+  const [accountId, setAccountId] = useDraftState(contact.account_id);
   const [accountError, setAccountError] = useState<string | null>(null);
-  const [nameIsHuman, setNameIsHuman] = useState(Boolean(contact.display_name_set_by_human_at));
+  const [nameIsHuman, setNameIsHuman] = useDraftState(Boolean(contact.display_name_set_by_human_at));
   const zone = useOrgTimeZone();
 
   const phone = contact.phone_prefix

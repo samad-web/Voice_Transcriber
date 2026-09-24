@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import {
   CalendarClock,
@@ -94,11 +95,11 @@ export function ContactActivity({
   contactName: string;
   initial: ContactActivityData;
 }) {
-  const [feed, setFeed] = useState(initial);
+  const [refreshing, startRefresh] = useTransition();
+  const [feed, setFeed] = useServerState(initial, refreshing);
   const [channel, setChannel] = useState<ActivityChannel | "all">("all");
   const [actorKind, setActorKind] = useState<ActorKind | "all">("all");
   const [composing, setComposing] = useState(false);
-  const [refreshing, startRefresh] = useTransition();
   /**
    * How much history is loaded. The first render is the server's default;
    * "Show older" asks for the API's maximum, which is as far as one composed

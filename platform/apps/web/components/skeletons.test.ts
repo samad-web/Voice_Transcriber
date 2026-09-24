@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { Skeleton } from "@aura/ui";
 import {
   CanvasTileSkeleton,
-  ChannelStripSkeleton,
   BorderedListCardSkeleton,
   ChartCardSkeleton,
   DetailListCardSkeleton,
@@ -200,24 +199,6 @@ describe("inline regions keep their accessible announcement", () => {
     const out = html(createElement(InlineListSkeleton, { rows: 2, label: "Loading tasks" }));
     expect(out).toContain("Loading tasks");
     expect(out).toContain('role="status"');
-  });
-});
-
-describe("ChannelStripSkeleton", () => {
-  // The strip is rendered by five pages and was drawn by one loader; the other
-  // four popped ~70px in on arrival. `active` is the page's own index.
-  it("draws all five channels and underlines exactly the page's own", () => {
-    for (const active of [0, 1, 2, 3, 4]) {
-      const out = html(createElement(ChannelStripSkeleton, { active }));
-      const tabs = [...out.matchAll(/class="(flex h-11 [^"]*)"/g)].map((m) => m[1]);
-      expect(tabs).toHaveLength(5);
-      const underlined = tabs.flatMap((t, i) => (t.includes("border-border-strong") ? [i] : []));
-      expect(underlined, `active=${active}`).toEqual([active]);
-    }
-  });
-
-  it("is full-bleed - its negative margins are what let the rule reach the content edge", () => {
-    expect(html(createElement(ChannelStripSkeleton, {}))).toContain("md:-mx-8");
   });
 });
 

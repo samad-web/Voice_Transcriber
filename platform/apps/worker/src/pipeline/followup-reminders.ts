@@ -1,5 +1,6 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { featureSpec } from "@aura/shared";
+import { announce } from "./realtime";
 
 /**
  * The follow-up escalation ladder (migration 0095).
@@ -106,10 +107,14 @@ const SWEEP_SQL = `
 `;
 
 async function sweepOrg(orgId: string): Promise<number> {
-  return withOrgContext(orgId, async (client) => {
+  const raised = await withOrgContext(orgId, async (client) => {
     const result = await client.query(SWEEP_SQL, [MAX_DAYS_OVERDUE]);
     return result.rowCount ?? 0;
   });
+  // Tell open consoles a notification landed - AFTER the write committed, so the
+  // bell's re-read (it reloads on any live event) is guaranteed to see the row.
+  if (raised > 0) announce(orgId, "notification", "created");
+  return raised;
 }
 
 export async function runFollowupReminders(): Promise<number> {

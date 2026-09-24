@@ -9,7 +9,7 @@ import { FilterTableSkeleton } from "@/components/skeletons";
 export default function QuotationsLoading() {
   return (
     <>
-      <PageHeader title="Quotations" context="Pipeline" />
+      <PageHeader title="Quotes" context="Sales" />
       <FilterTableSkeleton pills={6} columns={["primary", "chip", "num", "date"]} withAction />
     </>
   );

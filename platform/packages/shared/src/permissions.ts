@@ -52,6 +52,12 @@ export type SystemRoleKey = z.infer<typeof SystemRoleKey>;
  * so an owner could rearrange forty checkboxes and change nothing about them.
  * See `PERMISSION_OBJECT_MODULE` below for what widening it required.
  *
+ * `lead_board` joined in with 0136: making, reshaping, routing and deleting
+ * lead boards. Like `pipeline` it is configuration rather than a record, but
+ * unlike `pipeline` an owner asked to decide per role who may do it, so it is
+ * modelled here. Only `all` scope is meaningful - the console shows its cells
+ * as No / Yes.
+ *
  * `call` is deliberately still ABSENT, and that is a decision rather than an
  * omission. Reading a call already has three gates - the `call_intel` module,
  * the `recordings_listen` flag on the membership, and the persona - and 0039's
@@ -69,6 +75,7 @@ export const PermissionObjectType = z.enum([
   "quotation",
   "invoice",
   "lead",
+  "lead_board",
 ]);
 export type PermissionObjectType = z.infer<typeof PermissionObjectType>;
 
@@ -98,7 +105,11 @@ export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, "aura" | "cr
   quotation: "crm",
   invoice: "crm",
   lead: "aura",
+  lead_board: "aura",
 };
+
+/** Objects whose grants are whole-org powers, where "own records" means nothing. */
+export const ALL_SCOPE_ONLY_OBJECTS: ReadonlySet<PermissionObjectType> = new Set(["lead_board"]);
 
 export const PermissionAction = z.enum(["view", "create", "edit", "delete", "export"]);
 export type PermissionAction = z.infer<typeof PermissionAction>;
@@ -173,8 +184,12 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "invoice:create",
   "invoice:edit",
   "invoice:view",
+  "lead:create",
   "lead:edit",
   "lead:view",
+  "lead_board:create",
+  "lead_board:delete",
+  "lead_board:edit",
   "product:create",
   "product:edit",
   "product:view",

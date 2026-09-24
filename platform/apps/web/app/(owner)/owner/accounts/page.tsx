@@ -22,7 +22,7 @@ import { SavedViewsBar } from "../saved-views/saved-views-bar";
 import { loadSavedViews } from "../saved-views/load";
 import { relativeTime, type Account } from "../types";
 
-export const metadata: Metadata = { title: "Accounts" };
+export const metadata: Metadata = { title: "Companies" };
 
 const PAGE_SIZE = 50;
 
@@ -72,7 +72,7 @@ export default async function AccountsPage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Accounts" context="Pipeline" />
+        <PageHeader title="Companies" context="Customers" />
         <LoadFailure what="accounts" failure={result} />
       </>
     );
@@ -81,7 +81,7 @@ export default async function AccountsPage({
 
   return (
     <>
-      <PageHeader title="Accounts" context="Pipeline" />
+      <PageHeader title="Companies" context="Customers" />
 
       <SavedViewsBar list="accounts" views={views} current={current} allLabel="All accounts" />
 

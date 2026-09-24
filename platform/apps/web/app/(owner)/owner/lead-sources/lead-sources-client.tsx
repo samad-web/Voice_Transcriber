@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import Link from "next/link";
 import {
   Button,
@@ -123,8 +124,8 @@ function SourceCard({
   onToggleEvents: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const [token, setToken] = useState(source.intake_token);
-  const [path, setPath] = useState(source.endpointPath);
+  const [token, setToken] = useDraftState(source.intake_token);
+  const [path, setPath] = useDraftState(source.endpointPath);
   const alert = useAlert();
   const channel = channels.find((c) => c.id === source.kind);
   const url = path ? `${origin}/v1${path}` : null;

@@ -283,8 +283,13 @@ export async function upsertLead(
        -- its columns advances within its own board and a tenant with nowhere
        -- open to advance to gets null and keeps its stage. The status column is
        -- untouched: both columns are non-terminal, so it stays 'open'.
+       --
+       -- Main board only (0136): $8 and $20 are the MAIN board's keys, and a
+       -- lead on another board has columns of its own - writing a Main-board
+       -- key onto it would drop the card out of every column it can render.
        stage = CASE
                  WHEN $20::text IS NOT NULL
+                  AND leads.board_id IS NULL
                   AND leads.stage = $8::text
                   AND leads.status = 'open'
                   AND EXCLUDED.call_count > 1

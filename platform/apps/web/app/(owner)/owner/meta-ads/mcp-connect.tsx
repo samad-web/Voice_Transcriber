@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useServerState, useDraftState } from "@/lib/use-server-state";
 import { CheckCircle2, Plug, TriangleAlert } from "lucide-react";
 import {
   Button,
@@ -33,11 +34,11 @@ import {
  * the UI rather than left to be discovered.
  */
 export function McpConnect({ initial }: { initial: McpConnection | null }) {
-  const [connection, setConnection] = useState<McpConnection | null>(initial);
-  const [capabilities, setCapabilities] = useState<McpCapabilities | null>(null);
-  const [serverUrl, setServerUrl] = useState(initial?.server_url ?? "");
-  const [token, setToken] = useState("");
   const [pending, startTransition] = useTransition();
+  const [connection, setConnection] = useServerState<McpConnection | null>(initial, pending);
+  const [capabilities, setCapabilities] = useState<McpCapabilities | null>(null);
+  const [serverUrl, setServerUrl] = useDraftState(initial?.server_url ?? "");
+  const [token, setToken] = useState("");
   const confirm = useConfirm();
   const alert = useAlert();
   const toast = useToast();

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import {
   canPairDevices,
   OWNER_ROLE_DESCRIPTIONS,
@@ -80,9 +81,9 @@ function Row({
   canEdit: boolean;
   isSelf: boolean;
 }) {
-  const [role, setRole] = useState<OwnerRole>(member.ownerRole);
-  const [telecallerId, setTelecallerId] = useState(member.telecallerId ?? "");
-  const [canPair, setCanPair] = useState(member.canPairDevices);
+  const [role, setRole] = useDraftState<OwnerRole>(member.ownerRole);
+  const [telecallerId, setTelecallerId] = useDraftState(member.telecallerId ?? "");
+  const [canPair, setCanPair] = useDraftState(member.canPairDevices);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();

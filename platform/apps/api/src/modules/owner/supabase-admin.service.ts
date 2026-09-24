@@ -1,6 +1,35 @@
 import { randomBytes } from "node:crypto";
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 
+/** The parts of a GoTrue user the platform reads. */
+export interface AuthUser {
+  id: string;
+  email: string;
+  /** GoTrue only sets this once the address is proven (Google says so, or a link was clicked). */
+  emailVerified: boolean;
+  /** `app_metadata.providers` - e.g. ["email", "google"]. */
+  providers: string[];
+}
+
+function toAuthUser(raw: Record<string, unknown>): AuthUser | null {
+  const id = typeof raw.id === "string" ? raw.id : null;
+  if (!id) return null;
+  const app = (raw.app_metadata ?? {}) as Record<string, unknown>;
+  const providers = Array.isArray(app.providers)
+    ? (app.providers as unknown[]).filter((p): p is string => typeof p === "string")
+    : typeof app.provider === "string"
+      ? [app.provider]
+      : [];
+  return {
+    id,
+    email: typeof raw.email === "string" ? raw.email.trim().toLowerCase() : "",
+    // email_confirmed_at only - `confirmed_at` is also set by a PHONE
+    // confirmation, which proves nothing about the address.
+    emailVerified: Boolean(raw.email_confirmed_at),
+    providers,
+  };
+}
+
 /**
  * Supabase Auth admin operations, over plain fetch.
  *
@@ -135,6 +164,76 @@ export class SupabaseAdminService {
     throw new Error(
       "supabase auth: too many accounts to search for that address - look it up in the Supabase dashboard",
     );
+  }
+
+  /**
+   * The auth user behind an access token, as GoTrue itself sees it.
+   *
+   * Invite acceptance and identity linking take the invitee's TOKEN, never a
+   * subject and email the web tier says it read from one. GoTrue's own answer
+   * is the only thing trusted to say who signed in and whether their address
+   * is verified - so a bug in the caller cannot bind the wrong person, it can
+   * only fail. Authenticated by the person's own token, not the service key.
+   */
+  async userFromAccessToken(accessToken: string): Promise<AuthUser | null> {
+    if (!this.configured) {
+      throw new ServiceUnavailableException(
+        "Supabase Auth is not configured on the API - set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY",
+      );
+    }
+    const res = await fetch(`${this.url}/auth/v1/user`, {
+      headers: { apikey: this.serviceKey, authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    // 401/403: expired, revoked or forged. Not an error of ours - no user.
+    if (res.status === 401 || res.status === 403) return null;
+    if (!res.ok) throw new Error(`supabase auth ${res.status}: could not verify the session`);
+    return toAuthUser((await res.json()) as Record<string, unknown>);
+  }
+
+  /** The auth user with this id, or null when GoTrue has none (deleted). */
+  async getUserById(userId: string): Promise<AuthUser | null> {
+    try {
+      return toAuthUser(await this.call(`/admin/users/${encodeURIComponent(userId)}`, { method: "GET" }));
+    } catch (err) {
+      if (err instanceof Error && /supabase auth 404/.test(err.message)) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Make sure an auth user exists for this address, without a password.
+   *
+   * For invites. A deployment that has switched GoTrue sign-ups off (the right
+   * setting once Google sign-in is on, since the anon key is public) refuses
+   * an OAuth sign-in for an unknown address. Creating the user first - confirmed,
+   * because the invite is the owner vouching for the address, and with no
+   * password, so it opens by nothing but a verified Google identity for that
+   * same address - lets GoTrue link the Google identity to it instead.
+   *
+   * Returns the id and whether THIS call created it, so a revoked invite can
+   * delete what it made and nothing else.
+   */
+  async ensureUser(email: string, metadata: Record<string, unknown> = {}): Promise<{ id: string; created: boolean }> {
+    const existing = await this.findUserByEmail(email);
+    if (existing) return { id: existing.id, created: false };
+    try {
+      const user = await this.call("/admin/users", {
+        method: "POST",
+        body: { email, email_confirm: true, user_metadata: metadata },
+      });
+      const id = user.id as string | undefined;
+      if (!id) throw new Error("supabase auth returned no user id");
+      return { id, created: true };
+    } catch (err) {
+      // Lost a race with a concurrent sign-in - the user exists now, which is
+      // all this was for.
+      if (err instanceof Error && /already been registered|already registered|already exists/i.test(err.message)) {
+        const found = await this.findUserByEmail(email);
+        if (found) return { id: found.id, created: false };
+      }
+      throw err;
+    }
   }
 
   async setPassword(userId: string, password: string): Promise<void> {

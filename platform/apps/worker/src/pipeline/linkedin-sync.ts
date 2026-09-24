@@ -9,6 +9,7 @@ import {
 } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
 import { ensureLeadSource, ingestIntakeLead, pruneIntakeEvents } from "./lead-intake";
+import { announce } from "./realtime";
 
 /**
  * Pull LinkedIn Lead Gen Form responses onto the lead board (migration 0078).
@@ -157,6 +158,8 @@ export async function syncConnection(
       else skipped += 1;
     }
   });
+  // After the commit, so a console re-reading on the signal sees the rows.
+  if (created > 0) announce(connection.org_id, "lead", "created");
 
   // The cursor advances to the newest submission actually seen, NOT to now():
   // moving it to the wall clock would skip anything LinkedIn had not yet made

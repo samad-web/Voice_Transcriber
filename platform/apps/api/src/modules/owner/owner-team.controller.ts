@@ -25,6 +25,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
+import { consolePhone, orgPhoneCountry } from "../../common/console-phone";
 import { DbService } from "../../db/db.service";
 import { OwnerAccountsService } from "./owner-accounts.service";
 
@@ -63,6 +64,16 @@ const UpdateMemberBody = z.object({
   canPairDevices: z.boolean().optional(),
 });
 
+/**
+ * Blank, or a phone number. Only the length is capped here; the real rule -
+ * valid for its country, stored as E.164 - is `consolePhone` in the handler,
+ * which needs the workspace's country to read a number typed without a "+".
+ */
+const PhoneNumber = z.string().trim().max(40);
+
+/** "" and whitespace are "not given". */
+const blankToNull = (value: string | null | undefined): string | null => (value && value.trim() ? value : null);
+
 const InviteBody = z.object({
   email: z.string().email().max(200),
   name: z.string().min(1).max(200).optional(),
@@ -75,6 +86,14 @@ const InviteBody = z.object({
   ownerRole: OwnerRole,
   /** Bind them to a telecaller identity in the same action - see update(). */
   telecallerId: z.string().uuid().nullable().optional(),
+  /**
+   * Their mobile and WhatsApp numbers (0102's `phone`, 0135's
+   * `whatsapp_number`), written onto the new membership in the same action.
+   * The form mirrors one into the other with a tick; this route takes both as
+   * sent and never infers one from the other.
+   */
+  phone: PhoneNumber.nullish(),
+  whatsapp: PhoneNumber.nullish(),
   /**
    * Listening to a recording is a privacy event, so a new colleague gets it
    * only if asked for - the opposite default to the operator path, which
@@ -136,7 +155,8 @@ export class OwnerTeamController {
                 -- suspended colleague still holds every lead they were working,
                 -- and a page that simply stopped listing them would read as
                 -- "removed" and prompt somebody to create a second login.
-                m.status, m.staff_code AS "staffCode", m.phone, m.job_title AS "jobTitle",
+                m.status, m.staff_code AS "staffCode", m.phone, m.whatsapp_number AS "whatsapp",
+                m.job_title AS "jobTitle",
                 m.suspended_at AS "suspendedAt",
                 m.role_id AS "roleId", r.name AS "roleName", r.key AS "roleKey",
                 m.can_pair_devices AS "canPairDevices",
@@ -348,6 +368,11 @@ export class OwnerTeamController {
     const parsed = InviteBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
+    // Checked BEFORE the login is created: a number refused after it would
+    // leave a half-invited person behind. E.164, valid for its country.
+    const country = await this.db.withOrg(orgId, (client) => orgPhoneCountry(client, orgId));
+    const phone = consolePhone(blankToNull(p.phone), "phone", country);
+    const whatsapp = consolePhone(blankToNull(p.whatsapp), "whatsapp", country);
 
     const created = await this.accounts.createLogin(
       orgId,
@@ -370,6 +395,23 @@ export class OwnerTeamController {
     // view even though they are two writes.
     if (p.telecallerId) {
       await this.bindTelecaller(orgId, created.owner.userId as string, p.telecallerId);
+    }
+
+    // The numbers go on the MEMBERSHIP (this org's staff record), not on the
+    // user - someone who already had a login elsewhere keeps their other
+    // workspaces' numbers untouched. COALESCE so linking an existing member
+    // with the fields left blank does not wipe numbers already on file.
+    if (phone || whatsapp) {
+      await this.db.withOrg(orgId, (client) =>
+        client.query(
+          `UPDATE memberships
+              SET phone = COALESCE($3, phone),
+                  whatsapp_number = COALESCE($4, whatsapp_number),
+                  updated_at = now()
+            WHERE org_id = $1 AND user_id = $2`,
+          [orgId, created.owner.userId, phone, whatsapp],
+        ),
+      );
     }
 
     return created;
@@ -443,7 +485,8 @@ export class OwnerTeamController {
   }
 
   /**
-   * The employment record: staff code, phone, job title (migration 0102).
+   * The employment record: staff code, phone, job title (migration 0102), and
+   * WhatsApp number (0135).
    *
    * Separate from `update()` above, which changes what somebody may SEE. These
    * three fields grant nothing at all, and keeping them on their own route is
@@ -469,6 +512,13 @@ export class OwnerTeamController {
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
+      // The staff register's numbers are stored as E.164, valid for their
+      // country - the invite route's rule, which this route used to lack.
+      if (p.phone !== undefined || p.whatsapp !== undefined) {
+        const country = await orgPhoneCountry(client, orgId);
+        if (p.phone !== undefined) p.phone = consolePhone(blankToNull(p.phone), "phone", country);
+        if (p.whatsapp !== undefined) p.whatsapp = consolePhone(blankToNull(p.whatsapp), "whatsapp", country);
+      }
       // Empty string means CLEAR, not "store a blank". `memberships_org_staff_code`
       // is unique per org over non-null values, so a blank code stored as ''
       // would let exactly one person hold it and refuse the second with a
@@ -481,6 +531,7 @@ export class OwnerTeamController {
            staff_code = CASE WHEN $3::boolean THEN $4 ELSE staff_code END,
            phone      = CASE WHEN $5::boolean THEN $6 ELSE phone END,
            job_title  = CASE WHEN $7::boolean THEN $8 ELSE job_title END,
+           whatsapp_number = CASE WHEN $9::boolean THEN $10 ELSE whatsapp_number END,
            updated_at = now()
          WHERE user_id = $1 AND org_id = $2`,
         [
@@ -492,6 +543,8 @@ export class OwnerTeamController {
           blank(p.phone),
           p.jobTitle !== undefined,
           blank(p.jobTitle),
+          p.whatsapp !== undefined,
+          blank(p.whatsapp),
         ],
       );
       if (rowCount === 0) throw new NotFoundException("member not found in this org");

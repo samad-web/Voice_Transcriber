@@ -12,15 +12,19 @@ import Link from "next/link";
 export function FilterLink({
   active,
   href,
+  onClick,
   children,
 }: {
   active: boolean;
   href: string;
+  /** For a pill inside a Popover, which must close on navigation as well as on Escape/an outside click. */
+  onClick?: () => void;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       aria-current={active ? "true" : undefined}
       // Selected = a solid NEUTRAL fill. The brand gradient's mid-stop is a blue
       // within a few degrees of the one that now means OUTGOING on a call, and

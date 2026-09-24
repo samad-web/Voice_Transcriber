@@ -54,7 +54,7 @@ describe("comparisons (docs/29 §3.2)", () => {
   it("uses a glyph and words, never a colour", () => {
     expect(deltaText(percentDelta(118, 100)!, 30)).toBe("▲ 18% vs previous 30 days");
     expect(deltaText(percentDelta(80, 100)!, 7)).toBe("▼ 20% vs previous 7 days");
-    expect(deltaText(percentDelta(100, 100)!, 1)).toBe("no change vs previous 1 day");
+    expect(deltaText(percentDelta(100, 100)!, 1)).toBe("no change vs day before");
   });
 
   it("measures a rate's change in points", () => {

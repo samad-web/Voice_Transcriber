@@ -20,7 +20,7 @@ function Highlight({ snippet }: { snippet: string }) {
         const match = part.match(/^<b>([\s\S]*?)<\/b>$/);
         if (match) {
           return (
-            <mark key={i} className="bg-black text-white px-0.5 rounded-none">
+            <mark key={i} className="bg-accent-subtle text-accent-text px-0.5 rounded-none">
               {match[1]}
             </mark>
           );
@@ -70,7 +70,7 @@ export function SearchExplorer({
             Full-Text Transcript Search
           </h4>
         </div>
-        <p className="text-xs text-neutral-400 font-sans font-medium">
+        <p className="text-xs text-text-muted font-sans font-medium">
           Search every diarized transcript for{" "}
           <span className="text-black font-bold">{tenantName ?? "this tenant"}</span>. Matches are
           ranked and highlighted from the call record.
@@ -105,8 +105,8 @@ export function SearchExplorer({
 
           {results.length === 0 ? (
             <Card className="flex flex-col items-center py-12 gap-3">
-              <FileText className="h-8 w-8 text-neutral-300" />
-              <p className="text-xs font-mono font-bold uppercase text-neutral-400">
+              <FileText className="h-8 w-8 text-text-subtle" />
+              <p className="text-xs font-mono font-bold uppercase text-text-subtle">
                 {searched ? "No transcripts matched that query" : "Run a search to see results"}
               </p>
             </Card>
@@ -120,19 +120,19 @@ export function SearchExplorer({
                 href={`/instances/${orgId}/calls?call=${r.callId}`}
                 className="block"
               >
-                <Card className="hover:bg-neutral-50 transition-colors space-y-2">
+                <Card className="hover:bg-surface-hover transition-colors space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-mono text-xs font-bold text-black">
                       #{r.callId.slice(0, 8)}
                     </span>
-                    <span className="text-[10px] text-neutral-400 font-mono">
+                    <span className="text-[10px] text-text-muted font-mono">
                       <LocalTime iso={r.startedAt} />
                     </span>
                   </div>
-                  <p className="text-xs font-sans leading-relaxed text-neutral-700">
+                  <p className="text-xs font-sans leading-relaxed text-text">
                     <Highlight snippet={r.snippet} />
                   </p>
-                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-neutral-400">
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-text-muted">
                     rank {r.rank.toFixed(4)} · open this call →
                   </span>
                 </Card>

@@ -35,7 +35,7 @@ function FootnoteSkeleton({ lines }: { lines: number }) {
 export default function ReportsLoading() {
   return (
     <>
-      <PageHeader title="Reports" context="Pipeline" />
+      <PageHeader title="Sales overview" context="Reports" />
 
       <DateRangeBarSkeleton />
       <DateRangeSummarySkeleton />

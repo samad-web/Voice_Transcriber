@@ -67,7 +67,7 @@ export default async function ConnectAppPage({ params, searchParams }: { params:
     if (detail.kind === "notfound") notFound();
     return (
       <>
-        <PageHeader title={`Connect ${spec.label}`} context="Integrations" />
+        <PageHeader title={`Connect ${spec.label}`} context="Connected apps" />
         <LoadFailure what={`${spec.label}'s status`} failure={detail} />
       </>
     );
@@ -94,7 +94,7 @@ export default async function ConnectAppPage({ params, searchParams }: { params:
 
   return (
     <>
-      <PageHeader title={`Connect ${spec.label}`} context="Integrations" />
+      <PageHeader title={`Connect ${spec.label}`} context="Connected apps" />
       <ConnectFlow appId={spec.id as ConnectableApp} data={data} />
     </>
   );

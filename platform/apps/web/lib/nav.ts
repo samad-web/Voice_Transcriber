@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  ChartColumn,
   Bell,
   Building2,
   CalendarDays,
@@ -9,14 +10,15 @@ import {
   Contact,
   Copy,
   FileText,
+  Funnel,
   Gauge,
   Handshake,
+  House,
   Inbox,
   Languages,
   Layers,
   LayoutGrid,
   LineChart,
-  ListChecks,
   ListFilter,
   Megaphone,
   MessageCircle,
@@ -26,15 +28,16 @@ import {
   Palette,
   Phone,
   PhoneForwarded,
-  PieChart,
   Plug,
   Receipt,
   Route,
   Search,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Smartphone,
   Sparkles,
+  SquareCheck,
   Target,
   ToggleLeft,
   Undo2,
@@ -159,10 +162,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   { href: "/owner", label: "Dashboard", icon: Activity, title: "Dashboard", context: "Instance" },
   {
     href: "/owner/board",
-    label: "Lead Board",
+    label: "Lead board",
     icon: LayoutGrid,
-    title: "Lead Board",
-    context: "Pipeline",
+    title: "Lead board",
+    context: "Leads",
     // Telecaller's nav is Dashboard + All Leads (self-filtered) + their own
     // team profile once that route lands (design doc §9) - not the full board.
     //
@@ -175,17 +178,17 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/leads",
-    label: "All Leads",
+    label: "All leads",
     icon: ListFilter,
-    title: "All Leads",
-    context: "Pipeline",
+    title: "All leads",
+    context: "Leads",
   },
   {
     href: "/owner/calls",
     label: "Calls",
     icon: Phone,
     title: "Calls",
-    context: "Pipeline",
+    context: "Conversations",
     // Owner/manager only, like Call Quality: a call log is a view over the
     // whole floor's conversations, not a telecaller's view of their own work
     // (design doc §9). The API enforces the same pair - the nav is the
@@ -203,7 +206,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     label: "Projects",
     icon: Layers,
     title: "Projects",
-    context: "Pipeline",
+    context: "Settings",
     // Deliberately NOT in CRM_GATED_HREFS, alongside Lead Board and All
     // Leads: the catalogue labels `leads`, which are core Aura, so a tenant
     // without the CRM module still sees project chips on their board and
@@ -220,7 +223,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     label: "Deals",
     icon: Handshake,
     title: "Deals",
-    context: "Pipeline",
+    context: "Sales",
     // Same persona restriction as the lead board (design doc §9) - a
     // telecaller's nav stays Dashboard + All Leads, not the full pipeline -
     // and sales joins for the same reason it joins the board.
@@ -229,28 +232,28 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   {
     href: "/owner/tasks",
     label: "Tasks",
-    icon: ListChecks,
+    icon: SquareCheck,
     title: "Tasks",
-    context: "Pipeline",
+    context: "Your work",
     // No persona restriction, unlike the boards: a telecaller's own follow-ups
     // are exactly the thing they need this console for.
   },
   {
     href: "/owner/review",
-    label: "Review queue",
+    label: "Needs review",
     icon: ClipboardCheck,
-    title: "Review queue",
-    context: "Pipeline",
+    title: "Needs review",
+    context: "Leads",
     // No persona restriction on the entry: every persona can review at least
     // one source (lib/review-queue.ts), and the page shows each person only
     // the sources their role and the tenant's features already admit.
   },
   {
     href: "/owner/inbox",
-    label: "Inbox",
+    label: "Chats",
     icon: MessagesSquare,
-    title: "Inbox",
-    context: "Pipeline",
+    title: "Chats",
+    context: "Conversations",
     // Everyone who works a customer, for the same reason Tasks is: a
     // telecaller answering replies is the whole job, and routing
     // correspondence to a persona who cannot see it is how an enquiry goes
@@ -263,10 +266,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/whatsapp-leads",
-    label: "WhatsApp leads",
+    label: "WhatsApp chats",
     icon: MessagesSquare,
-    title: "WhatsApp leads",
-    context: "Pipeline",
+    title: "WhatsApp chats",
+    context: "Leads",
     // Same audience as the Inbox it feeds off, and for the same reason: the
     // person who answers a thread is the person who can tell whether it was a
     // buyer or a courier. Marketing is excluded as it is there - this is
@@ -275,10 +278,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/outreach",
-    label: "Outreach",
+    label: "Follow-up sequences",
     icon: Milestone,
-    title: "Outreach",
-    context: "Pipeline",
+    title: "Follow-up sequences",
+    context: "Conversations",
     // Unrestricted, like Tasks and Inbox: working the follow-up ladder is a
     // telecaller's core job, not a manager's oversight view.
   },
@@ -287,30 +290,30 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     label: "Contacts",
     icon: Contact,
     title: "Contacts",
-    context: "Pipeline",
+    context: "Customers",
   },
   {
     href: "/owner/accounts",
-    label: "Accounts",
+    label: "Companies",
     icon: Building2,
-    title: "Accounts",
-    context: "Pipeline",
+    title: "Companies",
+    context: "Customers",
   },
   {
     href: "/owner/products",
-    label: "Products",
+    label: "Price list",
     icon: Package,
-    title: "Products",
-    context: "Pipeline",
+    title: "Price list",
+    context: "Sales",
     // Sales quotes from the catalogue, so it has to be able to read it.
     ownerRoles: ["owner", "manager", "sales"],
   },
   {
     href: "/owner/quotations",
-    label: "Quotations",
+    label: "Quotes",
     icon: FileText,
-    title: "Quotations",
-    context: "Pipeline",
+    title: "Quotes",
+    context: "Sales",
     // Raising a quote is the sales job. Turning one into an INVOICE is not -
     // see the next entry, which deliberately stops at owner/manager.
     ownerRoles: ["owner", "manager", "sales"],
@@ -320,7 +323,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     label: "Invoices",
     icon: Receipt,
     title: "Invoices",
-    context: "Pipeline",
+    context: "Sales",
     // Owner/manager only, and the one place the sales persona stops short of
     // the quotation it raised: billing a customer is a financial commitment by
     // the business, and the person who negotiated the price should not also be
@@ -329,10 +332,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/sops",
-    label: "Call procedure",
+    label: "Call checklist",
     icon: ClipboardCheck,
-    title: "Call procedure",
-    context: "Team",
+    title: "Call checklist",
+    context: "Settings",
     // Owner and manager only, unlike Productivity next door. That page shows a
     // person their own numbers, which every persona is entitled to; this one
     // DEFINES the measure, and a telecaller editing the rules they are scored
@@ -342,12 +345,12 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/agents",
-    label: "AI agents",
+    label: "AI assistants",
     icon: Sparkles,
-    title: "AI Agent Studio",
+    title: "AI assistants",
     // "Conversations", not "Team": it is filed under that section (OWNER_SECTION_OF
     // below) and its page's own header says so.
-    context: "Conversations",
+    context: "Settings",
     // Owner and manager, for the Call procedure reason next door: an extractor
     // decides which of the floor's calls become leads, and the people whose
     // calls are counted should not be the ones setting the rule. The API
@@ -356,10 +359,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/productivity",
-    label: "Productivity",
+    label: "Team activity",
     icon: Gauge,
-    title: "Productivity",
-    context: "Team",
+    title: "Team activity",
+    context: "Reports",
     // No `ownerRoles`, deliberately - every persona may open this, including a
     // telecaller. The route narrows the ROWS rather than refusing the page:
     // OwnerScopeGuard resolves a telecaller to their own record, so they see
@@ -369,10 +372,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/reports",
-    label: "Reports",
-    icon: PieChart,
-    title: "Reports",
-    context: "Pipeline",
+    label: "Sales overview",
+    icon: ChartColumn,
+    title: "Sales overview",
+    context: "Reports",
     // Pipeline value and per-rep win rates are a manager's view of the team,
     // not a telecaller's or a rep's view of their own work - same restriction
     // the boards carry (design doc §9). A rep's own numbers are on their
@@ -386,10 +389,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/reports/sla",
-    label: "Response & Follow-ups",
+    label: "Response times",
     icon: Gauge,
-    title: "Response & Follow-ups",
-    context: "Pipeline",
+    title: "Response times",
+    context: "Reports",
     // Owner/manager only, and narrower than Reports on purpose. This is a
     // supervision surface: it names who answered slowly and who missed a
     // follow-up. Marketing has no floor to supervise, and a telecaller
@@ -399,10 +402,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/reports/builder",
-    label: "Report Builder",
+    label: "Custom reports",
     icon: LineChart,
-    title: "Report builder",
-    context: "Pipeline",
+    title: "Custom reports",
+    context: "Reports",
     // Same persona restriction as Reports, and for the same reason: a report
     // is a view over the whole team's pipeline, not a telecaller's view of
     // their own work (design doc §9). The API narrows it further per record
@@ -420,10 +423,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/duplicates",
-    label: "Duplicates",
+    label: "Possible duplicates",
     icon: Copy,
-    title: "Duplicates",
-    context: "Pipeline",
+    title: "Possible duplicates",
+    context: "Leads",
     // Marketing owns the intake that CREATES most duplicates - the same
     // person should be able to clean them up.
     ownerRoles: ["owner", "manager", "marketing"],
@@ -432,28 +435,28 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     href: "/owner/import",
     label: "Import",
     icon: Upload,
-    title: "Bulk Import",
-    context: "Pipeline",
+    title: "Import",
+    context: "Leads",
     // A list bought from an event or an agency arrives as a CSV, and loading
     // it is marketing's job.
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/messaging-setup",
-    label: "WhatsApp Setup",
+    label: "WhatsApp number",
     icon: MessageCircle,
-    title: "WhatsApp Setup",
+    title: "WhatsApp number",
     context: "Settings",
     // Grouped under Lead connectors, and marketing owns lead connectors.
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/lead-sources",
-    label: "Lead Sources",
+    label: "Lead sources",
     icon: Inbox,
     // Sentence case, as the page's own header (and every other owner page) has it.
     title: "Lead sources",
-    context: "Pipeline",
+    context: "Settings",
     // Not a telecaller's or a rep's decision: a source carries a credential
     // and decides who new business is assigned to. Marketing joins because
     // connecting the channels demand arrives on IS the marketing job - it is
@@ -462,9 +465,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/lead-routing",
-    label: "Lead Routing",
+    label: "Who gets new leads",
     icon: Route,
-    title: "Lead routing",
+    title: "Who gets new leads",
     context: "Settings",
     // Owner and manager only, and narrower than Lead Sources next door, which
     // marketing shares. Marketing connects the channels demand arrives on;
@@ -476,17 +479,17 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/meta-ads",
-    label: "Meta Lead Ads",
+    label: "Facebook & Instagram ads",
     icon: Megaphone,
-    title: "Meta Lead Ads",
+    title: "Facebook & Instagram ads",
     context: "Settings",
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
     href: "/owner/devices",
-    label: "Handsets",
+    label: "Phones",
     icon: Smartphone,
-    title: "Handsets",
+    title: "Phones",
     context: "Settings",
     // No `ownerRoles`, deliberately, and it is the only Settings page without
     // one. Every persona may SEE the fleet - a telecaller checking whether
@@ -502,9 +505,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/recycle-bin",
-    label: "Recycle Bin",
+    label: "Deleted items",
     icon: Undo2,
-    title: "Recycle bin",
+    title: "Deleted items",
     context: "Settings",
     // Owner and manager, matching the API. Narrower than several of the delete
     // endpoints it undoes - a scoped rep can remove their own sales target -
@@ -515,9 +518,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/branding",
-    label: "Branding",
+    label: "Logo & colours",
     icon: Palette,
-    title: "Branding",
+    title: "Logo & colours",
     context: "Settings",
     // Marketing owns how the business presents itself, which is what this page
     // is - the logo and palette on every quote and invoice a customer receives.
@@ -525,20 +528,20 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/call-quality",
-    label: "Call Quality",
+    label: "Calls to check",
     icon: AlertTriangle,
-    title: "Call Quality",
-    context: "Pipeline",
+    title: "Calls to check",
+    context: "Conversations",
     // A manager's review queue over the whole floor's calls, same restriction
     // as Reports and the boards (design doc §9) - not a telecaller's own view.
     ownerRoles: ["owner", "manager"],
   },
   {
     href: "/owner/insights",
-    label: "Call insights",
+    label: "Call summary",
     icon: BarChart3,
-    title: "Call insights",
-    context: "Conversations",
+    title: "Call summary",
+    context: "Reports",
     // Owner/manager, matching the API: the page summarises the whole floor's
     // conversations and ranks named colleagues - the call log's restriction
     // and the staff scorecard's, for their reasons. A rep's own numbers are on
@@ -547,9 +550,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/calls/triage",
-    label: "Unmatched calls",
+    label: "Calls to link",
     icon: Unlink,
-    title: "Unmatched calls",
+    title: "Calls to link",
     context: "Conversations",
     // Owner/manager only, matching the call log it hangs off: the queue is
     // every unmatched call on the floor and working it creates leads across
@@ -558,10 +561,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/features",
-    label: "Features",
+    label: "Turn features on/off",
     icon: ToggleLeft,
-    title: "Features",
-    context: "Workspace",
+    title: "Turn features on/off",
+    context: "Settings",
     // Owner and manager, and deliberately NOT in the feature catalogue itself:
     // a switchboard that could be switched off is one click from a workspace
     // that needs an operator with a SQL prompt to recover. Same reasoning as
@@ -570,10 +573,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/integrations",
-    label: "Integrations",
+    label: "Connected apps",
     icon: Plug,
-    title: "Integrations",
-    context: "Workspace",
+    title: "Connected apps",
+    context: "Settings",
     // Every persona (doc 28, Q7). It is the store now, not an admin board: a
     // telecaller links their own Gmail and WhatsApp here. What each persona
     // SEES in it is filtered by the API (canSeeApp), so a telecaller's store
@@ -581,10 +584,10 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/staff",
-    label: "Staff",
+    label: "Team & permissions",
     icon: Users,
-    title: "Staff",
-    context: "Workspace",
+    title: "Team & permissions",
+    context: "Settings",
     // Was /owner/team, and that URL still resolves - it redirects here (see
     // that page). Renamed because the section now answers three questions
     // rather than one: who is here, what may they do, and how are they doing.
@@ -594,21 +597,22 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // any of them. Every tab renders read-only for a manager rather than being
     // hidden - knowing who sits where is part of running the floor.
     ownerRoles: ["owner", "manager"],
-    // The same page, named from where each reader sits: an owner employs
-    // staff, a manager runs a team. There used to be a second "Team" entry
-    // that only redirected here, so a manager saw two links to one page.
-    roleLabels: { manager: "Team" },
+    // One name for every reader. It used to be "Staff" to an owner and "Team"
+    // to a manager; two words for one page is the kind of guessing the
+    // navigation overhaul set out to remove, and "Team & permissions" is what
+    // either of them came here to find.
   },
   {
     href: "/owner/superfone",
-    label: "Superfone calls",
+    label: "Office line (Superfone)",
     icon: PhoneForwarded,
-    title: "Superfone",
-    context: "Superfone",
-    // â”€â”€ ITS OWN SECTION, DELIBERATELY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    title: "Office line (Superfone)",
+    context: "Conversations",
+    // ── ITS OWN TAB, DELIBERATELY ──────────────────────────────────────────
     //
     // Superfone is one telephony provider among several and could have been a
-    // filter on the call log. It is separated because the two logs answer
+    // filter on the call log. It is a separate tab beside Calls, rather than
+    // rows mixed into that list, because the two logs answer
     // different questions and have different data behind them: the call log is
     // recordings the handsets uploaded, with transcripts and AI reads;
     // Superfone is a CDR feed from a cloud PBX, with no audio of ours and no
@@ -618,9 +622,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/transcription",
-    label: "Transcription",
+    label: "Transcripts",
     icon: Languages,
-    title: "Transcription",
+    title: "Transcripts",
     context: "Settings",
     // Owner and manager, matching the persona check in the page's own server
     // action - which is the real control here, because the API route behind it
@@ -634,9 +638,9 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   },
   {
     href: "/owner/call-access",
-    label: "Call access",
+    label: "Support access to calls",
     icon: ShieldCheck,
-    title: "Call access",
+    title: "Support access to calls",
     context: "Settings",
     // Owner and manager may LOOK; only an owner may decide, which the API
     // enforces with `@RequireOwnerRole("owner")` rather than this list.
@@ -647,6 +651,17 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // tenant's recordings must not be something the vendor can hide. A
     // revocation the customer cannot reach is not a revocation.
     ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/settings",
+    label: "Settings",
+    icon: Settings,
+    title: "Settings",
+    context: "Workspace",
+    // The one door into every set-up page (see OWNER_SETTINGS_GROUPS). No
+    // persona restriction and no feature key: the page lists only the settings
+    // THIS reader can open, and every persona has at least their own phone and
+    // their own connected apps.
   },
 ];
 
@@ -699,120 +714,196 @@ const CRM_GATED_HREFS = [
 ];
 
 /**
- * The owner console's sidebar groups, in render order.
+ * The owner console's sections, in rail order - one sidebar entry each.
  *
- * WHY THIS EXISTS. The customer console grew to two dozen destinations, and a
- * flat rail of two dozen is not a menu - it is a list you read top to bottom
- * every time because nothing tells you where to look. Grouping is what turns
- * "somewhere in there" into "under Lead connectors".
+ * WHY SECTIONS AND NOT HEADINGS. The rail used to be six promoted pages and a
+ * "More" holding seven headings over thirty-odd links, and a first-time user
+ * had to read all of it and guess. Now every page belongs to exactly one
+ * section, named for what somebody came to DO - find leads, look after
+ * customers, sell, talk to people, see the numbers, set things up - and the
+ * rail shows only the sections. A section's pages are tabs across the top of
+ * the page (`ownerTabsFor`), so one click reaches the area, one more the page,
+ * and every page's neighbours are visible on arrival instead of hidden behind
+ * a disclosure.
  *
- * The grouping is by WHAT SOMEBODY CAME TO DO, not by what the code is. Meta
- * Lead Ads and WhatsApp Setup sit beside Lead Sources under Lead connectors
- * because all three answer "where do new leads arrive from" - even though one
- * is an ad platform, one is a messaging provider and one is a CSV/webhook
- * catalogue. Filing them under Settings, where they were, meant the person
- * connecting a lead source had to already know that.
+ * Settings is a section like the others but the rail pins it to the foot,
+ * apart from the daily work: most people open it once. Its pages are grouped
+ * again (OWNER_SETTINGS_GROUPS), because sixteen tabs is the same wall.
  *
- * Dashboard has no section on purpose: it sits above the first heading, which
- * is what makes the first heading read as a heading rather than a label for
- * everything under it.
+ * `account` never reaches the rail. Notifications is each person's own
+ * preference and is offered from the account menu; it is filed here so that
+ * "every page is filed somewhere" stays a checkable property.
+ *
+ * Home has no section, on purpose: it sits above the first, which is what
+ * makes it read as the start rather than a member of Tasks.
  */
 export const OWNER_NAV_SECTIONS = [
-  { key: "pipeline", label: "Pipeline" },
-  { key: "crm", label: "Customers" },
-  { key: "conversations", label: "Conversations" },
+  { key: "tasks", label: "Tasks" },
+  { key: "leads", label: "Leads" },
+  { key: "customers", label: "Customers" },
   { key: "sales", label: "Sales" },
-  { key: "insights", label: "Insights" },
-  { key: "connectors", label: "Lead connectors" },
-  { key: "workspace", label: "Workspace" },
+  { key: "conversations", label: "Conversations" },
+  { key: "reports", label: "Reports" },
+  { key: "settings", label: "Settings" },
+  { key: "account", label: "Your account" },
 ] as const;
 
 export type NavSection = (typeof OWNER_NAV_SECTIONS)[number]["key"];
 
 /**
- * Which group each owner page belongs to.
+ * Each section's rail icon - the most widely recognised glyph for the idea,
+ * not the most specific one. A person scanning the rail matches shapes before
+ * they read words, so a funnel has to mean leads and a gear has to mean
+ * settings the way they do everywhere else.
+ */
+const OWNER_SECTION_ICONS: Record<NavSection, LucideIcon> = {
+  tasks: SquareCheck,
+  leads: Funnel,
+  customers: Users,
+  sales: Handshake,
+  conversations: MessagesSquare,
+  reports: ChartColumn,
+  settings: Settings,
+  account: Bell,
+};
+
+/** Pinned under the main list rather than in it. */
+const OWNER_FOOTER_SECTIONS: readonly NavSection[] = ["settings"];
+/** Reached from somewhere other than the rail (the account menu). */
+const OWNER_OFF_RAIL_SECTIONS: readonly NavSection[] = ["account"];
+
+/** The Settings landing page: every group below, as cards. */
+export const OWNER_SETTINGS_HREF = "/owner/settings";
+
+/**
+ * The set-up pages, grouped the way somebody looks for them, with the one
+ * line the Settings page prints under each.
+ *
+ * The groups answer questions, not code boundaries. "Who gets new leads" sits
+ * with the lead sources because `lead_sources` already carries an "assign to"
+ * field and the routing page is the generalisation of it - somebody who opens
+ * one to answer "who gets these" needs the other. Phones sits with the team
+ * because pairing a phone is a permission granted on the team page.
+ *
+ * ORDER IS TAB ORDER. OWNER_SECTION_OF is built from this list, so the Settings
+ * cards, the tabs across a settings page and the section map cannot disagree.
+ */
+export const OWNER_SETTINGS_GROUPS: readonly {
+  key: string;
+  label: string;
+  pages: readonly { href: string; blurb: string }[];
+}[] = [
+  {
+    key: "team",
+    label: "Team",
+    pages: [
+      { href: "/owner/staff", blurb: "Who works here, what each person can see and do, and how they are doing." },
+      { href: "/owner/devices", blurb: "The phones that record calls, and whether each one has checked in." },
+    ],
+  },
+  {
+    key: "intake",
+    label: "Getting leads in",
+    pages: [
+      { href: "/owner/lead-sources", blurb: "Web forms, email and other places new enquiries arrive from." },
+      { href: "/owner/meta-ads", blurb: "Bring in leads from your Facebook and Instagram ad forms." },
+      { href: "/owner/messaging-setup", blurb: "Connect the WhatsApp Business number customers message you on." },
+      { href: "/owner/lead-routing", blurb: "Rules that decide which person each new lead goes to." },
+    ],
+  },
+  {
+    key: "calls",
+    label: "Calls & AI",
+    pages: [
+      { href: "/owner/sops", blurb: "The steps a good call should follow, used to score every call." },
+      { href: "/owner/agents", blurb: "AI helpers that read calls and chats and pick out leads and details." },
+      { href: "/owner/transcription", blurb: "The language your calls are in, and how transcripts are written." },
+      { href: "/owner/call-access", blurb: "Whether our support team may open your call recordings." },
+    ],
+  },
+  {
+    key: "business",
+    label: "Your business",
+    pages: [
+      { href: "/owner/projects", blurb: "The projects or offerings leads ask about, used to label them." },
+      { href: "/owner/branding", blurb: "Your logo and colours, on the console and on every quote and invoice." },
+    ],
+  },
+  {
+    key: "tools",
+    label: "Apps & tools",
+    pages: [
+      { href: "/owner/integrations", blurb: "Connect Gmail, WhatsApp, calendars and other apps." },
+      { href: "/owner/features", blurb: "Show or hide parts of the console your team does not use." },
+      { href: "/owner/recycle-bin", blurb: "Things deleted recently, and a way to bring them back." },
+    ],
+  },
+];
+
+/**
+ * Which section each owner page belongs to.
  *
  * A map here rather than a `section` field on each item, so the whole taxonomy
  * is readable in one screen - the question this file gets asked is "what is
- * next to what", and a property spread across two dozen object literals cannot
- * answer it. nav.test.ts pins both halves: no page is LOST in the grouping, and
- * every page is filed HERE rather than caught by `groupNav`'s fallback - the
- * first alone let two pages sit under the wrong heading unnoticed.
+ * next to what", and a property spread across forty object literals cannot
+ * answer it. Key order within a section is TAB order (see `groupNav`), so the
+ * page every persona can open goes first: a section's rail link is its first
+ * visible page, and a telecaller clicking Leads must land on a page, not a 403.
  *
- * Keys for pages that do not exist on every branch are harmless and
- * deliberate: a page lands in one commit and its nav entry in another, and an
- * entry with nowhere to go would otherwise disappear from the rail with no
- * error anywhere.
+ * nav.test.ts pins both halves: no page is LOST in the grouping, and every page
+ * is filed HERE rather than caught by `groupNav`'s fallback.
+ *
+ * Reports holds pages from two modules - the CRM reports and the call-log
+ * reports (Call summary, Team activity) - and that is fine now in a way it was
+ * not under the old headings: a section shows whichever of its pages this
+ * tenant has, and `crmPrimary` no longer promotes it (CRM_PRIMARY_SECTIONS).
  */
 const OWNER_SECTION_OF: Record<string, NavSection> = {
-  "/owner/calls/triage": "conversations",
-  "/owner/features": "workspace",
-  "/owner/integrations": "workspace",
-  "/owner/staff": "workspace",
-  "/owner/superfone": "conversations",
-  "/owner/transcription": "workspace",
-  "/owner/call-access": "workspace",
-  "/owner/board": "pipeline",
-  "/owner/leads": "pipeline",
-  "/owner/tasks": "pipeline",
-  "/owner/review": "pipeline",
-  "/owner/outreach": "pipeline",
+  "/owner/tasks": "tasks",
 
-  "/owner/deals": "crm",
-  "/owner/contacts": "crm",
-  "/owner/accounts": "crm",
+  // All leads first: every persona has it, the board is persona-limited.
+  "/owner/leads": "leads",
+  "/owner/board": "leads",
+  // The queue and the two things it is made of. Needs review already
+  // aggregates WhatsApp chats and duplicates (lib/review-queue.ts); the two
+  // full pages sit beside it for working one source in bulk.
+  "/owner/review": "leads",
+  "/owner/whatsapp-leads": "leads",
+  "/owner/duplicates": "leads",
+  "/owner/import": "leads",
 
-  "/owner/calls": "conversations",
-  "/owner/call-quality": "conversations",
-  // Beside the call log it summarises, NOT under Insights with Reports - the
-  // same reasoning as Productivity below: Insights is CRM-promoted and every
-  // member is CRM-gated, while this page is `call_intel`, and a recorder
-  // tenant with no CRM must still find it.
-  "/owner/insights": "conversations",
-  // Beside the call log, NOT under Insights with Reports - and the nav test is
-  // what forced the question. Insights is a CRM_PRIMARY_SECTION whose every
-  // member is CRM-gated, so filing an ungated page there made "the promoted
-  // sections are empty once crmEnabled=false" false and broke the ordering
-  // invariant. That was the test catching a real error rather than a
-  // bookkeeping one: productivity is computed from `calls`, belongs to the
-  // `aura` module, and a recording-only tenant with no CRM must still see it.
-  "/owner/productivity": "conversations",
-  "/owner/sops": "conversations",
-  // Beside Call procedure: both define how the floor's conversations are read.
-  "/owner/agents": "conversations",
-  "/owner/inbox": "conversations",
-  "/owner/whatsapp-leads": "conversations",
+  "/owner/contacts": "customers",
+  "/owner/accounts": "customers",
 
-  "/owner/products": "sales",
+  // In the order a sale happens: deal, quote, invoice - then the price list
+  // they all draw on, which is reference rather than work.
+  "/owner/deals": "sales",
   "/owner/quotations": "sales",
   "/owner/invoices": "sales",
+  "/owner/products": "sales",
 
-  "/owner/reports": "insights",
-  "/owner/reports/builder": "insights",
-  // Was unfiled and fell into the last group, Workspace (plan 23 §G2).
-  "/owner/reports/sla": "insights",
+  "/owner/inbox": "conversations",
+  "/owner/outreach": "conversations",
+  "/owner/calls": "conversations",
+  "/owner/superfone": "conversations",
+  // The two call queues, beside the log they hang off.
+  "/owner/calls/triage": "conversations",
+  "/owner/call-quality": "conversations",
 
-  "/owner/lead-sources": "connectors",
-  // Beside Lead Sources rather than under Workspace with Team. `lead_sources`
-  // already carries an "assign to" field, and this page is the generalisation
-  // of exactly that field - somebody who opens Lead Sources to answer "who
-  // gets these" is the person who needs this. Filing it with the team roster
-  // would mean knowing to look for a routing rule under Workspace.
-  "/owner/lead-routing": "connectors",
-  "/owner/meta-ads": "connectors",
-  "/owner/messaging-setup": "connectors",
+  // Sales overview first for the personas that have it; a telecaller's first
+  // visible page here is Team activity, which is scoped to their own numbers.
+  "/owner/reports": "reports",
+  "/owner/insights": "reports",
+  "/owner/productivity": "reports",
+  "/owner/reports/sla": "reports",
+  "/owner/reports/builder": "reports",
 
-  "/owner/projects": "workspace",
-  "/owner/import": "workspace",
-  "/owner/duplicates": "workspace",
-  // Beside Team, not under Lead connectors: this is who and what is on the
-  // floor, and the pairing permission is granted on the Team page next to it.
-  "/owner/devices": "workspace",
-  "/owner/branding": "workspace",
-  "/owner/notifications": "workspace",
-  // Workspace housekeeping, beside Team. Filed explicitly: it used to land here
-  // only because the fallback appends unfiled pages to the last group.
-  "/owner/recycle-bin": "workspace",
+  [OWNER_SETTINGS_HREF]: "settings",
+  ...Object.fromEntries(
+    OWNER_SETTINGS_GROUPS.flatMap((g) => g.pages.map((p) => [p.href, "settings" as const])),
+  ),
+
+  "/owner/notifications": "account",
 };
 
 /**
@@ -825,8 +916,13 @@ export function ownerSectionOf(href: string): NavSection | undefined {
   return OWNER_SECTION_OF[href];
 }
 
-/** Sections carrying the CRM object model - what `crmPrimary` promotes. */
-const CRM_PRIMARY_SECTIONS: NavSection[] = ["crm", "insights"];
+/**
+ * Sections carrying only the CRM object model - what `crmPrimary` promotes.
+ * Reports is not among them any more: it also holds the call-log reports,
+ * which a tenant without the CRM still has, and promoting a section for its
+ * CRM half would move those too.
+ */
+const CRM_PRIMARY_SECTIONS: NavSection[] = ["customers", "sales"];
 
 /**
  * One tenant's provisioning state, as the nav needs to see it.
@@ -980,45 +1076,42 @@ export function ownerNavSectionsFor(
   return groupNav(visible, order, OWNER_SECTION_OF, "/owner");
 }
 
-/* ══ THE TOP-LEVEL RAIL ════════════════════════════════════════════════════════
+/* ══ THE RAIL AND THE TABS ═════════════════════════════════════════════════════
  *
- * Grouping turned two dozen links into seven headings, but seven headings over
- * thirty links is still a menu you read. The pages somebody opens every hour -
- * the pipeline, the people, the follow-ups, the numbers - are a handful, and
- * they should be one glance and one click from anywhere, with everything else
- * one disclosure further away.
+ * Two levels, and each does one job. The RAIL is where you are in the business:
+ * Home plus at most six sections, with Settings pinned apart at the foot. The
+ * TABS across the top of a page are where you are inside that section. Nothing
+ * is behind a disclosure, so nothing has to be known about in advance to be
+ * found.
  *
- * So the rail has at most OWNER_RAIL_MAX_TOP_LEVEL entries: the primary pages
- * below, in this order, plus a single "More" that holds the grouped sections
- * exactly as `ownerNavSectionsFor` builds them, minus what was promoted.
- *
- * DERIVED, NOT LISTED AGAIN - same rule as the messaging switcher. A primary
- * entry only appears if `ownerNavSectionsFor` already let this reader see that
- * page, so a telecaller gets Home / Leads / Contacts / Tasks and never a Deals
- * link that would 403, and a recording-only tenant without the CRM module gets
- * Home / Leads. Nothing is added by promotion and nothing is lost: every
- * visible page is in exactly one of `primary` and `more`, which nav.test.ts
- * asserts for every persona and module combination.
+ * DERIVED, NOT LISTED AGAIN. Both are built from `ownerNavSectionsFor`, which
+ * has already applied persona, module and feature rules - so a section appears
+ * only if this reader can open at least one of its pages, its rail link goes to
+ * the first of those, and its tabs are exactly those. A telecaller's Leads has
+ * no Board tab and a recording-only tenant has no Sales entry at all, with no
+ * second copy of the visibility rules to drift. nav.test.ts / owner-rail.test.ts
+ * assert that every visible page is reachable exactly once.
  */
 
-/** The promoted pages, in rail order. `label` overrides the item's own where the rail wants the short form. */
-export const OWNER_PRIMARY_NAV: readonly { href: string; label: string }[] = [
-  { href: "/owner", label: "Home" },
-  { href: "/owner/leads", label: "Leads" },
-  { href: "/owner/deals", label: "Deals" },
-  { href: "/owner/contacts", label: "Contacts" },
-  { href: "/owner/tasks", label: "Tasks" },
-  { href: "/owner/reports", label: "Reports" },
-];
-
-/** Primary entries plus the "More" disclosure. */
-export const OWNER_RAIL_MAX_TOP_LEVEL = 7;
+/** One rail entry: Home, or a section. */
+export interface OwnerRailEntry {
+  key: NavSection | "home";
+  label: string;
+  icon: LucideIcon;
+  /** Where the entry goes: the section's first page this reader can open. */
+  href: string;
+  /** Every page in the section this reader can open, in tab order. */
+  items: NavItem[];
+}
 
 export interface OwnerRail {
-  primary: NavItem[];
-  /** The rest, grouped as before. Empty when every visible page was promoted. */
-  more: NavGroup[];
+  primary: OwnerRailEntry[];
+  /** Pinned under the main list - Settings. */
+  footer: OwnerRailEntry[];
 }
+
+/** Home plus the daily-work sections; Settings is pinned apart and not counted. */
+export const OWNER_RAIL_MAX_TOP_LEVEL = 7;
 
 export function ownerRailFor(
   role: OwnerRole,
@@ -1027,50 +1120,119 @@ export function ownerRailFor(
   callIntelEnabled = false,
   entitlement?: Entitlement,
 ): OwnerRail {
-  const groups = ownerNavSectionsFor(role, crmPrimary, crmEnabled, callIntelEnabled, entitlement);
-  const visible = new Map(groups.flatMap((g) => g.items).map((item) => [item.href, item]));
-  const promoted = new Set(OWNER_PRIMARY_NAV.map((p) => p.href));
-
-  const primary = OWNER_PRIMARY_NAV.flatMap(({ href, label }) => {
-    const item = visible.get(href);
-    return item ? [{ ...item, label }] : [];
+  const entries: OwnerRailEntry[] = ownerNavSectionsFor(
+    role,
+    crmPrimary,
+    crmEnabled,
+    callIntelEnabled,
+    entitlement,
+  ).map((group) => {
+    const key = (group.key as NavSection | null) ?? "home";
+    return {
+      key,
+      label: key === "home" ? "Home" : (group.label ?? key),
+      icon: key === "home" ? House : OWNER_SECTION_ICONS[key],
+      href: group.items[0].href,
+      items: group.items,
+    };
   });
-  const more = groups
-    .map((group) => ({ ...group, items: group.items.filter((item) => !promoted.has(item.href)) }))
-    .filter((group) => group.items.length > 0);
 
-  return { primary, more };
+  return {
+    primary: entries.filter(
+      (e) => e.key === "home" || (!OWNER_FOOTER_SECTIONS.includes(e.key) && !OWNER_OFF_RAIL_SECTIONS.includes(e.key)),
+    ),
+    footer: entries.filter((e) => e.key !== "home" && OWNER_FOOTER_SECTIONS.includes(e.key)),
+  };
 }
 
 /**
- * Where the reader is, as the rail needs to show it.
+ * Where the reader is: the page (`activeHref`, longest prefix, so
+ * /owner/reports/sla is Response times and not Sales overview) and the rail
+ * entry holding it (`activeKey`).
  *
- * `activeHref` is the one page that renders as current - longest prefix over
- * EVERY visible item, so /owner/reports/sla is Response & Follow-ups, not
- * Reports. `primaryParentHref` is the promoted page that current page sits
- * underneath (Reports, there), which the rail marks more quietly so a person
- * three levels deep can still see which top-level area they are in.
- * `inMore` says whether the current page is behind the disclosure, which is
- * what opens it on arrival.
+ * Home is current only on /owner itself. "/owner" is every page's prefix, so a
+ * plain longest-prefix match would light Home up on a page the rail does not
+ * list - Notifications, the account pages - which says "you are on Home" to
+ * somebody who is not.
  */
 export function ownerRailState(
   pathname: string,
   rail: OwnerRail,
-): { activeHref: string | null; primaryParentHref: string | null; inMore: boolean } {
-  const all = [...rail.primary, ...rail.more.flatMap((g) => g.items)];
-  const active = navItemFor(pathname, all) ?? null;
-  const inMore = active ? !rail.primary.some((p) => p.href === active.href) : false;
-  const parent = inMore
-    ? rail.primary
-        // "/owner" is everything's prefix; only an exact match makes Home current.
-        .filter((p) => p.href !== "/owner" && pathname.startsWith(`${p.href}/`))
-        .sort((a, b) => b.href.length - a.href.length)[0]
-    : undefined;
-  return {
-    activeHref: active?.href ?? null,
-    primaryParentHref: parent?.href ?? null,
-    inMore,
-  };
+): { activeKey: OwnerRailEntry["key"] | null; activeHref: string | null } {
+  const entries = [...rail.primary, ...rail.footer];
+  const active = navItemFor(
+    pathname,
+    entries.flatMap((e) => e.items),
+  );
+  if (!active || (active.href === "/owner" && pathname.replace(/\/+$/, "") !== "/owner")) {
+    return { activeKey: null, activeHref: null };
+  }
+  const entry = entries.find((e) => e.items.includes(active));
+  return { activeKey: entry?.key ?? null, activeHref: active.href };
+}
+
+export interface OwnerTabs {
+  /** The section (or, inside Settings, the settings group) the tabs belong to. */
+  label: string;
+  tabs: NavItem[];
+  activeHref: string;
+  /** Inside Settings: the way back to every setting, since the tabs show one group. */
+  back?: { href: string; label: string };
+}
+
+/**
+ * The tab strip for the page at `pathname`, or null where there is none.
+ *
+ * None on Home and on the Settings landing page, and none where a section has
+ * a single page for this reader - a one-tab strip is a highlighted pill that
+ * cannot be clicked off, which is furniture, not navigation. Inside Settings
+ * the strip is the page's own group plus a link back to all of them, so it is
+ * drawn even for a one-page group: the way back is the point there.
+ *
+ * And none BELOW a tab's own page - a contact, a quotation, a saved report.
+ * Those pages carry breadcrumbs back to their list, and a strip of the list's
+ * siblings above one record is a second, competing answer to "where am I".
+ */
+export function ownerTabsFor(pathname: string, rail: OwnerRail): OwnerTabs | null {
+  const { activeKey, activeHref } = ownerRailState(pathname, rail);
+  if (!activeKey || !activeHref || activeKey === "home") return null;
+  if (pathname.replace(/\/+$/, "") !== activeHref) return null;
+  const entry = [...rail.primary, ...rail.footer].find((e) => e.key === activeKey);
+  if (!entry) return null;
+
+  if (activeKey === "settings") {
+    if (activeHref === OWNER_SETTINGS_HREF) return null;
+    const group = OWNER_SETTINGS_GROUPS.find((g) => g.pages.some((p) => p.href === activeHref));
+    const inGroup = new Set(group?.pages.map((p) => p.href) ?? [activeHref]);
+    return {
+      label: group?.label ?? entry.label,
+      tabs: entry.items.filter((i) => inGroup.has(i.href)),
+      activeHref,
+      back: { href: OWNER_SETTINGS_HREF, label: "All settings" },
+    };
+  }
+
+  if (entry.items.length < 2) return null;
+  return { label: entry.label, tabs: entry.items, activeHref };
+}
+
+/**
+ * The Settings landing page's cards: each group with the pages this reader
+ * can open, and nothing for a group with none. `visible` is the reader's own
+ * `ownerNavItemsFor`, so the page offers no card the rail would hide.
+ */
+export function ownerSettingsGroupsFor(
+  visible: NavItem[],
+): { key: string; label: string; pages: { item: NavItem; blurb: string }[] }[] {
+  const byHref = new Map(visible.map((i) => [i.href, i]));
+  return OWNER_SETTINGS_GROUPS.map((g) => ({
+    key: g.key,
+    label: g.label,
+    pages: g.pages.flatMap((p) => {
+      const item = byHref.get(p.href);
+      return item ? [{ item, blurb: p.blurb }] : [];
+    }),
+  })).filter((g) => g.pages.length > 0);
 }
 
 /**
@@ -1177,129 +1339,5 @@ export function platformNavSections(): NavGroup[] {
 export function navItemFor(pathname: string, items: NavItem[] = NAV_ITEMS): NavItem | undefined {
   return items
     .filter((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
-    .sort((a, b) => b.href.length - a.href.length)[0];
-}
-
-/* ══ THE MESSAGING CHANNEL SWITCHER ═══════════════════════════════════════════
- *
- * A second level of navigation, across the top of five pages, replacing the
- * rail as the way you move between them while you are in there.
- *
- * ── WHY THESE FIVE, AND WHY A SWITCHER ──────────────────────────────────────
- *
- * "Talking to customers" is one job in this product and five pages in this
- * console, and the rail files them under four different headings - Inbox and
- * WhatsApp leads under Conversations, Outreach under Pipeline, WhatsApp Setup
- * under Lead connectors, Import under Workspace. Each of those filings is
- * defensible on its own terms and the aggregate is not: somebody who has just
- * connected a WABA number and wants to see what arrived has to know that the
- * connecting and the seeing live in different sections of a two-dozen-item rail.
- *
- * A switcher is the right shape rather than a sixth rail section because these
- * five are ONE STACK SEEN FROM FIVE ANGLES, not five destinations. The
- * question is never "where is Outreach", it is "what is happening in messaging"
- * - and the answer moves between the setup, the queue and the ladder several
- * times in a sitting. Tabs make that movement one click and, more importantly,
- * make the set VISIBLE: you cannot discover a page you did not know to look
- * for, and a person who has only ever opened the Inbox now sees that a
- * WhatsApp queue and a workflow ladder exist at all.
- *
- * ── WHY IT IS DERIVED FROM THE RAIL AND NOT LISTED AGAIN ────────────────────
- *
- * Every channel below is an `href` that must already exist in OWNER_NAV_ITEMS,
- * and `messagingChannelsFor` filters through `ownerNavItemsFor` rather than
- * re-implementing the persona and module rules. Two lists of the same pages
- * with two copies of the visibility logic is how a marketing user ends up with
- * a tab that 403s: the rail would hide it and a hand-maintained tab strip
- * would not. There is a test asserting the containment both ways.
- *
- * That is also what makes it DYNAMIC. A recording-only tenant with no CRM
- * module keeps Workflows and loses the rest; a telecaller keeps the Inbox,
- * the WhatsApp queue and Workflows and never sees the WABA credentials or the
- * bulk importer. The strip re-skins itself per reader, and collapses to
- * nothing at all when only one channel survives - a one-tab tab strip is
- * furniture, not navigation.
- */
-export interface MessagingChannel {
-  key: string;
-  /** Short - the strip has to fit five of these on a phone. */
-  label: string;
-  href: string;
-  /** The one-line explanation under the strip when this channel is active. */
-  blurb: string;
-}
-
-export const MESSAGING_CHANNELS: MessagingChannel[] = [
-  {
-    key: "overview",
-    label: "Overview",
-    href: "/owner/inbox",
-    blurb: "Every thread with a customer, whichever channel it arrived on.",
-  },
-  {
-    key: "workflows",
-    label: "Workflows",
-    href: "/owner/outreach",
-    blurb: "The follow-up ladder - who is due a nudge, and what the next step is.",
-  },
-  {
-    key: "whatsapp",
-    label: "WhatsApp",
-    href: "/owner/whatsapp-leads",
-    blurb: "WhatsApp conversations waiting for someone to say whether they are a lead.",
-  },
-  {
-    key: "waba",
-    label: "WABA",
-    href: "/owner/messaging-setup",
-    blurb: "The WhatsApp Business Account behind the channel - numbers, provider and templates.",
-  },
-  {
-    key: "uploads",
-    label: "Uploads",
-    href: "/owner/import",
-    blurb: "Bring a list in from a CSV - contacts, accounts or deals.",
-  },
-];
-
-/**
- * The channels this reader may actually open, in strip order.
- *
- * Takes the same four arguments the rail does and applies them the same way,
- * because it applies them BY CALLING the rail. `callIntelEnabled` is passed
- * through for completeness even though no channel is gated on it today - a
- * future "Calls" channel would be, and a signature that already carries it
- * will not need every call site edited on the day that lands.
- */
-export function messagingChannelsFor(
-  role: OwnerRole,
-  crmPrimary = false,
-  crmEnabled = true,
-  callIntelEnabled = false,
-  entitlement?: Entitlement,
-): MessagingChannel[] {
-  const allowed = new Set(
-    ownerNavItemsFor(role, crmPrimary, crmEnabled, callIntelEnabled, entitlement).map(
-      (i) => i.href,
-    ),
-  );
-  return MESSAGING_CHANNELS.filter((c) => allowed.has(c.href));
-}
-
-/**
- * Which channel a URL is inside, or undefined when it is nowhere near the
- * messaging stack.
- *
- * Longest-prefix, for the same reason `navItemFor` is: a thread at
- * `/owner/inbox/<id>` is still the Overview channel, and a plain `startsWith`
- * on the shortest href would be right by accident here and wrong the first
- * time two channel hrefs share a prefix.
- */
-export function activeChannelFor(
-  pathname: string,
-  channels: MessagingChannel[] = MESSAGING_CHANNELS,
-): MessagingChannel | undefined {
-  return channels
-    .filter((c) => pathname === c.href || pathname.startsWith(`${c.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0];
 }

@@ -48,7 +48,7 @@ function PageTabSkeleton({ active, bar }: { active: boolean; bar: string }) {
 export default function ReportEditorLoading() {
   return (
     <>
-      <PageHeaderSkeleton context="Report builder" />
+      <PageHeaderSkeleton context="Custom reports" />
 
       <div className="-mt-2 flex flex-wrap items-center gap-3">
         {LINK_W.map((w, i) => (

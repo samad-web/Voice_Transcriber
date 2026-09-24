@@ -36,24 +36,17 @@ const COLUMNS: Col[] = [
 ];
 
 /**
- * Mirrors leads/page.tsx: the saved-views strip, then leads-table.tsx - a search
- * box beside a Stage pill group (All plus the six default stages) and a Sort
- * group (4), a row of four selects (Status, Contacted, Came in through, Assigned
- * to), and the 12-column table (COLUMNS). A Project pill row joins the filters
- * for a tenant that has a project catalogue.
+ * Mirrors leads/page.tsx: the saved-views strip, then leads-table.tsx - a
+ * search box, the Stage/Project/Status/Assigned-to selects beside the
+ * Advanced filters button, and the 12-column table (COLUMNS).
  */
 export default function LeadsLoading() {
   return (
     <>
-      <PageHeader title="All Leads" context="Pipeline" />
+      <PageHeader title="All leads" context="Leads" />
       <TabsSkeleton tabs={1} />
-      {/* The table's own filter row: stacked on a phone, a single line from lg. */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-5">
-        <Skeleton className="h-9.5 w-full rounded-sm lg:min-w-48 lg:flex-1" />
-        <ToolbarSkeleton pills={7} />
-        <ToolbarSkeleton pills={4} />
-      </div>
-      <ToolbarSkeleton selects={4} />
+      <Skeleton className="h-9.5 w-full rounded-sm sm:max-w-sm" />
+      <ToolbarSkeleton selects={4} pills={1} />
       <TableBlockSkeleton columns={COLUMNS} />
     </>
   );

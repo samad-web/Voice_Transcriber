@@ -14,6 +14,7 @@ import {
 import type { DbClient } from "./crm-dispatch";
 import { projectLeadToCrm } from "./crm-objects";
 import { detectProjectsForText } from "./projects";
+import { announce } from "./realtime";
 
 /**
  * Pull Meta lead-ads leads through a tenant's MCP server and put them on the
@@ -144,6 +145,8 @@ async function syncOne(
     if (outcome === "created") created += 1;
     else skipped += 1;
   }
+  // Each lead committed in its own transaction above; one signal covers them.
+  if (created > 0) announce(connection.org_id, "lead", "created");
 
   await getAdminPool().query(
     `UPDATE mcp_connections

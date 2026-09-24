@@ -136,7 +136,7 @@ function BodySkeleton({ kind }: { kind: Kind }) {
 export default function ReviewLoading() {
   return (
     <>
-      <PageHeader title="Review queue" context="Pipeline" />
+      <PageHeader title="Needs review" context="Leads" />
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           {PILL_W.map((width) => (

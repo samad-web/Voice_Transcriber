@@ -10,6 +10,7 @@ import {
   type TeamMember,
   type TeamRollup as TeamRollupData,
 } from "@/lib/team-rollup";
+import { inSpan } from "@/lib/dashboard-charts";
 import { formatValue } from "./types";
 
 /**
@@ -65,8 +66,8 @@ export function TeamRollup({
         <MonoLabel>Who is carrying what</MonoLabel>
         <p className="text-xs text-text-muted tabular-nums">
           {totals.people} {totals.people === 1 ? "person" : "people"} · {totals.openDeals} open{" "}
-          {totals.openDeals === 1 ? "deal" : "deals"} · {formatValue(totals.openValue)} · won in{" "}
-          {within}: {totals.wonDeals}
+          {totals.openDeals === 1 ? "deal" : "deals"} · {formatValue(totals.openValue)} · won{" "}
+          {inSpan(within)}: {totals.wonDeals}
         </p>
       </div>
 
@@ -154,7 +155,7 @@ function TeamRow({
           href={member.openDeals > 0 ? teamDealsHref(member) : undefined}
         />
         <Figure
-          label={`Won in ${within}`}
+          label={`Won ${inSpan(within)}`}
           value={`${member.wonDeals}`}
           detail={member.wonValue > 0 ? formatValue(member.wonValue) : undefined}
         />

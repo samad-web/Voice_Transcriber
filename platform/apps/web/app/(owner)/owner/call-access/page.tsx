@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerTry } from "@/lib/owner-context";
 import { CallAccessClient, type CallAccessData } from "./call-access-client";
 
-export const metadata: Metadata = { title: "Call access" };
+export const metadata: Metadata = { title: "Support access to calls" };
 
 /**
  * Who outside this business may look at its call recordings (migration 0122).
@@ -39,7 +39,7 @@ export default async function CallAccessPage() {
   return (
     <>
       <PageHeader
-        title="Call access"
+        title="Support access to calls"
         context="Settings"
         description="Nobody outside your team can open your call logs, recordings or transcripts without your approval."
       />

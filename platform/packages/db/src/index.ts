@@ -14,6 +14,7 @@ export * from "./ssrf-guard";
 export * from "./lead-routing";
 export * from "./crm-projection";
 export * from "./lead-stage-history";
+export * from "./lead-boards";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 

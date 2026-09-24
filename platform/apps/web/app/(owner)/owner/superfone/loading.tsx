@@ -12,7 +12,7 @@ import { TableBlockSkeleton } from "@/components/skeletons";
 export default function SuperfoneLoading() {
   return (
     <>
-      <PageHeader title="Superfone" context="Superfone" />
+      <PageHeader title="Office line (Superfone)" context="Conversations" />
 
       <Card className="space-y-1.5">
         <div className="flex flex-wrap items-center justify-between gap-2">

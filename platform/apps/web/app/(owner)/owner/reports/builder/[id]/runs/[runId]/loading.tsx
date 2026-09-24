@@ -12,7 +12,7 @@ import { CanvasTileSkeleton } from "@/components/skeletons";
 export default function RunDetailLoading() {
   return (
     <>
-      <PageHeader title="Report run" context="Report builder" />
+      <PageHeader title="Report run" context="Custom reports" />
       <div className="-mt-2 flex h-4 items-center gap-3">
         <Skeleton className="h-3 w-32" />
       </div>

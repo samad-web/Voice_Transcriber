@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Button, Card, FormField, Input, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { savePaymentSettingsAction, type PaymentSettings } from "./actions";
 
@@ -31,7 +32,7 @@ export function PaymentSettingsCard({
   /** Called after a successful save - the Integrations store's connect step moves on with it. */
   onSaved?: () => void;
 }) {
-  const [keyId, setKeyId] = useState(initial.keyId ?? "");
+  const [keyId, setKeyId] = useDraftState(initial.keyId ?? "");
   const [keySecret, setKeySecret] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [open, setOpen] = useState(!initial.keyId);

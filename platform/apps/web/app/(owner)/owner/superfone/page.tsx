@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
 
-export const metadata: Metadata = { title: "Superfone" };
+export const metadata: Metadata = { title: "Office line (Superfone)" };
 
 interface SourceRow {
   id: string;
@@ -77,7 +77,7 @@ export default async function SuperfonePage() {
     // panel, then a live check that the first call arrives, then back here.
     return (
       <>
-        <PageHeader title="Superfone" context="Superfone" />
+        <PageHeader title="Office line (Superfone)" context="Conversations" />
         <Card className="space-y-3">
           <MonoLabel>Connect Superfone</MonoLabel>
           <p className="max-w-prose text-sm leading-relaxed text-text-muted">
@@ -105,7 +105,7 @@ export default async function SuperfonePage() {
 
   return (
     <>
-      <PageHeader title="Superfone" context="Superfone" />
+      <PageHeader title="Office line (Superfone)" context="Conversations" />
 
       <Card className="space-y-1.5">
         <div className="flex flex-wrap items-center justify-between gap-2">

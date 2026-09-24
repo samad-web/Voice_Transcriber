@@ -1,6 +1,7 @@
 import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { AUTH_EVENT_RETENTION_DAYS } from "@aura/shared";
+import { announce } from "./realtime";
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -76,6 +77,7 @@ export async function reapExpired(): Promise<number> {
   let reaped = 0;
   let kept = 0;
   for (const org of orgs) {
+    let removed = 0;
     reaped += await withOrgContext(org.id, async (client) => {
       const { rows: expired } = await client.query(
         `SELECT c.id, r.s3_key FROM calls c
@@ -189,8 +191,16 @@ export async function reapExpired(): Promise<number> {
         );
       }
 
+      removed =
+        calls.reaped +
+        (dormant.rowCount ?? 0) +
+        (dormantDeals.rowCount ?? 0) +
+        (dormantContacts.rowCount ?? 0);
       return calls.reaped;
     });
+    // After the commit. Retention removes rows from boards and lists people
+    // may have open; without this they would linger until the next navigation.
+    if (removed > 0) announce(org.id, "lead", "deleted");
   }
   if (reaped > 0) console.log(`reaper: removed ${reaped} expired call(s)`);
   if (kept > 0) console.warn(`reaper: kept ${kept} expired call(s) whose recording could not be deleted; retrying next run`);

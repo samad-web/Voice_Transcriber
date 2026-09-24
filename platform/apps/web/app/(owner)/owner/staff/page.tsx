@@ -8,10 +8,10 @@ import { PerformanceTab } from "./performance-tab";
 import { RolesTab } from "./roles-tab";
 import { TeamTab } from "./team-tab";
 
-/** "Staff" to an owner, "Team" to a manager - whatever the rail called it (nav.ts). */
+/** Whatever the rail calls it (nav.ts) - one name for every persona now. */
 async function sectionName(): Promise<string> {
   const owner = await getOwner();
-  return owner ? ownerNavLabel("/owner/staff", owner.membership.ownerRole, "Staff") : "Staff";
+  return owner ? ownerNavLabel("/owner/staff", owner.membership.ownerRole, "Team & permissions") : "Team & permissions";
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -71,7 +71,7 @@ export default async function StaffPage({
 
   return (
     <>
-      <PageHeader title={ownerNavLabel("/owner/staff", role, "Staff")} context="Workspace" />
+      <PageHeader title={ownerNavLabel("/owner/staff", role, "Team & permissions")} context="Settings" />
 
       <nav className="flex flex-wrap gap-1" aria-label="Sections">
         {TABS.map((t) => {

@@ -44,7 +44,7 @@ function HandsetRowSkeleton({ i }: { i: number }) {
 export default function DevicesLoading() {
   return (
     <>
-      <PageHeader title="Handsets" context="Settings" />
+      <PageHeader title="Phones" context="Settings" />
 
       <div className="mt-6 space-y-6">
         <Card>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState, useServerState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -50,19 +51,19 @@ export function QuotationDetail({
   const router = useRouter();
   const alert = useAlert();
 
-  const [quotation, setQuotation] = useState(initialQuotation);
-  const [status, setStatus] = useState<QuotationStatus>(initialQuotation.status);
-  const [validUntil, setValidUntil] = useState(
+  const [quotation, setQuotation] = useServerState(initialQuotation);
+  const [status, setStatus] = useDraftState<QuotationStatus>(initialQuotation.status);
+  const [validUntil, setValidUntil] = useDraftState(
     initialQuotation.valid_until ? initialQuotation.valid_until.slice(0, 10) : "",
   );
-  const [notes, setNotes] = useState(initialQuotation.notes ?? "");
+  const [notes, setNotes] = useDraftState(initialQuotation.notes ?? "");
   const [headerPending, startHeader] = useTransition();
 
   const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
-  const [discountType, setDiscountType] = useState<"none" | "percent" | "amount">(
+  const [discountType, setDiscountType] = useDraftState<"none" | "percent" | "amount">(
     initialQuotation.discount_type ?? "none",
   );
-  const [discountValue, setDiscountValue] = useState(
+  const [discountValue, setDiscountValue] = useDraftState(
     initialQuotation.discount_value ? String(Number(initialQuotation.discount_value)) : "0",
   );
   const [itemsPending, startItems] = useTransition();

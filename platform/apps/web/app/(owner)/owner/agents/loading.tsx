@@ -54,7 +54,7 @@ function AgentSectionSkeleton({ cards, start }: { cards: number; start: number }
 export default function AgentsLoading() {
   return (
     <>
-      <PageHeader title="AI Agent Studio" context="Conversations" />
+      <PageHeader title="AI assistants" context="Settings" />
 
       <Card className="space-y-2">
         <Skeleton className="h-3 w-28" />

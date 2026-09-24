@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import {
   Button,
@@ -16,6 +17,9 @@ import {
   useAlert,
 } from "@aura/ui";
 import { Time } from "@/components/org-time";
+import { fetchOwnerCallAction } from "../actions";
+import { CallDrawer } from "../calls-explorer";
+import type { OwnerCall } from "../../types";
 import {
   createLeadFromCallAction,
   dismissCallAction,
@@ -80,11 +84,39 @@ export function TriageQueue({
   counts: TriageCounts;
   status: "unmatched" | "dismissed";
 }) {
-  const [calls, setCalls] = useState(initial);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // Follows the server as the queue changes elsewhere - held while a row is
+  // mid-action so a refresh cannot put back the row just handled.
+  const [calls, setCalls] = useServerState(initial, pendingId !== null);
   const [linking, setLinking] = useState<UnmatchedCall | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<OwnerCall | null>(null);
   const [, startTransition] = useTransition();
   const alert = useAlert();
+
+  /**
+   * Open the call's own detail view right here - the same drawer the call log
+   * uses - rather than sending the reader to `/owner/calls` to find it. This
+   * queue's calls have no lead yet, so most are off the log's default filters
+   * entirely; navigating there used to land on the unfiltered list with no
+   * indication which row, if any, was the one just triaged.
+   */
+  const openCall = (id: string): void => {
+    setOpeningId(id);
+    startTransition(async () => {
+      const result = await fetchOwnerCallAction(id);
+      setOpeningId(null);
+      if (result.error || !result.detail) {
+        await alert({
+          title: "Couldn't open the call",
+          body: result.error ?? "Unknown error",
+          tone: "danger",
+        });
+        return;
+      }
+      setViewing(result.detail.call);
+    });
+  };
 
   /** Drop the row, run the action, put it back if the server said no. */
   const act = (
@@ -219,12 +251,14 @@ export function TriageQueue({
                     </Button>
                   </>
                 )}
-                <Link
-                  href={`/owner/calls?q=${encodeURIComponent(call.remote_name ?? "")}`}
-                  className="text-xs text-text-muted underline underline-offset-2 hover:text-text"
+                <button
+                  type="button"
+                  disabled={openingId === call.id}
+                  onClick={() => openCall(call.id)}
+                  className="text-xs text-text-muted underline underline-offset-2 hover:text-text disabled:opacity-60"
                 >
-                  Open call log
-                </Link>
+                  {openingId === call.id ? "Opening…" : "Open call log"}
+                </button>
               </div>
             </div>
           </Card>
@@ -241,6 +275,11 @@ export function TriageQueue({
           }}
         />
       ) : null}
+
+      {/* No disposition vocabulary and no pointer back to this queue - a call
+          here has no lead yet, and a link back to the page it is already on
+          would be circular. */}
+      <CallDrawer call={viewing} onClose={() => setViewing(null)} dispositions={[]} triageHref={null} />
     </>
   );
 }

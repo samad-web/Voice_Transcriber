@@ -32,7 +32,7 @@ function OptionRow({ label, options }: { label: string; options: readonly string
 export default function ProductivityLoading() {
   return (
     <>
-      <PageHeader title="Productivity" context="Team" />
+      <PageHeader title="Team activity" context="Reports" />
 
       <DateRangeBarSkeleton />
       <DateRangeSummarySkeleton />

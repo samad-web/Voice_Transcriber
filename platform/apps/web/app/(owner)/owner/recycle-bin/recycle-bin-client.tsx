@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import { Undo2 } from "lucide-react";
 import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { RECYCLE_BIN, daysUntilPurge } from "@aura/shared";
@@ -16,8 +17,8 @@ import { restoreAction, type BinItem, type BinResponse } from "./actions";
  * are looking for is still here, and the answer is a number next to it.
  */
 export function RecycleBinClient({ data }: { data: BinResponse }) {
-  const [items, setItems] = useState(data.items);
   const [pending, startTransition] = useTransition();
+  const [items, setItems] = useServerState(data.items, pending);
   const [busy, setBusy] = useState<string | null>(null);
   const alert = useAlert();
   const toast = useToast();

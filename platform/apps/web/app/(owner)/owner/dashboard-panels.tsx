@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, MonoLabel, RowHint, StateChip, StatusChip, STATE_TONE } from "@aura/ui";
 import type { ConsoleState } from "@aura/ui";
+import { todayIn } from "@aura/shared";
 import { DateRangeBar, DateRangeSummary } from "@/components/date-range-bar";
 import { pointsDelta, rateText, share } from "@/lib/dashboard-charts";
 import { rangePresets, type DateWindow } from "@/lib/date-range";
@@ -59,7 +60,13 @@ export function WindowPicker({
 }) {
   return (
     <>
-      <DateRangeBar path="/owner" presets={rangePresets("/owner", window)} from={from} to={to} />
+      <DateRangeBar
+        path="/owner"
+        presets={rangePresets("/owner", window)}
+        from={from}
+        to={to}
+        today={todayIn(zone)}
+      />
       <DateRangeSummary
         from={from}
         to={to}

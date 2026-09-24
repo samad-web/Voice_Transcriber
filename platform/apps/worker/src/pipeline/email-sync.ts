@@ -15,6 +15,7 @@ import {
   ProviderHttpError,
   type NormalisedMessage,
 } from "./email-providers";
+import { announce } from "./realtime";
 
 /**
  * Pull each connected mailbox onto the interaction timeline (PRD Layer 1).
@@ -306,6 +307,8 @@ export async function syncAllMailboxes(fetchImpl: typeof fetch = fetch): Promise
         syncConnection(client as DbClient, connection, fetchImpl),
       );
       written += outcome.written;
+      // Emails land on contact and deal timelines - after the commit.
+      if (outcome.written > 0) announce(connection.org_id, "interaction", "created");
       if (outcome.reason) {
         console.log(`mail sync ${connection.account_email}: ${outcome.reason}`);
       } else if (outcome.written > 0) {

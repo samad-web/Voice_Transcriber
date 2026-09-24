@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 import { TranscriptionClient } from "./transcription-client";
 
-export const metadata: Metadata = { title: "Transcription" };
+export const metadata: Metadata = { title: "Transcripts" };
 
 /** The slice of `GET /v1/org` this page reads. Snake_case, straight from the row. */
 interface OrgTranscription {
@@ -49,7 +49,7 @@ export default async function TranscriptionPage() {
 
   return (
     <>
-      <PageHeader title="Transcription" context="Settings" />
+      <PageHeader title="Transcripts" context="Settings" />
 
       {!orgResult.ok ? (
         <LoadFailure what="transcription settings" failure={orgResult} />

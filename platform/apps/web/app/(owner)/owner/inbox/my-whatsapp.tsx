@@ -8,7 +8,6 @@ import {
   Dialog,
   ErrorBanner,
   FormField,
-  Input,
   MonoLabel,
   RowHint,
   StatusChip,
@@ -16,6 +15,7 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { PhoneInput, usePhoneCheck } from "@/components/phone-input";
 import {
   disconnectPersonalWhatsAppAction,
   personalWhatsAppStatusAction,
@@ -193,6 +193,10 @@ function PairDialog({
   onLinked: () => void;
 }) {
   const [phone, setPhone] = useState("");
+  const phoneCheck = usePhoneCheck();
+  // Required, and valid for its country: this is the number WhatsApp itself
+  // will be asked to link, so a wrong one fails on the phone, not here.
+  const phoneOk = phoneCheck(phone, { required: true }).ok;
   const [method, setMethod] = useState<"code" | "qr">("code");
   const [pairing, setPairing] = useState<PersonalWhatsAppPairing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -246,6 +250,7 @@ function PairDialog({
   }, [onLinked, stopPolling, toast]);
 
   const start = async () => {
+    if (!phoneOk) return;
     setBusy(true);
     setError(null);
     const res = await startPersonalWhatsAppAction({ phone, method });
@@ -280,13 +285,9 @@ function PairDialog({
               label="Your WhatsApp number"
               name="phone"
               required
-              hint="The number on the phone you are about to link, with the country code."
+              hint="The number on the phone you are about to link."
             >
-              <Input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="919789961631"
-              />
+              <PhoneInput value={phone} onChange={(value) => setPhone(value)} />
             </FormField>
 
             <FormField label="How would you like to link it" name="method">
@@ -328,7 +329,7 @@ function PairDialog({
               is no appeal if that happens.
             </RowHint>
 
-            <Button onClick={() => void start()} loading={busy} disabled={!phone.trim()}>
+            <Button onClick={() => void start()} loading={busy} disabled={!phoneOk}>
               Continue
             </Button>
           </>

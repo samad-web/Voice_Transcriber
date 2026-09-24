@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Hourglass } from "lucide-react";
 import { Button, useToast } from "@aura/ui";
 import { MAX_STALE_AFTER_DAYS, MIN_STALE_AFTER_DAYS } from "@/lib/deal-staleness";
@@ -25,7 +26,7 @@ export function StaleThreshold({
   canEdit: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(days));
+  const [draft, setDraft] = useDraftState(String(days));
   const [pending, startTransition] = useTransition();
   const input = useRef<HTMLInputElement>(null);
   const toast = useToast();

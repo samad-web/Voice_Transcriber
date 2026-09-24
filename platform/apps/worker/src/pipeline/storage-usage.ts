@@ -1,5 +1,6 @@
 import { getAdminPool } from "@aura/db";
 import { formatBytes, storageAlertLevel, storagePercent, type StorageSummary } from "@aura/shared";
+import { announce } from "./realtime";
 
 /**
  * How much each tenant is storing (doc 27 §6.2, migration 0128).
@@ -194,6 +195,8 @@ export async function sweepStorageUsage(now: Date = new Date()): Promise<{ orgs:
         ],
       );
       alerts += rowCount ?? 0;
+      // Autocommitted on the pool, so the row is already visible to the bell.
+      if ((rowCount ?? 0) > 0) announce(row.org_id, "notification", "created");
     }
     await pool.query(`UPDATE org_storage_usage SET last_quota_alert_pct = $2 WHERE org_id = $1`, [row.org_id, level]);
   }

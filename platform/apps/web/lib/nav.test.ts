@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { OwnerRole } from "@aura/shared";
 import {
-  MESSAGING_CHANNELS,
   NAV_ITEMS,
   OWNER_NAV_ITEMS,
+  OWNER_SETTINGS_GROUPS,
+  OWNER_SETTINGS_HREF,
   PLATFORM_NAV_SECTIONS,
-  activeChannelFor,
-  messagingChannelsFor,
   ownerNavItemsFor,
   ownerNavLabel,
   ownerNavSectionsFor,
@@ -49,8 +48,9 @@ describe("ownerNavItemsFor", () => {
       ]);
       expect([promoted, at(promoted) < at("/owner/leads")]).toEqual([promoted, true]);
     }
-    // Reports rides with them: it reads the CRM object model too.
-    expect(at("/owner/reports")).toBeLessThan(at("/owner/board"));
+    // Reports does NOT ride with them any more: the section also holds the
+    // call-log reports, which a tenant without the CRM still has.
+    expect(at("/owner/reports")).toBeGreaterThan(at("/owner/board"));
   });
 
   it("never removes the legacy Board/All Leads pair - they stay present, just lower", () => {
@@ -270,12 +270,14 @@ describe("ownerNavItemsFor - the client's feature switches", () => {
     expect(items).not.toContain("/owner/calls");
   });
 
-  it("drops a heading whose every page was switched off", () => {
-    // Sales is Products, Quotations and Invoices. With Products off the whole
-    // group goes, rather than leaving a heading over nothing.
+  it("drops a section whose every page was switched off", () => {
+    // Sales is Deals, Quotes, Invoices and the Price list. With Deals and the
+    // Price list off (and Quotes and Invoices going with the Price list they
+    // depend on) the whole section goes, rather than leaving a rail entry
+    // over nothing.
     const groups = ownerNavSectionsFor("owner", false, true, true, {
       modules: ["aura", "crm", "call_intel", "wasi"],
-      features: { products: false },
+      features: { deals: false, products: false },
     });
     expect(groups.map((g) => g.key)).not.toContain("sales");
   });
@@ -310,13 +312,36 @@ describe("ownerNavSectionsFor", () => {
     expect(first.items.map((i) => i.href)).toEqual(["/owner"]);
   });
 
-  it("groups the lead connectors together, away from the rest of the settings", () => {
-    // The example the grouping was asked for: an ad platform, a messaging
-    // provider and the source catalogue all answer "where do leads come from".
-    const connectors = groups("owner", false, true, true).find((g) => g.key === "connectors");
-    expect(connectors?.label).toBe("Lead connectors");
-    expect(connectors?.items.map((i) => i.href)).toContain("/owner/meta-ads");
-    expect(connectors?.items.map((i) => i.href)).toContain("/owner/messaging-setup");
+  it("keeps the lead connectors together inside Settings", () => {
+    // An ad platform, a messaging provider, the source catalogue and the
+    // routing rules all answer "how do leads get in, and to whom" - one
+    // settings group, so they are one set of tabs.
+    const intake = OWNER_SETTINGS_GROUPS.find((g) => g.key === "intake");
+    expect(intake?.label).toBe("Getting leads in");
+    expect(intake?.pages.map((p) => p.href)).toEqual([
+      "/owner/lead-sources",
+      "/owner/meta-ads",
+      "/owner/messaging-setup",
+      "/owner/lead-routing",
+    ]);
+  });
+
+  it("files every settings page in exactly one settings group", () => {
+    // The Settings landing page and the tabs on a settings page are both drawn
+    // from the groups. A settings page in none of them would have no card and
+    // no tabs; one in two would be a card twice.
+    const inGroups = OWNER_SETTINGS_GROUPS.flatMap((g) => g.pages.map((p) => p.href));
+    expect(new Set(inGroups).size).toBe(inGroups.length);
+    const settingsPages = OWNER_NAV_ITEMS.map((i) => i.href).filter(
+      (href) => ownerSectionOf(href) === "settings" && href !== OWNER_SETTINGS_HREF,
+    );
+    expect([...inGroups].sort()).toEqual([...settingsPages].sort());
+  });
+
+  it("gives every settings page a description for its card", () => {
+    for (const page of OWNER_SETTINGS_GROUPS.flatMap((g) => g.pages)) {
+      expect([page.href, page.blurb.length > 10]).toEqual([page.href, true]);
+    }
   });
 
   it("drops empty groups rather than rendering a heading over nothing", () => {
@@ -351,13 +376,17 @@ describe("ownerNavSectionsFor", () => {
   it("files pages under the heading they were placed under", () => {
     const sectionOf = (href: string) =>
       groups("owner", false, true, true).find((g) => g.items.some((i) => i.href === href))?.key;
-    expect(sectionOf("/owner/board")).toBe("pipeline");
-    expect(sectionOf("/owner/contacts")).toBe("crm");
+    expect(sectionOf("/owner/board")).toBe("leads");
+    expect(sectionOf("/owner/whatsapp-leads")).toBe("leads");
+    expect(sectionOf("/owner/contacts")).toBe("customers");
     expect(sectionOf("/owner/inbox")).toBe("conversations");
+    expect(sectionOf("/owner/superfone")).toBe("conversations");
     expect(sectionOf("/owner/invoices")).toBe("sales");
-    expect(sectionOf("/owner/reports/sla")).toBe("insights");
-    expect(sectionOf("/owner/lead-sources")).toBe("connectors");
-    expect(sectionOf("/owner/recycle-bin")).toBe("workspace");
+    expect(sectionOf("/owner/reports/sla")).toBe("reports");
+    expect(sectionOf("/owner/productivity")).toBe("reports");
+    expect(sectionOf("/owner/lead-sources")).toBe("settings");
+    expect(sectionOf("/owner/recycle-bin")).toBe("settings");
+    expect(sectionOf("/owner/notifications")).toBe("account");
   });
 });
 
@@ -497,15 +526,18 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
-  it("gives the Staff page one rail entry, named for who is reading", () => {
+  it("gives the team page one entry and one name, whoever is reading", () => {
     // /owner/team only redirects into Staff; a second entry for it meant a
-    // manager saw two links to one page.
+    // manager saw two links to one page. It was then "Staff" to an owner and
+    // "Team" to a manager - one page, two names - and is now one name.
     const staff = (role: "owner" | "manager") =>
       ownerNavItemsFor(role, false, true, true).filter((i) => i.href === "/owner/staff" || i.href === "/owner/team");
-    expect(staff("owner").map((i) => [i.href, i.label, i.title])).toEqual([["/owner/staff", "Staff", "Staff"]]);
-    expect(staff("manager").map((i) => [i.href, i.label, i.title])).toEqual([["/owner/staff", "Team", "Team"]]);
-    expect(ownerNavLabel("/owner/staff", "owner", "?")).toBe("Staff");
-    expect(ownerNavLabel("/owner/staff", "manager", "?")).toBe("Team");
+    for (const role of ["owner", "manager"] as const) {
+      expect(staff(role).map((i) => [i.href, i.label, i.title])).toEqual([
+        ["/owner/staff", "Team & permissions", "Team & permissions"],
+      ]);
+      expect(ownerNavLabel("/owner/staff", role, "?")).toBe("Team & permissions");
+    }
     expect(ownerNavLabel("/owner/nowhere", "manager", "Fallback")).toBe("Fallback");
   });
 
@@ -531,103 +563,6 @@ describe("the owner personas (migration 0079)", () => {
         expect([role, href, nav(role).includes(href)]).toEqual([role, href, true]);
       }
     }
-  });
-});
-
-/**
- * The messaging channel switcher (Overview | Workflows | WhatsApp | WABA |
- * Uploads).
- *
- * The whole risk this suite exists for is DRIFT. The switcher is a second
- * navigation over pages the rail already lists, and the failure it invites is
- * the two disagreeing: a tab offered to somebody the rail correctly hides,
- * which is a link straight into a 403. `messagingChannelsFor` is built by
- * filtering `ownerNavItemsFor` for exactly that reason, and these assertions
- * hold it to that rather than to a hand-written expectation of who sees what.
- */
-describe("messagingChannelsFor", () => {
-  const keys = (
-    role: Parameters<typeof messagingChannelsFor>[0],
-    crmEnabled?: boolean,
-  ) => messagingChannelsFor(role, false, crmEnabled).map((c) => c.key);
-
-  it("never offers a channel the rail hides from that persona", () => {
-    for (const role of OwnerRole.options) {
-      for (const crmEnabled of [true, false]) {
-        const railed = new Set(hrefs(role, false, crmEnabled));
-        const offered = messagingChannelsFor(role, false, crmEnabled).map((c) => c.href);
-        expect([role, crmEnabled, offered.filter((h) => !railed.has(h))]).toEqual([
-          role,
-          crmEnabled,
-          [],
-        ]);
-      }
-    }
-  });
-
-  it("points every channel at a page that actually exists in the nav", () => {
-    // A typo'd href would silently vanish from the strip for every persona
-    // rather than 404, which is the failure mode hardest to notice.
-    const known = new Set(OWNER_NAV_ITEMS.map((i) => i.href));
-    for (const channel of MESSAGING_CHANNELS) {
-      expect([channel.key, known.has(channel.href)]).toEqual([channel.key, true]);
-    }
-  });
-
-  it("gives an owner the full stack", () => {
-    expect(keys("owner")).toEqual(["overview", "workflows", "whatsapp", "waba", "uploads"]);
-  });
-
-  it("re-skins itself per persona - a telecaller gets the queues, not the credentials", () => {
-    // The switcher's "dynamic" half. A telecaller works threads; they do not
-    // hold the WABA credentials and do not bulk-load lists.
-    expect(keys("telecaller")).toEqual(["overview", "workflows", "whatsapp"]);
-    // Marketing is the mirror image: they connect the channel and load the
-    // lists, and they are deliberately kept out of one-to-one correspondence
-    // with named customers.
-    expect(keys("marketing")).toEqual(["workflows", "waba", "uploads"]);
-  });
-
-  it("drops the CRM-gated channels for a tenant with no CRM module", () => {
-    // Overview, WhatsApp and Uploads read the CRM object model and are on
-    // CRM_GATED_HREFS. Workflows and WABA are not, and deliberately: outreach
-    // is core Aura, and connecting a WhatsApp number is how leads ARRIVE -
-    // gating it behind the CRM would leave a recording-only tenant unable to
-    // plug in the channel that feeds them.
-    expect(keys("owner", false)).toEqual(["workflows", "waba"]);
-  });
-
-  it("falls below two channels exactly where the strip must disappear", () => {
-    // ChannelSwitcher renders nothing under two - a one-tab tab strip is a
-    // highlighted pill nobody can click off. The combination that reaches it
-    // is a telecaller on a tenant with no CRM: the queues are gated away and
-    // the WABA credentials were never theirs.
-    expect(keys("telecaller", false)).toEqual(["workflows"]);
-  });
-});
-
-describe("activeChannelFor", () => {
-  it("matches a channel's own page", () => {
-    expect(activeChannelFor("/owner/inbox")?.key).toBe("overview");
-    expect(activeChannelFor("/owner/messaging-setup")?.key).toBe("waba");
-  });
-
-  it("keeps a nested route inside its channel", () => {
-    // Longest-prefix, so opening one thread does not blank the strip.
-    expect(activeChannelFor("/owner/inbox/abc-123")?.key).toBe("overview");
-  });
-
-  it("does not match a sibling route that merely shares a prefix", () => {
-    expect(activeChannelFor("/owner/inbox-archive")).toBeUndefined();
-    expect(activeChannelFor("/owner/leads")).toBeUndefined();
-  });
-
-  it("matches only within the channels it was given", () => {
-    // The strip highlights against what this reader can see, not against the
-    // full list - otherwise a persona without Uploads would land on /owner/import
-    // (via a stale link) and see a tab strip pointing at a tab it does not draw.
-    const forTelecaller = messagingChannelsFor("telecaller");
-    expect(activeChannelFor("/owner/import", forTelecaller)).toBeUndefined();
   });
 });
 
@@ -722,14 +657,14 @@ describe("the owner personas (migration 0079)", () => {
     }
   });
 
-  it("shows Handsets to every persona, and offers it exactly once", () => {
+  it("shows Phones (was Handsets) to every persona, and offers it exactly once", () => {
     // Two entries once carried this label - a read-only fleet view at
     // /owner/handsets and the pairing surface at /owner/devices - and the rail
     // showed both, in the same section, under the same name. /owner/devices
     // won; /owner/handsets is now a redirect and must not be in the rail.
     expect(nav("owner")).toContain("/owner/devices");
     expect(nav("owner")).not.toContain("/owner/handsets");
-    expect(OWNER_NAV_ITEMS.filter((i) => i.label === "Handsets")).toHaveLength(1);
+    expect(OWNER_NAV_ITEMS.filter((i) => i.label === "Phones")).toHaveLength(1);
 
     // Every persona, deliberately - the surviving page is NOT read-only, and
     // that is precisely why the restriction lifted. Pairing and retiring are

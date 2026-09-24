@@ -15,7 +15,7 @@ import {
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
 import type { ProductivityResponse, TelecallerProductivityRow } from "./types";
 
-export const metadata: Metadata = { title: "Productivity" };
+export const metadata: Metadata = { title: "Team activity" };
 
 const SORTS = [
   { key: "calls", label: "Calls" },
@@ -91,18 +91,19 @@ export default async function ProductivityPage({
 
   return (
     <>
-      <PageHeader title="Productivity" context="Team" />
+      <PageHeader title="Team activity" context="Reports" />
 
-      {/* Range and sort as links, not a client component: the API already
-          sorts, so shipping JavaScript to re-sort a list the server ordered
-          would be a bundle for nothing. The range is the shared control; a
-          new range keeps the sort, and a new sort keeps the range. */}
+      {/* Sort stays a plain link, not client state: the API already sorts, so
+          shipping JavaScript to re-sort a list the server ordered would be a
+          bundle for nothing. The range is the shared control; a new range
+          keeps the sort, and a new sort keeps the range. */}
       <DateRangeBar
         path="/owner/productivity"
         presets={rangePresets("/owner/productivity", window, { keep: { sort } })}
         from={shown.from}
         to={shown.to}
         keep={{ sort }}
+        today={todayIn(zone)}
       />
       {invalid ? <DateRangeNotice fallbackDays={DEFAULT_RANGE_DAYS} /> : null}
       <DateRangeSummary from={shown.from} to={shown.to} zone={zone} />

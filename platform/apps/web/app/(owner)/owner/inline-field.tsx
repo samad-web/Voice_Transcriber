@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Check, Loader2, Pencil } from "lucide-react";
 
 /**
@@ -36,7 +37,7 @@ export function InlineField({
   readOnlyReason?: string;
 }) {
   const [current, setCurrent] = useState(value);
-  const [draft, setDraft] = useState(value ?? "");
+  const [draft, setDraft] = useDraftState(value ?? "");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);

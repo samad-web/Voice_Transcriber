@@ -2,11 +2,11 @@ import { Card, Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { FormCardSkeleton } from "@/components/skeletons";
 
-/** Mirrors account/time/page.tsx: the clock card (a large time over two short lists), then the picker card. */
+/** Mirrors account/time/page.tsx: the clock card (a large time over two short lists), the picker card, then the location card. */
 export default function TimeZoneLoading() {
   return (
     <>
-      <PageHeader title="Time zone" context="Account" />
+      <PageHeader title="Time & location" context="Account" />
       <Card className="space-y-4">
         <Skeleton className="h-3 w-40" />
         <Skeleton className="h-9 w-32" />
@@ -23,6 +23,7 @@ export default function TimeZoneLoading() {
         </div>
       </Card>
       <FormCardSkeleton fields={1} />
+      <FormCardSkeleton fields={2} />
     </>
   );
 }

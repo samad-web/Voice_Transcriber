@@ -11,7 +11,7 @@ import { loadSavedViews } from "../saved-views/load";
 import type { Lead, Project, Stage } from "../types";
 import { LeadsTable, type TelecallerOption } from "./leads-table";
 
-export const metadata: Metadata = { title: "All Leads" };
+export const metadata: Metadata = { title: "All leads" };
 
 const PAGE_SIZE = 50;
 
@@ -21,6 +21,8 @@ interface ListResponse {
   limit: number;
   offset: number;
   stages: Stage[];
+  /** Every lead board with its columns (0136). */
+  boards?: { id: string | null; name: string; stages: Stage[] }[];
 }
 
 /**
@@ -46,6 +48,7 @@ export default async function LeadsPage({
   // and the bucket bounds - this page never computes an age.
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
   for (const key of [
+    "boardId",
     "stage",
     "status",
     "q",
@@ -87,7 +90,7 @@ export default async function LeadsPage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="All Leads" context="Pipeline" />
+        <PageHeader title="All leads" context="Leads" />
         <LoadFailure what="leads" failure={result} />
       </>
     );
@@ -96,7 +99,7 @@ export default async function LeadsPage({
 
   return (
     <>
-      <PageHeader title="All Leads" context="Pipeline" />
+      <PageHeader title="All leads" context="Leads" />
       <SavedViewsBar list="leads" views={views} current={viewQueryFrom("leads", sp)} allLabel="All leads" />
       {/* useSearchParams needs a Suspense boundary to keep this page static-shell
           renderable; the table is the only client piece on the page. */}
@@ -104,6 +107,7 @@ export default async function LeadsPage({
         <LeadsTable
           leads={data.leads}
           stages={data.stages}
+          boards={data.boards ?? []}
           projects={projects?.projects ?? []}
           total={data.total}
           limit={data.limit ?? PAGE_SIZE}

@@ -11,6 +11,7 @@ import { DUE_WINDOWS, dueWindowQuery, prioritise, workspaceToday, type DueWindow
 import { BulkActionBar } from "../bulk/bulk-action-bar";
 import { useRowSelection } from "../bulk/use-row-selection";
 import { fetchTasksAction, updateTaskAction } from "../crm-actions";
+import { NewTaskButton, useAssigneeOptions } from "../task-composer";
 import { TaskRow } from "../task-row";
 import type { Task } from "../types";
 
@@ -24,6 +25,9 @@ import type { Task } from "../types";
  * one filter never becomes page 3 of another.
  */
 const PAGE_SIZE = 50;
+
+/** `who` values that are a word rather than a user id. */
+const WHO_WORDS = new Set(["mine", "unassigned", "awaiting"]);
 
 export interface TaskFilters {
   q?: string;
@@ -56,6 +60,7 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
   const [today, setToday] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [, startTransition] = useTransition();
+  const assignees = useAssigneeOptions();
   const selection = useRowSelection(selecting && tasks ? tasks.map((t) => t.id) : []);
 
   const { q, status = "open", who = "", due = "", priority = "", sort = "due" } = filters;
@@ -70,7 +75,8 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
       q: q || undefined,
       mine: who === "mine",
       unassigned: who === "unassigned",
-      assigneeUserId: who && who !== "mine" && who !== "unassigned" ? who : undefined,
+      awaiting: who === "awaiting",
+      assigneeUserId: who && !WHO_WORDS.has(who) ? who : undefined,
       priority: priority === "low" || priority === "normal" || priority === "high" ? priority : undefined,
       sort: sort === "created" || sort === "priority" ? sort : "due",
       limit: PAGE_SIZE,
@@ -113,6 +119,18 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
     });
   };
 
+  // A row came back changed (reassigned, accepted, declined). On the
+  // "Waiting for my answer" view an answered task no longer belongs, so it
+  // leaves; everywhere else the API's copy replaces ours.
+  const replace = (next: Task) => {
+    if (who === "awaiting" && next.my_status !== "pending") {
+      setTasks((prev) => (prev ?? []).filter((t) => t.id !== next.id));
+      setTotal((n) => Math.max(0, n - 1));
+      return;
+    }
+    setTasks((prev) => (prev ?? []).map((t) => (t.id === next.id ? next : t)));
+  };
+
   // The default "due" sort is what-to-do-next order (next-actions.ts); any
   // other sort is the server's order, untouched.
   const ordered = tasks && today ? (sort === "due" && status === "open" ? prioritise(tasks, today) : tasks) : [];
@@ -125,6 +143,10 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
 
   return (
     <div className="space-y-3">
+      {/* Creating a task lived only on a contact, company or deal; the page
+          named Tasks had no way to add one. A task made here is not tied to a
+          record - the API allows that, and "remind Priya to send the brochure"
+          does not always have a contact yet. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-text-muted tabular-nums" aria-live="polite">
           {tasks === null
@@ -133,6 +155,7 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
               ? `${first}-${first + ordered.length - 1} of ${total} tasks`
               : `${total} task${total === 1 ? "" : "s"}`}
         </p>
+        <div className="flex flex-wrap items-center gap-2">
         {ordered.length > 0 ? (
           <Button
             type="button"
@@ -148,6 +171,19 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
             {selecting ? "Done selecting" : "Select"}
           </Button>
         ) : null}
+          <NewTaskButton
+            assignees={assignees}
+            placeholder="e.g. Send the brochure to the Mehta family"
+            onCreated={(task) => {
+              // Shown straight away on the open list; any other view (done, a
+              // different person) picks it up on its next load.
+              if (status === "open" && who !== "awaiting") {
+                setTasks((prev) => [task, ...(prev ?? [])]);
+                setTotal((n) => n + 1);
+              }
+            }}
+          />
+        </div>
       </div>
 
       {error ? <ErrorBanner>{error}</ErrorBanner> : null}
@@ -165,6 +201,8 @@ export function TaskBrowser({ filters, offset }: { filters: TaskFilters; offset:
               task={task}
               today={today}
               showAssignee
+              assignees={assignees}
+              onChanged={replace}
               onComplete={complete}
               selection={
                 selecting ? { selected: selection.selected.has(task.id), onToggle: () => selection.toggle(task.id) } : undefined

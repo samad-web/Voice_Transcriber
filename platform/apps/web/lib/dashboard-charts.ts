@@ -86,9 +86,14 @@ export function pointsDelta(current: number | null, previous: number | null): De
   return { kind: points > 0 ? "up" : "down", amount: Math.abs(points) };
 }
 
+/** A tile's window after a verb: "in 30d", "in 1 – 30 Jun" - or just "today". */
+export function inSpan(span: string): string {
+  return span === "today" ? span : `in ${span}`;
+}
+
 /** "▲ 18% vs previous 30 days" - glyph and words, never a colour (docs/29 P2). */
 export function deltaText(delta: Delta, days: number, unit: "%" | " pts" = "%"): string {
-  const period = `previous ${days} ${days === 1 ? "day" : "days"}`;
+  const period = days === 1 ? "day before" : `previous ${days} days`;
   switch (delta.kind) {
     case "from-zero":
       return `none in the ${period}`;

@@ -72,8 +72,15 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
   },
   task_assigned: {
     label: "Task assigned",
-    description: "Somebody gave you a task.",
+    description: "Somebody gave you a task to accept or decline.",
     icon: "user-plus",
+    // Since 0135 a task handed to you waits for your answer.
+    needsAction: true,
+  },
+  task_response: {
+    label: "Task accepted or declined",
+    description: "Somebody answered a task you gave them.",
+    icon: "clipboard-check",
     needsAction: false,
   },
   task_due: {

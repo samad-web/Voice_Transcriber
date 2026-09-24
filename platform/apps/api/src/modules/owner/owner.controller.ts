@@ -627,9 +627,12 @@ export class OwnerController {
           callSummarySql(win,callAnd),
 
           // Board shape: every stage, including the empty ones, so the funnel
-          // does not silently change width as leads move.
+          // does not silently change width as leads move. The Main board's
+          // leads only (0136): the funnel's columns are the Main board's, and a
+          // copied board shares its keys, so its cards would otherwise be
+          // counted in columns they are not in.
           `SELECT stage, count(*)::int AS count, COALESCE(sum(value_num), 0)::float AS value
-             FROM leads${leadWhere} GROUP BY stage`,
+             FROM leads WHERE board_id IS NULL${leadAnd} GROUP BY stage`,
 
           /*
            * Per-telecaller performance. Attribution follows the handset: a lead
@@ -715,7 +718,8 @@ export class OwnerController {
           leadTriageSql(leadAndL),
           // The redesign's three (Build docs/29 §6), same flight again.
           callHeatSql(win,callAnd),
-          stageAgingSql("leads", leadAnd),
+          // Main board only, for the funnel's reason above (0136).
+          stageAgingSql("leads", ` AND board_id IS NULL${leadAnd}`),
           responseSql(win,leadAndL),
         ].join(";\n"),
       )) as unknown as { rows: Record<string, unknown>[] }[];

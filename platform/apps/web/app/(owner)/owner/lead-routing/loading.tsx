@@ -221,7 +221,7 @@ function DecisionLogSkeleton() {
 export default function LeadRoutingLoading() {
   return (
     <>
-      <PageHeader title="Lead routing" context="Settings" />
+      <PageHeader title="Who gets new leads" context="Settings" />
       <TextLines line="h-5" bars={INTRO} className="-mt-2 max-w-2xl" />
       <div className="mt-6 space-y-6">
         <BacklogCardSkeleton />

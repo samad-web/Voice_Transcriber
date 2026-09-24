@@ -17,6 +17,7 @@ import { decryptSecret, encryptSecret } from "@aura/db";
 import { normalizePeerAddress } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { orgPhoneCountry, whatsappPhone } from "../../common/console-phone";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { threadViewerOf } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -218,7 +219,10 @@ export class WhatsAppPairingController {
       );
     }
 
-    const phone = normalizePeerAddress("whatsapp", input.phone);
+    // Valid for its country first (the console's phone rule), then the same
+    // "+digits" peer-address spelling every thread is matched on.
+    const checked = whatsappPhone(input.phone, "phone", await this.db.withOrg(orgId, (client) => orgPhoneCountry(client, orgId)));
+    const phone = normalizePeerAddress("whatsapp", checked);
     if (!phone) throw new BadRequestException("that does not look like a usable phone number");
 
     const existing = await this.personalChannel(orgId, me);

@@ -38,7 +38,7 @@ function PaymentCardSkeleton() {
 export default function InvoicesLoading() {
   return (
     <>
-      <PageHeader title="Invoices" context="Pipeline" />
+      <PageHeader title="Invoices" context="Sales" />
       <PaymentCardSkeleton />
       <FilterTableSkeleton pills={6} columns={["primary", "chip", "num", "num", "date"]} />
     </>

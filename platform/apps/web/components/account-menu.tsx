@@ -2,7 +2,7 @@
 
 import { useId, useState, useTransition } from "react";
 import Link from "next/link";
-import { Building2, ChevronsUpDown, Clock, History, LogOut, Receipt, User, type LucideIcon } from "lucide-react";
+import { Bell, Building2, ChevronsUpDown, Clock, History, LogOut, Receipt, User, type LucideIcon } from "lucide-react";
 import { Popover, ProgressBar } from "@aura/ui";
 import {
   OWNER_ROLE_LABELS,
@@ -26,6 +26,7 @@ import {
 
 const ICONS: Record<AccountMenuItemId, LucideIcon> = {
   profile: User,
+  notifications: Bell,
   business: Building2,
   time: Clock,
   plan: Receipt,
@@ -75,6 +76,7 @@ export function AccountMenu({
   ownerRole,
   orgName,
   storage,
+  compact = false,
 }: {
   email?: string | null;
   /** users.name; the email's local part stands in when it is empty. */
@@ -85,6 +87,13 @@ export function AccountMenu({
   orgName?: string | null;
   /** The worker's snapshot (0128), riding on /v1/auth/context. Null until measured. */
   storage?: StorageSummary | null;
+  /**
+   * The collapsed sidebar: the trigger is the avatar alone, and the panel opens
+   * at its own width (w-72) overhanging the page instead of stretching to the
+   * rail - an 80px-wide menu wraps every label a letter at a time. Possible
+   * because the sidebar footer is outside its scroll container (sidebar.tsx).
+   */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [everywhereOpen, setEverywhereOpen] = useState(false);
@@ -111,23 +120,30 @@ export function AccountMenu({
         // container clips an absolutely positioned child on BOTH axes - a
         // w-72 panel in the 15rem rail was cut off at its right edge and gave
         // the rail a sideways scrollbar. Measured in a browser, 2026-09-22.
-        align="stretch"
-        className="p-1.5"
+        align={compact ? "start" : "stretch"}
+        className={compact ? "w-72 p-1.5" : "p-1.5"}
         trigger={
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-controls={open ? panelId : undefined}
-            className="flex w-full items-center gap-2.5 rounded-lg p-1 text-left transition-colors duration-150 ease-out hover:bg-surface-hover"
+            // Compact has no visible name, so it goes on the button itself.
+            aria-label={compact ? `Account: ${email ? display : "Not signed in"}` : undefined}
+            title={compact ? (email ? display : "Not signed in") : undefined}
+            className={`flex w-full items-center rounded-lg p-1 text-left transition-colors duration-150 ease-out hover:bg-surface-hover ${
+              compact ? "justify-center" : "gap-2.5"
+            }`}
           >
             <Avatar initials={accountInitials(name, email)} />
-            <span className="min-w-0 flex-1">
+            <span className={compact ? "hidden" : "min-w-0 flex-1"}>
               {/* `||` not `??` - an account with no email arrives as "". */}
               <span className="block truncate text-xs font-medium text-text">{email ? display : "Not signed in"}</span>
               <span className="block truncate text-xs text-text-muted">{email || "Session pending"}</span>
             </span>
-            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-text-subtle" aria-hidden="true" />
+            {compact ? null : (
+              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-text-subtle" aria-hidden="true" />
+            )}
           </button>
         }
       >

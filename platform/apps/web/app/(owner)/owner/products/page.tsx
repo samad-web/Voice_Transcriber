@@ -7,7 +7,7 @@ import { ownerTry, requireFeature } from "@/lib/owner-context";
 import { ProductsClient } from "./products-client";
 import type { Product } from "./actions";
 
-export const metadata: Metadata = { title: "Products" };
+export const metadata: Metadata = { title: "Price list" };
 
 const PAGE_SIZE = 50;
 
@@ -44,7 +44,7 @@ export default async function ProductsPage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Products" context="Pipeline" />
+        <PageHeader title="Price list" context="Sales" />
         <LoadFailure what="your products" failure={result} />
       </>
     );
@@ -53,7 +53,7 @@ export default async function ProductsPage({
 
   return (
     <>
-      <PageHeader title="Products" context="Pipeline" />
+      <PageHeader title="Price list" context="Sales" />
 
       <form className="max-w-sm">
         <MonoLabel>Search</MonoLabel>

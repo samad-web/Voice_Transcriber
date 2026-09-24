@@ -1,5 +1,5 @@
 import { timeZoneSpellings } from "@aura/shared";
-import { chooseZoneSpelling } from "./time-settings.controller";
+import { chooseZoneSpelling, regionChangeProblem } from "./time-settings.controller";
 
 describe("chooseZoneSpelling (doc 30)", () => {
   it("stores the current IANA name when the database knows it", () => {
@@ -19,5 +19,16 @@ describe("chooseZoneSpelling (doc 30)", () => {
 
   it("refuses a zone the database knows under no spelling", () => {
     expect(chooseZoneSpelling(["Pacific/Kanton", "Pacific/Enderbury"], [])).toBeNull();
+  });
+});
+
+describe("regionChangeProblem (Time & location)", () => {
+  it("lets an Indian business change currency, or any business without a GSTIN move country", () => {
+    expect(regionChangeProblem("IN", { gstin: "27ABCDE1234F1Z5" })).toBeNull();
+    expect(regionChangeProblem("AE", { gstin: null })).toBeNull();
+  });
+
+  it("refuses to move a business with a GSTIN out of India", () => {
+    expect(regionChangeProblem("AE", { gstin: "27ABCDE1234F1Z5" })).toMatch(/GSTIN/);
   });
 });

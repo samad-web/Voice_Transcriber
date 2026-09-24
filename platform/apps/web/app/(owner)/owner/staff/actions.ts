@@ -5,6 +5,7 @@ import { OwnerRole } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
 import { errorText, ownerHeaders, type ActionResult } from "../actions";
+import type { IssuedInvite } from "./types";
 
 /**
  * Change a colleague's persona, and/or which telecaller identity they are.
@@ -96,6 +97,9 @@ export async function inviteTeamMemberAction(input: {
   ownerRole: string;
   telecallerId?: string | null;
   recordingsListen?: boolean;
+  /** Mobile and WhatsApp (0102's phone, 0135's whatsapp_number). */
+  phone?: string | null;
+  whatsapp?: string | null;
 }): Promise<ActionResult & { password?: string | null; linkedExisting?: boolean }> {
   const owner = await getOwner();
   if (!owner) return { error: "Not signed in as an instance owner" };
@@ -123,6 +127,8 @@ export async function inviteTeamMemberAction(input: {
         ownerRole: role.data,
         telecallerId: input.telecallerId || null,
         recordingsListen: input.recordingsListen ?? false,
+        phone: input.phone?.trim() || null,
+        whatsapp: input.whatsapp?.trim() || null,
       }),
     });
     if (!res.ok) return { error: await errorText(res) };
@@ -192,5 +198,103 @@ export async function removeTeamMemberAction(userId: string): Promise<ActionResu
 
   revalidatePath("/owner/staff");
   revalidatePath("/owner");
+  return {};
+}
+
+// ── Invite by link (0137) ─────────────────────────────────────────────────
+//
+// The Google-sign-in alternative to "Create login". The owner decides the same
+// things (role, telecaller, phones); the invitee finishes by continuing with
+// Google as the invited address. Every write is `@RequireOwnerRole("owner")`
+// in owner-invites.controller.ts - the owner checks here are the courtesy.
+//
+// The link comes back to the owner once, like a generated password. It is
+// emailed only when the owner ticks "Email it" for this one invite AND the
+// platform has SMTP configured - never by default.
+
+type InviteResult = ActionResult & { issued?: IssuedInvite };
+
+async function postInvite(path: string, body: unknown): Promise<InviteResult> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const issued = (await res.json()) as IssuedInvite;
+    revalidatePath("/owner/staff");
+    return { issued };
+  } catch {
+    return { error: "The platform API did not answer." };
+  }
+}
+
+export async function issueInviteAction(input: {
+  email: string;
+  name?: string;
+  ownerRole: string;
+  telecallerId?: string | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  send: boolean;
+  ttlHours: number;
+}): Promise<InviteResult> {
+  const owner = await getOwner();
+  if (!owner) return { error: "Not signed in as an instance owner" };
+  if (owner.membership.ownerRole !== "owner") {
+    return { error: "Only an Owner can invite people." };
+  }
+
+  const role = OwnerRole.safeParse(input.ownerRole);
+  if (!role.success) return { error: `"${input.ownerRole}" is not a role` };
+  const email = input.email.trim();
+  if (!email) return { error: "An email address is required." };
+
+  return postInvite("/v1/owner/invites", {
+    email,
+    name: input.name?.trim() || undefined,
+    ownerRole: role.data,
+    telecallerId: input.telecallerId || null,
+    phone: input.phone?.trim() || null,
+    whatsapp: input.whatsapp?.trim() || null,
+    send: input.send === true,
+    ttlHours: input.ttlHours,
+  });
+}
+
+/** A new link and expiry; the old link stops working at once. */
+export async function resendInviteAction(inviteId: string, send: boolean): Promise<InviteResult> {
+  const owner = await getOwner();
+  if (!owner) return { error: "Not signed in as an instance owner" };
+  if (owner.membership.ownerRole !== "owner") {
+    return { error: "Only an Owner can resend an invite." };
+  }
+  return postInvite(`/v1/owner/invites/${encodeURIComponent(inviteId)}/resend`, { send: send === true });
+}
+
+export async function revokeInviteAction(inviteId: string): Promise<ActionResult> {
+  const owner = await getOwner();
+  if (!owner) return { error: "Not signed in as an instance owner" };
+  if (owner.membership.ownerRole !== "owner") {
+    return { error: "Only an Owner can withdraw an invite." };
+  }
+
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/invites/${encodeURIComponent(inviteId)}`, {
+      method: "DELETE",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await errorText(res) };
+  } catch {
+    return { error: "The platform API did not answer." };
+  }
+  revalidatePath("/owner/staff");
   return {};
 }

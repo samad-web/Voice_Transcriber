@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState, useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import {
   Button,
@@ -57,22 +58,22 @@ export function InvoiceDetail({
   items: InvoiceItem[];
   payments: Payment[];
 }) {
-  const [invoice, setInvoice] = useState(initialInvoice);
-  const [status, setStatus] = useState<InvoiceStatus>(initialInvoice.status);
+  const [invoice, setInvoice] = useServerState(initialInvoice);
+  const [status, setStatus] = useDraftState<InvoiceStatus>(initialInvoice.status);
   const confirm = useConfirm();
   const alert = useAlert();
   const toast = useToast();
-  const [dueDate, setDueDate] = useState(initialInvoice.due_date ? initialInvoice.due_date.slice(0, 10) : "");
-  const [notes, setNotes] = useState(initialInvoice.notes ?? "");
-  const [customerGstin, setCustomerGstin] = useState(initialInvoice.customer_gstin ?? "");
-  const [placeOfSupply, setPlaceOfSupply] = useState(initialInvoice.place_of_supply ?? "");
+  const [dueDate, setDueDate] = useDraftState(initialInvoice.due_date ? initialInvoice.due_date.slice(0, 10) : "");
+  const [notes, setNotes] = useDraftState(initialInvoice.notes ?? "");
+  const [customerGstin, setCustomerGstin] = useDraftState(initialInvoice.customer_gstin ?? "");
+  const [placeOfSupply, setPlaceOfSupply] = useDraftState(initialInvoice.place_of_supply ?? "");
   const [headerPending, startHeader] = useTransition();
 
   const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
-  const [discountType, setDiscountType] = useState<"none" | "percent" | "amount">(
+  const [discountType, setDiscountType] = useDraftState<"none" | "percent" | "amount">(
     initialInvoice.discount_type ?? "none",
   );
-  const [discountValue, setDiscountValue] = useState(
+  const [discountValue, setDiscountValue] = useDraftState(
     initialInvoice.discount_value ? String(Number(initialInvoice.discount_value)) : "0",
   );
   const [itemsPending, startItems] = useTransition();

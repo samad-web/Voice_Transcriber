@@ -89,6 +89,13 @@ export const NotificationKind = z.enum([
    * event is noise, not information.
    */
   "missed_call",
+  /**
+   * Somebody accepted or declined a task you gave them (migration 0135). Told
+   * to the task's creator only - the people it was shared with see the answer
+   * on the task itself, and ringing all of them for each other's replies is
+   * the noise that teaches people to ignore the bell.
+   */
+  "task_response",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

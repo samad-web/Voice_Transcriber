@@ -85,14 +85,14 @@ function TaskRowSkeleton({ i }: { i: number }) {
  * Mirrors tasks/page.tsx: the saved-views strip (only its "Open tasks" tab; a
  * user's own views join it after the fetch), then a grid from `xl` - one card
  * holding the filter form (a search box and five selects: Status, Assigned to, Due,
- * Priority, Sort), a task count beside the Select button and the bordered list of
+ * Priority, Sort), the new-task row, a task count beside the Select button and the bordered list of
  * task rows, beside a narrow Overdue card: its label, the big count, a caption and
  * the first few overdue dates with their titles.
  */
 export default function TasksLoading() {
   return (
     <>
-      <PageHeader title="Tasks" context="Pipeline" />
+      <PageHeader title="Tasks" context="Your work" />
       <SavedViewsStripSkeleton />
       <div className="grid gap-6 xl:grid-cols-[1fr_18rem]">
         <Card className="space-y-4">
@@ -103,11 +103,16 @@ export default function TasksLoading() {
             ))}
           </div>
           <div className="space-y-3">
+            {/* Count on the left; Select and the New task button (which opens
+                the task dialog) on the right. */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex h-4 items-center">
                 <Skeleton className="h-3 w-16" />
               </div>
-              <Skeleton className="h-10 w-20 rounded-full sm:h-8" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-10 w-20 rounded-full sm:h-8" />
+                <Skeleton className="h-10 w-28 rounded-full" />
+              </div>
             </div>
             <ul className="divide-y divide-border rounded-md border border-border">
               {[0, 1, 2, 3, 4, 5].map((i) => (

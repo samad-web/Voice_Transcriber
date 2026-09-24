@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/page-header";
-import { ChannelStripSkeleton, StatPlusListSkeleton } from "@/components/skeletons";
+import { StatPlusListSkeleton } from "@/components/skeletons";
 
 /**
  * Mirrors outreach/page.tsx: the channel strip, a "due now" count card, then the
@@ -8,8 +8,7 @@ import { ChannelStripSkeleton, StatPlusListSkeleton } from "@/components/skeleto
 export default function OutreachLoading() {
   return (
     <>
-      <PageHeader title="Outreach" context="Pipeline" />
-      <ChannelStripSkeleton active={1} />
+      <PageHeader title="Follow-up sequences" context="Conversations" />
       <StatPlusListSkeleton statFirst />
     </>
   );

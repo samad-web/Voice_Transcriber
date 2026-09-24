@@ -28,7 +28,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DB_CONTAINER="${DB_CONTAINER:-aura-supabase-db}"
 ENV_FILE="${ENV_FILE:-.env.selfhost}"
 NETWORK="${NETWORK:-aura_default}"
 

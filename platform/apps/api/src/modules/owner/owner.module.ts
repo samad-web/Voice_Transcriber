@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { AgentsModule } from "../agents/agents.module";
+import { PublicApiModule } from "../public-api/public-api.module";
 import { RolesModule } from "../roles/roles.module";
+import { LeadBoardsController } from "./lead-boards.controller";
 import { CallInsightsController } from "./call-insights.controller";
 import { CallSopsController } from "./call-sops.controller";
 import { OwnerCallsController } from "./owner-calls.controller";
@@ -11,6 +13,9 @@ import { OrgFeaturesController } from "./org-features.controller";
 import { TelecallerProductivityController } from "./telecaller-productivity.controller";
 import { OwnerRolesController } from "./owner-roles.controller";
 import { OwnerTeamController } from "./owner-team.controller";
+import { OwnerInvitesController } from "./owner-invites.controller";
+import { AuthInvitesController } from "./auth-invites.controller";
+import { InvitesService } from "./invites.service";
 import { StaffPerformanceController } from "./staff-performance.controller";
 import { LeadsController } from "./leads.controller";
 import { OwnerController } from "./owner.controller";
@@ -33,8 +38,10 @@ import { SupabaseAdminService } from "./supabase-admin.service";
  * why they are nevertheless two controllers.
  */
 @Module({
-  // AgentsModule for the call drawer's reply drafter (0121).
-  imports: [RolesModule, AgentsModule],
+  // AgentsModule for the call drawer's reply drafter (0121). PublicApiModule
+  // for CrmIngestService: the console's "New lead" writes through the same
+  // service every other door does (0136).
+  imports: [RolesModule, AgentsModule, PublicApiModule],
   controllers: [
     CallInsightsController,
     TelecallerProductivityController,
@@ -46,8 +53,13 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     OrgFeaturesController,
     OwnerRolesController,
     OwnerTeamController,
+    // 0137: invite by link, finish with Google - the owner's half and the
+    // invitee's (server-to-server from the public invite page).
+    OwnerInvitesController,
+    AuthInvitesController,
     StaffPerformanceController,
     LeadsController,
+    LeadBoardsController,
     OwnerController,
     OwnersController,
     SetupController,
@@ -56,6 +68,6 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     PlanUsageController,
     TimeSettingsController,
   ],
-  providers: [OwnerAccountsService, SupabaseAdminService],
+  providers: [OwnerAccountsService, SupabaseAdminService, InvitesService],
 })
 export class OwnerModule {}

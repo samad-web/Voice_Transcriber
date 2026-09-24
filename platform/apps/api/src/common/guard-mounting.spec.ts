@@ -111,8 +111,11 @@ import { MetaWebhookController } from "../modules/meta-ads/meta-webhook.controll
 import { ReportBuilderController } from "../modules/report-builder/report-builder.controller";
 import { ReportDatasetsController } from "../modules/report-builder/report-datasets.controller";
 import { LeadsController } from "../modules/owner/leads.controller";
+import { LeadBoardsController } from "../modules/owner/lead-boards.controller";
 import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnerTeamController } from "../modules/owner/owner-team.controller";
+import { OwnerInvitesController } from "../modules/owner/owner-invites.controller";
+import { AuthInvitesController } from "../modules/owner/auth-invites.controller";
 import { OwnerRolesController } from "../modules/owner/owner-roles.controller";
 import { OrgFeaturesController } from "../modules/owner/org-features.controller";
 import { StaffPerformanceController } from "../modules/owner/staff-performance.controller";
@@ -143,6 +146,7 @@ import { RolesController } from "../modules/roles/roles.controller";
 import { ErasureController } from "../modules/tenancy/erasure.controller";
 import { MembersController } from "../modules/tenancy/members.controller";
 import { TenancyController } from "../modules/tenancy/tenancy.controller";
+import { BrandingAssetsController } from "../modules/tenancy/branding-assets.controller";
 import { WorkspacesController } from "../modules/tenancy/workspaces.controller";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -174,6 +178,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   DeviceTelemetryController,
   InstancesController,
   LeadsController,
+  LeadBoardsController,
   OwnerCallsController,
   CallTriageController,
   CallDispositionsController,
@@ -183,6 +188,10 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   CallInsightsController,
   OwnerController,
   OwnerTeamController,
+  // 0137: invite by link - the owner's four, and the invitee's four
+  // (server-to-server, cross-tenant).
+  OwnerInvitesController,
+  AuthInvitesController,
   OwnerRolesController,
   OrgFeaturesController,
   StaffPerformanceController,
@@ -190,6 +199,9 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   ErasureController,
   MembersController,
   TenancyController,
+  // Uploaded branding images, served to signed-out browsers (a favicon
+  // request carries no credential) - the one unguarded route on TenancyModule.
+  BrandingAssetsController,
   WorkspacesController,
   // ── the marketing funnel's operator surface (LeadsModule) ─────────────────
   // Added late. These three shipped without being listed here, so for the
@@ -433,6 +445,10 @@ const INTERNAL = ["GET /internal/events"];
 
 const UNGUARDED = [
   "GET /health",
+  // An org's uploaded logo / favicon / banner. Public by nature: the same
+  // values already render in a bare <img> for anyone loading the console, and
+  // the uuid filename, not a credential, is what stops a guessed name resolving.
+  "GET /branding-assets/:orgId/:filename",
   "POST /auth/login",
   "POST /auth/logout",
   "POST /devices/register",
@@ -530,6 +546,15 @@ const DEVICE_AUTHED = [
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
 const CROSS_TENANT = [
   "GET /auth/context",
+  // Invite by link (0137), the invitee's half. Cross-tenant because the
+  // invitee has no workspace yet - the token names it. Reached only from the
+  // console's public invite page and OAuth callback, on the admin key; accept
+  // and identity/link take the person's own Supabase access token and ask
+  // GoTrue who it is, so nothing here trusts the caller about identity.
+  "GET /auth/invites/preview",
+  "POST /auth/invites/prepare",
+  "POST /auth/invites/accept",
+  "POST /auth/identity/link",
   "GET /auth/me",
   "POST /admin/tenants",
   "GET /admin/tenants",
@@ -563,6 +588,10 @@ const CROSS_TENANT = [
   "POST /admin/operators/:email/login",
   "POST /admin/operators/:email/password",
   "GET /analytics/fleet",
+  // Platform Hub KPIs (dashboard overhaul): both answer a fleet-wide question
+  // with no single org to scope to, same reasoning as /analytics/fleet above.
+  "GET /analytics/active-users",
+  "GET /analytics/booking-rate",
   // The marketing funnel. Cross-tenant by nature rather than by exception: an
   // enquiry has no org yet - that is what makes it an enquiry - so there is no
   // tenant for TenantGuard to scope these to. They still carry AdminKeyGuard,
@@ -706,6 +735,13 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/team",
   "POST /owner/team/:userId/password",
   "DELETE /owner/team/:userId",
+  // Invite by link (0137). Reading pending invites is owner-or-manager like
+  // the roster; issuing, resending and withdrawing are owner only, for the
+  // same reason POST /owner/team is.
+  "GET /owner/invites",
+  "POST /owner/invites",
+  "POST /owner/invites/:id/resend",
+  "DELETE /owner/invites/:id",
   // The staff record (migration 0102). All owner-only, and each is a different
   // kind of write on the same row:
   //
@@ -809,9 +845,15 @@ const OWNER_ROLE_ROUTES = [
   // The workspace clock (doc 30): owner and manager read AND write it.
   "GET /owner/time-settings",
   "PUT /owner/time-settings",
+  // Its location half - country and currency - is owner alone: the same
+  // columns the business profile's owner-only PUT writes.
+  "PUT /owner/time-settings/region",
   // Doc 27 §4.4's fix. Its OrgRoleGuard was inert for every console request
   // (the admin key is platform_admin); the persona gate is the real one.
   "PATCH /org/branding",
+  // Its upload half - a presigned PUT for a branding image - carries the
+  // same two gates as the PATCH that saves the resulting URL.
+  "POST /org/branding/upload-url",
   // Owner alone on both halves: whoever holds these keys decides which bank
   // account this business's money settles into.
   "GET /owner/payment-settings",
@@ -974,6 +1016,7 @@ const ORG_ROLE_ROUTES = [
   "DELETE /apikeys/:id",
   "PATCH /org/policy",
   "PATCH /org/branding",
+  "POST /org/branding/upload-url",
   "POST /roles",
   "PATCH /roles/:id",
   "PUT /roles/:id/permissions",
@@ -1031,6 +1074,19 @@ const CRM_PERMISSION_ROUTES = [
   "GET /leads/:id",
   "GET /leads/:id/calls/:callId",
   "PATCH /leads/:id",
+  // The console's "New lead" (0136) - `lead:create`, seeded by 0136 from
+  // `lead:edit` so nobody who could work a lead lost the ability to add one.
+  "POST /leads",
+  // ── Lead boards (0136) ──
+  // Reading boards is `lead:view`; making, reshaping, routing and deleting
+  // them are the `lead_board` object's create/edit/delete - admin-only by
+  // 0136's seed, because they change the columns under everyone's leads.
+  "GET /lead-boards",
+  "POST /lead-boards",
+  "PATCH /lead-boards/:ref",
+  "DELETE /lead-boards/:id",
+  "GET /lead-boards/routes",
+  "PUT /lead-boards/routes",
   "GET /accounts",
   "GET /accounts/:id",
   "POST /accounts",
@@ -1114,6 +1170,10 @@ const CRM_PERMISSION_ROUTES = [
   "POST /contacts/reassign",
   "POST /deals/reassign",
   "POST /tasks/reassign",
+  // An assignee's accept / decline (migration 0135). `task:view`, not edit:
+  // being asked to do something must not depend on being allowed to rewrite
+  // it, and the UPDATE is keyed on the caller's own id.
+  "POST /tasks/:id/respond",
   "POST /tags/:id/contacts",
   "POST /tags/:id/deals",
   // PRD Layer 3. Viewing a report needs `deal:view`; the CSV export needs
@@ -1355,7 +1415,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 453 routes, partitioned 390 tenant / 32 cross-tenant / 10 device / 20 unguarded / 1 internal", () => {
+  it("has 461 routes, partitioned 398 tenant / 32 cross-tenant / 10 device / 20 unguarded / 1 internal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -1483,8 +1543,17 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // tenant-scoped, OwnerRoleGuard owner+manager.
     // 453: POST /calls/missed (0133), the handset's missed calls. Device-authed,
     // so the tenant and principal counts do not move.
-    expect(ROUTES).toHaveLength(453);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(453);
+    // 461: lead boards (0136) - the console's POST /leads and the six
+    // /lead-boards routes. All tenant-scoped and CrmPermissionsGuard'd.
+    // 464: Time & location's PUT /owner/time-settings/region, tenant-scoped,
+    // OwnerRoleGuard owner only.
+    // +8: invite by link (0137) - four tenant-scoped /owner/invites routes
+    // (OwnerRoleGuard) and four cross-tenant /auth/invites + /auth/identity.
+    // 474: branding uploads - POST /org/branding/upload-url (tenant-scoped,
+    // OrgRoleGuard + OwnerRoleGuard like PATCH /org/branding) and the
+    // unguarded GET /branding-assets/:orgId/:filename that serves them.
+    expect(ROUTES).toHaveLength(474);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(474);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1516,17 +1585,23 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 383: plus the store's app page read (doc 28 §10).
     // 388: plus doc 28's five store routes (see the total above).
     // 390: plus the workspace clock's two (doc 30).
-    expect(tenantScoped).toHaveLength(390);
+    // 391: plus a task assignee's accept / decline (0135).
+    // 398: plus lead boards' seven (0136).
+    // 399: plus Time & location's region PUT.
+    // 403: plus invite by link's four /owner/invites routes (0137).
+    // 404: plus POST /org/branding/upload-url.
+    expect(tenantScoped).toHaveLength(404);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(453);
+    ).toBe(474); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 414 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 422 principal routes", () => {
+    // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
     // 412 = 380 tenant-scoped principal + 32 cross-tenant, after the store's
@@ -1549,7 +1624,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // request. Asserting the INDICES (not just membership) is what makes a
     // reordered `@UseGuards` fail here.
     const principalRoutes = ROUTES.filter((r) => r.guards.includes("AdminKeyGuard"));
-    expect(principalRoutes).toHaveLength(414);
+    // 430: plus invite by link's eight (0137) - four tenant-scoped, four cross-tenant.
+    // 434: plus POST /org/branding/upload-url, and the Platform Hub's
+    // GET /analytics/active-users + /analytics/booking-rate, which reached
+    // CROSS_TENANT without this count moving.
+    expect(principalRoutes).toHaveLength(434);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

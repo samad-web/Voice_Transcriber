@@ -14,7 +14,7 @@ import { getOwner, ownerGet, ownerTry, requireFeature } from "@/lib/owner-contex
  */
 const SLA_DEFAULT_DAYS = 90;
 
-export const metadata: Metadata = { title: "Response & Follow-ups" };
+export const metadata: Metadata = { title: "Response times" };
 
 interface ResponseTimeReport {
   from: string;
@@ -149,7 +149,7 @@ export default async function SlaReportsPage({
   if (!responseResult.ok && !compliance && !aging) {
     return (
       <>
-        <PageHeader title="Response & Follow-ups" context="Pipeline" />
+        <PageHeader title="Response times" context="Reports" />
         <LoadFailure what="response-time SLAs" failure={responseResult} />
       </>
     );
@@ -157,7 +157,7 @@ export default async function SlaReportsPage({
 
   return (
     <>
-      <PageHeader title="Response & Follow-ups" context="Pipeline" />
+      <PageHeader title="Response times" context="Reports" />
 
       {/* The one period control, above both windowed sections. Lead aging
           below is a snapshot of now and ignores it, and says so. */}
@@ -166,6 +166,7 @@ export default async function SlaReportsPage({
         presets={rangePresets("/owner/reports/sla", window, { defaultDays: SLA_DEFAULT_DAYS })}
         from={response?.from ?? requested.from}
         to={response?.to ?? requested.to}
+        today={todayIn(response?.timezone ?? zone)}
       />
       {invalid ? <DateRangeNotice fallbackDays={SLA_DEFAULT_DAYS} /> : null}
       <DateRangeSummary

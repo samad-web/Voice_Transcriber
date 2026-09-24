@@ -5,7 +5,7 @@ import { ownerTry } from "@/lib/owner-context";
 import { RecycleBinClient } from "./recycle-bin-client";
 import type { BinResponse } from "./actions";
 
-export const metadata: Metadata = { title: "Recycle bin" };
+export const metadata: Metadata = { title: "Deleted items" };
 
 /**
  * The recycle bin (migration 0108).
@@ -23,7 +23,7 @@ export default async function RecycleBinPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Recycle bin" context="Settings" />
+        <PageHeader title="Deleted items" context="Settings" />
         <LoadFailure what="the recycle bin" failure={result} />
       </>
     );
@@ -32,7 +32,7 @@ export default async function RecycleBinPage() {
 
   return (
     <>
-      <PageHeader title="Recycle bin" context="Settings" />
+      <PageHeader title="Deleted items" context="Settings" />
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
         Tags, rules, datasets, targets and connections your team has deleted. They are kept for{" "}
         {data.retentionDays} days with everything that was attached to them, so restoring one brings

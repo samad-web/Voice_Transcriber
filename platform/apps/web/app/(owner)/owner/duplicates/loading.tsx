@@ -41,7 +41,7 @@ function RecordSideSkeleton({ i }: { i: number }) {
 export default function DuplicatesLoading() {
   return (
     <>
-      <PageHeader title="Duplicates" context="Pipeline" />
+      <PageHeader title="Possible duplicates" context="Leads" />
       <div className="-mt-2">
         <TextLine line="h-5" bar="h-3.5 w-[64rem] max-w-full" />
       </div>

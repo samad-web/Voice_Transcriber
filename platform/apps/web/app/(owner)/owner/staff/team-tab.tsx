@@ -2,9 +2,20 @@ import { OWNER_ROLE_DESCRIPTIONS, OWNER_ROLE_LABELS, OwnerRole } from "@aura/sha
 import { Card, MonoLabel } from "@aura/ui";
 import { LoadFailure } from "@/components/load-failure";
 import { ownerTry } from "@/lib/owner-context";
+import { googleSignInEnabled } from "@/lib/supabase/google";
 import { InviteForm, TeamCounts } from "./invite-form";
+import { PendingInvites, type PendingInviteRow } from "./pending-invites";
 import { TeamTable } from "./team-table";
-import type { TeamResponse } from "./types";
+import type { InvitesResponse, TeamInvite, TeamResponse } from "./types";
+
+/** "expires in 2 days" / "expired 3 hours ago" - relative, so no time zone is involved. */
+function expiryLabel(invite: TeamInvite, now: number): string {
+  const ms = new Date(invite.expiresAt).getTime() - now;
+  const abs = Math.abs(ms);
+  const hours = Math.max(1, Math.round(abs / 3_600_000));
+  const span = hours < 48 ? `${hours} hour${hours === 1 ? "" : "s"}` : `${Math.round(hours / 24)} days`;
+  return ms > 0 ? `expires in ${span}` : `expired ${span} ago`;
+}
 
 /**
  * Who is in this workspace, and what each of them can see.
@@ -35,12 +46,24 @@ export async function TeamTab({
   role: OwnerRole;
   selfUserId: string | null;
 }) {
-  const result = await ownerTry<TeamResponse>("/v1/owner/team");
+  const [result, invitesResult, googleEnabled] = await Promise.all([
+    ownerTry<TeamResponse>("/v1/owner/team"),
+    // Secondary: if this fails the roster still renders, just without the
+    // pending list - an invite problem must not hide who is already here.
+    ownerTry<InvitesResponse>("/v1/owner/invites"),
+    googleSignInEnabled(),
+  ]);
 
   if (!result.ok) {
     return <LoadFailure what="your team" failure={result} />;
   }
   const data = result.data;
+  const invites = invitesResult.ok ? invitesResult.data : null;
+  const now = Date.now();
+  const pendingInvites: PendingInviteRow[] = (invites?.invites ?? []).map((invite) => ({
+    ...invite,
+    expiresLabel: expiryLabel(invite, now),
+  }));
 
   // Headcount by persona - "how many users do we have" answered on the page
   // that manages them, in the enum's own order so the list does not reshuffle
@@ -77,7 +100,23 @@ export async function TeamTab({
 
       <TeamCounts counts={counts} suspended={suspended} />
 
-      {role === "owner" ? <InviteForm telecallers={data.telecallers} /> : null}
+      {role === "owner" ? (
+        <InviteForm
+          telecallers={data.telecallers}
+          inviteByLink={{
+            // Both halves must work for a link to be acceptable: Google on in
+            // GoTrue, and the API able to reach GoTrue's admin endpoints.
+            googleEnabled: googleEnabled && Boolean(invites?.authConfigured),
+            mailConfigured: Boolean(invites?.mailConfigured),
+          }}
+        />
+      ) : null}
+
+      <PendingInvites
+        invites={pendingInvites}
+        canEdit={role === "owner"}
+        mailConfigured={Boolean(invites?.mailConfigured)}
+      />
 
       <TeamTable
         members={data.members}

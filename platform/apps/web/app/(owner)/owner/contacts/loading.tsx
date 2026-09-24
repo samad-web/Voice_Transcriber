@@ -11,7 +11,7 @@ import { TableBlockSkeleton, TabsSkeleton, ToolbarSkeleton } from "@/components/
 export default function ContactsLoading() {
   return (
     <>
-      <PageHeader title="Contacts" context="Pipeline" />
+      <PageHeader title="Contacts" context="Customers" />
       <TabsSkeleton tabs={1} />
       <ToolbarSkeleton search selects={3} />
       <TableBlockSkeleton

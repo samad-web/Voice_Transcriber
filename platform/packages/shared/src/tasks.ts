@@ -27,6 +27,35 @@ const DueOn = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
  */
 const DueAt = z.string().datetime({ offset: true });
 
+/**
+ * Everyone the task is given to (migration 0135), first = the primary
+ * assignee. Each of them is asked to accept; somebody giving a task to
+ * themselves is not. Twenty is a team, not a broadcast - a task for the whole
+ * floor is an announcement, and the bell is the wrong tool for one.
+ */
+const AssigneeIds = z
+  .array(z.string().uuid())
+  .max(20)
+  .transform((ids) => [...new Set(ids)]);
+
+export const TaskAssigneeStatus = z.enum(["pending", "accepted", "declined"]);
+export type TaskAssigneeStatus = z.infer<typeof TaskAssigneeStatus>;
+
+/** One person on a task and their answer, as the list returns it. */
+export interface TaskAssignee {
+  user_id: string;
+  name: string | null;
+  status: TaskAssigneeStatus;
+}
+
+/** An assignee's answer: `POST /v1/tasks/:id/respond`. */
+export const TaskRespondInput = z.object({
+  response: z.enum(["accept", "decline"]),
+  /** Optional, and only kept on a decline - it is what the creator reads. */
+  reason: z.string().trim().max(500).nullish(),
+});
+export type TaskRespondInput = z.infer<typeof TaskRespondInput>;
+
 export const TaskInput = z.object({
   title: z.string().min(1).max(300),
   notes: z.string().max(10_000).nullish(),
@@ -35,7 +64,9 @@ export const TaskInput = z.object({
   dealId: z.string().uuid().nullish(),
   /** The lead this is a promise about (0095). What makes a task a follow-up. */
   leadId: z.string().uuid().nullish(),
+  /** One person. Kept for callers that predate 0135; `assigneeUserIds` wins when both are sent. */
   assigneeUserId: z.string().uuid().nullish(),
+  assigneeUserIds: AssigneeIds.optional(),
   dueOn: DueOn.nullish(),
   dueAt: DueAt.nullish(),
   priority: TaskPriority.default("normal"),
@@ -45,7 +76,13 @@ export type TaskInput = z.infer<typeof TaskInput>;
 export const TaskUpdate = z.object({
   title: z.string().min(1).max(300).optional(),
   notes: z.string().max(10_000).nullable().optional(),
+  /** Replaces everyone on the task with this one person (or nobody). */
   assigneeUserId: z.string().uuid().nullable().optional(),
+  /**
+   * Replaces the whole set. People already on it keep their answer; anybody
+   * new - or anybody who had declined and is being asked again - is pending.
+   */
+  assigneeUserIds: AssigneeIds.optional(),
   leadId: z.string().uuid().nullable().optional(),
   dueOn: DueOn.nullable().optional(),
   dueAt: DueAt.nullable().optional(),

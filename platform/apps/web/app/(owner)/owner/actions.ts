@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { LeadTemperature } from "@aura/shared";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
-import type { Lead, LeadCall, LeadCallDetail, Stage } from "./types";
+import type { Lead, LeadBoardRef, LeadCall, LeadCallDetail, Stage } from "./types";
 
 /**
  * Every action re-resolves the owner from the session rather than trusting an
@@ -40,6 +40,8 @@ export interface LeadUpdate {
    * field has to be able to carry an explicit null.
    */
   temperature?: LeadTemperature | null;
+  /** Move to another lead board - `main` or a board id (0136). */
+  boardId?: string;
 }
 
 /** Zod issue arrays and plain messages both arrive under `message`. Shared
@@ -102,16 +104,22 @@ export async function updateLeadAction(
 }
 
 /** Lead detail for the drawer: the full record plus its call history. */
-export async function fetchLeadAction(
-  leadId: string,
-): Promise<{ lead?: Lead; calls?: LeadCall[]; stages?: Stage[]; error?: string }> {
+export async function fetchLeadAction(leadId: string): Promise<{
+  lead?: Lead;
+  calls?: LeadCall[];
+  /** The columns of the lead's OWN board. */
+  stages?: Stage[];
+  /** Every board, for moving the lead between them (0136). */
+  boards?: LeadBoardRef[];
+  error?: string;
+}> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
 
   try {
     const res = await fetch(`${API_URL}/v1/leads/${leadId}`, { headers, cache: "no-store" });
     if (!res.ok) return { error: `API ${res.status}` };
-    return (await res.json()) as { lead: Lead; calls: LeadCall[]; stages: Stage[] };
+    return (await res.json()) as { lead: Lead; calls: LeadCall[]; stages: Stage[]; boards: LeadBoardRef[] };
   } catch {
     return { error: "API unreachable" };
   }

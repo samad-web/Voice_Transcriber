@@ -182,7 +182,7 @@ function LinkedInPanelSkeleton() {
 export default function LeadSourcesLoading() {
   return (
     <>
-      <PageHeader title="Lead sources" context="Pipeline" />
+      <PageHeader title="Lead sources" context="Settings" />
       <TextLines line="h-5" bars={INTRO} className="-mt-2 max-w-2xl" />
       <SheetsPanelSkeleton />
       <div className="space-y-6">

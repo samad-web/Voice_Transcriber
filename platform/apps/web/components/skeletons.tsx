@@ -637,52 +637,6 @@ export function TabsSkeleton({
   );
 }
 
-/** Label widths of the five messaging channels: Overview, Workflows, WhatsApp, WABA, Uploads. */
-const CHANNEL_W = ["w-14", "w-16", "w-16", "w-9", "w-12"] as const;
-
-/**
- * The messaging channel strip (`ChannelBar` -> `ChannelSwitcher`) that five
- * pages - Inbox, Outreach, WhatsApp leads, WhatsApp Setup, Bulk Import - each
- * render directly under their own header: a full-bleed hairline carrying `h-11`
- * links, then one line of blurb for the active channel.
- *
- * `active` is the index of the channel THE PAGE ITSELF is (0 Overview/Inbox, 1
- * Workflows/Outreach, 2 WhatsApp, 3 WABA/Setup, 4 Uploads/Import): the loader
- * knows which page it stands in for even though the strip's data is per-reader,
- * and that tab gets the 2px underline the real strip draws under it. The
- * negative margins are the strip's own - they are what lets the rule run to the
- * content edge - so this must be a direct child of `<main>`.
- *
- * Always drawn with all five: the real strip drops whichever a reader's persona
- * or the tenant's features exclude, which a loader cannot know without fetching.
- * A page that leaves this out makes the strip pop in ~70px tall on arrival and
- * push everything under it down.
- */
-export function ChannelStripSkeleton({ active = 0 }: { active?: number }) {
-  return (
-    <div>
-      <div className="-mx-4 overflow-hidden border-b border-border px-4 sm:-mx-5 sm:px-5 md:-mx-8 md:px-8">
-        <div className="-mb-px flex gap-0.5">
-          {CHANNEL_W.map((w, i) => (
-            <div
-              key={i}
-              className={join(
-                "flex h-11 shrink-0 items-center border-b-2 px-3 sm:px-4",
-                i === active ? "border-border-strong" : "border-transparent",
-              )}
-            >
-              <Skeleton className={join("h-3.5", w)} />
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="mt-2 flex h-4 items-center">
-        <Skeleton className="h-3 w-80 max-w-full" />
-      </div>
-    </div>
-  );
-}
-
 /**
  * The operator console's tenant switcher: a label over one pill per tenant.
  *

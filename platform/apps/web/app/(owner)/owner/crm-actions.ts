@@ -286,6 +286,8 @@ export interface TaskInputPayload {
   contactId?: string | null;
   accountId?: string | null;
   assigneeUserId?: string | null;
+  /** Everyone it is given to, first = primary (0135). Each is asked to accept. */
+  assigneeUserIds?: string[];
 }
 
 export async function createTaskAction(
@@ -320,6 +322,8 @@ export async function updateTaskAction(
     dueOn?: string | null;
     priority?: "low" | "normal" | "high";
     assigneeUserId?: string | null;
+    /** Replaces everyone on the task (0135). */
+    assigneeUserIds?: string[];
   },
 ): Promise<ActionResult & { task?: Task }> {
   const headers = await ownerHeaders();
@@ -342,6 +346,34 @@ export async function updateTaskAction(
   }
 }
 
+/**
+ * Accept or decline a task you were given (migration 0135). The API keys the
+ * change on the signed-in person, so this can only ever answer for yourself.
+ */
+export async function respondToTaskAction(
+  taskId: string,
+  response: "accept" | "decline",
+  reason?: string,
+): Promise<ActionResult & { task?: Task }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/tasks/${taskId}/respond`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({ response, reason: reason?.trim() || null }),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const data = (await res.json()) as { task: Task };
+    revalidatePath("/owner/tasks");
+    return { task: data.task };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 export async function fetchTasksAction(
   query: {
     dealId?: string;
@@ -356,6 +388,8 @@ export async function fetchTasksAction(
     /** The Tasks list's filters (CRM dashboard Phase 5). */
     assigneeUserId?: string;
     unassigned?: boolean;
+    /** Only tasks waiting for the signed-in person's accept / decline (0135). */
+    awaiting?: boolean;
     priority?: "low" | "normal" | "high";
     q?: string;
     /** Inclusive `YYYY-MM-DD` bounds in the viewer's calendar (lib/next-actions.ts dueWindowQuery). */
@@ -373,6 +407,7 @@ export async function fetchTasksAction(
   if (query.mine) params.set("mine", "1");
   else if (query.assigneeUserId) params.set("assigneeUserId", query.assigneeUserId);
   else if (query.unassigned) params.set("unassigned", "1");
+  if (query.awaiting) params.set("awaiting", "1");
   if (query.dealId) params.set("dealId", query.dealId);
   if (query.contactId) params.set("contactId", query.contactId);
   if (query.accountId) params.set("accountId", query.accountId);

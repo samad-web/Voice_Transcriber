@@ -125,8 +125,8 @@ function RosterSkeleton() {
 export default function StaffLoading() {
   return (
     <>
-      {/* "Staff" to an owner, "Team" to a manager - the rail's word for it. */}
-      <NavPageHeader href="/owner/staff" fallback="Staff" context="Workspace" />
+      {/* The rail's word for it (nav.ts). */}
+      <NavPageHeader href="/owner/staff" fallback="Team & permissions" context="Settings" />
 
       <TabsSkeleton variant="boxed" tabs={3} />
 

@@ -38,10 +38,10 @@ async function ownerOnly(): Promise<{ headers: HeadersInit } | { error: string }
   return { headers };
 }
 
-/** Employee code, job title and phone - see migration 0102. */
+/** Employee code, job title, phone (0102) and WhatsApp (0135). */
 export async function setStaffProfileAction(
   userId: string,
-  fields: { staffCode?: string; jobTitle?: string; phone?: string },
+  fields: { staffCode?: string; jobTitle?: string; phone?: string; whatsapp?: string },
 ): Promise<ActionResult> {
   const gate = await ownerOnly();
   if ("error" in gate) return gate;
@@ -53,6 +53,7 @@ export async function setStaffProfileAction(
     staffCode: fields.staffCode?.trim() ? fields.staffCode.trim() : null,
     jobTitle: fields.jobTitle?.trim() ? fields.jobTitle.trim() : null,
     phone: fields.phone?.trim() ? fields.phone.trim() : null,
+    whatsapp: fields.whatsapp?.trim() ? fields.whatsapp.trim() : null,
   };
 
   try {

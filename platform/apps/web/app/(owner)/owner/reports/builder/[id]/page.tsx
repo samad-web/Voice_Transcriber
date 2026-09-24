@@ -103,7 +103,7 @@ export default async function ReportBuilderDetailPage({
   return (
     <>
       <BreadcrumbLeaf label={detail.report.name} />
-      <PageHeader title={detail.report.name} context="Report builder" />
+      <PageHeader title={detail.report.name} context="Custom reports" />
       <div className="-mt-2 flex flex-wrap items-center gap-3 text-xs">
         <Link
           href={`/owner/reports/builder/${id}/runs`}

@@ -1,4 +1,5 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { announce } from "./realtime";
 
 /**
  * Lead scoring (Kailash gap Milestone 4) - a rule-based point ledger on
@@ -131,9 +132,13 @@ export async function runLeadScoringSweep(): Promise<number> {
     const replied = pointsFor(org.lead_scoring_rules, "replied");
     const meeting = pointsFor(org.lead_scoring_rules, "meeting_booked");
     const decay = pointsFor(org.lead_scoring_rules, "inactivity_decay");
-    total += await scoreReplies(org.id, replied);
-    total += await scoreMeetings(org.id, meeting);
-    total += await scoreInactivityDecay(org.id, decay);
+    const scored =
+      (await scoreReplies(org.id, replied)) +
+      (await scoreMeetings(org.id, meeting)) +
+      (await scoreInactivityDecay(org.id, decay));
+    total += scored;
+    // Each scorer committed on its own; contact scores are on screen in lists.
+    if (scored > 0) announce(org.id, "contact", "updated");
   }
   if (total > 0) console.log(`lead scoring: recorded ${total} event(s)`);
   return total;

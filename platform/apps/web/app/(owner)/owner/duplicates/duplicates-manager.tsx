@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import {
@@ -20,8 +21,8 @@ import type { DuplicateMatch } from "../types";
  */
 export function DuplicatesManager({ initial }: { initial: DuplicateMatch[] }) {
   const router = useRouter();
-  const [duplicates, setDuplicates] = useState(initial);
   const [pending, startTransition] = useTransition();
+  const [duplicates, setDuplicates] = useServerState(initial, pending);
   const alert = useAlert();
   const toast = useToast();
 

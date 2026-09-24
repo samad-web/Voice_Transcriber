@@ -7,7 +7,7 @@ import { DateRangeNotice } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
-import { percentDelta, pointsDelta, rateText, share, windowLabel } from "@/lib/dashboard-charts";
+import { inSpan, percentDelta, pointsDelta, rateText, share, windowLabel } from "@/lib/dashboard-charts";
 import { DEFAULT_RANGE_DAYS, dateWindowQuery, parseDateWindow, resolveDateWindow } from "@/lib/date-range";
 import type { TeamRollup as TeamRollupData } from "@/lib/team-rollup";
 import { ownerNavItemsFor } from "@/lib/nav";
@@ -135,7 +135,9 @@ export default async function OwnerDashboardPage({
   // preset is "30d" / "last 30 days"; a custom range is its own dates, since
   // "last 30 days" over 1-30 June would be untrue by July.
   const days = data.window.days ?? (window.kind === "relative" ? window.days : 30);
-  const rangeWords = window.kind === "fixed" ? windowLabel(data.window.from, data.window.to) : null;
+  // "Today" is a one-day preset, and "Won in 1d" says it worse than "won today".
+  const rangeWords =
+    window.kind === "fixed" ? windowLabel(data.window.from, data.window.to) : days === 1 ? "today" : null;
   const span = rangeWords ?? `${days}d`;
   const period = rangeWords ?? undefined;
   const view = { data, days, span, period, crmPrimary, role, callIntel, tasksVisible, team, zone };
@@ -284,7 +286,7 @@ function OwnerDashboard({ data, days, span, period, crmPrimary, callIntel, tasks
           value={leads.open}
           context={
             <TileContext
-              fact={`now · ${leads.created_in_window} new in ${span}`}
+              fact={`now · ${leads.created_in_window} new ${inSpan(span)}`}
               change={<DeltaNote delta={d.created} days={days} />}
             />
           }
@@ -297,7 +299,7 @@ function OwnerDashboard({ data, days, span, period, crmPrimary, callIntel, tasks
           icon={<Banknote className="h-5 w-5" />}
         />
         <StatCard
-          label={c.windowed ? `Won in ${span}` : "Won (all time)"}
+          label={c.windowed ? `Won ${inSpan(span)}` : "Won (all time)"}
           value={c.won}
           context={
             <TileContext
@@ -418,7 +420,7 @@ function ManagerDashboard({ data, days, span, period, crmPrimary, callIntel, tas
           value={leads.open}
           context={
             <TileContext
-              fact={`now · ${leads.created_in_window} new in ${span}`}
+              fact={`now · ${leads.created_in_window} new ${inSpan(span)}`}
               change={<DeltaNote delta={d.created} days={days} />}
             />
           }
@@ -521,7 +523,7 @@ function TelecallerDashboard({ data, days, span, period, crmPrimary, tasksVisibl
         <StatCard
           label="Your open leads"
           value={leads.open}
-          context={`now · ${leads.created_in_window} new in ${span}`}
+          context={`now · ${leads.created_in_window} new ${inSpan(span)}`}
           icon={<Target className="h-5 w-5" />}
         />
         <StatCard
@@ -686,7 +688,7 @@ function MarketingDashboard({ data, days, span, period, crmPrimary, tasksVisible
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
         <StatCard
-          label={`New leads in ${span}`}
+          label={`New leads ${inSpan(span)}`}
           value={leads.created_in_window}
           context={
             <TileContext

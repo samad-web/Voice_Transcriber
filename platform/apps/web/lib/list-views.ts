@@ -38,6 +38,7 @@ export const LIST_DEFINITIONS: Readonly<Record<ListKey, ListDefinition>> = {
     path: "/owner/leads",
     params: [
       "q",
+      "boardId",
       "stage",
       "status",
       "projectId",

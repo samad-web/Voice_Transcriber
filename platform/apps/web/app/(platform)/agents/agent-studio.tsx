@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Copy, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { compileToJsonSchema } from "@aura/shared";
-import { BrutalButton, Card, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
+import { BrutalButton, Card, ConsolePanel, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import {
   activateAgentAction,
@@ -137,21 +137,21 @@ export function AgentStudio({
           </h4>
           <div className="space-y-3">
             {agents.length === 0 ? (
-              <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-6 text-center">
+              <p className="text-xs font-mono font-bold uppercase text-text-subtle py-6 text-center">
                 No agents yet
               </p>
             ) : (
               agents.map((agent) => (
                 <div
                   key={`${agent.id}-${agent.version}`}
-                  className="p-4 rounded-none border-2 border-neutral-200 bg-white space-y-2"
+                  className="p-4 rounded-none border-2 border-border bg-surface space-y-2"
                 >
                   <div className="flex justify-between items-start gap-2">
                     <div>
                       <span className="font-display font-black text-black text-sm block uppercase tracking-tight">
                         {agent.name}
                       </span>
-                      <span className="text-[10px] font-mono text-neutral-500 font-bold uppercase">
+                      <span className="text-[10px] font-mono text-text-muted font-bold uppercase">
                         v{agent.version} · {agent.field_schema?.fields?.length ?? 0} fields
                       </span>
                     </div>
@@ -166,7 +166,7 @@ export function AgentStudio({
                           activateAgentAction({ agentId: agent.id, version: agent.version, orgId }).then(() => undefined),
                         )
                       }
-                      className="text-[10px] font-mono text-black underline hover:text-neutral-600 font-bold uppercase tracking-wider"
+                      className="text-[10px] font-mono text-text underline hover:text-text-muted font-bold uppercase tracking-wider"
                     >
                       Set as Active
                     </button>
@@ -187,7 +187,7 @@ export function AgentStudio({
               Describe With AI
             </h4>
           </div>
-          <p className="text-xs text-neutral-400 font-sans font-medium">
+          <p className="text-xs text-text-muted font-sans font-medium">
             Say what the agent should do - it fills in the name, system prompt and fields below for
             you to review and adjust. Pick a &quot;Start from&quot; agent first to describe a
             <em> change</em> to it instead of a fresh one.
@@ -278,7 +278,7 @@ export function AgentStudio({
             </div>
 
             {fields.map((field, i) => (
-              <div key={i} className="border-2 border-black bg-neutral-50 p-3.5 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div key={i} className="border-2 border-border-strong bg-surface p-3.5 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input
                   className={inputClass}
                   placeholder="key (snake_case)"
@@ -323,7 +323,7 @@ export function AgentStudio({
                   </label>
                   <button
                     onClick={() => setFields((p) => p.filter((_, idx) => idx !== i))}
-                    className="p-1.5 text-black hover:text-white hover:bg-black rounded-none border border-transparent hover:border-black"
+                    className="p-1.5 text-text hover:bg-surface-hover rounded-none border border-transparent hover:border-border-strong"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -350,9 +350,11 @@ export function AgentStudio({
 
         <Card elevated>
           <MonoLabel className="mb-2">Compiled Gemini responseSchema (live)</MonoLabel>
-          <div className="bg-black rounded-none p-4 text-[10px] font-mono text-neutral-300 overflow-x-auto max-h-72 overflow-y-auto border-2 border-black">
-            <pre>{JSON.stringify(compiled, null, 2)}</pre>
-          </div>
+          <ConsolePanel
+            tone="neutral"
+            lines={JSON.stringify(compiled, null, 2).split("\n")}
+            className="max-h-72 text-[10px]"
+          />
         </Card>
       </div>
     </div>

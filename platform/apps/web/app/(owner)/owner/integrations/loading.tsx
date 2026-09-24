@@ -44,8 +44,8 @@ export default function IntegrationsLoading() {
   return (
     <>
       <PageHeader
-        title="Integrations"
-        context="Workspace"
+        title="Connected apps"
+        context="Settings"
         description="Connect the apps your team already uses. Nothing here sends on its own."
       />
 

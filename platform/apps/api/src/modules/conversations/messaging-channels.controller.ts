@@ -22,6 +22,7 @@ import {
   type ChannelProbeOutcome,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { orgPhoneCountry, whatsappPhone } from "../../common/console-phone";
 import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -137,7 +138,18 @@ export class MessagingChannelsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const input = parsed.data;
 
-    const inboundAddress = normalizePeerAddress(input.channel, input.inboundAddress);
+    // A WhatsApp number is held to the console's phone rule - valid for its
+    // country - before it becomes the "+digits" address threads match on.
+    // Instagram / Facebook handles are not numbers and pass through as before.
+    const address =
+      input.channel === "whatsapp"
+        ? whatsappPhone(
+            input.inboundAddress,
+            "inboundAddress",
+            await this.db.withOrg(orgId, (client) => orgPhoneCountry(client, orgId)),
+          )
+        : input.inboundAddress;
+    const inboundAddress = normalizePeerAddress(input.channel, address);
     if (!inboundAddress) throw new BadRequestException("inboundAddress is not usable");
 
     return this.db.withOrg(orgId, async (client) => {

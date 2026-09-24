@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import { Plus, X } from "lucide-react";
 import {
@@ -32,10 +33,10 @@ const BLANK = { name: "", description: "", color: "", aliases: [""] };
  * work and leaves every record that already carries it intact.
  */
 export function ProjectsClient({ projects: initial }: { projects: Project[] }) {
-  const [projects, setProjects] = useState(initial);
+  const [pending, startTransition] = useTransition();
+  const [projects, setProjects] = useServerState(initial, pending);
   const [editing, setEditing] = useState<Project | "new" | null>(null);
   const [draft, setDraft] = useState(BLANK);
-  const [pending, startTransition] = useTransition();
   const alert = useAlert();
 
   useEffect(() => setProjects(initial), [initial]);

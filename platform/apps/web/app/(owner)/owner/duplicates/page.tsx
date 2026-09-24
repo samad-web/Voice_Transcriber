@@ -5,7 +5,7 @@ import { ownerTry, requireFeature } from "@/lib/owner-context";
 import type { DuplicateMatch } from "../types";
 import { DuplicatesManager } from "./duplicates-manager";
 
-export const metadata: Metadata = { title: "Duplicates" };
+export const metadata: Metadata = { title: "Possible duplicates" };
 
 interface ListResponse {
   duplicates: DuplicateMatch[];
@@ -25,7 +25,7 @@ export default async function DuplicatesPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Duplicates" context="Pipeline" />
+        <PageHeader title="Possible duplicates" context="Leads" />
         <LoadFailure what="duplicates" failure={result} />
       </>
     );
@@ -34,7 +34,7 @@ export default async function DuplicatesPage() {
 
   return (
     <>
-      <PageHeader title="Duplicates" context="Pipeline" />
+      <PageHeader title="Possible duplicates" context="Leads" />
       <p className="-mt-2 text-sm text-text-muted">
         Contacts and accounts that share the same external system id. Pick which record to keep -
         the other's history merges into it and can be undone for 30 days.

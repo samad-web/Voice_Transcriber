@@ -159,15 +159,16 @@ describe("Branding schema", () => {
     expect(Branding.safeParse({ logoUrl: "logo.png" }).success).toBe(false);
   });
 
-  it("strips loginBackgroundUrl rather than failing on it", () => {
-    // A tenant who set the retired field still has the key in their jsonb.
-    // Reading their org must not 500, and must not resurrect the field.
+  it("round-trips loginBackgroundUrl now that it is storable again", () => {
+    // Retired once, then reinstated (stored, not yet rendered - see the file
+    // header). A tenant who set it before it was retired still has the key in
+    // their jsonb, and it must come back intact rather than be stripped.
     const parsed = parseBranding({
       logoUrl: "https://cdn.example.com/logo.png",
       loginBackgroundUrl: "https://cdn.example.com/bg.jpg",
     });
     expect(parsed.logoUrl).toBe("https://cdn.example.com/logo.png");
-    expect("loginBackgroundUrl" in parsed).toBe(false);
+    expect(parsed.loginBackgroundUrl).toBe("https://cdn.example.com/bg.jpg");
   });
 });
 

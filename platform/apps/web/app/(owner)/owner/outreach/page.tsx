@@ -4,11 +4,10 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
-import { ChannelBar } from "../channel-bar";
 import { Outreach } from "./outreach-client";
 import type { DueStep } from "./actions";
 
-export const metadata: Metadata = { title: "Outreach" };
+export const metadata: Metadata = { title: "Follow-up sequences" };
 
 /**
  * The follow-up ladder (migration 0058).
@@ -27,8 +26,7 @@ export default async function OutreachPage() {
 
   return (
     <>
-      <PageHeader title="Outreach" context="Pipeline" />
-      <ChannelBar />
+      <PageHeader title="Follow-up sequences" context="Conversations" />
 
       {!result.ok ? (
         <LoadFailure what="outreach cadences" failure={result} />

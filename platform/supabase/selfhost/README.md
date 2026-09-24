@@ -271,15 +271,15 @@ belief, not a backup.
 
 ## 4. Day-to-day
 
-**psql.** `docker exec -it supabase-db psql -U postgres`. From your laptop,
-tunnel: `ssh -L 5432:127.0.0.1:5432 root@<vps>` — the pooler is published on
+**psql.** `docker exec -it aura-supabase-db psql -U postgres`. From your laptop,
+tunnel: `ssh -L 5432:127.0.0.1:15432 root@<vps>` — the pooler is published on
 loopback only.
 
 **Studio.** `https://supabase.example.com/`, basic auth from `DASHBOARD_USERNAME`
 / `DASHBOARD_PASSWORD`. That basic auth is the only thing between the internet
 and a SQL console over every tenant's data.
 
-**Logs.** `docker logs supabase-auth`, `supabase-db`, `supabase-envoy`.
+**Logs.** `docker logs aura-supabase-auth`, `aura-supabase-db`, `aura-supabase-api-gw` (not `supabase-*`: those belong to the TNPSC stack on the same box).
 
 **Restarting the stack does not restart Aura**, and vice versa. They are separate
 projects on purpose.

@@ -7,6 +7,7 @@ import { EmptyState, MonoLabel, useAlert } from "@aura/ui";
 import { useOrgTimeZone } from "@/components/org-time";
 import { useFocusParam } from "../lib/use-focus-param";
 import { formatValue, num, relativeTime } from "../types";
+import { useDragAutoScroll } from "./use-drag-auto-scroll";
 
 /**
  * Generic pipeline board shared by the lead board (./board.tsx) and the deal
@@ -22,6 +23,10 @@ import { formatValue, num, relativeTime } from "../types";
  * the card returns to where it was and the reason is raised in a dialog - a
  * card that silently snaps back with no explanation is the worst version of
  * this, and text below the fold is barely better.
+ *
+ * Holding a dragged card near the left or right edge scrolls the board that
+ * way (./use-drag-auto-scroll.ts), so a stage that starts off-screen is still
+ * a drop target.
  *
  * Every card is also a button that opens the drawer, where the same move can
  * be made by tapping a stage. That is the path on touch devices, where HTML5
@@ -102,6 +107,9 @@ export function KanbanBoard<T extends { stage: string }>({
   const zone = useOrgTimeZone();
   /** Moves this board has sent but not yet had confirmed. */
   const inFlight = useRef(0);
+  /** The horizontal scroller, pushed sideways while a card is held near its edge. */
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  useDragAutoScroll(scrollerRef, dragging !== null);
 
   /*
    * FOLLOW THE SERVER, BUT NOT OVER SOMEBODY'S HANDS.
@@ -267,8 +275,11 @@ export function KanbanBoard<T extends { stage: string }>({
       ) : null}
 
       {/* One horizontal scroller; columns keep a fixed width so a busy stage
-          does not squeeze the rest of the board into slivers. */}
-      <div className="flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
+          does not squeeze the rest of the board into slivers. While a card is
+          dragged, holding it near either edge scrolls this sideways
+          (use-drag-auto-scroll.ts) - the browser never does that for an inner
+          scroller on its own. */}
+      <div ref={scrollerRef} className="relative flex gap-4 overflow-x-auto pb-4 -mx-1 px-1">
         {columns.map((column) => (
           <section
             key={column.key}
@@ -331,7 +342,14 @@ export function KanbanBoard<T extends { stage: string }>({
               </span>
             </header>
 
-            <div className="max-h-[calc(100dvh-16rem)] min-h-[8rem] flex-1 space-y-2 overflow-y-auto p-2">
+            {/* `relative` is load-bearing. The cards carry `sr-only` text (the
+                idle badge's "No activity for N days"), which is
+                position:absolute; with no positioned ancestor it is laid out
+                against the PAGE at its unscrolled position, escapes this
+                scroller's clipping, and stretches the document by however far
+                the column's content runs - a long column left ~750px of empty
+                page under the board. A positioned scroller contains it. */}
+            <div className="relative max-h-[calc(100dvh-16rem)] min-h-[8rem] flex-1 space-y-2 overflow-y-auto p-2">
               {column.items.length === 0 ? (
                 <p className="py-6 text-center text-xs text-text-subtle">Empty</p>
               ) : null}

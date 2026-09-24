@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Copy, ExternalLink } from "lucide-react";
 import {
   Button,
@@ -100,9 +101,9 @@ export function OAuthAppsPanel({ data }: { data: OAuthAppsView }) {
 function OAuthAppCard({ app }: { app: OAuthAppView }) {
   const configured = Boolean(app.clientId && app.hasSecret);
   const [open, setOpen] = useState(false);
-  const [clientId, setClientId] = useState(app.clientId ?? "");
+  const [clientId, setClientId] = useDraftState(app.clientId ?? "");
   const [clientSecret, setClientSecret] = useState("");
-  const [tenant, setTenant] = useState(app.tenant ?? "");
+  const [tenant, setTenant] = useDraftState(app.tenant ?? "");
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const confirm = useConfirm();

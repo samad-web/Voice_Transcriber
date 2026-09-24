@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import {
   Button,
   FormField,
   Input,
   MonoLabel,
+  Select,
   StateChip,
   StatusChip,
   callState,
@@ -20,12 +22,14 @@ import { fetchLeadAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
 import { ProjectChip } from "./project-chip";
 import {
+  boardRef,
   contactLabel,
   formatDuration,
   formatValue,
   num,
   relativeTime,
   type Lead,
+  type LeadBoardRef,
   type LeadCall,
   type Project,
   type Stage,
@@ -40,7 +44,7 @@ import {
  * copied rather than left on the old 2px black border - which would be the only
  * brutalist edge left in the drawer. When Textarea lands, delete this.
  */
-const TEXTAREA_CLASS =
+export const TEXTAREA_CLASS =
   "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
   "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
 
@@ -67,6 +71,11 @@ export function LeadDrawer({
   onChanged?: (leadId: string, update: Partial<Lead>) => void;
 }) {
   const [calls, setCalls] = useState<LeadCall[] | null>(null);
+  // The lead's OWN board's columns and the board list (0136), from its detail
+  // read. The caller's `stages` are the board on screen, which on the Leads
+  // list is the Main board even for a lead that lives elsewhere.
+  const [own, setOwn] = useState<{ stages?: Stage[]; boards?: LeadBoardRef[] }>({});
+  const router = useRouter();
   const [draft, setDraft] = useState({ nextAction: "", notes: "", value: "" });
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
@@ -88,8 +97,11 @@ export function LeadDrawer({
   useEffect(() => {
     if (!leadId) return;
     let cancelled = false;
+    setOwn({});
     void fetchLeadAction(leadId).then((result) => {
-      if (!cancelled) setCalls(result.calls ?? []);
+      if (cancelled) return;
+      setCalls(result.calls ?? []);
+      setOwn({ stages: result.stages, boards: result.boards });
     });
     return () => {
       cancelled = true;
@@ -165,6 +177,28 @@ export function LeadDrawer({
     });
   };
 
+  /**
+   * Move the lead to another board (0136). It keeps its column when that
+   * board has one with the same key, else starts in the first column - the
+   * API decides, so this only names the board. The drawer closes afterwards:
+   * the card has left the board it was opened from.
+   */
+  const moveBoard = (ref: string) => {
+    const name = own.boards?.find((b) => boardRef(b.id) === ref)?.name;
+    startTransition(async () => {
+      const result = await updateLeadAction(lead.id, { boardId: ref });
+      if (result.error) {
+        await alert({ title: "Couldn't move the lead", body: result.error, tone: "danger" });
+        return;
+      }
+      toast(name ? `Moved to ${name}` : "Moved");
+      onClose();
+      router.refresh();
+    });
+  };
+
+  const stageOptions = own.stages ?? stages;
+
   const facts = Object.entries(lead.facts ?? {}).filter(
     ([, value]) => value !== null && value !== "",
   );
@@ -208,10 +242,26 @@ export function LeadDrawer({
         </div>
 
         <div className="space-y-5 p-4 sm:p-5">
+          {own.boards && own.boards.length > 1 ? (
+            <FormField label="Board" name="lead-board">
+              <Select
+                value={boardRef(lead.board_id ?? null)}
+                onChange={(e) => moveBoard(e.target.value)}
+                disabled={pending}
+              >
+                {own.boards.map((b) => (
+                  <option key={boardRef(b.id)} value={boardRef(b.id)}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          ) : null}
+
           <div className="space-y-2">
             <MonoLabel>Stage</MonoLabel>
             <div className="flex flex-wrap gap-1.5">
-              {stages.map((stage) => (
+              {stageOptions.map((stage) => (
                 <button
                   key={stage.key}
                   type="button"

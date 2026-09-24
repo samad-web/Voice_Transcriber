@@ -15,7 +15,7 @@ export default async function DataSourcesPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Data sources" context="Report builder" />
+        <PageHeader title="Data sources" context="Custom reports" />
         <LoadFailure what="your data sources" failure={result} />
       </>
     );
@@ -24,7 +24,7 @@ export default async function DataSourcesPage() {
 
   return (
     <>
-      <PageHeader title="Data sources" context="Report builder" />
+      <PageHeader title="Data sources" context="Custom reports" />
       <p className="-mt-2 max-w-3xl text-sm text-text-muted">
         A data source is what a widget draws from. Your CRM is already available as several of
         them - connecting one costs nothing and stores no data, it just points at records you can

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import { Pencil, User } from "lucide-react";
 import { Button, Checkbox, Input, useAlert } from "@aura/ui";
@@ -26,8 +27,8 @@ export function TelecallerForm({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [nameValue, setNameValue] = useState(name ?? "");
-  const [idValue, setIdValue] = useState(externalId ?? "");
+  const [nameValue, setNameValue] = useDraftState(name ?? "");
+  const [idValue, setIdValue] = useDraftState(externalId ?? "");
   const [reassign, setReassign] = useState(false);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();

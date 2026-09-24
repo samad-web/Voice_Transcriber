@@ -24,10 +24,13 @@ export function Board({
   columns: initial,
   stages,
   projects,
+  isMain = true,
 }: {
   columns: BoardColumn[];
   stages: Stage[];
   projects: Project[];
+  /** The Main board fills from calls; any other board only from routing and New lead (0136). */
+  isMain?: boolean;
 }) {
   const columns: KanbanColumn<Lead>[] = initial.map((c) => ({
     key: c.key,
@@ -70,11 +73,17 @@ export function Board({
               ) : null}
             </span>
           ) : null,
-        emptyState: {
-          title: "Nothing in the pipeline yet",
-          description:
-            "Cards appear automatically when a recorded call is transcribed and the AI agent extracts a usable enquiry from it.",
-        },
+        emptyState: isMain
+          ? {
+              title: "Nothing in the pipeline yet",
+              description:
+                "Cards appear automatically when a recorded call is transcribed and the AI agent extracts a usable enquiry from it.",
+            }
+          : {
+              title: "Nothing on this board yet",
+              description:
+                "Send a channel's new leads here in Manage boards → Routing, add one with New lead, or move a lead here from its drawer.",
+            },
         moveOnServer: async (id, stage) => {
           const result = await updateLeadAction(id, { stage });
           return { error: result.error, record: result.lead };

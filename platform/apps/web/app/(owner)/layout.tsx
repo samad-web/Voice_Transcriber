@@ -12,9 +12,12 @@ import { BackButton } from "@/components/back-button";
 import { BreadcrumbProvider, OwnerBreadcrumbs } from "@/components/breadcrumbs";
 import { ConsoleHeader } from "@/components/console-header";
 import { NavHistoryProvider } from "@/components/nav-history-provider";
+import { OrgRegionProvider } from "@/components/org-region";
 import { OrgTimeProvider } from "@/components/org-time";
+import { FullscreenToggle } from "@/components/fullscreen-toggle";
 import { GlobalSearch } from "@/components/global-search";
 import { MobileNav } from "@/components/mobile-nav";
+import { OwnerSectionTabs } from "@/components/owner-section-tabs";
 import { TenantContextSwitcher, type TenantChip } from "@/components/tenant-context-switcher";
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
@@ -195,6 +198,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
     // Outermost, so every time under it - the header's notification bell as
     // much as the page - is read in the workspace's own zone (Build docs/30).
     <OrgTimeProvider zone={owner.membership.reportingTimezone}>
+    {/* Beside the clock, for the same reason: every phone field under it
+        starts on the workspace's own country (Time & location). */}
+    <OrgRegionProvider country={owner.membership.defaultCountry} currency={owner.membership.baseCurrency}>
     <RealtimeProvider enabled={realtimeEnabled}>
     <div
       className="min-h-dvh flex flex-col md:flex-row"
@@ -203,6 +209,17 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
       // never raw tenant input.
       style={{ ...brandVars, ...(background ? { backgroundColor: background } : {}) } as React.CSSProperties}
     >
+      {/* The brand-gradient hairline, edge to edge of the VIEWPORT rather than
+          of either column beside it: `fixed` so it sits over the sidebar and
+          the content pane alike (both `z-30` at most) and stays put while
+          either scrolls, the same way the sticky rail and header already do. A
+          branded tenant's own colour rides along for free - `--brand-gradient`
+          is itself re-pointed to it, above, so this never has to know. */}
+      <div
+        aria-hidden="true"
+        className="print-hide fixed inset-x-0 top-0 z-40 h-[3px]"
+        style={{ backgroundImage: "var(--brand-gradient)" }}
+      />
       {/* Both providers wrap the rail and the phone bar as well as the page
           column: the phone bar draws a Back button too, and Back names each
           history entry after the page's own <BreadcrumbLeaf> (doc 28 §3.4). */}
@@ -229,6 +246,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         title={company}
         subtitle="Sales Pipeline"
         logoUrl={branding.logoUrl}
+        sidebarIconUrl={branding.sidebarIconUrl}
         name={owner.name}
         storage={owner.membership.storage}
         setupProgress={setupProgress}
@@ -244,14 +262,12 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         title={company}
         subtitle="Sales Pipeline"
         logoUrl={branding.logoUrl}
-        accentColor={currentTenant.accent.swatch}
         name={owner.name}
         storage={owner.membership.storage}
         setupProgress={setupProgress}
       />
       <div className="flex min-w-0 flex-1 flex-col">
       <ConsoleHeader
-        accentColor={currentTenant.accent.swatch}
         tenant={
           <TenantContextSwitcher
             current={currentTenant}
@@ -268,10 +284,13 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           // two directions: the bell says what happened, this says whether you
           // would have been told. The theme toggle sits here too - one click,
           // reachable from every page, rather than a control someone has to
-          // remember lives inside the account panel.
+          // remember lives inside the account panel. Full screen sits beside the
+          // bell for the same reason: it is about the whole console, not one
+          // page, so it lives in the bar every page shares.
           <>
             <ThemeToggle />
             <RealtimeIndicator />
+            <FullscreenToggle />
             <NotificationBell />
           </>
         }
@@ -306,6 +325,15 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
             className="print-hide max-h-32 w-full rounded-xl border border-border object-cover"
           />
         ) : null}
+        {/* The section's pages as tabs - the rail's second level. Drawn here
+            rather than per page so it stays put while the next tab loads. */}
+        <OwnerSectionTabs
+          ownerRole={owner.membership.ownerRole}
+          crmPrimary={crmPrimary}
+          crmEnabled={crmEnabled}
+          callIntelEnabled={callIntelEnabled}
+          entitlement={entitlement}
+        />
         {children}
       </main>
       </div>
@@ -313,6 +341,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
       </BreadcrumbProvider>
     </div>
     </RealtimeProvider>
+    </OrgRegionProvider>
     </OrgTimeProvider>
   );
 }

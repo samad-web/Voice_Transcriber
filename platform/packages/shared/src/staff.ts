@@ -50,6 +50,8 @@ export const StaffProfileInput = z.object({
    */
   staffCode: z.string().trim().max(40).nullable().optional(),
   phone: z.string().trim().max(40).nullable().optional(),
+  /** Often the same as `phone` - see migration 0135 for why it is its own column. */
+  whatsapp: z.string().trim().max(40).nullable().optional(),
   jobTitle: z.string().trim().max(120).nullable().optional(),
 });
 export type StaffProfileInput = z.infer<typeof StaffProfileInput>;

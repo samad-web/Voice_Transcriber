@@ -13,7 +13,7 @@ import { FormFieldsSkeleton, PageHeaderSkeleton } from "@/components/skeletons";
 export default function NewAgentLoading() {
   return (
     <>
-      <PageHeaderSkeleton context="AI Agent Studio" />
+      <PageHeaderSkeleton context="AI assistants" />
 
       <Card className="space-y-1">
         <Skeleton className="h-3 w-28" />

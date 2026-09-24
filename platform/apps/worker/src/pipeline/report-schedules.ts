@@ -1,5 +1,6 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { nextRunAt, ReportDoc, type ScheduleInput } from "@aura/shared";
+import { announce } from "./realtime";
 
 /**
  * Scheduled report delivery (migration 0077).
@@ -246,7 +247,11 @@ export async function runReportScheduleSweep(): Promise<number> {
     if ((claimed.rowCount ?? 0) === 0) continue;
 
     try {
-      if (await runOne(schedule)) delivered++;
+      if (await runOne(schedule)) {
+        delivered++;
+        // runOne's transaction has committed by now - see its withOrgContext.
+        announce(schedule.org_id, "notification", "created");
+      }
     } catch (err) {
       console.error(`report schedule ${schedule.id}:`, err);
     }

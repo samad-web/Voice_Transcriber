@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import {
@@ -47,8 +48,8 @@ export function TranscriptionClient({
   canEdit: boolean;
 }) {
   const router = useRouter();
-  const [language, setLanguage] = useState(asrLanguage ?? "unknown");
-  const [mode, setMode] = useState(asrMode ?? ASR_MODE_DEFAULT);
+  const [language, setLanguage] = useDraftState(asrLanguage ?? "unknown");
+  const [mode, setMode] = useDraftState(asrMode ?? ASR_MODE_DEFAULT);
   const [terms, setTerms] = useState<string[]>(vocabulary ?? []);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);

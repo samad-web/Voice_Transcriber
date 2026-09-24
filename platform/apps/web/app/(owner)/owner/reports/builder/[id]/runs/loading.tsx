@@ -13,7 +13,7 @@ const RUN_W = ["w-44", "w-40", "w-48", "w-44", "w-40", "w-48"] as const;
 export default function RunHistoryLoading() {
   return (
     <>
-      <PageHeader title="Run history" context="Report builder" />
+      <PageHeader title="Run history" context="Custom reports" />
 
       <Card>
         <div className="flex h-4 items-center">

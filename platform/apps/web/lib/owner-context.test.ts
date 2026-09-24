@@ -814,8 +814,9 @@ describe("getOwnerBranding", () => {
   });
 
   it("drops a stored value the schema no longer accepts", async () => {
-    // `loginBackgroundUrl` was retired: every tenant signs in at the same URL,
-    // so it could never be applied. Tenants who set it still have the key.
+    // PATCH merges into the jsonb, so a key the schema has since dropped stays
+    // stored for tenants who set it. (This used to be `loginBackgroundUrl`,
+    // which is storable again - any retired key exercises the same path.)
     const { getOwnerBranding, fetchMock } = await load({
       operatorEmails: OPERATOR_EMAIL,
       authEnabled: true,
@@ -824,7 +825,7 @@ describe("getOwnerBranding", () => {
     contextOk(fetchMock, {
       memberships: [
         rawMembership({
-          branding: { logoUrl: "https://cdn.example.com/l.png", loginBackgroundUrl: "https://x/y" },
+          branding: { logoUrl: "https://cdn.example.com/l.png", retiredField: "https://x/y" },
         }),
       ],
       user: { id: USER_B },

@@ -10,7 +10,7 @@ import { TableBlockSkeleton, ToolbarSkeleton } from "@/components/skeletons";
 export default function ProductsLoading() {
   return (
     <>
-      <PageHeader title="Products" context="Pipeline" />
+      <PageHeader title="Price list" context="Sales" />
       <ToolbarSkeleton search />
       {/* products-client.tsx is one block that spaces its own button row and table (space-y-4). */}
       <div className="space-y-4">

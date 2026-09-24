@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { StatusChip, useAlert, useToast } from "@aura/ui";
 import { setCallDispositionAction, type Disposition } from "./actions";
 
@@ -45,7 +46,7 @@ export function DispositionPicker({
   current: string | null;
   onChange?: (key: string | null) => void;
 }) {
-  const [selected, setSelected] = useState(current);
+  const [selected, setSelected] = useDraftState(current);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();

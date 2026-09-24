@@ -10,19 +10,19 @@ import type { ReactNode } from "react";
  * own - the bar's layout and behaviour do not move.
  *
  * Sticky from `md` up only. Below that, <MobileNav>'s own sticky bar already
- * holds the top of the screen (and carries the tenant name and accent), and
- * two sticky bars stacked would eat a phone's viewport.
+ * holds the top of the screen, and two sticky bars stacked would eat a
+ * phone's viewport.
  *
- * The accent hairline is the tenant's colour (lib/tenant-accent.ts) - the one
- * thing on screen that changes when you switch tenant even if you never read
- * the name.
+ * The brand-gradient hairline across the very top of the screen - above this
+ * bar AND the sidebar beside it, edge to edge of the viewport - is the owner
+ * layout's own `fixed` strip, not this component's: it has to span both
+ * columns of that layout's flex row, which is a width this bar does not have.
  */
 export function ConsoleHeader({
   tenant,
   search,
   back,
   actions,
-  accentColor,
 }: {
   tenant: ReactNode;
   search: ReactNode;
@@ -35,17 +35,9 @@ export function ConsoleHeader({
    */
   back?: ReactNode;
   actions: ReactNode;
-  accentColor?: string;
 }) {
   return (
-    <header
-      // The hairline from `md` up only: below it <MobileNav>'s sticky bar
-      // carries the same line, and two stacked accent lines read as a border.
-      className={`print-hide z-20 border-b border-border bg-surface md:sticky md:top-0 ${
-        accentColor ? "md:shadow-[inset_0_3px_0_0_var(--tenant-accent)]" : ""
-      }`}
-      style={accentColor ? ({ "--tenant-accent": accentColor } as React.CSSProperties) : undefined}
-    >
+    <header className="print-hide z-20 border-b border-border bg-surface md:sticky md:top-0">
       {/* xl+: equal outer columns put search on the bar's true centre; flex alone centres it in the uneven gap between tenant and actions. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3.5 pb-2.5 sm:px-5 md:flex-nowrap md:px-8 xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,36rem)_minmax(0,1fr)]">
         <div className="min-w-0 shrink">{tenant}</div>

@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { Button, ErrorBanner, Input, MonoLabel, useAlert } from "@aura/ui";
+import { ErrorBanner, MonoLabel, useAlert } from "@aura/ui";
 import { useOrgTimeZone } from "@/components/org-time";
 import { InlineListSkeleton } from "@/components/skeletons";
 import { prioritise, workspaceToday } from "@/lib/next-actions";
-import { createTaskAction, fetchTasksAction, updateTaskAction } from "./crm-actions";
+import { fetchTasksAction, updateTaskAction } from "./crm-actions";
+import { NewTaskButton, useAssigneeOptions } from "./task-composer";
 import { TaskRow } from "./task-row";
 import type { Task } from "./types";
 
@@ -37,9 +38,9 @@ export function TaskList({
 }) {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ title: "", dueOn: "" });
   const [today, setToday] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const assignees = useAssigneeOptions();
   const alert = useAlert();
   const zone = useOrgTimeZone();
   // Inside a record's own page the record link would point at itself.
@@ -68,32 +69,6 @@ export function TaskList({
     return load();
   }, [load, zone]);
 
-  const add = () => {
-    if (!draft.title.trim()) {
-      void alert({
-        title: "Couldn't add the task",
-        body: "Give the task a title",
-        tone: "danger",
-      });
-      return;
-    }
-    startTransition(async () => {
-      const result = await createTaskAction({
-        title: draft.title.trim(),
-        dueOn: draft.dueOn || null,
-        dealId: dealId ?? null,
-        contactId: contactId ?? null,
-        accountId: accountId ?? null,
-      });
-      if (result.error) {
-        await alert({ title: "Couldn't add the task", body: result.error, tone: "danger" });
-        return;
-      }
-      if (result.task) setTasks((prev) => [result.task!, ...(prev ?? [])]);
-      setDraft({ title: "", dueOn: "" });
-    });
-  };
-
   const complete = (task: Task) => {
     // Optimistic: drop it from the open list immediately.
     setTasks((prev) => (prev ?? []).filter((t) => t.id !== task.id));
@@ -110,38 +85,28 @@ export function TaskList({
     });
   };
 
+  // A row came back from the API changed - reassigned in its dialog, or
+  // accepted / declined by the reader. The API's copy replaces ours whole, so
+  // everyone's answers are the server's rather than a guess.
+  const replace = (next: Task) => setTasks((prev) => (prev ?? []).map((t) => (t.id === next.id ? next : t)));
+
   const ordered = tasks && today ? prioritise(tasks, today) : [];
 
   return (
     <div className="space-y-3">
-      <MonoLabel>{title}</MonoLabel>
-
-      {showComposer ? (
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-0 flex-1">
-            <Input
-              value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="Call back about the quote"
-              maxLength={300}
-              aria-label="New follow-up"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") add();
-              }}
-            />
-          </div>
-          <input
-            type="date"
-            value={draft.dueOn}
-            onChange={(e) => setDraft({ ...draft, dueOn: e.target.value })}
-            aria-label="Due date"
-            className="h-9 rounded-md border border-border-strong bg-surface px-2 text-sm text-text"
+      <div className="flex items-center justify-between gap-2">
+        <MonoLabel>{title}</MonoLabel>
+        {showComposer ? (
+          <NewTaskButton
+            size="sm"
+            assignees={assignees}
+            dealId={dealId}
+            contactId={contactId}
+            accountId={accountId}
+            onCreated={(task) => setTasks((prev) => [task, ...(prev ?? [])])}
           />
-          <Button type="button" size="sm" onClick={add} loading={pending}>
-            Add
-          </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {error ? <ErrorBanner>{error}</ErrorBanner> : null}
 
@@ -158,6 +123,8 @@ export function TaskList({
               today={today}
               showRecord={!onRecord}
               showAssignee={!onRecord}
+              assignees={assignees}
+              onChanged={replace}
               onComplete={complete}
               onLogged={({ completed, next }) => {
                 setTasks((prev) => {

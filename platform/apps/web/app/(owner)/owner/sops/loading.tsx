@@ -19,7 +19,7 @@ const EXPLAINER: readonly (readonly string[])[] = [
 export default function SopsLoading() {
   return (
     <>
-      <PageHeader title="Call procedure" context="Team" />
+      <PageHeader title="Call checklist" context="Settings" />
 
       <Card className="space-y-2">
         <Skeleton className="h-3 w-28" />

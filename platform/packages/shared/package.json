@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "libphonenumber-js": "^1.13.13",
     "zod": "^4.1.0"
   },
   "devDependencies": {

@@ -30,7 +30,7 @@ export default async function RunsPage({ params }: { params: Promise<{ id: strin
 
   return (
     <>
-      <PageHeader title="Run history" context="Report builder" />
+      <PageHeader title="Run history" context="Custom reports" />
 
       <Card>
         <MonoLabel>Runs</MonoLabel>

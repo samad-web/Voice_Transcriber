@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, X } from "lucide-react";
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import { formatWait, leadCallbackState } from "@aura/shared";
 import {
   Button,
   Input,
-  MonoLabel,
+  Popover,
   Select,
   StatusChip,
   TableBody,
@@ -16,6 +16,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@aura/ui";
+import { FilterTag } from "@/components/filter-tag";
 import { useOrgTimeZone } from "@/components/org-time";
 import { formatDateRange } from "@/lib/report-dashboard";
 import { BulkActionBar } from "../bulk/bulk-action-bar";
@@ -26,6 +27,7 @@ import { CHANNEL_OPTIONS } from "../list-options";
 import { ProjectChip } from "../project-chip";
 import { TemperatureChip } from "../temperature-chip";
 import {
+  boardRef,
   contactLabel,
   formatValue,
   num,
@@ -40,6 +42,17 @@ const SORTS = [
   { key: "created", label: "Newest" },
   { key: "value", label: "Value" },
   { key: "title", label: "A-Z" },
+] as const;
+
+const STATUS_OPTIONS = [
+  { value: "open", label: "Open" },
+  { value: "won", label: "Won" },
+  { value: "lost", label: "Lost" },
+] as const;
+
+const RESPONDED_OPTIONS = [
+  { value: "no", label: "Not yet" },
+  { value: "yes", label: "Yes" },
 ] as const;
 
 /** A telecaller identity a lead can be assigned to - from GET /v1/owner/team. */
@@ -73,7 +86,8 @@ function leadCallbackLabel(lead: Lead): { text: string; waiting: boolean } | nul
  */
 export function LeadsTable({
   leads,
-  stages,
+  stages: mainStages,
+  boards = [],
   projects,
   total,
   limit,
@@ -82,7 +96,10 @@ export function LeadsTable({
   canReassign = false,
 }: {
   leads: Lead[];
+  /** The Main board's columns. */
   stages: Stage[];
+  /** Every lead board (0136), so each row's stage reads in its own board's words. */
+  boards?: { id: string | null; name: string; stages: Stage[] }[];
   projects: Project[];
   total: number;
   limit: number;
@@ -120,14 +137,28 @@ export function LeadsTable({
     if (focus) setOpen(leads.find((l) => l.id === focus) ?? null);
   }, [params, leads]);
 
-  const setParam = (key: string, value: string | null) => {
+  /** Change several parameters at once; `null` removes one. */
+  const setParams = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params.toString());
-    if (value === null || value === "") next.delete(key);
-    else next.set(key, value);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
     // Any filter change invalidates the current page.
-    if (key !== "offset") next.delete("offset");
+    if (!("offset" in patch)) next.delete("offset");
     router.push(`/owner/leads${next.toString() ? `?${next}` : ""}`);
   };
+  const setParam = (key: string, value: string | null) => setParams({ [key]: value });
+
+  const boardParam = params.get("boardId");
+  const activeBoard = boardParam ? boards.find((b) => boardRef(b.id) === boardParam) : undefined;
+  // The Stage filter offers the columns of the board being looked at - stage
+  // keys belong to a board, so "all boards" offers the Main board's.
+  const stages = activeBoard?.stages ?? mainStages;
+  const stagesOf = (boardId: string | null | undefined) =>
+    boards.find((b) => b.id === (boardId ?? null))?.stages ?? mainStages;
+  const stageLabel = (lead: Lead) => stagesOf(lead.board_id).find((s) => s.key === lead.stage)?.label ?? lead.stage;
+  const boardName = (boardId: string | null) => boards.find((b) => b.id === boardId)?.name ?? "";
 
   const stage = params.get("stage");
   const status = params.get("status");
@@ -139,16 +170,68 @@ export function LeadsTable({
   const createdTo = params.get("createdTo");
 
   /** The created-date window is set by a Reports drill-down; clearing it removes both ends at once. */
-  const clearCreated = () => {
-    const next = new URLSearchParams(params.toString());
-    next.delete("createdFrom");
-    next.delete("createdTo");
-    next.delete("offset");
-    router.push(`/owner/leads${next.toString() ? `?${next}` : ""}`);
-  };
+  const clearCreated = () => setParams({ createdFrom: null, createdTo: null });
   const sort = params.get("sort") ?? "activity";
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.max(1, Math.ceil(total / limit));
+
+  const activeProject = project ? projects.find((p) => p.id === project) : undefined;
+  const activeAssignee = assignedTo ? telecallers.find((t) => t.id === assignedTo) : undefined;
+
+  // Every active selection, as a removable tag - the same treatment the Calls
+  // page's filters got. The date range is set by a Reports drill-down rather
+  // than a control here, but it is still a filter narrowing this list, so it
+  // belongs in the same row rather than its own special-cased chip.
+  const tags: { key: string; label: string; onRemove: () => void }[] = [];
+  if (boardParam)
+    tags.push({
+      key: "board",
+      label: `Board: ${activeBoard?.name ?? boardParam}`,
+      // The stage filter was chosen from this board's columns, so it goes too.
+      onRemove: () => setParams({ boardId: null, stage: null }),
+    });
+  if (stage)
+    tags.push({
+      key: "stage",
+      label: `Stage: ${stages.find((s) => s.key === stage)?.label ?? stage}`,
+      onRemove: () => setParam("stage", null),
+    });
+  if (project)
+    tags.push({
+      key: "project",
+      label: `Project: ${project === "none" ? "Unlabelled" : (activeProject?.name ?? project)}`,
+      onRemove: () => setParam("projectId", null),
+    });
+  if (status)
+    tags.push({
+      key: "status",
+      label: `Status: ${STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status}`,
+      onRemove: () => setParam("status", null),
+    });
+  if (assignedTo)
+    tags.push({
+      key: "assignedTo",
+      label: `Assigned to: ${assignedTo === "none" ? "Unassigned" : (activeAssignee?.displayName ?? assignedTo)}`,
+      onRemove: () => setParam("assignedTo", null),
+    });
+  if (responded)
+    tags.push({
+      key: "responded",
+      label: `Contacted: ${RESPONDED_OPTIONS.find((o) => o.value === responded)?.label ?? responded}`,
+      onRemove: () => setParam("responded", null),
+    });
+  if (channel)
+    tags.push({
+      key: "channel",
+      label: `Came in through: ${CHANNEL_OPTIONS.find((o) => o.value === channel)?.label ?? channel}`,
+      onRemove: () => setParam("sourceChannel", null),
+    });
+  if (createdFrom || createdTo)
+    tags.push({
+      key: "created",
+      label: `Arrived: ${formatDateRange(createdFrom ?? createdTo!, createdTo ?? createdFrom!)}`,
+      onRemove: clearCreated,
+    });
 
   const patch = (leadId: string, update: Partial<Lead>) => {
     setRows((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...update } : l)));
@@ -169,17 +252,16 @@ export function LeadsTable({
 
   return (
     <>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-5">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setParam("q", query.trim() || null);
-          }}
-          className="min-w-0 flex-1"
-        >
-          <MonoLabel>Search</MonoLabel>
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="relative min-w-0 flex-1">
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setParam("q", query.trim() || null);
+            }}
+            className="min-w-0 flex-1"
+          >
+            <div className="relative">
               <Search
                 aria-hidden="true"
                 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-muted"
@@ -191,7 +273,7 @@ export function LeadsTable({
                 aria-label="Search leads"
                 // The icon and the clear button sit inside the field, so the
                 // padding has to clear both.
-                className="pr-9 pl-9"
+                className="h-9.5 pr-9 pl-9"
               />
               {query ? (
                 <button
@@ -207,141 +289,165 @@ export function LeadsTable({
                 </button>
               ) : null}
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
 
-        <div>
-          <MonoLabel>Stage</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <FilterChip active={!stage} onClick={() => setParam("stage", null)}>
-              All
-            </FilterChip>
-            {stages.map((s) => (
-              <FilterChip
-                key={s.key}
-                active={stage === s.key}
-                onClick={() => setParam("stage", stage === s.key ? null : s.key)}
+        {tags.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {tags.map((tag) => (
+              <FilterTag key={tag.key} label={tag.label} onRemove={tag.onRemove} />
+            ))}
+            {tags.length > 1 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setParams({
+                    boardId: null,
+                    stage: null,
+                    projectId: null,
+                    status: null,
+                    assignedTo: null,
+                    responded: null,
+                    sourceChannel: null,
+                    createdFrom: null,
+                    createdTo: null,
+                  })
+                }
+                className="px-1.5 text-xs font-medium text-text-muted underline underline-offset-2 hover:text-text"
               >
-                {s.label}
-              </FilterChip>
-            ))}
+                Clear all
+              </button>
+            ) : null}
           </div>
-        </div>
+        ) : null}
 
-        <div>
-          <MonoLabel>Sort</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {SORTS.map((s) => (
-              <FilterChip key={s.key} active={sort === s.key} onClick={() => setParam("sort", s.key)}>
-                {s.label}
-              </FilterChip>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Only the active projects are offered. An archived one can still be
-          reached by URL - a bookmarked filter must not break - but putting it
-          in the chip row would grow the list forever. */}
-      {projects.length > 0 ? (
-        <div>
-          <MonoLabel>Project</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <FilterChip active={!project} onClick={() => setParam("projectId", null)}>
-              All
-            </FilterChip>
-            {projects
-              .filter((p) => p.active)
-              .map((p) => (
-                <FilterChip
-                  key={p.id}
-                  active={project === p.id}
-                  onClick={() => setParam("projectId", project === p.id ? null : p.id)}
-                >
-                  {p.name}
-                </FilterChip>
-              ))}
-            {/* The list an owner needs to see to find out their catalogue is
-                missing an alias. Without it, a silently unlabelled lead looks
-                exactly like a lead that genuinely has no project. */}
-            <FilterChip
-              active={project === "none"}
-              onClick={() => setParam("projectId", project === "none" ? null : "none")}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Only once there is more than one board (0136). */}
+          {boards.length > 1 ? (
+            <Select
+              size="sm"
+              aria-label="Board"
+              value={boardParam ?? ""}
+              // A stage belongs to a board, so switching boards drops it.
+              onChange={(e) => setParams({ boardId: e.target.value || null, stage: null })}
+              className="h-8 w-40"
             >
-              Unlabelled
-            </FilterChip>
-          </div>
-        </div>
-      ) : null}
+              <option value="">All boards</option>
+              {boards.map((b) => (
+                <option key={boardRef(b.id)} value={boardRef(b.id)}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          ) : null}
 
-      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-        <LeadSelect
-          id="leads-status"
-          label="Status"
-          value={status ?? ""}
-          onChange={(value) => setParam("status", value || null)}
-          options={[
-            { value: "", label: "Any status" },
-            { value: "open", label: "Open" },
-            { value: "won", label: "Won" },
-            { value: "lost", label: "Lost" },
-          ]}
-        />
-        <LeadSelect
-          id="leads-responded"
-          label="Contacted"
-          value={responded}
-          onChange={(value) => setParam("responded", value || null)}
-          options={[
-            { value: "", label: "Either" },
-            { value: "no", label: "Not yet" },
-            { value: "yes", label: "Yes" },
-          ]}
-        />
-        <LeadSelect
-          id="leads-channel"
-          label="Came in through"
-          value={channel}
-          onChange={(value) => setParam("sourceChannel", value || null)}
-          options={CHANNEL_OPTIONS}
-        />
-        {/* Only where the roster could be read (owner/manager) - a telecaller's
-            list is already narrowed to their own leads. */}
-        {telecallers.length > 0 || assignedTo ? (
-          <LeadSelect
-            id="leads-assigned"
-            label="Assigned to"
-            value={assignedTo}
-            onChange={(value) => setParam("assignedTo", value || null)}
-            options={[
-              { value: "", label: "Anyone" },
-              { value: "none", label: "Unassigned" },
-              ...telecallers.map((t) => ({ value: t.id, label: t.displayName })),
-              ...(assignedTo && assignedTo !== "none" && !telecallers.some((t) => t.id === assignedTo)
-                ? [{ value: assignedTo, label: "(no longer active)" }]
-                : []),
-            ]}
+          <Select
+            size="sm"
+            aria-label="Stage"
+            value={stage ?? ""}
+            onChange={(e) => setParam("stage", e.target.value || null)}
+            className="h-8 w-36"
+          >
+            <option value="">All stages</option>
+            {stages.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+
+          {/* Only the active projects are offered. An archived one can still be
+              reached by URL - a bookmarked filter must not break. */}
+          {projects.length > 0 ? (
+            <Select
+              size="sm"
+              aria-label="Project"
+              value={project ?? ""}
+              onChange={(e) => setParam("projectId", e.target.value || null)}
+              className="h-8 w-36"
+            >
+              <option value="">All projects</option>
+              {projects
+                .filter((p) => p.active)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              {/* An owner needs to see the catalogue is missing an alias - without
+                  this option, a silently unlabelled lead looks exactly like one
+                  that genuinely has no project. */}
+              <option value="none">Unlabelled</option>
+            </Select>
+          ) : null}
+
+          <Select
+            size="sm"
+            aria-label="Status"
+            value={status ?? ""}
+            onChange={(e) => setParam("status", e.target.value || null)}
+            className="h-8 w-32"
+          >
+            <option value="">Any status</option>
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+
+          {/* Only where the roster could be read (owner/manager) - a telecaller's
+              list is already narrowed to their own leads. */}
+          {telecallers.length > 0 || assignedTo ? (
+            <Select
+              size="sm"
+              aria-label="Assigned to"
+              value={assignedTo}
+              onChange={(e) => setParam("assignedTo", e.target.value || null)}
+              className="h-8 w-40"
+            >
+              <option value="">Anyone</option>
+              <option value="none">Unassigned</option>
+              {telecallers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.displayName}
+                </option>
+              ))}
+              {assignedTo && assignedTo !== "none" && !telecallers.some((t) => t.id === assignedTo) ? (
+                <option value={assignedTo}>(no longer active)</option>
+              ) : null}
+            </Select>
+          ) : null}
+
+          <LeadsAdvancedFilters
+            responded={responded}
+            channel={channel}
+            onResponded={(value) => setParam("responded", value)}
+            onChannel={(value) => setParam("sourceChannel", value)}
           />
-        ) : null}
-        {createdFrom || createdTo ? (
-          <div>
-            <MonoLabel>Arrived</MonoLabel>
-            <div className="mt-1.5">
-              <FilterChip active onClick={clearCreated}>
-                {formatDateRange(createdFrom ?? createdTo!, createdTo ?? createdFrom!)}
-                <span aria-hidden="true" className="ml-1.5">✕</span>
-                <span className="sr-only"> - remove this filter</span>
-              </FilterChip>
-            </div>
-          </div>
-        ) : null}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-md border border-border bg-surface">
-        <div className="flex items-center justify-between gap-3 border-b border-border bg-bg-subtle px-4 py-3">
-          <span className="text-sm font-medium text-text tabular-nums">
-            {total} lead{total === 1 ? "" : "s"}
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 border-b border-border bg-bg-subtle px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-sm font-medium text-text tabular-nums">
+              {total} lead{total === 1 ? "" : "s"}
+            </span>
+            <Select
+              size="sm"
+              aria-label="Order of leads"
+              value={sort}
+              onChange={(e) => setParam("sort", e.target.value)}
+              className="h-8 w-32"
+            >
+              {SORTS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </Select>
+          </div>
           <span className="text-xs text-text-muted tabular-nums">
             page {page} of {pages}
           </span>
@@ -469,8 +575,11 @@ export function LeadsTable({
                               : "outline"
                         }
                       >
-                        {stages.find((s) => s.key === lead.stage)?.label ?? lead.stage}
+                        {stageLabel(lead)}
                       </StatusChip>
+                      {boards.length > 1 && lead.board_id ? (
+                        <span className="mt-0.5 block text-xs text-text-muted">{boardName(lead.board_id)}</span>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {num(lead.value_num) === null ? "-" : formatValue(lead.value_num)}
@@ -597,31 +706,67 @@ function LeadSelect({
   );
 }
 
-/** Selected filter = the gradient fill, the same "you are here" the sidebar and page header use. */
-function FilterChip({
-  active,
-  onClick,
-  children,
+/**
+ * "Contacted" and "Came in through" (point 5 of the Calls brief, applied
+ * here too): specific enough that most readers never touch them, so they live
+ * behind one button rather than two more always-visible selects.
+ */
+function LeadsAdvancedFilters({
+  responded,
+  channel,
+  onResponded,
+  onChannel,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  responded: string;
+  channel: string;
+  onResponded: (value: string) => void;
+  onChannel: (value: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const activeCount = (responded ? 1 : 0) + (channel ? 1 : 0);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      // Selected = a solid NEUTRAL fill, not the brand gradient. This strip sits
-      // directly above a lead table; "this filter is on" is not one of the four
-      // states (@aura/ui's state.tsx), so it gets no hue.
-      className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
-        active
-          ? "border-transparent bg-text text-bg"
-          : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
-      }`}
+    <Popover
+      open={open}
+      onDismiss={() => setOpen(false)}
+      align="end"
+      className="w-64 p-3"
+      trigger={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
+            activeCount > 0
+              ? "border-transparent bg-text text-bg"
+              : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+          }`}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+          Advanced filters
+          {activeCount > 0 ? (
+            <span className="rounded-full bg-bg/25 px-1.5 py-px text-[10px]">{activeCount}</span>
+          ) : null}
+        </button>
+      }
     >
-      {children}
-    </button>
+      <div className="space-y-3">
+        <LeadSelect
+          id="leads-responded"
+          label="Contacted"
+          value={responded}
+          onChange={onResponded}
+          options={[{ value: "", label: "Either" }, ...RESPONDED_OPTIONS]}
+        />
+        <LeadSelect
+          id="leads-channel"
+          label="Came in through"
+          value={channel}
+          onChange={onChannel}
+          options={CHANNEL_OPTIONS}
+        />
+      </div>
+    </Popover>
   );
 }

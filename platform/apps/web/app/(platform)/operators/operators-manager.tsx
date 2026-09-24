@@ -5,6 +5,7 @@ import { Copy, KeyRound, RotateCcw, Trash2, UserPlus } from "lucide-react";
 import {
   BrutalButton,
   Card,
+  ConsolePanel,
   EmptyState,
   MonoLabel,
   StatusChip,
@@ -318,9 +319,7 @@ function PasswordReveal({
         <MonoLabel>Password for {email} - shown once</MonoLabel>
         <StatusChip tone="danger">Copy now</StatusChip>
       </div>
-      <div className="rounded-md bg-black p-2.5 font-mono text-sm break-all text-green-400">
-        {password}
-      </div>
+      <ConsolePanel lines={[password]} tone="log" />
       <div className="flex flex-wrap gap-2">
         <BrutalButton
           variant="secondary"

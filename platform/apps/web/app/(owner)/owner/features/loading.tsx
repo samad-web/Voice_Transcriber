@@ -39,7 +39,7 @@ function FeatureGroupSkeleton({ rows, start }: { rows: number; start: number }) 
 export default function FeaturesLoading() {
   return (
     <>
-      <PageHeader title="Features" context="Workspace" />
+      <PageHeader title="Turn features on/off" context="Settings" />
 
       <div className="-mt-2 max-w-prose space-y-2.5">
         <Skeleton className="h-3 w-full" />

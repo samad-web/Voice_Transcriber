@@ -100,6 +100,14 @@ export interface OwnerMembership {
    * API, and callers fall back to Asia/Kolkata.
    */
   reportingTimezone?: string | null;
+  /**
+   * org_business_profile.country (0126), set on Time & location - the country
+   * every phone field starts on. Optional for the same older-API reason;
+   * callers fall back to India.
+   */
+  defaultCountry?: string | null;
+  /** org_business_profile.base_currency (0126). Falls back to INR. */
+  baseCurrency?: string | null;
 }
 
 export interface Principal {
@@ -416,6 +424,20 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     memberships,
   };
 });
+
+/**
+ * Would this address be let into the operator console? The same three sources
+ * `getPrincipal` consults, for the Google callback, which has to decide before
+ * the new session is readable through cookies whether a sign-in with no
+ * workspace is platform staff or a stranger to sign straight back out.
+ */
+export async function isListedOperatorEmail(rawEmail: string): Promise<boolean> {
+  const email = rawEmail.trim().toLowerCase();
+  if (!email) return false;
+  if (ROOT_OPERATOR_EMAIL !== "" && email === ROOT_OPERATOR_EMAIL) return true;
+  if (OPERATOR_EMAILS.includes(email)) return true;
+  return isAppointedOperator(email);
+}
 
 /**
  * Is this address in `platform_operators` (migration 0089)?

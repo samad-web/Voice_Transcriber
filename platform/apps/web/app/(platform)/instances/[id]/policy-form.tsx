@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { ShieldCheck } from "lucide-react";
 import { BrutalButton, Card, Input, Select, useAlert, useToast } from "@aura/ui";
 import { updatePolicyAction } from "./actions";
@@ -17,10 +18,10 @@ export function PolicyForm({
     store_full_number?: boolean;
   };
 }) {
-  const [consentPolicy, setConsentPolicy] = useState(initial.consent_policy);
-  const [onConsentFailure, setOnConsentFailure] = useState(initial.on_consent_failure);
-  const [retentionDays, setRetentionDays] = useState(String(initial.retention_days));
-  const [storeFullNumber, setStoreFullNumber] = useState(initial.store_full_number ?? false);
+  const [consentPolicy, setConsentPolicy] = useDraftState(initial.consent_policy);
+  const [onConsentFailure, setOnConsentFailure] = useDraftState(initial.on_consent_failure);
+  const [retentionDays, setRetentionDays] = useDraftState(String(initial.retention_days));
+  const [storeFullNumber, setStoreFullNumber] = useDraftState(initial.store_full_number ?? false);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
@@ -53,7 +54,7 @@ export function PolicyForm({
           Consent &amp; Retention Policy
         </h4>
       </div>
-      <p className="text-xs text-neutral-500 font-sans font-medium">
+      <p className="text-xs text-text-muted font-sans font-medium">
         Applies to every handset enrolled in this instance - saving bumps their config version.
       </p>
 
@@ -95,14 +96,14 @@ export function PolicyForm({
         />
       </div>
 
-      <label className="flex items-start gap-2.5 cursor-pointer border-2 border-neutral-200 p-3">
+      <label className="flex items-start gap-2.5 cursor-pointer border-2 border-border-strong p-3">
         <input
           type="checkbox"
           className="mt-0.5 h-4 w-4 accent-black shrink-0"
           checked={storeFullNumber}
           onChange={(e) => setStoreFullNumber(e.target.checked)}
         />
-        <span className="text-xs font-sans text-neutral-700 leading-relaxed">
+        <span className="text-xs font-sans text-text-muted leading-relaxed">
           <span className="font-display font-bold uppercase text-black block text-xs">
             Store full phone numbers
           </span>

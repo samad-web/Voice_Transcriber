@@ -13,7 +13,7 @@ const STEP_W = ["w-28", "w-24", "w-20", "w-16"] as const;
 export default function ConnectAppLoading() {
   return (
     <>
-      <PageHeaderSkeleton context="Integrations" />
+      <PageHeaderSkeleton context="Connected apps" />
 
       <div className="max-w-3xl space-y-4">
         <div className="flex flex-wrap items-center gap-2">

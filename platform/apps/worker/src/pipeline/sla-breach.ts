@@ -1,5 +1,6 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { OWNER_ROLE_ADMINS } from "@aura/shared";
+import { announce } from "./realtime";
 
 /**
  * The response SLA sweep (CRM dashboard Phase 7, migration 0109).
@@ -63,7 +64,7 @@ export async function runSlaBreachSweep(): Promise<number> {
 }
 
 async function raiseForOrg(orgId: string, slaMinutes: number): Promise<number> {
-  return withOrgContext(orgId, async (client) => {
+  const raised = await withOrgContext(orgId, async (client) => {
     const { rowCount } = await client.query(
       `INSERT INTO notifications (org_id, user_id, kind, title, body, link_path, dedupe_key)
        SELECT $1, r.user_id, 'sla_breach',
@@ -91,6 +92,10 @@ async function raiseForOrg(orgId: string, slaMinutes: number): Promise<number> {
     );
     return rowCount ?? 0;
   });
+  // Tell open consoles a notification landed - AFTER the write committed, so the
+  // bell's re-read (it reloads on any live event) is guaranteed to see the row.
+  if (raised > 0) announce(orgId, "notification", "created");
+  return raised;
 }
 
 export function startSlaBreachSweep(): NodeJS.Timeout {

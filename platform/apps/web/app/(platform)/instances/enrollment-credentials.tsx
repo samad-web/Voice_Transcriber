@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Copy, QrCode } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
+import { BrutalButton, Card, ConsolePanel, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { enrollmentQrPayload } from "@aura/shared";
 
 export interface Credentials {
@@ -87,23 +87,21 @@ export function EnrollmentCredentials({
 
       <div className="space-y-1.5">
         <MonoLabel>Instance ID</MonoLabel>
-        <div className="bg-neutral-50 border-2 border-black p-2.5 font-mono text-xs break-all">
+        <div className="bg-surface border-2 border-border-strong p-2.5 font-mono text-xs break-all">
           {result.instanceId}
         </div>
       </div>
 
       <div className="space-y-1.5">
         <MonoLabel>One-Time Admin Key</MonoLabel>
-        <div className="bg-black text-green-400 border-2 border-black p-2.5 font-mono text-xs break-all">
-          {result.adminKey}
-        </div>
+        <ConsolePanel lines={[result.adminKey ?? ""]} tone="log" />
         <BrutalButton variant="secondary" className="w-full" onClick={copyKey}>
           <Copy className="h-4 w-4" />
           COPY ADMIN KEY
         </BrutalButton>
       </div>
 
-      <div className="flex items-start gap-4 pt-2 border-t-2 border-neutral-200">
+      <div className="flex items-start gap-4 pt-2 border-t-2 border-border">
         {qrDataUrl ? (
           // A raw <img>, not next/image, on purpose: the source is an in-memory
           // data: URI generated a few lines up, so there is nothing for the
@@ -115,10 +113,10 @@ export function EnrollmentCredentials({
           />
         ) : (
           <div className="border-2 border-black w-32 h-32 flex items-center justify-center">
-            <QrCode className="h-8 w-8 text-neutral-300" />
+            <QrCode className="h-8 w-8 text-text-subtle" />
           </div>
         )}
-        <div className="text-[11px] text-neutral-600 font-sans font-medium leading-relaxed">
+        <div className="text-[11px] text-text-muted font-sans font-medium leading-relaxed">
           <span className="font-display font-bold uppercase text-black block mb-1 text-xs">
             On the handset
           </span>

@@ -81,7 +81,7 @@ const META_W = ["w-56", "w-60", "w-52", "w-64"] as const;
 export default function ReportBuilderLoading() {
   return (
     <>
-      <PageHeader title="Report builder" context="Pipeline" />
+      <PageHeader title="Custom reports" context="Reports" />
 
       <div className="-mt-2 max-w-3xl">
         <Line box="sm" bar="h-3.5 w-full" />

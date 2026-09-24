@@ -6,7 +6,7 @@ import { FormCardSkeleton } from "@/components/skeletons";
 export default function BrandingLoading() {
   return (
     <>
-      <PageHeader title="Branding" context="Settings" />
+      <PageHeader title="Logo & colours" context="Settings" />
       <Skeleton className="h-3.5 w-full max-w-2xl" />
       <FormCardSkeleton fields={7} />
     </>

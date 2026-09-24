@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   AlarmClock,
@@ -45,6 +45,16 @@ import {
  * one: a poll that fires while a push channel is working is pure waste.
  */
 const POLL_MS = 300_000;
+
+/**
+ * How long a burst of live changes is collected before the bell re-reads.
+ * The bell listens to EVERY change (see the subscription below), and a call
+ * finishing can fan out into several events in a second; one read covers them.
+ */
+const RELOAD_DEBOUNCE_MS = 800;
+
+/** More new rows than this at once is a catch-up, said as a count, not one toast each. */
+const TOAST_EACH_MAX = 2;
 
 const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
   "user-plus": UserPlus,
@@ -97,6 +107,13 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+  /**
+   * Ids already shown, so only rows that are NEW to this tab raise a toast.
+   * Null until the first load: what is waiting when the page opens is the
+   * badge's job, and toasting a backlog on every navigation would be noise.
+   */
+  const seen = useRef<Set<string> | null>(null);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(() => {
     void fetchNotificationsAction().then((result) => {
@@ -104,14 +121,47 @@ export function NotificationBell() {
       setUnread(result.unread);
       setHeld(result.held);
       setNextDeliveryAt(result.nextDeliveryAt);
+
+      // The toast: an unread row this tab has not seen before, while somebody
+      // is looking. A hidden tab still updates its badge but does not toast -
+      // a toast times out, so one raised in a background tab is never read.
+      const fresh = result.notifications.filter((r) => r.read_at === null && !seen.current?.has(r.id));
+      const firstLoad = seen.current === null;
+      seen.current = new Set([...(seen.current ?? []), ...result.notifications.map((r) => r.id)]);
+      if (firstLoad || fresh.length === 0 || document.visibilityState !== "visible") return;
+      if (fresh.length > TOAST_EACH_MAX) {
+        toast(`${fresh.length} new notifications`);
+      } else {
+        for (const row of fresh) toast(`${notificationKindSpec(row.kind).label}: ${row.title}`, { duration: 6000 });
+      }
     });
-  }, []);
+  }, [toast]);
+
+  /** Many signals in quick succession cost one read. */
+  const scheduleLoad = useCallback(() => {
+    if (reloadTimer.current) return;
+    reloadTimer.current = setTimeout(() => {
+      reloadTimer.current = null;
+      load();
+    }, RELOAD_DEBOUNCE_MS);
+  }, [load]);
 
   useEffect(() => {
     load();
     const timer = setInterval(load, POLL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
+    // Coming back to the tab catches up at once rather than at the next poll:
+    // a laptop that slept may have dropped the live connection, and the badge
+    // is the first thing somebody looks at when they return.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") scheduleLoad();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    };
+  }, [load, scheduleLoad]);
 
   /*
    * This component is the reason `useRealtime` exists.
@@ -122,10 +172,17 @@ export function NotificationBell() {
    * refresh cannot reach into that. Without this subscription the badge would
    * be the one thing on a live page still a poll behind.
    *
-   * Subscribed to `task` as well as `notification`: assigning a task is what
-   * WRITES the notification (migration 0048), and the two land together.
+   * Subscribed to EVERY topic, not a list. A notification is almost always
+   * written as a side effect of some other change - assigning a task, routing
+   * a lead, a WhatsApp chat landing - and the live event announces the ROUTE
+   * that changed (realtime.interceptor.ts), not the notification. The old
+   * list, ["notification", "task"], missed every notification written by a
+   * lead or conversation change, which then sat invisible until the
+   * five-minute backstop. Listening to everything, debounced, is one small
+   * read per burst - cheaper than the page refresh the same event already
+   * triggers - and cannot miss a producer added next month.
    */
-  useRealtime(["notification", "task"], load);
+  useRealtime("*", scheduleLoad);
 
   // Click-away, Escape and focus restoration now come from Popover - a panel
   // that only closes via its own button is a panel people end up trapped under

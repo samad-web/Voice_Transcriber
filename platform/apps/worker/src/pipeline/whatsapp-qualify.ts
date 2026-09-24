@@ -1,6 +1,7 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { qualifyWhatsAppConversation, type QualifierAgent } from "@aura/llm";
 import { OWNER_ROLE_ADMINS, StoredExtractionSchema, type QualifiableMessage } from "@aura/shared";
+import { announce } from "./realtime";
 
 /**
  * The WhatsApp qualification sweep (migration 0080).
@@ -314,8 +315,8 @@ export async function runWhatsAppQualificationSweep(): Promise<number> {
  * (junk is hidden there, and personal threads are never shown at all).
  */
 export async function raiseReviewPending(orgId: string): Promise<void> {
-  await withOrgContext(orgId, async (client) => {
-    await client.query(
+  const raised = await withOrgContext(orgId, async (client) => {
+    const { rowCount } = await client.query(
       `WITH waiting AS (
          SELECT id, created_at FROM conversation_qualifications
           WHERE org_id = $1 AND status = 'pending' AND disposition = 'prospect'
@@ -337,7 +338,11 @@ export async function raiseReviewPending(orgId: string): Promise<void> {
        ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
       [orgId, OWNER_ROLE_ADMINS],
     );
+    return rowCount ?? 0;
   });
+  // Tell open consoles a notification landed - AFTER the write committed, so the
+  // bell's re-read (it reloads on any live event) is guaranteed to see the row.
+  if (raised > 0) announce(orgId, "notification", "created");
 }
 
 export function startWhatsAppQualificationSweep(): NodeJS.Timeout {

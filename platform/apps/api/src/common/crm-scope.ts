@@ -88,6 +88,8 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   // controller - the fallthrough below returns null, meaning no narrowing, so
   // a role granted `owned` would silently read the whole floor's leads.
   lead: null,
+  // A board is org configuration (0136), not a record anybody owns.
+  lead_board: null,
 };
 
 /**
@@ -115,12 +117,18 @@ export function scopeFilter(
 
   if (column) return { sql: `${prefix}${column} = $?`, value: userId };
 
-  // `task` is the one object with no single owner column - either end of it.
-  // Both branches compare to the SAME parameter, so the caller still
-  // substitutes exactly one value.
+  // `task` is the one object with no single owner column - either end of it,
+  // plus anybody else it was shared with (0135's task_assignees) who has not
+  // turned it down. Every branch compares to the SAME parameter, so the caller
+  // still substitutes exactly one value. Unaliased, the correlation names the
+  // table outright: a bare `id` inside the subquery would bind to whichever
+  // table in scope happens to have one.
   if (objectType === "task") {
+    const idRef = prefix ? `${prefix}id` : "tasks.id";
     return {
-      sql: `(${prefix}assignee_user_id = $? OR ${prefix}created_by = $?)`,
+      sql:
+        `(${prefix}assignee_user_id = $? OR ${prefix}created_by = $? OR EXISTS (` +
+        `SELECT 1 FROM task_assignees ta WHERE ta.task_id = ${idRef} AND ta.user_id = $? AND ta.status <> 'declined'))`,
       value: userId,
     };
   }

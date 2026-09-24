@@ -14,6 +14,7 @@ import type { DbClient } from "./crm-dispatch";
 import { ingestIntakeLead, type IntakeSourceRow } from "./lead-intake";
 import { oauthAppFor, refreshAccessToken } from "./email-sync";
 import { ProviderHttpError } from "./email-providers";
+import { announce } from "./realtime";
 
 /** The catalogue entry this sweep is gated on - see the org query below. */
 const SHEETS_FEATURE = featureSpec("sheets_sync");
@@ -386,9 +387,12 @@ export async function runSheetsSync(fetchImpl: typeof fetch = fetch): Promise<nu
   let created = 0;
   for (const source of sources) {
     try {
-      created += await withOrgContext(source.org_id, (client) =>
+      const made = await withOrgContext(source.org_id, (client) =>
         syncSheetSource(client as DbClient, source, fetchImpl),
       );
+      created += made;
+      // After the commit, so a console re-reading on the signal sees the rows.
+      if (made > 0) announce(source.org_id, "lead", "created");
     } catch (err) {
       // The error is recorded ON THE SOURCE as well as logged, because the
       // person who can fix it - "the sheet was moved to another Drive" - reads

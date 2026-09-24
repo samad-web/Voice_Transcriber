@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /**
  * The heading block at the top of every console page.
  *
@@ -21,15 +23,22 @@
  * turns a sentence into a wall of capitals. Optional and rare: most titles need
  * no explaining, and a loader must pass the same text or the header grows by a
  * line on arrival (console-loading.test.ts checks it).
+ *
+ * `actions` fills the slot the `justify-between` row already reserved on the
+ * right - a page-specific control (the dashboard's fullscreen toggle) that
+ * does not belong on every one of the other pages sharing this component, so
+ * it stays a prop rather than a fixed addition here.
  */
 export function PageHeader({
   title,
   context,
   description,
+  actions,
 }: {
   title: string;
   context?: string;
   description?: string;
+  actions?: ReactNode;
 }) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-bg-subtle px-5 py-5 sm:px-7 sm:py-6">
@@ -57,6 +66,7 @@ export function PageHeader({
             <p className="mt-2 max-w-2xl text-sm text-text-muted">{description}</p>
           ) : null}
         </div>
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
     </div>
   );

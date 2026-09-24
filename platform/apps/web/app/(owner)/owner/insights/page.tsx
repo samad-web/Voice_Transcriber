@@ -5,6 +5,7 @@ import {
   callInsightsHighlights,
   callInsightsParams,
   formatReportRange,
+  todayIn,
 } from "@aura/shared";
 import { DateRangeBar, DateRangeSummary } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
@@ -28,7 +29,7 @@ import {
 } from "./insights-sections";
 import { PdfDownload } from "./pdf-download";
 
-export const metadata: Metadata = { title: "Call insights" };
+export const metadata: Metadata = { title: "Call summary" };
 
 /**
  * Call insights - every call the floor recorded in a range, read together.
@@ -74,7 +75,7 @@ export default async function CallInsightsPage({
     // and "we could not read your calls" must never look alike.
     return (
       <>
-        <PageHeader title="Call insights" context="Conversations" />
+        <PageHeader title="Call summary" context="Reports" />
         <Card>
           <MonoLabel>Could not load call insights</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
@@ -97,7 +98,7 @@ export default async function CallInsightsPage({
 
   return (
     <>
-      <PageHeader title="Call insights" context="Conversations" />
+      <PageHeader title="Call summary" context="Reports" />
       <p className="-mt-2 text-sm text-text-muted">
         Every call your team recorded in the period, read together: how many, when, what happened on
         them and how well they went. Download it as a PDF to share with someone who does not log in.
@@ -110,6 +111,7 @@ export default async function CallInsightsPage({
         from={report.range.from}
         to={report.range.to}
         aside={<PdfDownload window={window} />}
+        today={todayIn(report.org.timezone)}
       />
 
       {invalid ? (

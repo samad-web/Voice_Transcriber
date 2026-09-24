@@ -39,7 +39,7 @@ export default function CallAccessLoading() {
   return (
     <>
       <PageHeader
-        title="Call access"
+        title="Support access to calls"
         context="Settings"
         description="Nobody outside your team can open your call logs, recordings or transcripts without your approval."
       />

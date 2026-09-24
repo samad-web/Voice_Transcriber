@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import {
   OWNER_ROLE_DESCRIPTIONS,
@@ -19,6 +20,7 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { PhonePairFields, usePhoneErrors } from "@/components/phone-pair-fields";
 import { removeTeamMemberAction, resetTeamPasswordAction, setTeamMemberAction } from "./actions";
 import {
   assignStaffRoleAction,
@@ -104,8 +106,8 @@ function Row({
   canEdit: boolean;
   isSelf: boolean;
 }) {
-  const [role, setRole] = useState<OwnerRole>(member.ownerRole);
-  const [telecallerId, setTelecallerId] = useState(member.telecallerId ?? "");
+  const [role, setRole] = useDraftState<OwnerRole>(member.ownerRole);
+  const [telecallerId, setTelecallerId] = useDraftState(member.telecallerId ?? "");
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
@@ -149,9 +151,16 @@ function Row({
           {member.status === "suspended" ? <StatusChip tone="danger">suspended</StatusChip> : null}
           {member.staffCode ? <StatusChip tone="outline">{member.staffCode}</StatusChip> : null}
         </div>
-        {member.jobTitle || member.phone ? (
+        {member.jobTitle || member.phone || member.whatsapp ? (
           <p className="mt-1 text-xs text-text-muted">
-            {[member.jobTitle, member.phone].filter(Boolean).join(" - ")}
+            {[
+              member.jobTitle,
+              member.phone,
+              // Said once when it is the same number; spelled out when not.
+              member.whatsapp && member.whatsapp !== member.phone ? `WhatsApp ${member.whatsapp}` : null,
+            ]
+              .filter(Boolean)
+              .join(" - ")}
           </p>
         ) : null}
         {canEdit ? <StaffDetails member={member} /> : null}
@@ -413,16 +422,31 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
 function StaffDetails({ member }: { member: TeamMember }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [staffCode, setStaffCode] = useState(member.staffCode ?? "");
-  const [jobTitle, setJobTitle] = useState(member.jobTitle ?? "");
-  const [phone, setPhone] = useState(member.phone ?? "");
+  const [staffCode, setStaffCode] = useDraftState(member.staffCode ?? "");
+  const [jobTitle, setJobTitle] = useDraftState(member.jobTitle ?? "");
+  // Starts ticked only when the two numbers already agree (or neither is
+  // set) - a person whose WhatsApp differs must not have it overwritten by
+  // opening and saving this panel.
+  const [phones, setPhones] = useState({
+    mobile: member.phone ?? "",
+    whatsapp: member.whatsapp ?? "",
+    same: (member.whatsapp ?? "") === (member.phone ?? "") || !member.whatsapp,
+  });
+  // Checked against the workspace's country, the rule the API applies too.
+  const phoneErrors = usePhoneErrors();
+  const { mobile: mobileError, whatsapp: whatsappError } = phoneErrors(phones);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
 
   const save = () => {
     startTransition(async () => {
-      const res = await setStaffProfileAction(member.userId, { staffCode, jobTitle, phone });
+      const res = await setStaffProfileAction(member.userId, {
+        staffCode,
+        jobTitle,
+        phone: phones.mobile,
+        whatsapp: phones.same ? phones.mobile : phones.whatsapp,
+      });
       if (res.error) {
         await alert({
           title: `Couldn't save ${member.email}'s details`,
@@ -463,14 +487,17 @@ function StaffDetails({ member }: { member: TeamMember }) {
         value={jobTitle}
         onChange={(e) => setJobTitle(e.target.value)}
       />
-      <Input
-        aria-label={`Phone for ${member.email}`}
-        placeholder="Phone"
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
+      <PhonePairFields
+        idPrefix={`staff-${member.userId}`}
+        mobile={phones.mobile}
+        whatsapp={phones.whatsapp}
+        same={phones.same}
+        onChange={setPhones}
+        disabled={pending}
+        stacked
       />
       <div className="flex gap-2">
-        <Button type="button" onClick={save} disabled={pending}>
+        <Button type="button" onClick={save} disabled={pending || Boolean(mobileError || whatsappError)}>
           {pending ? "Saving..." : "Save"}
         </Button>
         <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
@@ -498,7 +525,7 @@ function StaffDetails({ member }: { member: TeamMember }) {
  * membership used before this control existed.
  */
 function PermissionRole({ member, roles }: { member: TeamMember; roles: TeamRole[] }) {
-  const [roleId, setRoleId] = useState(member.roleId ?? "");
+  const [roleId, setRoleId] = useDraftState(member.roleId ?? "");
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();

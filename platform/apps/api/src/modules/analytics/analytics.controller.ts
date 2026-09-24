@@ -136,4 +136,72 @@ export class AnalyticsController {
 
     return { calls: totals, tenants, devices, byTenant, byDay };
   }
+
+  /**
+   * Platform-wide sign-ins, for the Platform Hub's "active users" tile.
+   *
+   * Counts DISTINCT `auth_user_id` from `auth_events` (0127) - a person who
+   * signs in three times in a day is one active person, not three. Both
+   * consoles count: an operator working the fleet and a tenant owner checking
+   * their calls are both "the platform being used" from where this number is
+   * read. Two adjacent 24h windows so the caller can compute a trend without a
+   * second round trip; `last7d` gives the tile's context line.
+   */
+  @Get("active-users")
+  @CrossTenant()
+  async activeUsers() {
+    const admin = this.db.adminPool();
+    const {
+      rows: [row],
+    } = await admin.query(
+      `SELECT count(DISTINCT auth_user_id) FILTER (
+                WHERE created_at > now() - interval '24 hours')::int AS last24h,
+              count(DISTINCT auth_user_id) FILTER (
+                WHERE created_at <= now() - interval '24 hours'
+                  AND created_at >  now() - interval '48 hours')::int AS previous24h,
+              count(DISTINCT auth_user_id) FILTER (
+                WHERE created_at > now() - interval '7 days')::int AS last7d
+         FROM auth_events
+        WHERE kind = 'sign_in'`,
+    );
+    return { last24h: row.last24h, previous24h: row.previous24h, last7d: row.last7d };
+  }
+
+  /**
+   * The sales funnel's booking conversion, for the Platform Hub's
+   * "transaction/booking rate" tile - the one place in this schema a
+   * "booking" or a "conversion" is a real, stored fact rather than something
+   * this route would have to invent. `marketing.funnel_submissions` is every
+   * inbound enquiry; `marketing.booking_slots` with `status = 'booked'` is the
+   * subset that turned into a sales call. Both counted in the SAME two
+   * 30-day windows so the rate and its trend describe the same cohorts.
+   */
+  @Get("booking-rate")
+  @CrossTenant()
+  async bookingRate() {
+    const admin = this.db.adminPool();
+    const {
+      rows: [row],
+    } = await admin.query(
+      `SELECT
+         (SELECT count(*) FILTER (WHERE created_at > now() - interval '30 days')::int
+            FROM marketing.funnel_submissions)                                       AS submissions_current,
+         (SELECT count(*) FILTER (
+                   WHERE created_at <= now() - interval '30 days'
+                     AND created_at >  now() - interval '60 days')::int
+            FROM marketing.funnel_submissions)                                       AS submissions_previous,
+         (SELECT count(*) FILTER (WHERE booked_at > now() - interval '30 days')::int
+            FROM marketing.booking_slots WHERE status = 'booked')                    AS booked_current,
+         (SELECT count(*) FILTER (
+                   WHERE booked_at <= now() - interval '30 days'
+                     AND booked_at >  now() - interval '60 days')::int
+            FROM marketing.booking_slots WHERE status = 'booked')                    AS booked_previous`,
+    );
+    return {
+      submissionsCurrent: row.submissions_current,
+      bookedCurrent: row.booked_current,
+      submissionsPrevious: row.submissions_previous,
+      bookedPrevious: row.booked_previous,
+    };
+  }
 }

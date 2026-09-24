@@ -1,6 +1,5 @@
 import { Card, Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
-import { ChannelStripSkeleton } from "@/components/skeletons";
 
 /** The review cards' names, cycled so three cards do not read as one copied three times. */
 const TITLE_W = ["w-40", "w-52", "w-36"] as const;
@@ -52,8 +51,7 @@ function ReviewCardSkeleton({ i }: { i: number }) {
 export default function WhatsAppLeadsLoading() {
   return (
     <>
-      <PageHeader title="WhatsApp leads" context="Pipeline" />
-      <ChannelStripSkeleton active={2} />
+      <PageHeader title="WhatsApp chats" context="Leads" />
 
       <div className="space-y-4">
         <Card>

@@ -40,12 +40,6 @@ export function MobileNav({
   subtitle = "Call Intelligence",
   /** See <Sidebar>: this org's own mark, resolved by the owner layout. */
   logoUrl,
-  /**
-   * The tenant's accent (lib/tenant-accent.ts), drawn as a hairline on the top
-   * bar. On a phone the console header scrolls away, so this bar is what keeps
-   * WHICH TENANT visible at all times. Owner console only.
-   */
-  accentColor,
   /** See <Sidebar>: the account menu's name and storage line (doc 27 §2). */
   name,
   storage,
@@ -65,7 +59,6 @@ export function MobileNav({
   title?: string;
   subtitle?: string;
   logoUrl?: string | null;
-  accentColor?: string;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -76,7 +69,7 @@ export function MobileNav({
       : null;
   const groups = platformNavSections();
   const items = ownerRail
-    ? [...ownerRail.primary, ...ownerRail.more.flatMap((group) => group.items)]
+    ? [...ownerRail.primary, ...ownerRail.footer].flatMap((entry) => entry.items)
     : groups.flatMap((group) => group.items);
   const current = navItemFor(pathname, items);
 
@@ -156,7 +149,6 @@ export function MobileNav({
     <>
       <header
         className="print-hide sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-surface px-4 py-3 md:hidden"
-        style={accentColor ? { boxShadow: `inset 0 3px 0 0 ${accentColor}` } : undefined}
       >
         <Logo size={28} priority src={logoUrl} />
         <div className="min-w-0 flex-1">

@@ -13,6 +13,7 @@ import {
   timeZoneLabel,
   type BusinessProfile,
 } from "@aura/shared";
+import { PhoneInput } from "@/components/phone-input";
 import { saveBusinessProfileAction } from "../actions";
 
 type Form = Record<
@@ -53,6 +54,29 @@ function formFrom(p: BusinessProfile): Form {
     contactPhone: p.contactPhone ?? "",
     website: p.website ?? "",
   };
+}
+
+/**
+ * "India (IN)". The name comes from ICU; to keep the server's render and the
+ * browser's identical, the code is always shown beside it and a runtime
+ * without DisplayNames falls back to the code alone.
+ */
+function countryLabel(code: string): string {
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "region" }).of(code);
+    return name && name !== code ? `${name} (${code})` : code;
+  } catch {
+    return code;
+  }
+}
+
+function currencyLabel(code: string): string {
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "currency" }).of(code);
+    return name && name !== code ? `${name} (${code})` : code;
+  } catch {
+    return code;
+  }
 }
 
 const SECTION = "space-y-4 border-t border-border pt-5 first:border-t-0 first:pt-0";
@@ -97,12 +121,15 @@ export function BusinessProfileForm({
     setErrors({});
     setError(null);
     startTransition(async () => {
+      // Country and currency are NOT sent: Time & location owns them, and the
+      // API keeps what is stored when they are absent - so this form, loaded
+      // before a change made there, cannot undo it.
+      const { country: _country, baseCurrency: _currency, ...fields } = form;
       const result = await saveBusinessProfileAction({
-        ...form,
+        ...fields,
         gstin: gstin || null,
         pan: derivedPan ?? (form.pan.trim() || null),
-        country: form.country.trim().toUpperCase(),
-        baseCurrency: form.baseCurrency.trim().toUpperCase(),
+        contactPhone: form.contactPhone || null,
         stateCode: india ? form.stateCode || null : null,
       });
       if (result.fieldErrors) setErrors(result.fieldErrors);
@@ -218,14 +245,25 @@ export function BusinessProfileForm({
                   ))}
                 </Select>
               </FormField>
-              <FormField label="Country" name="country" hint="Two letters, like IN." error={errors.country}>
-                <Input
-                  value={form.country}
-                  onChange={(e) => set("country", e.target.value.toUpperCase())}
-                  maxLength={2}
-                  className="font-mono uppercase"
-                />
-              </FormField>
+              {/* Read-only here, like the zone: Time & location owns the country,
+                  because it is also where every phone field starts. */}
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium text-text">Country</p>
+                <p className="text-sm text-text" suppressHydrationWarning>
+                  {countryLabel(form.country)}
+                </p>
+                <p className="text-xs text-text-muted">
+                  Also the default for every phone number.{" "}
+                  <Link href="/owner/account/time" className="font-medium text-text underline-offset-2 hover:underline">
+                    Change country
+                  </Link>
+                </p>
+                {errors.country ? (
+                  <p role="alert" className="text-xs font-medium text-danger-text">
+                    {errors.country}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </section>
 
@@ -244,11 +282,10 @@ export function BusinessProfileForm({
                 />
               </FormField>
               <FormField label="Business phone" name="contactPhone" error={errors.contactPhone}>
-                <Input
-                  type="tel"
+                <PhoneInput
                   value={form.contactPhone}
-                  onChange={(e) => set("contactPhone", e.target.value)}
-                  maxLength={32}
+                  onChange={(value) => set("contactPhone", value)}
+                  defaultCountry={form.country}
                 />
               </FormField>
               <FormField label="Website" name="website" error={errors.website}>
@@ -273,14 +310,18 @@ export function BusinessProfileForm({
                   </Link>
                 </p>
               </div>
-              <FormField label="Base currency" name="baseCurrency" hint="Three letters, like INR." error={errors.baseCurrency}>
-                <Input
-                  value={form.baseCurrency}
-                  onChange={(e) => set("baseCurrency", e.target.value.toUpperCase())}
-                  maxLength={3}
-                  className="font-mono uppercase"
-                />
-              </FormField>
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium text-text">Base currency</p>
+                <p className="text-sm text-text" suppressHydrationWarning>
+                  {currencyLabel(form.baseCurrency)}
+                </p>
+                <p className="text-xs text-text-muted">
+                  The currency this business works in.{" "}
+                  <Link href="/owner/account/time" className="font-medium text-text underline-offset-2 hover:underline">
+                    Change currency
+                  </Link>
+                </p>
+              </div>
               <FormField label="Financial year starts in" name="fyStartMonth" error={errors.fyStartMonth}>
                 <Select value={String(form.fyStartMonth)} onChange={(e) => set("fyStartMonth", Number(e.target.value))}>
                   {MONTH_NAMES.map((m, i) => (

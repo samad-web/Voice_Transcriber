@@ -6,7 +6,7 @@ import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 import { TriageQueue } from "./triage-queue";
 import type { TriageCounts, UnmatchedCall } from "./actions";
 
-export const metadata: Metadata = { title: "Unmatched calls" };
+export const metadata: Metadata = { title: "Calls to link" };
 
 interface TriageResponse {
   calls: UnmatchedCall[];
@@ -61,7 +61,7 @@ export default async function CallTriagePage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Unmatched calls" context="Conversations" />
+        <PageHeader title="Calls to link" context="Conversations" />
         <LoadFailure what="unmatched calls" failure={result} />
       </>
     );
@@ -70,7 +70,7 @@ export default async function CallTriagePage({
 
   return (
     <>
-      <PageHeader title="Unmatched calls" context="Conversations" />
+      <PageHeader title="Calls to link" context="Conversations" />
       <p className="-mt-2 max-w-prose text-sm leading-relaxed text-text-muted">
         Calls with no lead behind them. Most calls attach themselves automatically — the number on
         the call and the number on the lead are the same value, so the match needs no guesswork.

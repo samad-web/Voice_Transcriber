@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import {
   detectProjects,
   entryStage,
@@ -9,12 +9,14 @@ import {
 } from "@aura/shared";
 import {
   findLiveContact,
+  leadBoardStages,
   projectFactsToCustomFields,
   queueContactCreated,
   queueDealCreated,
   recordDealEntry,
   recordNoPipeline,
   resolveDealPipeline,
+  resolveLeadBoard,
   routeLead,
 } from "@aura/db";
 import { DbService } from "../../db/db.service";
@@ -107,6 +109,19 @@ export interface CreateLeadInput {
   sourceCreatedAt?: Date | string | null;
   /** The source's own id for it, for tracing back without the intake ledger. */
   sourceRef?: string | null;
+
+  // ── Which lead board (migration 0136) ───────────────────────────────────
+  //
+  // Decided for a NEW lead only. A known number arriving through a channel
+  // routed elsewhere stays on the board somebody is already working it on -
+  // first touch, like every attribution field above.
+  /** The WhatsApp number (messaging_channels.id) it arrived on, for routing. */
+  messagingChannelId?: string | null;
+  /**
+   * The board a person chose, which outranks routing. `null` is the Main
+   * board; leave it undefined to let the channel's route decide.
+   */
+  boardId?: string | null;
 }
 
 /** Any open transaction. Both the pool client and a test double satisfy it. */
@@ -124,6 +139,8 @@ export interface LeadRecord {
   status: string;
   projectKey: string | null;
   projectDetectedFrom: string | null;
+  /** The board the lead is on - for an existing lead, the one it was already on. null is the Main board. */
+  boardId: string | null;
   /**
    * Who the distribution engine (0094) gave it to, when it ran and picked
    * somebody. Null covers three different things - not a new lead, already
@@ -216,7 +233,28 @@ export class CrmIngestService {
       // import path (0062) makes the same call.
       const facts = { ...(input.facts ?? {}), ...(input.company ? { company: input.company } : {}) };
 
-      const stages = parseLeadStages(org.lead_stages);
+      // ── Board (0136): a person's choice, else the channel's route, else Main
+      // The Main board's columns came back with the org row above, so the
+      // common case - an unrouted channel - costs no extra round trip.
+      let boardId =
+        input.boardId !== undefined
+          ? input.boardId
+          : await resolveLeadBoard(client, orgId, {
+              channel: input.sourceChannel,
+              sourceId: input.sourceChannel === "whatsapp" ? input.messagingChannelId : input.leadSourceId,
+            });
+      let stages = parseLeadStages(org.lead_stages);
+      if (boardId !== null) {
+        const board = await leadBoardStages(client, orgId, boardId);
+        if (board) {
+          stages = board.stages;
+        } else if (input.boardId !== undefined) {
+          throw new BadRequestException("no such lead board");
+        } else {
+          // A route to a board deleted since - the Main board, not a lost lead.
+          boardId = null;
+        }
+      }
       const stage = entryStage(stages);
       const status = statusForStage(stages, stage);
 
@@ -286,18 +324,20 @@ export class CrmIngestService {
       }
 
       // ── Lead: upsertLead's own dedup key, so a later CALL converges ──────
-      let lead: { id: string; created: boolean } | undefined;
+      let lead: { id: string; created: boolean; board_id: string | null } | undefined;
       if (phone.hash) {
         ({
           rows: [lead],
-        } = await client.query<{ id: string; created: boolean }>(
+        } = await client.query<{ id: string; created: boolean; board_id: string | null }>(
+          // board_id is deliberately absent from DO UPDATE SET: an existing
+          // lead stays on its board (see CreateLeadInput.boardId).
           `INSERT INTO leads (org_id, workspace_id, contact_name, contact_number_hash,
                               contact_number_prefix, contact_number_last3, title, stage, status,
                               summary, facts, value_num, call_count, last_activity_at,
                               source_channel, lead_source_id, marketing_source_id,
-                              assigned_telecaller_id, source_created_at, source_ref)
+                              assigned_telecaller_id, source_created_at, source_ref, board_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now(),
-                   $13, $14, $15, $16, $17, $18)
+                   $13, $14, $15, $16, $17, $18, $19)
            ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
            DO UPDATE SET
              -- Stage and status are the owner's, never an integration's: a
@@ -322,7 +362,7 @@ export class CrmIngestService {
              source_created_at = COALESCE(leads.source_created_at, EXCLUDED.source_created_at),
              source_ref        = COALESCE(leads.source_ref, EXCLUDED.source_ref),
              last_activity_at = now()
-           RETURNING id, (xmax = 0) AS created`,
+           RETURNING id, (xmax = 0) AS created, board_id`,
           [
             orgId,
             org.workspace_id,
@@ -342,6 +382,7 @@ export class CrmIngestService {
             input.assignedTelecallerId ?? null,
             input.sourceCreatedAt ?? null,
             input.sourceRef ?? null,
+            boardId,
           ],
         ));
       } else {
@@ -350,14 +391,14 @@ export class CrmIngestService {
         // who happen to share one.
         ({
           rows: [lead],
-        } = await client.query<{ id: string; created: boolean }>(
+        } = await client.query<{ id: string; created: boolean; board_id: string | null }>(
           `INSERT INTO leads (org_id, workspace_id, contact_name, title, stage, status,
                               summary, facts, value_num, call_count, last_activity_at,
                               source_channel, lead_source_id, marketing_source_id,
-                              assigned_telecaller_id, source_created_at, source_ref)
+                              assigned_telecaller_id, source_created_at, source_ref, board_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 0, now(), $10, $11, $12, $13,
-                   $14, $15)
-           RETURNING id, true AS created`,
+                   $14, $15, $16)
+           RETURNING id, true AS created, board_id`,
           [
             orgId,
             org.workspace_id,
@@ -374,6 +415,7 @@ export class CrmIngestService {
             input.assignedTelecallerId ?? null,
             input.sourceCreatedAt ?? null,
             input.sourceRef ?? null,
+            boardId,
           ],
         ));
       }
@@ -535,6 +577,7 @@ export class CrmIngestService {
         status,
         projectKey: project.key,
         projectDetectedFrom: project.matchedOn,
+        boardId: lead.board_id,
         routedTelecallerId,
       };
     }

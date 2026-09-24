@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerTry } from "@/lib/owner-context";
 import { FeatureBoard } from "./feature-board";
 
-export const metadata: Metadata = { title: "Features" };
+export const metadata: Metadata = { title: "Turn features on/off" };
 
 export interface FeatureRow {
   key: string;
@@ -61,7 +61,7 @@ export default async function FeaturesPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Features" context="Workspace" />
+        <PageHeader title="Turn features on/off" context="Settings" />
         <LoadFailure what="your features" failure={result} />
       </>
     );
@@ -75,7 +75,7 @@ export default async function FeaturesPage() {
 
   return (
     <>
-      <PageHeader title="Features" context="Workspace" />
+      <PageHeader title="Turn features on/off" context="Settings" />
       <p className="-mt-2 max-w-prose text-sm leading-relaxed text-text-muted">
         Switch off the parts of Aura this business does not use, and they disappear from everybody’s
         sidebar. Nothing is deleted — switching a feature back on brings the same records back

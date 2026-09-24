@@ -16,7 +16,7 @@ const LINE_TAIL = ["h-3 w-2/3", "h-3 w-1/2", "h-3 w-3/4"] as const;
 export default function IntegrationAppLoading() {
   return (
     <>
-      <PageHeaderSkeleton context="Integrations" />
+      <PageHeaderSkeleton context="Connected apps" />
 
       <div className="-mt-2 flex flex-wrap items-start gap-x-4 gap-y-3">
         <Skeleton className="h-12 w-12 shrink-0 rounded-xl" />

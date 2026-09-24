@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { describeAnswers } from "@aura/shared";
 import {
   BrutalButton,
@@ -678,7 +679,7 @@ function ConvertForm({
 }) {
   // Defaults chosen so the common case is one click: the enquirer's own name,
   // and the same retention default the product ships with.
-  const [orgName, setOrgName] = useState(lead.name);
+  const [orgName, setOrgName] = useDraftState(lead.name);
   const [retentionDays, setRetentionDays] = useState(90);
   const [consentPolicy, setConsentPolicy] = useState("tone");
 

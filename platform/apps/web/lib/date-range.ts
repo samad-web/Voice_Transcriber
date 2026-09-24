@@ -28,7 +28,8 @@ import { formatReportRange, isCalendarDate, shiftDateKey } from "@aura/shared";
 
 export type DateWindow = { kind: "relative"; days: number } | { kind: "fixed"; from: string; to: string };
 
-export const RANGE_PRESETS = [7, 30, 90] as const;
+/** 1 is "Today" - the org's today, the same count the API resolves in its zone. */
+export const RANGE_PRESETS = [1, 7, 30, 90] as const;
 export const DEFAULT_RANGE_DAYS = 30;
 /** A year and a day, so "this time last year" is always expressible. */
 export const MAX_RANGE_DAYS = 366;
@@ -128,6 +129,11 @@ export interface RangePreset {
   active: boolean;
 }
 
+/** A preset as its pill reads: "Today", then "Last N days". */
+export function presetLabel(days: number): string {
+  return days === 1 ? "Today" : `Last ${days} days`;
+}
+
 /** The pills: one per preset, lit when it is the window showing. */
 export function rangePresets(
   path: string,
@@ -136,7 +142,7 @@ export function rangePresets(
 ): RangePreset[] {
   return (opts.presets ?? RANGE_PRESETS).map((days) => ({
     key: String(days),
-    label: `Last ${days} days`,
+    label: presetLabel(days),
     href: dateWindowHref(path, { kind: "relative", days }, opts),
     active: isPresetWindow(window, days),
   }));

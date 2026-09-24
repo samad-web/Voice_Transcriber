@@ -78,7 +78,7 @@ export default async function LeadSourcesPage() {
   if (!sourcesResult.ok) {
     return (
       <>
-        <PageHeader title="Lead sources" context="Pipeline" />
+        <PageHeader title="Lead sources" context="Settings" />
         <LoadFailure what="lead sources" failure={sourcesResult} />
       </>
     );
@@ -86,7 +86,7 @@ export default async function LeadSourcesPage() {
   if (!catalogueResult.ok) {
     return (
       <>
-        <PageHeader title="Lead sources" context="Pipeline" />
+        <PageHeader title="Lead sources" context="Settings" />
         <LoadFailure what="the channel catalogue" failure={catalogueResult} />
       </>
     );
@@ -96,7 +96,7 @@ export default async function LeadSourcesPage() {
 
   return (
     <>
-      <PageHeader title="Lead sources" context="Pipeline" />
+      <PageHeader title="Lead sources" context="Settings" />
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
         Every way a lead can reach you. A form on your website, your enquiry inbox, your phone
         system, and your Facebook and LinkedIn ads all land on the same board as your calls -

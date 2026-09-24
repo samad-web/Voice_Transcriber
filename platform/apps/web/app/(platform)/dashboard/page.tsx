@@ -1,9 +1,19 @@
 import Link from "next/link";
-import { Activity, Building2, DollarSign, HardDrive, Phone } from "lucide-react";
-import { Card, MonoLabel, STATE_TONE, StatCard, StatusChip } from "@aura/ui";
+import {
+  Activity,
+  Building2,
+  CalendarCheck,
+  DollarSign,
+  HardDrive,
+  HeartPulse,
+  Phone,
+  Users,
+} from "lucide-react";
+import { Card, MonoLabel, Sparkline, STATE_TONE, StatCard, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
+import { deltaText, percentDelta, pointsDelta, rateText, share } from "@/lib/dashboard-charts";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin, apiGetAs } from "@/lib/server-api";
 import { resolveTenantScope } from "@/lib/tenant-scope";
@@ -34,6 +44,37 @@ interface Fleet {
     total_seconds: number;
     last_call_at: string | null;
   }>;
+  byDay: Array<{ day: string; volume: number; complete: number }>;
+}
+
+/** GET /v1/analytics/active-users. */
+interface ActiveUsers {
+  last24h: number;
+  previous24h: number;
+  last7d: number;
+}
+
+/** GET /v1/analytics/booking-rate. */
+interface BookingRate {
+  submissionsCurrent: number;
+  bookedCurrent: number;
+  submissionsPrevious: number;
+  bookedPrevious: number;
+}
+
+/** GET /v1/admin/health. */
+interface Health {
+  stages: Array<{
+    name: string;
+    status: "ok" | "degraded" | "stalled";
+    inFlight: number;
+    failed: number;
+    oldestInFlight: string | null;
+  }>;
+  queue: { name: string; depth: number | null; reachable: boolean };
+  awaitingAudio: number;
+  failedUpload: number;
+  stuckAfterSeconds: number;
 }
 
 /**
@@ -53,9 +94,12 @@ export default async function DashboardPage({
   const { org } = await searchParams;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 
-  const [fleet, data] = await Promise.all([
+  const [fleet, data, activeUsers, bookingRate, health] = await Promise.all([
     apiGetAdmin<Fleet>("/v1/analytics/fleet"),
     apiGetAs<Overview>("/v1/analytics/overview", orgId),
+    apiGetAdmin<ActiveUsers>("/v1/analytics/active-users"),
+    apiGetAdmin<BookingRate>("/v1/analytics/booking-rate"),
+    apiGetAdmin<Health>("/v1/admin/health"),
   ]);
 
   if (!data && !fleet) {
@@ -80,6 +124,28 @@ export default async function DashboardPage({
   const minutes = Math.round((data?.calls.total_seconds ?? 0) / 60);
   const tokens = (data?.usage.llm_tokens_in ?? 0) + (data?.usage.llm_tokens_out ?? 0);
 
+  // ── active users: sign-ins today vs. the same window yesterday ────────────
+  const activeUsersTrend = activeUsers
+    ? percentDelta(activeUsers.last24h, activeUsers.previous24h)
+    : null;
+
+  // ── booking rate: the funnel's own conversion, trailing 30d vs. previous 30d ─
+  const bookingRateCurrent = bookingRate
+    ? share(bookingRate.bookedCurrent, bookingRate.submissionsCurrent)
+    : null;
+  const bookingRatePrevious = bookingRate
+    ? share(bookingRate.bookedPrevious, bookingRate.submissionsPrevious)
+    : null;
+  const bookingTrend = pointsDelta(bookingRateCurrent, bookingRatePrevious);
+
+  // ── pipeline health: worst stage wins, silent when everything is ok ───────
+  const unhealthyStages = health?.stages.filter((s) => s.status !== "ok") ?? [];
+  const worstHealth = unhealthyStages.some((s) => s.status === "stalled")
+    ? "stalled"
+    : unhealthyStages.length > 0
+      ? "degraded"
+      : "ok";
+
   return (
     <>
       <PageHeader title="Platform Hub" />
@@ -95,7 +161,20 @@ export default async function DashboardPage({
             </p>
           </div>
 
+          {/* Headline row: what an operator needs to know first - is the
+              platform being used, is it healthy, and is it winning business. */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            <StatCard
+              label="Active Users"
+              value={activeUsers ? activeUsers.last24h.toLocaleString() : "-"}
+              context={activeUsers ? `${activeUsers.last7d.toLocaleString()} in the last 7 days` : "unavailable"}
+              icon={<Users className="h-5 w-5" />}
+              trend={
+                activeUsersTrend
+                  ? { kind: activeUsersTrend.kind, text: deltaText(activeUsersTrend, 1) }
+                  : undefined
+              }
+            />
             <StatCard
               label="Tenants"
               value={fleet.tenants.total}
@@ -103,24 +182,63 @@ export default async function DashboardPage({
               icon={<Building2 className="h-5 w-5" />}
             />
             <StatCard
+              label="Pipeline Health"
+              value={health ? `${health.stages.length - unhealthyStages.length}/${health.stages.length} healthy` : "-"}
+              context={
+                health
+                  ? `queue depth ${health.queue.reachable ? (health.queue.depth ?? 0).toLocaleString() : "unreachable"}`
+                  : "unavailable"
+              }
+              icon={<HeartPulse className="h-5 w-5" />}
+              // Silent when every stage is ok, same pattern as the Calls tile's
+              // failed-count chip below - an alarm colour that fires on every
+              // page load stops meaning anything.
+              state={worstHealth !== "ok" ? "error" : undefined}
+              stateLabel={
+                worstHealth !== "ok" ? `${unhealthyStages.length} ${worstHealth}` : undefined
+              }
+            />
+            <StatCard
+              label="Booking Rate"
+              value={bookingRate ? rateText(bookingRate.bookedCurrent, bookingRate.submissionsCurrent) : "-"}
+              context={
+                bookingRate
+                  ? `${bookingRate.bookedCurrent} of ${bookingRate.submissionsCurrent} enquiries (30d)`
+                  : "unavailable"
+              }
+              icon={<CalendarCheck className="h-5 w-5" />}
+              trend={
+                bookingTrend
+                  ? { kind: bookingTrend.kind, text: deltaText(bookingTrend, 30, " pts") }
+                  : undefined
+              }
+            />
+          </div>
+
+          {/* Demoted, not deleted: still useful, just not the first thing an
+              operator needs - see StatCard's own note on `tone="plain"`. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <StatCard
+              tone="plain"
               label="Calls"
               value={fleet.calls.calls.toLocaleString()}
               context={`${fleet.calls.in_pipeline} still in flight`}
               icon={<Phone className="h-5 w-5" />}
-              // The one state on the operator's fleet row. `failed` is an
-              // ERROR - orange - and on an already-orange tile it renders as
-              // an inverted chip carrying the triangle, which is what
-              // distinguishes it there. See StatCard.
+              // `failed` is an ERROR - orange - never red (see @aura/ui's
+              // state.tsx: red means a missed call, not a system failure).
               state={fleet.calls.failed > 0 ? "error" : undefined}
               stateLabel={fleet.calls.failed > 0 ? `${fleet.calls.failed} failed` : undefined}
+              footer={<Sparkline values={fleet.byDay.slice(-7).map((d) => d.volume)} />}
             />
             <StatCard
+              tone="plain"
               label="Recorded Time"
               value={`${fleetMinutes.toLocaleString()} min`}
               context={`${fleet.calls.complete} calls fully processed`}
               icon={<Activity className="h-5 w-5" />}
             />
             <StatCard
+              tone="plain"
               label="Devices"
               value={`${fleet.devices.active}/${fleet.devices.total}`}
               context="active / enrolled"
@@ -244,8 +362,10 @@ export default async function DashboardPage({
                     return (
                       <div key={d.day} className="flex-1 flex flex-col items-center gap-1.5">
                         <div className="w-full flex flex-col justify-end h-32">
+                          {/* A magnitude, not a state (see state.tsx) - the
+                              sequential grey ramp, not a hue. */}
                           <div
-                            className="w-full bg-text"
+                            className="w-full bg-chart-seq-3"
                             style={{ height: `${(d.volume / max) * 100}%` }}
                           />
                         </div>

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Button, Card, EmptyState, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { Time } from "@/components/org-time";
+import { useServerState } from "@/lib/use-server-state";
 import { resolveCallIntegrityFlagAction, type CallIntegrityFlag } from "./actions";
 
 const FLAG_LABEL: Record<CallIntegrityFlag["flag_type"], string> = {
@@ -31,10 +32,11 @@ function detailLine(flag: CallIntegrityFlag): string {
 
 /** Review queue for /v1/call-integrity-flags - dismiss what's fine, resolve what got fixed. */
 export function CallQualityManager({ initial }: { initial: CallIntegrityFlag[] }) {
-  const [flags, setFlags] = useState(initial);
   // Which single flag is mid-action, not a workspace-wide flag - acting on one
   // card must not disable the buttons on every other open flag.
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // Follows the server (new flags from the nightly sweep), held mid-action.
+  const [flags, setFlags] = useServerState(initial, pendingId !== null);
   const [, startTransition] = useTransition();
   const alert = useAlert();
 

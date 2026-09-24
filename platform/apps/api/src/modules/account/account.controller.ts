@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { consolePhone, orgPhoneCountry } from "../../common/console-phone";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -146,9 +147,11 @@ export class AccountController {
     const userId = this.caller(req);
     const parsed = PhoneInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const next = parsed.data.phone;
 
     return this.db.withOrg(orgId, async (client) => {
+      // Stored as E.164 and valid for its country: this is the number a
+      // call-access code is sent to, and a typo here locks the person out.
+      const next = consolePhone(parsed.data.phone, "phone", await orgPhoneCountry(client, orgId));
       // FOR UPDATE so the "old" digits in the audit line are the ones this
       // write actually replaced, not a value a concurrent save already changed.
       const {

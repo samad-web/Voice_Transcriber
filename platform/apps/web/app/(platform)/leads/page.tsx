@@ -31,7 +31,7 @@ export default async function LeadsPage() {
     <>
       <PageHeader title="Funnel Leads" context="Platform" />
 
-      <p className="max-w-xl font-sans text-xs font-medium text-neutral-500">
+      <p className="max-w-xl font-sans text-xs font-medium text-text-muted">
         Enquiries from the marketing site. Converting one provisions a client
         instance and returns its enrollment key once.
       </p>

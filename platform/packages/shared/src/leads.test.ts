@@ -16,6 +16,7 @@ import {
   parseLeadRules,
   parseLeadStages,
   qualifyLead,
+  stageOnBoard,
   statusForStage,
   type LeadStages,
 } from "./leads";
@@ -201,6 +202,24 @@ describe("statusForStage", () => {
 
   it("treats an unknown stage key as open rather than throwing", () => {
     expect(statusForStage(DEFAULT_LEAD_STAGES, "no_such_stage")).toBe("open");
+  });
+});
+
+describe("stageOnBoard", () => {
+  const website = parseLeadStages([
+    { key: "enquiry", label: "Enquiry" },
+    { key: "qualified", label: "Qualified" },
+    { key: "won", label: "Won", terminal: "won" },
+  ]);
+
+  it("keeps the column when the target board has the same key", () => {
+    expect(stageOnBoard(website, "qualified")).toBe("qualified");
+    expect(stageOnBoard(website, "won")).toBe("won");
+  });
+
+  it("drops into the target's entry column when it has no such key", () => {
+    expect(stageOnBoard(website, "negotiation")).toBe("enquiry");
+    expect(stageOnBoard(website, null)).toBe("enquiry");
   });
 });
 

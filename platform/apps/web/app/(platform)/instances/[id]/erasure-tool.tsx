@@ -49,14 +49,14 @@ export function ErasureTool({ orgId }: { orgId: string }) {
       : [];
 
   return (
-    <Card elevated className="space-y-4 border-red-600">
+    <Card elevated className="space-y-4 border-danger">
       <div className="flex items-center gap-2">
-        <ShieldX className="h-4 w-4 text-red-600" />
+        <ShieldX className="h-4 w-4 text-danger" />
         <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
           Right-to-Erasure (GDPR Art. 17)
         </h4>
       </div>
-      <p className="text-xs text-neutral-500 font-sans font-medium">
+      <p className="text-xs text-text-muted font-sans font-medium">
         Cascading erasure destroys the call and every downstream artefact, then returns a signed,
         hash-chained receipt for the audit ledger. Scoped to this customer.
       </p>

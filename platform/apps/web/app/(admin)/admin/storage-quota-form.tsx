@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Button, Input } from "@aura/ui";
 import { setStorageQuotaAction } from "./actions";
 
@@ -11,7 +12,7 @@ import { setStorageQuotaAction } from "./actions";
  * in-app note at 80 % and 100 %.
  */
 export function StorageQuotaForm({ orgId, quotaGb }: { orgId: string; quotaGb: number | null }) {
-  const [value, setValue] = useState(quotaGb === null ? "" : String(quotaGb));
+  const [value, setValue] = useDraftState(quotaGb === null ? "" : String(quotaGb));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const dirty = value.trim() !== (quotaGb === null ? "" : String(quotaGb));

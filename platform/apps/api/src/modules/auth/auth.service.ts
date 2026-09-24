@@ -44,6 +44,11 @@ export const AUTH_CONTEXT_SQL = `WITH u AS (
               -- Storage (0128): the snapshot row, never a sum over recordings.
               o.retention_days AS "retentionDays",
               o.reporting_timezone AS "reportingTimezone",
+              -- Region (0126): the default country every phone field starts on,
+              -- and the workspace currency. LEFT JOIN - an org that never saved
+              -- its business profile has no row and reads the defaults.
+              bp.country AS "defaultCountry",
+              bp.base_currency AS "baseCurrency",
               o.storage_quota_bytes::text AS "storageQuotaBytes",
               su.recording_bytes::text AS "storageRecordingBytes",
               su.recording_count AS "storageRecordingCount",
@@ -73,6 +78,7 @@ export const AUTH_CONTEXT_SQL = `WITH u AS (
            ON m.user_id = u.id AND m.status = 'active'
          LEFT JOIN organizations o ON o.id = m.org_id
          LEFT JOIN org_storage_usage su ON su.org_id = m.org_id
+         LEFT JOIN org_business_profile bp ON bp.org_id = m.org_id
         ORDER BY m.created_at ASC`;
 
 @Injectable()
@@ -220,6 +226,10 @@ export class AuthService {
       storage: StorageSummary | null;
       /** organizations.reporting_timezone (0090) - Login activity's clock. */
       reportingTimezone: string;
+      /** org_business_profile.country (0126) - where every phone field starts. */
+      defaultCountry: string;
+      /** org_business_profile.base_currency (0126). */
+      baseCurrency: string;
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
@@ -286,6 +296,8 @@ export class AuthService {
             }
           : null,
         reportingTimezone: r.reportingTimezone ?? "Asia/Kolkata",
+        defaultCountry: r.defaultCountry ?? "IN",
+        baseCurrency: r.baseCurrency ?? "INR",
       }));
 
     return { memberships, user };

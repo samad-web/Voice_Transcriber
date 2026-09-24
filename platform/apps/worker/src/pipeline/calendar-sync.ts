@@ -2,6 +2,7 @@ import { decryptSecret, encryptSecret, getAdminPool, withOrgContext } from "@aur
 import type { DbClient } from "./crm-dispatch";
 import { calendarAdapter, type NormalisedEvent } from "./calendar-providers";
 import { needsReconnect, oauthAppFor, refreshAccessToken } from "./email-sync";
+import { announce } from "./realtime";
 
 /**
  * Pull each connected calendar onto the interaction timeline (PRD Layer 1).
@@ -259,6 +260,8 @@ export async function syncAllCalendars(fetchImpl: typeof fetch = fetch): Promise
         syncCalendar(client as DbClient, connection, fetchImpl),
       );
       written += outcome.written;
+      // Meetings land on contact and deal timelines - after the commit.
+      if (outcome.written > 0 || outcome.removed > 0) announce(connection.org_id, "interaction", "changed");
       if (outcome.reason) {
         console.log(`calendar sync ${connection.account_email}: ${outcome.reason}`);
       } else if (outcome.written > 0 || outcome.removed > 0) {

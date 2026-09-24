@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Check, Laptop } from "lucide-react";
 import { Button, Card, ErrorBanner, Input, MonoLabel, useToast } from "@aura/ui";
 import {
@@ -71,7 +72,7 @@ export function TimeZoneSettings({
   const listId = useId();
   const hintId = useId();
   const [now, setNow] = useState(renderedAt);
-  const [saved, setSaved] = useState(current);
+  const [saved, setSaved] = useDraftState(current);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);

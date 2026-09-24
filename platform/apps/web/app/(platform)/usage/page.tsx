@@ -145,13 +145,13 @@ export default async function UsagePage({
               </div>
 
               {billing === null ? (
-                <p className="text-xs font-mono font-bold uppercase text-neutral-400 py-6 text-center">
+                <p className="text-xs font-mono font-bold uppercase text-text-subtle py-6 text-center">
                   Billing service unavailable
                 </p>
               ) : (billing.invoices ?? []).length === 0 ? (
                 <div className="flex flex-col items-center py-8 gap-3">
-                  <FileText className="h-8 w-8 text-neutral-300" />
-                  <p className="text-xs font-mono font-bold uppercase text-neutral-400">
+                  <FileText className="h-8 w-8 text-text-subtle" />
+                  <p className="text-xs font-mono font-bold uppercase text-text-subtle">
                     No invoices yet - metered usage bills at period close
                   </p>
                 </div>
@@ -159,23 +159,23 @@ export default async function UsagePage({
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[420px] text-left border-collapse">
                     <thead>
-                      <tr className="bg-neutral-100 border-b-2 border-black font-mono text-[10px] text-black font-bold uppercase tracking-wider">
+                      <tr className="bg-bg-subtle border-b-2 border-border-strong font-mono text-[10px] text-text font-bold uppercase tracking-wider">
                         <th className="py-3 px-4">Invoice</th>
                         <th className="py-3 px-4">Period</th>
                         <th className="py-3 px-4">Amount</th>
                         <th className="py-3 px-4 text-right">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y-2 divide-neutral-100 text-sm">
+                    <tbody className="divide-y-2 divide-border text-sm">
                       {billing.invoices.map((inv) => (
-                        <tr key={inv.id} className="hover:bg-neutral-50">
+                        <tr key={inv.id} className="hover:bg-surface-hover">
                           <td className="py-3 px-4 font-mono text-xs font-bold">
                             {inv.hosted_invoice_url ? (
                               <a
                                 href={inv.hosted_invoice_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="underline hover:text-neutral-600"
+                                className="underline hover:text-text"
                               >
                                 {inv.number ?? inv.id.slice(0, 10)}
                               </a>

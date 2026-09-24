@@ -1,4 +1,5 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
+import { announce } from "./realtime";
 
 /**
  * The daily productivity rollup (migration 0090): how much each telecaller
@@ -220,7 +221,11 @@ export async function runTelecallerStats(from?: Date, to?: Date): Promise<number
   let written = 0;
   for (const org of orgs) {
     try {
-      written += await rollupOrg(org, padded.from, padded.to);
+      const rows = await rollupOrg(org, padded.from, padded.to);
+      written += rows;
+      // The coaching dashboards read these rollups. Every 15 minutes at most,
+      // so this is a gentle nudge rather than a stream.
+      if (rows > 0) announce(org.id, "report", "updated");
     } catch (err) {
       // One tenant's bad data - an unparseable timezone that got past the
       // trigger, a clock so skewed the window is empty - must not stop the

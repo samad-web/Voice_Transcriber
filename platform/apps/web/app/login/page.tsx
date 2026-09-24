@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
-import { Card, Logo, MonoLabel } from "@aura/ui";
+import { Card, ErrorBanner, Logo, MonoLabel } from "@aura/ui";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
+import { googleSignInEnabled } from "@/lib/supabase/google";
+import { authErrorMessage } from "./auth-errors";
+import { GoogleButton } from "./google-button";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in - Aura Platform" };
@@ -19,9 +22,13 @@ const HIGHLIGHTS = [
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; signedOut?: string }>;
+  searchParams: Promise<{ next?: string; signedOut?: string; error?: string }>;
 }) {
-  const { next, signedOut } = await searchParams;
+  const { next, signedOut, error } = await searchParams;
+  // Only when GoTrue has the provider switched on - a button that leads to
+  // "provider is not enabled" is worse than no button.
+  const google = await googleSignInEnabled();
+  const errorMessage = authErrorMessage(error);
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4 sm:p-6">
@@ -83,6 +90,19 @@ export default async function LoginPage({
             >
               You&apos;ve been signed out on every device.
             </p>
+          ) : null}
+
+          {errorMessage ? <ErrorBanner>{errorMessage}</ErrorBanner> : null}
+
+          {google ? (
+            <>
+              <GoogleButton next={next} />
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-border" />
+                <MonoLabel>or with a password</MonoLabel>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </>
           ) : null}
 
           {AUTH_ENABLED ? null : (

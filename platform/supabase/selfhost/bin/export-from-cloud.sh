@@ -36,7 +36,7 @@ set -euo pipefail
 
 CLOUD_URL="${1:-}"
 OUT_DIR="${2:-./dump}"
-DB_CONTAINER="${DB_CONTAINER:-supabase-db}"
+DB_CONTAINER="${DB_CONTAINER:-aura-supabase-db}"
 
 if [ -z "$CLOUD_URL" ]; then
   echo "usage: bash $0 <cloud-database-url> [out-dir]" >&2

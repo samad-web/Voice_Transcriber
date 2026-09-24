@@ -1,7 +1,9 @@
 import { BadRequestException, Body, Controller, Get, Put, Req, UseGuards } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { BusinessProfileInput, businessProfileComplete, type BusinessProfile } from "@aura/shared";
+import { toPhoneCountry } from "@aura/shared/dist/phone";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { consolePhone } from "../../common/console-phone";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -155,9 +157,23 @@ export class BusinessProfileController {
   @Put()
   @RequireOwnerRole("owner")
   async put(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
-    const parsed = BusinessProfileInput.safeParse(body);
+    // Country and currency are owned by Time & location now
+    // (time-settings.controller.ts), and the console's form no longer sends
+    // them - the same move the zone made, for the same reason: a form that
+    // re-sent the values it loaded with would let an old tab undo a change
+    // made there. Absent means "keep what is stored"; the GST rules below
+    // still run against the real country. An API caller that sends them
+    // still sets them.
+    const raw: Record<string, unknown> = body && typeof body === "object" ? { ...(body as Record<string, unknown>) } : {};
+    if (raw.country === undefined || raw.baseCurrency === undefined) {
+      const stored = await this.db.withOrg(orgId, (client) => readProfile(client, orgId));
+      raw.country ??= stored?.country ?? "IN";
+      raw.baseCurrency ??= stored?.baseCurrency ?? "INR";
+    }
+    const parsed = BusinessProfileInput.safeParse(raw);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const p = parsed.data;
+    // The business's own number, E.164 and valid for its country.
+    const p = { ...parsed.data, contactPhone: consolePhone(parsed.data.contactPhone, "contactPhone", toPhoneCountry(parsed.data.country)) };
     const actor = req.principal?.userId ?? "unknown";
     const actorUuid = /^[0-9a-f-]{36}$/i.test(actor) ? actor : null;
 

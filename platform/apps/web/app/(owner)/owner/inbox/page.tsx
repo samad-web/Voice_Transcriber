@@ -4,7 +4,6 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
-import { ChannelBar } from "../channel-bar";
 import { Inbox } from "./inbox-client";
 import { MyWhatsApp } from "./my-whatsapp";
 import type { Conversation } from "./actions";
@@ -16,7 +15,7 @@ import type { Conversation } from "./actions";
  */
 const LINKS_OWN_WHATSAPP = new Set(["owner", "manager", "telecaller", "sales"]);
 
-export const metadata: Metadata = { title: "Inbox" };
+export const metadata: Metadata = { title: "Chats" };
 
 /**
  * Inbound messaging (migrations 0055/0056).
@@ -43,8 +42,7 @@ export default async function InboxPage() {
 
   return (
     <>
-      <PageHeader title="Inbox" context="Pipeline" />
-      <ChannelBar />
+      <PageHeader title="Chats" context="Conversations" />
 
       {!unmatched.ok ? (
         <LoadFailure what="the inbox" failure={unmatched} />

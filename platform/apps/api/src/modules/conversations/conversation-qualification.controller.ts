@@ -17,6 +17,7 @@ import { z } from "zod";
 import { scoreBand, type QualificationDisposition } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { consolePhone, orgPhoneCountry } from "../../common/console-phone";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { ThreadViewer, visibleThread } from "../../common/private-threads";
@@ -108,6 +109,7 @@ interface QualificationRow {
   peer_label: string | null;
   contact_id: string | null;
   workspace_id: string | null;
+  messaging_channel_id: string | null;
 }
 
 @Controller("conversation-qualifications")
@@ -238,7 +240,8 @@ export class ConversationQualificationController {
         `SELECT q.id, q.conversation_id, q.status, q.disposition, q.score,
                 q.extracted_name, q.extracted_email, q.extracted_company,
                 q.extracted_budget, q.extracted_notes, q.facts,
-                c.peer_address, c.peer_label, c.contact_id, c.workspace_id
+                c.peer_address, c.peer_label, c.contact_id, c.workspace_id,
+                c.messaging_channel_id
            FROM conversation_qualifications q
            JOIN conversations c ON c.id = q.conversation_id
           WHERE q.id = $1 AND q.org_id = $2 AND ${visibleThread("c", 3)}
@@ -248,6 +251,11 @@ export class ConversationQualificationController {
       if (!row) throw new NotFoundException("no such qualification");
       if (row.status !== "pending") {
         throw new ConflictException(`this qualification is already ${row.status}`);
+      }
+      // A number the reviewer typed is held to the console's phone rule:
+      // E.164, valid for its country. Blank keeps the old meaning.
+      if (patch.phone?.trim()) {
+        patch.phone = consolePhone(patch.phone, "phone", await orgPhoneCountry(client, orgId));
       }
 
       const lead = await this.ingest.writeLead(client, orgId, {
@@ -269,6 +277,9 @@ export class ConversationQualificationController {
         // reviewer saw on the card - the worker kept valid values alone.
         facts: row.facts && Object.keys(row.facts).length > 0 ? row.facts : null,
         sourceChannel: "whatsapp",
+        // Which number it came in on, so a board routed to that number (0136)
+        // receives it.
+        messagingChannelId: row.messaging_channel_id,
         workspaceId: row.workspace_id,
       });
 

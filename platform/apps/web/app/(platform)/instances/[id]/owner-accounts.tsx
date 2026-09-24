@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { AlertTriangle, Copy, Trash2, UserPlus } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
+import { BrutalButton, Card, ConsolePanel, MonoLabel, StatusChip, useAlert, useToast } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
 import {
@@ -115,14 +115,23 @@ export function OwnerAccounts({
       </div>
 
       {!authConfigured ? (
-        <div className="flex items-start gap-2.5 rounded-md border border-warning bg-warning-subtle p-3">
-          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
-          <p className="text-sm leading-relaxed text-warning-text">
-            Supabase Auth is not configured on the API - set SUPABASE_URL and
-            SUPABASE_SERVICE_ROLE_KEY, then restart it. Logins cannot be created
-            until then.
+        process.env.NODE_ENV === "production" ? (
+          <div className="flex items-start gap-2.5 rounded-md border border-warning bg-warning-subtle p-3">
+            <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
+            <p className="text-sm leading-relaxed text-warning-text">
+              Supabase Auth is not configured on the API - set SUPABASE_URL and
+              SUPABASE_SERVICE_ROLE_KEY, then restart it. Logins cannot be created
+              until then.
+            </p>
+          </div>
+        ) : (
+          // Local dev has no Supabase Auth backend by design (auth is opt-in -
+          // see lib/supabase/config.ts) - this is expected, not a misconfiguration
+          // to flag with a warning banner.
+          <p className="text-xs font-mono text-text-muted border-2 border-border p-3">
+            Owner logins are disabled in local dev (no Supabase Auth configured).
           </p>
-        </div>
+        )
       ) : null}
 
       {owners.length > 0 ? (
@@ -148,7 +157,7 @@ export function OwnerAccounts({
                   type="button"
                   disabled={pending || !owner.hasLogin}
                   onClick={() => reset(owner.userId, owner.email)}
-                  className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-border-strong hover:bg-black hover:text-white disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black"
+                  className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-border-strong hover:bg-surface-hover hover:text-text disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-muted"
                 >
                   Reset password
                 </button>
@@ -157,7 +166,7 @@ export function OwnerAccounts({
                     type="button"
                     disabled={pending}
                     onClick={() => revoke(owner.userId)}
-                    className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-black bg-red-500 text-white"
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-danger bg-danger text-danger-fg"
                   >
                     Confirm revoke
                   </button>
@@ -167,7 +176,7 @@ export function OwnerAccounts({
                     disabled={pending}
                     onClick={() => setConfirming(owner.userId)}
                     aria-label={`Revoke ${owner.email}`}
-                    className="p-1.5 border-2 border-border-strong text-text hover:bg-red-500 hover:text-white hover:border-red-500"
+                    className="p-1.5 border-2 border-border-strong text-text hover:bg-danger hover:text-danger-fg hover:border-danger"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -250,15 +259,13 @@ function PasswordReveal({ email, password }: { email: string; password: string }
   const toast = useToast();
 
   return (
-    <div className="border-2 border-black bg-white p-3.5 space-y-2.5">
+    <div className="border-2 border-border-strong bg-surface p-3.5 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
         <MonoLabel>Temporary password - shown once</MonoLabel>
         <StatusChip tone="danger">Copy now</StatusChip>
       </div>
-      <p className="text-xs font-sans text-neutral-600 break-all">{email}</p>
-      <div className="bg-black text-green-400 border-2 border-black p-2.5 font-mono text-sm break-all">
-        {password}
-      </div>
+      <p className="text-xs font-sans text-text break-all">{email}</p>
+      <ConsolePanel lines={[password]} tone="log" />
       <BrutalButton
         variant="secondary"
         className="w-full"
@@ -283,7 +290,7 @@ function PasswordReveal({ email, password }: { email: string; password: string }
         <Copy className="h-4 w-4" />
         COPY PASSWORD
       </BrutalButton>
-      <p className="text-[10px] font-mono text-neutral-500 leading-relaxed">
+      <p className="text-[10px] font-mono text-text-muted leading-relaxed">
         Send it over a channel the customer trusts and have them change it after
         the first sign-in. A lost password is reset here, never recovered.
       </p>

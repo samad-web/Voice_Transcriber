@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { BrutalButton, Card, StatusChip, useAlert, useToast } from "@aura/ui";
 import {
   PLACEHOLDER_HELP,
@@ -160,9 +161,9 @@ function VariantEditor({
 }) {
   const isEmail = variant.channel === "email";
 
-  const [subject, setSubject] = useState(variant.subject ?? "");
-  const [body, setBody] = useState(variant.body);
-  const [enabled, setEnabled] = useState(variant.enabled);
+  const [subject, setSubject] = useDraftState(variant.subject ?? "");
+  const [body, setBody] = useDraftState(variant.body);
+  const [enabled, setEnabled] = useDraftState(variant.enabled);
   /**
    * What is actually stored, as far as this editor knows.
    *

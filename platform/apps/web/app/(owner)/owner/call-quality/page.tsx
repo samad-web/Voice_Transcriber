@@ -7,7 +7,7 @@ import { DispositionsEditor } from "./dispositions-editor";
 import type { CallIntegrityFlag } from "./actions";
 import type { Disposition } from "./disposition-actions";
 
-export const metadata: Metadata = { title: "Call Quality" };
+export const metadata: Metadata = { title: "Calls to check" };
 
 interface ListResponse {
   flags: CallIntegrityFlag[];
@@ -32,7 +32,7 @@ export default async function CallQualityPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Call Quality" context="Pipeline" />
+        <PageHeader title="Calls to check" context="Conversations" />
         <LoadFailure what="the review queue" failure={result} />
       </>
     );
@@ -41,7 +41,7 @@ export default async function CallQualityPage() {
 
   return (
     <>
-      <PageHeader title="Call Quality" context="Pipeline" />
+      <PageHeader title="Calls to check" context="Conversations" />
       <p className="-mt-2 text-sm text-text-muted">
         Calls where the AI read and the CRM disagree - a promising call with no deal, an outcome
         that contradicts the deal&rsquo;s status, or a deal that&rsquo;s gone quiet since a strong

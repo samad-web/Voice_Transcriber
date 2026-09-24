@@ -15,6 +15,7 @@ describe("accountMenuItemsFor (doc 27 §2.2)", () => {
   it("gives the owner every entry", () => {
     expect(ids(accountMenuItemsFor("owner", "owner"))).toEqual([
       "profile",
+      "notifications",
       "business",
       "time",
       "plan",
@@ -27,6 +28,7 @@ describe("accountMenuItemsFor (doc 27 §2.2)", () => {
   it("gives the manager every entry too - the business profile opens read-only, the time zone editable", () => {
     expect(ids(accountMenuItemsFor("owner", "manager"))).toEqual([
       "profile",
+      "notifications",
       "business",
       "time",
       "plan",
@@ -37,10 +39,11 @@ describe("accountMenuItemsFor (doc 27 §2.2)", () => {
   });
 
   it.each(["telecaller", "sales", "marketing"] as const)(
-    "gives a %s only Profile, Login activity and the two sign-outs",
+    "gives a %s only Profile, notifications, Login activity and the two sign-outs",
     (role) => {
       expect(ids(accountMenuItemsFor("owner", role))).toEqual([
         "profile",
+        "notifications",
         "login_activity",
         "sign_out_all",
         "sign_out",

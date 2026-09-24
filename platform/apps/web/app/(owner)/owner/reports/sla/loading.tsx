@@ -94,7 +94,7 @@ function ReportCard({
 export default function SlaReportsLoading() {
   return (
     <>
-      <PageHeader title="Response & Follow-ups" context="Pipeline" />
+      <PageHeader title="Response times" context="Reports" />
 
       <DateRangeBarSkeleton />
       <DateRangeSummarySkeleton />

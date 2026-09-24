@@ -3,12 +3,23 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Play, RefreshCw, Search, X } from "lucide-react";
-import { callbackLabel, callbackState, formatReportRange, missedReasonLabel, type CallLogSort } from "@aura/shared";
+import { AlertTriangle, CalendarDays, ChevronDown, Play, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
+import {
+  CALL_LOG_PERIODS,
+  callLogPeriodLabel,
+  callbackLabel,
+  callbackState,
+  formatReportRange,
+  isCallLogPeriod,
+  missedReasonLabel,
+  timeZoneLabel,
+  type CallLogSort,
+} from "@aura/shared";
 import {
   Button,
   Input,
   MonoLabel,
+  Popover,
   RowHint,
   Select,
   StateChip,
@@ -26,6 +37,7 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { FilterTag } from "@/components/filter-tag";
 import { Time, useOrgTimeZone } from "@/components/org-time";
 import { PageNav } from "@/components/page-nav";
 import { InlineListSkeleton } from "@/components/skeletons";
@@ -124,8 +136,9 @@ export function CallsExplorer({
   /** The tenant's outcome vocabulary (0097). Empty hides the picker entirely. */
   dispositions: Disposition[];
   /**
-   * The days the date filter covered, as the API resolved them. The filter
-   * itself is the page's shared date control, above this component.
+   * The days the date filter covered, as the API resolved them - used to seed
+   * the date dropdown's custom From/To pair and to name the range when the
+   * list comes back empty.
    */
   range: { from: string; to: string } | null;
   sort: CallLogSort;
@@ -161,21 +174,60 @@ export function CallsExplorer({
   const missed = params.get("missed");
   const sentiment = params.get("sentiment");
   const deviceId = params.get("deviceId");
+  const period = params.get("period");
+  const from = params.get("from");
+  const to = params.get("to");
   const { pages, first, last } = pageState(total, limit, offset);
+
+  const telecaller = deviceId ? telecallers.find((t) => t.id === deviceId) : undefined;
+  // Every active selection, as a removable tag - only the ones made from a
+  // dropdown or the advanced drawer (point 6 of the brief). The date filter is
+  // not one of these: its own trigger already names the range, so repeating it
+  // as a tag would say the same thing twice.
+  const tags: { key: string; label: string; onRemove: () => void }[] = [];
+  if (state)
+    tags.push({
+      key: "state",
+      label: `Status: ${STATES.find((s) => s.key === state)?.label ?? state}`,
+      onRemove: () => setParam("state", null),
+    });
+  if (sentiment)
+    tags.push({
+      key: "sentiment",
+      label: `Feeling: ${SENTIMENTS.find((s) => s.key === sentiment)?.label ?? sentiment}`,
+      onRemove: () => setParam("sentiment", null),
+    });
+  if (direction)
+    tags.push({
+      key: "direction",
+      label: `Direction: ${humanize(direction)}`,
+      onRemove: () => setParam("direction", null),
+    });
+  if (missed)
+    tags.push({
+      key: "missed",
+      label: `Missed calls: ${MISSED.find((m) => m.key === missed)?.label ?? missed}`,
+      onRemove: () => setParam("missed", null),
+    });
+  if (deviceId)
+    tags.push({
+      key: "deviceId",
+      label: `Telecaller: ${telecaller?.telecaller_name ?? telecaller?.label ?? "Unnamed handset"}`,
+      onRemove: () => setParam("deviceId", null),
+    });
 
   return (
     <>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-5">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setParam("q", query.trim() || null);
-          }}
-          className="min-w-0 flex-1"
-        >
-          <MonoLabel>Search</MonoLabel>
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="relative min-w-0 flex-1">
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setParam("q", query.trim() || null);
+            }}
+            className="min-w-0 flex-1"
+          >
+            <div className="relative">
               <Search
                 aria-hidden="true"
                 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-text-muted"
@@ -187,7 +239,7 @@ export function CallsExplorer({
                 // search the transcript - see the API's ListQuery.
                 placeholder="Name, or what the call was about"
                 aria-label="Search calls"
-                className="pr-9 pl-9"
+                className="h-9.5 pr-9 pl-9"
               />
               {query ? (
                 <button
@@ -203,109 +255,98 @@ export function CallsExplorer({
                 </button>
               ) : null}
             </div>
-          </div>
-        </form>
+          </form>
 
-        <div>
-          <MonoLabel>Status</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <FilterChip active={!state} onClick={() => setParam("state", null)}>
-              All
-            </FilterChip>
+          <DateFilterControl
+            period={period}
+            from={from}
+            to={to}
+            range={range}
+            zone={zone}
+            onSelectPeriod={(key) => setParams({ period: key, from: null, to: null })}
+            onSelectRange={(f, t) => setParams({ from: f, to: t, period: null })}
+          />
+        </div>
+
+        {tags.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {tags.map((tag) => (
+              <FilterTag key={tag.key} label={tag.label} onRemove={tag.onRemove} />
+            ))}
+            {tags.length > 1 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setParams({ state: null, sentiment: null, direction: null, missed: null, deviceId: null })
+                }
+                className="px-1.5 text-xs font-medium text-text-muted underline underline-offset-2 hover:text-text"
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Select
+            size="sm"
+            aria-label="Status"
+            value={state ?? ""}
+            onChange={(e) => setParam("state", e.target.value || null)}
+            className="h-8 w-36"
+          >
+            <option value="">All statuses</option>
             {STATES.map((s) => (
-              <FilterChip
-                key={s.key}
-                active={state === s.key}
-                onClick={() => setParam("state", state === s.key ? null : s.key)}
-              >
+              <option key={s.key} value={s.key}>
                 {s.label}
-              </FilterChip>
+              </option>
             ))}
-          </div>
-        </div>
+          </Select>
 
-        <div>
-          <MonoLabel>Feeling</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <FilterChip active={!sentiment} onClick={() => setParam("sentiment", null)}>
-              Any
-            </FilterChip>
+          <Select
+            size="sm"
+            aria-label="Feeling"
+            value={sentiment ?? ""}
+            onChange={(e) => setParam("sentiment", e.target.value || null)}
+            className="h-8 w-32"
+          >
+            <option value="">Any feeling</option>
             {SENTIMENTS.map((s) => (
-              <FilterChip
-                key={s.key}
-                active={sentiment === s.key}
-                onClick={() => setParam("sentiment", sentiment === s.key ? null : s.key)}
-              >
+              <option key={s.key} value={s.key}>
                 {s.label}
-              </FilterChip>
+              </option>
             ))}
-          </div>
-        </div>
+          </Select>
 
-        <div>
-          <MonoLabel>Direction</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <FilterChip active={!direction} onClick={() => setParam("direction", null)}>
-              Both
-            </FilterChip>
-            {["incoming", "outgoing"].map((d) => (
-              <FilterChip
-                key={d}
-                active={direction === d}
-                onClick={() => setParam("direction", direction === d ? null : d)}
-              >
-                {humanize(d)}
-              </FilterChip>
-            ))}
-          </div>
+          <Select
+            size="sm"
+            aria-label="Direction"
+            value={direction ?? ""}
+            onChange={(e) => setParam("direction", e.target.value || null)}
+            className="h-8 w-36"
+          >
+            <option value="">Both directions</option>
+            <option value="incoming">Incoming</option>
+            <option value="outgoing">Outgoing</option>
+          </Select>
+
+          <AdvancedFiltersPopover
+            missed={missed}
+            deviceId={deviceId}
+            telecallers={telecallers}
+            onMissed={(v) => setParam("missed", v)}
+            onDevice={(v) => setParam("deviceId", v)}
+          />
         </div>
       </div>
-
-      <div>
-        <MonoLabel>Missed calls</MonoLabel>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          <FilterChip active={!missed} onClick={() => setParam("missed", null)}>
-            Any call
-          </FilterChip>
-          {MISSED.map((m) => (
-            <FilterChip
-              key={m.key}
-              active={missed === m.key}
-              onClick={() => setParam("missed", missed === m.key ? null : m.key)}
-            >
-              {m.label}
-            </FilterChip>
-          ))}
-        </div>
-      </div>
-
-      {telecallers.length > 0 ? (
-        <div>
-          <MonoLabel>Telecaller</MonoLabel>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <FilterChip active={!deviceId} onClick={() => setParam("deviceId", null)}>
-              Everyone
-            </FilterChip>
-            {telecallers.map((t) => (
-              <FilterChip
-                key={t.id}
-                active={deviceId === t.id}
-                onClick={() => setParam("deviceId", deviceId === t.id ? null : t.id)}
-              >
-                {t.telecaller_name ?? t.label ?? "Unnamed handset"}
-              </FilterChip>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {/* The rows' clip is on the body below rather than on this card, so the
           toolbar keeps its own rounded top. */}
       <div className="rounded-md border border-border bg-surface">
         {/* The list's controls, above the rows they act on: in what order,
             and which page - reachable without scrolling to the foot of fifty
-            rows. The same pager repeats under the table. WHEN is the shared
-            date control at the top of the page, with the dates it covered. */}
+            rows. The same pager repeats under the table. WHEN is the date
+            dropdown above, with the dates it covered. */}
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 rounded-t-md border-b border-border bg-bg-subtle px-4 py-2.5">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p aria-live="polite" className="text-sm font-medium text-text tabular-nums">
@@ -577,6 +618,222 @@ function FilterChip({
   );
 }
 
+/** One row of the date popover's quick-select column. */
+function PeriodOption({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ease-out ${
+        active ? "bg-text font-medium text-bg" : "text-text hover:bg-surface-hover"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The single date dropdown the brief asks for: a trigger naming whatever is
+ * active ("Any date", "Last 7 days", or the two resolved dates), opening onto
+ * quick-select periods on the left and a custom From/To pair in the centre -
+ * everything `DateRangeBar` offers the rest of the console, folded into one
+ * control so it can sit right beside Search instead of its own always-open row.
+ *
+ * Scoped to this page rather than added to `DateRangeBar` itself: that
+ * component is shared by half a dozen report screens (components/date-range-bar.tsx),
+ * and this page is the only one whose brief asks for a popover instead of an
+ * always-visible bar.
+ */
+function DateFilterControl({
+  period,
+  from,
+  to,
+  range,
+  zone,
+  onSelectPeriod,
+  onSelectRange,
+}: {
+  period: string | null;
+  from: string | null;
+  to: string | null;
+  /** The resolved dates, for the From/To pair's starting values. */
+  range: { from: string; to: string } | null;
+  zone: string;
+  onSelectPeriod: (period: string | null) => void;
+  onSelectRange: (from: string, to: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label =
+    from && to
+      ? formatReportRange(from, to)
+      : period && isCallLogPeriod(period)
+        ? callLogPeriodLabel(period)
+        : "Any date";
+
+  return (
+    <Popover
+      open={open}
+      onDismiss={() => setOpen(false)}
+      align="end"
+      className="w-[min(34rem,calc(100vw-2rem))] p-0"
+      trigger={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className="flex h-9.5 shrink-0 items-center gap-2 rounded-sm border border-border-strong bg-surface px-3 text-sm text-text transition-colors duration-150 ease-out hover:bg-surface-hover"
+        >
+          <CalendarDays className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+          <span className="font-medium whitespace-nowrap">{label}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden="true" />
+        </button>
+      }
+    >
+      <div className="flex flex-col sm:flex-row">
+        <div className="flex shrink-0 flex-col gap-0.5 border-b border-border p-2 sm:w-40 sm:border-r sm:border-b-0">
+          <PeriodOption active={!period && !from} onClick={() => { onSelectPeriod(null); setOpen(false); }}>
+            Any date
+          </PeriodOption>
+          {CALL_LOG_PERIODS.map((p) => (
+            <PeriodOption
+              key={p.key}
+              active={period === p.key}
+              onClick={() => {
+                onSelectPeriod(p.key);
+                setOpen(false);
+              }}
+            >
+              {p.label}
+            </PeriodOption>
+          ))}
+        </div>
+
+        <form
+          className="flex flex-col gap-3 p-3 sm:w-64"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const data = new FormData(e.currentTarget);
+            const f = String(data.get("from") || "");
+            const t = String(data.get("to") || "");
+            if (!f || !t) return;
+            onSelectRange(f, t);
+            setOpen(false);
+          }}
+        >
+          <p className="text-xs font-medium text-text-muted">Custom range</p>
+          <label className="space-y-1 text-xs text-text-muted">
+            <span className="block">From</span>
+            <Input type="date" name="from" defaultValue={from ?? range?.from} required className="w-full" />
+          </label>
+          <label className="space-y-1 text-xs text-text-muted">
+            <span className="block">To</span>
+            <Input type="date" name="to" defaultValue={to ?? range?.to} required className="w-full" />
+          </label>
+          <Button type="submit" variant="secondary" size="sm">
+            Show range
+          </Button>
+        </form>
+      </div>
+      <p className="border-t border-border px-3 py-2 text-xs text-text-muted">
+        times in {timeZoneLabel(zone)}
+      </p>
+    </Popover>
+  );
+}
+
+/**
+ * "Missed calls" and "Telecaller" (point 5): specific enough that most
+ * readers never touch them, so they live behind one button rather than two
+ * more always-visible chip rows.
+ */
+function AdvancedFiltersPopover({
+  missed,
+  deviceId,
+  telecallers,
+  onMissed,
+  onDevice,
+}: {
+  missed: string | null;
+  deviceId: string | null;
+  telecallers: Telecaller[];
+  onMissed: (key: string | null) => void;
+  onDevice: (id: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const activeCount = (missed ? 1 : 0) + (deviceId ? 1 : 0);
+
+  return (
+    <Popover
+      open={open}
+      onDismiss={() => setOpen(false)}
+      align="end"
+      className="w-72 p-3"
+      trigger={
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out ${
+            activeCount > 0
+              ? "border-transparent bg-text text-bg"
+              : "border-border-strong bg-surface text-text-muted hover:bg-surface-hover hover:text-text"
+          }`}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+          Advanced filters
+          {activeCount > 0 ? (
+            <span className="rounded-full bg-bg/25 px-1.5 py-px text-[10px]">{activeCount}</span>
+          ) : null}
+        </button>
+      }
+    >
+      <div className="space-y-3">
+        <div>
+          <MonoLabel>Missed calls</MonoLabel>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <FilterChip active={!missed} onClick={() => onMissed(null)}>
+              Any call
+            </FilterChip>
+            {MISSED.map((m) => (
+              <FilterChip key={m.key} active={missed === m.key} onClick={() => onMissed(missed === m.key ? null : m.key)}>
+                {m.label}
+              </FilterChip>
+            ))}
+          </div>
+        </div>
+
+        {telecallers.length > 0 ? (
+          <div>
+            <MonoLabel>Telecaller</MonoLabel>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <FilterChip active={!deviceId} onClick={() => onDevice(null)}>
+                Everyone
+              </FilterChip>
+              {telecallers.map((t) => (
+                <FilterChip key={t.id} active={deviceId === t.id} onClick={() => onDevice(deviceId === t.id ? null : t.id)}>
+                  {t.telecaller_name ?? t.label ?? "Unnamed handset"}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </Popover>
+  );
+}
+
 /**
  * One call, opened from the log.
  *
@@ -584,7 +841,9 @@ function FilterChip({
  * that immediately and only the transcript, analytics and facts are fetched -
  * the parts no list can afford to carry for every row.
  */
-function CallDrawer({
+/** Exported so the triage queue can open the same detail view in place,
+ *  without navigating to the call log this drawer normally lives on. */
+export function CallDrawer({
   call,
   onClose,
   dispositions,
@@ -913,7 +1172,7 @@ function CallDrawer({
           {sop ? (
             <section className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-2">
-                <MonoLabel>Call procedure</MonoLabel>
+                <MonoLabel>Call checklist</MonoLabel>
                 {sop.adherence_pct !== null ? (
                   <StatusChip
                     tone={

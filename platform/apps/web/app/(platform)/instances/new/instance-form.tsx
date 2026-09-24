@@ -56,7 +56,7 @@ export function InstanceForm() {
           <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
             New Customer Instance
           </h4>
-          <p className="text-xs text-neutral-400 font-sans font-medium mt-0.5">
+          <p className="text-xs text-text-muted font-sans font-medium mt-0.5">
             Creates an isolated tenant for this company, plus its first enrollment key. The key is
             shown exactly once.
           </p>
@@ -76,7 +76,7 @@ export function InstanceForm() {
 
         <div className="space-y-1.5">
           <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-            Device Server URL <span className="text-neutral-400">(optional - put in the QR)</span>
+            Device Server URL <span className="text-text-muted">(optional - put in the QR)</span>
           </label>
           <input
             className={inputClass}
@@ -143,7 +143,7 @@ export function InstanceForm() {
           </div>
         </div>
 
-        <label className="flex items-start gap-2.5 border-2 border-black bg-neutral-50 p-3 cursor-pointer">
+        <label className="flex items-start gap-2.5 border-2 border-border-strong bg-surface p-3 cursor-pointer">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -154,7 +154,7 @@ export function InstanceForm() {
             <span className="block text-xs font-mono uppercase tracking-wider font-bold text-black">
               Enable CRM
             </span>
-            <span className="block text-[11px] text-neutral-500 font-sans mt-0.5">
+            <span className="block text-[11px] text-text-muted font-sans mt-0.5">
               Contacts, Accounts, Deals, pipelines and roles for this client. Off by default - every
               instance gets call recording and transcription regardless; this adds the CRM on top.
               Can be turned on or off later from the instance page.
@@ -176,7 +176,7 @@ export function InstanceForm() {
       {result?.adminKey ? (
         <div className="space-y-4">
           <EnrollmentCredentials result={result} serverUrl={serverUrl} />
-          <p className="text-xs text-neutral-500 font-sans font-medium">
+          <p className="text-xs text-text-muted font-sans font-medium">
             CRM: {result.enabledModules?.includes("crm") ? "enabled" : "not enabled"} for this
             instance.
           </p>
@@ -190,7 +190,7 @@ export function InstanceForm() {
       ) : (
         <Card className="flex flex-col items-center justify-center min-h-48 gap-2">
           <MonoLabel>Provisioned credentials appear here - once</MonoLabel>
-          <p className="text-[11px] text-neutral-500 font-sans max-w-xs text-center">
+          <p className="text-[11px] text-text-muted font-sans max-w-xs text-center">
             The company gets its own org, workspace and instance. Nothing is shared with your other
             customers.
           </p>

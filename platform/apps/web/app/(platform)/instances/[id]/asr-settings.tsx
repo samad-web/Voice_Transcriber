@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import { Languages, Plus, X } from "lucide-react";
 import {
@@ -35,8 +36,8 @@ export function AsrSettings({
   vocabulary: string[];
 }) {
   const router = useRouter();
-  const [language, setLanguage] = useState(asrLanguage ?? "unknown");
-  const [mode, setMode] = useState(asrMode ?? ASR_MODE_DEFAULT);
+  const [language, setLanguage] = useDraftState(asrLanguage ?? "unknown");
+  const [mode, setMode] = useDraftState(asrMode ?? ASR_MODE_DEFAULT);
   const [terms, setTerms] = useState<string[]>(vocabulary ?? []);
   const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
@@ -108,7 +109,7 @@ export function AsrSettings({
             </option>
           ))}
         </Select>
-        <p className="text-[11px] text-neutral-500 font-sans leading-relaxed">
+        <p className="text-[11px] text-text-muted font-sans leading-relaxed">
           {language === "unknown"
             ? "The recogniser guesses per call. It gets this wrong occasionally - a Tamil call has been transcribed as Spanish - and when it does, the whole transcript is lost. Name the language if you know it."
             : "Every call from this instance is transcribed as this language, instead of the recogniser guessing."}
@@ -126,7 +127,7 @@ export function AsrSettings({
           ))}
         </Select>
         {activeMode ? (
-          <p className="text-[11px] text-neutral-500 font-sans leading-relaxed">
+          <p className="text-[11px] text-text-muted font-sans leading-relaxed">
             {activeMode.blurb}
           </p>
         ) : null}
@@ -135,7 +136,7 @@ export function AsrSettings({
       {/* Vocabulary */}
       <div className="space-y-2">
         <MonoLabel>Names &amp; terms</MonoLabel>
-        <p className="text-[11px] text-neutral-500 font-sans leading-relaxed">
+        <p className="text-[11px] text-text-muted font-sans leading-relaxed">
           Your business name, products, places and people - spelled the way you
           want them to appear. The analyser is told these, so summaries and
           extracted fields use the right spelling even when the recogniser
@@ -152,7 +153,7 @@ export function AsrSettings({
               }
             }}
             placeholder="RD Interlock"
-            className="flex-1 border-2 border-black bg-white p-2 text-xs font-sans"
+            className="flex-1 border-2 border-border-strong bg-surface p-2 text-xs font-sans"
           />
           <BrutalButton variant="secondary" onClick={addTerm} disabled={!draft.trim()}>
             <Plus className="h-4 w-4" />
@@ -164,14 +165,14 @@ export function AsrSettings({
             {terms.map((t) => (
               <span
                 key={t}
-                className="inline-flex items-center gap-1.5 border-2 border-black bg-neutral-50 px-2 py-1 text-[11px] font-sans font-bold"
+                className="inline-flex items-center gap-1.5 border-2 border-border-strong bg-surface px-2 py-1 text-[11px] font-sans font-bold"
               >
                 {t}
                 <button
                   type="button"
                   aria-label={`Remove ${t}`}
                   onClick={() => setTerms(terms.filter((x) => x !== t))}
-                  className="text-neutral-500 hover:text-red-700"
+                  className="text-text-muted hover:text-danger-text"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -179,7 +180,7 @@ export function AsrSettings({
             ))}
           </div>
         ) : (
-          <p className="text-[11px] font-mono font-bold uppercase text-neutral-400">
+          <p className="text-[11px] font-mono font-bold uppercase text-text-subtle">
             None yet
           </p>
         )}

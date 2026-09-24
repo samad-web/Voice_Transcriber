@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import {
   Button,
@@ -16,6 +17,7 @@ import {
 } from "@aura/ui";
 import { providerSpec, readChannel } from "@aura/shared";
 import { Time } from "@/components/org-time";
+import { PhoneInput, usePhoneCheck } from "@/components/phone-input";
 import { MetaWebhookDetails } from "./meta-webhook-details";
 import { WasiWebhookDetails } from "./wasi-webhook-details";
 
@@ -38,9 +40,9 @@ import {
  * here: that already happened on Wasi's side for this org's WABA.
  */
 export function MessagingSetup({ initial }: { initial: MessagingChannel[] }) {
-  const [channels, setChannels] = useState(initial);
-  const [secretDialogFor, setSecretDialogFor] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [channels, setChannels] = useServerState(initial, pending);
+  const [secretDialogFor, setSecretDialogFor] = useState<string | null>(null);
   const alert = useAlert();
 
   function refresh() {
@@ -298,6 +300,8 @@ export function CreateDialog({
   const [wasiClientId, setWasiClientId] = useState("");
   const [pending, start] = useTransition();
   const alert = useAlert();
+  // The business number the channel receives on: required, valid for its country.
+  const numberOk = usePhoneCheck()(inboundAddress, { required: true }).ok;
 
   // The kit's <Dialog> only toggles the underlying <dialog> element and never
   // unmounts its children, so without this a cancelled (or completed) attempt
@@ -313,6 +317,7 @@ export function CreateDialog({
   }, [open]);
 
   function submit() {
+    if (!numberOk) return;
     start(async () => {
       const res = await createWasiChannelAction({
         inboundAddress,
@@ -343,7 +348,7 @@ export function CreateDialog({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={pending}>
+          <Button onClick={submit} disabled={pending || !numberOk}>
             {pending ? "Connecting…" : "Connect"}
           </Button>
         </>
@@ -351,11 +356,7 @@ export function CreateDialog({
     >
       <div className="space-y-3">
         <FormField label="WhatsApp number" name="inboundAddress" required>
-          <Input
-            value={inboundAddress}
-            onChange={(e) => setInboundAddress(e.target.value)}
-            placeholder="919789961631"
-          />
+          <PhoneInput value={inboundAddress} onChange={(value) => setInboundAddress(value)} />
         </FormField>
         <FormField label="Display name" name="displayName">
           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />

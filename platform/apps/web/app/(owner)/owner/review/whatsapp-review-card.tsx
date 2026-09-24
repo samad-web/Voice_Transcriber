@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button, FormField, Input, StatusChip } from "@aura/ui";
+import { formatPhoneForDisplay } from "@aura/shared/dist/phone";
+import { PhoneInput, usePhoneCheck } from "@/components/phone-input";
 import { formatTestValue, humanizeKey } from "@/lib/agent-studio";
 import type { ReviewQualification } from "@/lib/review-queue";
 import { approveQualificationAction, rejectQualificationAction } from "../whatsapp-leads/actions";
@@ -39,7 +41,7 @@ function proposed(q: ReviewQualification, key: keyof Edits): string {
     case "name":
       return q.extracted_name ?? q.peer_label ?? "not stated";
     case "phone":
-      return q.peer_address;
+      return formatPhoneForDisplay(q.peer_address);
     case "email":
       return q.extracted_email ?? "not stated";
     case "company":
@@ -57,12 +59,17 @@ export function WhatsAppReviewCard({ item, waiting, onResolved, onFailed }: Revi
   const [edits, setEdits] = useState<Edits>({});
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const phoneCheck = usePhoneCheck();
   const details = Object.entries(q.facts ?? {}).flatMap(([key, value]) => {
     const text = formatTestValue(value);
     return text === null ? [] : [[key, text] as const];
   });
 
   const approve = async () => {
+    // A number the reviewer typed must be a real one; blank keeps the
+    // WhatsApp number the thread came from.
+    const phone = phoneCheck(edits.phone);
+    if (!phone.ok) return onFailed("Check the phone number", phone.message);
     setBusy(true);
     const trimmed = (key: keyof Edits) => edits[key]?.trim() || undefined;
     // Parsed, not cast: a budget typed as "lots" must not become 0, which reads
@@ -71,7 +78,7 @@ export function WhatsAppReviewCard({ item, waiting, onResolved, onFailed }: Revi
     const value = rawValue === undefined ? undefined : Number(rawValue.replace(/[^\d.]/gu, ""));
     const res = await approveQualificationAction(q.id, {
       name: trimmed("name"),
-      phone: trimmed("phone"),
+      phone: phone.e164 ?? undefined,
       email: trimmed("email"),
       company: trimmed("company"),
       notes: trimmed("notes"),
@@ -131,6 +138,13 @@ export function WhatsAppReviewCard({ item, waiting, onResolved, onFailed }: Revi
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {FIELDS.map((field) => (
             <FormField key={field.key} label={field.label} name={field.key} id={`${q.id}-${field.key}`}>
+              {field.key === "phone" ? (
+                <PhoneInput
+                  id={`${q.id}-phone`}
+                  value={edits.phone ?? ""}
+                  onChange={(value) => setEdits((prev) => ({ ...prev, phone: value }))}
+                />
+              ) : (
               <Input
                 id={`${q.id}-${field.key}`}
                 value={edits[field.key] ?? ""}
@@ -138,6 +152,7 @@ export function WhatsAppReviewCard({ item, waiting, onResolved, onFailed }: Revi
                 inputMode={field.key === "value" ? "decimal" : undefined}
                 onChange={(event) => setEdits((prev) => ({ ...prev, [field.key]: event.target.value }))}
               />
+              )}
             </FormField>
           ))}
           <p className="text-xs text-text-muted sm:col-span-2">

@@ -15,7 +15,7 @@ export default async function ProjectsPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Projects" context="Pipeline" />
+        <PageHeader title="Projects" context="Settings" />
         <LoadFailure what="your projects" failure={result} />
       </>
     );
@@ -24,7 +24,7 @@ export default async function ProjectsPage() {
 
   return (
     <>
-      <PageHeader title="Projects" context="Pipeline" />
+      <PageHeader title="Projects" context="Settings" />
       <p className="-mt-2 max-w-2xl text-sm text-text-muted">
         What you sell. Every recorded call is matched against this list, and the lead it produces is
         labelled with whichever project the conversation was about - so a board filtered to one

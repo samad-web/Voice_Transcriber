@@ -40,7 +40,7 @@ function SelectField({ label, hint }: { label: string; hint: number }) {
 export default function TranscriptionLoading() {
   return (
     <>
-      <PageHeader title="Transcription" context="Settings" />
+      <PageHeader title="Transcripts" context="Settings" />
 
       <Card elevated className="max-w-2xl space-y-6">
         <div className="flex h-4 items-center">

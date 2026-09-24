@@ -8,7 +8,7 @@ import { Time } from "@/components/org-time";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 
-export const metadata: Metadata = { title: "AI Agent Studio" };
+export const metadata: Metadata = { title: "AI assistants" };
 
 export interface AgentSummary {
   id: string;
@@ -50,7 +50,7 @@ export default async function AgentStudioPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="AI Agent Studio" context="Conversations" />
+        <PageHeader title="AI assistants" context="Settings" />
         <LoadFailure what="saved agents" failure={result} />
       </>
     );
@@ -70,7 +70,7 @@ export default async function AgentStudioPage() {
 
   return (
     <>
-      <PageHeader title="AI Agent Studio" context="Conversations" />
+      <PageHeader title="AI assistants" context="Settings" />
 
       <Card className="space-y-2">
         <MonoLabel>What agents do</MonoLabel>

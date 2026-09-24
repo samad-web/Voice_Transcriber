@@ -62,14 +62,20 @@ export default async function SlotsPage({
     <>
       <PageHeader title="Booking Slots" context="Platform" />
 
-      <p className="max-w-xl font-sans text-xs font-medium text-neutral-500">
+      <p className="max-w-xl font-sans text-xs font-medium text-text-muted">
         Who is booked in, and when you are free. Open slots are offered to qualified leads; a
         booked one shows who took it.
       </p>
 
       {/* Scopes the booked calls below. The calendar under them keeps its own
           month-by-month navigation - it is for setting availability. */}
-      <DateRangeBar path="/slots" presets={bookingPresets(window)} from={range.from} to={range.to} />
+      <DateRangeBar
+        path="/slots"
+        presets={bookingPresets(window)}
+        from={range.from}
+        to={range.to}
+        today={todayIn(timeZone)}
+      />
       {invalid ? <DateRangeNotice fallbackDays={14} fallback="the next 14 days" /> : null}
       <DateRangeSummary from={range.from} to={range.to} zone={timeZone} />
 

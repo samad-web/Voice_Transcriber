@@ -12,6 +12,7 @@ import {
 } from "@aura/shared";
 import { getAdminPool, withOrgContext } from "@aura/db";
 import type { DbClient } from "./crm-dispatch";
+import { announce } from "./realtime";
 
 /**
  * The automation engine (PRD Layer 2, migration 0049).
@@ -323,7 +324,9 @@ async function moveStage(
 }
 
 /** Process one queued event against every active rule for its trigger. */
-export async function processEvent(client: DbClient, event: EventRow): Promise<void> {
+/** Returns how many rules matched (and so may have written tasks or notifications). */
+export async function processEvent(client: DbClient, event: EventRow): Promise<number> {
+  let matchedRules = 0;
   const { rows: rules } = await client.query<RuleRow>(
     `SELECT id, name, conditions, actions FROM automation_rules
       WHERE trigger = $1 AND status = 'active' AND deleted_at IS NULL`,
@@ -350,6 +353,7 @@ export async function processEvent(client: DbClient, event: EventRow): Promise<v
       continue;
     }
 
+    matchedRules++;
     const outcomes = await applyActions(client, event.org_id, actions.data, event.payload);
     await recordRun(client, event, rule.id, true, outcomes);
     await client.query(
@@ -357,6 +361,7 @@ export async function processEvent(client: DbClient, event: EventRow): Promise<v
       [rule.id],
     );
   }
+  return matchedRules;
 }
 
 async function recordRun(
@@ -398,7 +403,11 @@ export async function drainAutomationEvents(): Promise<number> {
   let processed = 0;
   for (const event of events) {
     try {
-      await withOrgContext(event.org_id, (client) => processEvent(client as DbClient, event));
+      const matched = await withOrgContext(event.org_id, (client) => processEvent(client as DbClient, event));
+      // A matched rule may have created a task and told its assignee, or sent a
+      // notify action. Announced after the transaction, so the bell's re-read
+      // sees the rows; a rule that matched nothing announces nothing.
+      if (matched > 0) announce(event.org_id, "notification", "created");
       await getAdminPool().query(
         `UPDATE automation_events SET processed_at = now(), error = NULL WHERE id = $1`,
         [event.id],

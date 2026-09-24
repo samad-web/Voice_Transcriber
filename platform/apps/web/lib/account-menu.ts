@@ -23,10 +23,18 @@ import type { Crumb } from "@/lib/breadcrumbs";
 
 export type AccountArea = "owner" | "platform";
 
-export type AccountPage = "profile" | "business" | "time" | "plan" | "login_activity" | "get_started";
+export type AccountPage =
+  | "profile"
+  | "notifications"
+  | "business"
+  | "time"
+  | "plan"
+  | "login_activity"
+  | "get_started";
 
 export type AccountMenuItemId =
   | "profile"
+  | "notifications"
   | "business"
   | "time"
   | "plan"
@@ -45,6 +53,10 @@ export interface AccountMenuItem {
 
 const OWNER_HREFS: Record<AccountPage, string> = {
   profile: "/owner/account/profile",
+  // A person's own bell - instant or digest is each person's choice, which is
+  // why it sits here beside Profile and not in the Settings pages the whole
+  // workspace shares. The page kept its URL when it left the rail.
+  notifications: "/owner/notifications",
   business: "/owner/account/business",
   time: "/owner/account/time",
   plan: "/owner/account/plan",
@@ -101,8 +113,9 @@ export function accountMenuItemsFor(area: AccountArea, ownerRole?: OwnerRole | n
   };
 
   page("profile", "profile", "Profile");
+  page("notifications", "notifications", "My notifications");
   page("business", "business", "Business profile");
-  page("time", "time", "Time zone");
+  page("time", "time", "Time & location");
   page("plan", "plan", "Plan & usage");
   page("login_activity", "login_activity", "Login activity");
   items.push({ id: "sign_out_all", label: "Log out from all devices", group: "session" });
@@ -148,7 +161,7 @@ export function accountDisplayName(name: string | null | undefined, email: strin
 const ACCOUNT_CRUMBS: ReadonlyArray<{ href: string; trail: string[] }> = [
   { href: OWNER_HREFS.profile, trail: ["Account", "Profile"] },
   { href: OWNER_HREFS.business, trail: ["Account", "Business profile"] },
-  { href: OWNER_HREFS.time, trail: ["Account", "Time zone"] },
+  { href: OWNER_HREFS.time, trail: ["Account", "Time & location"] },
   { href: OWNER_HREFS.plan, trail: ["Account", "Plan & usage"] },
   { href: OWNER_HREFS.login_activity, trail: ["Account", "Login activity"] },
   { href: OWNER_HREFS.get_started, trail: ["Get started"] },

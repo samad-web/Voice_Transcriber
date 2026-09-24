@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { FlaskConical, Play } from "lucide-react";
-import { BrutalButton, Card, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
+import { BrutalButton, Card, ConsolePanel, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
 import { inputClass } from "@/lib/form";
 import { testAgentAction, type AgentTestResult } from "./actions";
 import type { AgentRow } from "./agent-studio";
@@ -46,7 +46,7 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
           Sandbox - Test Against a Stored Call
         </h4>
       </div>
-      <p className="text-xs text-neutral-400 font-sans font-medium">
+      <p className="text-xs text-text-muted font-sans font-medium">
         Run an agent version against a real transcript to preview the extracted JSON and validation
         before activating it.
       </p>
@@ -121,9 +121,11 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
 
           <div>
             <MonoLabel className="mb-2">Agent Output</MonoLabel>
-            <div className="bg-black rounded-none p-4 text-[10px] font-mono text-green-400 overflow-x-auto max-h-72 overflow-y-auto border-2 border-black">
-              <pre>{JSON.stringify(result.output ?? null, null, 2)}</pre>
-            </div>
+            <ConsolePanel
+              tone="log"
+              lines={JSON.stringify(result.output ?? null, null, 2).split("\n")}
+              className="max-h-72 text-[10px]"
+            />
           </div>
 
           {result.validationErrors &&
@@ -132,9 +134,11 @@ export function AgentSandbox({ agents, orgId }: { agents: AgentRow[]; orgId?: st
             : true) ? (
             <div>
               <MonoLabel className="mb-2">Validation Errors</MonoLabel>
-              <div className="bg-black rounded-none p-4 text-[10px] font-mono text-red-400 overflow-x-auto max-h-48 overflow-y-auto border-2 border-black">
-                <pre>{JSON.stringify(result.validationErrors, null, 2)}</pre>
-              </div>
+              <ConsolePanel
+                tone="danger"
+                lines={JSON.stringify(result.validationErrors, null, 2).split("\n")}
+                className="max-h-48 text-[10px]"
+              />
             </div>
           ) : null}
         </div>

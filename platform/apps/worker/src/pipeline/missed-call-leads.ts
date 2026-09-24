@@ -2,6 +2,7 @@ import { getAdminPool, projectLeadToCrm, routeLead, withOrgContext } from "@aura
 import { dueDate, entryStage, leadTitle, parseLeadStages, statusForStage } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
 import { notifyMissedCallOwner } from "./missed-call-notify";
+import { announce } from "./realtime";
 
 /**
  * Missed calls from UNKNOWN callers become leads (migration 0134 - the
@@ -234,7 +235,12 @@ async function createLeadsForOrg(orgId: string): Promise<number> {
   for (const callId of callIds) {
     try {
       const did = await withOrgContext(orgId, (client) => createLeadFromMissedCall(client, orgId, callId));
-      if (did) created++;
+      if (did) {
+        created++;
+        // The lead and its owner's "a call went unanswered" notice have both
+        // committed; one signal refreshes the board and the bell.
+        announce(orgId, "notification", "created");
+      }
     } catch (err) {
       console.error(`missed-call lead: org ${orgId} call ${callId}:`, err);
     }

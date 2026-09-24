@@ -45,14 +45,14 @@ export function KeyGenerator({
           <h4 className="text-lg font-display font-black text-black uppercase tracking-tight">
             Issue Enrollment Key
           </h4>
-          <p className="text-xs text-neutral-400 font-sans font-medium mt-0.5">
+          <p className="text-xs text-text-muted font-sans font-medium mt-0.5">
             Enrolls new handsets into {instanceName}. Shown exactly once.
           </p>
         </div>
 
         <div className="space-y-1.5">
           <label className="text-xs font-mono text-black uppercase tracking-wider font-bold block">
-            Device Server URL <span className="text-neutral-400">(optional - put in the QR)</span>
+            Device Server URL <span className="text-text-muted">(optional - put in the QR)</span>
           </label>
           <input
             className={inputClass}
@@ -105,7 +105,7 @@ export function KeyGenerator({
         />
       ) : (
         <Card className="flex items-center justify-center min-h-48">
-          <p className="text-xs font-mono font-bold uppercase text-neutral-400">
+          <p className="text-xs font-mono font-bold uppercase text-text-subtle">
             Generated key appears here - once
           </p>
         </Card>

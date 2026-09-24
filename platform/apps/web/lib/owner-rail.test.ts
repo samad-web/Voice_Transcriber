@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { OwnerRole } from "@aura/shared";
 import {
-  OWNER_PRIMARY_NAV,
   OWNER_RAIL_MAX_TOP_LEVEL,
+  OWNER_SETTINGS_HREF,
   ownerNavItemsFor,
   ownerRailFor,
   ownerRailState,
+  ownerSectionOf,
+  ownerSettingsGroupsFor,
+  ownerTabsFor,
 } from "./nav";
 
 /**
- * The top-level rail (nav.ts, "THE TOP-LEVEL RAIL").
+ * The rail and the tabs (nav.ts, "THE RAIL AND THE TABS").
  *
- * Two properties matter and both are asserted across EVERY persona and module
+ * The properties that matter are asserted across EVERY persona and module
  * combination rather than a hand-picked few: the rail never exceeds its cap,
- * and promoting pages loses none - every page the grouped rail would have
- * shown is still reachable, exactly once.
+ * and nothing is lost - every page the reader may open is reachable exactly
+ * once, from the rail's sections or (Notifications) the account menu.
  */
 
 const COMBINATIONS = OwnerRole.options.flatMap((role) =>
@@ -23,12 +26,13 @@ const COMBINATIONS = OwnerRole.options.flatMap((role) =>
   ),
 );
 
+const keys = (rail: ReturnType<typeof ownerRailFor>) => rail.primary.map((e) => e.key);
+
 describe("ownerRailFor", () => {
-  it("never shows more than the cap of top-level entries, More included", () => {
+  it("never shows more than the cap of main entries", () => {
     for (const { role, crmEnabled, callIntelEnabled } of COMBINATIONS) {
       const rail = ownerRailFor(role, false, crmEnabled, callIntelEnabled);
-      const topLevel = rail.primary.length + (rail.more.length > 0 ? 1 : 0);
-      expect([role, crmEnabled, topLevel <= OWNER_RAIL_MAX_TOP_LEVEL]).toEqual([
+      expect([role, crmEnabled, rail.primary.length <= OWNER_RAIL_MAX_TOP_LEVEL]).toEqual([
         role,
         crmEnabled,
         true,
@@ -39,35 +43,69 @@ describe("ownerRailFor", () => {
   it("keeps every visible page reachable exactly once", () => {
     for (const { role, crmEnabled, callIntelEnabled } of COMBINATIONS) {
       const rail = ownerRailFor(role, false, crmEnabled, callIntelEnabled);
-      const onRail = [...rail.primary, ...rail.more.flatMap((g) => g.items)].map((i) => i.href);
-      const visible = ownerNavItemsFor(role, false, crmEnabled, callIntelEnabled).map((i) => i.href);
+      const onRail = [...rail.primary, ...rail.footer].flatMap((e) => e.items).map((i) => i.href);
+      const visible = ownerNavItemsFor(role, false, crmEnabled, callIntelEnabled)
+        .map((i) => i.href)
+        // Offered from the account menu instead (lib/account-menu.ts).
+        .filter((href) => ownerSectionOf(href) !== "account");
       expect([role, crmEnabled, [...onRail].sort()]).toEqual([role, crmEnabled, [...visible].sort()]);
       expect(new Set(onRail).size).toBe(onRail.length);
     }
   });
 
-  it("promotes the core pages in a fixed order with their short labels", () => {
+  it("gives an owner Home and six sections, with Settings pinned apart", () => {
     const rail = ownerRailFor("owner", false, true, true);
-    expect(rail.primary.map((i) => [i.href, i.label])).toEqual(
-      OWNER_PRIMARY_NAV.map((p) => [p.href, p.label]),
-    );
+    expect(rail.primary.map((e) => [e.key, e.label])).toEqual([
+      ["home", "Home"],
+      ["tasks", "Tasks"],
+      ["leads", "Leads"],
+      ["customers", "Customers"],
+      ["sales", "Sales"],
+      ["conversations", "Conversations"],
+      ["reports", "Reports"],
+    ]);
+    expect(rail.footer.map((e) => [e.key, e.href])).toEqual([["settings", OWNER_SETTINGS_HREF]]);
   });
 
-  it("never promotes a page the persona cannot see", () => {
-    // A telecaller has no Deals or Reports (design doc §9); the rail must not
-    // offer a link the grouped rail would have hidden.
-    const primary = ownerRailFor("telecaller", false, true, true).primary.map((i) => i.href);
-    expect(primary).toEqual(["/owner", "/owner/leads", "/owner/contacts", "/owner/tasks"]);
+  it("points each section at its first page the reader can open", () => {
+    const href = (role: OwnerRole, key: string) =>
+      ownerRailFor(role, false, true, true).primary.find((e) => e.key === key)?.href;
+    expect(href("owner", "leads")).toBe("/owner/leads");
+    expect(href("owner", "reports")).toBe("/owner/reports");
+    // A telecaller has no Sales overview; their Reports is their own activity.
+    expect(href("telecaller", "reports")).toBe("/owner/productivity");
+    // Marketing has no Chats (one-to-one correspondence), so Conversations
+    // opens on the follow-up sequences instead of a 403.
+    expect(href("marketing", "conversations")).toBe("/owner/outreach");
   });
 
-  it("collapses to Home and Leads for a tenant without the CRM module", () => {
-    const primary = ownerRailFor("owner", false, false, false).primary.map((i) => i.href);
-    expect(primary).toEqual(["/owner", "/owner/leads"]);
+  it("never offers a section the persona has no page in", () => {
+    // A telecaller has no deals, quotes, invoices or price list (design doc §9).
+    expect(keys(ownerRailFor("telecaller", false, true, true))).toEqual([
+      "home",
+      "tasks",
+      "leads",
+      "customers",
+      "conversations",
+      "reports",
+    ]);
   });
 
-  it("does not repeat a promoted page under More", () => {
-    const more = ownerRailFor("owner", false, true, true).more.flatMap((g) => g.items.map((i) => i.href));
-    for (const { href } of OWNER_PRIMARY_NAV) expect(more).not.toContain(href);
+  it("collapses for a tenant without the CRM module", () => {
+    // Tasks, Customers and Sales are all CRM objects; leads, the call queues
+    // and the activity report are core Aura.
+    expect(keys(ownerRailFor("owner", false, false, false))).toEqual([
+      "home",
+      "leads",
+      "conversations",
+      "reports",
+    ]);
+  });
+
+  it("keeps Notifications off the rail", () => {
+    const rail = ownerRailFor("owner", false, true, true);
+    const onRail = [...rail.primary, ...rail.footer].flatMap((e) => e.items).map((i) => i.href);
+    expect(onRail).not.toContain("/owner/notifications");
   });
 });
 
@@ -75,32 +113,88 @@ describe("ownerRailState", () => {
   const rail = ownerRailFor("owner", false, true, true);
 
   it("marks Home current only on /owner itself", () => {
-    expect(ownerRailState("/owner", rail)).toEqual({
-      activeHref: "/owner",
-      primaryParentHref: null,
-      inMore: false,
-    });
-    expect(ownerRailState("/owner/branding", rail).activeHref).toBe("/owner/branding");
+    expect(ownerRailState("/owner", rail)).toEqual({ activeKey: "home", activeHref: "/owner" });
+    // Not on a page the rail does not list, which every path is a child of.
+    expect(ownerRailState("/owner/account/profile", rail)).toEqual({ activeKey: null, activeHref: null });
+    expect(ownerRailState("/owner/notifications", rail)).toEqual({ activeKey: null, activeHref: null });
   });
 
-  it("keeps a record page under its primary section", () => {
+  it("lights up the section on every one of its pages", () => {
+    expect(ownerRailState("/owner/board", rail).activeKey).toBe("leads");
+    expect(ownerRailState("/owner/whatsapp-leads", rail).activeKey).toBe("leads");
+    expect(ownerRailState("/owner/superfone", rail).activeKey).toBe("conversations");
+    expect(ownerRailState("/owner/branding", rail).activeKey).toBe("settings");
+  });
+
+  it("keeps a record page under its section, by longest prefix", () => {
     expect(ownerRailState("/owner/contacts/abc", rail)).toEqual({
+      activeKey: "customers",
       activeHref: "/owner/contacts",
-      primaryParentHref: null,
-      inMore: false,
     });
+    expect(ownerRailState("/owner/reports/sla", rail).activeHref).toBe("/owner/reports/sla");
+    expect(ownerRailState("/owner/calls/triage", rail).activeHref).toBe("/owner/calls/triage");
+  });
+});
+
+describe("ownerTabsFor", () => {
+  const rail = ownerRailFor("owner", false, true, true);
+  const hrefs = (path: string) => ownerTabsFor(path, rail)?.tabs.map((t) => t.href);
+
+  it("draws the section's pages in order, with the current one marked", () => {
+    const tabs = ownerTabsFor("/owner/quotations", rail);
+    expect(tabs?.label).toBe("Sales");
+    expect(tabs?.activeHref).toBe("/owner/quotations");
+    expect(tabs?.tabs.map((t) => t.label)).toEqual(["Deals", "Quotes", "Invoices", "Price list"]);
   });
 
-  it("opens More for a page behind it, and names the primary area it sits under", () => {
-    expect(ownerRailState("/owner/reports/sla", rail)).toEqual({
-      activeHref: "/owner/reports/sla",
-      primaryParentHref: "/owner/reports",
-      inMore: true,
-    });
-    expect(ownerRailState("/owner/staff", rail)).toEqual({
-      activeHref: "/owner/staff",
-      primaryParentHref: null,
-      inMore: true,
-    });
+  it("draws nothing on Home, on the Settings page, or below a tab's own page", () => {
+    expect(ownerTabsFor("/owner", rail)).toBeNull();
+    expect(ownerTabsFor(OWNER_SETTINGS_HREF, rail)).toBeNull();
+    expect(ownerTabsFor("/owner/contacts/abc", rail)).toBeNull();
+    expect(ownerTabsFor("/owner/reports/builder/abc", rail)).toBeNull();
+  });
+
+  it("draws nothing where the section has one page for this reader", () => {
+    // Tasks is one page for everybody: a one-tab strip is furniture.
+    expect(ownerTabsFor("/owner/tasks", rail)).toBeNull();
+    // A telecaller's Reports is their activity alone.
+    expect(ownerTabsFor("/owner/productivity", ownerRailFor("telecaller", false, true, true))).toBeNull();
+  });
+
+  it("shows one settings group at a time, with a way back to all of them", () => {
+    const tabs = ownerTabsFor("/owner/meta-ads", rail);
+    expect(tabs?.label).toBe("Getting leads in");
+    expect(tabs?.back).toEqual({ href: OWNER_SETTINGS_HREF, label: "All settings" });
+    expect(hrefs("/owner/meta-ads")).toEqual([
+      "/owner/lead-sources",
+      "/owner/meta-ads",
+      "/owner/messaging-setup",
+      "/owner/lead-routing",
+    ]);
+  });
+
+  it("only offers tabs the reader may open", () => {
+    // A telecaller's Leads has no Board (persona-limited) and no Import.
+    const telecaller = ownerRailFor("telecaller", false, true, true);
+    expect(ownerTabsFor("/owner/leads", telecaller)?.tabs.map((t) => t.href)).toEqual([
+      "/owner/leads",
+      "/owner/review",
+      "/owner/whatsapp-leads",
+    ]);
+  });
+});
+
+describe("ownerSettingsGroupsFor", () => {
+  it("lists only the groups and pages the reader may open", () => {
+    const groups = ownerSettingsGroupsFor(ownerNavItemsFor("telecaller", false, true, true));
+    expect(groups.map((g) => [g.key, g.pages.map((p) => p.item.href)])).toEqual([
+      ["team", ["/owner/devices"]],
+      ["tools", ["/owner/integrations"]],
+    ]);
+  });
+
+  it("gives an owner every group", () => {
+    const groups = ownerSettingsGroupsFor(ownerNavItemsFor("owner", false, true, true));
+    expect(groups.map((g) => g.key)).toEqual(["team", "intake", "calls", "business", "tools"]);
   });
 });

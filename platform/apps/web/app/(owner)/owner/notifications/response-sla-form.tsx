@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Button, FormField, Select, useAlert, useToast } from "@aura/ui";
 import { saveResponseSlaAction } from "./actions";
 
@@ -20,8 +21,8 @@ function label(minutes: number): string {
  * and the API refuses them regardless.
  */
 export function ResponseSlaForm({ initial }: { initial: number }) {
-  const [saved, setSaved] = useState(initial);
-  const [minutes, setMinutes] = useState(initial);
+  const [saved, setSaved] = useDraftState(initial);
+  const [minutes, setMinutes] = useDraftState(initial);
   const [busy, setBusy] = useState(false);
   const alert = useAlert();
   const toast = useToast();

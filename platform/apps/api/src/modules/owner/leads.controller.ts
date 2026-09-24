@@ -14,18 +14,20 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { recordLeadStageTransition } from "@aura/db";
+import { leadBoardStages, listLeadBoards, recordLeadStageTransition } from "@aura/db";
 import {
   BulkAssignLeadsInput,
   LeadSourceChannel,
   LeadTemperature,
   parseLeadStages,
   parsePipelineStages,
+  stageOnBoard,
   statusForStage,
   type BulkResult,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { assignInBulk } from "../../common/bulk-assign";
+import { consolePhone, orgPhoneCountry } from "../../common/console-phone";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { orgHasModule } from "../../common/org-modules";
 import { assertInOrg } from "../../common/org-references";
@@ -36,6 +38,7 @@ import { OwnerScopeGuard } from "../../common/owner-scope.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { recordStageTransition } from "../crm-objects/stage-history";
+import { CrmIngestService } from "../public-api/crm-ingest.service";
 import { dealStageChangedSubject, enqueueAutomationEventSafely } from "../automation/enqueue";
 
 /**
@@ -46,7 +49,12 @@ import { dealStageChangedSubject, enqueueAutomationEventSafely } from "../automa
  */
 const ProjectFilter = z.union([z.string().uuid(), z.literal("none")]);
 
+/** A lead board (0136): a lead_boards id, or `main` for the org's original board. */
+const BoardRef = z.union([z.string().uuid(), z.literal("main")]);
+const boardIdOf = (ref: z.infer<typeof BoardRef>): string | null => (ref === "main" ? null : ref);
+
 const ListQuery = z.object({
+  boardId: BoardRef.optional(),
   stage: z.string().max(40).optional(),
   status: z.enum(["open", "won", "lost"]).optional(),
   telecallerId: z.string().uuid().optional(),
@@ -97,6 +105,8 @@ const ListQuery = z.object({
 const BoardQuery = z.object({
   /** Cards fetched per column. The count is always the true total. */
   perStage: z.coerce.number().int().min(1).max(200).default(50),
+  /** Which board (0136). Absent is the Main board. */
+  boardId: BoardRef.optional(),
   /**
    * Narrow the whole board to one project. The per-column counts and subtotals
    * are computed after this filter, so a filtered board's numbers describe the
@@ -122,11 +132,30 @@ const UpdateLeadBody = z.object({
    * while setting one takes it away from the worker for good.
    */
   temperature: LeadTemperature.nullable().optional(),
+  /**
+   * Move the lead to another board (0136). It keeps its column when the
+   * target has the same key, else it enters at the target's entry column -
+   * or at `stage`, when that is sent too.
+   */
+  boardId: BoardRef.optional(),
+});
+
+const CreateLeadBody = z.object({
+  name: z.string().trim().min(1).max(200),
+  phone: z.string().trim().max(40).nullable().optional(),
+  email: z.string().trim().email().max(200).nullable().optional(),
+  company: z.string().trim().max(200).nullable().optional(),
+  notes: z.string().max(5000).nullable().optional(),
+  value: z.number().nonnegative().nullable().optional(),
+  /** Omitted: wherever "Added manually" is routed. */
+  boardId: BoardRef.optional(),
 });
 
 /** Columns every lead view returns - one shape for the board and the list. */
 const LEAD_COLUMNS = `
   l.id, l.title, l.stage, l.status, l.score, l.value_num, l.summary, l.next_action,
+  -- Which board it is on (0136); null is the Main board.
+  l.board_id,
   -- Hot/Medium/Cold, and whether it was derived or chosen. The console shows
   -- the second one: a rating somebody picked reads differently from one the
   -- AI guessed, and hiding that difference is what makes people mistrust both.
@@ -265,17 +294,10 @@ const CALL_INTEL_JOIN = `
 // records these are.
 @UseGuards(AdminKeyGuard, TenantGuard, OwnerScopeGuard, CrmPermissionsGuard)
 export class LeadsController {
-  constructor(private readonly db: DbService) {}
-
-  /** The tenant's stage list - the board's columns, in order. */
-  private async stagesFor(client: {
-    query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
-  }) {
-    const {
-      rows: [org],
-    } = await client.query("SELECT lead_stages FROM organizations LIMIT 1");
-    return parseLeadStages(org?.lead_stages);
-  }
+  constructor(
+    private readonly db: DbService,
+    private readonly ingest: CrmIngestService,
+  ) {}
 
   /**
    * Whether the human making this request may read a word-for-word account of
@@ -331,6 +353,7 @@ export class LeadsController {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const {
+      boardId,
       stage,
       status,
       telecallerId,
@@ -379,6 +402,8 @@ export class LeadsController {
       const scoped = ownerScopeFilter("lead", scope, "l");
       if (scoped) add(scoped.sql, scoped.value);
 
+      if (boardId === "main") where.push("l.board_id IS NULL");
+      else if (boardId) add("l.board_id = $?", boardId);
       if (stage) add("l.stage = $?", stage);
       if (status) add("l.status = $?", status);
       if (telecallerId) add("l.telecaller_device_id = $?", telecallerId);
@@ -435,12 +460,16 @@ export class LeadsController {
         params,
       );
 
+      // Every board, so each row's stage reads in its own board's words.
+      // `stages` stays the Main board's, for the stage filter.
+      const boards = await listLeadBoards(client, orgId);
       return {
         leads: rows.map(({ total_count: _total, ...lead }) => lead),
         total: rows[0]?.total_count ?? 0,
         limit,
         offset,
-        stages: await this.stagesFor(client),
+        stages: boards[0]?.stages ?? [],
+        boards,
       };
     });
   }
@@ -457,12 +486,23 @@ export class LeadsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
     const { perStage, projectId } = parsed.data;
+    const boardId = parsed.data.boardId ? boardIdOf(parsed.data.boardId) : null;
 
     return this.db.withOrg(orgId, async (client) => {
-      const stages = await this.stagesFor(client);
+      // All boards in one read: this one's columns, and the switcher's list.
+      const boards = await listLeadBoards(client, orgId);
+      const board = boards.find((b) => b.id === boardId);
+      if (!board) throw new NotFoundException("no such lead board");
+      const stages = board.stages;
 
       const params: unknown[] = [perStage];
       const boardWhere: string[] = [];
+      if (boardId === null) {
+        boardWhere.push("l.board_id IS NULL");
+      } else {
+        params.push(boardId);
+        boardWhere.push(`l.board_id = $${params.length}`);
+      }
       if (projectId === "none") {
         boardWhere.push("l.project_id IS NULL");
       } else if (projectId) {
@@ -520,7 +560,13 @@ export class LeadsController {
       const known = new Set(stages.map((s) => s.key));
       const orphans = rows.filter((r) => !known.has(String(r.stage)));
 
-      return { columns, orphaned: orphans.length, stages };
+      return {
+        columns,
+        orphaned: orphans.length,
+        stages,
+        board: { id: board.id, name: board.name },
+        boards: boards.map((b) => ({ id: b.id, name: b.name })),
+      };
     });
   }
 
@@ -588,7 +634,11 @@ export class LeadsController {
         [lead.contact_number_hash, lead.first_call_id, lead.last_call_id],
       );
 
-      return { lead, calls, stages: await this.stagesFor(client) };
+      // The lead's OWN board's columns for its stage picker, and every board
+      // for the "move to board" one.
+      const boards = await listLeadBoards(client, orgId);
+      const stages = (boards.find((b) => b.id === (lead.board_id ?? null)) ?? boards[0])?.stages ?? [];
+      return { lead, calls, stages, boards: boards.map((b) => ({ id: b.id, name: b.name })) };
     });
   }
 
@@ -692,6 +742,42 @@ export class LeadsController {
   }
 
   /**
+   * "New lead" - a person putting a card on a board by hand (0136).
+   *
+   * Through `CrmIngestService`, the same write every other door uses, so a
+   * hand-made lead gets the contact, the deal, the project detection and the
+   * telecaller rotation a web-form lead gets, and dedupes on the same phone
+   * key: typing a number the business already knows opens THAT lead
+   * (`created: false`) instead of forking a duplicate.
+   *
+   * The board is the person's pick when they made one, else wherever
+   * "Added manually" is routed.
+   */
+  @Post()
+  @RequireCrmPermission("lead", "create")
+  async create(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = CreateLeadBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const b = parsed.data;
+    // E.164, valid for its country - so a lead typed here dedupes against the
+    // same person arriving from Meta or WhatsApp, which already send E.164.
+    const phone = b.phone?.trim()
+      ? consolePhone(b.phone, "phone", await this.db.withOrg(orgId, (client) => orgPhoneCountry(client, orgId)))
+      : null;
+    const lead = await this.ingest.createLead(orgId, {
+      name: b.name,
+      phone,
+      email: b.email ?? null,
+      company: b.company ?? null,
+      notes: b.notes ?? null,
+      value: b.value ?? null,
+      sourceChannel: "manual",
+      ...(b.boardId !== undefined ? { boardId: boardIdOf(b.boardId) } : {}),
+    });
+    return { leadId: lead.leadId, created: lead.created, boardId: lead.boardId };
+  }
+
+  /**
    * Give many leads to one telecaller - the Leads list's bulk "Reassign".
    *
    * ── OWNER AND MANAGER ONLY ─────────────────────────────────────────────────
@@ -784,13 +870,39 @@ export class LeadsController {
     const actorId = req.principal?.userId ?? "unknown";
 
     return this.db.withOrg(orgId, async (client) => {
-      const stages = await this.stagesFor(client);
-      if (p.stage && !stages.some((s) => s.key === p.stage)) {
+      // The columns of the board this lead is on (0136) - a stage is only
+      // valid against its own board. One read, the same cost as the org-wide
+      // stage list this replaced. Scoped like the write below, so a lead this
+      // person may not see answers 404 here too rather than a stage error.
+      const readable = ownerScopeFilter("lead", scope, "l");
+      const {
+        rows: [current],
+      } = await client.query<{ board_id: string | null; stage: string; stages: unknown }>(
+        `SELECT l.board_id, l.stage, COALESCE(b.stages, o.lead_stages) AS stages
+           FROM leads l
+           JOIN organizations o ON o.id = l.org_id
+           LEFT JOIN lead_boards b ON b.id = l.board_id
+          WHERE l.id = $1${readable ? ` AND ${readable.sql.replace(/\$\?/g, "$2")}` : ""}`,
+        readable ? [leadId, readable.value] : [leadId],
+      );
+      if (!current) throw new NotFoundException("lead not found");
+
+      const targetBoardId = p.boardId !== undefined ? boardIdOf(p.boardId) : current.board_id;
+      const moving = targetBoardId !== current.board_id;
+      let stages = parseLeadStages(current.stages);
+      if (moving) {
+        const target = await leadBoardStages(client, orgId, targetBoardId);
+        if (!target) throw new BadRequestException("no such lead board");
+        stages = target.stages;
+      }
+      // A move keeps the card's column when the target board has that key.
+      const nextStage = p.stage ?? (moving ? stageOnBoard(stages, current.stage) : undefined);
+      if (nextStage && !stages.some((s) => s.key === nextStage)) {
         throw new BadRequestException(
-          `unknown stage "${p.stage}" - valid stages: ${stages.map((s) => s.key).join(", ")}`,
+          `unknown stage "${nextStage}" - valid stages: ${stages.map((s) => s.key).join(", ")}`,
         );
       }
-      const status = p.stage ? statusForStage(stages, p.stage) : null;
+      const status = nextStage ? statusForStage(stages, nextStage) : null;
 
       // The handset and project must be this org's - foreign-key checks
       // ignore RLS (doc 23, A2).
@@ -802,7 +914,7 @@ export class LeadsController {
       // and the read filter would then hide the evidence from them. Scoping
       // the read without the write is the worse of the two half-measures.
       const owned = ownerScopeFilter("lead", scope, "");
-      const ownedAnd = owned ? ` AND ${owned.sql.replace(/\$\?/g, "$19")}` : "";
+      const ownedAnd = owned ? ` AND ${owned.sql.replace(/\$\?/g, "$21")}` : "";
 
       const {
         rows: [updated],
@@ -845,6 +957,7 @@ export class LeadsController {
                                   WHEN $17::boolean THEN 'auto'
                                   ELSE temperature_source
                                 END,
+           board_id    = CASE WHEN $19::boolean THEN $20::uuid ELSE board_id END,
            -- Working a lead IS activity: without this a card the owner is
            -- actively progressing would age out of the retention sweep.
            last_activity_at = now()
@@ -852,12 +965,12 @@ export class LeadsController {
          WHERE id = $1${ownedAnd}
          RETURNING id, stage, status, title, value_num, next_action, notes, contact_name,
                    telecaller_device_id, project_id, project_source,
-                   temperature, temperature_source,
+                   temperature, temperature_source, board_id,
                    stage_changed_at, last_activity_at,
                    prior.prior_stage, prior.prior_status`,
         [
           leadId,
-          p.stage ?? null,
+          nextStage ?? null,
           status,
           p.title ?? null,
           // A nullable field needs "was it sent?" separate from "is it null?" -
@@ -876,7 +989,9 @@ export class LeadsController {
           p.projectId ?? null,
           p.temperature !== undefined,
           p.temperature ?? null,
-          // $19, present only when the persona narrows. Spread rather than
+          moving,
+          targetBoardId,
+          // $21, present only when the persona narrows. Spread rather than
           // pushed unconditionally so the placeholder numbering above stays
           // literal and readable.
           ...(owned ? [owned.value] : []),
@@ -893,7 +1008,7 @@ export class LeadsController {
       // is exactly the bug this call fixes. `console` because this endpoint is
       // only ever a person - which is also what lets 0093's trigger count the
       // move as the lead's first response.
-      if (p.stage) {
+      if (nextStage) {
         await recordLeadStageTransition(client, orgId, {
           leadId,
           fromStage: (priorStage as string | null) ?? null,
@@ -933,7 +1048,13 @@ export class LeadsController {
         // stage/status ONCE, on creation - a follow-up call must never move a
         // deal a human is already working. This IS that human moving it, so
         // propagating it onto the linked deal is this endpoint's job.
-        if (p.stage) await this.propagateStageToDeal(client, orgId, leadId, p.stage, actorUserId(req));
+        //
+        // Main board only (0136): another board's column keys are its own and
+        // have no deal equivalent, so carrying them over would only fill
+        // reconciliation with false mismatches.
+        if (nextStage && targetBoardId === null) {
+          await this.propagateStageToDeal(client, orgId, leadId, nextStage, actorUserId(req));
+        }
         await client.query("RELEASE SAVEPOINT lead_propagation");
       } catch (err) {
         await client.query("ROLLBACK TO SAVEPOINT lead_propagation");
@@ -943,7 +1064,13 @@ export class LeadsController {
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
          VALUES ($1, 'user', $2, $3, 'lead', $4, $5::jsonb)`,
-        [orgId, actorId, p.stage ? "lead.stage_change" : "lead.update", leadId, JSON.stringify(p)],
+        [
+          orgId,
+          actorId,
+          moving ? "lead.board_move" : nextStage ? "lead.stage_change" : "lead.update",
+          leadId,
+          JSON.stringify(p),
+        ],
       );
 
       return { lead };

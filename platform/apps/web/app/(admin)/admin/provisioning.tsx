@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import { Plus } from "lucide-react";
 import {
   ORG_MODULES,
@@ -222,7 +223,7 @@ function CreateEnvironment({ onClose }: { onClose: () => void }) {
   const [workspaceName, setWorkspaceName] = useState("Default");
   const [region, setRegion] = useState("ap-south-1");
   const [modules, setModules] = useState<OrgModule[]>(["aura", "crm"]);
-  const [whatsappProvider, setWhatsappProvider] = useState<WhatsAppProvider>("none");
+  const [whatsappProvider, setWhatsappProvider] = useDraftState<WhatsAppProvider>("none");
   const [result, setResult] = useState<ProvisionResult | null>(null);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
@@ -326,7 +327,7 @@ function ConfigureTenant({
   tenant: TenantProvisioning;
   onClose: () => void;
 }) {
-  const [modules, setModules] = useState<OrgModule[]>(tenant.enabled_modules as OrgModule[]);
+  const [modules, setModules] = useDraftState<OrgModule[]>(tenant.enabled_modules as OrgModule[]);
   const [whatsappProvider, setWhatsappProvider] = useState<WhatsAppProvider>(
     (tenant.whatsapp_provider as WhatsAppProvider) ?? "none",
   );

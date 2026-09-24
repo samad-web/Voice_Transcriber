@@ -1,3 +1,5 @@
+import { CONTROL_CHROME } from "@aura/ui";
+
 /**
  * Shared form control classes. These were duplicated verbatim across ten page
  * components; hoisting them means the responsive rules below are applied once.
@@ -9,8 +11,18 @@
  *    `sm` up where the design intends it.
  *  - `min-w-0` - an <input>'s intrinsic min-width (~170px) otherwise stops it
  *    shrinking inside a flex row, overflowing the card on a narrow viewport.
+ *
+ * `CONTROL_CHROME` (the same border/fill/text tokens `Input`/`Select` use),
+ * not the old hardcoded `border-2 border-black bg-neutral-50 text-black`: that
+ * literal was invisible to `app/console-palette.test.ts` (it only scans
+ * `.tsx`), so every one of this helper's nine consumers rendered black-on-grey
+ * regardless of theme. No `focus:outline-none` either - the previous value
+ * silently beat the global `:focus-visible` ring (Tailwind's utilities layer
+ * outranks theme.css's `@layer base`), dropping the keyboard focus ring on
+ * every field that used it; `Input`/`Select` never set it, for the same
+ * reason.
  */
-const BASE = "w-full min-w-0 p-2.5 border-2 border-black bg-neutral-50 rounded-none text-black focus:outline-none";
+const BASE = `w-full min-w-0 p-2.5 ${CONTROL_CHROME}`;
 
 export const inputClass = `${BASE} text-base sm:text-sm font-sans`;
 

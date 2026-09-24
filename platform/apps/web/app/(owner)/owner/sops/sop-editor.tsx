@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import type { SopStep } from "@aura/shared";
 import { Button, Card, Input, Label, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { deactivateSopAction, saveSopAction } from "./actions";
@@ -54,7 +55,7 @@ export function SopEditor({
   defaultSteps: SopStep[];
   canDeactivate: boolean;
 }) {
-  const [name, setName] = useState(active?.name ?? "Outbound sales call");
+  const [name, setName] = useDraftState(active?.name ?? "Outbound sales call");
   const [steps, setSteps] = useState<SopStep[]>(active?.steps ?? []);
   const [pending, startTransition] = useTransition();
   const alert = useAlert();

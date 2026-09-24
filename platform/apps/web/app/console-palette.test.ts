@@ -73,24 +73,16 @@ const STRICT = [join("app", "(owner)"), "components", join("packages", "ui", "sr
  * palette, from the pre-v2 design system. MEANT TO SHRINK - delete a line when
  * its page is migrated. Nothing may be added.
  */
-const LEGACY_STOCK_PALETTE = [
+const LEGACY_STOCK_PALETTE: string[] = [
   // Arrived with the operator-console work on this branch and never went
   // through the palette pass. Operator-only, so no customer sees it - which is
   // why it is backlog rather than a blocker.
-  "app/(platform)/operators/operators-manager.tsx",
-  "app/(platform)/agents/agent-sandbox.tsx",
-  "app/(platform)/agents/agent-studio.tsx",
-  "app/(platform)/instances/enrollment-credentials.tsx",
-  "app/(platform)/instances/new/instance-form.tsx",
-  "app/(platform)/instances/[id]/asr-settings.tsx",
-  "app/(platform)/instances/[id]/erasure-tool.tsx",
-  "app/(platform)/instances/[id]/key-generator.tsx",
-  "app/(platform)/instances/[id]/owner-accounts.tsx",
-  "app/(platform)/instances/[id]/policy-form.tsx",
-  "app/(platform)/leads/page.tsx",
-  "app/(platform)/search/search-explorer.tsx",
-  "app/(platform)/slots/page.tsx",
-  "app/(platform)/usage/page.tsx",
+  //
+  // The 14 files that used to live here (operators-manager, agent-sandbox,
+  // agent-studio, enrollment-credentials, instance-form, asr-settings,
+  // erasure-tool, key-generator, owner-accounts, policy-form, leads/page,
+  // search-explorer, slots/page, usage/page) were migrated to the semantic
+  // token set in one pass and struck off - see console-colour-rule memory.
 ];
 
 /** The same ratchet for hand-rolled state chips outside the strict scope. */
@@ -127,6 +119,10 @@ const GRADIENT_CHROME = [
   // A loading placeholder carries no meaning and is replaced within a second;
   // there is no data on screen for it to be confused with.
   "components/skeletons.tsx",
+  // The header hairline, `fixed` above the sidebar AND the content column so it
+  // is edge to edge of the viewport - used to be inline in sidebar.tsx and
+  // mobile-nav.tsx (both above), moved here so it can span both at once.
+  "app/(owner)/layout.tsx",
 ];
 
 function sourceFiles(dir: string): string[] {

@@ -67,7 +67,7 @@ export default async function ContactsPage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Contacts" context="Pipeline" />
+        <PageHeader title="Contacts" context="Customers" />
         <LoadFailure what="contacts" failure={result} />
       </>
     );
@@ -76,7 +76,7 @@ export default async function ContactsPage({
 
   return (
     <>
-      <PageHeader title="Contacts" context="Pipeline" />
+      <PageHeader title="Contacts" context="Customers" />
 
       <SavedViewsBar list="contacts" views={views} current={current} allLabel="All contacts" />
 

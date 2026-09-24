@@ -83,7 +83,7 @@ export default async function IntegrationAppPage({ params }: { params: Params })
   return (
     <>
       <BreadcrumbLeaf label={spec.label} />
-      <PageHeader title={spec.label} context="Integrations" />
+      <PageHeader title={spec.label} context="Connected apps" />
 
       {detail.ok ? (
         <AppHero spec={spec} detail={detail.data} role={role} />

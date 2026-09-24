@@ -161,6 +161,9 @@ services:
       # Server components talk to the API over the compose network, skipping
       # the public hop (and the TLS handshake) entirely.
       API_URL: http://api:4000
+      # Google sign-in's redirectTo (lib/supabase/google.ts). The same value
+      # the api service gets, so the console never builds it from a Host header.
+      PUBLIC_APP_URL: https://${APP_DOMAIN}${CONSOLE_BASE_PATH-/admin}
     depends_on:
       - api
 

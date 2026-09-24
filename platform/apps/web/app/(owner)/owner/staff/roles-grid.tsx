@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { isPermissionEnforced } from "@aura/shared";
+import { ALL_SCOPE_ONLY_OBJECTS, isPermissionEnforced, type PermissionObjectType } from "@aura/shared";
 import {
   Button,
   Card,
@@ -22,6 +22,8 @@ import type { RoleRow } from "./types";
  *  about. */
 const OBJECT_LABELS: Record<string, string> = {
   lead: "Leads",
+  // Making, reshaping, routing and deleting boards (0136) - not the leads on them.
+  lead_board: "Lead boards",
   contact: "Contacts",
   account: "Accounts",
   deal: "Deals",
@@ -163,6 +165,13 @@ function RoleEditor({
   const router = useRouter();
   const [grid, setGrid] = useState<Grid>(() => gridFor(role, objectTypes, actions));
   const [dirty, setDirty] = useState(false);
+  // Follow the server - another owner changing this role in another tab - but
+  // never over unsaved edits here. `role` is a new object on every refresh.
+  const [seenRole, setSeenRole] = useState(role);
+  if (role !== seenRole && !dirty) {
+    setSeenRole(role);
+    setGrid(gridFor(role, objectTypes, actions));
+  }
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
@@ -309,6 +318,10 @@ function RoleEditor({
                       </td>
                     );
                   }
+                  // A whole-org power (a board is nobody's record) is a plain
+                  // yes or no - offering "Own records" would be a setting that
+                  // means nothing. Yes is stored as scope `all`.
+                  const yesNo = ALL_SCOPE_ONLY_OBJECTS.has(object as PermissionObjectType);
                   return (
                     <td key={action} className="px-3 py-2">
                       {canEdit ? (
@@ -316,23 +329,31 @@ function RoleEditor({
                           aria-label={`${ACTION_LABELS[action] ?? action} ${
                             OBJECT_LABELS[object] ?? object
                           } for ${role.name}`}
-                          value={grid[object][action]}
+                          value={yesNo && grid[object][action] === "owned" ? "all" : grid[object][action]}
                           disabled={pending}
                           onChange={(e) =>
                             set(object, action, e.target.value as "none" | "all" | "owned")
                           }
                         >
                           <option value="none">No</option>
-                          <option value="all">All records</option>
-                          <option value="owned">Own records</option>
+                          {yesNo ? (
+                            <option value="all">Yes</option>
+                          ) : (
+                            <>
+                              <option value="all">All records</option>
+                              <option value="owned">Own records</option>
+                            </>
+                          )}
                         </Select>
                       ) : (
                         <StatusChip tone={grid[object][action] === "none" ? "outline" : "muted"}>
                           {grid[object][action] === "none"
                             ? "No"
-                            : grid[object][action] === "owned"
-                              ? "Own"
-                              : "All"}
+                            : yesNo
+                              ? "Yes"
+                              : grid[object][action] === "owned"
+                                ? "Own"
+                                : "All"}
                         </StatusChip>
                       )}
                     </td>
@@ -349,7 +370,9 @@ function RoleEditor({
         person&rsquo;s login. On the Team tab, a Telecaller or Sales role is narrowed to records
         attributed to their handset identity instead &mdash; both apply, and the narrower one wins.
         Cells marked <em>not checked</em> are combinations Aura does not enforce anywhere, so
-        setting them would change nothing.
+        setting them would change nothing. <strong className="font-medium text-text">Lead boards</strong>{" "}
+        is about the boards themselves &mdash; creating them, changing their columns and which
+        channels feed them, and deleting them &mdash; not about the leads on them.
       </p>
 
       {dirty ? (

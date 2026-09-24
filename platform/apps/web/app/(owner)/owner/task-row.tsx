@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { AlertTriangle, CalendarDays, CircleDashed, Clock, MessageCircle, Phone } from "lucide-react";
-import { StatusChip } from "@aura/ui";
+import { AlertTriangle, CalendarDays, CircleDashed, Clock, MessageCircle, Phone, Users } from "lucide-react";
+import { Button, Input, StatusChip, useAlert } from "@aura/ui";
 import { URGENCY_TONE, dueText, urgencyOf, type Urgency } from "@/lib/next-actions";
+import type { AssigneeOption } from "./bulk/actions";
+import { respondToTaskAction } from "./crm-actions";
 import { QuickLog, logParentFor } from "./quick-log";
+import { AnswerIcon, ReassignDialog } from "./task-composer";
 import type { Interaction, Task } from "./types";
 
 const URGENCY_ICON: Record<Urgency, typeof Clock> = {
@@ -35,6 +38,8 @@ export function TaskRow({
   onComplete,
   onLogged,
   selection,
+  assignees,
+  onChanged,
 }: {
   task: Task;
   today: string;
@@ -49,8 +54,21 @@ export function TaskRow({
    * one tick can never mean two different things in the same row.
    */
   selection?: { selected: boolean; onToggle: () => void };
+  /**
+   * The team, when the row may hand the task to someone else. With it (and
+   * `onChanged`), the row gets a Reassign button that opens the people
+   * dialog - one or several teammates, each asked to accept (0135).
+   */
+  assignees?: AssigneeOption[] | null;
+  /** The task came back changed - reassigned, accepted or declined. */
+  onChanged?: (task: Task) => void;
 }) {
   const [mode, setMode] = useState<"call" | "message" | null>(null);
+  const [reassigning, setReassigning] = useState(false);
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState("");
+  const [answering, startAnswer] = useTransition();
+  const alert = useAlert();
   const isOpen = task.status === "open";
   // A finished task is not urgent; it keeps the neutral rail whatever its date.
   const urgency = isOpen ? urgencyOf(task, today) : "undated";
@@ -65,6 +83,30 @@ export function TaskRow({
         ? `/owner/accounts/${task.account_id}`
         : null;
   const recordName = task.contact_name ?? task.deal_name ?? null;
+  // Everyone on it with their answer (0135); a row from an older API has only
+  // the primary, who by definition already had it.
+  const people =
+    task.assignees ??
+    (task.assignee_user_id
+      ? [{ user_id: task.assignee_user_id, name: task.assignee_name ?? null, status: "accepted" as const }]
+      : []);
+  const waitingOnMe = isOpen && task.my_status === "pending" && !selection;
+
+  const answer = (response: "accept" | "decline") =>
+    startAnswer(async () => {
+      const result = await respondToTaskAction(task.id, response, response === "decline" ? reason : undefined);
+      if (result.error) {
+        await alert({
+          title: response === "accept" ? "Couldn't accept that task" : "Couldn't decline that task",
+          body: result.error,
+          tone: "danger",
+        });
+        return;
+      }
+      setDeclining(false);
+      setReason("");
+      if (result.task) onChanged?.(result.task);
+    });
 
   const actionButton = (next: "call" | "message", label: string, ActionIcon: typeof Phone) => (
     <button
@@ -136,10 +178,82 @@ export function TaskRow({
                 {recordName}
               </Link>
             ) : null}
-            {showAssignee ? (
-              <span className="text-text-muted">{task.assignee_name ? `· ${task.assignee_name}` : "· Unassigned"}</span>
+            {/* Shown on a record's own page too once there is more than the
+                one accepted person to say - that is news, not repetition. */}
+            {showAssignee || people.length > 1 || people.some((p) => p.status !== "accepted") ? (
+              people.length === 0 ? (
+                <span className="text-text-muted">· Unassigned</span>
+              ) : (
+                // Declined stays visible, struck through, so whoever asked can
+                // see who turned it down rather than wondering where they went.
+                <span className="inline-flex flex-wrap items-center gap-1" aria-label="Assigned to">
+                  {people.map((p) => (
+                    <span
+                      key={p.user_id}
+                      title={`${p.name ?? "Former member"}: ${p.status}`}
+                      className={`inline-flex max-w-[11rem] items-center gap-1 rounded-full border px-2 py-0.5 ${
+                        p.status === "pending"
+                          ? "border-dashed border-border-strong text-text-muted"
+                          : p.status === "declined"
+                            ? "border-border text-text-subtle line-through"
+                            : "border-border text-text-muted"
+                      }`}
+                    >
+                      <AnswerIcon status={p.status} />
+                      <span className="truncate">{p.name ?? "Former member"}</span>
+                    </span>
+                  ))}
+                </span>
+              )
+            ) : null}
+            {isOpen && !selection && onChanged && assignees && assignees.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setReassigning(true)}
+                aria-label={`Reassign "${task.title}"`}
+                className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-text-muted hover:bg-surface-hover hover:text-text"
+              >
+                <Users aria-hidden="true" className="h-3 w-3" />
+                Reassign
+              </button>
             ) : null}
           </span>
+          {waitingOnMe ? (
+            <div className="mt-2 rounded-md border border-border-strong bg-bg-subtle px-3 py-2">
+              {declining ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-[12rem] flex-1">
+                    <Input
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="Reason (optional, shown to whoever asked)"
+                      aria-label="Reason for declining"
+                      maxLength={500}
+                      autoFocus
+                    />
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setDeclining(false)} disabled={answering}>
+                    Back
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => answer("decline")} loading={answering}>
+                    Decline task
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-text">You&apos;ve been asked to take this on</span>
+                  <span className="flex gap-2">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setDeclining(true)} disabled={answering}>
+                      Decline
+                    </Button>
+                    <Button type="button" size="sm" onClick={() => answer("accept")} loading={answering}>
+                      Accept
+                    </Button>
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
         {/* Wide screens: actions on the row. Narrow: below it, full-size targets.
             Not on a finished task, and not while selecting. */}
@@ -168,6 +282,15 @@ export function TaskRow({
             }}
           />
         </div>
+      ) : null}
+      {reassigning && onChanged ? (
+        <ReassignDialog
+          task={task}
+          assignees={assignees ?? null}
+          open={reassigning}
+          onClose={() => setReassigning(false)}
+          onSaved={onChanged}
+        />
       ) : null}
     </li>
   );

@@ -1,4 +1,10 @@
-import { DEFAULT_TIME_ZONE, formatRelative, type LeadTemperature } from "@aura/shared";
+import {
+  DEFAULT_TIME_ZONE,
+  formatRelative,
+  type LeadTemperature,
+  type TaskAssignee,
+  type TaskAssigneeStatus,
+} from "@aura/shared";
 
 /** Shapes returned by /v1/owner/* and /v1/leads - shared by all three pages. */
 
@@ -11,6 +17,8 @@ export interface Stage {
 export interface Lead {
   id: string;
   title: string;
+  /** Which lead board it is on (0136); null is the Main board. */
+  board_id?: string | null;
   stage: string;
   status: "open" | "won" | "lost";
   score: string | number | null;
@@ -117,6 +125,48 @@ export interface BoardColumn extends Stage {
   count: number;
   value: number;
   leads: Lead[];
+}
+
+/** A lead board (0136). `id` null is the Main board - `organizations.lead_stages`. */
+export interface LeadBoardRef {
+  id: string | null;
+  name: string;
+}
+
+/** `GET /v1/lead-boards` - a board with its columns and how many leads sit in each. */
+export interface LeadBoard extends LeadBoardRef {
+  stages: Stage[];
+  counts: Record<string, number>;
+  leadCount: number;
+}
+
+/** What the signed-in person may do with boards, read from the permission grid. */
+export interface LeadBoardGrants {
+  createLead: boolean;
+  createBoard: boolean;
+  editBoards: boolean;
+  deleteBoards: boolean;
+}
+
+export type LeadBoardChannel = "whatsapp" | "web_form" | "manual";
+
+export interface LeadBoardRoute {
+  channel: LeadBoardChannel;
+  /** A WhatsApp number or web form; null is every source on the channel. */
+  sourceId: string | null;
+  /** null is the Main board, stated explicitly (overrides the channel's route). */
+  boardId: string | null;
+}
+
+export interface LeadBoardRouteSource {
+  id: string;
+  label: string;
+  active: boolean;
+}
+
+/** The URL/API spelling of a board: `main` for the Main board. */
+export function boardRef(id: string | null): string {
+  return id ?? "main";
 }
 
 export interface LeadCall {
@@ -682,6 +732,14 @@ export interface Task {
   lead_stage?: string | null;
   assignee_user_id: string | null;
   assignee_name?: string | null;
+  /**
+   * Everyone on the task and their answer (migration 0135), primary first.
+   * Absent on a row an older API returned; treat as just the primary.
+   */
+  assignees?: TaskAssignee[];
+  /** The reader's own answer - "pending" is what shows Accept / Decline. */
+  my_status?: TaskAssigneeStatus | null;
+  created_by?: string | null;
   deal_name?: string | null;
   contact_name?: string | null;
   due_on: string | null;

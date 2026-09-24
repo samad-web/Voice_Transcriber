@@ -90,12 +90,19 @@ describe("the enforced-permission inventory", () => {
     expect(PERMISSION_OBJECT_MODULE.lead).toBe("aura");
   });
 
-  it("enforces lead:view and lead:edit, and claims nothing more", () => {
-    // The leads controller has four reads and one PATCH. There is no create,
-    // delete or export route, so those cells must stay inert - and migration
-    // 0103 seeds only these two for the same reason.
+  it("enforces lead:view, lead:create and lead:edit, and claims nothing more", () => {
+    // The leads controller has four reads, one PATCH and - since 0136 - the
+    // console's "New lead". There is no delete or export route, so those cells
+    // must stay inert; 0103 seeded view/edit and 0136 seeded create to match.
     const leadPairs = ENFORCED_PERMISSIONS.filter((p: string) => p.startsWith("lead:"));
-    expect([...leadPairs].sort()).toEqual(["lead:edit", "lead:view"]);
+    expect([...leadPairs].sort()).toEqual(["lead:create", "lead:edit", "lead:view"]);
+  });
+
+  it("enforces lead_board create, edit and delete, and no view", () => {
+    // Reading boards rides on lead:view - anyone who sees the board sees its
+    // tabs - so a lead_board:view cell would be a picker that changes nothing.
+    const boardPairs = ENFORCED_PERMISSIONS.filter((p: string) => p.startsWith("lead_board:"));
+    expect([...boardPairs].sort()).toEqual(["lead_board:create", "lead_board:delete", "lead_board:edit"]);
   });
 
   it("reflects over every controller file on disk", () => {

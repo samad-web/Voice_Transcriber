@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { FormField, Input, Select, useAlert } from "@aura/ui";
+import { PhoneInput, usePhoneCheck } from "@/components/phone-input";
 import { createMetaChannelAction } from "./actions";
 
 export type MetaChannelKind = "waba" | "instagram" | "facebook";
@@ -77,6 +78,9 @@ export function useMetaChannelForm({
 }) {
   const [kind, setKind] = useState<MetaChannelKind>(fixedKind ?? "waba");
   const [inboundAddress, setInboundAddress] = useState("");
+  const phoneCheck = usePhoneCheck();
+  // A WhatsApp number must be valid for its country; a page handle is free text.
+  const addressOk = kind === "waba" ? phoneCheck(inboundAddress, { required: true }).ok : Boolean(inboundAddress.trim());
   const [displayName, setDisplayName] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [senderId, setSenderId] = useState("");
@@ -102,6 +106,7 @@ export function useMetaChannelForm({
   }, [active, fixedKind]);
 
   const submit = () => {
+    if (!addressOk) return;
     start(async () => {
       const res = await createMetaChannelAction({
         kind,
@@ -126,7 +131,14 @@ export function useMetaChannelForm({
     <div className="space-y-3">
       {fixedKind ? null : (
         <FormField label="What are you connecting" name="kind" hint={selected.blurb}>
-          <Select value={kind} onChange={(e) => setKind(e.target.value as MetaChannelKind)}>
+          <Select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as MetaChannelKind);
+              // A number and a handle are different things; never carry one into the other.
+              setInboundAddress("");
+            }}
+          >
             {KINDS.map((k) => (
               <option key={k.value} value={k.value}>
                 {k.label}
@@ -142,15 +154,19 @@ export function useMetaChannelForm({
         required
         hint={
           kind === "waba"
-            ? "The number customers message, in full international form."
+            ? "The number customers message."
             : "Just so you can tell your channels apart in the list."
         }
       >
-        <Input
-          value={inboundAddress}
-          onChange={(e) => setInboundAddress(e.target.value)}
-          placeholder={kind === "waba" ? "919789961631" : "@yourbusiness"}
-        />
+        {kind === "waba" ? (
+          <PhoneInput value={inboundAddress} onChange={(value) => setInboundAddress(value)} />
+        ) : (
+          <Input
+            value={inboundAddress}
+            onChange={(e) => setInboundAddress(e.target.value)}
+            placeholder="@yourbusiness"
+          />
+        )}
       </FormField>
 
       <FormField label="Display name" name="displayName">
@@ -201,6 +217,6 @@ export function useMetaChannelForm({
     fields,
     submit,
     pending,
-    canSubmit: !pending && Boolean(accessToken) && Boolean(senderId) && Boolean(inboundAddress.trim()),
+    canSubmit: !pending && Boolean(accessToken) && Boolean(senderId) && addressOk,
   };
 }

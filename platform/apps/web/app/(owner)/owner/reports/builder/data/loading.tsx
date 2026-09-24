@@ -76,7 +76,7 @@ const DATASETS = [
 export default function DataSourcesLoading() {
   return (
     <>
-      <PageHeader title="Data sources" context="Report builder" />
+      <PageHeader title="Data sources" context="Custom reports" />
 
       <div className="-mt-2 max-w-3xl">
         <Line box="sm" bar="h-3.5 w-full" />

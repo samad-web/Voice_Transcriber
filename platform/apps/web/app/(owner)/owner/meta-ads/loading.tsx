@@ -103,7 +103,7 @@ function McpCardSkeleton() {
 export default function MetaAdsLoading() {
   return (
     <>
-      <PageHeader title="Meta Lead Ads" context="Settings" />
+      <PageHeader title="Facebook & Instagram ads" context="Settings" />
       <TextLines line="h-5" bars={SIGN_IN_COPY} className="max-w-2xl" />
       <div className="flex flex-wrap gap-2">
         <Skeleton className="h-10 w-48 rounded-full" />

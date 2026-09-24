@@ -9,7 +9,7 @@ import { TableBlockSkeleton, TabsSkeleton, ToolbarSkeleton } from "@/components/
 export default function AccountsLoading() {
   return (
     <>
-      <PageHeader title="Accounts" context="Pipeline" />
+      <PageHeader title="Companies" context="Customers" />
       <TabsSkeleton tabs={1} />
       <ToolbarSkeleton search selects={1} />
       <TableBlockSkeleton columns={["primary", "text", "text", "date"]} />

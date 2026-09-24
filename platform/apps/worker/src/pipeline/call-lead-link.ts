@@ -1,6 +1,7 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { leadTitle } from "@aura/shared";
 import { notifyMissedCallOwner } from "./missed-call-notify";
+import { announce } from "./realtime";
 
 /**
  * Attach calls to the leads they were about (migration 0094).
@@ -160,7 +161,11 @@ export async function runCallLeadLink(): Promise<number> {
   let linked = 0;
   for (const org of orgs) {
     try {
-      linked += await linkOrg(org.id);
+      const n = await linkOrg(org.id);
+      linked += n;
+      // linkOrg commits before returning. A link can raise a missed-call
+      // notice (notifyMissedCallOwner), so say so once per org that changed.
+      if (n > 0) announce(org.id, "notification", "created");
     } catch (err) {
       // One tenant's failure must not stop the others. Nothing is lost: the
       // next tick recomputes from the same guard, because this converges

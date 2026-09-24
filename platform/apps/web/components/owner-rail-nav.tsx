@@ -1,62 +1,62 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, MoreHorizontal } from "lucide-react";
-import { ownerRailState, type NavItem, type OwnerRail } from "@/lib/nav";
+import { ownerRailState, type OwnerRail, type OwnerRailEntry } from "@/lib/nav";
 
 /**
- * The owner console's rail: the promoted pages, then one "More" disclosure
- * holding the grouped rest (lib/nav.ts, "THE TOP-LEVEL RAIL").
+ * The owner console's rail: Home and the daily-work sections, then Settings
+ * pinned apart below them (lib/nav.ts, "THE RAIL AND THE TABS").
+ *
+ * One link per section and nothing folded away. A section's own pages are the
+ * tabs across the top of the page (<OwnerSectionTabs>), so the rail only has to
+ * answer "which part of the business", and the whole of it fits on one screen
+ * without a disclosure somebody has to know to open.
  *
  * Shared by <Sidebar> and <MobileNav> so the two breakpoints cannot disagree
  * about what is top-level or what "you are here" looks like. `variant` only
  * changes the tap target height - a thumb needs more than a cursor.
- *
- * More OPENS BY ITSELF when the current page is inside it, and re-opens on
- * navigation into it. Otherwise a person who followed a link to Team would see
- * no highlighted item anywhere on the rail.
  */
 export function OwnerRailNav({
   rail,
   pathname,
   variant,
+  /** Icon-only rail (sidebar.tsx's collapse toggle). Never true for "drawer" -
+   *  the mobile nav has no collapsed state of its own. */
+  collapsed = false,
 }: {
   rail: OwnerRail;
   pathname: string;
   variant: "sidebar" | "drawer";
+  collapsed?: boolean;
 }) {
-  const { activeHref, primaryParentHref, inMore } = ownerRailState(pathname, rail);
-  const [moreOpen, setMoreOpen] = useState(inMore);
-  const moreId = useId();
-
-  useEffect(() => {
-    if (inMore) setMoreOpen(true);
-  }, [inMore, pathname]);
-
+  const { activeKey } = ownerRailState(pathname, rail);
   const pad = variant === "drawer" ? "py-3" : "py-2";
 
-  const link = (item: NavItem, parent = false) => {
-    const Icon = item.icon;
-    const isActive = item.href === activeHref;
+  const link = (entry: OwnerRailEntry) => {
+    const Icon = entry.icon;
+    const isActive = entry.key === activeKey;
     return (
       <Link
-        key={item.href}
-        href={item.href}
-        aria-current={isActive ? "page" : undefined}
+        key={entry.key}
+        href={entry.href}
+        // The entry stands for a whole section, so it is current on every tab
+        // of it - "page" only when the reader is on the section's first page.
+        aria-current={isActive ? (pathname === entry.href ? "page" : "true") : undefined}
+        // Collapsed rows have no visible label, so the name still has to reach
+        // someone hovering with a mouse - a native title tooltip, same as any
+        // other icon-only control.
+        title={collapsed ? entry.label : undefined}
         style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
-        className={`flex w-full items-center gap-3 rounded-full px-3 ${pad} text-sm font-medium transition-colors duration-150 ease-out ${
+        className={`flex w-full items-center rounded-full px-3 ${pad} text-sm font-medium transition-colors duration-150 ease-out ${
+          collapsed ? "justify-center" : "gap-3"
+        } ${
           isActive
             ? "text-white"
-            : parent
-              ? // The area the current page sits under: quieter than the active
-                // fill so only one item ever reads as "here".
-                "bg-surface-hover text-text"
-              : "text-text-muted hover:bg-surface-hover hover:text-text active:bg-surface-hover"
+            : "text-text-muted hover:bg-surface-hover hover:text-text active:bg-surface-hover"
         }`}
       >
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="truncate">{item.label}</span>
+        {collapsed ? null : <span className="truncate">{entry.label}</span>}
       </Link>
     );
   };
@@ -64,37 +64,14 @@ export function OwnerRailNav({
   return (
     <div className="space-y-1">
       <section aria-label="Primary" className="space-y-0.5">
-        {rail.primary.map((item) => link(item, item.href === primaryParentHref))}
+        {rail.primary.map(link)}
       </section>
 
-      {rail.more.length > 0 ? (
-        <section aria-label="More" className="space-y-0.5 pt-1">
-          <button
-            type="button"
-            onClick={() => setMoreOpen((v) => !v)}
-            aria-expanded={moreOpen}
-            aria-controls={moreId}
-            className={`flex w-full items-center gap-3 rounded-full px-3 ${pad} text-sm font-medium text-text-muted transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-text`}
-          >
-            <MoreHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="flex-1 text-left">More</span>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 transition-transform duration-150 ${moreOpen ? "rotate-180" : ""}`}
-              aria-hidden="true"
-            />
-          </button>
-          <div id={moreId} hidden={!moreOpen} className="space-y-3 pt-2">
-            {rail.more.map((group) => (
-              <section key={group.key ?? "top"} aria-label={group.label ?? undefined} className="space-y-0.5">
-                {group.label ? (
-                  <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase">
-                    {group.label}
-                  </h2>
-                ) : null}
-                {group.items.map((item) => link(item))}
-              </section>
-            ))}
-          </div>
+      {rail.footer.length > 0 ? (
+        // Set-up, not daily work: a hairline and a gap say so without a
+        // heading the reader would have to read.
+        <section aria-label="Settings" className="mt-3 space-y-0.5 border-t border-border pt-3">
+          {rail.footer.map(link)}
         </section>
       ) : null}
     </div>

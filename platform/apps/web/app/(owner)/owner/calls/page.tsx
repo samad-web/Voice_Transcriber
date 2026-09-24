@@ -1,16 +1,8 @@
 import type { Metadata } from "next";
-import {
-  CALL_LOG_PERIODS,
-  callLogDateParams,
-  callLogDateSelection,
-  resolveTimeZone,
-  type CallLogSort,
-} from "@aura/shared";
+import { callLogDateParams, callLogDateSelection, type CallLogSort } from "@aura/shared";
 import { Card, MonoLabel } from "@aura/ui";
-import { DateRangeBar, DateRangeSummary } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
-import { periodPresets } from "@/lib/date-range";
 import { getOwner, ownerFeatures, ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import type { OwnerCall, Telecaller } from "../types";
 import { CallsExplorer } from "./calls-explorer";
@@ -55,7 +47,7 @@ export default async function CallsPage({
   if (!entitled) {
     return (
       <>
-        <PageHeader title="Calls" context="Pipeline" />
+        <PageHeader title="Calls" context="Conversations" />
         <Card>
           <MonoLabel>Not part of your plan</MonoLabel>
           <p className="mt-2 text-sm text-text-muted">
@@ -105,42 +97,22 @@ export default async function CallsPage({
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="Calls" context="Pipeline" />
+        <PageHeader title="Calls" context="Conversations" />
         <LoadFailure what="the call log" failure={result} />
       </>
     );
   }
   const data = result.data;
 
-  // The shared date control (components/date-range-bar.tsx). The log keeps its
-  // own named periods - "Any date" first, since an unfiltered log is its
-  // default - and they travel by NAME, resolved by the API in the org's zone.
-  // Every other filter rides along; the page offset does not, because a new
-  // range is a new list.
-  const keep: Record<string, string | undefined> = {};
-  for (const key of ["state", "direction", "missed", "sentiment", "deviceId", "q", "sort"]) keep[key] = one(key);
-  const presets = periodPresets(
-    "/owner/calls",
-    CALL_LOG_PERIODS,
-    dateSelection === null ? null : dateSelection.kind === "period" ? dateSelection.period : "custom",
-    keep,
-  );
   const range = data.range ?? null;
 
   return (
     <>
-      <PageHeader title="Calls" context="Pipeline" />
+      <PageHeader title="Calls" context="Conversations" />
       <p className="-mt-2 text-sm text-text-muted">
         Every call your team has recorded, with what the AI made of it, and every call nobody
         picked up. Open one to read the conversation or see whether the caller was rung back.
       </p>
-      <DateRangeBar path="/owner/calls" presets={presets} from={range?.from} to={range?.to} keep={keep} />
-      <DateRangeSummary
-        from={range?.from}
-        to={range?.to}
-        parts={range ? [] : ["Any date"]}
-        zone={resolveTimeZone(owner?.membership.reportingTimezone)}
-      />
       <CallsExplorer
         // Where a missed caller with no lead gets one - only offered when that
         // queue exists for this workspace, since a link into a switched-off

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { StatusChip, useAlert, useToast } from "@aura/ui";
+import { formatPhoneForDisplay } from "@aura/shared/dist/phone";
+import { PhoneInput, usePhoneCheck } from "@/components/phone-input";
 import {
   approveQualificationAction,
   listQualificationsAction,
@@ -55,6 +57,7 @@ export function QualificationQueue() {
   const [, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+  const phoneCheck = usePhoneCheck();
 
   const load = useCallback(() => {
     startTransition(async () => {
@@ -74,8 +77,15 @@ export function QualificationQueue() {
     setEdits((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
 
   const approve = async (q: Qualification) => {
-    setBusyId(q.id);
     const e = edits[q.id] ?? {};
+    // A callback number the reviewer typed must be a real one; blank keeps
+    // the WhatsApp number the thread came from.
+    const phone = phoneCheck(e.phone);
+    if (!phone.ok) {
+      await alert({ title: "Check the phone number", body: phone.message, tone: "danger" });
+      return;
+    }
+    setBusyId(q.id);
     // Trim, then drop anything empty. `value` is parsed rather than cast: a
     // budget field a reviewer typed "lots" into must NOT become 0, which is the
     // exact bug the intake engine shipped - a zero-value deal reads as a real
@@ -83,7 +93,7 @@ export function QualificationQueue() {
     const parsedValue = e.value !== undefined ? Number(e.value.replace(/[^\d.]/gu, "")) : undefined;
     const res = await approveQualificationAction(q.id, {
       ...(e.name?.trim() ? { name: e.name.trim() } : {}),
-      ...(e.phone?.trim() ? { phone: e.phone.trim() } : {}),
+      ...(phone.e164 ? { phone: phone.e164 } : {}),
       ...(e.email?.trim() ? { email: e.email.trim() } : {}),
       ...(e.company?.trim() ? { company: e.company.trim() } : {}),
       ...(e.notes?.trim() ? { notes: e.notes.trim() } : {}),
@@ -182,12 +192,21 @@ export function QualificationQueue() {
                   value={e.name ?? ""}
                   onChange={(v) => setEdit(q.id, "name", v)}
                 />
-                <Field
-                  label="Phone"
-                  placeholder={q.peer_address}
-                  value={e.phone ?? ""}
-                  onChange={(v) => setEdit(q.id, "phone", v)}
-                />
+                <div className="text-xs text-text-muted">
+                  <span id={`${q.id}-phone-label`}>Phone</span>
+                  <div className="mt-1">
+                    <PhoneInput
+                      size="sm"
+                      aria-label="Phone"
+                      aria-describedby={`${q.id}-phone-hint`}
+                      value={e.phone ?? ""}
+                      onChange={(v) => setEdit(q.id, "phone", v)}
+                    />
+                  </div>
+                  <span id={`${q.id}-phone-hint`} className="mt-0.5 block">
+                    Blank uses {formatPhoneForDisplay(q.peer_address)}
+                  </span>
+                </div>
                 <Field
                   label="Email"
                   placeholder={q.extracted_email ?? "not stated"}

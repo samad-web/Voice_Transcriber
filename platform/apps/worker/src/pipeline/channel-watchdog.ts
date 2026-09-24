@@ -7,6 +7,7 @@ import {
   readChannel,
   type ChannelProbeOutcome,
 } from "@aura/shared";
+import { announce } from "./realtime";
 
 /**
  * The WhatsApp channel watchdog (migrations 0110/0100).
@@ -245,6 +246,9 @@ async function raise(
       [orgId, title, body, dedupeKey, OWNER_ROLE_ADMINS],
     );
   });
+  // Tell open consoles a notification landed - AFTER the write committed, so the
+  // bell's re-read (it reloads on any live event) is guaranteed to see the row.
+  announce(orgId, "notification", "created");
 }
 
 /** ISO-ish year+week, so a quiet-channel notice repeats weekly and not hourly. */

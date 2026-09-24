@@ -77,6 +77,22 @@ import type { ConsoleState } from "./state";
 
 export type StatFormat = "auto" | "number" | "text";
 
+/** Matches `dashboard-charts.ts`'s `DeltaKind` (apps/web) without importing it -
+ *  this package holds no app-specific business logic, only the rendering. */
+export type TrendKind = "up" | "down" | "flat" | "from-zero";
+
+export interface StatTrend {
+  kind: TrendKind;
+  /**
+   * The whole sentence, e.g. "▲ 18% vs previous 30 days" - produce it with
+   * `deltaText()` from apps/web's `lib/dashboard-charts.ts`, which is also
+   * what `DeltaNote` (app/(owner)/owner/_dashboard/chart-parts.tsx) renders.
+   * This component does not compose the text itself so it stays decoupled
+   * from that app-level module.
+   */
+  text: string;
+}
+
 export interface StatCardProps {
   label: string;
   /** A number, a string, or arbitrary nodes. See the typography note above. */
@@ -92,12 +108,40 @@ export interface StatCardProps {
   state?: ConsoleState;
   /** Overrides the state's default word ("Missed", "Error", …). */
   stateLabel?: string;
+  /**
+   * A change against a previous period. Glyph and words, NEVER colour (docs/29
+   * P2 - green/red already mean answered/missed in this console, so a coloured
+   * up/down arrow here would lie about state). Renders the same way
+   * `DeltaNote` does: the leading glyph is `aria-hidden`, a screen reader
+   * hears "up"/"down" as plain text instead. Sits under `context`, inside the
+   * fill.
+   */
+  trend?: StatTrend;
   /** Below the divider - a link, a comparison, a timestamp. */
   footer?: ReactNode;
   /** `plain` drops the fill for a secondary tile that must not compete. */
   tone?: "kpi" | "plain";
   format?: StatFormat;
   className?: string;
+}
+
+/** The trend line: `▲`/`▼` marked `aria-hidden`, the word spelled out for
+ *  screen readers, "flat"/"from-zero" text read as-is (they carry no glyph). */
+function TrendLine({ trend, filled }: { trend: StatTrend; filled: boolean }) {
+  const hasGlyph = trend.kind === "up" || trend.kind === "down";
+  return (
+    <p className={cx("mt-1 text-xs", filled ? "text-kpi-fg" : "text-text-muted")}>
+      {hasGlyph ? (
+        <>
+          <span aria-hidden="true">{trend.text.slice(0, 1)}</span>
+          <span className="sr-only">{trend.kind === "up" ? "up" : "down"}</span>
+          {trend.text.slice(1)}
+        </>
+      ) : (
+        trend.text
+      )}
+    </p>
+  );
 }
 
 /**
@@ -141,6 +185,7 @@ export function StatCard({
   icon,
   state,
   stateLabel,
+  trend,
   footer,
   tone = "kpi",
   format = "auto",
@@ -199,6 +244,7 @@ export function StatCard({
               {context}
             </p>
           ) : null}
+          {trend ? <TrendLine trend={trend} filled={filled} /> : null}
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">

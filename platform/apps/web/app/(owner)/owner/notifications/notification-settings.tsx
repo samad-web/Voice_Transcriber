@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useDraftState } from "@/lib/use-server-state";
 import type { NotificationKind } from "@aura/shared";
 import { Button, FormField, InfoHint, Select, useAlert } from "@aura/ui";
 import {
@@ -21,9 +22,9 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
  * doing that once per click would move the same rows back and forth.
  */
 export function NotificationSettings({ initial }: { initial: NotificationPreferences }) {
-  const [saved, setSaved] = useState(initial);
+  const [saved, setSaved] = useDraftState(initial);
   const [digest, setDigest] = useState<Set<NotificationKind>>(() => new Set(initial.digestKinds));
-  const [hour, setHour] = useState(initial.digestHour);
+  const [hour, setHour] = useDraftState(initial.digestHour);
   const [busy, setBusy] = useState(false);
   const alert = useAlert();
 

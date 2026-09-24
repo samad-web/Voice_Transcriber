@@ -3,13 +3,12 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { ownerTry } from "@/lib/owner-context";
 import { requireOwnerFeature } from "@/lib/owner-features";
-import { ChannelBar } from "../channel-bar";
 import { MessagingSetup } from "./messaging-setup-client";
 // Same name as nav.ts's channel type and a different thing entirely - this one
 // is a connected WhatsApp number. Only the local one is referenced here.
 import type { MessagingChannel } from "./actions";
 
-export const metadata: Metadata = { title: "WhatsApp Setup" };
+export const metadata: Metadata = { title: "WhatsApp number" };
 
 export default async function MessagingSetupPage() {
   // Feature gate (migration 0101). Before any fetch: a page this tenant is
@@ -22,7 +21,7 @@ export default async function MessagingSetupPage() {
   if (!result.ok) {
     return (
       <>
-        <PageHeader title="WhatsApp Setup" context="Settings" />
+        <PageHeader title="WhatsApp number" context="Settings" />
         <LoadFailure what="your WhatsApp setup" failure={result} />
       </>
     );
@@ -31,8 +30,7 @@ export default async function MessagingSetupPage() {
 
   return (
     <>
-      <PageHeader title="WhatsApp Setup" context="Settings" />
-      <ChannelBar />
+      <PageHeader title="WhatsApp number" context="Settings" />
       {/* This said WhatsApp goes "through Wasi … rather than Meta directly"
           while the card below offered "Connect through Meta" (doc 28 §16, 6d).
           Both routes are real; the sentence now says so. */}
