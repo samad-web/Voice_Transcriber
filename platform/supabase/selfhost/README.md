@@ -301,6 +301,38 @@ the database — but the message does not say so. Stop this stack first, or use
 `aura-supabase`. With `restart: unless-stopped` on both, Docker handles this on
 its own; it only matters when bringing the stack up by hand after a `down`.
 
+### Google sign-in on a private stack
+
+The browser has to reach GoTrue twice: the console sends it to
+`/auth/v1/authorize`, and Google sends it back to `/auth/v1/callback`. The
+Supabase hostname stays dark, so both paths are published on the APP domain,
+and nothing else from the gateway is. Envoy already serves these two routes
+without an API key (`upstream/volumes/api/envoy/lds.template.yaml`).
+
+nginx, inside the existing `server` block for the app domain:
+
+```nginx
+# GoTrue's two OAuth endpoints - nothing else from Supabase is public.
+location = /auth/v1/authorize { limit_except GET { deny all; } proxy_pass http://127.0.0.1:18084; include /etc/nginx/proxy_params; add_header X-Robots-Tag "noindex, nofollow" always; }
+location = /auth/v1/callback  { limit_except GET POST { deny all; } proxy_pass http://127.0.0.1:18084; include /etc/nginx/proxy_params; add_header X-Robots-Tag "noindex, nofollow" always; }
+```
+
+`.env.selfhost`: `GOOGLE_ENABLED=true`, `GOOGLE_CLIENT_ID`, `GOOGLE_SECRET`,
+`GOOGLE_REDIRECT_URI=https://<APP_DOMAIN>/auth/v1/callback`, and the console
+callback `https://<APP_DOMAIN>/admin/auth/callback**` in `ADDITIONAL_REDIRECT_URLS`
+(the `**` lets `?next=...` through).
+Then recreate only GoTrue:
+
+```bash
+docker compose --env-file .env.selfhost \
+  -f upstream/docker-compose.yml -f docker-compose.aura.yml up -d auth
+```
+
+`.env.production`: `SUPABASE_AUTH_PUBLIC_URL=https://<APP_DOMAIN>`, then
+`up -d web` (a runtime variable, no rebuild). Without it the console hides the
+Google button, because `http://supabase-gateway:8000` is not an address a
+browser can open.
+
 ---
 
 ## 5. Traps

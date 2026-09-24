@@ -127,13 +127,19 @@ services:
     # "Continue with Google" (0137). Off unless GOOGLE_ENABLED=true in
     # .env.selfhost - the console hides its Google button by asking this
     # server's /auth/v1/settings, so leaving these unset changes nothing.
-    # The redirect URI registered in Google Cloud is GoTrue's own callback,
-    # not the console's: https://<SUPABASE_DOMAIN>/auth/v1/callback.
+    #
+    # GOOGLE_REDIRECT_URI is where Google sends the browser back to GoTrue, and
+    # must be registered verbatim in Google Cloud. It is set on its own rather
+    # than derived from API_EXTERNAL_URL because this stack is private: the
+    # Supabase hostname stays dark and nginx forwards exactly two GoTrue paths
+    # (/auth/v1/authorize, /auth/v1/callback) from the APP domain, so this is
+    # https://<APP_DOMAIN>/auth/v1/callback. API_EXTERNAL_URL is also the
+    # token issuer, and changing it would sign everybody out.
     environment:
       GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET:-}
-      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${API_EXTERNAL_URL}/callback
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
 
   # ── Data API (PostgREST) ───────────────────────────────────────────────────
   rest:

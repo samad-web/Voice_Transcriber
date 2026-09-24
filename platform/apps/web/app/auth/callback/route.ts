@@ -5,6 +5,7 @@ import { ACTIVE_ORG_COOKIE, ACTIVE_ORG_MAX_AGE_S } from "@/lib/active-org";
 import { recordAuthEvent, sessionIdFromAccessToken } from "@/lib/auth-events";
 import { consoleUrl } from "@/lib/console-url";
 import { isListedOperatorEmail } from "@/lib/owner-context";
+import { consolePublicOrigin } from "@/lib/public-url";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import { INVITE_COOKIE } from "@/lib/supabase/google";
@@ -48,10 +49,11 @@ async function discardSession(): Promise<void> {
   }
 }
 
-function to(request: NextRequest, path: string, params: Record<string, string> = {}): NextResponse {
+function to(origin: string, path: string, params: Record<string, string> = {}): NextResponse {
   // consoleUrl, not new URL(path, origin): a redirect built here does not get
-  // the /admin basePath on its own (lib/console-url.ts).
-  const url = consoleUrl(new URL(request.url).origin, path, undefined, "/login");
+  // the /admin basePath on its own (lib/console-url.ts). And the PUBLIC
+  // origin, not request.url's - behind nginx that is https://0.0.0.0:3000.
+  const url = consoleUrl(origin, path, undefined, "/login");
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return NextResponse.redirect(url);
 }
@@ -71,7 +73,8 @@ async function postApi(path: string, body: unknown): Promise<{ ok: boolean; body
 }
 
 export async function GET(request: NextRequest) {
-  if (!AUTH_ENABLED) return to(request, "/login");
+  const origin = await consolePublicOrigin();
+  if (!AUTH_ENABLED) return to(origin, "/login");
 
   const query = request.nextUrl.searchParams;
   const store = await cookies();
@@ -81,7 +84,7 @@ export async function GET(request: NextRequest) {
   if (inviteToken) store.delete(INVITE_COOKIE);
 
   const failed = (code: string) =>
-    inviteToken ? to(request, `/invite/${encodeURIComponent(inviteToken)}`, { error: code }) : to(request, "/login", { error: code });
+    inviteToken ? to(origin, `/invite/${encodeURIComponent(inviteToken)}`, { error: code }) : to(origin, "/login", { error: code });
 
   // Cancelled at Google, or GoTrue refused (e.g. sign-ups disabled for an
   // unknown address). The provider's own words stay out of the URL.
@@ -119,16 +122,16 @@ export async function GET(request: NextRequest) {
       });
     }
     await recordAuthEvent({ kind: "sign_in", authUserId: data.user.id, sessionId, console: "owner", orgId });
-    return to(request, "/owner", accepted.body.alreadyMember ? {} : { joined: "1" });
+    return to(origin, "/owner", accepted.body.alreadyMember ? {} : { joined: "1" });
   }
 
   const linked = await postApi("/v1/auth/identity/link", { accessToken });
   const hasWorkspace = linked.ok && linked.body.hasWorkspace === true;
   if (!hasWorkspace && !(await isListedOperatorEmail(data.user.email ?? ""))) {
     await discardSession();
-    return to(request, "/login", { error: linked.ok ? "no_workspace" : "unavailable" });
+    return to(origin, "/login", { error: linked.ok ? "no_workspace" : "unavailable" });
   }
 
   await recordAuthEvent({ kind: "sign_in", authUserId: data.user.id, sessionId });
-  return to(request, safeConsolePath(query.get("next"), "/dashboard"));
+  return to(origin, safeConsolePath(query.get("next"), "/dashboard"));
 }

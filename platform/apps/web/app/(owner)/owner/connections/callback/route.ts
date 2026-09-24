@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { ConnectErrorCode } from "@aura/shared";
 import { consoleUrl } from "@/lib/console-url";
 import { getOwner } from "@/lib/owner-context";
+import { consolePublicOrigin } from "@/lib/public-url";
 import { API_URL, orgHeaders } from "@/lib/server-api";
 
 /**
@@ -28,10 +29,12 @@ import { API_URL, orgHeaders } from "@/lib/server-api";
 
 const FALLBACK = "/owner/integrations";
 
-function redirectTo(request: Request, path: string, params: Record<string, string>): NextResponse {
+async function redirectTo(_request: Request, path: string, params: Record<string, string>): Promise<NextResponse> {
   // Through consoleUrl, not `new URL(path, origin)`: a redirect does not get
-  // the /admin basePath on its own - see lib/console-url.ts.
-  const url = consoleUrl(new URL(request.url).origin, path, undefined, FALLBACK);
+  // the /admin basePath on its own - see lib/console-url.ts. And the PUBLIC
+  // origin, not request.url's: behind nginx a route handler sees the address
+  // the server is bound to (https://0.0.0.0:3000), not aura.sirahagents.com.
+  const url = consoleUrl(await consolePublicOrigin(), path, undefined, FALLBACK);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return NextResponse.redirect(url);
 }

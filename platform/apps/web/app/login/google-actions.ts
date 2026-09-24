@@ -3,12 +3,13 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { safeConsolePath } from "@aura/shared";
+import { consolePublicBase } from "@/lib/public-url";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 import {
   INVITE_COOKIE,
   INVITE_COOKIE_MAX_AGE_S,
-  consolePublicBase,
+  browserAuthorizeUrl,
   googleSignInEnabled,
 } from "@/lib/supabase/google";
 import { createClient } from "@/lib/supabase/server";
@@ -46,7 +47,11 @@ async function startGoogle(redirectPath: string, loginHint?: string): Promise<Go
   if (error || !data?.url) {
     return { error: error?.message || "Couldn't start Google sign-in. Try again." };
   }
-  redirect(data.url);
+  // supabase-js built this on the server's own GoTrue address, which on the
+  // private self-hosted stack is an internal hostname - see publicAuthBase.
+  const authorizeUrl = browserAuthorizeUrl(data.url);
+  if (!authorizeUrl) return { error: NOT_AVAILABLE };
+  redirect(authorizeUrl);
 }
 
 /** "Continue with Google" on the sign-in page. */
