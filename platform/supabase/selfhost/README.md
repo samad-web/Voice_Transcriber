@@ -84,15 +84,21 @@ Then edit the three URLs in `.env.selfhost` — `SUPABASE_PUBLIC_URL`,
 `API_EXTERNAL_URL`, `SITE_URL` — to your real domains, and check
 `ss -ltnp` for a native Postgres already holding 5432.
 
-DNS and TLS for the new subdomain, before first start:
+**The stack is PRIVATE — nothing about it is published (production, since
+2026-09-24).** Every auth call the console makes runs server-side, so
+`NEXT_PUBLIC_SUPABASE_URL=http://supabase-gateway:8000` and the web container
+reaches GoTrue over the Docker network; the API does the same. Studio and
+Postgres are reached only through an SSH tunnel to `127.0.0.1:18084` /
+`127.0.0.1:15432`. `supabase.aura.sirahagents.com` has an A record but
+`docker/nginx-aura.conf` keeps it dark: 443 refuses the TLS handshake (so no
+certificate is ever issued and the name never reaches Certificate Transparency
+logs) and 80 closes without a response. **Do not certbot it.** Set
+`SUPABASE_PUBLIC_URL=http://127.0.0.1:18084` in `.env.selfhost` so
+`verify-selfhost.sh` probes the gateway directly.
 
-```bash
-# A record: supabase.sirahagents.com -> this box
-sudo certbot --nginx -d supabase.sirahagents.com     # nginx layout only
-```
-
-The vhost is already written — `docker/nginx-aura.conf` (host nginx) and
-`docker/Caddyfile` (container Caddy) both have a block for it.
+The one feature that needs a public GoTrue is "Continue with Google" (the
+browser follows its `/auth/v1/authorize` and `/auth/v1/callback` redirects).
+If that is ever enabled, publish exactly those two paths, not the gateway.
 
 ```bash
 docker compose --env-file .env.selfhost \
@@ -186,7 +192,7 @@ ones people forget:
 | `FUNNEL_DATABASE_URL` | `postgresql://aura_marketing:…@supabase-db:5432/postgres` |
 | **`DB_SSL`** | **`0`** — without it the marketing site cannot reach the database |
 | **`SUPABASE_DOMAIN`** | **the new subdomain** — Caddy refuses to start without it |
-| **`NEXT_PUBLIC_SUPABASE_URL`** | **the new public URL** |
+| **`NEXT_PUBLIC_SUPABASE_URL`** | **`http://supabase-gateway:8000`** (internal - see section 1) |
 | **`NEXT_PUBLIC_SUPABASE_ANON_KEY`** | **`ANON_KEY` from `.env.selfhost`** |
 | `SUPABASE_URL` | `http://supabase-gateway:8000` (internal; no public hop) |
 | `SUPABASE_SERVICE_ROLE_KEY` | `SERVICE_ROLE_KEY` from `.env.selfhost` |
@@ -275,7 +281,7 @@ belief, not a backup.
 tunnel: `ssh -L 5432:127.0.0.1:15432 root@<vps>` — the pooler is published on
 loopback only.
 
-**Studio.** `https://supabase.example.com/`, basic auth from `DASHBOARD_USERNAME`
+**Studio.** `ssh -L 18084:127.0.0.1:18084 root@<vps>`, then `http://localhost:18084/`, basic auth from `DASHBOARD_USERNAME`
 / `DASHBOARD_PASSWORD`. That basic auth is the only thing between the internet
 and a SQL console over every tenant's data.
 
