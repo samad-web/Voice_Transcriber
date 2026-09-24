@@ -32,6 +32,8 @@ import { PageHeader } from "@/components/page-header";
 import { StorageVital, storageFromOrg, type OrgStorageFields } from "@/components/storage-vital";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAs } from "@/lib/server-api";
+import { googleSignInEnabled } from "@/lib/supabase/google";
+import type { InstanceInvite } from "./actions";
 import { workspacesFor } from "@/lib/tenant-scope";
 import type { CallRow } from "../../calls/calls-explorer";
 import { CrmManager, type Integration } from "../../crm/crm-manager";
@@ -439,6 +441,15 @@ export default async function InstanceDetailPage({
       // below, and the devices table only needs to key it by device id.
       apiGetAs<{ devices: FleetHealthRow[] }>("/v1/devices/fleet-health", orgId),
     ]);
+  // Owner invites by link (0137) - secondary: a failure here hides the
+  // pending list and the invite option, never the rest of the page.
+  const [inviteData, googleEnabled] = await Promise.all([
+    apiGetAs<{ invites: InstanceInvite[]; mailConfigured: boolean; authConfigured: boolean }>(
+      "/v1/instance-invites",
+      orgId,
+    ),
+    googleSignInEnabled(),
+  ]);
   const instances = list?.instances ?? [];
   const healthByDevice = new Map((fleetHealth?.devices ?? []).map((h) => [h.deviceId, h]));
 
@@ -990,6 +1001,11 @@ export default async function InstanceDetailPage({
           orgId={orgId}
           owners={owners}
           authConfigured={ownerData?.authConfigured ?? false}
+          invites={inviteData?.invites ?? []}
+          inviteByLink={{
+            googleEnabled: googleEnabled && Boolean(inviteData?.authConfigured),
+            mailConfigured: Boolean(inviteData?.mailConfigured),
+          }}
         />
       </Section>
 

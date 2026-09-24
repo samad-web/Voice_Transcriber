@@ -15,6 +15,7 @@ import { OwnerRolesController } from "./owner-roles.controller";
 import { OwnerTeamController } from "./owner-team.controller";
 import { OwnerInvitesController } from "./owner-invites.controller";
 import { AuthInvitesController } from "./auth-invites.controller";
+import { InstanceInvitesController } from "./instance-invites.controller";
 import { InvitesService } from "./invites.service";
 import { StaffPerformanceController } from "./staff-performance.controller";
 import { LeadsController } from "./leads.controller";
@@ -57,6 +58,8 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     // invitee's (server-to-server from the public invite page).
     OwnerInvitesController,
     AuthInvitesController,
+    // ...and the operator inviting an instance's first owner.
+    InstanceInvitesController,
     StaffPerformanceController,
     LeadsController,
     LeadBoardsController,

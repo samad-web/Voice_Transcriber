@@ -524,6 +524,109 @@ export async function revokeOwnerAction(
   return { loginDeleted: Boolean(res.data?.loginDeleted) };
 }
 
+// ── Owner invite by link (0137) ──────────────────────────────────────────
+//
+// The alternative to "Create owner login": a single-use, expiring link the
+// owner opens to join by continuing with Google. The link comes back ONCE;
+// it is emailed only when the operator ticks "Email it" for that invite and
+// the platform has PLATFORM_SMTP_* configured.
+
+export interface InstanceInvite {
+  id: string;
+  email: string;
+  name: string | null;
+  status: "pending" | "expired";
+  expiresAt: string;
+  emailedAt: string | null;
+}
+
+export interface InviteOutcome {
+  error?: string;
+  /** Shown once - only its hash is stored. */
+  link?: string;
+  email?: string;
+  expiresAt?: string;
+  emailed?: boolean;
+  emailError?: string | null;
+}
+
+type Issued = {
+  invite: { email: string; expiresAt: string };
+  link: string;
+  emailed: boolean;
+  emailError: string | null;
+};
+
+function outcome(res: { data?: Issued; error?: string }): InviteOutcome {
+  if (res.error || !res.data) return { error: res.error ?? "The platform didn't return a link." };
+  return {
+    link: res.data.link,
+    email: res.data.invite.email,
+    expiresAt: res.data.invite.expiresAt,
+    emailed: res.data.emailed,
+    emailError: res.data.emailError,
+  };
+}
+
+export async function inviteOwnerAction(input: {
+  orgId: string;
+  email: string;
+  name?: string;
+  recordingsListen: boolean;
+  send: boolean;
+  ttlHours: number;
+}): Promise<InviteOutcome> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await call<Issued>(`/v1/instance-invites`, {
+    method: "POST",
+    orgId: input.orgId,
+    body: {
+      email: input.email.trim(),
+      name: input.name?.trim() || undefined,
+      recordingsListen: input.recordingsListen,
+      send: input.send === true,
+      ttlHours: input.ttlHours,
+    },
+  });
+  if (!res.error) revalidatePath(`/instances/${input.orgId}`);
+  return outcome(res);
+}
+
+/** A new link and expiry; the old link stops working at once. */
+export async function resendOwnerInviteAction(orgId: string, inviteId: string, send: boolean): Promise<InviteOutcome> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await call<Issued>(`/v1/instance-invites/${encodeURIComponent(inviteId)}/resend`, {
+    method: "POST",
+    orgId,
+    body: { send: send === true },
+  });
+  if (!res.error) revalidatePath(`/instances/${orgId}`);
+  return outcome(res);
+}
+
+export async function revokeOwnerInviteAction(orgId: string, inviteId: string): Promise<{ error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const res = await call<{ revoked: boolean }>(`/v1/instance-invites/${encodeURIComponent(inviteId)}`, {
+    method: "DELETE",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  revalidatePath(`/instances/${orgId}`);
+  return {};
+}
+
 export interface ErasureReceipt {
   error?: string;
   status?: string;

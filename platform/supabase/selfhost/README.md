@@ -317,6 +317,17 @@ location = /auth/v1/authorize { limit_except GET { deny all; } proxy_pass http:/
 location = /auth/v1/callback  { limit_except GET POST { deny all; } proxy_pass http://127.0.0.1:18084; include /etc/nginx/proxy_params; add_header X-Robots-Tag "noindex, nofollow" always; }
 ```
 
+The console's own location (`/admin`) also needs bigger header buffers. After
+a Google sign-in, `/admin/auth/callback` sets Supabase session cookies holding
+the Google profile and provider token, and they outgrow nginx's default 4-8k.
+The symptom is a 502, with "upstream sent too big header" in the nginx error log:
+
+```nginx
+proxy_buffer_size       64k;
+proxy_buffers           8 64k;
+proxy_busy_buffers_size 128k;
+```
+
 `.env.selfhost`: `GOOGLE_ENABLED=true`, `GOOGLE_CLIENT_ID`, `GOOGLE_SECRET`,
 `GOOGLE_REDIRECT_URI=https://<APP_DOMAIN>/auth/v1/callback`, and the console
 callback `https://<APP_DOMAIN>/admin/auth/callback**` in `ADDITIONAL_REDIRECT_URLS`

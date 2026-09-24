@@ -116,6 +116,7 @@ import { OwnerController } from "../modules/owner/owner.controller";
 import { OwnerTeamController } from "../modules/owner/owner-team.controller";
 import { OwnerInvitesController } from "../modules/owner/owner-invites.controller";
 import { AuthInvitesController } from "../modules/owner/auth-invites.controller";
+import { InstanceInvitesController } from "../modules/owner/instance-invites.controller";
 import { OwnerRolesController } from "../modules/owner/owner-roles.controller";
 import { OrgFeaturesController } from "../modules/owner/org-features.controller";
 import { StaffPerformanceController } from "../modules/owner/staff-performance.controller";
@@ -192,6 +193,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // (server-to-server, cross-tenant).
   OwnerInvitesController,
   AuthInvitesController,
+  InstanceInvitesController,
   OwnerRolesController,
   OrgFeaturesController,
   StaffPerformanceController,
@@ -1552,8 +1554,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 474: branding uploads - POST /org/branding/upload-url (tenant-scoped,
     // OrgRoleGuard + OwnerRoleGuard like PATCH /org/branding) and the
     // unguarded GET /branding-assets/:orgId/:filename that serves them.
-    expect(ROUTES).toHaveLength(474);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(474);
+    expect(ROUTES).toHaveLength(478);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(478);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1590,14 +1592,14 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 399: plus Time & location's region PUT.
     // 403: plus invite by link's four /owner/invites routes (0137).
     // 404: plus POST /org/branding/upload-url.
-    expect(tenantScoped).toHaveLength(404);
+    expect(tenantScoped).toHaveLength(408);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(474); // = ROUTES.length: every route in exactly one class
+    ).toBe(478); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 422 principal routes", () => {
@@ -1628,7 +1630,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 434: plus POST /org/branding/upload-url, and the Platform Hub's
     // GET /analytics/active-users + /analytics/booking-rate, which reached
     // CROSS_TENANT without this count moving.
-    expect(principalRoutes).toHaveLength(434);
+    expect(principalRoutes).toHaveLength(438);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

@@ -78,3 +78,7 @@ list.txt
 
 # A one-off compiled-output snapshot kept for local recovery, not source.
 apps/api/dist-recovery/
+
+# Google OAuth client downloads (client_secret_<id>.apps.googleusercontent.com.json).
+# They hold the client secret, and this repository is public.
+client_secret_*.json
