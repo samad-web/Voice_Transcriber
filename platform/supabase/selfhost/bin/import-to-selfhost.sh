@@ -102,6 +102,31 @@ fi
 echo "   0007 applied"
 
 echo
+echo "── 2b/7  clear rows the migrations seeded ──"
+# Several migrations INSERT reference rows (marketing.funnel_criteria id=1,
+# system roles, default boards, ...). The cloud database ran the same
+# migrations, so its dump carries those rows too, and loading on top of the
+# seeds fails on the first duplicate key (found in the 2026-09-24 rehearsal).
+# Empty every table the dump covers - everything in public + marketing except
+# schema_migrations, which the dump deliberately excludes - so the load
+# reproduces the cloud rows exactly, seeds included. Sequences are restored by
+# the dump's own setval calls.
+in_db psql "$TARGET_SUPERUSER_URL" -v ON_ERROR_STOP=1 -q -c "
+DO \$\$
+DECLARE tables text;
+BEGIN
+  SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+    INTO tables
+    FROM pg_tables
+   WHERE schemaname IN ('public', 'marketing')
+     AND NOT (schemaname = 'public' AND tablename = 'schema_migrations');
+  IF tables IS NOT NULL THEN
+    EXECUTE 'TRUNCATE ' || tables || ' CASCADE';
+  END IF;
+END \$\$;"
+echo "   emptied"
+
+echo
 echo "── 3/7  load application rows ──"
 # --disable-triggers wraps the load in session_replication_role = replica, so
 # foreign keys do not care what order the tables arrive in. Needs superuser on
