@@ -3,6 +3,7 @@
 # Build the self-hosted database and load the exported data into it.
 #
 #   TARGET_DATABASE_URL='postgresql://postgres:PW@supabase-db:5432/postgres' \
+#   TARGET_SUPERUSER_URL='postgresql://supabase_admin:PW@supabase-db:5432/postgres' \
 #   TARGET_APP_DATABASE_URL='postgresql://aura_app:PW@supabase-db:5432/postgres' \
 #   APP_DB_PASSWORD='...' \
 #   bash bin/import-to-selfhost.sh ./dump
@@ -29,7 +30,14 @@ DB_CONTAINER="${DB_CONTAINER:-aura-supabase-db}"
 PLATFORM_DIR="${PLATFORM_DIR:-/opt/aura/platform}"
 FORCE="${FORCE:-0}"
 
-: "${TARGET_DATABASE_URL:?set TARGET_DATABASE_URL (the postgres superuser on the SELF-HOSTED database)}"
+: "${TARGET_DATABASE_URL:?set TARGET_DATABASE_URL (the postgres role on the SELF-HOSTED database)}"
+# The ROW LOAD needs a real superuser, and on the self-hosted image that is
+# supabase_admin, not postgres: `postgres` there has BYPASSRLS but not
+# SUPERUSER, and pg_restore --disable-triggers has to disable the foreign-key
+# system triggers, which only a superuser may do. The SCHEMA is still built as
+# postgres (step 1), so every table is owned exactly as it is on Supabase Cloud
+# and at runtime. Same password as postgres on a stock self-hosted stack.
+: "${TARGET_SUPERUSER_URL:?set TARGET_SUPERUSER_URL (supabase_admin on the SELF-HOSTED database)}"
 : "${TARGET_APP_DATABASE_URL:?set TARGET_APP_DATABASE_URL (the aura_app runtime role)}"
 : "${APP_DB_PASSWORD:?set APP_DB_PASSWORD - bootstrap-role.js applies it to aura_app}"
 
@@ -43,7 +51,7 @@ done
 # write it into the live cloud project, on top of the rows it came from. The
 # argument order makes that a single-character mistake, so check rather than
 # trust.
-case "$TARGET_DATABASE_URL" in
+case "$TARGET_DATABASE_URL $TARGET_SUPERUSER_URL" in
   *supabase.co*|*pooler.supabase.com*)
     echo "FATAL: TARGET_DATABASE_URL points at Supabase Cloud." >&2
     echo "This script writes. The target must be the SELF-HOSTED database." >&2
@@ -100,7 +108,7 @@ echo "── 3/7  load application rows ──"
 # the target, which self-hosted postgres gives us and Supabase Cloud never did.
 # --single-transaction so a failure leaves nothing half-loaded.
 docker exec -i "$DB_CONTAINER" pg_restore \
-  --dbname="$TARGET_DATABASE_URL" \
+  --dbname="$TARGET_SUPERUSER_URL" \
   --data-only --disable-triggers --no-owner --no-acl \
   --single-transaction \
   < "$DUMP_DIR/app-data.dump"
@@ -108,8 +116,8 @@ echo "   loaded"
 
 echo
 echo "── 4/7  load auth users (users first, then identities - FK order) ──"
-in_db psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q < "$DUMP_DIR/auth-users.sql"
-in_db psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q < "$DUMP_DIR/auth-identities.sql"
+in_db psql "$TARGET_SUPERUSER_URL" -v ON_ERROR_STOP=1 -q < "$DUMP_DIR/auth-users.sql"
+in_db psql "$TARGET_SUPERUSER_URL" -v ON_ERROR_STOP=1 -q < "$DUMP_DIR/auth-identities.sql"
 auth_users=$(in_db psql "$TARGET_DATABASE_URL" -Atc "SELECT count(*) FROM auth.users;")
 echo "   $auth_users auth user(s)"
 

@@ -90,7 +90,9 @@ function generate() {
     SECRET_KEY_BASE: token(64),
     VAULT_ENC_KEY: token(32),
     PG_META_CRYPTO_KEY: token(32),
-    REALTIME_DB_ENC_KEY: token(32),
+    // 16, not 32: Realtime encrypts tenant secrets with AES-128-ECB, and a
+    // 32-byte key crash-loops it at seed time ("Bad key size").
+    REALTIME_DB_ENC_KEY: token(16),
     S3_PROTOCOL_ACCESS_KEY_ID: crypto.randomBytes(16).toString("hex"),
     S3_PROTOCOL_ACCESS_KEY_SECRET: crypto.randomBytes(32).toString("hex"),
     _expiresAt: expiresAt,
