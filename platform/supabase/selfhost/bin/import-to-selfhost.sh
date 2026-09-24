@@ -177,7 +177,10 @@ echo "── 6/7  row counts against the export manifest ──"
 fail=0
 while IFS='=' read -r table expected; do
   [ -n "$table" ] || continue
-  actual=$(in_db psql "$TARGET_DATABASE_URL" -Atc "SELECT count(*) FROM public.$table;")
+  # </dev/null: `docker exec -i` would otherwise read the REST of row-exact.txt
+  # from the loop's stdin, and only the first table would ever be checked
+  # (it did exactly that in the 2026-09-24 rehearsal).
+  actual=$(in_db psql "$TARGET_DATABASE_URL" -Atc "SELECT count(*) FROM public.$table;" < /dev/null)
   if [ "$actual" = "$expected" ]; then
     printf '   %-14s %s\n' "$table" "$actual"
   else

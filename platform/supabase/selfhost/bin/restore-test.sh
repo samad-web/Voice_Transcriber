@@ -24,8 +24,13 @@ NETWORK="${NETWORK:-aura_default}"
 BACKUP_BUCKET="${BACKUP_BUCKET:-aura-backups}"
 MINIO_ALIAS_URL="${MINIO_ALIAS_URL:-http://minio:9000}"
 PROD_ENV="${PROD_ENV:-/opt/aura/platform/.env.production}"
-# Matches the image the live stack runs, so a restore that works here works there.
-PG_IMAGE="${PG_IMAGE:-supabase/postgres:17.6.1.136}"
+# PLAIN Postgres of the live major version (17), deliberately not the Supabase
+# image. The Supabase image ships its own, older `auth` tables - GoTrue's
+# migrations are what normally shape them - so restoring a dump into it
+# silently drops every auth.users row on "column does not exist". Into plain
+# Postgres the dump creates every schema itself, auth included. The price is
+# two Supabase-only extensions (pg_net, supabase_vault), expected below.
+PG_IMAGE="${PG_IMAGE:-postgres:17}"
 SCRATCH_CONTAINER="aura-restore-test-$$"
 
 if [ -f "$PROD_ENV" ]; then
@@ -75,11 +80,20 @@ docker run -d --name "$SCRATCH_CONTAINER" --network none \
   -e POSTGRES_DB=postgres \
   "$PG_IMAGE" >/dev/null
 
-for _ in $(seq 1 60); do
-  if docker exec "$SCRATCH_CONTAINER" pg_isready -U postgres -h localhost >/dev/null 2>&1; then break; fi
+# Three consecutive successful QUERIES, not one pg_isready: the entrypoint
+# answers during initdb on a temporary server, then restarts it, and a restore
+# that starts in that gap lands nowhere.
+ok=0
+for _ in $(seq 1 90); do
+  if docker exec "$SCRATCH_CONTAINER" psql -h localhost -U postgres -Atc 'SELECT 1' >/dev/null 2>&1; then
+    ok=$((ok + 1))
+  else
+    ok=0
+  fi
+  [ "$ok" -ge 3 ] && break
   sleep 2
 done
-docker exec "$SCRATCH_CONTAINER" pg_isready -U postgres -h localhost >/dev/null 2>&1 || {
+[ "$ok" -ge 3 ] || {
   echo "FATAL: the throwaway Postgres never became ready." >&2
   docker logs --tail 40 "$SCRATCH_CONTAINER" >&2
   exit 1
@@ -88,25 +102,30 @@ echo "   ready"
 
 echo
 echo "── restoring ──"
-# Not --single-transaction: a full-database restore into a Supabase image emits
-# some statements the image has already applied (extensions, supabase roles), and
-# those are expected to fail harmlessly. Errors are counted instead, and judged
-# below by whether the DATA arrived.
-docker exec -i "$SCRATCH_CONTAINER" pg_restore \
-  --dbname="postgresql://postgres:restore-test-throwaway@localhost:5432/postgres" \
-  --no-owner --no-acl --exit-on-error=false \
+# Not --single-transaction: the two Supabase-only extensions cannot exist in
+# plain Postgres and are expected to fail; everything else must land. (There is
+# no `--exit-on-error=false`: pg_restore rejects it as a usage error, restores
+# nothing, and says so in a line the error count below never matched.)
+docker exec -i "$SCRATCH_CONTAINER" pg_restore -U postgres -d postgres \
+  --no-owner --no-acl \
   < "$WORK/$WANTED" 2> "$WORK/restore.err" || true
 
-errors=$(grep -c '^pg_restore: error' "$WORK/restore.err" 2>/dev/null || echo 0)
-echo "   pg_restore reported $errors error line(s)"
+# Every ERROR except the Supabase internals plain Postgres cannot provide.
+# Not `grep -c ... || echo 0`: with no match grep -c PRINTS 0 and exits 1, so
+# that form yields "0\n0" and a clean restore reads as a failed one.
+EXPECTED='extension "(pg_net|supabase_vault)"|relation "vault\.secrets" does not exist'
+errors=$(grep 'ERROR:' "$WORK/restore.err" | grep -cvE "$EXPECTED") || true
+errors="${errors:-0}"
+expected=$(grep 'ERROR:' "$WORK/restore.err" | grep -cE "$EXPECTED") || true
+echo "   pg_restore: ${errors} unexpected error(s), ${expected:-0} expected (pg_net / supabase_vault)"
 if [ "$errors" != "0" ]; then
-  echo "   first few:"
-  grep '^pg_restore: error' "$WORK/restore.err" | head -5 | sed 's/^/      /'
+  grep 'ERROR:' "$WORK/restore.err" | grep -vE "$EXPECTED" | head -5 | sed 's/^/      /'
+  FAILURES_RESTORE=1
 fi
 
 echo
 echo "── does the restored database actually hold the data? ──"
-FAILURES=0
+FAILURES="${FAILURES_RESTORE:-0}"
 q() { docker exec -i "$SCRATCH_CONTAINER" psql -U postgres -d postgres -Atc "$1" 2>/dev/null || echo "ERR"; }
 
 check() { # name expected actual
