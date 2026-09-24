@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 import { ExtractionSchema, StoredExtractionSchema } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -41,7 +42,10 @@ const GenerateBody = z.object({
   baseVersion: z.number().int().positive().optional(),
 });
 
-const actorOf = (req: PrincipalRequest) => ({ userId: req.principal?.userId ?? "dev-admin" });
+const actorOf = (req: PrincipalRequest) => {
+  const actor = auditActor(req);
+  return { userId: actor.id, type: actor.type };
+};
 
 /**
  * The OPERATOR's Agent Studio - any tenant, on the admin key.

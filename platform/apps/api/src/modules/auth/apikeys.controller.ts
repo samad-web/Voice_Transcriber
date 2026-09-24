@@ -19,6 +19,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const CreateApiKeyBody = z.object({
   name: z.string().min(1).max(120),
@@ -83,8 +84,8 @@ export class ApiKeysController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'apikey.create', 'api_key', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", row.id],
+         VALUES ($1, $4, $2, 'apikey.create', 'api_key', $3)`,
+        [orgId, auditActor(req).id, row.id, auditActor(req).type],
       );
       // `key` is shown once, never retrievable again - only the hash is stored.
       return {
@@ -135,8 +136,8 @@ export class ApiKeysController {
       if ((res.rowCount ?? 0) === 0) throw new NotFoundException("api key not found");
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'apikey.revoke', 'api_key', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", id],
+         VALUES ($1, $4, $2, 'apikey.revoke', 'api_key', $3)`,
+        [orgId, auditActor(req).id, id, auditActor(req).type],
       );
       return { revoked: id };
     });

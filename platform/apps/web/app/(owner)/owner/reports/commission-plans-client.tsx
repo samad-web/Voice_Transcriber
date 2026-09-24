@@ -60,8 +60,13 @@ function formatRate(plan: CommissionPlan): string {
  * ReportsService.commission() for why nothing here computes a payout.
  *
  * Same one-client-component-owns-list-and-dialog shape as ProductsClient.
+ *
+ * `canEdit` is false for the marketing persona: it may READ the plans beside
+ * the commission report, but a plan decides what people are paid, so writing
+ * one is owner/manager - enforced by the API (commission-plans.controller.ts,
+ * doc 31 §2 X8). Hiding the controls here keeps marketing from meeting a 403.
  */
-export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
+export function CommissionPlansClient({ plans, canEdit }: { plans: CommissionPlan[]; canEdit: boolean }) {
   const [editing, setEditing] = useState<CommissionPlan | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -155,9 +160,11 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
         <p className="text-xs text-text-muted">
           A rate per org - commission is computed fresh on every report, never accrued or approved.
         </p>
-        <Button type="button" size="sm" onClick={openCreate}>
-          New plan
-        </Button>
+        {canEdit ? (
+          <Button type="button" size="sm" onClick={openCreate}>
+            New plan
+          </Button>
+        ) : null}
       </div>
 
       {plans.length === 0 ? (
@@ -165,9 +172,11 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
           title="No commission plans yet"
           description="Set a rate against won value, won deals, or calls, and it applies to every export from here on."
           action={
-            <Button type="button" size="sm" onClick={openCreate}>
-              New plan
-            </Button>
+            canEdit ? (
+              <Button type="button" size="sm" onClick={openCreate}>
+                New plan
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -184,13 +193,17 @@ export function CommissionPlansClient({ plans }: { plans: CommissionPlan[] }) {
             {plans.map((plan) => (
               <TableRow key={plan.id}>
                 <TableCell>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(plan)}
-                    className="block text-left font-medium text-text hover:underline"
-                  >
-                    {plan.name}
-                  </button>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => openEdit(plan)}
+                      className="block text-left font-medium text-text hover:underline"
+                    >
+                      {plan.name}
+                    </button>
+                  ) : (
+                    <span className="font-medium text-text">{plan.name}</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-text-muted">{METRIC_LABEL[plan.metric]}</TableCell>
                 <TableCell className="tabular-nums text-text-muted">{formatRate(plan)}</TableCell>

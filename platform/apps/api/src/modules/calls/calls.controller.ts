@@ -31,6 +31,7 @@ import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.gu
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
+import { auditActor } from "../../common/audit-actor";
 
 const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -670,7 +671,9 @@ export class CallsController {
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
   ) {
-    const actorId = req.principal?.userId ?? "unknown";
+    // Who listened is the whole point of this row - and the operator console
+    // is the listener a customer most needs named (doc 31 §2 X9).
+    const actor = auditActor(req);
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [rec],
@@ -681,8 +684,8 @@ export class CallsController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'recording.playback', 'call', $3, $4)`,
-        [orgId, actorId, callId, JSON.stringify({ s3Key: rec.s3_key })],
+         VALUES ($1, $5, $2, 'recording.playback', 'call', $3, $4)`,
+        [orgId, actor.id, callId, JSON.stringify({ s3Key: rec.s3_key }), actor.type],
       );
 
       return { url };
@@ -731,8 +734,8 @@ export class CallsController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'call.reprocess', 'call', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", callId, JSON.stringify({ from: call.status })],
+         VALUES ($1, $5, $2, 'call.reprocess', 'call', $3, $4)`,
+        [orgId, auditActor(req).id, callId, JSON.stringify({ from: call.status }), auditActor(req).type],
       );
       return { status: "UPLOADED" as const };
     });
@@ -792,8 +795,8 @@ export class CallsController {
         // org-targeted audit row (tenancy.controller.ts:125).
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-           VALUES ($1, 'user', $2, 'call.reprocess_backlog', 'organization', $3, $4::jsonb)`,
-          [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify({ statuses, sinceDays, count: rows.length })],
+           VALUES ($1, $5, $2, 'call.reprocess_backlog', 'organization', $3, $4::jsonb)`,
+          [orgId, auditActor(req).id, orgId, JSON.stringify({ statuses, sinceDays, count: rows.length }), auditActor(req).type],
         );
       }
       return rows.map((r) => r.id);

@@ -68,37 +68,8 @@ export async function previewImportAction(
   }
 }
 
-/**
- * Run the import. `rows` are the RAW parsed CSV rows keyed by original
- * header - the API applies `mapping` itself, so nothing is pre-mapped here.
- */
-export async function runImportAction(
-  entity: ImportEntity,
-  mapping: Record<string, string | null>,
-  dedupeStrategy: DedupeStrategy,
-  rows: Record<string, unknown>[],
-): Promise<{ job?: ImportJob; error?: string }> {
-  const authHeaders = await ownerHeaders();
-  if (!authHeaders) return { error: "Not signed in as an instance owner" };
-
-  try {
-    const res = await fetch(`${API_URL}/v1/import/run`, {
-      method: "POST",
-      headers: authHeaders,
-      cache: "no-store",
-      body: JSON.stringify({ entity, mapping, dedupeStrategy, rows }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const detail = (body as { message?: unknown })?.message ?? body;
-      return { error: typeof detail === "string" ? detail : `API ${res.status}` };
-    }
-    const data = (await res.json()) as { job: ImportJob };
-    return { job: data.job };
-  } catch {
-    return { error: "API unreachable" };
-  }
-}
+// Running the import is NOT an action: the rows are several MB, past the 1 MB
+// every Server Action is capped at. It is the route handler in ./run/route.ts.
 
 /** The per-row failures for one job, for the results table. */
 export async function fetchImportErrorsAction(

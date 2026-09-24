@@ -1,3 +1,4 @@
+import type { AuditActor } from "../../common/audit-actor";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { RoleInput, RolePermissionGrant } from "@aura/shared";
 import { DbService } from "../../db/db.service";
@@ -66,7 +67,7 @@ export class RolesService {
     });
   }
 
-  async create(orgId: string, input: RoleInput, actorId: string) {
+  async create(orgId: string, input: RoleInput, actor: AuditActor) {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [existing],
@@ -84,7 +85,7 @@ export class RolesService {
          RETURNING ${ROLE_COLUMNS}`,
         [orgId, input.key, input.name, input.description ?? null],
       );
-      await this.audit(client, orgId, "role.create", role.id, actorId);
+      await this.audit(client, orgId, "role.create", role.id, actor);
       return { role };
     });
   }
@@ -92,7 +93,7 @@ export class RolesService {
   /** Name/description/status only. A system role's key/is_system are fixed -
    *  other code (the createTenant seed, memberships.role_id's backfill) assumes
    *  the 5 seeded rows exist per org with those exact keys. */
-  async update(orgId: string, id: string, patch: RoleUpdate, actorId: string) {
+  async update(orgId: string, id: string, patch: RoleUpdate, actor: AuditActor) {
     if (Object.keys(patch).length === 0) throw new BadRequestException("no fields to update");
 
     return this.db.withOrg(orgId, async (client) => {
@@ -121,7 +122,7 @@ export class RolesService {
           patch.status ?? null,
         ],
       );
-      await this.audit(client, orgId, "role.update", id, actorId);
+      await this.audit(client, orgId, "role.update", id, actor);
       return { role };
     });
   }
@@ -153,7 +154,7 @@ export class RolesService {
     orgId: string,
     id: string,
     grants: RolePermissionGrant[],
-    actorId: string,
+    actor: AuditActor,
   ) {
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -176,7 +177,7 @@ export class RolesService {
           ],
         );
       }
-      await this.audit(client, orgId, "role.permissions_update", id, actorId);
+      await this.audit(client, orgId, "role.permissions_update", id, actor);
 
       const { rows } = await client.query(
         `SELECT object_type, action, scope, field_restrictions
@@ -200,7 +201,7 @@ export class RolesService {
    * That is a permission change disguised as a tidy-up, and it should be an
    * explicit reassignment instead.
    */
-  async remove(orgId: string, id: string, actorId: string) {
+  async remove(orgId: string, id: string, actor: AuditActor) {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [role],
@@ -225,7 +226,7 @@ export class RolesService {
       }
 
       await client.query(`DELETE FROM roles WHERE id = $1`, [id]);
-      await this.audit(client, orgId, "role.delete", id, actorId);
+      await this.audit(client, orgId, "role.delete", id, actor);
       return { deleted: true };
     });
   }
@@ -235,12 +236,12 @@ export class RolesService {
     orgId: string,
     action: string,
     targetId: string,
-    actorId: string,
+    actor: AuditActor,
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'role', $4)`,
-      [orgId, actorId, action, targetId],
+       VALUES ($1, $5, $2, $3, 'role', $4)`,
+      [orgId, actor.id, action, targetId, actor.type],
     );
   }
 }

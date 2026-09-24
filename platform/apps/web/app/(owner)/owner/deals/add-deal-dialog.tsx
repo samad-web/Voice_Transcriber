@@ -7,7 +7,7 @@ import { Button, Dialog, ErrorBanner, FormField, Input, Select, useAlert } from 
 import { fetchAssigneeOptionsAction, type AssigneeOption } from "../bulk/actions";
 import { searchRecordsAction, type RecordOption } from "../crm-actions";
 import type { Stage } from "../types";
-import { addDealAction } from "./board-actions";
+import { addDealAction, type ExistingContact } from "./board-actions";
 
 type ContactMode = "existing" | "new";
 
@@ -32,6 +32,12 @@ type ContactMode = "existing" | "new";
  * A new contact is name + email only. Phone numbers in Aura are stored as a
  * match key from the handset, not as typed text, so a phone field here would
  * collect a number the contact record cannot hold.
+ *
+ * An email the org already has is refused by the API (one person per email),
+ * and when the API names who has it, the error carries a "Use <name>" button
+ * that flips to Existing contact with that person picked - everything else
+ * typed (stage, value, deal name, owner) stays as it was, so one click and
+ * "Add deal" again is all it takes.
  */
 export function AddDealDialog({
   pipelineId,
@@ -47,6 +53,9 @@ export function AddDealDialog({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // The contact the API said already has the typed email - offered as a
+  // one-click switch. Cleared with the error it belongs to.
+  const [existing, setExisting] = useState<ExistingContact | null>(null);
 
   const firstOpen = stages.find((s) => !s.terminal)?.key ?? stages[0]?.key ?? "";
   const [mode, setMode] = useState<ContactMode>("existing");
@@ -72,6 +81,22 @@ export function AddDealDialog({
     setName("");
     setOwnerUserId("");
     setError(null);
+    setExisting(null);
+  };
+
+  /**
+   * Put the deal on the contact the API found instead. Seeds the picker with
+   * that one row so it is selected at once, and searches by the email so the
+   * debounced search that follows returns the same person rather than
+   * replacing the list with the recent-contacts default.
+   */
+  const pickExisting = (contact: ExistingContact) => {
+    setMode("existing");
+    setContacts([{ id: contact.id, label: contact.displayName, detail: contact.email }]);
+    setQuery(contact.email ?? contact.displayName);
+    setContactId(contact.id);
+    setError(null);
+    setExisting(null);
   };
 
   // The team, once per open.
@@ -104,6 +129,7 @@ export function AddDealDialog({
 
   const submit = () => {
     setError(null);
+    setExisting(null);
     if (mode === "existing" && !contactId) return setError("Pick a contact, or switch to New contact.");
     if (mode === "new" && !newName.trim()) return setError("Give the new contact a name.");
     if (!dealName) return setError("Give the deal a name.");
@@ -124,6 +150,7 @@ export function AddDealDialog({
       });
       if (result.error && !result.dealId) {
         setError(result.error);
+        setExisting(result.existingContact ?? null);
         return;
       }
       setOpen(false);
@@ -142,6 +169,7 @@ export function AddDealDialog({
       onClick={() => {
         setMode(value);
         setError(null);
+        setExisting(null);
       }}
       className={`h-10 flex-1 rounded-md border text-sm font-medium transition-colors duration-150 ease-out ${
         mode === value
@@ -267,7 +295,22 @@ export function AddDealDialog({
             </FormField>
           </div>
 
-          {error ? <ErrorBanner>{error}</ErrorBanner> : null}
+          {error ? (
+            <ErrorBanner>
+              <p>{error}</p>
+              {existing ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="mt-2"
+                  onClick={() => pickExisting(existing)}
+                  disabled={pending}
+                >
+                  Use {existing.displayName} for this deal
+                </Button>
+              ) : null}
+            </ErrorBanner>
+          ) : null}
         </div>
       </Dialog>
     </>

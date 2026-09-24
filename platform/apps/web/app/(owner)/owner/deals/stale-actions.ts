@@ -10,12 +10,10 @@ import { apiErrorMessage } from "../lib/api-error";
 /**
  * Set how many idle days flag a deal as stale on one pipeline (migration 0106).
  *
- * THIS IS THE ONLY PERSONA GATE. `PATCH /v1/pipelines/:id` is plain
- * AdminKeyGuard+TenantGuard - pipeline configuration, by design - and every
- * console request arrives on the admin key, so the API cannot tell an owner
- * from a telecaller here. The check below is what stops a rep re-timing the
- * flag their manager reads; deleting it is a privilege escalation, the same
- * shape as updateTranscriptionAction's note.
+ * Owner or manager. Until doc 31 §2 X8 this check was the only persona gate:
+ * `PATCH /v1/pipelines/:id` was plain AdminKeyGuard+TenantGuard. The API now
+ * requires owner/manager itself (pipelines.controller.ts), so this check is a
+ * friendlier refusal, not the boundary.
  *
  * The body is built from the one field this action exists for. Nothing the
  * client sends reaches the API except the number, validated first.

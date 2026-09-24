@@ -22,6 +22,7 @@ import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-
 import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const LineItem = z.object({
   productId: z.string().uuid().nullish(),
@@ -378,8 +379,8 @@ export class QuotationsController {
   private async audit(client: QueryClient, orgId: string, action: string, targetId: string, req: PrincipalRequest) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'quotation', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'quotation', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

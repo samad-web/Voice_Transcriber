@@ -27,6 +27,7 @@ import { DbService } from "../../db/db.service";
 import { dealStageChangedSubject, enqueueAutomationEventSafely } from "../automation/enqueue";
 import { OwnerFilter } from "../../common/list-filters";
 import { recordStageTransition } from "./stage-history";
+import { auditActor } from "../../common/audit-actor";
 
 const ListQuery = z.object({
   pipelineId: z.string().uuid().optional(),
@@ -521,7 +522,7 @@ export class DealsController {
         value: ownerUserId,
         ids,
         owned: scopeFilter("deal", recordScope, "r"),
-        audit: { targetType: "deal", action: "deal.reassign", actorId: req.principal?.userId ?? "dev-admin" },
+        audit: { targetType: "deal", action: "deal.reassign", actorId: auditActor(req).id },
       });
       return { updated: updated.length, skipped: ids.length - updated.length };
     });
@@ -695,8 +696,8 @@ export class DealsController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'deal', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'deal', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

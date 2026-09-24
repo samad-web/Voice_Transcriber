@@ -28,6 +28,7 @@ import { assertInOrg, assertMembers } from "../../common/org-references";
 import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 /**
  * `period_start`/`period_end` go through to_char rather than being returned
@@ -316,8 +317,8 @@ export class TargetsController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'sales_target', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'sales_target', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

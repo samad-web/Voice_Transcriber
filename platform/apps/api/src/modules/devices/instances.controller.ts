@@ -21,6 +21,7 @@ import { OperatorOnlyGuard } from "../../common/operator-only.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT ?? "http://localhost:9000",
@@ -102,8 +103,8 @@ export class InstancesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'instance.create', 'instance', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", instance.id],
+         VALUES ($1, $4, $2, 'instance.create', 'instance', $3)`,
+        [orgId, auditActor(req).id, instance.id, auditActor(req).type],
       );
 
       return {
@@ -301,17 +302,17 @@ export class InstancesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'instance.delete', 'instance', $3, $4)`,
+         VALUES ($1, $5, $2, 'instance.delete', 'instance', $3, $4)`,
         [
           orgId,
-          req.principal?.userId ?? "dev-admin",
+          auditActor(req).id,
           instanceId,
           JSON.stringify({
             name: instance.name,
             purgeCalls,
             devices: counts.devices,
             calls: counts.calls,
-          }),
+          }), auditActor(req).type
         ],
       );
 
@@ -352,8 +353,8 @@ export class InstancesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'enrollment_key.create', 'instance', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", instanceId],
+         VALUES ($1, $4, $2, 'enrollment_key.create', 'instance', $3)`,
+        [orgId, auditActor(req).id, instanceId, auditActor(req).type],
       );
 
       return {

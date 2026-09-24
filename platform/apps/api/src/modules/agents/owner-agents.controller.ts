@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { AgentDefinition, AgentKind } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
@@ -106,7 +107,10 @@ function toWrite(def: AgentDefinition): Omit<AgentWrite, "labels"> {
   };
 }
 
-const actorOf = (req: PrincipalRequest) => ({ userId: req.principal?.userId ?? "unknown" });
+const actorOf = (req: PrincipalRequest) => {
+  const actor = auditActor(req);
+  return { userId: actor.id, type: actor.type };
+};
 
 @Controller("owner/agents")
 @UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard, OrgFeatureGuard)

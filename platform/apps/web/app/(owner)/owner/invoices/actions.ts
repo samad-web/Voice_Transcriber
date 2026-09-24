@@ -12,6 +12,8 @@ import { ownerHeaders } from "../actions";
 
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "void";
 
+export type PaymentProvider = "razorpay" | "stripe";
+
 export interface Invoice {
   id: string;
   workspace_id: string | null;
@@ -26,7 +28,12 @@ export interface Invoice {
   subtotal: string;
   discount_type: "percent" | "amount" | null;
   discount_value: string | null;
+  /** cgst + sgst + igst, derived by the API. */
   tax_total: string;
+  /** IGST (true) or CGST + SGST (false). */
+  is_inter_state: boolean;
+  /** The gateway a payment link was already sent through, if any. */
+  payment_provider: PaymentProvider | null;
   cgst: string | null;
   sgst: string | null;
   igst: string | null;
@@ -57,7 +64,10 @@ export interface Payment {
   id: string;
   provider: string;
   status: "created" | "paid" | "failed";
+  /** What the link asked for. */
   amount: string;
+  /** What the gateway reported capturing - can exceed the balance that was credited. */
+  amount_captured: string | null;
   currency: string;
   razorpay_payment_link_id: string | null;
   created_at: string;
@@ -85,6 +95,8 @@ export interface InvoicePatch {
   notes?: string | null;
   customerGstin?: string | null;
   placeOfSupply?: string | null;
+  /** IGST (true) or CGST + SGST (false). Locked by the API once money is received. */
+  interState?: boolean;
   /** A full replacement of the line items - never a partial patch of one row. */
   items?: InvoiceItemInput[];
 }
@@ -151,14 +163,17 @@ export async function updateInvoiceAction(
 }
 
 /**
- * Mint a Razorpay payment link. A human clicks the button that calls this,
+ * Mint a payment link through the chosen gateway (Razorpay when unspecified,
+ * which is the API's default too). A human clicks the button that calls this,
  * gets back a URL, and shares it themselves - there is no auto-send here or
- * on the API side. Can fail with a 503 (Razorpay not configured on this
- * deployment) or a 400 (nothing outstanding); both come back as `error` for
- * the caller to render as plain text, not to treat as a crash.
+ * on the API side. Can fail with a 503 (gateway not configured on this
+ * deployment) or a 400 (nothing outstanding, or a link already out through the
+ * other gateway); all come back as `error` for the caller to render as plain
+ * text, not to treat as a crash.
  */
 export async function createPaymentLinkAction(
   id: string,
+  provider: PaymentProvider = "razorpay",
 ): Promise<{ payment?: Payment; paymentLinkUrl?: string; error?: string }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
@@ -168,6 +183,7 @@ export async function createPaymentLinkAction(
       method: "POST",
       headers,
       cache: "no-store",
+      body: JSON.stringify({ provider }),
     });
     if (!res.ok) return { error: await message(res) };
     const data = (await res.json()) as { payment: Payment; paymentLinkUrl: string };
@@ -189,7 +205,24 @@ export interface PaymentSettings {
   usingPlatformGateway: boolean;
 }
 
+/** One provider's card, as `GET /v1/owner/payment-settings` returns it in `providers`. */
+export interface GatewayState extends PaymentSettings {
+  provider: PaymentProvider;
+  /** The org's own keys are complete and switched on. */
+  ownAccount: boolean;
+  /** A link can be created through this provider (own keys or the platform's). */
+  available: boolean;
+}
+
+export interface PaymentSettingsResponse {
+  /** The Razorpay card - kept for callers written before Stripe. */
+  settings: PaymentSettings;
+  providers?: Record<PaymentProvider, GatewayState>;
+}
+
 export interface PaymentSettingsDraft {
+  /** Omitted means Razorpay, on the API as here. */
+  provider?: PaymentProvider;
   keyId: string;
   /** Omitted keeps the stored secret - the API never returns it to be re-sent. */
   keySecret?: string;

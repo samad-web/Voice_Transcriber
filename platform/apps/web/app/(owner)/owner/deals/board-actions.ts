@@ -20,6 +20,13 @@ import { apiErrorMessage } from "../lib/api-error";
  * what exists, rather than pretending nothing happened: a contact created
  * without its deal is still a real contact, and deleting it behind the
  * person's back would be the surprising outcome.
+ *
+ * A "new" contact whose email the org already has stops at step one with
+ * nothing written - the API answers 409 - and, when the API says the person
+ * may see that contact, hands it back as `existingContact` so the dialog can
+ * offer to put the deal on them instead. Nine times in ten that is what the
+ * person meant: they did not find the customer in the search and typed them
+ * in again.
  */
 export async function addDealAction(input: {
   pipelineId: string;
@@ -28,7 +35,7 @@ export async function addDealAction(input: {
   amount: number | null;
   ownerUserId: string | null;
   contact: { kind: "existing"; id: string } | { kind: "new"; displayName: string; email: string | null } | null;
-}): Promise<{ dealId?: string; error?: string }> {
+}): Promise<{ dealId?: string; error?: string; existingContact?: ExistingContact }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
 
@@ -45,6 +52,7 @@ export async function addDealAction(input: {
           ...(input.contact.email ? { email: input.contact.email } : {}),
         }),
       });
+      if (res.status === 409) return duplicateContact(res, input.contact.email);
       if (!res.ok) return { error: `Couldn't create the contact: ${await apiErrorMessage(res)}` };
       contactId = ((await res.json()) as { contact: { id: string } }).contact.id;
     }
@@ -90,6 +98,48 @@ export async function addDealAction(input: {
   } catch {
     return { error: "API unreachable" };
   }
+}
+
+/** A contact the org already has, as the API's 409 names it. */
+export interface ExistingContact {
+  id: string;
+  displayName: string;
+  email: string | null;
+}
+
+/**
+ * Read POST /v1/contacts' 409 (contacts.controller.ts, `duplicateEmail`).
+ *
+ * `existing` is null when the caller may not see that contact - then the
+ * message says the email is taken and nothing about whose it is, because the
+ * API withheld exactly that. Any other 409 shape (an older API, a different
+ * conflict) falls back to the API's own message rather than guessing.
+ */
+async function duplicateContact(
+  res: Response,
+  email: string | null,
+): Promise<{ error: string; existingContact?: ExistingContact }> {
+  const body = (await res.json().catch(() => ({}))) as {
+    code?: string;
+    message?: unknown;
+    existing?: { id?: unknown; displayName?: unknown } | null;
+  };
+  const existing = body.existing;
+  if (body.code === "contact_email_exists" && typeof existing?.id === "string") {
+    const displayName = typeof existing.displayName === "string" ? existing.displayName : "A contact";
+    return {
+      error: `${displayName} already has ${email ?? "this email"}. Nothing was added.`,
+      existingContact: { id: existing.id, displayName, email },
+    };
+  }
+  if (body.code === "contact_email_exists") {
+    return {
+      error: `A contact with ${email ?? "this email"} already exists, but it isn't one you can see. Nothing was added - ask whoever owns it, or use a different email.`,
+    };
+  }
+  return {
+    error: `Couldn't create the contact: ${typeof body.message === "string" ? body.message : `API ${res.status}`}`,
+  };
 }
 
 /**

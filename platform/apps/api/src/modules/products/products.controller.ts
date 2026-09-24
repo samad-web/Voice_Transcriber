@@ -18,6 +18,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const ListQuery = z.object({
   q: z.string().max(200).optional(),
@@ -183,8 +184,8 @@ export class ProductsController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'product', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'product', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

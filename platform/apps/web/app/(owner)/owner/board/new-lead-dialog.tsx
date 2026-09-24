@@ -126,7 +126,9 @@ export function NewLeadDialog({ boards }: { boards: LeadBoardRef[] }) {
             <FormField label="Phone" name="new-lead-phone" hint="Recognises someone you already know">
               <PhoneInput value={form.phone} onChange={(value) => setForm((f) => ({ ...f, phone: value }))} />
             </FormField>
-            <FormField label="Email" name="new-lead-email" hint="Optional">
+            {/* True for email too since writeLead reaches a known person's lead
+                through their contact (crm-ingest.service.ts, email-only branch). */}
+            <FormField label="Email" name="new-lead-email" hint="Also recognises someone you already know">
               <Input type="email" value={form.email} onChange={set("email")} placeholder="priya@example.com" />
             </FormField>
             <FormField label="Company" name="new-lead-company" hint="Optional">

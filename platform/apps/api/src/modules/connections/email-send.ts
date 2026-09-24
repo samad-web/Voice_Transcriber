@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ResolvedOAuthClient } from "@aura/db";
 import { connectionProvider } from "@aura/shared";
 import { sendSmtpMessage, type SmtpConfig } from "./smtp";
@@ -37,11 +38,31 @@ export interface OutgoingMessage {
   body: string;
   fromEmail: string;
   fromName?: string | null;
+  /** RFC 5322 Message-ID, angle brackets included. Written as a header when set. */
+  messageId?: string | null;
 }
 
 export interface SendResult {
   /** The provider's own id, so the sent message can be deduplicated by the sync. */
   externalId: string | null;
+  /**
+   * The RFC 5322 Message-ID the message went out with, where we know it.
+   *
+   * The de-duplication key when there is no usable provider id - Outlook's
+   * case (see the Graph path below). Stored on the interaction's metadata as
+   * `internet_message_id`, which is the key the worker's mail sync checks
+   * (apps/worker/src/pipeline/email-sync.ts) before writing a synced copy.
+   */
+  internetMessageId: string | null;
+}
+
+/**
+ * A fresh Message-ID in the sender's own domain, as RFC 5322 §3.6.4 asks.
+ * Random rather than derived from anything, so two sends can never collide.
+ */
+export function newMessageId(fromEmail: string): string {
+  const domain = header(fromEmail.split("@")[1] ?? "").replace(/[<>\s]/g, "") || "localhost";
+  return `<${randomUUID()}@${domain}>`;
 }
 
 /**
@@ -97,6 +118,7 @@ export function buildMime(message: OutgoingMessage): string {
     `From: ${from}`,
     `To: ${header(message.to)}`,
     `Subject: ${header(message.subject)}`,
+    ...(message.messageId ? [`Message-ID: ${header(message.messageId)}`] : []),
     "MIME-Version: 1.0",
     'Content-Type: text/plain; charset="UTF-8"',
     "Content-Transfer-Encoding: 8bit",
@@ -131,19 +153,23 @@ export async function sendMessage(
 
   if (provider === "imap") {
     if (!smtp) throw new Error("this mailbox has no SMTP settings saved - reconnect it");
+    // Our own Message-ID, because SMTP gives back nothing we can key on: its
+    // 250 response carries a queue id that is the server's and means nothing
+    // to us, and without a header of ours the server would invent the
+    // Message-ID where we could not see it. Recorded on the interaction, it
+    // is what a future IMAP sync of the Sent folder would dedupe against.
+    // (There is no IMAP sync today - emailAdapter('imap') is null - so today
+    // nothing re-reads these and nothing can duplicate them.)
+    const messageId = newMessageId(message.fromEmail);
     // The SAME buildMime as the Gmail path, so a reply looks identical
     // whichever mailbox it left from - and so the header-injection guard that
     // function applies is not something the SMTP path could forget.
     await sendSmtpMessage(smtp, {
       from: message.fromEmail,
       to: message.to,
-      mime: buildMime(message),
+      mime: buildMime({ ...message, messageId }),
     });
-    // SMTP returns a queue id in its 250 response, which is the server's own
-    // and means nothing to us. Null, like the Microsoft path, and for the same
-    // reason: the mail sync picks the message up from the Sent folder and
-    // dedupes against the interaction row.
-    return { externalId: null };
+    return { externalId: null, internetMessageId: messageId };
   }
 
   if (provider === "google") {
@@ -157,30 +183,61 @@ export async function sendMessage(
       body: JSON.stringify({ raw }),
     });
     if (!res.ok) throw await sendError(res);
+    // Gmail's id is the message's id in the mailbox - the same one the sync
+    // reads from Sent - so the unique index on external_id does the dedupe.
     const body = (await res.json()) as { id?: string };
-    return { externalId: body.id ?? null };
+    return { externalId: body.id ?? null, internetMessageId: null };
   }
 
-  // Microsoft Graph. `saveToSentItems` so the message appears in the user's
-  // own Sent folder - a CRM that sends on someone's behalf and leaves no
-  // trace in their own mailbox is not a tool they can audit.
-  const res = await fetchImpl("https://graph.microsoft.com/v1.0/me/sendMail", {
+  // ── Microsoft Graph: create a draft, then send it ──────────────────────────
+  //
+  // NOT the one-call `/me/sendMail`. That returns 202 with an empty body, so
+  // the console had nothing to record, and the sync then wrote the Sent Items
+  // copy as a second row - every Outlook send appeared twice on the timeline.
+  // (The comment that used to sit here said the sync deduped "by subject and
+  // time"; no such check ever existed.)
+  //
+  // Creating the draft first (201, the full message) hands back the
+  // `internetMessageId` Exchange assigned, and the draft's `/send` keeps it.
+  // Its Graph `id` is no use as a key: ids change when an item changes folder
+  // unless every caller opts into immutable ids, and sending moves the draft
+  // to Sent Items. The Message-ID does not change, so that is what the
+  // interaction records and what the sync matches on.
+  //
+  // We do not SET internetMessageId ourselves: Graph documents it without
+  // saying it is writable on create, and a guess that turned into a 400
+  // would fail real sends. Reading back Exchange's own is certain.
+  //
+  // `/send` saves to Sent Items (Graph's documented behaviour for a draft),
+  // which keeps what `saveToSentItems: true` guaranteed before - a CRM that
+  // sends on someone's behalf and leaves no trace in their own mailbox is not
+  // a tool they can audit. Needs Mail.ReadWrite for the draft, which the
+  // Microsoft connection already requests (@aura/shared connection-providers).
+  const auth = { authorization: `Bearer ${accessToken}` };
+  const created = await fetchImpl("https://graph.microsoft.com/v1.0/me/messages", {
     method: "POST",
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    headers: { ...auth, "content-type": "application/json" },
     body: JSON.stringify({
-      message: {
-        subject: header(message.subject),
-        body: { contentType: "Text", content: message.body },
-        toRecipients: [{ emailAddress: { address: header(message.to) } }],
-      },
-      saveToSentItems: true,
+      subject: header(message.subject),
+      body: { contentType: "Text", content: message.body },
+      toRecipients: [{ emailAddress: { address: header(message.to) } }],
     }),
   });
-  if (!res.ok) throw await sendError(res);
-  // Graph's sendMail returns 202 with an empty body - no id to record. The
-  // mail sync will pick the message up from the Sent folder on its next pass
-  // and dedupe against the interaction row written here by subject and time.
-  return { externalId: null };
+  if (!created.ok) throw await sendError(created);
+  const draft = (await created.json()) as { id?: string; internetMessageId?: string };
+  if (!draft.id) throw new Error("the mail provider created no draft to send");
+
+  const draftUrl = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(draft.id)}`;
+  const sent = await fetchImpl(`${draftUrl}/send`, { method: "POST", headers: auth });
+  if (!sent.ok) {
+    const error = await sendError(sent);
+    // Nothing went out; don't leave a half-made message sitting in the
+    // person's Drafts to be sent by hand later by mistake. Best-effort - the
+    // error the caller sees is the send failure, not this.
+    await fetchImpl(draftUrl, { method: "DELETE", headers: auth }).catch(() => undefined);
+    throw error;
+  }
+  return { externalId: null, internetMessageId: draft.internetMessageId ?? null };
 }
 
 /**

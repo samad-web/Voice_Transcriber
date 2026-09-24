@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Card, EmptyState, MonoLabel, StatusChip } from "@aura/ui";
-import { DEFAULT_TIME_ZONE, todayIn } from "@aura/shared";
+import { DEFAULT_TIME_ZONE, OWNER_ROLE_ADMINS, todayIn } from "@aura/shared";
 import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
@@ -627,7 +627,10 @@ export default async function ReportsPage({
           <NotPermitted />
         ) : (
           <div className="mt-3">
-            <CommissionPlansClient plans={commissionPlans.plans} />
+            <CommissionPlansClient
+              plans={commissionPlans.plans}
+              canEdit={owner ? OWNER_ROLE_ADMINS.includes(owner.membership.ownerRole) : false}
+            />
           </div>
         )}
       </Card>

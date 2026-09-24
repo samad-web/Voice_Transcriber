@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -46,7 +47,8 @@ const SourcePatch = SourceInput.partial()
  * somebody spends money on them.
  */
 @Controller("marketing-sources")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
 export class MarketingSourcesController {
   constructor(private readonly db: DbService) {}
 
@@ -78,6 +80,8 @@ export class MarketingSourcesController {
   }
 
   @Post()
+  // doc 31 §2 X8: attribution sources are marketing's to define.
+  @RequireOwnerRole("owner", "manager", "marketing")
   async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = SourceInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -116,6 +120,8 @@ export class MarketingSourcesController {
   }
 
   @Patch(":id")
+  // doc 31 §2 X8: same as create.
+  @RequireOwnerRole("owner", "manager", "marketing")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

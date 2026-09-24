@@ -25,6 +25,7 @@ import { sendWasiMessage, WasiSendError } from "./wasi-client";
 import { EvolutionError, evolutionAdminFromEnv, sendEvolutionText } from "./evolution-client";
 import { MetaSendError, sendMetaDirect, sendWhatsAppCloud } from "./meta-send";
 import { replyWindow } from "./meta-messaging";
+import { auditActor } from "../../common/audit-actor";
 
 const SendBody = z.discriminatedUnion("type", [
   z.object({
@@ -398,8 +399,8 @@ export class WhatsAppSendController {
       await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId]);
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'conversation.whatsapp_send', 'conversation', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", conversationId],
+         VALUES ($1, $4, $2, 'conversation.whatsapp_send', 'conversation', $3)`,
+        [orgId, auditActor(req).id, conversationId, auditActor(req).type],
       );
 
       return { sent: true, message: row };

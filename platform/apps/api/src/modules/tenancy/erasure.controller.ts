@@ -16,6 +16,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const ErasureBody = z.object({
   /** Erase everything tied to one call, or (later) a subject phone hash. */
@@ -176,8 +177,8 @@ export class ErasureController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'erasure.complete', 'call', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", callId, JSON.stringify({ ...receipt, signature })],
+         VALUES ($1, $5, $2, 'erasure.complete', 'call', $3, $4)`,
+        [orgId, auditActor(req).id, callId, JSON.stringify({ ...receipt, signature }), auditActor(req).type],
       );
 
       return { ...receipt, signature, receiptHash: createHash("sha256").update(signature).digest("hex") };

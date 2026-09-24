@@ -14,11 +14,13 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { assertInOrg } from "../../common/org-references";
 import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const CommissionMetric = z.enum(["won_value", "won_count", "calls"]);
 const CommissionRateType = z.enum(["percent", "flat_per_unit"]);
@@ -60,7 +62,9 @@ const COMMISSION_PLAN_COLUMNS = `id, workspace_id, name, metric, rate_type, rate
  * approval trail.
  */
 @Controller("commission-plans")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager", "marketing")
 export class CommissionPlansController {
   constructor(private readonly db: DbService) {}
 
@@ -92,6 +96,8 @@ export class CommissionPlansController {
   }
 
   @Post()
+  // doc 31 §2 X8: a plan decides what people are paid - the lead-routing rule (owner/manager) applies; marketing keeps READ access for the Reports page.
+  @RequireOwnerRole("owner", "manager")
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateCommissionPlanBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -115,6 +121,8 @@ export class CommissionPlansController {
   }
 
   @Patch(":id")
+  // doc 31 §2 X8: same as create.
+  @RequireOwnerRole("owner", "manager")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
@@ -168,6 +176,8 @@ export class CommissionPlansController {
    * and nothing else.
    */
   @Delete(":id")
+  // doc 31 §2 X8: same as create.
+  @RequireOwnerRole("owner", "manager")
   async remove(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string, @Req() req: PrincipalRequest) {
     return this.db.withOrg(orgId, async (client) => {
       const removed = await softDelete(client, "commission_plan", id, req);
@@ -186,8 +196,8 @@ export class CommissionPlansController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'commission_plan', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'commission_plan', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

@@ -27,6 +27,7 @@ import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-perm
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 /**
  * Reading and writing custom-field VALUES on a record.
@@ -272,8 +273,8 @@ export class CustomFieldValuesController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'custom_field_value.write', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", objectType, recordId],
+         VALUES ($1, $5, $2, 'custom_field_value.write', $3, $4)`,
+        [orgId, auditActor(req).id, objectType, recordId, auditActor(req).type],
       );
 
       return this.read(orgId, objectType, recordId, recordScope);

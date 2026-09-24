@@ -91,7 +91,9 @@ export const IMPORT_FIELDS: Record<ImportEntity, ImportField[]> = {
       label: "Phone",
       required: false,
       example: "9876543210",
-      hint: "Digits, with or without a country code - punctuation is ignored.",
+      hint:
+        "A number valid in your workspace's country (Time & location), or any number written with its + country code. " +
+        "Spaces and dashes are fine. A row whose phone is not a real number fails rather than being saved.",
       aliases: ["phone number", "mobile", "mobile number", "contact number", "whatsapp"],
     },
     {
@@ -220,6 +222,49 @@ export function suggestMapping(entity: ImportEntity, headers: string[]): Record<
     mapping[field] = partial?.raw ?? null;
   }
   return mapping;
+}
+
+// -- how much one run may carry ------------------------------------------
+
+/** Rows per run. The API's zod schema and the console's upload step both read this. */
+export const IMPORT_MAX_ROWS = 5000;
+
+/**
+ * The largest JSON body `POST /v1/import/run` accepts - and so the largest the
+ * console's import route forwards.
+ *
+ * Every other API route stays at the global 1 MB (main.ts); this ONE route gets
+ * a route-scoped parser (apps/api/src/modules/import/import-body-limit.ts),
+ * because a 5,000-row contact file is routinely 2-4 MB of JSON and the old 1 MB
+ * cap failed imports well under the advertised row limit, with a bare 413.
+ *
+ * Why 8 MB and not more: the worst case measured in
+ * apps/api/src/modules/import/import-body-limit.spec.ts (5,000 rows, every
+ * contact column under long headers, 80-character names in Tamil script -
+ * three UTF-8 bytes a character - and 80-character emails and titles) is
+ * 4.16 MB, so 8 MB is ~1.9x headroom on a file nobody really has. It must stay under
+ * Next's `middlewareClientMaxBodySize` (10 MB default): the console's middleware
+ * clones every request body, and past that size it TRUNCATES the body rather
+ * than refusing it, which would reach the route handler as malformed JSON.
+ */
+export const IMPORT_RUN_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Only the cells the mapping will read, keyed by their original header.
+ *
+ * The console used to post every parsed column, mapped or not - a CRM export
+ * with forty columns sent forty cells a row for the importer to throw away, and
+ * that, not the rows the person meant to import, is what blew the body limit.
+ * It is also less PII in flight, and less stored on `import_job_errors.raw`.
+ * The API applies the same `mapping` to this as it would to the full row, so
+ * trimming here changes nothing about what gets imported.
+ */
+export function pickMappedColumns(mapping: Record<string, string | null>, row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const header of Object.values(mapping)) {
+    if (header && Object.prototype.hasOwnProperty.call(row, header)) out[header] = row[header];
+  }
+  return out;
 }
 
 /** Applies a header->field mapping to one raw CSV row, trimming string values. */

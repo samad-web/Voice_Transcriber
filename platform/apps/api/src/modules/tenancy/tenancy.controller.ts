@@ -1,15 +1,26 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, Body, Controller, Get, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
 import { z } from "zod";
 import { ASR_LANGUAGES, ASR_MODES, Branding } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { hashAppLockPassword } from "../../common/app-lock-hash";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
-import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
+import { auditActor } from "../../common/audit-actor";
 
 /**
  * What a branding image is allowed to be, for the presigned-upload endpoint
@@ -105,6 +116,25 @@ const PolicyBody = z.object({
   appLockPassword: z.string().min(4).max(72).nullable().optional(),
 });
 
+/**
+ * The `PolicyBody` fields a tenant's own console may set - the three the
+ * Transcription page edits. Everything else in `PolicyBody` (consent regime,
+ * retention, full-number storage, transcription on/off, WhatsApp
+ * qualification and its retention, the app-lock password) is set by the
+ * platform operator today, and no owner-console page sends it. A new console
+ * page that needs one of them adds it here, deliberately.
+ */
+const CONSOLE_POLICY_FIELDS: ReadonlySet<string> = new Set(["asrLanguage", "asrMode", "vocabulary"]);
+
+/**
+ * A real person the owner console proxies for (admin key + `x-caller-user-id`),
+ * or a Bearer session - as opposed to the bare admin key, whose principal is
+ * the literal "admin-key" and has no person behind it.
+ */
+function isConsolePerson(req: PrincipalRequest): boolean {
+  return z.string().uuid().safeParse(req.principal?.userId).success;
+}
+
 /** Org-level compliance policy (§2.6): consent regime + retention window. */
 @Controller("org")
 @UseGuards(AdminKeyGuard, TenantGuard)
@@ -175,8 +205,8 @@ export class TenancyController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'org.branding_update', 'organization', $3, $4::jsonb)`,
-        [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify(p)],
+         VALUES ($1, $5, $2, 'org.branding_update', 'organization', $3, $4::jsonb)`,
+        [orgId, auditActor(req).id, orgId, JSON.stringify(p), auditActor(req).type],
       );
       return org;
     });
@@ -216,13 +246,40 @@ export class TenancyController {
     return { uploadUrl, assetPath: `/branding-assets/${orgId}/${filename}` };
   }
 
+  /**
+   * Doc 31 §2 X8 - the same hole doc 27 §4.4 closed for branding, still open
+   * here. `@RequireOrgRole("org_admin")` is inert for every console request
+   * (all arrive as `platform_admin`), so the owner console's transcription
+   * page was the only thing refusing a telecaller - in its server action, not
+   * here. And the body carries fields that are the PROVIDER's to set.
+   *
+   * Now two gates, both enforced by the API:
+   *  - who: a person the console proxies for must be owner or manager, read
+   *    from memberships. The operator console and ops tooling send no person
+   *    (the bare admin key), which `@OperatorMayCall` lets through as before.
+   *  - what: a person may send only the transcription fields; consent,
+   *    retention, full-number storage, transcription on/off and the app-lock
+   *    password stay operator-only (see CONSOLE_POLICY_FIELDS below).
+   */
   @Patch("policy")
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  @OperatorMayCall()
+  @RequireOwnerRole("owner", "manager")
   async updatePolicy(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = PolicyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
+    if (isConsolePerson(req)) {
+      const refused = Object.keys(p).filter(
+        (k) => p[k as keyof typeof p] !== undefined && !CONSOLE_POLICY_FIELDS.has(k),
+      );
+      if (refused.length > 0) {
+        throw new ForbiddenException(
+          `only the platform operator can change: ${refused.sort().join(", ")}`,
+        );
+      }
+    }
 
     return this.db.withOrg(orgId, async (client) => {
       const {
@@ -280,15 +337,26 @@ export class TenancyController {
           : p;
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'org.policy_update', 'organization', $3, $4::jsonb)`,
-        [orgId, req.principal?.userId ?? "dev-admin", orgId, JSON.stringify(auditMeta)],
+         VALUES ($1, $5, $2, 'org.policy_update', 'organization', $3, $4::jsonb)`,
+        [orgId, auditActor(req).id, orgId, JSON.stringify(auditMeta), auditActor(req).type],
       );
       return org;
     });
   }
 
-  /** Immutable audit ledger (§2.6) for the web Compliance page. */
+  /**
+   * Immutable audit ledger (§2.6). Read by the operator console's instance
+   * page on the bare admin key.
+   *
+   * Doc 31 §2 X9: this had no gate beyond tenant membership, so any console
+   * person whose request reached it could read who did what across the whole
+   * org - role changes, exports, recording playback. A person must be the
+   * OWNER; the operator console keeps its access through `@OperatorMayCall`.
+   */
   @Get("audit")
+  @UseGuards(OwnerRoleGuard)
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async audit(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(

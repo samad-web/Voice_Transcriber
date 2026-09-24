@@ -149,6 +149,7 @@ import { MembersController } from "../modules/tenancy/members.controller";
 import { TenancyController } from "../modules/tenancy/tenancy.controller";
 import { BrandingAssetsController } from "../modules/tenancy/branding-assets.controller";
 import { WorkspacesController } from "../modules/tenancy/workspaces.controller";
+import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
 /** Every controller in `app.module.ts`'s module graph, in inventory 13 §1.1 order. */
@@ -346,11 +347,12 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   //    exception as messaging/webhook/:token - a form on a customer's website,
   //    an Exotel passthrough and a Mailgun route cannot present an admin key,
   //    so the `:token` path segment IS the credential.
-  //  - LeadSourcesController is ordinary org CONFIGURATION on
-  //    AdminKeyGuard+TenantGuard, the tier projects/tags/marketing-sources sit
-  //    on. Deliberately not CrmPermissionsGuard'd: `PermissionObjectType` has
-  //    no value for a settings page, and widening it would mean seeding grants
-  //    for five system roles to gate a catalogue.
+  //  - LeadSourcesController is ordinary org CONFIGURATION, the tier
+  //    projects/tags/marketing-sources sit on. Deliberately not
+  //    CrmPermissionsGuard'd: `PermissionObjectType` has no value for a
+  //    settings page, and widening it would mean seeding grants for five
+  //    system roles to gate a catalogue. Persona-gated instead since doc 31
+  //    §2 X8 (see OWNER_ROLE_ROUTES).
   //  - LinkedInOAuthController mixes both in one class, like MetaOAuthController
   //    does: `oauth/callback` is LinkedIn's own browser redirect and verifies
   //    itself with a signed state token instead of a guard.
@@ -996,7 +998,148 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/call-access/:id/deny",
   "POST /owner/call-access/:id/revoke",
   "PUT /owner/call-access/settings",
+  // ── Org configuration that checked nothing but tenant membership (doc 31 §2 X8) ──
+  //
+  // Every route below used to be plain AdminKeyGuard + TenantGuard, so a
+  // telecaller whose request reached one could merge records, rewrite
+  // automation rules or read the org's audit log. Each now declares the
+  // personas its console page is shown to (reads the whole floor uses stay
+  // inert - a class mount with no class-level requirement), and every one
+  // carries @OperatorMayCall so the bare admin key - operator console, ops
+  // scripts, e2e harnesses - keeps exactly the access it had. That makes the
+  // change strictly narrower: only console PEOPLE lost anything. See
+  // OPERATOR_MAY_CALL_ROUTES below.
+  //
+  // Automation rules, custom-field definitions and analytics: operator-console
+  // surfaces today; a person must be owner or manager.
+  "GET /automations",
+  "GET /automations/runs",
+  "POST /automations/dry-run",
+  "POST /automations",
+  "PATCH /automations/:id",
+  "DELETE /automations/:id",
+  "GET /custom-field-definitions",
+  "POST /custom-field-definitions",
+  "PATCH /custom-field-definitions/:id",
+  "DELETE /custom-field-definitions/:id",
+  "GET /analytics/overview",
+  "GET /analytics/fleet",
+  "GET /analytics/active-users",
+  "GET /analytics/booking-rate",
+  // Merge and CSV import: owner, manager, marketing - who the Duplicates and
+  // Import pages are shown to. An import's error rows are further narrowed in
+  // the handler to the person who ran it, or an owner/manager (X6).
+  "POST /import/preview",
+  "POST /import/run",
+  "GET /import/:jobId",
+  "GET /import/:jobId/errors",
+  "GET /import/:jobId/errors.csv",
+  "POST /merge/scan",
+  "GET /merge/duplicates",
+  "POST /merge/duplicates/:id/dismiss",
+  "GET /merge",
+  "POST /merge",
+  "POST /merge/:id/revert",
+  // Cadences are the org's ladder (owner/manager); journeys, due steps and
+  // step outcomes are every rep's daily work and stay open.
+  "GET /outreach/cadences",
+  "POST /outreach/cadences",
+  "PATCH /outreach/cadences/:id",
+  "GET /outreach/journeys",
+  "POST /outreach/journeys",
+  "PATCH /outreach/journeys/:id",
+  "GET /outreach/due",
+  "PATCH /outreach/steps/:id",
+  // Reads open (the board labels leads with projects); writes for the four
+  // personas the Projects page is shown to.
+  "GET /projects",
+  "POST /projects",
+  "PATCH /projects/:id",
+  // Reads open; create/edit owner and manager (the Manage board control's
+  // reach); stage packs owner, manager and sales (the Deals page's).
+  "GET /pipelines",
+  "GET /pipelines/:id",
+  "POST /pipelines",
+  "PATCH /pipelines/:id",
+  "GET /pipelines/stage-packs/catalogue",
+  "POST /pipelines/:id/apply-stage-pack",
+  // Lead sources, WhatsApp channel setup, embedded signup and Meta MCP
+  // connections: owner, manager, marketing - the Lead sources, Messaging
+  // setup and Meta ads pages. One exception: a channel's template list is
+  // what the inbox picker reads, so every replying persona keeps it.
+  "GET /lead-sources/catalogue",
+  "POST /lead-sources/sheets/preview",
+  "GET /lead-sources",
+  "POST /lead-sources",
+  "PATCH /lead-sources/:id",
+  "POST /lead-sources/:id/rotate-token",
+  "GET /lead-sources/:id/events",
+  "POST /lead-sources/events/:eventId/replay",
+  "GET /messaging/channels",
+  "POST /messaging/channels",
+  "PATCH /messaging/channels/:id",
+  "POST /messaging/channels/:id/verify",
+  "GET /messaging/channels/:id/templates",
+  "POST /messaging/channels/:id/templates/sync",
+  "GET /messaging/embedded-signup",
+  "POST /messaging/embedded-signup",
+  "GET /mcp/connections",
+  "POST /mcp/connections",
+  "POST /mcp/connections/:id/test",
+  "DELETE /mcp/connections/:id",
+  // The tag vocabulary is owner/manager to change; the record-tagging routes
+  // keep their CrmPermissionsGuard grant and declare no persona (inert).
+  "GET /tags",
+  "POST /tags",
+  "PATCH /tags/:id",
+  "DELETE /tags/:id",
+  "POST /contacts/:id/tags",
+  "DELETE /contacts/:id/tags/:tagId",
+  "POST /deals/:id/tags",
+  "DELETE /deals/:id/tags/:tagId",
+  "POST /tags/:id/contacts",
+  "POST /tags/:id/deals",
+  "GET /marketing-sources",
+  "POST /marketing-sources",
+  "PATCH /marketing-sources/:id",
+  // A commission plan decides what people are paid: marketing may read the
+  // plans beside the commission report, only owner/manager write them.
+  "GET /commission-plans",
+  "GET /commission-plans/:id",
+  "POST /commission-plans",
+  "PATCH /commission-plans/:id",
+  "DELETE /commission-plans/:id",
+  // The org audit log (owner) and the org policy (owner/manager, and a console
+  // person may send only the three transcription fields - enforced in the
+  // handler, see CONSOLE_POLICY_FIELDS in tenancy.controller.ts).
+  "GET /org/audit",
+  "PATCH /org/policy",
+  // Membership and role-grid writes. `OrgRoleGuard` alone was inert for a
+  // console person (every one arrives as platform_admin), so the only thing
+  // stopping a self-promotion was that no owner-console action called these.
+  // The operator console's Team and Roles tabs write here on the bare key; a
+  // person must be the owner - the tier /owner/team and /owner/roles require.
+  "POST /members",
+  "PATCH /members/:userId",
+  "DELETE /members/:userId",
+  "POST /roles",
+  "PATCH /roles/:id",
+  "PUT /roles/:id/permissions",
 ];
+
+/**
+ * Routes whose persona gate lets the BARE admin key through
+ * (`@OperatorMayCall`, owner-role.guard.ts). Pinned for the same reason
+ * OPERATOR_ONLY_ROUTES is: a route that quietly GAINS it hands the persona
+ * check a bypass for any caller that omits `x-caller-user-id`; one that LOSES
+ * it silently locks the operator console out.
+ *
+ * Every entry is also in OWNER_ROLE_ROUTES - the marker means nothing on a
+ * route OwnerRoleGuard never runs on, and the test asserts that too.
+ */
+const OPERATOR_MAY_CALL_ROUTES = OWNER_ROLE_ROUTES.slice(
+  OWNER_ROLE_ROUTES.indexOf("GET /automations"),
+);
 
 /**
  * Org-administration routes gated on `principal.role` directly via
@@ -1310,6 +1453,8 @@ interface Route {
   /** Class guards then handler guards, which is the order Nest runs them in. */
   guards: string[];
   crossTenant: boolean;
+  /** `@OperatorMayCall` on the handler or the class. */
+  operatorMayCall: boolean;
 }
 
 /**
@@ -1346,6 +1491,9 @@ function routesOf(cls: Type<unknown>): Route[] {
       crossTenant:
         Reflect.getMetadata(CROSS_TENANT_KEY, handler) === true ||
         Reflect.getMetadata(CROSS_TENANT_KEY, cls) === true,
+      operatorMayCall:
+        Reflect.getMetadata(OPERATOR_MAY_CALL_KEY, handler) === true ||
+        Reflect.getMetadata(OPERATOR_MAY_CALL_KEY, cls) === true,
     });
   }
   return routes;
@@ -1809,24 +1957,34 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
-  it("leaves pipelines, custom-field-definitions and merge unenforced, as scoped", () => {
-    // Asserted rather than assumed: these carry the root ADMIN_API_KEY like
-    // every other tenant route, and the reason they are NOT permission-checked
-    // is that `PermissionObjectType` has no value for them yet - not that
-    // somebody forgot. If that enum grows, this test is where the decision
-    // gets revisited.
-    const unenforced = ROUTES.filter(
+  it("gates pipelines, custom-field-definitions and merge by persona, not by grant", () => {
+    // Revisited in doc 31 §2 X8, as this test's earlier version asked. The
+    // reason these carry no CrmPermissionsGuard still holds -
+    // `PermissionObjectType` has no value for a pipeline, a field definition
+    // or a merge - but "no grant" had become "no check": every one was plain
+    // AdminKeyGuard + TenantGuard, reachable by any console persona. They now
+    // take the persona check, and nothing else, so a grant can still be added
+    // later without two gates disagreeing.
+    const configRoutes = ROUTES.filter(
       (r) =>
         r.route.includes("/pipelines") ||
         r.route.includes("/custom-field-definitions") ||
         r.route.includes("/merge"),
     );
-    // 16 since the stage packs landed: the catalogue and the apply route are
-    // pipeline configuration, the same tier as renaming a column, and
-    // PermissionObjectType still has no value for a pipeline.
-    expect(unenforced).toHaveLength(16);
-    for (const { route, guards } of unenforced) {
-      expect([route, guards]).toEqual([route, ["AdminKeyGuard", "TenantGuard"]]);
+    // 16 since the stage packs landed.
+    expect(configRoutes).toHaveLength(16);
+    for (const { route, guards } of configRoutes) {
+      expect([route, guards]).toEqual([route, ["AdminKeyGuard", "TenantGuard", "OwnerRoleGuard"]]);
+    }
+  });
+
+  it("lets the bare admin key past the persona check on exactly the pinned routes", () => {
+    const marked = ROUTES.filter((r) => r.operatorMayCall);
+    expect(sorted(marked.map((r) => r.route))).toEqual(sorted(OPERATOR_MAY_CALL_ROUTES));
+    // The marker is only read by OwnerRoleGuard. On a route without it, it
+    // would be a comment that looks like a policy.
+    for (const { route, guards } of marked) {
+      expect([route, guards.includes("OwnerRoleGuard")]).toEqual([route, true]);
     }
   });
 

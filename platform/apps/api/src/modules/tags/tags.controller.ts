@@ -16,6 +16,7 @@ import {
 import { z } from "zod";
 import { BulkTagInput, type BulkResult } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
@@ -54,7 +55,8 @@ const TagPatch = z
  * The guards are therefore per-handler rather than on the class.
  */
 @Controller()
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
 export class TagsController {
   constructor(private readonly db: DbService) {}
 
@@ -81,6 +83,8 @@ export class TagsController {
   }
 
   @Post("tags")
+  // doc 31 §2 X8: the vocabulary is org configuration; web bulk/actions.ts already refused other personas, the API did not.
+  @RequireOwnerRole("owner", "manager")
   async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = TagInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -108,6 +112,8 @@ export class TagsController {
   }
 
   @Patch("tags/:id")
+  // doc 31 §2 X8: same as create.
+  @RequireOwnerRole("owner", "manager")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
@@ -157,6 +163,8 @@ export class TagsController {
    * before the click is better than a recycle bin afterwards.
    */
   @Delete("tags/:id")
+  // doc 31 §2 X8: same as create.
+  @RequireOwnerRole("owner", "manager")
   async remove(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

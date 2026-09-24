@@ -22,6 +22,7 @@ import {
   OutreachJourneyStatus,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -64,7 +65,8 @@ const JourneyPatch = z.object({ stopReason: z.string().max(200).optional() }).st
  * safety rule 3, kept structurally rather than by convention.
  */
 @Controller("outreach")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
 export class OutreachController {
   constructor(private readonly db: DbService) {}
 
@@ -102,6 +104,8 @@ export class OutreachController {
    * transaction means a failure halfway cannot leave one behind either.
    */
   @Post("cadences")
+  // doc 31 §2 X8: a cadence is the org's shared ladder; reps work journeys, managers write the ladder.
+  @RequireOwnerRole("owner", "manager")
   async createCadence(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = CadenceInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -154,6 +158,8 @@ export class OutreachController {
    * new cadence, and retiring the old one.
    */
   @Patch("cadences/:id")
+  // doc 31 §2 X8: same as createCadence.
+  @RequireOwnerRole("owner", "manager")
   async updateCadence(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

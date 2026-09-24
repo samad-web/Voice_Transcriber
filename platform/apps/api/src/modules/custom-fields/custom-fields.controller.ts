@@ -16,9 +16,11 @@ import {
 import { z } from "zod";
 import { CustomFieldDefinitionInput, CustomFieldObjectType, CustomFieldOption } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const ListQuery = z.object({
   objectType: CustomFieldObjectType.optional(),
@@ -45,9 +47,17 @@ const FIELD_COLUMNS = `id, object_type, key, label, type, description, required,
  * `objectType` are immutable after creation: a field whose storage type
  * needs to change is archived (DELETE) and a new one created, not mutated in
  * place, the same reasoning that keeps agents versioned rather than edited.
+ *
+ * Persona-gated (doc 31 §2 X8): a definition reshapes every record of its
+ * type for the whole org, and archiving one hides its values from everybody.
+ * Owner and manager only. The operator console manages these on the bare
+ * admin key, hence `@OperatorMayCall`. Record-level VALUES are a different
+ * controller (custom-field-values), gated by the record's own grant.
  */
 @Controller("custom-field-definitions")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager")
 export class CustomFieldsController {
   constructor(private readonly db: DbService) {}
 
@@ -183,8 +193,8 @@ export class CustomFieldsController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'custom_field_definition', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'custom_field_definition', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

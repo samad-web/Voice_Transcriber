@@ -17,27 +17,24 @@ import { errorText, ownerHeaders, type ActionResult } from "../actions";
  * enough to state plainly. There, the check was a nicety: the API's
  * `@RequireOwnerRole("owner")` refused a manager regardless.
  *
- * Here the API CANNOT refuse anyone. `PATCH /v1/org/policy` is gated by
- * `OrgRoleGuard`, which reads `principal.role` - and every owner-console
- * request arrives on the platform admin key, which `admin-key.guard.ts` mints
- * as the literal `"platform_admin"`. So the guard passes for a telecaller
- * exactly as it passes for an owner. The only thing standing between a
- * restricted persona and this org's transcription settings is this function.
+ * Until doc 31 §2 X8 the API could not refuse anyone here: `PATCH
+ * /v1/org/policy` was gated only by `OrgRoleGuard`, which every owner-console
+ * request passes (the admin key mints `"platform_admin"`), so this function
+ * was the whole gate. The API now enforces both halves itself - owner or
+ * manager from memberships (`@OperatorMayCall` keeps the operator console's
+ * bare-key access), and a console person may send only `asrLanguage`,
+ * `asrMode` and `vocabulary` (`CONSOLE_POLICY_FIELDS` in
+ * tenancy.controller.ts). The check below stays so a refusal reads as a
+ * sentence rather than a 403.
  *
- * Deleting these four lines is therefore a privilege escalation, not a
- * refactor. If this ever needs to be relaxed, add `@RequireOwnerRole` to a
- * dedicated owner-facing route first - `/v1/org/policy` cannot take one,
- * because the operator console and ops tooling reach it with a bare admin key
- * that OwnerRoleGuard is specifically hardened to deny.
- *
- * ── AND THE FIELD WHITELIST IS THE SECOND HALF ────────────────────────────
+ * ── AND THE FIELD WHITELIST ───────────────────────────────────────────────
  *
  * `PATCH /v1/org/policy` also accepts `consentPolicy`, `retentionDays`,
  * `storeFullNumber`, `transcriptionEnabled` and `appLockPassword` - compliance
  * and fleet settings that are the PROVIDER's to set, not the customer's. This
  * action builds its own body from three named fields and forwards nothing it
- * was handed, so no argument from the browser can reach any of them. A
- * spread of the caller's object would have quietly exposed all five.
+ * was handed; the API would now refuse the other five from a console person
+ * anyway, but a spread of the caller's object is still the wrong shape.
  */
 export interface TranscriptionSettings {
   /** `null` means auto-detect - a real choice, not an absence. */

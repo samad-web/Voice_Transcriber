@@ -24,6 +24,7 @@ import { isUniqueViolation } from "../../common/pg-errors";
 import { restoreDeleted } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -155,8 +156,8 @@ export class RecycleBinController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'recycle_bin.restore', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", parsed.data, id],
+         VALUES ($1, $5, $2, 'recycle_bin.restore', $3, $4)`,
+        [orgId, auditActor(req).id, parsed.data, id, auditActor(req).type],
       );
 
       return { restored: true, resource: parsed.data, href: spec.href };

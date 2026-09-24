@@ -5,6 +5,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { GATEWAY_PROVIDERS, readGatewayStates } from "./gateway-availability";
 
 /**
  * The client's own payment gateway (migration 0060's `payment_gateway_config`).
@@ -39,17 +40,52 @@ import { DbService } from "../../db/db.service";
  * is no reason to: the only edit anybody makes here is replacing it.
  */
 
-const SettingsBody = z.object({
-  /** Razorpay's publishable key. `rzp_live_...` / `rzp_test_...`. */
-  keyId: z.string().trim().min(8).max(120),
-  /**
-   * Sent only when changing it. Omitted means "keep what is stored", which is
-   * what lets somebody correct a typo'd key id without re-pasting the secret.
-   */
-  keySecret: z.string().trim().min(8).max(200).optional(),
-  webhookSecret: z.string().trim().min(8).max(200).nullish(),
-  enabled: z.boolean().default(true),
-});
+/**
+ * One provider's keys. `provider` is optional and means Razorpay when absent,
+ * so every caller written before Stripe existed keeps meaning what it meant.
+ *
+ * Stripe's fields are checked by prefix because its key id - the PUBLISHABLE
+ * key - is stored in the clear and shown back on the settings page. Pasting the
+ * secret key into that box would otherwise store a live secret unencrypted and
+ * render it to everyone who opens the page.
+ */
+const SettingsBody = z
+  .object({
+    provider: z.enum(GATEWAY_PROVIDERS).default("razorpay"),
+    /** Razorpay: `rzp_live_...` / `rzp_test_...`. Stripe: the publishable `pk_...` key. */
+    keyId: z.string().trim().min(8).max(120),
+    /**
+     * Sent only when changing it. Omitted means "keep what is stored", which is
+     * what lets somebody correct a typo'd key id without re-pasting the secret.
+     */
+    keySecret: z.string().trim().min(8).max(200).optional(),
+    webhookSecret: z.string().trim().min(8).max(200).nullish(),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine((body, ctx) => {
+    if (body.provider !== "stripe") return;
+    if (!body.keyId.startsWith("pk_")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["keyId"],
+        message: "the Stripe key shown here must be the publishable key (pk_...), never the secret key",
+      });
+    }
+    if (body.keySecret && !/^(sk|rk)_/.test(body.keySecret)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["keySecret"],
+        message: "a Stripe secret key starts with sk_ (or rk_ for a restricted key)",
+      });
+    }
+    if (body.webhookSecret && !body.webhookSecret.startsWith("whsec_")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["webhookSecret"],
+        message: "a Stripe webhook signing secret starts with whsec_",
+      });
+    }
+  });
 
 @Controller("owner/payment-settings")
 @UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
@@ -57,36 +93,32 @@ const SettingsBody = z.object({
 export class PaymentSettingsController {
   constructor(private readonly db: DbService) {}
 
+  /**
+   * Both providers' state, each read with its own provider filter (doc 26
+   * defect 2: since 0099 keyed the table on (org_id, provider), an unfiltered
+   * read picked up whichever row came first - possibly Stripe's).
+   *
+   * `settings` stays the Razorpay card, byte-for-byte what it was, for the
+   * pages and the connect flow that already read it; `providers` carries both.
+   */
   @Get()
   async read(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
-      const {
-        rows: [row],
-      } = await client.query<{
-        key_id: string | null;
-        has_secret: boolean;
-        has_webhook: boolean;
-        enabled: boolean;
-      }>(
-        `SELECT key_id,
-                (key_secret IS NOT NULL)     AS has_secret,
-                (webhook_secret IS NOT NULL) AS has_webhook,
-                enabled
-           FROM payment_gateway_config WHERE org_id = $1`,
-        [orgId],
-      );
+      const providers = await readGatewayStates(client, orgId);
+      const razorpay = providers.razorpay;
       return {
         settings: {
-          keyId: row?.key_id ?? null,
-          hasSecret: row?.has_secret ?? false,
-          hasWebhookSecret: row?.has_webhook ?? false,
-          enabled: row?.enabled ?? true,
+          keyId: razorpay.keyId,
+          hasSecret: razorpay.hasSecret,
+          hasWebhookSecret: razorpay.hasWebhookSecret,
+          enabled: razorpay.enabled,
           // What the client is on RIGHT NOW, which is the thing the page has
           // to be honest about: with no keys of their own, payments still work
           // and settle to the platform (0060's fallback). Saying "not
           // configured" without saying that reads as "payments are broken".
-          usingPlatformGateway: !(row?.key_id && row?.has_secret && row?.enabled),
+          usingPlatformGateway: razorpay.usingPlatformGateway,
         },
+        providers,
       };
     });
   }
@@ -95,19 +127,19 @@ export class PaymentSettingsController {
   async save(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = SettingsBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { keyId, keySecret, webhookSecret, enabled } = parsed.data;
+    const { provider, keyId, keySecret, webhookSecret, enabled } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [existing],
       } = await client.query<{ has_secret: boolean }>(
         `SELECT (key_secret IS NOT NULL) AS has_secret
-           FROM payment_gateway_config WHERE org_id = $1`,
-        [orgId],
+           FROM payment_gateway_config WHERE org_id = $1 AND provider = $2`,
+        [orgId, provider],
       );
       // A first save must carry a secret - a key id on its own configures
-      // nothing, and `resolveRazorpayCredentials` would silently keep using
-      // the platform's gateway while this page claimed to be set up.
+      // nothing, and resolve*Credentials would silently keep using the
+      // platform's gateway while this page claimed to be set up.
       if (!keySecret && !existing?.has_secret) {
         throw new BadRequestException("a key secret is required the first time you connect");
       }
@@ -117,17 +149,26 @@ export class PaymentSettingsController {
         // credential in this schema uses (packages/db/secrets.ts). RLS does not
         // protect a stolen dump, so the value at rest is ciphertext regardless
         // of who can SELECT it.
+        //
+        // ON CONFLICT (org_id, provider) - the key 0099 gave the table. The old
+        // `ON CONFLICT (org_id)` matched no unique index, so Postgres rejected
+        // every save with 42P10 (doc 26 defect 1, reproduced 2026-09-24).
+        //
+        // COALESCE is safe here because key_secret and webhook_secret are
+        // NULLable: a keep-the-stored-secret save sends NULL, and NOT NULL is
+        // checked before conflict arbitration, which would break this shape on
+        // a NOT NULL column. The check above guarantees a first insert carries
+        // a secret, so no row is ever created without one.
         `INSERT INTO payment_gateway_config (org_id, provider, key_id, key_secret, webhook_secret, enabled)
-         VALUES ($1, 'razorpay', $2, $3, $4, $5)
-         ON CONFLICT (org_id) DO UPDATE SET
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (org_id, provider) DO UPDATE SET
            key_id  = EXCLUDED.key_id,
-           -- COALESCE, so an omitted secret keeps the stored one rather than
-           -- nulling it - see SettingsBody.
            key_secret     = COALESCE(EXCLUDED.key_secret, payment_gateway_config.key_secret),
            webhook_secret = COALESCE(EXCLUDED.webhook_secret, payment_gateway_config.webhook_secret),
            enabled = EXCLUDED.enabled`,
         [
           orgId,
+          provider,
           keyId,
           keySecret ? encryptSecret(keySecret) : null,
           webhookSecret ? encryptSecret(webhookSecret) : null,
@@ -136,14 +177,18 @@ export class PaymentSettingsController {
       );
 
       await client.query(
-        // The value is never logged, only the fact that it changed. "Who
-        // pointed our settlements somewhere else, and when" is a question
-        // worth being able to answer.
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', 'owner-console', 'payment_gateway.update', 'organization', $1)`,
-        [orgId],
+        // The value is never logged, only the fact that it changed and for
+        // which gateway. "Who pointed our settlements somewhere else, and
+        // when" is a question worth being able to answer.
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', 'owner-console', 'payment_gateway.update', 'organization', $2, $3)`,
+        // The org id twice, as separate parameters: org_id is uuid and
+        // target_id is text, and one untyped parameter cannot be both - the
+        // old `$1, ..., $1` failed with "inconsistent types deduced" (42P08),
+        // hidden until now behind the 42P10 on the statement before it.
+        [orgId, orgId, JSON.stringify({ provider })],
       );
-      return { saved: true };
+      return { saved: true, provider };
     });
   }
 }

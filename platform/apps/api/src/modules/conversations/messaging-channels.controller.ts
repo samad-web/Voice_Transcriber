@@ -22,6 +22,7 @@ import {
   type ChannelProbeOutcome,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { orgPhoneCountry, whatsappPhone } from "../../common/console-phone";
 import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -116,7 +117,9 @@ const CHANNEL_COLUMNS = `id, workspace_id, channel, provider, inbound_address, d
   (forward_secret IS NOT NULL) AS has_forward_secret`;
 
 @Controller("messaging/channels")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager", "marketing")
 export class MessagingChannelsController {
   constructor(private readonly db: DbService) {}
 
@@ -388,6 +391,8 @@ export class MessagingChannelsController {
    * on. Only meaningful for a `provider = 'wasi'` channel.
    */
   @Get(":id/templates")
+  // doc 31 §2 X8: the inbox's template picker reads this for every persona that can reply; everything else here is channel setup.
+  @RequireOwnerRole("owner", "manager", "telecaller", "sales", "marketing")
   async templates(@OrgId() orgId: string, @Param("id", new ParseUUIDPipe()) id: string) {
     return this.db.withOrg(orgId, async (client) => {
       const {

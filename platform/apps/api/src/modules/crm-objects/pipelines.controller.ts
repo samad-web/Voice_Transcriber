@@ -26,9 +26,11 @@ import {
 } from "@aura/shared";
 import { recordStageTransition } from "./stage-history";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const CreatePipelineBody = z.object({
   name: z.string().min(1).max(120),
@@ -61,7 +63,8 @@ const PIPELINE_COLUMNS = `id, name, object_type, stages, is_default, status, sta
  * owner/leads.controller.ts are untouched by this module.
  */
 @Controller("pipelines")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
 export class PipelinesController {
   constructor(private readonly db: DbService) {}
 
@@ -87,6 +90,8 @@ export class PipelinesController {
   }
 
   @Post()
+  // doc 31 §2 X8: reshaping a board changes it for everybody - the Manage board control is already owner/manager only.
+  @RequireOwnerRole("owner", "manager")
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreatePipelineBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -126,6 +131,8 @@ export class PipelinesController {
   }
 
   @Patch(":id")
+  // doc 31 §2 X8: was gated only in the web action (deals/stale-actions.ts); now the API says so too.
+  @RequireOwnerRole("owner", "manager")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
@@ -249,6 +256,10 @@ export class PipelinesController {
    * the correct amount of work for a decision somebody made deliberately.
    */
   @Post(":id/apply-stage-pack")
+  // doc 31 §2 X8: the personas the Deals page shows the ready-made boards to.
+  // Deliberately wider than Manage board (owner/manager) - web deals/page.tsx
+  // records that choice ("the ready-made boards keep the reach they had").
+  @RequireOwnerRole("owner", "manager", "sales")
   async applyStagePack(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
@@ -344,8 +355,8 @@ export class PipelinesController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'deal_pipeline', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'deal_pipeline', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

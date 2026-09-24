@@ -37,6 +37,7 @@ import {
   pkcePair,
   safeRedirectPath,
 } from "./oauth";
+import { auditActor } from "../../common/audit-actor";
 
 const StartBody = z.object({
   provider: z.string().min(1).max(40),
@@ -468,7 +469,7 @@ async function audit(
 ): Promise<void> {
   await db.query(
     `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-     VALUES ($1, 'user', $2, $3, 'connection', $4)`,
-    [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+     VALUES ($1, $5, $2, $3, 'connection', $4)`,
+    [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
   );
 }

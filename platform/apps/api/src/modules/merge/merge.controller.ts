@@ -15,6 +15,8 @@ import {
 import { z } from "zod";
 import { UNMATCHABLE_DISPLAY_NAMES } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
+import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -107,8 +109,19 @@ function actorUserId(req: PrincipalRequest): string | null {
   return userId && z.string().uuid().safeParse(userId).success ? userId : null;
 }
 
+/**
+ * Persona-gated (doc 31 §2 X8). A merge rewrites two people's records into
+ * one and repoints every deal, task and conversation of the loser, so it
+ * belongs to exactly the personas the Duplicates page and its review-queue
+ * source are shown to (web/lib/nav.ts, web/lib/review-queue.ts): owner,
+ * manager and marketing. Before this the API checked nothing beyond tenant
+ * membership, so the nav restriction was the only thing standing between a
+ * telecaller and `POST /merge`.
+ */
 @Controller("merge")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager", "marketing")
 export class MergeController {
   constructor(private readonly db: DbService) {}
 
@@ -431,8 +444,15 @@ export class MergeController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'merge.perform', $3, $4, $5::jsonb)`,
-        [orgId, actorId ?? "unknown", objectType, survivorId, JSON.stringify({ victimId, mergeLogId: logRow.id })],
+         VALUES ($1, $6, $2, 'merge.perform', $3, $4, $5::jsonb)`,
+        [
+          orgId,
+          auditActor(req).id,
+          objectType,
+          survivorId,
+          JSON.stringify({ victimId, mergeLogId: logRow.id }),
+          auditActor(req).type,
+        ],
       );
 
       return {
@@ -540,8 +560,15 @@ export class MergeController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'merge.revert', $3, $4, $5::jsonb)`,
-        [orgId, actorId ?? "unknown", log.object_type, log.survivor_id, JSON.stringify({ mergeLogId: id })],
+         VALUES ($1, $6, $2, 'merge.revert', $3, $4, $5::jsonb)`,
+        [
+          orgId,
+          auditActor(req).id,
+          log.object_type,
+          log.survivor_id,
+          JSON.stringify({ mergeLogId: id }),
+          auditActor(req).type,
+        ],
       );
 
       return { reverted: true, survivorId: log.survivor_id, victimId: log.victim_id };

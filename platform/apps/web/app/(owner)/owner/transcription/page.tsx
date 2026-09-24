@@ -26,15 +26,13 @@ interface OrgTranscription {
  * on a board card - spells names out of this list, so a stale glossary is
  * visible in the product rather than buried in a config table.
  *
- * ── THE REDIRECT IS NOT THE BOUNDARY, AND HERE THAT IS UNUSUAL ────────────
+ * ── THE REDIRECT IS NOT THE BOUNDARY ──────────────────────────────────────
  *
- * On most owner pages the API refuses a persona the nav never offered the page
- * to. Not this one: `PATCH /v1/org/policy` is gated on `principal.role`, which
- * is the literal "platform_admin" for every admin-key caller - i.e. for every
- * owner-console request, whoever is signed in. The persona check that actually
- * holds is the one inside `updateTranscriptionAction`; this redirect only saves
- * a telecaller from a page of controls that would refuse them on save. See
- * that action's header before moving either check.
+ * The API is: since doc 31 §2 X8, `PATCH /v1/org/policy` resolves the
+ * persona from memberships and takes only the three transcription fields
+ * from a console person. This redirect only saves a telecaller from a page of
+ * controls that would refuse them on save; `updateTranscriptionAction` repeats
+ * the check so the refusal is a sentence rather than a 403.
  */
 export default async function TranscriptionPage() {
   // Off means off, not merely hidden - see requireFeature.

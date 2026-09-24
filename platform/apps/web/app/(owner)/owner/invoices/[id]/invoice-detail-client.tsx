@@ -18,7 +18,6 @@ import {
   TableHeaderCell,
   TableRow,
   useAlert,
-  useConfirm,
   useToast,
 } from "@aura/ui";
 import { Time } from "@/components/org-time";
@@ -28,12 +27,14 @@ import {
   type Invoice,
   type InvoiceItem,
   type Payment,
+  type PaymentProvider,
   type InvoiceStatus,
 } from "../actions";
+import { selectableStatuses } from "../status-moves";
 import { formatMoney } from "../../lib/format-money";
 import { sourceToLineItemRows, useLineItemRows } from "../../use-line-item-rows";
 
-const STATUS_OPTIONS: InvoiceStatus[] = ["draft", "sent", "paid", "overdue", "void"];
+const PROVIDER_LABEL: Record<PaymentProvider, string> = { razorpay: "Razorpay", stripe: "Stripe" };
 
 function paymentTone(status: Payment["status"]): "solid" | "outline" | "danger" {
   if (status === "paid") return "solid";
@@ -53,14 +54,16 @@ export function InvoiceDetail({
   invoice: initialInvoice,
   items: initialItems,
   payments,
+  gateways,
 }: {
   invoice: Invoice;
   items: InvoiceItem[];
   payments: Payment[];
+  /** Which gateways a link can go through. Absent from an older API: Razorpay only. */
+  gateways?: Record<PaymentProvider, boolean>;
 }) {
   const [invoice, setInvoice] = useServerState(initialInvoice);
   const [status, setStatus] = useDraftState<InvoiceStatus>(initialInvoice.status);
-  const confirm = useConfirm();
   const alert = useAlert();
   const toast = useToast();
   const [dueDate, setDueDate] = useDraftState(initialInvoice.due_date ? initialInvoice.due_date.slice(0, 10) : "");
@@ -76,15 +79,28 @@ export function InvoiceDetail({
   const [discountValue, setDiscountValue] = useDraftState(
     initialInvoice.discount_value ? String(Number(initialInvoice.discount_value)) : "0",
   );
+  const [interState, setInterState] = useDraftState<boolean>(initialInvoice.is_inter_state ?? false);
   const [itemsPending, startItems] = useTransition();
 
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [paymentPending, startPayment] = useTransition();
 
+  // A link already out through one gateway pins the invoice to it (the API
+  // refuses the other). Otherwise every gateway the org can use is offered,
+  // Razorpay first - what an unqualified link has always meant.
+  const offeredProviders: PaymentProvider[] = invoice.payment_provider
+    ? [invoice.payment_provider]
+    : (["razorpay", "stripe"] as const).filter((p) =>
+        gateways ? gateways[p] : p === "razorpay",
+      );
+  const [provider, setProvider] = useState<PaymentProvider>(offeredProviders[0] ?? "razorpay");
+
   const saveHeader = () => {
     startHeader(async () => {
       const result = await updateInvoiceAction(invoice.id, {
-        status,
+        // Only a CHANGE is sent: the API refuses moves it does not allow, and
+        // an unchanged status is not a move.
+        ...(status !== invoice.status ? { status } : {}),
         dueDate: dueDate || null,
         notes: notes.trim() || null,
         customerGstin: customerGstin.trim() || null,
@@ -136,6 +152,7 @@ export function InvoiceDetail({
           type: discountType === "none" ? null : discountType,
           value: discountNum,
         },
+        interState,
       });
       if (result.error || !result.invoice) {
         await alert({
@@ -151,12 +168,13 @@ export function InvoiceDetail({
       setDiscountValue(
         result.invoice.discount_value ? String(Number(result.invoice.discount_value)) : "0",
       );
+      setInterState(result.invoice.is_inter_state ?? false);
     });
   };
 
   const collectPayment = () => {
     startPayment(async () => {
-      const result = await createPaymentLinkAction(invoice.id);
+      const result = await createPaymentLinkAction(invoice.id, provider);
       if (result.error || !result.paymentLinkUrl) {
         await alert({
           title: "Couldn't create a payment link",
@@ -184,27 +202,10 @@ export function InvoiceDetail({
   };
 
   const balanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
-
-  // "Paid" is a claim about money actually received - selecting it while a
-  // balance is still outstanding is very likely a mistake, so it gets the same
-  // confirmation dialog the rest of the console uses before any other
-  // consequential, hard-to-undo action (e.g. team-manager.tsx's member
-  // removal, device-actions.tsx's device actions).
-  const handleStatusChange = async (next: InvoiceStatus) => {
-    if (next === "paid" && next !== status && balanceDue > 0) {
-      const ok = await confirm({
-        title: "Mark this invoice paid?",
-        body: `A balance of ${formatMoney(balanceDue, invoice.currency)} is still due. Marking it paid records money you may not have received.`,
-        confirmLabel: "Mark paid",
-        tone: "danger",
-        // Recoverable: the status can be set back, and no record is destroyed.
-        // Loud, but not a deletion.
-        requireTyped: false,
-      });
-      if (!ok) return;
-    }
-    setStatus(next);
-  };
+  // Mirrors the API's lock: once money is in, or the invoice is closed, the
+  // lines, discount and GST treatment are a settled tax document.
+  const moneyLocked =
+    Number(invoice.amount_paid || 0) > 0 || invoice.status === "paid" || invoice.status === "void";
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
@@ -305,6 +306,17 @@ export function InvoiceDetail({
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4">
+            <FormField label="GST" name="gstTreatment">
+              <Select
+                value={interState ? "inter" : "intra"}
+                disabled={moneyLocked}
+                onChange={(e) => setInterState(e.target.value === "inter")}
+              >
+                <option value="intra">CGST + SGST (same state)</option>
+                <option value="inter">IGST (another state)</option>
+              </Select>
+            </FormField>
+            <div />
             <FormField label="Discount type" name="discountType">
               <Select
                 value={discountType}
@@ -327,8 +339,15 @@ export function InvoiceDetail({
             </FormField>
           </div>
 
-          <div className="mt-4 flex justify-end">
-            <Button type="button" loading={itemsPending} onClick={saveItems}>
+          <div className="mt-4 flex items-center justify-end gap-3">
+            {moneyLocked ? (
+              <p className="text-xs text-text-muted">
+                {invoice.status === "void"
+                  ? "This invoice is void."
+                  : "Payment has been received, so the lines, discount and GST are locked."}
+              </p>
+            ) : null}
+            <Button type="button" loading={itemsPending} disabled={moneyLocked} onClick={saveItems}>
               Save items
             </Button>
           </div>
@@ -380,11 +399,13 @@ export function InvoiceDetail({
           <MonoLabel>Details</MonoLabel>
           <div className="mt-3 space-y-3">
             <FormField label="Status" name="status">
+              {/* Only the moves the API allows by hand. "paid" is never one:
+                  an invoice becomes paid when a payment is recorded. */}
               <Select
                 value={status}
-                onChange={(e) => void handleStatusChange(e.target.value as InvoiceStatus)}
+                onChange={(e) => setStatus(e.target.value as InvoiceStatus)}
               >
-                {STATUS_OPTIONS.map((s) => (
+                {selectableStatuses(invoice.status).map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -516,9 +537,27 @@ export function InvoiceDetail({
         <Card>
           <MonoLabel>Collect payment</MonoLabel>
           <p className="mt-2 text-xs text-text-muted">
-            Generates a Razorpay payment link. Nothing is emailed or texted automatically - copy the
-            link and share it yourself.
+            Generates a payment link
+            {offeredProviders.length === 1 ? ` through ${PROVIDER_LABEL[offeredProviders[0]]}` : ""}.
+            Nothing is emailed or texted automatically - copy the link and share it yourself.
           </p>
+          {!paymentUrl && offeredProviders.length > 1 ? (
+            <div className="mt-3">
+              <FormField label="Collect through" name="paymentProvider">
+                <Select
+                  value={provider}
+                  disabled={paymentPending}
+                  onChange={(e) => setProvider(e.target.value as PaymentProvider)}
+                >
+                  {offeredProviders.map((p) => (
+                    <option key={p} value={p}>
+                      {PROVIDER_LABEL[p]}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          ) : null}
           {paymentUrl ? (
             <div className="mt-3 flex items-center gap-2">
               <Input
@@ -537,7 +576,14 @@ export function InvoiceDetail({
               </Button>
             </div>
           ) : (
-            <Button type="button" size="sm" className="mt-3" loading={paymentPending} onClick={collectPayment}>
+            <Button
+              type="button"
+              size="sm"
+              className="mt-3"
+              loading={paymentPending}
+              disabled={invoice.status === "void" || balanceDue <= 0}
+              onClick={collectPayment}
+            >
               Collect Payment
             </Button>
           )}

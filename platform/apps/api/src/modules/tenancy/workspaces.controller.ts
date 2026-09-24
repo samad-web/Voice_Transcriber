@@ -13,6 +13,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const CreateWorkspaceBody = z.object({
   name: z.string().min(1).max(120),
@@ -55,8 +56,8 @@ export class WorkspacesController {
       // reuse the uuid $1 for a text column (Postgres 42P08 inconsistent types).
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'workspace.create', 'workspace', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", workspace.id],
+         VALUES ($1, $4, $2, 'workspace.create', 'workspace', $3)`,
+        [orgId, auditActor(req).id, workspace.id, auditActor(req).type],
       );
       return workspace;
     });

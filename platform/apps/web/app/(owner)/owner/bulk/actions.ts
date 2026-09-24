@@ -113,10 +113,9 @@ export async function fetchTagsAction(): Promise<{ tags?: TagOption[]; canCreate
 /**
  * Add a word to the org's tag vocabulary.
  *
- * OWNER/MANAGER, checked HERE: the API's `POST /v1/tags` is org configuration
- * on AdminKeyGuard+TenantGuard with no persona gate (tags.controller.ts), so
- * this action is the only thing stopping every rep from growing the list. Same
- * arrangement as the stale-deal threshold (deals/stale-actions.ts).
+ * OWNER/MANAGER. The API enforces it too since doc 31 §2 X8
+ * (`@RequireOwnerRole` on `POST /v1/tags`, tags.controller.ts); checking it
+ * here as well turns the refusal into a sentence instead of a 403.
  */
 export async function createTagAction(name: string): Promise<{ tag?: TagOption; error?: string }> {
   const owner = await getOwner();

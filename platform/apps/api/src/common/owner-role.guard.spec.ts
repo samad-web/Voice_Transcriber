@@ -20,7 +20,7 @@
 import { ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { AuthService } from "../modules/auth/auth.service";
-import { OwnerRoleGuard, RequireOwnerRole } from "./owner-role.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "./owner-role.guard";
 import {
   ORG_A,
   USER_A,
@@ -240,6 +240,74 @@ describe("OwnerRoleGuard", () => {
       type: ForbiddenException,
       message: "requires owner role: owner or manager",
       status: 403,
+    });
+  });
+
+  describe("@OperatorMayCall (doc 31 §2 X8)", () => {
+    /** Mirrors AutomationController: operator-console routes a person may also reach. */
+    @OperatorMayCall()
+    @RequireOwnerRole("owner", "manager")
+    class OperatorSettingsFixture {
+      update(): void {}
+    }
+
+    it("O11 · lets the BARE admin key through, without a database read", async () => {
+      // The operator console and the ops scripts: no user, so no persona to
+      // check - and no row to look one up in. Without the opt-in this is O4.
+      const { context } = makeExecutionContext({
+        cls: OperatorSettingsFixture,
+        handler: OperatorSettingsFixture.prototype.update,
+        principal: adminKeyPrincipal({ operatorEmail: "ops@aura.test" }),
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(auth.ownerRoleFor).not.toHaveBeenCalled();
+    });
+
+    it("O12 · still enforces the persona on a console user the web tier proxies for", async () => {
+      // THE case the opt-in must not open: the same admin key, but carrying
+      // `x-caller-user-id` - a real person, whose real persona is telecaller.
+      auth.ownerRoleFor.mockResolvedValue("telecaller");
+      const { context } = makeExecutionContext({
+        cls: OperatorSettingsFixture,
+        handler: OperatorSettingsFixture.prototype.update,
+        principal: adminKeyPrincipal({ userId: USER_A, ownerRole: "owner" }),
+      });
+
+      await expectHttpError(() => guard.canActivate(context), {
+        type: ForbiddenException,
+        message: "requires owner role: owner or manager",
+        status: 403,
+      });
+      expect(auth.ownerRoleFor).toHaveBeenCalledWith(USER_A, ORG_A);
+    });
+
+    it("O13 · still enforces the persona on a Bearer session", async () => {
+      const { context } = makeExecutionContext({
+        cls: OperatorSettingsFixture,
+        handler: OperatorSettingsFixture.prototype.update,
+        principal: sessionPrincipal({ ownerRole: "sales" }),
+      });
+
+      await expectHttpError(() => guard.canActivate(context), {
+        type: ForbiddenException,
+        message: "requires owner role: owner or manager",
+        status: 403,
+      });
+    });
+
+    it("O14 · the opt-in is per route - O4 still holds everywhere else", async () => {
+      const { context } = makeExecutionContext({
+        cls: OwnerFixtureController,
+        handler: OwnerFixtureController.prototype.updateTelecaller,
+        principal: adminKeyPrincipal(),
+      });
+
+      await expectHttpError(() => guard.canActivate(context), {
+        type: ForbiddenException,
+        message: "requires owner role: owner or manager",
+        status: 403,
+      });
     });
   });
 });

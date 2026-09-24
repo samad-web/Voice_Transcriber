@@ -29,6 +29,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 /** `main` for the org's original board, else a lead_boards id. */
 const BoardRef = z.union([z.string().uuid(), z.literal("main")]);
@@ -480,8 +481,8 @@ export class LeadBoardsController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-       VALUES ($1, 'user', $2, $3, 'lead_board', $4, $5::jsonb)`,
-      [orgId, req.principal?.userId ?? "unknown", action, targetId ?? "main", JSON.stringify(meta)],
+       VALUES ($1, $6, $2, $3, 'lead_board', $4, $5::jsonb)`,
+      [orgId, auditActor(req).id, action, targetId ?? "main", JSON.stringify(meta), auditActor(req).type],
     );
   }
 }

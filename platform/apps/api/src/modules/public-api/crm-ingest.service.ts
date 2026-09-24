@@ -47,6 +47,10 @@ import { DbService } from "../../db/db.service";
  * lead instead of forking a duplicate. Matching the existing key is the whole
  * point; inventing a new one here would have quietly created the duplicate-lead
  * problem this codebase already has six phone normalisers' worth of.
+ *
+ * With no usable phone, the email dedupes the CONTACT, and the lead is found
+ * through that contact's existing links rather than through a new key on
+ * `leads` - see the email-only branch in `writeLead`.
  */
 
 export interface CreateLeadInput {
@@ -175,6 +179,40 @@ function phoneParts(raw: string | null | undefined) {
     last3: digits.slice(-3),
   };
 }
+
+/**
+ * What a second arrival for a KNOWN lead may change on it - the one rule for
+ * both ways writeLead finds that lead: the phone upsert's ON CONFLICT, and the
+ * email-only UPDATE, which aliases its parameters as `excluded` so the very
+ * same text applies to it. One copy, because "first touch wins" written twice
+ * is two rules the day somebody edits one of them.
+ *
+ * board_id is deliberately absent: an existing lead stays on its board (see
+ * CreateLeadInput.boardId). So are title, stage and status.
+ */
+const LEAD_RETOUCH_SET = `
+  -- Stage and status are the owner's, never an integration's: a
+  -- re-push must not drag a lead someone is negotiating back to New.
+  contact_name = COALESCE(leads.contact_name, excluded.contact_name),
+  summary      = COALESCE(excluded.summary, leads.summary),
+  facts        = leads.facts || excluded.facts,
+  value_num    = COALESCE(excluded.value_num, leads.value_num),
+  -- Attribution is first-touch, and assignment is a person's
+  -- decision: a second submission through a different form must not
+  -- re-credit the channel or take the lead off whoever is working
+  -- it. All four COALESCE onto the EXISTING row for that reason.
+  source_channel      = COALESCE(leads.source_channel, excluded.source_channel),
+  lead_source_id      = COALESCE(leads.lead_source_id, excluded.lead_source_id),
+  marketing_source_id = COALESCE(leads.marketing_source_id, excluded.marketing_source_id),
+  assigned_telecaller_id =
+    COALESCE(leads.assigned_telecaller_id, excluded.assigned_telecaller_id),
+  -- First touch here too, and for a sharper reason than the others:
+  -- a lead that re-submits in June must keep the March enquiry time,
+  -- or its response time silently resets and a lead nobody answered
+  -- for three months reads as fresh.
+  source_created_at = COALESCE(leads.source_created_at, excluded.source_created_at),
+  source_ref        = COALESCE(leads.source_ref, excluded.source_ref),
+  last_activity_at = now()`;
 
 @Injectable()
 export class CrmIngestService {
@@ -339,29 +377,7 @@ export class CrmIngestService {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now(),
                    $13, $14, $15, $16, $17, $18, $19)
            ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
-           DO UPDATE SET
-             -- Stage and status are the owner's, never an integration's: a
-             -- re-push must not drag a lead someone is negotiating back to New.
-             contact_name = COALESCE(leads.contact_name, EXCLUDED.contact_name),
-             summary      = COALESCE(EXCLUDED.summary, leads.summary),
-             facts        = leads.facts || EXCLUDED.facts,
-             value_num    = COALESCE(EXCLUDED.value_num, leads.value_num),
-             -- Attribution is first-touch, and assignment is a person's
-             -- decision: a second submission through a different form must not
-             -- re-credit the channel or take the lead off whoever is working
-             -- it. All four COALESCE onto the EXISTING row for that reason.
-             source_channel      = COALESCE(leads.source_channel, EXCLUDED.source_channel),
-             lead_source_id      = COALESCE(leads.lead_source_id, EXCLUDED.lead_source_id),
-             marketing_source_id = COALESCE(leads.marketing_source_id, EXCLUDED.marketing_source_id),
-             assigned_telecaller_id =
-               COALESCE(leads.assigned_telecaller_id, EXCLUDED.assigned_telecaller_id),
-             -- First touch here too, and for a sharper reason than the others:
-             -- a lead that re-submits in June must keep the March enquiry time,
-             -- or its response time silently resets and a lead nobody answered
-             -- for three months reads as fresh.
-             source_created_at = COALESCE(leads.source_created_at, EXCLUDED.source_created_at),
-             source_ref        = COALESCE(leads.source_ref, EXCLUDED.source_ref),
-             last_activity_at = now()
+           DO UPDATE SET ${LEAD_RETOUCH_SET}
            RETURNING id, (xmax = 0) AS created, board_id`,
           [
             orgId,
@@ -385,10 +401,82 @@ export class CrmIngestService {
             boardId,
           ],
         ));
-      } else {
-        // No dedupe key at all (no usable phone). A fresh row is the only
-        // honest option - matching on name would merge two different people
-        // who happen to share one.
+      } else if (!contactCreated) {
+        // ── No phone, but a person we already know (by email) ─────────────
+        //
+        // `leads` has no email column, so the phone upsert above has nothing
+        // to conflict on and every email-only arrival used to insert a fresh
+        // lead - a second web-form fill, or a rep re-typing a customer into
+        // "New lead", forked a duplicate card each time. The email DOES dedupe
+        // on the contact (findLiveContact, above), so the lead is reached
+        // through the contact instead, by the links the rest of the CRM
+        // already treats as "this lead's contact" (crm-reconcile.ts reads the
+        // same three):
+        //
+        //   · contacts.source_lead_id - the lead that made the contact. Every
+        //     door that creates a contact sets it, this one included (below).
+        //   · deals.contact_id -> deals.source_lead_id - the lead's deal points
+        //     at its contact. Needed for a SECOND workspace: the contact is
+        //     org-wide and keeps its first lead in source_lead_id, so a lead
+        //     this door made in another desk is only reachable through its
+        //     deal - without this, every later arrival there forks again.
+        //   · the contact's phone key - a person first known by phone whose
+        //     lead is keyed on that number, now writing in by email.
+        //
+        // Always inside THIS workspace, like the phone key. And any status,
+        // like the phone key: the phone upsert converges on a won or lost
+        // lead too (the unique index allows no other answer), and a returning
+        // customer's email must not be treated differently from their number.
+        //
+        // Same DO UPDATE SET as the phone path, verbatim (LEAD_RETOUCH_SET),
+        // so first touch wins here by construction rather than by a second
+        // copy of the rules that could drift. The row lock the UPDATE takes
+        // serialises two concurrent arrivals for the same person.
+        ({
+          rows: [lead],
+        } = await client.query<{ id: string; created: boolean; board_id: string | null }>(
+          `UPDATE leads SET ${LEAD_RETOUCH_SET}
+             FROM (SELECT $3::text AS contact_name, $4::text AS summary, $5::jsonb AS facts,
+                          $6::numeric AS value_num, $7::text AS source_channel,
+                          $8::uuid AS lead_source_id, $9::uuid AS marketing_source_id,
+                          $10::uuid AS assigned_telecaller_id,
+                          $11::timestamptz AS source_created_at, $12::text AS source_ref) AS excluded
+            WHERE leads.id = (
+                    SELECT l.id
+                      FROM contacts c
+                      JOIN leads l
+                        ON l.workspace_id = $2
+                       AND (l.id = c.source_lead_id
+                            OR l.id IN (SELECT d.source_lead_id FROM deals d
+                                         WHERE d.contact_id = c.id AND d.source_lead_id IS NOT NULL)
+                            OR (c.phone_hash IS NOT NULL AND l.contact_number_hash = c.phone_hash))
+                     WHERE c.id = $1
+                     -- The lead that made the contact first; otherwise the
+                     -- one somebody touched last.
+                     ORDER BY (l.id IS NOT DISTINCT FROM c.source_lead_id) DESC,
+                              l.last_activity_at DESC, l.id
+                     LIMIT 1)
+            RETURNING leads.id, false AS created, leads.board_id`,
+          [
+            contact.id,
+            org.workspace_id,
+            input.name?.trim() ?? null,
+            input.notes?.trim() ?? null,
+            JSON.stringify(facts),
+            input.value ?? null,
+            input.sourceChannel ?? null,
+            input.leadSourceId ?? null,
+            input.marketingSourceId ?? null,
+            input.assignedTelecallerId ?? null,
+            input.sourceCreatedAt ?? null,
+            input.sourceRef ?? null,
+          ],
+        ));
+      }
+      if (!lead) {
+        // No dedupe key at all (no usable phone, and no known person behind
+        // the email). A fresh row is the only honest option - matching on
+        // name would merge two different people who happen to share one.
         ({
           rows: [lead],
         } = await client.query<{ id: string; created: boolean; board_id: string | null }>(

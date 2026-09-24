@@ -22,6 +22,8 @@ import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-
 import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { readGatewayStates } from "./gateway-availability";
+import { auditActor } from "../../common/audit-actor";
 
 const LineItem = z.object({
   productId: z.string().uuid().nullish(),
@@ -48,7 +50,8 @@ const CreateInvoiceBody = z.object({
   discount: Discount.default({ type: null, value: 0 }),
   // The rep states whether this is an intra-state sale; deriving it
   // automatically would need an org "home state" setting that doesn't exist
-  // yet, and guessing wrong on a tax document is worse than asking.
+  // yet, and guessing wrong on a tax document is worse than asking. Stored on
+  // `invoices.is_inter_state` (0139) so a later edit recomputes the same split.
   interState: z.boolean().default(false),
   customerGstin: z.string().max(20).nullish(),
   placeOfSupply: z.string().max(100).nullish(),
@@ -57,10 +60,36 @@ const CreateInvoiceBody = z.object({
   items: z.array(LineItem).min(1, "an invoice needs at least one line item"),
 });
 
+/**
+ * The status moves a person may make by hand (doc 26 defect 4, section 6.1).
+ *
+ * `paid` is not among them, from anywhere: it is a claim that money arrived,
+ * and only a recorded payment makes it (the signed gateway webhooks, via
+ * apply-gateway-payment.ts). Before this, PATCH could set any status, `paid`
+ * included, without touching `amount_paid` or `payments`.
+ *
+ *   draft   -> sent | void     issue it, or discard it (there is no DELETE yet)
+ *   sent    -> overdue | void  overdue is a due-date label no job sets yet
+ *   overdue -> sent | void
+ *
+ * `void` additionally needs no money received (checked in the handler) -
+ * voiding a paid invoice is a refund or a credit note, which is F1. `paid` and
+ * `void` are terminal here. Sending the CURRENT status is accepted as a no-op,
+ * so a form that posts every field back does not fail on an unchanged value.
+ * Mirrored for the UI in apps/web/app/(owner)/owner/invoices/actions.ts.
+ */
+export const MANUAL_STATUS_MOVES: Record<string, readonly string[]> = {
+  draft: ["sent", "void"],
+  sent: ["overdue", "void"],
+  overdue: ["sent", "void"],
+};
+
 const UpdateInvoiceBody = z.object({
   accountId: z.string().uuid().nullable().optional(),
   contactId: z.string().uuid().nullable().optional(),
   dealId: z.string().uuid().nullable().optional(),
+  // Every stored value parses, so an unchanged status round-trips; which
+  // CHANGES are allowed is MANUAL_STATUS_MOVES, enforced in the handler.
   status: z.enum(["draft", "sent", "paid", "overdue", "void"]).optional(),
   discount: Discount.optional(),
   interState: z.boolean().optional(),
@@ -81,8 +110,12 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+// `tax_total` is derived rather than stored: the web has always rendered it and
+// no column ever held it (doc 26 defect 5). F1 plans a stored column; until
+// then the sum of the three GST heads is the tax on the document.
 const INVOICE_COLUMNS = `id, workspace_id, account_id, contact_id, deal_id, quotation_id,
   invoice_number, status, currency, subtotal, discount_type, discount_value, cgst, sgst, igst,
+  (cgst + sgst + igst) AS tax_total, is_inter_state, payment_provider,
   customer_gstin, place_of_supply, total, amount_paid, due_date, notes, owner_user_id,
   created_at, updated_at`;
 
@@ -163,11 +196,19 @@ export class InvoicesController {
       if (!invoice) throw new NotFoundException("invoice not found");
       const items = await this.fetchItems(client, id);
       const { rows: payments } = await client.query(
-        `SELECT id, provider, status, amount, currency, razorpay_payment_link_id, created_at, captured_at
+        `SELECT id, provider, status, amount, amount_captured, currency, razorpay_payment_link_id,
+                created_at, captured_at
            FROM payments WHERE invoice_id = $1 ORDER BY created_at DESC`,
         [id],
       );
-      return { invoice, items, payments };
+      // Which gateways "Collect payment" can use - booleans only, so a manager
+      // who may not open the owner-only payment settings can still pick one.
+      const states = await readGatewayStates(client, orgId);
+      const gateways = {
+        razorpay: states.razorpay.available,
+        stripe: states.stripe.available,
+      };
+      return { invoice, items, payments, gateways };
     });
   }
 
@@ -255,13 +296,56 @@ export class InvoicesController {
       });
 
       const scoped = scopeClause("invoice", recordScope, 2);
+      // FOR UPDATE: the status and money checks below must still hold when the
+      // UPDATE runs, and a webhook crediting this invoice locks the same row.
       const {
         rows: [existing],
       } = await client.query(
-        `SELECT id, discount_type, discount_value FROM invoices WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}`,
+        `SELECT id, status, amount_paid, discount_type, discount_value, is_inter_state
+           FROM invoices WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}
+           FOR UPDATE`,
         scoped ? [id, recordScope.userId] : [id],
       );
       if (!existing) throw new NotFoundException("invoice not found");
+
+      const moneyReceived = Number(existing.amount_paid) > 0;
+      if (p.status !== undefined && p.status !== existing.status) {
+        if (p.status === "paid") {
+          throw new ConflictException(
+            "an invoice becomes paid only when a payment is recorded against it",
+          );
+        }
+        if (!(MANUAL_STATUS_MOVES[existing.status] ?? []).includes(p.status)) {
+          throw new ConflictException(`an invoice cannot move from ${existing.status} to ${p.status}`);
+        }
+        if (p.status === "void") {
+          const {
+            rows: [paid],
+          } = await client.query(
+            `SELECT count(*)::int AS n FROM payments WHERE invoice_id = $1 AND status = 'paid'`,
+            [id],
+          );
+          if (moneyReceived || paid.n > 0) {
+            throw new ConflictException(
+              "money has been received against this invoice - it cannot be voided",
+            );
+          }
+        }
+      }
+
+      // Anything that moves the total or the GST split is refused once money
+      // has been received or the invoice is closed: `amount_paid` was credited
+      // against the old total, and rewriting a settled tax document is what a
+      // credit note (F1) is for. Notes, due date and links stay editable.
+      const rewritesMoney =
+        p.items !== undefined || p.discount !== undefined || p.interState !== undefined;
+      if (rewritesMoney && (moneyReceived || existing.status === "paid" || existing.status === "void")) {
+        throw new ConflictException(
+          existing.status === "void"
+            ? "a void invoice cannot be changed"
+            : "payment has been received against this invoice - its lines, discount and GST treatment are locked",
+        );
+      }
 
       let items: LineItemInput[];
       if (p.items) {
@@ -284,7 +368,12 @@ export class InvoicesController {
         value: Number(existing.discount_value),
       };
       const totals = computeDocumentTotals(items, discount);
-      const gst = p.interState !== undefined ? splitGst(totals.taxTotal, p.interState) : null;
+      // Always recomputed, from the stored treatment when the edit does not
+      // restate it. The old code kept the previous split whenever interState
+      // was omitted, so a line edit left CGST/SGST summing to the OLD tax
+      // against a NEW total (doc 26 defect 5).
+      const interState: boolean = p.interState ?? existing.is_inter_state ?? false;
+      const gst = splitGst(totals.taxTotal, interState);
 
       const {
         rows: [invoice],
@@ -297,9 +386,10 @@ export class InvoicesController {
            discount_type   = $9,
            discount_value  = $10,
            subtotal        = $11,
-           cgst            = COALESCE($12, cgst),
-           sgst            = COALESCE($13, sgst),
-           igst            = COALESCE($14, igst),
+           cgst            = $12,
+           sgst            = $13,
+           igst            = $14,
+           is_inter_state  = $24,
            total            = $15,
            customer_gstin  = CASE WHEN $16::boolean THEN $17 ELSE customer_gstin END,
            place_of_supply = CASE WHEN $18::boolean THEN $19 ELSE place_of_supply END,
@@ -316,14 +406,15 @@ export class InvoicesController {
           discount.type,
           discount.value,
           totals.subtotal,
-          gst?.cgst ?? null,
-          gst?.sgst ?? null,
-          gst?.igst ?? null,
+          gst.cgst,
+          gst.sgst,
+          gst.igst,
           totals.total,
           p.customerGstin !== undefined, p.customerGstin ?? null,
           p.placeOfSupply !== undefined, p.placeOfSupply ?? null,
           p.dueDate !== undefined, p.dueDate ?? null,
           p.notes !== undefined, p.notes ?? null,
+          interState,
         ],
       );
       await this.audit(client, orgId, "invoice.update", id, req);
@@ -363,9 +454,9 @@ export class InvoicesController {
           `INSERT INTO invoices
              (org_id, workspace_id, account_id, contact_id, deal_id, quotation_id, invoice_number,
               currency, subtotal, discount_type, discount_value, cgst, sgst, igst, customer_gstin,
-              place_of_supply, total, due_date, notes, owner_user_id)
+              place_of_supply, total, due_date, notes, owner_user_id, is_inter_state)
            VALUES ($1, $2, $3, $4, $5, $6, next_invoice_number($1), $7, $8, $9, $10, $11, $12, $13,
-                   $14, $15, $16, $17, $18, $19)
+                   $14, $15, $16, $17, $18, $19, $20)
            RETURNING ${INVOICE_COLUMNS}`,
           [
             orgId,
@@ -387,6 +478,7 @@ export class InvoicesController {
             p.dueDate ?? null,
             p.notes ?? null,
             recordScope.scope === "owned" ? recordScope.userId : null,
+            p.interState,
           ],
         );
         await this.insertItems(client, orgId, invoice.id, p.items as any[]);
@@ -442,8 +534,8 @@ export class InvoicesController {
   private async audit(client: QueryClient, orgId: string, action: string, targetId: string, req: PrincipalRequest) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'invoice', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'invoice', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

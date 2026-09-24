@@ -46,6 +46,7 @@ import {
   rebindDevice,
   restoreDevice,
 } from "./device-rebind";
+import { auditActor } from "../../common/audit-actor";
 
 /**
  * The one refusal `POST /devices/recover` gives anybody who has not proven the
@@ -579,12 +580,12 @@ export class DevicesController {
       const result = await restoreDevice(client, id);
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'device.restore', 'device', $3, $4)`,
+         VALUES ($1, $5, $2, 'device.restore', 'device', $3, $4)`,
         [
           orgId,
-          req.principal?.userId ?? "dev-admin",
+          auditActor(req).id,
           id,
-          JSON.stringify({ previousStatus: result.previousStatus, wasRemoved: result.wasRemoved }),
+          JSON.stringify({ previousStatus: result.previousStatus, wasRemoved: result.wasRemoved }), auditActor(req).type
         ],
       );
       return result;
@@ -952,8 +953,8 @@ export class DevicesController {
 
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-           VALUES ($1, 'user', $2, 'device.telecaller_set', 'device', $3, $4)`,
-          [orgId, req.principal?.userId ?? "dev-admin", deviceId, JSON.stringify({ name, externalId })],
+           VALUES ($1, $5, $2, 'device.telecaller_set', 'device', $3, $4)`,
+          [orgId, auditActor(req).id, deviceId, JSON.stringify({ name, externalId }), auditActor(req).type],
         );
 
         return {
@@ -982,8 +983,8 @@ export class DevicesController {
       if (rows.length === 0) throw new BadRequestException("device not found in this org");
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, $3, 'device', $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", `device.${status === "wiped" ? "wipe" : "logout"}`, deviceId],
+         VALUES ($1, $5, $2, $3, 'device', $4)`,
+        [orgId, auditActor(req).id, `device.${status === "wiped" ? "wipe" : "logout"}`, deviceId, auditActor(req).type],
       );
       return rows[0];
     });
@@ -1055,12 +1056,12 @@ export class DevicesController {
       // delete that is the whole point of the first branch.
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'device.remove', 'device', $3, $4)`,
+         VALUES ($1, $5, $2, 'device.remove', 'device', $3, $4)`,
         [
           orgId,
-          req.principal?.userId ?? "dev-admin",
+          auditActor(req).id,
           id,
-          JSON.stringify({ outcome, calls, label: device.label, previousStatus: device.status }),
+          JSON.stringify({ outcome, calls, label: device.label, previousStatus: device.status }), auditActor(req).type
         ],
       );
 

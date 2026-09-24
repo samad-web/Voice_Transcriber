@@ -195,9 +195,15 @@ export class OrgFeaturesController {
 
       if (Object.keys(changed).length > 0) {
         await client.query(
+          // target_id is its OWN parameter ($4), not a second use of $1: org_id
+          // is uuid and target_id is text, and one untyped placeholder feeding
+          // both fails with 42P08 "inconsistent types deduced for parameter $1"
+          // - which rolled back the whole save, so no change made on this page
+          // ever stuck (doc 31 §2, found while fixing X9; reproduced against
+          // Postgres with this exact statement).
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-           VALUES ($1, 'user', $2, 'owner.features.update', 'organization', $1, $3::jsonb)`,
-          [orgId, actorId ?? "unknown", JSON.stringify({ changed })],
+           VALUES ($1, 'user', $2, 'owner.features.update', 'organization', $4, $3::jsonb)`,
+          [orgId, actorId ?? "unknown", JSON.stringify({ changed }), orgId],
         );
       }
 

@@ -34,6 +34,7 @@ import {
   sendingEnabled,
   sendMessage,
 } from "./email-send";
+import { auditActor } from "../../common/audit-actor";
 
 const SendBody = z.object({
   subject: z.string().min(1).max(200),
@@ -203,12 +204,43 @@ export class OutboundMailController {
         [contact.id],
       );
 
-      // ON CONFLICT DO NOTHING because the mail sync will find this same
-      // message in the Sent folder on its next pass. Whichever writes it
-      // second is the no-op.
+      // The mail sync will find this same message in the Sent folder on its
+      // next pass, and whichever of the two writes it second must be the
+      // no-op. Two keys make that true:
+      //
+      //   - Gmail returns its id, so both sides write the same external_id
+      //     and ON CONFLICT collapses them.
+      //   - Outlook returns no usable id (email-send.ts), so external_id is
+      //     NULL here and the unique index cannot help. The Message-ID can:
+      //     it goes in metadata as `internet_message_id`, which the sync
+      //     checks before inserting. And if the sync got there FIRST - it
+      //     read the Sent copy in the moment between the send and this
+      //     commit - its row carries the same key, and this check skips.
+      //
+      // Scoped to this connection, like the sync's own check, and backed by
+      // the index in migration 0138.
+      //
+      // Skipping the row does NOT skip the audit entry or the contact's
+      // activity stamp below: the send happened either way.
+      const alreadySynced = result.internetMessageId
+        ? Boolean(
+            (
+              await client.query(
+                `SELECT 1 FROM interactions
+                  WHERE connection_id = $1 AND type = 'email'
+                    AND metadata->>'internet_message_id' = $2
+                  LIMIT 1`,
+                [connection.id, result.internetMessageId],
+              )
+            ).rowCount,
+          )
+        : false;
+
       const {
         rows: [interaction],
-      } = await client.query(
+      } = alreadySynced
+        ? { rows: [] as unknown[] }
+        : await client.query(
         `INSERT INTO interactions
            (org_id, type, direction, contact_id, deal_id, connection_id, external_id,
             subject, body, occurred_at, actor_user_id, metadata)
@@ -229,7 +261,14 @@ export class OutboundMailController {
           // whose private mail is being copied in.
           message.body,
           userId.data,
-          JSON.stringify({ from: connection.account_email, to: [contact.email], sent: true }),
+          JSON.stringify({
+            from: connection.account_email,
+            to: [contact.email],
+            sent: true,
+            ...(result.internetMessageId
+              ? { internet_message_id: result.internetMessageId }
+              : {}),
+          }),
         ],
       );
 
@@ -239,8 +278,8 @@ export class OutboundMailController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'email.send', 'contact', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", contact.id],
+         VALUES ($1, $4, $2, 'email.send', 'contact', $3)`,
+        [orgId, auditActor(req).id, contact.id, auditActor(req).type],
       );
 
       return { sent: true, to: contact.email, interaction: interaction ?? null };

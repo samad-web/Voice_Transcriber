@@ -1,3 +1,4 @@
+import { auditActor } from "../../common/audit-actor";
 import {
   BadRequestException,
   Body,
@@ -98,7 +99,7 @@ export class OwnerRolesController {
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = RoleInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    return this.roles.create(orgId, parsed.data, req.principal?.userId ?? "unknown");
+    return this.roles.create(orgId, parsed.data, auditActor(req));
   }
 
   @Patch(":id")
@@ -111,7 +112,7 @@ export class OwnerRolesController {
   ) {
     const parsed = UpdateRoleBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    return this.roles.update(orgId, id, parsed.data, req.principal?.userId ?? "unknown");
+    return this.roles.update(orgId, id, parsed.data, auditActor(req));
   }
 
   /**
@@ -137,7 +138,7 @@ export class OwnerRolesController {
       orgId,
       id,
       parsed.data.grants,
-      req.principal?.userId ?? "unknown",
+      auditActor(req),
     );
   }
 
@@ -148,6 +149,6 @@ export class OwnerRolesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Req() req: PrincipalRequest,
   ) {
-    return this.roles.remove(orgId, id, req.principal?.userId ?? "unknown");
+    return this.roles.remove(orgId, id, auditActor(req));
   }
 }

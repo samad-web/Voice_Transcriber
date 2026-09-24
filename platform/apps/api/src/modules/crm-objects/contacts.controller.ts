@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   NotFoundException,
@@ -13,18 +14,27 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { BulkReassignInput, LeadSourceChannel, type BulkResult } from "@aura/shared";
+import {
+  BulkReassignInput,
+  LeadSourceChannel,
+  PERMISSION_OBJECT_MODULE,
+  ownerRoleSeesAllRecords,
+  resolveOwnerRole,
+  type BulkResult,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { assignInBulk } from "../../common/bulk-assign";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
 import { assertInOrg, assertMembers } from "../../common/org-references";
+import { KNOWN_UNIQUE_CONFLICTS, knownUniqueConflict } from "../../common/pg-errors";
 import { actorUserId } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { OwnerFilter } from "../../common/list-filters";
 import { enqueueAutomationEventSafely } from "../automation/enqueue";
+import { auditActor } from "../../common/audit-actor";
 
 const ListQuery = z.object({
   accountId: z.string().uuid().optional(),
@@ -223,10 +233,43 @@ export class ContactsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
 
+    try {
+      return await this.insertContact(orgId, p, req, recordScope);
+    } catch (err) {
+      // The race the pre-check below cannot close: two requests for the same
+      // email both pass it, and the second INSERT meets `contacts_org_email`.
+      // The index is the authority, so its answer is turned into the same 409
+      // the pre-check gives. On a FRESH transaction, because the one that hit
+      // the violation is aborted and can run nothing more.
+      if (p.email && knownUniqueConflict(err)?.constraint === "contacts_org_email") {
+        const conflict = await this.db.withOrg(orgId, (client) =>
+          this.emailConflict(client, orgId, p.email!, recordScope.userId),
+        );
+        throw conflict ?? duplicateEmail(null);
+      }
+      throw err;
+    }
+  }
+
+  private insertContact(
+    orgId: string,
+    p: z.infer<typeof CreateContactBody>,
+    req: PrincipalRequest,
+    recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
       // A foreign-key check ignores RLS, so without this a contact could be
       // filed under another tenant's account or workspace (doc 23, A2).
       await assertInOrg(client, orgId, { workspaceId: p.workspaceId, accountId: p.accountId });
+
+      // An email is one person per org (`contacts_org_email`, 0035). Asked
+      // BEFORE the insert so the common case - somebody typing a customer the
+      // business already has - is a 409 that names who, instead of a 23505
+      // that surfaced as a bare 500 and left the person guessing.
+      if (p.email) {
+        const conflict = await this.emailConflict(client, orgId, p.email, recordScope.userId);
+        if (conflict) throw conflict;
+      }
 
       const {
         rows: [contact],
@@ -262,6 +305,42 @@ export class ContactsController {
   }
 
   /**
+   * The 409 for an email this org already has on a live contact, or null when
+   * it has none.
+   *
+   * Names the existing contact (id + name) ONLY to a caller whose `contact:view`
+   * grant reaches it. The route's own scope is the `create` grant, which says
+   * nothing about reading: a role may add contacts it cannot browse, and an
+   * `owned` rep must not learn a colleague's customer's name by typing their
+   * email into a create form. Everyone else is told the email is taken and
+   * nothing more - which they could already infer from the refusal itself.
+   *
+   * `lower(email) = lower($2)` is the index's own expression, so this is an
+   * index probe, and it matches exactly what the index would refuse. Merged
+   * tombstones are skipped for the same reason: the index skips them.
+   */
+  private async emailConflict(
+    client: { query: <R>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }> },
+    orgId: string,
+    email: string,
+    userId: string | null,
+  ): Promise<ConflictException | null> {
+    const {
+      rows: [existing],
+    } = await client.query<{ id: string; display_name: string; owner_user_id: string | null }>(
+      `SELECT id, display_name, owner_user_id FROM contacts
+        WHERE org_id = $1 AND email IS NOT NULL AND lower(email) = lower($2) AND status <> 'merged'
+        LIMIT 1`,
+      [orgId, email],
+    );
+    if (!existing) return null;
+
+    const view = userId ? await contactViewScope(client, orgId, userId) : null;
+    const visible = view === "all" || (view === "owned" && existing.owner_user_id === userId);
+    return duplicateEmail(visible ? { id: existing.id, displayName: existing.display_name } : null);
+  }
+
+  /**
    * Give many contacts one owner - the list's bulk "Reassign".
    *
    * `contact:edit`, the grant the single PATCH's ownerUserId needs, and the
@@ -291,7 +370,7 @@ export class ContactsController {
         ids,
         extra: "r.status <> 'merged'",
         owned: scopeFilter("contact", recordScope, "r"),
-        audit: { targetType: "contact", action: "contact.reassign", actorId: req.principal?.userId ?? "dev-admin" },
+        audit: { targetType: "contact", action: "contact.reassign", actorId: auditActor(req).id },
       });
       return { updated: updated.length, skipped: ids.length - updated.length };
     });
@@ -311,6 +390,30 @@ export class ContactsController {
     const p = parsed.data;
     if (Object.keys(p).length === 0) throw new BadRequestException("no fields to update");
 
+    try {
+      return await this.updateContact(orgId, id, p, req, recordScope);
+    } catch (err) {
+      // Same answer the create path gives (doc 31 §2 X3): changing a contact's
+      // email to one another contact already has meets `contacts_org_email`,
+      // which reached the caller as a 500. Resolved on a fresh transaction
+      // because the one that hit the violation is aborted.
+      if (p.email && knownUniqueConflict(err)?.constraint === "contacts_org_email") {
+        const conflict = await this.db.withOrg(orgId, (client) =>
+          this.emailConflict(client, orgId, p.email!, recordScope.userId),
+        );
+        throw conflict ?? duplicateEmail(null);
+      }
+      throw err;
+    }
+  }
+
+  private updateContact(
+    orgId: string,
+    id: string,
+    p: z.infer<typeof UpdateContactBody>,
+    req: PrincipalRequest,
+    recordScope: CrmRecordScope,
+  ) {
     return this.db.withOrg(orgId, async (client) => {
       // Doc 23, A1/A2: the owner must be a member of THIS org (`users` has no
       // RLS, and the report builder shows the owner's name), and the account
@@ -389,8 +492,61 @@ export class ContactsController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'contact', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'contact', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
+}
+
+/**
+ * The 409 body for a taken email. `existing` is null when the caller may not
+ * see the contact - the web tier offers "use the existing contact" only when
+ * it is present, so the two answers stay distinguishable without a second
+ * status code.
+ */
+function duplicateEmail(existing: { id: string; displayName: string } | null): ConflictException {
+  const known = KNOWN_UNIQUE_CONFLICTS.contacts_org_email;
+  return new ConflictException({
+    statusCode: 409,
+    error: "Conflict",
+    code: known.code,
+    message: existing ? `${existing.displayName} already has this email address` : known.message,
+    existing,
+  });
+}
+
+/**
+ * The caller's `contact:view` scope - "all", "owned", or null for no grant.
+ *
+ * The same resolution CrmPermissionsGuard performs for the route's own
+ * requirement (grid grant, CRM module on, persona narrowing), asked for a
+ * DIFFERENT action: see emailConflict for why the create grant cannot answer
+ * a visibility question. Kept in step with that guard by hand; if either
+ * changes how a grant resolves, both must.
+ */
+async function contactViewScope(
+  client: { query: <R>(sql: string, params?: unknown[]) => Promise<{ rows: R[] }> },
+  orgId: string,
+  userId: string,
+): Promise<"all" | "owned" | null> {
+  const {
+    rows: [grant],
+  } = await client.query<{ scope: string; owner_role: string | null }>(
+    `SELECT rp.scope, m.owner_role
+       FROM memberships m
+       JOIN organizations o
+         ON o.id = m.org_id AND $3 = ANY(o.enabled_modules)
+       JOIN roles r
+         ON r.org_id = m.org_id
+        AND (r.id = m.role_id OR (m.role_id IS NULL AND r.key = m.role))
+       JOIN role_permissions rp
+         ON rp.role_id = r.id AND rp.object_type = 'contact' AND rp.action = 'view'
+      WHERE m.user_id = $1 AND m.org_id = $2
+      ORDER BY rp.scope
+      LIMIT 1`,
+    [userId, orgId, PERMISSION_OBJECT_MODULE.contact],
+  );
+  if (!grant) return null;
+  const gridScope = grant.scope === "owned" ? "owned" : "all";
+  return ownerRoleSeesAllRecords(resolveOwnerRole(grant.owner_role)) ? gridScope : "owned";
 }

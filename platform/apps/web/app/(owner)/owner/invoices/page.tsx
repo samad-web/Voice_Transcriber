@@ -17,7 +17,7 @@ import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import { formatMoney } from "../lib/format-money";
-import type { Invoice, InvoiceStatus, PaymentSettings } from "./actions";
+import type { Invoice, InvoiceStatus, PaymentSettingsResponse } from "./actions";
 import { PaymentSettingsCard } from "./payment-settings";
 
 export const metadata: Metadata = { title: "Invoices" };
@@ -75,7 +75,7 @@ export default async function InvoicesPage({
   // the rule. Fetched alongside the list rather than in its own Suspense
   // boundary: it is one indexed row by primary key, and a second sequential
   // round trip to Seoul would cost more than the query does.
-  const settings = await ownerGet<{ settings: PaymentSettings }>("/v1/owner/payment-settings");
+  const settings = await ownerGet<PaymentSettingsResponse>("/v1/owner/payment-settings");
 
   if (!result.ok) {
     return (
@@ -92,6 +92,15 @@ export default async function InvoicesPage({
       <PageHeader title="Invoices" context="Sales" />
 
       {settings?.settings ? <PaymentSettingsCard initial={settings.settings} /> : null}
+      {/* Stripe beside Razorpay (0099): per-invoice choice, so each gateway has
+          its own keys. Rendered only from an API that reports providers. */}
+      {settings?.providers?.stripe ? (
+        <PaymentSettingsCard
+          provider="stripe"
+          initial={settings.providers.stripe}
+          platformAvailable={settings.providers.stripe.available}
+        />
+      ) : null}
 
       <nav className="flex flex-wrap gap-1.5" aria-label="Filter by status">
         {STATUSES.map((s) => {

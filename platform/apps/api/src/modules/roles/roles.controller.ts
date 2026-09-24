@@ -1,3 +1,4 @@
+import { auditActor } from "../../common/audit-actor";
 import {
   BadRequestException,
   Body,
@@ -16,6 +17,7 @@ import { RoleInput, RolePermissionGrant } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { RolesService } from "./roles.service";
 
@@ -56,17 +58,27 @@ export class RolesController {
   }
 
   @Post()
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  // doc 31 §2 X8: OrgRoleGuard is inert for console people. The operator
+  // console writes the grid here on the bare key; a person must be the owner -
+  // the same tier /v1/owner/roles' writes require.
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = RoleInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    return this.roles.create(orgId, parsed.data, req.principal?.userId ?? "dev-admin");
+    return this.roles.create(orgId, parsed.data, auditActor(req));
   }
 
   @Patch(":id")
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  // doc 31 §2 X8: OrgRoleGuard is inert for console people. The operator
+  // console writes the grid here on the bare key; a person must be the owner -
+  // the same tier /v1/owner/roles' writes require.
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
@@ -75,7 +87,7 @@ export class RolesController {
   ) {
     const parsed = UpdateRoleBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    return this.roles.update(orgId, id, parsed.data, req.principal?.userId ?? "dev-admin");
+    return this.roles.update(orgId, id, parsed.data, auditActor(req));
   }
 
   @Get(":id/permissions")
@@ -84,8 +96,13 @@ export class RolesController {
   }
 
   @Put(":id/permissions")
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  // doc 31 §2 X8: OrgRoleGuard is inert for console people. The operator
+  // console writes the grid here on the bare key; a person must be the owner -
+  // the same tier /v1/owner/roles' writes require.
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async replacePermissions(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,
@@ -98,7 +115,7 @@ export class RolesController {
       orgId,
       id,
       parsed.data.grants,
-      req.principal?.userId ?? "dev-admin",
+      auditActor(req),
     );
   }
 }

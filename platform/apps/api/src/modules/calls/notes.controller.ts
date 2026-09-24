@@ -16,6 +16,7 @@ import type { PrincipalRequest } from "../../common/auth-principal";
 import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const CreateNoteBody = z.object({
   body: z.string().min(1).max(10000),
@@ -75,8 +76,8 @@ export class NotesController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'call.note', 'call', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", callId],
+         VALUES ($1, $4, $2, 'call.note', 'call', $3)`,
+        [orgId, auditActor(req).id, callId, auditActor(req).type],
       );
       return note;
     });

@@ -30,6 +30,7 @@ import { softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { CrmTestService } from "./crm-test.service";
+import { auditActor } from "../../common/audit-actor";
 
 /**
  * Connect a catalogue provider. The spec supplies the endpoint template, body
@@ -526,8 +527,8 @@ export class CrmController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'crm_integration', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'crm_integration', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

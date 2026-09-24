@@ -15,7 +15,9 @@ import {
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
+import { auditActor } from "../../common/audit-actor";
 import { OrgRoleGuard, RequireOrgRole } from "../../common/org-role.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { retirePersonalChannel } from "../../common/private-threads";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -76,8 +78,13 @@ export class MembersController {
   }
 
   @Post()
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  // doc 31 §2 X8: OrgRoleGuard is inert for console people (every one arrives
+  // as platform_admin). Only the operator console's Team tab writes here, on
+  // the bare key; a person the owner console proxies for must be the owner.
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateMemberBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -131,8 +138,8 @@ export class MembersController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'member.create', 'user', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", user.id],
+         VALUES ($1, $4, $2, 'member.create', 'user', $3)`,
+        [orgId, auditActor(req).id, user.id, auditActor(req).type],
       );
 
       return { userId: user.id, email: user.email, name: user.name, ...membership };
@@ -140,8 +147,13 @@ export class MembersController {
   }
 
   @Patch(":userId")
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  // doc 31 §2 X8: OrgRoleGuard is inert for console people (every one arrives
+  // as platform_admin). Only the operator console's Team tab writes here, on
+  // the bare key; a person the owner console proxies for must be the owner.
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async update(
     @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
@@ -221,16 +233,21 @@ export class MembersController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'member.update', 'user', $3, $4::jsonb)`,
-        [orgId, req.principal?.userId ?? "dev-admin", userId, JSON.stringify(p)],
+         VALUES ($1, $5, $2, 'member.update', 'user', $3, $4::jsonb)`,
+        [orgId, auditActor(req).id, userId, JSON.stringify(p), auditActor(req).type],
       );
       return { memberships: rows };
     });
   }
 
   @Delete(":userId")
-  @UseGuards(OrgRoleGuard)
+  @UseGuards(OrgRoleGuard, OwnerRoleGuard)
   @RequireOrgRole("org_admin")
+  // doc 31 §2 X8: OrgRoleGuard is inert for console people (every one arrives
+  // as platform_admin). Only the operator console's Team tab writes here, on
+  // the bare key; a person the owner console proxies for must be the owner.
+  @OperatorMayCall()
+  @RequireOwnerRole("owner")
   async remove(
     @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
@@ -252,8 +269,8 @@ export class MembersController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'member.delete', 'user', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", userId],
+         VALUES ($1, $4, $2, 'member.delete', 'user', $3)`,
+        [orgId, auditActor(req).id, userId, auditActor(req).type],
       );
       return { deleted: res.rowCount ?? 0 };
     });

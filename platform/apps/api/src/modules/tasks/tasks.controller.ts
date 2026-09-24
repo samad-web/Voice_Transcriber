@@ -41,6 +41,7 @@ import {
   replaceAssignees,
   withMyStatus,
 } from "./task-assignees";
+import { auditActor } from "../../common/audit-actor";
 
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
@@ -515,7 +516,7 @@ export class TasksController {
         value: assigneeUserId,
         ids,
         owned: scopeFilter("task", recordScope, "r"),
-        audit: { targetType: "task", action: "task.reassign", actorId: req.principal?.userId ?? "dev-admin" },
+        audit: { targetType: "task", action: "task.reassign", actorId: auditActor(req).id },
       });
 
       // Only the tasks the scoped UPDATE actually moved - a skipped id keeps
@@ -706,8 +707,8 @@ export class TasksController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'task', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'task', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

@@ -6,6 +6,7 @@ import { warnIfSecretsUnencrypted } from "@aura/db";
 import { AppModule } from "./app.module";
 import { assertRequiredEnv } from "./config/assert-env";
 import { corsDelegate } from "./config/cors";
+import { mountImportBodyParser } from "./modules/import/import-body-limit";
 
 async function bootstrap() {
   // FIRST, before anything can bind a port (checklist 08 §0.2). In production
@@ -35,6 +36,10 @@ async function bootstrap() {
   // Nest's default JSON body limit is 100kb. The largest real body is the
   // multipart part list on POST /v1/calls/:id/complete, which grows with the
   // recording; 1mb keeps long calls safe and still bounds the surface.
+  // The one exception, POST /v1/import/run (a 5,000-row CSV is several MB), is
+  // mounted FIRST so it reads that body before this cap can refuse it - see
+  // modules/import/import-body-limit.ts. Every other route keeps 1mb.
+  mountImportBodyParser(app);
   app.useBodyParser("json", { limit: "1mb" });
 
   app.setGlobalPrefix("v1");

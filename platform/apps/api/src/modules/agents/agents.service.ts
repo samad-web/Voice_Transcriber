@@ -31,6 +31,7 @@ import {
   type LeadQualification,
   type LeadRules,
 } from "@aura/shared";
+import type { AuditActorType } from "../../common/audit-actor";
 import { orgHasModule } from "../../common/org-modules";
 import { visibleThread } from "../../common/private-threads";
 import { isUniqueViolation } from "../../common/pg-errors";
@@ -72,6 +73,12 @@ export interface AgentWrite {
 
 export interface Actor {
   userId: string;
+  /**
+   * audit_log.actor_type for the row this write leaves. Absent reads as
+   * "user"; the operator studio passes "operator"/"system" so a vendor-side
+   * edit is not filed as a tenant user called "admin-key" (doc 31 §2 X9).
+   */
+  type?: AuditActorType;
 }
 
 export interface ExtractorTestResult extends AnalyzeResult {
@@ -835,8 +842,8 @@ export class AgentsService {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-       VALUES ($1, 'user', $2, $3, 'agent', $4, $5)`,
-      [orgId, actor.userId, action, agentId, JSON.stringify(meta)],
+       VALUES ($1, $6, $2, $3, 'agent', $4, $5)`,
+      [orgId, actor.userId, action, agentId, JSON.stringify(meta), actor.type ?? "user"],
     );
   }
 }

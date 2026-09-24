@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { deriveProjectKey, ProjectInput, ProjectPatch } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
@@ -37,7 +38,8 @@ import { DbService } from "../../db/db.service";
  * spend next quarter is worse than no number.
  */
 @Controller("projects")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
 export class ProjectsController {
   constructor(private readonly db: DbService) {}
 
@@ -70,6 +72,8 @@ export class ProjectsController {
   }
 
   @Post()
+  // doc 31 §2 X8: the personas the Projects page is shown to; the read stays open because the board labels leads with it.
+  @RequireOwnerRole("owner", "manager", "sales", "marketing")
   async create(@OrgId() orgId: string, @Body() body: unknown) {
     const parsed = ProjectInput.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
@@ -103,6 +107,8 @@ export class ProjectsController {
   }
 
   @Patch(":id")
+  // doc 31 §2 X8: same as create.
+  @RequireOwnerRole("owner", "manager", "sales", "marketing")
   async update(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) id: string,

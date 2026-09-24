@@ -90,6 +90,36 @@ export function toMinorUnits(amount: number, currency: string): number {
 }
 
 /**
+ * Where Stripe sends the paying customer back to: the PUBLIC site's origin,
+ * never the console.
+ *
+ * `PUBLIC_APP_URL` is the console's address - docker-compose.prod.yml builds
+ * it as `https://${APP_DOMAIN}${CONSOLE_BASE_PATH-/admin}`, so appending
+ * `/pay/thanks` to it produced `/admin/pay/thanks`: a console route that does
+ * not exist (404), behind the console's sign-in if it did, and the wrong place
+ * for a tenant's customer in any case (doc 26: customer-facing pages go on the
+ * public origin, never under the console's basePath). nginx sends every path
+ * on that origin outside /admin, /v1 and /login to the marketing app, which
+ * serves `/pay/thanks` and `/pay/cancelled` (apps/marketing/app/pay/*) with no
+ * sign-in and none of the site's chrome or analytics.
+ *
+ * So: the ORIGIN of PUBLIC_APP_URL, basePath dropped. Unset (local dev) it
+ * falls back to the marketing dev server.
+ */
+export function publicSiteOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.PUBLIC_APP_URL?.trim();
+  if (configured) {
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // A malformed value is a deploy mistake; fall through to the default
+      // rather than hand Stripe an unparseable URL it will reject anyway.
+    }
+  }
+  return "http://localhost:3200";
+}
+
+/**
  * A Checkout Session: Stripe's hosted payment page for one amount.
  *
  * Checkout and not a Payment Link, because a Payment Link is a REUSABLE object
@@ -118,8 +148,8 @@ export async function createCheckoutSession(
     // anything paid: a browser arriving at a success URL proves only that a
     // browser arrived. The signed webhook is the only thing that moves an
     // invoice to paid, which is the rule 0060 states and this preserves.
-    success_url: `${process.env.PUBLIC_APP_URL ?? "https://aura.local"}/pay/thanks`,
-    cancel_url: `${process.env.PUBLIC_APP_URL ?? "https://aura.local"}/pay/cancelled`,
+    success_url: `${publicSiteOrigin()}/pay/thanks`,
+    cancel_url: `${publicSiteOrigin()}/pay/cancelled`,
   });
   if (req.customerEmail) form.set("customer_email", req.customerEmail);
 

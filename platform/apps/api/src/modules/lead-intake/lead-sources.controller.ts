@@ -24,6 +24,7 @@ import {
   parseSpreadsheetId,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -98,7 +99,9 @@ const EventQuery = z.object({
  * source, with no read access to anything.
  */
 @Controller("lead-sources")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager", "marketing")
 export class LeadSourcesController {
   constructor(
     private readonly db: DbService,

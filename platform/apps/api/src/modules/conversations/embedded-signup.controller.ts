@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import { decryptSecret } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import {
@@ -76,7 +77,9 @@ interface WasiChannelRow {
 }
 
 @Controller("messaging/embedded-signup")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager", "marketing")
 export class EmbeddedSignupController {
   constructor(private readonly db: DbService) {}
 

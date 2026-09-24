@@ -21,18 +21,26 @@ import {
 } from "@aura/ui";
 import {
   IMPORT_FIELDS,
+  IMPORT_MAX_ROWS,
+  IMPORT_RUN_MAX_BYTES,
   type ImportField,
   importTemplateCsv,
   importTemplateFilename,
   looksLikeTemplateSample,
+  mapRow,
+  pickMappedColumns,
   suggestMapping,
 } from "@aura/shared";
+// By path, not from the index: these carry libphonenumber's metadata, which
+// only pages with a phone to check should load (see phone.ts).
+import { importPhone } from "@aura/shared/dist/import-phone";
+import { countryName, toPhoneCountry } from "@aura/shared/dist/phone";
+import { useOrgRegion } from "@/components/org-region";
 import { FormFieldsSkeleton, LoadingRegion, TableBlockSkeleton } from "@/components/skeletons";
 import {
   fetchImportErrorsAction,
   fetchImportErrorsCsvAction,
   previewImportAction,
-  runImportAction,
   type DedupeStrategy,
   type ImportEntity,
   type ImportJob,
@@ -67,8 +75,72 @@ const DEDUPE_OPTIONS: Array<{ value: DedupeStrategy; label: string; description:
   },
 ];
 
-const MAX_ROWS = 5000;
+const MAX_ROWS = IMPORT_MAX_ROWS;
 const PREVIEW_ROWS = 5;
+/** How many bad phones the Duplicates step lists by row before just counting. */
+const PHONE_ISSUES_SHOWN = 5;
+
+/**
+ * The route handler that runs an import (./run/route.ts). Plain `fetch` does
+ * NOT get Next's basePath the way <Link> and router.push do - in production the
+ * console is under /admin, and a bare "/owner/import/run" would hit the
+ * marketing site. Same reason as `searchUrl` in lib/global-search.ts.
+ */
+function importRunUrl(basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? ""): string {
+  return `${basePath}/owner/import/run`;
+}
+
+/**
+ * POST the run to ./run/route.ts. Every failure comes back as `{ error }` with
+ * a sentence a person can act on - including answers that are not the route's
+ * JSON at all (a proxy's HTML 413 page, a dropped connection).
+ */
+async function postImportRun(body: string): Promise<{ job?: ImportJob; error?: string }> {
+  let res: Response;
+  try {
+    res = await fetch(importRunUrl(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      cache: "no-store",
+    });
+  } catch {
+    return { error: "Couldn't reach the console. Check your connection and try again." };
+  }
+  const data = (await res.json().catch(() => null)) as { job?: ImportJob; error?: string } | null;
+  if (res.ok && data?.job) return { job: data.job };
+  if (data?.error) return { error: data.error };
+  if (res.status === 413) return { error: "This import is too large. Split the file and import it in batches." };
+  return { error: `Import failed (HTTP ${res.status}).` };
+}
+
+/** A row whose phone the API will refuse - found in the browser, before anything is sent. */
+interface PhoneIssue {
+  /** 1-based, counting data rows - the numbering the API's failed-row list uses. */
+  row: number;
+  message: string;
+}
+
+/**
+ * Every mapped phone that is not a number for the workspace's country, checked
+ * with the SAME `importPhone` the API runs on each row (X5) - so this list and
+ * the results screen's failed rows cannot disagree about which numbers are bad.
+ */
+function findPhoneIssues(
+  entity: ImportEntity,
+  mapping: Record<string, string | null>,
+  rows: Record<string, string>[],
+  country: string,
+): PhoneIssue[] {
+  if (entity !== "contact" || !mapping.phone) return [];
+  const phoneCountry = toPhoneCountry(country);
+  const issues: PhoneIssue[] = [];
+  rows.forEach((row, i) => {
+    const checked = importPhone(mapRow({ phone: mapping.phone }, row).phone, phoneCountry);
+    if (!checked.ok) issues.push({ row: i + 1, message: checked.message });
+  });
+  return issues;
+}
 
 const STEP_ORDER: Step[] = ["entity", "upload", "mapping", "strategy", "running", "results"];
 const STEP_LABELS: Record<Step, string> = {
@@ -108,8 +180,8 @@ function downloadCsv(filename: string, csv: string) {
  * The bulk-import wizard: entity → CSV → column mapping → dedupe strategy →
  * run → results. One `step` state machine, all client-side - the CSV itself
  * is parsed in the browser with papaparse and never touches the server until
- * "Start import", which sends the raw rows plus the mapping the human
- * confirmed. The API applies the mapping itself (see ./actions.ts).
+ * "Start import", which sends the mapped columns of each row plus the mapping
+ * the human confirmed, to ./run/route.ts. The API applies the mapping itself.
  */
 export function ImportWizard() {
   const [step, setStep] = useState<Step>("entity");
@@ -136,6 +208,15 @@ export function ImportWizard() {
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rowErrors, setRowErrors] = useState<ImportRowError[] | null>(null);
   const [, startRun] = useTransition();
+
+  // The workspace's country (Time & location) - what the API reads a phone
+  // without a "+" against. Only computed on the Duplicates step: that is the
+  // last screen before "Start import", and the mapping is final by then.
+  const region = useOrgRegion();
+  const phoneIssues = useMemo(
+    () => (step === "strategy" && entity ? findPhoneIssues(entity, mapping, rows, region.country) : []),
+    [step, entity, mapping, rows, region.country],
+  );
 
   function reset() {
     setStep("entity");
@@ -256,9 +337,28 @@ export function ImportWizard() {
 
   function runImport() {
     if (!entity) return;
+    // Only the columns the mapping reads (X7). An export with forty columns
+    // used to send all forty for every row, and THAT is what blew the size
+    // limit - the importer never looked at the other thirty-four.
+    const body = JSON.stringify({
+      entity,
+      mapping,
+      dedupeStrategy,
+      rows: rows.map((row) => pickMappedColumns(mapping, row)),
+    });
+    if (new Blob([body]).size > IMPORT_RUN_MAX_BYTES) {
+      void alert({
+        title: "That file is too large to import at once",
+        body:
+          `Even with only the mapped columns, these ${rows.length.toLocaleString()} rows come to more than ` +
+          `${Math.round(IMPORT_RUN_MAX_BYTES / 1024 / 1024)} MB. Split the file and import it in batches.`,
+        tone: "danger",
+      });
+      return;
+    }
     setStep("running");
     startRun(async () => {
-      const res = await runImportAction(entity, mapping, dedupeStrategy, rows);
+      const res = await postImportRun(body);
       if (res.error || !res.job) {
         setStep("strategy");
         await alert({
@@ -340,6 +440,8 @@ export function ImportWizard() {
 
       {step === "strategy" ? (
         <StrategyStep
+          phoneIssues={phoneIssues}
+          countryLabel={countryName(toPhoneCountry(region.country))}
           value={dedupeStrategy}
           onChange={setDedupeStrategy}
           onBack={() => setStep("mapping")}
@@ -705,11 +807,15 @@ function MappingStep({
 }
 
 function StrategyStep({
+  phoneIssues,
+  countryLabel,
   value,
   onChange,
   onBack,
   onNext,
 }: {
+  phoneIssues: PhoneIssue[];
+  countryLabel: string;
   value: DedupeStrategy;
   onChange: (value: DedupeStrategy) => void;
   onBack: () => void;
@@ -721,6 +827,8 @@ function StrategyStep({
       <p className="mt-1 text-sm text-text-muted">
         Choose what happens when a row looks like it matches a record already in your CRM.
       </p>
+
+      {phoneIssues.length > 0 ? <PhoneIssuesPanel issues={phoneIssues} countryLabel={countryLabel} /> : null}
 
       <RadioGroup legend="Duplicate strategy" className="mt-4">
         {DEDUPE_OPTIONS.map((opt) => (
@@ -743,6 +851,42 @@ function StrategyStep({
           Start import
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The rows whose phone will fail, said BEFORE "Start import" rather than on
+ * the results screen. A warning, not a block: the rest of the file is still
+ * worth importing, and the bad rows come back as failed rows with the same
+ * reason - downloadable, fixable, re-uploadable. What the person gets here is
+ * the chance to fix the spreadsheet first, while it is still open.
+ */
+function PhoneIssuesPanel({ issues, countryLabel }: { issues: PhoneIssue[]; countryLabel: string }) {
+  const shown = issues.slice(0, PHONE_ISSUES_SHOWN);
+  const more = issues.length - shown.length;
+  return (
+    <div
+      role="status"
+      className="mt-4 rounded-md border border-warning-text/30 bg-warning-subtle px-3 py-2 text-sm text-warning-text"
+    >
+      <p className="font-medium">
+        {issues.length === 1 ? "1 row has a phone number" : `${issues.length.toLocaleString()} rows have a phone number`}{" "}
+        that is not valid for {countryLabel} - {issues.length === 1 ? "it" : "they"} will fail rather than be
+        imported with a wrong number.
+      </p>
+      <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+        {shown.map((issue) => (
+          <li key={issue.row}>
+            <span className="tabular-nums">Row {issue.row}</span>: {issue.message}
+          </li>
+        ))}
+      </ul>
+      {more > 0 ? <p className="mt-1">…and {more.toLocaleString()} more.</p> : null}
+      <p className="mt-1.5">
+        Fix them in your spreadsheet and upload again, or continue - the failed rows can be downloaded afterwards.
+        A number from another country needs its + country code.
+      </p>
     </div>
   );
 }

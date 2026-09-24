@@ -19,6 +19,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { createPaymentLink, resolveRazorpayCredentials } from "./razorpay";
 import { createCheckoutSession, resolveStripeCredentials } from "./stripe";
+import { auditActor } from "../../common/audit-actor";
 
 /**
  * "Collect Payment" - a human click that creates a Razorpay Payment Link and
@@ -67,7 +68,7 @@ export class PaymentsController {
       const {
         rows: [invoice],
       } = await client.query(
-        `SELECT i.id, i.total, i.amount_paid, i.currency, i.invoice_number, i.contact_id,
+        `SELECT i.id, i.status, i.total, i.amount_paid, i.currency, i.invoice_number, i.contact_id,
                 i.payment_provider,
                 c.display_name, c.email, c.phone_prefix
            FROM invoices i
@@ -76,6 +77,9 @@ export class PaymentsController {
         scoped ? [id, recordScope.userId] : [id],
       );
       if (!invoice) throw new NotFoundException("invoice not found");
+      // A void invoice is owed by nobody; a link for it is money taken for
+      // nothing, which the webhook would then refuse to credit.
+      if (invoice.status === "void") throw new BadRequestException("this invoice is void");
       const due = Number(invoice.total) - Number(invoice.amount_paid);
       if (due <= 0) throw new BadRequestException("invoice has nothing outstanding");
 
@@ -149,8 +153,8 @@ export class PaymentsController {
       await client.query(`UPDATE invoices SET payment_provider = $2 WHERE id = $1`, [id, gateway]);
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'payment.link_created', 'invoice', $3)`,
-        [orgId, req.principal?.userId ?? "dev-admin", id],
+         VALUES ($1, $4, $2, 'payment.link_created', 'invoice', $3)`,
+        [orgId, auditActor(req).id, id, auditActor(req).type],
       );
 
       return { payment, paymentLinkUrl, provider: gateway };

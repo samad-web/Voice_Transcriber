@@ -15,9 +15,11 @@ import { z } from "zod";
 import { assertPublicHttpUrl, decryptSecret, encryptSecret } from "@aura/db";
 import { findTool, LEAD_TOOL_CANDIDATES, McpClient } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const ConnectBody = z.object({
   provider: z.enum(["meta"]),
@@ -55,7 +57,9 @@ const CONNECTION_COLUMNS = `
  * point of re-checking.
  */
 @Controller("mcp/connections")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager", "marketing")
 export class McpController {
   constructor(private readonly db: DbService) {}
 
@@ -126,13 +130,14 @@ export class McpController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'mcp_connection.connect', 'mcp_connection', $3, $4::jsonb)`,
+         VALUES ($1, $5, $2, 'mcp_connection.connect', 'mcp_connection', $3, $4::jsonb)`,
         [
           orgId,
-          req.principal?.userId ?? "unknown",
+          auditActor(req).id,
           connection.id,
           // The URL is safe to log; the token is not, and is not here.
           JSON.stringify({ provider, serverUrl }),
+          auditActor(req).type,
         ],
       );
 
@@ -213,8 +218,8 @@ export class McpController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'mcp_connection.disconnect', 'mcp_connection', $3, '{}'::jsonb)`,
-        [orgId, req.principal?.userId ?? "unknown", id],
+         VALUES ($1, $4, $2, 'mcp_connection.disconnect', 'mcp_connection', $3, '{}'::jsonb)`,
+        [orgId, auditActor(req).id, id, auditActor(req).type],
       );
 
       return { connection };

@@ -10,6 +10,7 @@ import {
   importTemplateSampleRows,
   looksLikeTemplateSample,
   mapRow,
+  pickMappedColumns,
   suggestMapping,
 } from "./import";
 
@@ -143,5 +144,23 @@ describe("looksLikeTemplateSample", () => {
 
   it("does not fire on a blank row", () => {
     expect(looksLikeTemplateSample("contact", contactMapping, { "Full name": "" })).toBe(false);
+  });
+});
+
+describe("pickMappedColumns", () => {
+  const mapping = { displayName: "Name", phone: "Mobile", email: null };
+
+  it("keeps only the cells a mapped field reads, under their original header", () => {
+    const row = { Name: "Priya", Mobile: "98765 43210", Notes: "long free text", Owner: "x" };
+    expect(pickMappedColumns(mapping, row)).toEqual({ Name: "Priya", Mobile: "98765 43210" });
+  });
+
+  it("imports exactly what the full row would have (X7: trimming is not a behaviour change)", () => {
+    const row = { Name: "  Priya ", Mobile: "98765 43210", Notes: "ignored" };
+    expect(mapRow(mapping, pickMappedColumns(mapping, row))).toEqual(mapRow(mapping, row));
+  });
+
+  it("does not invent a key for a header the row lacks", () => {
+    expect(pickMappedColumns(mapping, { Name: "Priya" })).toEqual({ Name: "Priya" });
   });
 });

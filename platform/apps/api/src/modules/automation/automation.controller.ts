@@ -23,10 +23,12 @@ import {
   type AutomationTrigger as AutomationTriggerValue,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { actorUserId, softDelete } from "../../common/soft-delete";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 const RULE_COLUMNS = `id, name, description, trigger, conditions, actions, status,
   run_count, last_run_at, created_by, created_at, updated_at`;
@@ -67,9 +69,20 @@ const DryRunInput = z.object({
  * A rule that changes records is not a way around a person's own grants,
  * because the executor is the worker and runs with the tenant's own context -
  * a rule cannot reach outside the org that wrote it.
+ *
+ * ── BUT A PERSONA GATE (doc 31 §2 X8) ─────────────────────────────────────
+ *
+ * "No permission object" had become "no check at all": any signed-in console
+ * user whose request reached these routes - a telecaller included - could
+ * create a rule that moves every deal or notifies the whole floor. A rule acts
+ * on everybody's records, so writing one is a manager's call: owner and
+ * manager only, from memberships. The operator console calls on the bare admin
+ * key with no person behind it, so `@OperatorMayCall` keeps it working.
  */
 @Controller("automations")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager")
 export class AutomationController {
   constructor(private readonly db: DbService) {}
 
@@ -300,8 +313,8 @@ export class AutomationController {
   ) {
     await client.query(
       `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-       VALUES ($1, 'user', $2, $3, 'automation_rule', $4)`,
-      [orgId, req.principal?.userId ?? "dev-admin", action, targetId],
+       VALUES ($1, $5, $2, $3, 'automation_rule', $4)`,
+      [orgId, auditActor(req).id, action, targetId, auditActor(req).type],
     );
   }
 }

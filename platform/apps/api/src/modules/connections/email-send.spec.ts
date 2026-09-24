@@ -1,4 +1,11 @@
-import { buildMime, canSend, dailySendLimit, sendingEnabled } from "./email-send";
+import {
+  buildMime,
+  canSend,
+  dailySendLimit,
+  newMessageId,
+  sendingEnabled,
+  sendMessage,
+} from "./email-send";
 
 /**
  * These cases guard the one thing in this CRM that reaches a real person who
@@ -122,5 +129,128 @@ describe("buildMime - header injection", () => {
     expect(buildMime({ ...base, fromName: "Sam Rep" })).toContain(
       "From: Sam Rep <rep@example.com>",
     );
+  });
+
+  it("writes a Message-ID header only when given one, and sanitises it like any header", () => {
+    expect(buildMime(base)).not.toMatch(/^Message-ID:/m);
+    const mime = buildMime({ ...base, messageId: "<abc@example.com>\r\nBcc: x@evil.example" });
+    expect(mime).toMatch(/^Message-ID: <abc@example.com> Bcc: x@evil.example$/m);
+    expect(mime).not.toMatch(/^Bcc:/m);
+  });
+});
+
+describe("newMessageId", () => {
+  it("is an RFC 5322 id in the sender's own domain", () => {
+    expect(newMessageId("rep@example.com")).toMatch(/^<[0-9a-f-]{36}@example\.com>$/);
+  });
+
+  it("never repeats", () => {
+    expect(newMessageId("rep@example.com")).not.toBe(newMessageId("rep@example.com"));
+  });
+});
+
+/**
+ * The Outlook send, which used to write every message twice onto the
+ * timeline: `/me/sendMail` returns 202 with no body, so the console's row had
+ * no key and the sync's copy of the Sent item could not be matched to it.
+ */
+describe("sendMessage - Microsoft Graph", () => {
+  const message = {
+    to: "priya@customer.com",
+    subject: "Your quote",
+    body: "Attached.",
+    fromEmail: "rep@example.com",
+  };
+
+  function graph(
+    responses: Array<{ status: number; body?: unknown }>,
+  ): { fetchImpl: typeof fetch; calls: Array<{ url: string; method: string; body?: string }> } {
+    const calls: Array<{ url: string; method: string; body?: string }> = [];
+    const queue = [...responses];
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
+      const next = queue.shift() ?? { status: 500, body: { error: "unexpected call" } };
+      return new Response(next.body === undefined ? null : JSON.stringify(next.body), {
+        status: next.status,
+      });
+    }) as typeof fetch;
+    return { fetchImpl, calls };
+  }
+
+  it("creates a draft, sends it, and returns the Message-ID Exchange assigned", async () => {
+    const { fetchImpl, calls } = graph([
+      { status: 201, body: { id: "AAMkDraft=", internetMessageId: "<draft-1@prod.outlook.com>" } },
+      { status: 202 },
+    ]);
+
+    const result = await sendMessage("microsoft", "token", message, fetchImpl);
+
+    expect(result).toEqual({ externalId: null, internetMessageId: "<draft-1@prod.outlook.com>" });
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ["POST", "https://graph.microsoft.com/v1.0/me/messages"],
+      ["POST", "https://graph.microsoft.com/v1.0/me/messages/AAMkDraft%3D/send"],
+    ]);
+    // The recipient is exactly the one given, and nothing else rides along.
+    const draft = JSON.parse(calls[0].body ?? "{}");
+    expect(draft.toRecipients).toEqual([{ emailAddress: { address: "priya@customer.com" } }]);
+    expect(draft.ccRecipients).toBeUndefined();
+    expect(draft.bccRecipients).toBeUndefined();
+  });
+
+  it("never uses /sendMail, whose empty 202 is what left nothing to dedupe on", async () => {
+    const { fetchImpl, calls } = graph([
+      { status: 201, body: { id: "d", internetMessageId: "<x@y>" } },
+      { status: 202 },
+    ]);
+    await sendMessage("microsoft", "token", message, fetchImpl);
+    expect(calls.some((c) => c.url.includes("sendMail"))).toBe(false);
+  });
+
+  it("throws and removes the draft when the send itself is refused", async () => {
+    const { fetchImpl, calls } = graph([
+      { status: 201, body: { id: "d1", internetMessageId: "<x@y>" } },
+      { status: 403, body: { error: "ErrorAccessDenied" } },
+      { status: 204 },
+    ]);
+    await expect(sendMessage("microsoft", "token", message, fetchImpl)).rejects.toThrow(
+      /refused the message \(403\)/,
+    );
+    expect(calls[2]).toMatchObject({
+      method: "DELETE",
+      url: "https://graph.microsoft.com/v1.0/me/messages/d1",
+    });
+  });
+
+  it("sends nothing when the draft cannot be created", async () => {
+    const { fetchImpl, calls } = graph([{ status: 400, body: { error: "bad" } }]);
+    await expect(sendMessage("microsoft", "token", message, fetchImpl)).rejects.toThrow(/400/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("still reports the send when Exchange returned no Message-ID - no key, but no failure", async () => {
+    const { fetchImpl } = graph([{ status: 201, body: { id: "d" } }, { status: 202 }]);
+    await expect(sendMessage("microsoft", "token", message, fetchImpl)).resolves.toEqual({
+      externalId: null,
+      internetMessageId: null,
+    });
+  });
+});
+
+describe("sendMessage - Gmail", () => {
+  it("returns Gmail's own id, which the sync reads back from Sent unchanged", async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ id: "18c0ffee" }), { status: 200 })) as typeof fetch;
+    await expect(
+      sendMessage(
+        "google",
+        "token",
+        { to: "a@b.com", subject: "s", body: "b", fromEmail: "rep@example.com" },
+        fetchImpl,
+      ),
+    ).resolves.toEqual({ externalId: "18c0ffee", internetMessageId: null });
   });
 });

@@ -21,6 +21,7 @@ import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { enqueueAutomationEventSafely } from "../automation/enqueue";
+import { auditActor } from "../../common/audit-actor";
 
 const ListQuery = z.object({
   type: z.string().max(40).optional(),
@@ -374,8 +375,8 @@ export class InteractionsController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'interaction.create', $3, $4)`,
-        [orgId, req.principal?.userId ?? "dev-admin", parentTable.replace(/s$/, ""), parentId],
+         VALUES ($1, $5, $2, 'interaction.create', $3, $4)`,
+        [orgId, auditActor(req).id, parentTable.replace(/s$/, ""), parentId, auditActor(req).type],
       );
 
       // Any interaction is activity: keep the object's sort key honest so a

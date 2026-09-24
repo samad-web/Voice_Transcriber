@@ -13,6 +13,8 @@ import {
   emailAdapter,
   parseAddress,
   ProviderHttpError,
+  resumePoint,
+  type FetchLimits,
   type NormalisedMessage,
 } from "./email-providers";
 import { announce } from "./realtime";
@@ -179,6 +181,8 @@ export async function syncConnection(
   client: DbClient,
   connection: ConnectionRow,
   fetchImpl: typeof fetch = fetch,
+  /** Per-pass read cap; the adapters' default unless a test shrinks it. */
+  limits?: FetchLimits,
 ): Promise<SyncOutcome> {
   const base: SyncOutcome = { connectionId: connection.id, fetched: 0, matched: 0, written: 0 };
 
@@ -216,11 +220,22 @@ export async function syncConnection(
   }
 
   // ── fetch ───────────────────────────────────────────────────────────────
-  const since = new Date(
-    (connection.last_synced_at?.getTime() ?? Date.now() - 30 * 86_400_000) -
-      OVERLAP_MINUTES * 60_000,
+  // A capped pass left an exact resume point; start there. Otherwise the
+  // window opens ten minutes before the last position, for mail the provider
+  // indexed after we looked.
+  const since =
+    resumePoint(connection.sync_cursor) ??
+    new Date(
+      (connection.last_synced_at?.getTime() ?? Date.now() - 30 * 86_400_000) -
+        OVERLAP_MINUTES * 60_000,
+    );
+  const result = await adapter.fetchSince(
+    accessToken ?? "",
+    connection.sync_cursor,
+    since,
+    fetchImpl,
+    limits,
   );
-  const result = await adapter.fetchSince(accessToken ?? "", connection.sync_cursor, since, fetchImpl);
   base.fetched = result.messages.length;
 
   // ── match ───────────────────────────────────────────────────────────────
@@ -242,6 +257,28 @@ export async function syncConnection(
     const hit = classify(message, connection.account_email, contactsByEmail);
     if (!hit) continue;
     base.matched++;
+
+    // ── the console's own sends ─────────────────────────────────────────────
+    //
+    // A message sent from the console through Outlook is already on the
+    // timeline (outbound-mail.controller.ts), but under no provider id -
+    // Graph's id changes when the draft moves to Sent Items, so the console
+    // could not know the one read here. The unique index on external_id
+    // cannot collapse the two, and every Outlook send showed twice. The
+    // Message-ID is the same on both, so a row from THIS mailbox already
+    // carrying it means this is that message's Sent copy: skip it.
+    // Scoped to the connection so two colleagues who both received one
+    // customer email still get a row each, as before.
+    if (message.internetMessageId) {
+      const { rowCount: known } = await client.query(
+        `SELECT 1 FROM interactions
+          WHERE connection_id = $1 AND type = 'email'
+            AND metadata->>'internet_message_id' = $2
+          LIMIT 1`,
+        [connection.id, message.internetMessageId],
+      );
+      if (known) continue;
+    }
 
     // The contact's most recent deal, so the thread lands on the pipeline
     // card too. Best-effort: an email is still worth recording without one.
@@ -271,18 +308,30 @@ export async function syncConnection(
         message.snippet,
         message.occurredAt,
         connection.user_id,
-        JSON.stringify({ from: message.from, to: message.to }),
+        // The Message-ID rides along so the console's write-side check
+        // (outbound-mail.controller.ts) can see this row too - it closes the
+        // other order, where the sync reads the Sent copy before the console
+        // has committed its own row.
+        JSON.stringify({
+          from: message.from,
+          to: message.to,
+          ...(message.internetMessageId ? { internet_message_id: message.internetMessageId } : {}),
+        }),
       ],
     );
     base.written += rowCount ?? 0;
   }
 
+  // `syncedThrough`, not now(): a pass that stopped at its page cap has not
+  // read the rest of the window, and moving past it here is exactly how mail
+  // used to vanish. During a backlog this reads as "synced up to <then>",
+  // which is the truth.
   await client.query(
     `UPDATE connected_accounts
-        SET last_synced_at = now(), sync_cursor = $2, sync_failures = 0, last_error = NULL,
+        SET last_synced_at = $3, sync_cursor = $2, sync_failures = 0, last_error = NULL,
             status = 'active'
       WHERE id = $1`,
-    [connection.id, result.cursor],
+    [connection.id, result.cursor, result.syncedThrough],
   );
   return base;
 }

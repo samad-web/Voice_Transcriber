@@ -25,6 +25,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
+import { auditActor } from "../../common/audit-actor";
 
 /** The 5 system roles seeded for every org - mirrors migration 0039's own seed. */
 const SYSTEM_ROLES = [
@@ -311,8 +312,8 @@ export class AdminController {
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, 'user', $2, 'tenant.create', 'organization', $3)`,
-        [org.id, req.principal?.userId ?? "dev-admin", org.id],
+         VALUES ($1, $4, $2, 'tenant.create', 'organization', $3)`,
+        [org.id, auditActor(req).id, org.id, auditActor(req).type],
       );
 
       await client.query("COMMIT");
@@ -435,10 +436,10 @@ export class AdminController {
         // one placeholder for both types fails Postgres's parameter-type
         // inference ("inconsistent types deduced for parameter $1", 42P08).
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'tenant.modules_update', 'organization', $3, $4)`,
+         VALUES ($1, $5, $2, 'tenant.modules_update', 'organization', $3, $4)`,
         [
           orgId,
-          req.principal?.userId ?? "dev-admin",
+          auditActor(req).id,
           orgId,
           // The RESOLVED state, not the patch. An entry reading
           // `{"whatsappProvider":"wasi"}` tells a reader what one person
@@ -446,6 +447,7 @@ export class AdminController {
           // then had - which is the question anybody reading an audit log six
           // months later is actually asking.
           JSON.stringify({ modules, whatsappProvider }),
+          auditActor(req).type,
         ],
       );
 
@@ -531,8 +533,8 @@ export class AdminController {
       );
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'org.storage_quota_set', 'organization', $3, $4::jsonb)`,
-        [orgId, req.principal?.operatorEmail ?? req.principal?.userId ?? "dev-admin", orgId, JSON.stringify({ quotaBytes })],
+         VALUES ($1, $5, $2, 'org.storage_quota_set', 'organization', $3, $4::jsonb)`,
+        [orgId, req.principal?.operatorEmail ?? auditActor(req).id, orgId, JSON.stringify({ quotaBytes }), auditActor(req).type],
       );
       await client.query("COMMIT");
       return { orgId, quotaBytes: org.storage_quota_bytes === null ? null : Number(org.storage_quota_bytes) };

@@ -105,3 +105,34 @@ export function verifyRazorpaySignature(rawBody: Buffer, signatureHeader: string
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
 }
+
+export interface RazorpayCapture {
+  /** `pay_...` - the idempotency key (payments.gateway_payment_id). */
+  paymentId: string;
+  /** Major units, converted from Razorpay's paise the same way createPaymentLink converted in. */
+  amount: number;
+  currency: string;
+}
+
+/**
+ * The captured payment inside a `payment_link.paid` / `payment.captured`
+ * delivery: `payload.payment.entity`, which both events carry.
+ *
+ * The amount is the PAYMENT's, not the link's `amount`: the link says what was
+ * asked for, the payment says what was taken. Null when the entity is missing,
+ * has no id or amount, or is not in the `captured` state (an `authorized`
+ * payment is not money yet) - the caller acknowledges and does nothing.
+ */
+export function parseRazorpayCapture(body: unknown): RazorpayCapture | null {
+  const entity = (body as { payload?: { payment?: { entity?: Record<string, unknown> } } })?.payload
+    ?.payment?.entity;
+  if (!entity) return null;
+  const id = entity.id;
+  const amount = entity.amount;
+  const currency = entity.currency;
+  if (typeof id !== "string" || !id) return null;
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) return null;
+  if (typeof currency !== "string" || !currency) return null;
+  if (entity.status !== undefined && entity.status !== "captured") return null;
+  return { paymentId: id, amount: amount / 100, currency: currency.toUpperCase() };
+}

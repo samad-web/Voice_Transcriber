@@ -1,14 +1,24 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { CrossTenant, OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
 const OverviewQuery = z.object({ instanceId: z.string().uuid().optional() });
 
-/** Core analytics (§4.2 Platform Hub) + usage summary (§2.7 metering). */
+/**
+ * Core analytics (§4.2 Platform Hub) + usage summary (§2.7 metering).
+ *
+ * Only the operator console reads these, on the bare admin key. A person the
+ * owner console proxies for must be an owner or manager (doc 31 §2 X8): the
+ * overview is whole-org call volume and usage, which the console's own
+ * dashboards already restrict to those two personas.
+ */
 @Controller("analytics")
-@UseGuards(AdminKeyGuard, TenantGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, OwnerRoleGuard)
+@OperatorMayCall()
+@RequireOwnerRole("owner", "manager")
 export class AnalyticsController {
   constructor(private readonly db: DbService) {}
 
