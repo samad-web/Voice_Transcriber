@@ -133,13 +133,15 @@ export const LEGAL: LegalDetails = {
   // it (apps/worker/src/pipeline/funnel-retention.ts). Both read the same
   // constant, so the published policy cannot drift from what actually deletes.
   enquiryRetentionDays: FUNNEL_ENQUIRY_RETENTION_DAYS,
-  deletionWindowDays: null,
-  exportWindowDays: null,
+  // Deletion follows the export window: 30 days to pull data out, then 30
+  // more before it's gone for good - 60 days total from termination.
+  deletionWindowDays: 30,
+  exportWindowDays: 30,
   requestForwardingDays: 7,
   // "Ack within 48 hours, resolve within 15 days" - the days figure the page
   // needs is the resolve target.
   rightsResponseDays: 15,
-  terminationNoticeDays: null,
+  terminationNoticeDays: 30,
   // Basis given: capped at what the customer paid for the plan the claim
   // relates to, in the preceding 12 months. Drafted from that instruction -
   // still needs a lawyer's eye on enforceability and the standard exclusions
