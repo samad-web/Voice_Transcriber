@@ -106,19 +106,28 @@ export interface LegalDetails {
 }
 
 export const LEGAL: LegalDetails = {
-  registeredName: null,
+  registeredName: "Mohamed Riyaz, proprietor, trading as Sirah Digital",
+  // Not required (see PRIVACY_FIELDS) - left out by choice, not by omission.
+  // Fill in a GST/Udyam/CIN number here if one is ever wanted on the page.
   registrationNumber: null,
-  registeredAddress: null,
-  city: null,
-  grievanceAddress: null,
-  grievanceOfficerName: null,
-  grievanceOfficerTitle: null,
-  grievanceOfficerEmail: null,
-  privacyEmail: null,
-  securityEmail: null,
-  contactEmail: null,
-  telephone: null,
-  effectiveDate: null,
+  registeredAddress:
+    "SY NO 203/10B, Innov8, Featherlite The Address, 200 Feet Radial Rd, " +
+    "Raja Joseph Colony, Pallavaram, Tambaram, Chennai, Tamil Nadu",
+  city: "Chennai",
+  // Not given separately - same as the registered office until told otherwise.
+  grievanceAddress:
+    "SY NO 203/10B, Innov8, Featherlite The Address, 200 Feet Radial Rd, " +
+    "Raja Joseph Colony, Pallavaram, Tambaram, Chennai, Tamil Nadu",
+  grievanceOfficerName: "Mohamed Riyaz",
+  // Not given separately - he is the sole proprietor, so this is the obvious
+  // designation. Correct it if a different title is wanted.
+  grievanceOfficerTitle: "Proprietor",
+  grievanceOfficerEmail: "support@sirahdigital.in",
+  privacyEmail: "support@sirahdigital.in",
+  securityEmail: "support@sirahdigital.in",
+  contactEmail: "support@sirahdigital.in",
+  telephone: "+91 73054 26819",
+  effectiveDate: "2026-09-25",
   // DECIDED, and enforced. Not null like the rest, because this one is not a
   // fact about the company - it is a policy choice, and it now has a job behind
   // it (apps/worker/src/pipeline/funnel-retention.ts). Both read the same
@@ -126,10 +135,23 @@ export const LEGAL: LegalDetails = {
   enquiryRetentionDays: FUNNEL_ENQUIRY_RETENTION_DAYS,
   deletionWindowDays: null,
   exportWindowDays: null,
-  requestForwardingDays: null,
-  rightsResponseDays: null,
+  requestForwardingDays: 7,
+  // "Ack within 48 hours, resolve within 15 days" - the days figure the page
+  // needs is the resolve target.
+  rightsResponseDays: 15,
   terminationNoticeDays: null,
-  liabilityClause: null,
+  // Basis given: capped at what the customer paid for the plan the claim
+  // relates to, in the preceding 12 months. Drafted from that instruction -
+  // still needs a lawyer's eye on enforceability and the standard exclusions
+  // (death/personal injury from negligence, fraud) Indian law won't let a cap
+  // override.
+  liabilityClause:
+    "Our total liability to you arising out of or in connection with the Service, " +
+    "however arising, is limited to the amount you paid us for the plan the claim " +
+    "relates to in the 12 months before the claim arose. We are not liable for " +
+    "indirect or consequential loss, including loss of profit, revenue or data. " +
+    "Nothing in this clause limits liability for death or personal injury caused " +
+    "by negligence, or for fraud.",
   indemnityClause: null,
   commercialTerms: null,
 };
@@ -152,7 +174,11 @@ const CORE: Array<keyof LegalDetails> = [
 
 const PRIVACY_FIELDS: Array<keyof LegalDetails> = [
   ...CORE,
-  "registrationNumber",
+  // Deliberately NOT required. Unlike the grievance officer (DPDP §13, a real
+  // legal mandate), a CIN/GST/registration number is a B2B trust nicety, not
+  // something the law makes you publish - and a sole proprietor may have none
+  // to give, or may reasonably not want one indexed on a public page. The
+  // privacy page renders the line only when a value is present.
   "grievanceOfficerName",
   "grievanceOfficerTitle",
   "grievanceOfficerEmail",

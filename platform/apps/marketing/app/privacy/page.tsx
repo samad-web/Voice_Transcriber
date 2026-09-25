@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Candid, LegalDocument, LegalTable } from "@/components/legal/document";
 import { pageMetadata } from "@/lib/metadata";
-import { PRIVACY_READY, required } from "@/lib/legal";
+import { LEGAL, PRIVACY_READY, required } from "@/lib/legal";
 import { CONSOLE_URL, SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
@@ -92,9 +92,11 @@ export default function PrivacyPage() {
         <li>
           <strong>Registered office:</strong> {required("registeredAddress")}
         </li>
-        <li>
-          <strong>CIN / registration number:</strong> {required("registrationNumber")}
-        </li>
+        {LEGAL.registrationNumber && (
+          <li>
+            <strong>CIN / registration number:</strong> {LEGAL.registrationNumber}
+          </li>
+        )}
         <li>
           <strong>Website:</strong> <a href={SITE_URL}>{SITE_URL.replace(/^https?:\/\//, "")}</a>
         </li>
@@ -352,13 +354,6 @@ export default function PrivacyPage() {
         </thead>
         <tbody>
           <tr>
-            <td>Supabase (managed Postgres)</td>
-            <td>Calls, transcripts, extracted fields, leads and the audit log</td>
-            <td>
-              <strong>ap-northeast-2 (Seoul, South Korea), not India</strong>
-            </td>
-          </tr>
-          <tr>
             <td>Sarvam AI</td>
             <td>Indic speech recognition and call analysis</td>
             <td>India</td>
@@ -371,23 +366,25 @@ export default function PrivacyPage() {
           <tr>
             <td>Hostinger</td>
             <td>
-              The application and worker servers, and the object storage holding call recording
-              audio
+              The application and worker servers, the Postgres database, and the object storage
+              holding call recording audio - we run our own database rather than using a managed
+              provider, so this is the only infrastructure sub-processor for everything except AI
+              analysis
             </td>
-            <td>Region set per deployment, stated in your contract</td>
+            <td>
+              <strong>Mumbai, India</strong>
+            </td>
           </tr>
         </tbody>
       </LegalTable>
 
-      <Candid title="We want to be direct about the first row.">
+      <Candid title="Your data moved: Seoul to Mumbai, September 2026.">
         <p>
-          Your customers&rsquo; call recordings are stored on infrastructure in South Korea, not
-          in India. The DPDP Act permits transfer outside India except to countries the Central
-          Government restricts, and South Korea is not currently restricted.
-        </p>
-        <p>
-          We are telling you this on the page rather than in an appendix because you should find
-          it out from us, and not from your own IT team after you have signed.
+          Until 24 September 2026, the database behind Aura ran on managed infrastructure in
+          Seoul, South Korea. It now runs on our own servers in Mumbai, India, alongside the rest
+          of the application. We are telling you here, rather than only updating the table above,
+          because a customer who checked this page before that date deserves to know it changed
+          and did not just get a quieter footnote.
         </p>
       </Candid>
 

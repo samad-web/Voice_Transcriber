@@ -38,7 +38,10 @@ export const metadata: Metadata = pageMetadata({
  *
  * TWO THINGS THIS PAGE DELIBERATELY VOLUNTEERS, because being caught is worse
  * than being upfront (doc 10 §11):
- *   - Postgres runs in ap-northeast-2 (Seoul), not India.
+ *   - Postgres ran in ap-northeast-2 (Seoul), not India, until the 2026-09-24
+ *     self-host cutover moved it onto our own servers in Mumbai (Hostinger data
+ *     centre `mum2`, confirmed against the account, not inferred from a config
+ *     string - see the MinIO note below for why that distinction matters).
  *   - On-device encryption is an optional at-rest setting, OFF by default, and
  *     the upload itself is protected by TLS, not by that setting
  *     (CaptureSettings.kt:49-55, UploadWorker.kt:103-108).
@@ -61,11 +64,6 @@ export const metadata: Metadata = pageMetadata({
  */
 const SUBPROCESSORS = [
   {
-    name: "Supabase (Postgres)",
-    purpose: "Your calls, transcripts, extracted fields, leads and audit log",
-    region: "ap-northeast-2 (Seoul), not India",
-  },
-  {
     name: "Sarvam AI",
     purpose: "Indic speech recognition and call analysis",
     region: "India",
@@ -78,8 +76,11 @@ const SUBPROCESSORS = [
   {
     name: "Hostinger",
     purpose:
-      "The application and worker servers, and the object storage holding call recording audio",
-    region: "See your contract; region is set per deployment",
+      "The application and worker servers, our own Postgres database, and the object storage " +
+      "holding call recording audio - we run our own database rather than using a managed " +
+      "provider, so this is the only infrastructure sub-processor for everything except AI " +
+      "analysis",
+    region: "Mumbai, India",
   },
 ];
 
@@ -213,10 +214,10 @@ export default function SecurityPage() {
         </div>
         <Prose className="mt-6">
           <p>
-            <strong>Our Postgres database currently runs in Seoul, not in India.</strong>{" "}
-            If your organisation has a data-residency requirement, that matters and you
-            should raise it before you sign anything. We are telling you here rather
-            than waiting to be asked.
+            <strong>Our Postgres database runs in Mumbai, India,</strong> on our own servers -
+            it moved off managed infrastructure in Seoul, South Korea on 24 September 2026. If
+            your organisation has a data-residency requirement, this now satisfies it; say so if
+            you need it in writing.
           </p>
         </Prose>
       </Section>
@@ -243,13 +244,9 @@ export default function SecurityPage() {
               role-based permissions.
             </li>
             <li>
-              <strong>The privacy policy and data processing agreement are in legal
-              review</strong> and are not published yet. If you need a DPA before you
-              start, tell us and we will tell you the honest timeline.
-            </li>
-            <li>
-              <strong>Data residency in India is not available today</strong>. See the
-              sub-processor table above.
+              <strong>The data processing agreement is still being finalised</strong> and is not
+              published yet. If you need one before you start, tell us and we will tell you the
+              honest timeline.
             </li>
           </ul>
           <p>

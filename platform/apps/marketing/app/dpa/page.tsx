@@ -32,8 +32,13 @@ export const metadata: Metadata = pageMetadata({
  *    has not been made. There are no EU customers today. When a deal needs it,
  *    it wants the Article 28(3) terms in full, the current Standard Contractual
  *    Clauses with modules and annexes completed, a UK IDTA if UK data is in
- *    scope, and a transfer impact assessment covering the Seoul hosting. That
- *    is a lawyer's work, not a placeholder.
+ *    scope, and a transfer impact assessment covering the one processing
+ *    activity still outside India post-cutover (Gemini API calls to Google).
+ *    That is a lawyer's work, not a placeholder.
+ *
+ * 3. **The primary database moved from Seoul to Mumbai on 2026-09-24** (the
+ *    self-host cutover). Annex A and §6 were updated to match; nothing about
+ *    the DPA's obligations changed, only the fact of where the data sits.
  */
 export default function DpaPage() {
   if (!DPA_READY) notFound();
@@ -233,13 +238,11 @@ export default function DpaPage() {
       <h2 id="where">6. Where data is processed</h2>
       <p>
         Personal data is processed in the locations set out in Annex A.{" "}
-        <strong>This includes processing outside India.</strong> Specifically, the primary
-        database is hosted in <strong>ap-northeast-2 (Seoul, South Korea)</strong>.
-      </p>
-      <p>
-        Under §16 of the DPDP Act, personal data may be transferred outside India except to a
-        country the Central Government restricts by notification. South Korea is not currently
-        restricted. If that changes, we will tell you and agree a plan to migrate.
+        <strong>The primary database and application servers run in Mumbai, India</strong>, on
+        our own infrastructure. Until 24 September 2026 the database ran on managed
+        infrastructure in Seoul, South Korea; it has since moved. Call analysis that runs on
+        Google&rsquo;s Gemini API, where Sarvam is not the configured provider, is the one
+        processing activity that remains outside India - see Annex A.
       </p>
       <p>
         We are stating the hosting region in the body of this DPA rather than burying it in an
@@ -315,18 +318,6 @@ export default function DpaPage() {
         </thead>
         <tbody>
           <tr>
-            <td>Supabase (managed Postgres)</td>
-            <td>Calls, transcripts, extracted fields, leads, audit log</td>
-            <td>ap-northeast-2 (Seoul, South Korea)</td>
-          </tr>
-          <tr>
-            <td>Hostinger</td>
-            <td>
-              Application and worker servers, and the object storage holding call recording audio
-            </td>
-            <td>Stated in your order form</td>
-          </tr>
-          <tr>
             <td>Sarvam AI</td>
             <td>Indic speech recognition and call analysis</td>
             <td>India</td>
@@ -335,6 +326,14 @@ export default function DpaPage() {
             <td>Google (Gemini)</td>
             <td>Call analysis where Sarvam is not the configured provider</td>
             <td>Google&rsquo;s infrastructure for the Gemini API</td>
+          </tr>
+          <tr>
+            <td>Hostinger</td>
+            <td>
+              Application and worker servers, our own Postgres database, and the object storage
+              holding call recording audio
+            </td>
+            <td>Mumbai, India</td>
           </tr>
         </tbody>
       </LegalTable>
