@@ -253,6 +253,10 @@ export default function PrivacyPage() {
         Tag Manager and Microsoft Clarity described in §3 set their own cookies, which are not
         ours and are not covered by that exemption.
       </p>
+      <p>
+        This is the cookie count for this marketing website. If you are a signed-in user of the
+        console, see §9, which covers the cookies the console itself sets.
+      </p>
 
       <h3 id="retention">5. How long we keep your enquiry</h3>
       <p>
@@ -273,24 +277,51 @@ export default function PrivacyPage() {
         other purpose:
       </p>
       <ul>
-        <li>audio recordings of calls made or received on enrolled handsets;</li>
-        <li>transcripts generated from those recordings;</li>
+        <li>
+          audio recordings of calls made or received on enrolled handsets, and the transcripts
+          generated from them;
+        </li>
         <li>
           the fields extracted from those transcripts: quantities, prices, locations,
           commitments, and whatever other fields your company has configured;
         </li>
-        <li>the phone numbers and names of the people on those calls;</li>
-        <li>records of which of your staff handled which call.</li>
+        <li>
+          leads and contacts, and the records your team creates about them in the CRM: notes,
+          tasks, stage and pipeline data;
+        </li>
+        <li>
+          conversations from messaging channels your organisation connects, such as WhatsApp,
+          including message content and the phone numbers involved;
+        </li>
+        <li>
+          mail, calendar and spreadsheet data from any mailbox, calendar or Google Sheet a member
+          of your team chooses to connect, limited to the access they grant when connecting it;
+        </li>
+        <li>the phone numbers and names of the people on your calls, conversations and leads;</li>
+        <li>records of which of your staff handled which call, conversation or lead.</li>
       </ul>
       <p>
         <strong>We do not use any of it for our own purposes.</strong> Specifically: we do not
-        use your call recordings, transcripts or extracted data to train, fine-tune or evaluate
-        any machine learning model of ours, we do not use them to build any product feature for
-        another customer, and we do not analyse them in aggregate across customers.
+        use your call recordings, transcripts, messages, connected mailbox data or any other
+        Customer Data to train, fine-tune or evaluate any machine learning model of ours, we do
+        not use it to build any product feature for another customer, and we do not analyse it in
+        aggregate across customers.
       </p>
       <p>
-        Your company decides what is recorded, who may access it, how long it is kept, and when
-        it is deleted. We give them the controls; they make the decisions.
+        Your company decides what is recorded and connected, who may access it, how long it is
+        kept, and when it is deleted. We give them the controls; they make the decisions.
+      </p>
+      <p>
+        Where you connect an email, calendar or spreadsheet account, or a messaging channel such
+        as WhatsApp, that connection runs on your own account with that provider. If your
+        organisation has not registered its own app with Google or Microsoft, the connection uses
+        Aura&rsquo;s own registered app to complete the sign-in; either way, it is your
+        organisation&rsquo;s account, and only the access it grants, that gets used - not ours.
+        Messages sent or received over WhatsApp necessarily also pass through WhatsApp&rsquo;s own
+        network, operated by Meta, the same as they would if you used WhatsApp directly; if your
+        organisation routes its WhatsApp connection through a WhatsApp Business Solution Provider
+        of its own choosing, that provider processes the same traffic under its own agreement with
+        your organisation, not with us.
       </p>
 
       <h3 id="customer-obligations">7. Your company&rsquo;s obligations, not ours</h3>
@@ -397,6 +428,13 @@ export default function PrivacyPage() {
           <strong>The marketing database is separate.</strong> The enquiry form connects using a
           database role that has access to the marketing schema and to nothing else. It cannot
           reach any customer&rsquo;s call data, by construction and not by convention.
+        </li>
+        <li>
+          <strong>The console sets its own cookies once you sign in</strong>, separate from the
+          one described in §4: to keep you signed in, to remember which organisation you are
+          currently working in, and to remember interface preferences such as your theme. These
+          are strictly necessary for the console to work and are not used for analytics or
+          advertising.
         </li>
       </ul>
 

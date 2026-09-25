@@ -173,6 +173,14 @@ export default function TermsPage() {
         Our handling of Customer Data is governed by the{" "}
         <a href="/dpa">data processing agreement</a>, which forms part of these terms.
       </p>
+      <p>
+        <strong>Connecting a third-party account is your relationship, not ours.</strong> If you
+        or your staff connect a mailbox, calendar, spreadsheet or messaging channel, such as
+        Google, Microsoft or a WhatsApp Business Solution Provider, you confirm you have the right
+        to connect it and to let us process what it contains for the purpose of providing the
+        Service. That provider&rsquo;s own terms continue to apply to the account, and we are not
+        a party to them. You may disconnect it at any time from the console.
+      </p>
 
       <h2 id="acceptable-use">7. What you must not do</h2>
       <p>You must not, and must not permit anyone else to:</p>
