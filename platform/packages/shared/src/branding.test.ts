@@ -159,6 +159,17 @@ describe("Branding schema", () => {
     expect(Branding.safeParse({ logoUrl: "logo.png" }).success).toBe(false);
   });
 
+  it("accepts the same-origin path the upload flow saves back", () => {
+    // tenancy.controller.ts's upload-url endpoint returns a path, not a full
+    // URL - the browser reaches the asset through the web app's own proxy
+    // route. z.string().url() alone rejected every uploaded image.
+    const parsed = Branding.safeParse({
+      logoUrl: "/admin/branding-assets/org-id/logo-uuid.png",
+      faviconUrl: "/branding-assets/org-id/favicon-uuid.ico",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it("round-trips loginBackgroundUrl now that it is storable again", () => {
     // Retired once, then reinstated (stored, not yet rendered - see the file
     // header). A tenant who set it before it was retired still has the key in

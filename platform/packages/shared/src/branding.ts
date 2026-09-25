@@ -37,7 +37,20 @@ import { z } from "zod";
 const HEX = /^#[0-9a-fA-F]{6}$/u;
 
 const HexColor = z.string().regex(HEX, "expected a hex colour like #2563eb");
-const AssetUrl = z.string().url().max(500);
+
+/**
+ * Either a pasted absolute URL, or the same-origin, basePath-prefixed path
+ * the branding upload flow saves back (see `brandingUploadUrl` in
+ * tenancy.controller.ts: it returns a path, not a full URL, because the
+ * browser reaches the asset through the web app's own proxy route, not the
+ * API directly). `z.string().url()` alone rejected every uploaded image.
+ */
+const AssetUrl = z
+  .string()
+  .max(500)
+  .refine((v) => /^https?:\/\//u.test(v) || v.startsWith("/"), {
+    message: "expected an image URL",
+  });
 
 /**
  * The colour half of a saved palette - shared between the org's live branding
