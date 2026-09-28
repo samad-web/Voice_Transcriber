@@ -21,13 +21,14 @@ import {
   TaskPriority,
   TaskRespondInput,
   TaskUpdate,
+  resolveOwnerRole,
   type BulkResult,
   type TaskAssignee,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { assignInBulk } from "../../common/bulk-assign";
-import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import { CrmPermissionsGuard, RequireCrmPermission, hasCrmGrant } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, scopeFilter, type CrmRecordScope } from "../../common/crm-scope";
 import { assertInOrg, assertMembers } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
@@ -306,6 +307,52 @@ export class TasksController {
     });
   }
 
+  /**
+   * Who "Assign to" may offer - every member, unless the caller's role lacks
+   * `task:assign_up` (0141), in which case owner and manager personas are
+   * left off the list. Declared above `@Get(":id")` for the same reason
+   * `counts` is - a literal path segment, matched before the uuid pipe would
+   * otherwise claim it.
+   *
+   * `task:create` rather than `task:assign_up`: everybody who may make a task
+   * needs SOME list back, just a narrower one without the extra grant - a
+   * blanket `task:assign_up` requirement here would 403 the picker for every
+   * telecaller instead of quietly filtering it.
+   */
+  @Get("assignable-people")
+  @RequireCrmPermission("task", "create")
+  async assignablePeople(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
+    return this.db.withOrg(orgId, async (client) => {
+      const me = actorUserId(req);
+      const allowedUp = me ? await hasCrmGrant(client, orgId, me, "task", "assign_up") : false;
+
+      const { rows } = await client.query<{
+        user_id: string;
+        name: string | null;
+        email: string;
+        owner_role: string | null;
+      }>(
+        `SELECT u.id AS user_id, u.name, u.email, m.owner_role
+           FROM memberships m
+           JOIN users u ON u.id = m.user_id
+          WHERE m.org_id = $1
+          ORDER BY u.email`,
+        [orgId],
+      );
+
+      const seen = new Set<string>();
+      const people: Array<{ userId: string; name: string | null; email: string }> = [];
+      for (const row of rows) {
+        if (seen.has(row.user_id)) continue;
+        seen.add(row.user_id);
+        const persona = resolveOwnerRole(row.owner_role);
+        if (!allowedUp && (persona === "owner" || persona === "manager")) continue;
+        people.push({ userId: row.user_id, name: row.name, email: row.email });
+      }
+      return { people };
+    });
+  }
+
   @Get(":id")
   @RequireCrmPermission("task", "view")
   async detail(
@@ -350,6 +397,7 @@ export class TasksController {
       const people = p.assigneeUserIds ?? (p.assigneeUserId ? [p.assigneeUserId] : []);
       await assertMembers(client, orgId, memberRefs(people));
       const me = actorUserId(req);
+      await this.assertAssignUpAllowed(client, orgId, me, people);
 
       const {
         rows: [task],
@@ -507,6 +555,7 @@ export class TasksController {
       // and an id that is not this org's is simply skipped.
       await assertMembers(client, orgId, { assigneeUserId });
       const me = actorUserId(req);
+      await this.assertAssignUpAllowed(client, orgId, me, assigneeUserId ? [assigneeUserId] : []);
       // Before assignInBulk overwrites the column it reads - see materializePrimary.
       await materializePrimary(client, orgId, ids);
       const updated = await assignInBulk(client, {
@@ -575,6 +624,7 @@ export class TasksController {
         p.assigneeUserIds ?? (p.assigneeUserId !== undefined ? (p.assigneeUserId ? [p.assigneeUserId] : []) : undefined);
       if (people) await assertMembers(client, orgId, memberRefs(people));
       const me = actorUserId(req);
+      if (people) await this.assertAssignUpAllowed(client, orgId, me, people);
       // Before the UPDATE below overwrites the column it reads.
       if (people) await materializePrimary(client, orgId, [id]);
 
@@ -695,6 +745,45 @@ export class TasksController {
         },
         actor,
       );
+    }
+  }
+
+  /**
+   * Refuses handing a task to an owner or manager persona unless the actor's
+   * role holds `task:assign_up` (0141). Runs before any write in create,
+   * update and reassign, so a refusal leaves nothing half-applied.
+   *
+   * Looks the targets up by membership, not by console session - the same
+   * reason `assertMembers` queries the database rather than trusting the
+   * client's own labels: a picker that has not been refreshed since a
+   * persona change must not decide who gets a grant.
+   */
+  private async assertAssignUpAllowed(
+    client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> },
+    orgId: string,
+    actorId: string | null,
+    targetUserIds: string[],
+  ) {
+    // Never the actor themselves. "Assign up" is handing work to somebody
+    // ABOVE you; a task you give yourself is not that, whoever you are - and
+    // without this an owner whose role had the grant removed could not write
+    // their own follow-ups, which is a lockout nobody would have configured
+    // on purpose.
+    const targets = targetUserIds.filter((id) => id !== actorId);
+    if (targets.length === 0) return;
+    const { rows } = await client.query(
+      `SELECT owner_role FROM memberships WHERE org_id = $1 AND user_id = ANY($2::uuid[])`,
+      [orgId, targets],
+    );
+    const targetsAbove = (rows as Array<{ owner_role: string | null }>).some((r) => {
+      const persona = resolveOwnerRole(r.owner_role);
+      return persona === "owner" || persona === "manager";
+    });
+    if (!targetsAbove) return;
+
+    const allowed = actorId ? await hasCrmGrant(client, orgId, actorId, "task", "assign_up") : false;
+    if (!allowed) {
+      throw new ForbiddenException("Your role cannot assign tasks to an owner or manager.");
     }
   }
 

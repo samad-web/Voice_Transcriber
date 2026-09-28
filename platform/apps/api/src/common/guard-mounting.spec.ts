@@ -1318,6 +1318,10 @@ const CRM_PERMISSION_ROUTES = [
   // Declared above GET /tasks/:id in the controller so Nest does not read
   // "counts" as a task id - the ordering matters there, not here.
   "GET /tasks/counts",
+  // Who "Assign to" may offer, already narrowed by task:assign_up (0141).
+  // Declared above GET /tasks/:id in the controller for the same reason
+  // "counts" is - a literal segment the uuid pipe would otherwise claim.
+  "GET /tasks/assignable-people",
   "GET /tasks/:id",
   "POST /tasks",
   "PATCH /tasks/:id",
@@ -1747,8 +1751,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // unguarded GET /branding-assets/:orgId/:filename that serves them.
     // 502: attendance (doc 33, 0140) - four device-authed /devices/me routes
     // and twenty tenant-scoped /owner/attendance routes.
-    expect(ROUTES).toHaveLength(502);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(502);
+    // 503: GET /tasks/assignable-people (0141) - the task assignee picker,
+    // already narrowed by task:assign_up before it returns.
+    expect(ROUTES).toHaveLength(503);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(503);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1785,14 +1791,15 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 399: plus Time & location's region PUT.
     // 403: plus invite by link's four /owner/invites routes (0137).
     // 404: plus POST /org/branding/upload-url.
-    expect(tenantScoped).toHaveLength(428);
+    // 429: plus GET /tasks/assignable-people (0141).
+    expect(tenantScoped).toHaveLength(429);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(502); // = ROUTES.length: every route in exactly one class
+    ).toBe(503); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 422 principal routes", () => {
@@ -1823,7 +1830,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 434: plus POST /org/branding/upload-url, and the Platform Hub's
     // GET /analytics/active-users + /analytics/booking-rate, which reached
     // CROSS_TENANT without this count moving.
-    expect(principalRoutes).toHaveLength(458);
+    // 459: plus GET /tasks/assignable-people (0141).
+    expect(principalRoutes).toHaveLength(459);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

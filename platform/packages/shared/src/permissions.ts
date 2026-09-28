@@ -111,11 +111,32 @@ export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, "aura" | "cr
 /** Objects whose grants are whole-org powers, where "own records" means nothing. */
 export const ALL_SCOPE_ONLY_OBJECTS: ReadonlySet<PermissionObjectType> = new Set(["lead_board"]);
 
-export const PermissionAction = z.enum(["view", "create", "edit", "delete", "export"]);
+/**
+ * `assign_up` joined with migration 0141 - "may this role hand a task to an
+ * owner or manager persona". It is meaningful for `task` only: nothing else in
+ * this enum has an upward direction to gate, so every other object's cell is
+ * left inert (`ENFORCED_PERMISSIONS` lists only `task:assign_up`) rather than
+ * offering a picker that changes nothing.
+ *
+ * Assignment itself was never gated - `assertMembers` in tasks.controller.ts
+ * only checks the assignee is a member of the org, and 0135's accept/decline
+ * flow was always the actual safety valve (the assignee can simply decline).
+ * This does not replace that; it adds a role-level "no" in front of it for
+ * tenants that want one.
+ */
+export const PermissionAction = z.enum(["view", "create", "edit", "delete", "export", "assign_up"]);
 export type PermissionAction = z.infer<typeof PermissionAction>;
 
 export const PermissionScope = z.enum(["all", "owned"]);
 export type PermissionScope = z.infer<typeof PermissionScope>;
+
+/**
+ * Actions where scope is meaningless - a capability, not a row filter -
+ * mirroring `ALL_SCOPE_ONLY_OBJECTS` but per-action rather than per-object.
+ * `assign_up` answers "may this role ever do it", never "for which records",
+ * so the console renders it Yes/No like a whole-org power.
+ */
+export const ALL_SCOPE_ONLY_ACTIONS: ReadonlySet<PermissionAction> = new Set(["assign_up"]);
 
 export const FieldRestriction = z.enum(["hidden", "readonly"]);
 export type FieldRestriction = z.infer<typeof FieldRestriction>;
@@ -199,6 +220,12 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "task:create",
   "task:edit",
   "task:view",
+  // Enforced INSIDE create/update/reassign in tasks.controller.ts, via an
+  // inline `hasCrmGrant()` check rather than `@RequireCrmPermission` - it only
+  // applies when the chosen assignee is an owner or manager, which a
+  // route-level guard cannot express without wrongly blocking every other
+  // target too. permissions-inventory.spec.ts carries the matching exception.
+  "task:assign_up",
 ];
 
 /** Does any route actually check this cell? See ENFORCED_PERMISSIONS. */

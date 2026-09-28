@@ -281,6 +281,8 @@ export interface TaskInputPayload {
   title: string;
   notes?: string | null;
   dueOn?: string | null;
+  /** The promised hour, when there is one (migration 0095) - an ISO instant, never a bare wall-clock string. */
+  dueAt?: string | null;
   priority?: "low" | "normal" | "high";
   dealId?: string | null;
   contactId?: string | null;

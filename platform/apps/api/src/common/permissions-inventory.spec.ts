@@ -57,13 +57,36 @@ function declaredPairs(): string[] {
   return [...pairs].sort();
 }
 
+/**
+ * Pairs enforced by an inline `hasCrmGrant()` check rather than the
+ * route-level `@RequireCrmPermission` decorator this file otherwise reflects
+ * over. `task:assign_up` (0141) only matters when the chosen assignee is an
+ * owner or manager, which a route-level guard cannot express - it would have
+ * to deny the WHOLE route, blocking every other assignee too. See
+ * `assertAssignUpAllowed` in tasks.controller.ts, called from create, update
+ * and reassign.
+ */
+const MANUALLY_ENFORCED: readonly string[] = ["task:assign_up"];
+
 describe("the enforced-permission inventory", () => {
   it("matches what the controllers actually declare, exactly", () => {
     // Both directions matter. A pair declared but not listed makes the console
     // render a live restriction as "not checked" - it silently stops offering a
     // control that works. A pair listed but not declared is the dangerous one:
-    // a picker that changes nothing.
-    expect(declaredPairs()).toEqual([...ENFORCED_PERMISSIONS].sort());
+    // a picker that changes nothing. `MANUALLY_ENFORCED` pairs are excluded
+    // from this comparison - checked instead by the tests below.
+    const declarative = [...ENFORCED_PERMISSIONS].filter((p) => !MANUALLY_ENFORCED.includes(p));
+    expect(declaredPairs()).toEqual(declarative.sort());
+  });
+
+  it("keeps every manually-enforced pair off the declarative list", () => {
+    // If a pair here ever gains a real `@RequireCrmPermission` decorator, it
+    // belongs in the main comparison above instead - this list is only for
+    // the ones a route guard genuinely cannot express.
+    for (const pair of MANUALLY_ENFORCED) {
+      expect(ENFORCED_PERMISSIONS).toContain(pair);
+      expect(declaredPairs()).not.toContain(pair);
+    }
   });
 
   it("names only objects the enum knows", () => {

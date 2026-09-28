@@ -191,3 +191,43 @@ export class CrmPermissionsGuard implements CanActivate {
 function denial({ objectType, action }: CrmPermissionRequirement): string {
   return `requires permission: ${action} on ${objectType}`;
 }
+
+/**
+ * An ad hoc grant check for a single (object, action), for a rule that gates
+ * WHO a request may target rather than whether the route runs at all - so it
+ * cannot be expressed as `@RequireCrmPermission`, which is yes/no for the
+ * whole request. `task:assign_up` (0141) is the one caller today: it only
+ * matters when the chosen assignee is an owner or manager, and every other
+ * assignee must still go through.
+ *
+ * Takes an already-open client (inside the caller's own `withOrg`) rather
+ * than a `DbService`, so this never opens a second connection alongside the
+ * request's own - the Mumbai-to-Seoul round trip this platform pays on every
+ * query is not one to double for a permission check.
+ *
+ * Deliberately no persona narrowing (unlike the guard above): a persona can
+ * only narrow a row-level SCOPE, and this is a plain capability, not a scope.
+ */
+export async function hasCrmGrant(
+  client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> },
+  orgId: string,
+  userId: string,
+  objectType: PermissionObjectType,
+  action: PermissionAction,
+): Promise<boolean> {
+  const { rows } = await client.query(
+    `SELECT 1
+       FROM memberships m
+       JOIN organizations o
+         ON o.id = m.org_id AND $5 = ANY(o.enabled_modules)
+       JOIN roles r
+         ON r.org_id = m.org_id
+        AND (r.id = m.role_id OR (m.role_id IS NULL AND r.key = m.role))
+       JOIN role_permissions rp
+         ON rp.role_id = r.id AND rp.object_type = $3 AND rp.action = $4
+      WHERE m.user_id = $1 AND m.org_id = $2
+      LIMIT 1`,
+    [userId, orgId, objectType, action, PERMISSION_OBJECT_MODULE[objectType]],
+  );
+  return rows.length > 0;
+}

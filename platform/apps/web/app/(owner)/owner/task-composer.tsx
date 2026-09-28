@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Check, Clock, Plus, Search, X } from "lucide-react";
-import { Button, Dialog, ErrorBanner, FormField, Input, Select } from "@aura/ui";
+import { Calendar as CalendarIcon, Check, Clock, Plus, Search, X } from "lucide-react";
+import { Button, Calendar, Dialog, ErrorBanner, FormField, Input, Popover, Select } from "@aura/ui";
 import { fetchAssigneeOptionsAction, type AssigneeOption } from "./bulk/actions";
 import { createTaskAction, updateTaskAction } from "./crm-actions";
 import type { Task } from "./types";
@@ -20,7 +20,7 @@ export function useAssigneeOptions(): AssigneeOption[] | null {
   const [options, setOptions] = useState<AssigneeOption[] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void fetchAssigneeOptionsAction("people").then((result) => {
+    void fetchAssigneeOptionsAction("task-assignees").then((result) => {
       if (!cancelled) setOptions(result.options ?? []);
     });
     return () => {
@@ -124,6 +124,134 @@ export function PeoplePicker({
   );
 }
 
+const HOURS = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
+const MINUTES = ["00", "15", "30", "45"];
+
+/**
+ * The due-date-and-time control, hand-themed the same way `Calendar` is: a
+ * native `<input type="date">` popup is the browser's own chrome and cannot
+ * be restyled at all, which is why it used to look like a different app
+ * dropped into the middle of this one (date-range-bar.tsx's same complaint).
+ *
+ * Time is a promised HOUR, not required (migration 0095's `dueAt`) - "call
+ * him back Thursday" has none, "call him back at 3" does, and this is
+ * optional beside the date for exactly that reason. Composed from the
+ * picker's own local time zone into an ISO instant on submit (see
+ * `NewTaskButton.submit`), never sent as a bare "15:00".
+ */
+function DueDatePicker({
+  dueOn,
+  dueTime,
+  onChange,
+}: {
+  dueOn: string;
+  dueTime: string;
+  onChange: (dueOn: string, dueTime: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  /**
+   * Remounts `Calendar` after every pick. It is a RANGE picker: left alone,
+   * its second click would report the two days sorted, and taking `from`
+   * would hand back the earlier one rather than the day just clicked. A
+   * fresh mount has no anchor, so every click is a first click - one day,
+   * reported as `(key, key)` - which is what a due date is.
+   */
+  const [picks, setPicks] = useState(0);
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const close = () => setOpen(false);
+
+  const label = dueOn ? `${dueOn}${dueTime ? ` · ${dueTime}` : ""}` : "No due date";
+
+  return (
+    <Popover
+      open={open}
+      onDismiss={close}
+      className="w-72 p-3"
+      trigger={
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className="flex h-9.5 w-full items-center justify-between gap-2 rounded-sm border border-border-strong bg-surface px-3 text-sm transition-colors duration-150 ease-out hover:bg-surface-hover"
+        >
+          <span className={dueOn ? "text-text" : "text-text-subtle"}>{label}</span>
+          <CalendarIcon className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+        </button>
+      }
+    >
+      <Calendar
+        key={picks}
+        from={dueOn || null}
+        to={dueOn || null}
+        onChange={(picked) => {
+          setPicks((n) => n + 1);
+          onChange(picked, dueTime);
+        }}
+        today={today}
+      />
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
+        <span className="text-xs text-text-muted">Time (optional)</span>
+        <div className="flex items-center gap-1">
+          <Select
+            aria-label="Due hour"
+            className="w-16"
+            value={dueTime ? dueTime.slice(0, 2) : ""}
+            disabled={!dueOn}
+            onChange={(e) => {
+              const h = e.target.value;
+              onChange(dueOn, h ? `${h}:${dueTime ? dueTime.slice(3, 5) : "00"}` : "");
+            }}
+          >
+            <option value="">--</option>
+            {HOURS.map((h) => (
+              <option key={h} value={h}>
+                {h}
+              </option>
+            ))}
+          </Select>
+          <span aria-hidden="true" className="text-text-muted">
+            :
+          </span>
+          <Select
+            aria-label="Due minute"
+            className="w-16"
+            value={dueTime ? dueTime.slice(3, 5) : ""}
+            disabled={!dueOn}
+            onChange={(e) => {
+              const m = e.target.value;
+              onChange(dueOn, dueTime ? `${dueTime.slice(0, 2)}:${m}` : `09:${m}`);
+            }}
+          >
+            <option value="">--</option>
+            {MINUTES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            onChange("", "");
+            close();
+          }}
+        >
+          Clear
+        </Button>
+        <Button type="button" size="sm" onClick={close}>
+          Done
+        </Button>
+      </div>
+    </Popover>
+  );
+}
+
 /**
  * "New task" - a button that opens the full form in a dialog.
  *
@@ -156,6 +284,7 @@ export function NewTaskButton({
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [dueOn, setDueOn] = useState("");
+  const [dueTime, setDueTime] = useState("");
   const [priority, setPriority] = useState<"low" | "normal" | "high">("normal");
   // Kept between tasks: several follow-ups for the same people in a row is
   // the common case, and re-picking them each time is friction.
@@ -173,10 +302,15 @@ export function NewTaskButton({
     setError(null);
     if (!title.trim()) return setError("Give the task a title.");
     startTransition(async () => {
+      // Composed from the picker's own local time zone, so "3pm" means the
+      // console operator's 3pm rather than a bare wall-clock string the API
+      // would have to guess a zone for (see DueDatePicker's comment).
+      const dueAt = dueOn && dueTime ? new Date(`${dueOn}T${dueTime}:00`).toISOString() : null;
       const result = await createTaskAction({
         title: title.trim(),
         notes: notes.trim() || null,
         dueOn: dueOn || null,
+        dueAt,
         priority,
         assigneeUserIds: people,
         dealId: dealId ?? null,
@@ -188,6 +322,7 @@ export function NewTaskButton({
       setTitle("");
       setNotes("");
       setDueOn("");
+      setDueTime("");
       setPriority("normal");
       setOpen(false);
     });
@@ -241,7 +376,14 @@ export function NewTaskButton({
           </FormField>
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Due date" name="task-due" hint="Optional">
-              <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} />
+              <DueDatePicker
+                dueOn={dueOn}
+                dueTime={dueTime}
+                onChange={(nextDueOn, nextDueTime) => {
+                  setDueOn(nextDueOn);
+                  setDueTime(nextDueTime);
+                }}
+              />
             </FormField>
             <FormField label="Priority" name="task-priority">
               <Select value={priority} onChange={(e) => setPriority(e.target.value as typeof priority)}>

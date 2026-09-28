@@ -155,14 +155,32 @@ export interface AssigneeOption {
  * `telecallers` - the active telecaller identities (leads belong to those); read
  * from the team roster, which is owner/manager only, the same people the lead
  * reassign route admits.
+ * `task-assignees` - the org's members, ALREADY narrowed by `task:assign_up`
+ * (0141): a caller whose role lacks that grant gets a list with no owner or
+ * manager on it, from `/v1/tasks/assignable-people` rather than `/v1/members`.
+ * Kept separate from `people` because that endpoint is also the deal-owner
+ * picker (add-deal-dialog.tsx), which has no such concept and must not be
+ * narrowed by it.
  */
 export async function fetchAssigneeOptionsAction(
-  kind: "people" | "telecallers",
+  kind: "people" | "telecallers" | "task-assignees",
 ): Promise<{ options?: AssigneeOption[]; error?: string }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
 
   try {
+    if (kind === "task-assignees") {
+      const res = await fetch(`${API_URL}/v1/tasks/assignable-people`, { headers, cache: "no-store" });
+      if (!res.ok) return { error: `API ${res.status}` };
+      const data = (await res.json()) as {
+        people: Array<{ userId: string; name: string | null; email: string }>;
+      };
+      const options = data.people
+        .map((p) => ({ id: p.userId, label: p.name ?? p.email, detail: p.name ? p.email : null }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      return { options };
+    }
+
     if (kind === "telecallers") {
       const res = await fetch(`${API_URL}/v1/owner/team`, { headers, cache: "no-store" });
       if (res.status === 403) return { error: "Only an owner or manager can reassign leads." };

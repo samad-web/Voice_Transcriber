@@ -2,7 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ALL_SCOPE_ONLY_OBJECTS, isPermissionEnforced, type PermissionObjectType } from "@aura/shared";
+import {
+  ALL_SCOPE_ONLY_ACTIONS,
+  ALL_SCOPE_ONLY_OBJECTS,
+  isPermissionEnforced,
+  type PermissionAction,
+  type PermissionObjectType,
+} from "@aura/shared";
 import {
   Button,
   Card,
@@ -40,6 +46,9 @@ const ACTION_LABELS: Record<string, string> = {
   edit: "Edit",
   delete: "Delete",
   export: "Export",
+  // Only meaningful on Follow-ups (0141) - every other object's cell renders
+  // "not checked", the same as any other action nothing enforces.
+  assign_up: "Assign up",
 };
 
 type Grid = Record<string, Record<string, "none" | "all" | "owned">>;
@@ -318,10 +327,13 @@ function RoleEditor({
                       </td>
                     );
                   }
-                  // A whole-org power (a board is nobody's record) is a plain
-                  // yes or no - offering "Own records" would be a setting that
-                  // means nothing. Yes is stored as scope `all`.
-                  const yesNo = ALL_SCOPE_ONLY_OBJECTS.has(object as PermissionObjectType);
+                  // A whole-org power (a board is nobody's record, assigning
+                  // up is a capability not a record filter) is a plain yes or
+                  // no - offering "Own records" would be a setting that means
+                  // nothing. Yes is stored as scope `all`.
+                  const yesNo =
+                    ALL_SCOPE_ONLY_OBJECTS.has(object as PermissionObjectType) ||
+                    ALL_SCOPE_ONLY_ACTIONS.has(action as PermissionAction);
                   return (
                     <td key={action} className="px-3 py-2">
                       {canEdit ? (
@@ -372,7 +384,10 @@ function RoleEditor({
         Cells marked <em>not checked</em> are combinations Aura does not enforce anywhere, so
         setting them would change nothing. <strong className="font-medium text-text">Lead boards</strong>{" "}
         is about the boards themselves &mdash; creating them, changing their columns and which
-        channels feed them, and deleting them &mdash; not about the leads on them.
+        channels feed them, and deleting them &mdash; not about the leads on them.{" "}
+        <strong className="font-medium text-text">Assign up</strong>, on Follow-ups, is whether this
+        role may hand a task to an Owner or Manager persona &mdash; off by default for Telecaller and
+        Sales, since 0135&rsquo;s accept-or-decline is otherwise the only check on who a task goes to.
       </p>
 
       {dirty ? (

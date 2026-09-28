@@ -42,6 +42,19 @@ const SORT_OPTIONS: readonly FilterOption[] = [
   { value: "created", label: "Newest" },
 ];
 
+/** History window - 30 days, matching the console's other short-window defaults (not SLA's 90). */
+const HISTORY_DAYS = 30;
+
+interface ComplianceKpi {
+  total: number;
+  completed: number;
+  overdue: number;
+  pending: number;
+  completedLate: number;
+  completedOnTime: number;
+  compliancePct: number | null;
+}
+
 /**
  * The workspace's follow-ups (Track A3), filterable and savable.
  *
@@ -69,15 +82,21 @@ export default async function TasksPage({
   const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
   const offset = Math.max(0, Number(one(params.offset)) || 0);
 
-  const [overdueResult, members, views, countsResult] = await Promise.all([
+  const [overdueResult, members, views, countsResult, historyResult] = await Promise.all([
     ownerTry<{ tasks: Task[]; total: number }>("/v1/tasks?overdue=1&limit=100"),
     loadMembers(),
     loadSavedViews("tasks"),
     // Only for the "waiting for your answer" banner (0135) - a failure just
     // means no banner, never a broken page.
     ownerTry<{ awaiting?: number }>("/v1/tasks/counts"),
+    // Completed-vs-missed history (same `deal:view`-gated endpoint the SLA
+    // report uses) - a scoped login gets their own numbers, `deal:view`'s
+    // `owned` scope applied to `tasks` the same way it is there. A failure
+    // just hides the card, never a broken page.
+    ownerTry<{ kpi: ComplianceKpi }>(`/v1/reports/followup-compliance?days=${HISTORY_DAYS}`),
   ]);
   const awaiting = countsResult.ok ? (countsResult.data.awaiting ?? 0) : 0;
+  const history = historyResult.ok ? historyResult.data.kpi : null;
 
   const whoOptions: FilterOption[] = [
     { value: "", label: "Everyone" },
@@ -133,25 +152,65 @@ export default async function TasksPage({
               <TaskBrowser filters={current} offset={offset} />
             </Card>
 
-            <Card>
-              <MonoLabel>Overdue</MonoLabel>
-              <p className="mt-2 text-3xl font-semibold text-text tabular-nums">{overdueResult.data.total}</p>
-              <p className="mt-1 text-xs text-text-muted">
-                {overdueResult.data.total === 0 ? "Nothing is past its due date." : "Open tasks past their due date."}
-              </p>
-              {overdueResult.data.tasks.length > 0 ? (
-                <ul className="mt-3 space-y-1.5">
-                  {overdueResult.data.tasks.slice(0, 8).map((task) => (
-                    <li key={task.id} className="text-xs break-words text-text-muted">
-                      <span className="font-medium text-danger-text tabular-nums">{task.due_on}</span> {task.title}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </Card>
+            <div className="space-y-6">
+              <Card>
+                <MonoLabel>Overdue</MonoLabel>
+                <p className="mt-2 text-3xl font-semibold text-text tabular-nums">{overdueResult.data.total}</p>
+                <p className="mt-1 text-xs text-text-muted">
+                  {overdueResult.data.total === 0 ? "Nothing is past its due date." : "Open tasks past their due date."}
+                </p>
+                {overdueResult.data.tasks.length > 0 ? (
+                  <ul className="mt-3 space-y-1.5">
+                    {overdueResult.data.tasks.slice(0, 8).map((task) => (
+                      <li key={task.id} className="text-xs break-words text-text-muted">
+                        <span className="font-medium text-danger-text tabular-nums">{task.due_on}</span> {task.title}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </Card>
+
+              {history ? <TaskHistoryCard kpi={history} /> : null}
+            </div>
           </div>
         </>
       )}
     </>
+  );
+}
+
+/**
+ * "Visible tracking" for missed follow-ups - a record, not a consequence: no
+ * score, no automated action, just what a person (or, for an owner/manager
+ * login, the floor) actually closed on time. Reuses the SLA report's own
+ * `followup-compliance` KPI rather than a second query, so this card and that
+ * report can never disagree, and is scoped by whatever `deal:view` resolves
+ * to for this login - see that endpoint's own comment for why a telecaller
+ * lands on their own numbers without a separate "mine" parameter.
+ */
+function TaskHistoryCard({ kpi }: { kpi: ComplianceKpi }) {
+  // Both halves of "didn't keep the promise": still open and past due, or
+  // closed but after the date it was promised for. Cancelled follow-ups are
+  // excluded upstream (the API's own comment: tidying up isn't a miss).
+  const missed = kpi.overdue + kpi.completedLate;
+  return (
+    <Card>
+      <MonoLabel>Task history · {HISTORY_DAYS}d</MonoLabel>
+      <div className="mt-2 grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-2xl font-semibold text-text tabular-nums">{kpi.completedOnTime}</p>
+          <p className="text-xs text-text-muted">Completed on time</p>
+        </div>
+        <div>
+          <p className="text-2xl font-semibold text-danger-text tabular-nums">{missed}</p>
+          <p className="text-xs text-text-muted">Missed</p>
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-text-muted">
+        {kpi.total === 0
+          ? "No follow-ups due in this window."
+          : `${kpi.compliancePct ?? 0}% on time, out of ${kpi.total} due.`}
+      </p>
+    </Card>
   );
 }
