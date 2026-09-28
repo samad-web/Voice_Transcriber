@@ -1,6 +1,7 @@
 package com.voicetranscriber.callrecorder.platform
 
 import android.content.Context
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
 import com.voicetranscriber.callrecorder.update.AppVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,10 +51,14 @@ object ActivationManager {
             ?: return@withContext "Not activated"
         try {
             val token = accessToken(baseUrl, deviceId)
-            val config = PlatformApi.fetchConfig(baseUrl, token)
+            val config = PlatformApi.fetchConfig(baseUrl, token, AppVersion.current(context))
             ActivationStore.saveConfig(
                 context, config.recordingEnabled, config.version, config.appLockPasswordHash,
             )
+            // Attendance (doc 33): store the block, re-arm the shift alarm, start or
+            // stop the shift service, and look for request decisions. An ABSENT block
+            // means attendance is off for this phone and everything stops.
+            AttendanceController.onConfig(context, config.attendance, config.attendanceJson)
             // recordingEnabled is the only capture knob the server config document
             // currently carries, so it fully drives the local gate (isRecordingAllowed).
             // TODO: when the server extends DeviceConfig with capture policy (e.g. a
@@ -72,6 +77,8 @@ object ActivationManager {
                     configVersion = 0,
                     appLockPasswordHash = ActivationStore.appLockPasswordHash(context),
                 )
+                // A revoked device tracks nobody's attendance either.
+                AttendanceController.onConfig(context, null, null)
                 "Server rejected device (${e.code}) - recording disabled"
             } else {
                 "Config refresh failed: ${e.message}"
@@ -117,6 +124,7 @@ object ActivationManager {
         }
 
     fun deactivate(context: Context) {
+        AttendanceController.onConfig(context, null, null)
         ActivationStore.clear(context)
         DeviceIdentity.wipe()
     }

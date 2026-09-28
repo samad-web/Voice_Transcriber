@@ -84,7 +84,15 @@ class LockActivity : AppCompatActivity() {
     }
 
     private fun enterApp() {
-        startActivity(Intent(this, MainActivity::class.java))
+        val main = Intent(this, MainActivity::class.java)
+        // A notification that asked for a specific screen (Attendance) gets it, after the lock.
+        intent?.getStringExtra(EXTRA_OPEN)?.let { main.putExtra(EXTRA_OPEN, it) }
+        startActivity(main)
         finish()
+    }
+
+    companion object {
+        const val EXTRA_OPEN = "open"
+        const val OPEN_ATTENDANCE = "attendance"
     }
 }

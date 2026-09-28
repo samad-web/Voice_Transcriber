@@ -157,8 +157,14 @@ describe("ownerTabsFor", () => {
   it("draws nothing where the section has one page for this reader", () => {
     // Tasks is one page for everybody: a one-tab strip is furniture.
     expect(ownerTabsFor("/owner/tasks", rail)).toBeNull();
-    // A telecaller's Reports is their activity alone.
-    expect(ownerTabsFor("/owner/productivity", ownerRailFor("telecaller", false, true, true))).toBeNull();
+  });
+
+  it("gives a telecaller's Reports their own activity and their own attendance, nothing else", () => {
+    // It was Team activity alone (a one-tab strip, so none) until Attendance
+    // (doc 33) joined: both pages narrow to the reader's own rows, so a
+    // telecaller gets both, and the rest of Reports stays a manager's view.
+    const tabs = ownerTabsFor("/owner/productivity", ownerRailFor("telecaller", false, true, true));
+    expect(tabs?.tabs.map((t) => t.href)).toEqual(["/owner/productivity", "/owner/attendance"]);
   });
 
   it("shows one settings group at a time, with a way back to all of them", () => {

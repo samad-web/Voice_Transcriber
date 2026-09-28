@@ -149,6 +149,8 @@ import { MembersController } from "../modules/tenancy/members.controller";
 import { TenancyController } from "../modules/tenancy/tenancy.controller";
 import { BrandingAssetsController } from "../modules/tenancy/branding-assets.controller";
 import { WorkspacesController } from "../modules/tenancy/workspaces.controller";
+import { DeviceAttendanceController } from "../modules/attendance/device-attendance.controller";
+import { OwnerAttendanceController } from "../modules/attendance/owner-attendance.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -411,6 +413,10 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // Doc 30: the workspace clock. OwnerRoleGuard owner+manager on BOTH halves
   // (see OWNER_ROLE_ROUTES) - unlike the business profile, a manager may set it.
   TimeSettingsController,
+  // Doc 33 / 0140: attendance. The handset's four (DEVICE_AUTHED) and the
+  // console's twenty (OWNER_ROLE_ROUTES), feature-gated on `attendance`.
+  DeviceAttendanceController,
+  OwnerAttendanceController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -545,6 +551,14 @@ const DEVICE_AUTHED = [
   // every /devices/me route: holding the Keystore key IS being the phone the
   // secret protects, and the route refuses a device that is no longer active.
   "POST /devices/me/recovery",
+  // Attendance (0140, doc 33): the presence beacon, the telecaller's own day,
+  // and applying for / cancelling leave and breaks. DeviceAuthGuard like every
+  // /devices/me route; the telecaller is always the one the device is bound
+  // to, never a value from the body.
+  "POST /devices/me/presence",
+  "GET /devices/me/attendance",
+  "POST /devices/me/attendance/requests",
+  "DELETE /devices/me/attendance/requests/:id",
 ];
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
@@ -998,6 +1012,35 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/call-access/:id/deny",
   "POST /owner/call-access/:id/revoke",
   "PUT /owner/call-access/settings",
+  // Attendance (doc 33, 0140). OwnerRoleGuard + OwnerScopeGuard +
+  // OrgFeatureGuard at class level, like the productivity read. Configuration
+  // (settings, patterns, people, exceptions, recording leave, review,
+  // overrides) and deciding a request declare owner/manager; the reads a
+  // telecaller may also make of their OWN day - today, timesheets (and the
+  // CSV), one day, the request list - declare nothing and are narrowed by
+  // OwnerScopeGuard instead, the productivity rule. Deciding is narrower again
+  // in the handler: the request's manager or an owner, never the requester.
+  // Only an owner may change the WhatsApp toggle (checked in the PUT).
+  "GET /owner/attendance/settings",
+  "PUT /owner/attendance/settings",
+  "GET /owner/attendance/patterns",
+  "POST /owner/attendance/patterns",
+  "PATCH /owner/attendance/patterns/:id",
+  "DELETE /owner/attendance/patterns/:id",
+  "GET /owner/attendance/people",
+  "PUT /owner/attendance/people",
+  "GET /owner/attendance/exceptions",
+  "POST /owner/attendance/exceptions",
+  "DELETE /owner/attendance/exceptions/:id",
+  "GET /owner/attendance/today",
+  "GET /owner/attendance/timesheets",
+  "GET /owner/attendance/timesheets.csv",
+  "GET /owner/attendance/day",
+  "GET /owner/attendance/requests",
+  "POST /owner/attendance/requests",
+  "POST /owner/attendance/requests/:id/decision",
+  "GET /owner/attendance/review",
+  "POST /owner/attendance/segments/:id/override",
   // ── Org configuration that checked nothing but tenant membership (doc 31 §2 X8) ──
   //
   // Every route below used to be plain AdminKeyGuard + TenantGuard, so a
@@ -1702,8 +1745,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 474: branding uploads - POST /org/branding/upload-url (tenant-scoped,
     // OrgRoleGuard + OwnerRoleGuard like PATCH /org/branding) and the
     // unguarded GET /branding-assets/:orgId/:filename that serves them.
-    expect(ROUTES).toHaveLength(478);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(478);
+    // 502: attendance (doc 33, 0140) - four device-authed /devices/me routes
+    // and twenty tenant-scoped /owner/attendance routes.
+    expect(ROUTES).toHaveLength(502);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(502);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1740,14 +1785,14 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 399: plus Time & location's region PUT.
     // 403: plus invite by link's four /owner/invites routes (0137).
     // 404: plus POST /org/branding/upload-url.
-    expect(tenantScoped).toHaveLength(408);
+    expect(tenantScoped).toHaveLength(428);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(478); // = ROUTES.length: every route in exactly one class
+    ).toBe(502); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 422 principal routes", () => {
@@ -1778,7 +1823,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 434: plus POST /org/branding/upload-url, and the Platform Hub's
     // GET /analytics/active-users + /analytics/booking-rate, which reached
     // CROSS_TENANT without this count moving.
-    expect(principalRoutes).toHaveLength(438);
+    expect(principalRoutes).toHaveLength(458);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

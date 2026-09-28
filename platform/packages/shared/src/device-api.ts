@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CaptureCapability } from "./enums";
+import { DeviceAttendanceConfig } from "./attendance";
 
 /**
  * Device enrollment (design doc §3.2) + the activation gate:
@@ -125,6 +126,13 @@ export const DeviceConfig = z.object({
    * forgets the guard is not punished for it.
    */
   appLockPasswordHash: z.string().nullable().optional(),
+  /**
+   * Attendance (migration 0140, doc 33). OMITTED - never null - while the
+   * workspace's `attendance_enabled` is off, the device is bound to no
+   * telecaller, or the handset is older than ATTENDANCE_MIN_VERSION_CODE. A
+   * 1.1.x phone and a switched-off workspace therefore see the same document.
+   */
+  attendance: DeviceAttendanceConfig.optional(),
 });
 export type DeviceConfig = z.infer<typeof DeviceConfig>;
 

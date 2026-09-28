@@ -96,6 +96,19 @@ export const NotificationKind = z.enum([
    * the noise that teaches people to ignore the bell.
    */
   "task_response",
+  /**
+   * A telecaller applied for leave, booked a break outside the allowance or
+   * asked to change their hours (migration 0140). Told to the request's
+   * approver - their `reports_to` manager - or to every owner when there is
+   * none, and to the owners again on escalation.
+   */
+  "attendance_request",
+  /** A break has run past its end by the alert threshold (0140). Managers only. */
+  "attendance_break_overrun",
+  /** A telecaller did not answer a presence check (0140). Their approver only. */
+  "attendance_away",
+  /** A stretch of a day needs a person to decide what it was (0140 §4 review). */
+  "attendance_review",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

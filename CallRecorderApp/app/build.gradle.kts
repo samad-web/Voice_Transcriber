@@ -40,8 +40,10 @@ android {
         // against: publish-app-release.js refuses a code that is not higher than
         // the live one, because a handset offered an equal code would prompt
         // forever and never be able to satisfy the prompt.
-        versionCode = 9
-        versionName = "1.1.5"
+        // 10 / 1.2.0: attendance (Build docs/33). The server only sends the
+        // attendance block to handsets at ATTENDANCE_MIN_VERSION_CODE (10) or above.
+        versionCode = 10
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -161,4 +163,10 @@ dependencies {
     // firebase-messaging-ktx, so dropping that artifact above would otherwise
     // have taken the token fetch with it.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
+    // JVM unit tests for the attendance engine (plain Kotlin, fake clock).
+    // org.json is a real implementation here: the android.jar copy used by
+    // local unit tests is stubs that throw "not mocked".
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

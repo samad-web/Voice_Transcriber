@@ -70,6 +70,34 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     icon: "plug",
     needsAction: true,
   },
+  // Attendance (doc 33, migration 0140). A request and a stretch to review
+  // both wait on a decision; an overrun break and an unanswered presence
+  // check are things to know, and the person deciding what they meant does it
+  // from the Review tab.
+  attendance_request: {
+    label: "Leave or break request",
+    description: "A telecaller applied for leave, asked for a break or asked to change their hours.",
+    icon: "clipboard-check",
+    needsAction: true,
+  },
+  attendance_review: {
+    label: "Attendance to review",
+    description: "Part of somebody's day could not be classified and needs a person to excuse it or not.",
+    icon: "clipboard-check",
+    needsAction: true,
+  },
+  attendance_break_overrun: {
+    label: "Break overran",
+    description: "A telecaller's break ran well past its end.",
+    icon: "hourglass",
+    needsAction: false,
+  },
+  attendance_away: {
+    label: "Missed presence check",
+    description: "A telecaller did not answer a presence check during their shift.",
+    icon: "alarm",
+    needsAction: false,
+  },
   task_assigned: {
     label: "Task assigned",
     description: "Somebody gave you a task to accept or decline.",

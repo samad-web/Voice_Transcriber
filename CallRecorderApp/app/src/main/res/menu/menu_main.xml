@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Shown only while attendance is switched on for this phone. -->
+    <item
+        android:id="@+id/action_attendance"
+        android:icon="@drawable/ic_attendance"
+        android:title="@string/att_menu"
+        android:visible="false"
+        app:showAsAction="ifRoom" />
     <item
         android:id="@+id/action_profile"
         android:title="@string/profile_menu"

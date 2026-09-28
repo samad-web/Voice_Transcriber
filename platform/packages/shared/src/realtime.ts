@@ -33,6 +33,11 @@ export const KNOWN_TOPICS = [
   "account",
   "agent",
   "apikey",
+  // Attendance (0140, doc 33). The owner routes announce it through the path
+  // (`/owner/attendance/*`), but the handset's presence batches arrive on
+  // `devices/me`, which is SILENT - so that handler, and the worker's
+  // classifier, announce it explicitly for the live Today board.
+  "attendance",
   "automation",
   "call",
   "campaign",

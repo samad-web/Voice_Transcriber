@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.util.Log
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
 
 /**
  * The two moments around an unattended install that arrive as broadcasts:
@@ -27,6 +28,11 @@ class UpdateReceiver : BroadcastReceiver() {
 
     private fun onReplaced(context: Context) {
         Log.i(TAG, "now running v${AppVersion.currentName(context)}")
+        // Attendance: re-arm the shift alarm and bring a running shift back (App.onCreate
+        // already logged app_start for it). Fetch config too - a 1.1.x -> 1.2.0 update
+        // is exactly when the server starts sending the attendance block.
+        AttendanceController.onBootOrRearm(context)
+        com.voicetranscriber.callrecorder.platform.ConfigRefreshWorker.runNow(context)
         // readyFile() is null once the installed build has caught up with the
         // pending one. Drop its bytes and the notification that advertised it
         // now, rather than at the next 6h check.

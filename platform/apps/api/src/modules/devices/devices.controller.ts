@@ -23,6 +23,7 @@ import { z } from "zod";
 import {
   AppUpdateResponse,
   DeviceConfig,
+  type DeviceAttendanceConfig,
   DeviceRecoverRequest,
   DeviceRecoveryProvisionRequest,
   DeviceRegisterRequest,
@@ -47,6 +48,7 @@ import {
   restoreDevice,
 } from "./device-rebind";
 import { auditActor } from "../../common/audit-actor";
+import { attendanceBlockFor, loadDeviceAttendanceContext } from "../attendance/attendance-device";
 
 /**
  * The one refusal `POST /devices/recover` gives anybody who has not proven the
@@ -727,6 +729,22 @@ export class DevicesController {
         row.org_status === "active" &&
         row.consent_policy !== "prohibited";
 
+      // Attendance (0140, doc 33). OMITTED unless the workspace switch is on,
+      // the phone is bound to an active telecaller and it is not known to be
+      // older than ATTENDANCE_MIN_VERSION_CODE - see attendance-device.ts.
+      // Never allowed to break the config itself: this document is the
+      // recording gate, and a fault in an optional block must not stop a
+      // fleet from recording. Safe to swallow: nothing is written after this
+      // point, so a failed read here (an API deployed ahead of 0140, say) only
+      // turns this read-only transaction's COMMIT into a ROLLBACK.
+      let attendance: DeviceAttendanceConfig | null = null;
+      try {
+        const ctx = await loadDeviceAttendanceContext(client, deviceId);
+        if (ctx && ctx.deviceStatus === "active") attendance = await attendanceBlockFor(client, ctx, Date.now());
+      } catch (err) {
+        console.warn(`device ${deviceId}: attendance block skipped (${(err as Error).message})`);
+      }
+
       return DeviceConfig.parse({
         version: row.config_version,
         recordingEnabled,
@@ -746,6 +764,7 @@ export class DevicesController {
         ...(row.app_lock_password_hash
           ? { appLockPasswordHash: row.app_lock_password_hash }
           : {}),
+        ...(attendance ? { attendance } : {}),
       });
     });
   }

@@ -5,6 +5,8 @@ import {
   ChartColumn,
   Bell,
   Building2,
+  CalendarCheck,
+  CalendarClock,
   CalendarDays,
   ClipboardCheck,
   Contact,
@@ -371,6 +373,20 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // is the opposite of what a coaching surface is for.
   },
   {
+    href: "/owner/attendance",
+    label: "Attendance",
+    icon: CalendarCheck,
+    title: "Attendance",
+    context: "Reports",
+    // Owner, manager and telecaller (doc 33 §7.1). A telecaller sees their own
+    // row, timesheet and requests - the API scopes them to it, the way Team
+    // activity next door does - because being open with a person about what
+    // is recorded about them is part of the privacy design (§11). Sales and
+    // marketing have no shift on a handset, so the page would be empty for
+    // them by construction. Gated by the `attendance` feature key.
+    ownerRoles: ["owner", "manager", "telecaller"],
+  },
+  {
     href: "/owner/reports",
     label: "Sales overview",
     icon: ChartColumn,
@@ -603,6 +619,19 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // either of them came here to find.
   },
   {
+    href: "/owner/settings/attendance",
+    label: "Attendance",
+    icon: CalendarClock,
+    title: "Attendance settings",
+    context: "Settings",
+    // Owner and manager, matching `@RequireOwnerRole("owner", "manager")` on
+    // the owner attendance writes (doc 33 §7.2). Shift patterns, holidays and
+    // who each telecaller reports to are running the floor. The WhatsApp
+    // alert toggle inside it is narrower still - owners only - and the API
+    // returns `canEditWhatsapp` so the page can say so rather than guess.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/superfone",
     label: "Office line (Superfone)",
     icon: PhoneForwarded,
@@ -799,6 +828,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
     pages: [
       { href: "/owner/staff", blurb: "Who works here, what each person can see and do, and how they are doing." },
       { href: "/owner/devices", blurb: "The phones that record calls, and whether each one has checked in." },
+      {
+        href: "/owner/settings/attendance",
+        blurb: "Shifts, breaks, holidays, who approves leave, and whether phones track attendance.",
+      },
     ],
   },
   {
@@ -895,6 +928,7 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/reports": "reports",
   "/owner/insights": "reports",
   "/owner/productivity": "reports",
+  "/owner/attendance": "reports",
   "/owner/reports/sla": "reports",
   "/owner/reports/builder": "reports",
 

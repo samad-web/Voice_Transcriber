@@ -35,6 +35,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.voicetranscriber.callrecorder.R
+import com.voicetranscriber.callrecorder.attendance.AttendanceActivity
+import com.voicetranscriber.callrecorder.attendance.AttendanceStore
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
 import com.voicetranscriber.callrecorder.databinding.ActivityMainBinding
 import com.voicetranscriber.callrecorder.databinding.SheetSettingsBinding
@@ -124,11 +126,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         requestRuntimePermissions()
+        openAttendanceIfAsked(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openAttendanceIfAsked(intent)
     }
 
     override fun onResume() {
         super.onResume()
         renderGreeting() // keep the time-of-day greeting current
+        invalidateOptionsMenu() // the Attendance item follows the latest config
+    }
+
+    /** Reminder and prompt notifications reach the Attendance screen through LockActivity. */
+    private fun openAttendanceIfAsked(intent: Intent?) {
+        if (intent?.getStringExtra(LockActivity.EXTRA_OPEN) != LockActivity.OPEN_ATTENDANCE) return
+        intent.removeExtra(LockActivity.EXTRA_OPEN)
+        startActivity(Intent(this, AttendanceActivity::class.java))
     }
 
     /**
@@ -200,10 +216,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)
+        menu.findItem(R.id.action_attendance)?.isVisible = AttendanceStore.config(this) != null
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
+        R.id.action_attendance -> {
+            startActivity(Intent(this, AttendanceActivity::class.java)); true
+        }
         R.id.action_settings -> { showSettings(); true }
         R.id.action_profile -> { showProfileDialog(); true }
         R.id.action_refresh -> {

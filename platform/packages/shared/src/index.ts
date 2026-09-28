@@ -72,5 +72,6 @@ export * from "./password-policy";
 export * from "./user-agent";
 export * from "./auth-events";
 export * from "./safe-path";
+export * from "./attendance";
 
 export * from "./time";

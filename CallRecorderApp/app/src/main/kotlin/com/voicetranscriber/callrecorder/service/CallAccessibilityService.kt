@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
 import com.voicetranscriber.callrecorder.recordings.CallSource
 import com.voicetranscriber.callrecorder.recordings.SourceRegistry
@@ -22,12 +23,24 @@ class CallAccessibilityService : AccessibilityService() {
 
     private var activeSource: CallSource? = null
     private var activePackage: String? = null
+    private var attendanceVoipCall = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString()
         val cls = event.className?.toString()
         val source = detectCallSource(pkg, cls)
+
+        // Attendance (doc 33 §3.1): a VoIP call window is call activity. Tracked on its
+        // own flag, independent of whether VoIP recording is on, so the recording logic
+        // below is exactly as it was.
+        if (source != null && !attendanceVoipCall) {
+            attendanceVoipCall = true
+            AttendanceController.onCallStart(this, voip = true, direction = "unknown")
+        } else if (source == null && attendanceVoipCall && pkg != null && !isTransientOverlay(pkg)) {
+            attendanceVoipCall = false
+            AttendanceController.onCallEnd(this, voip = true)
+        }
 
         when {
             // A call screen appeared and we're not already recording → start.

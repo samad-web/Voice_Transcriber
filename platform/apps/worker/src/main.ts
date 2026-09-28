@@ -38,6 +38,9 @@ import { startChannelWatchdog } from "./pipeline/channel-watchdog";
 import { startSlaBreachSweep } from "./pipeline/sla-breach";
 import { startReportScheduleSweep } from "./pipeline/report-schedules";
 import { startRecycleBinPurge } from "./pipeline/recycle-bin-purge";
+import { startAttendanceClassifier } from "./pipeline/attendance-classify";
+import { startAttendanceAlerts } from "./pipeline/attendance-alerts";
+import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -225,6 +228,18 @@ async function bootstrap() {
   // module header and design doc D6 for the reasoning and the seam.
   startReportScheduleSweep();
   startRecycleBinPurge();
+  // Attendance (doc 33, migration 0140), only for orgs that switched it on.
+  // The classifier rebuilds today, yesterday and any day the API marked, and
+  // fills telecaller_daily_stats.presence_seconds - pure computation. The
+  // alerts sweep raises IN-APP notifications (away, break overrun, review,
+  // escalation) and wakes silent phones with an FCM presence_check. The
+  // WhatsApp drain is the one outbound message: to a workspace's own managers,
+  // from its own business number, and only while an OWNER's toggle and
+  // WHATSAPP_SENDING_ENABLED are both on at send time. All three are sweeps,
+  // so they belong on the single-replica side when the process is split.
+  startAttendanceClassifier();
+  startAttendanceAlerts();
+  startAttendanceWhatsappDrain();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an

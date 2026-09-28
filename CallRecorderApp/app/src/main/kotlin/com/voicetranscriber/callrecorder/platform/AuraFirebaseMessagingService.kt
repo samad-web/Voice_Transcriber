@@ -3,6 +3,8 @@ package com.voicetranscriber.callrecorder.platform
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
+import com.voicetranscriber.callrecorder.attendance.AttendanceSyncWorker
 
 /**
  * Receives high-priority FCM data messages from the Aura platform server.
@@ -32,6 +34,14 @@ class AuraFirebaseMessagingService : FirebaseMessagingService() {
 
         when (action) {
             "config_refresh" -> ConfigRefreshWorker.runNow(applicationContext)
+            // Attendance (doc 33 §4): the server lost this phone's heartbeat mid-shift.
+            // The engine step is local and fast (it prompts if ACTIVE and silent past the
+            // threshold); the heartbeat it queues is sent by the uploader, and the sync
+            // worker picks it up if this process dies first - the same hand-off rule as above.
+            "presence_check" -> {
+                AttendanceController.presenceCheck(applicationContext)
+                AttendanceSyncWorker.enqueue(applicationContext)
+            }
             else -> Log.w(TAG, "Unknown FCM action: $action")
         }
     }

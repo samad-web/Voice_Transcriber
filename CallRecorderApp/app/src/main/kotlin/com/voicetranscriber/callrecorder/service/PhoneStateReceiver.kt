@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.telephony.TelephonyManager
 import android.util.Log
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
 import com.voicetranscriber.callrecorder.ingest.MissedCallSyncWorker
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
@@ -32,6 +33,12 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 lastNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
             }
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                // Attendance (doc 33 §3.1): a dial or an answered ring is call activity.
+                // Before the recording gate on purpose - presence does not depend on
+                // whether this phone records - and it changes nothing about recording.
+                AttendanceController.onCallStart(
+                    context, voip = false, direction = if (sawRinging) DIR_INCOMING else DIR_OUTGOING,
+                )
                 // Activation gate: an un-enrolled or remotely-disabled device never records.
                 if (!ActivationStore.isRecordingAllowed(context)) {
                     Log.i("PhoneStateReceiver", "recording blocked - device not activated/enabled")
@@ -66,6 +73,9 @@ class PhoneStateReceiver : BroadcastReceiver() {
                 // no recording. Reading the log (not this broadcast) decides which it was, so
                 // an answered call costs one local query that finds nothing to send.
                 if (rang) MissedCallSyncWorker.enqueueAfterCall(context)
+                // Attendance: the call ended (a no-op when no call had started, e.g. a
+                // ring nobody answered).
+                AttendanceController.onCallEnd(context, voip = false)
             }
         }
     }

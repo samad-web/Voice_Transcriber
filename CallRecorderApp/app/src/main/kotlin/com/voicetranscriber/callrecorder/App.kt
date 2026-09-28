@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.google.android.material.color.DynamicColors
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
 import com.voicetranscriber.callrecorder.ingest.MissedCallSyncWorker
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.platform.ConfigRefreshWorker
@@ -76,6 +77,10 @@ class App : Application() {
         // invisible state - the handset keeps working and just never gets
         // another push.
         FcmTokenManager.ensureSynced(this)
+        // Attendance (Build docs/33): creates its notification channels and, if the
+        // process died mid-shift, restores the shift (logging app_start or boot for the
+        // gap) and re-arms the next shift's alarm. A no-op while attendance is off.
+        runCatching { AttendanceController.onProcessStart(this) }
     }
 
     companion object {

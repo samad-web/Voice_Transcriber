@@ -55,6 +55,7 @@ export const FeatureKey = z.enum([
   "call_sops",
   "agent_studio",
   "productivity",
+  "attendance",
   "inbox",
   "whatsapp_leads",
   // ── Sales ──
@@ -286,6 +287,20 @@ export const FEATURES: FeatureSpec[] = [
     module: "aura",
     group: "conversations",
     hrefs: ["/owner/productivity"],
+    defaultEnabled: true,
+  },
+  {
+    key: "attendance",
+    label: "Attendance",
+    blurb: "Shifts, breaks, leave requests and the live board of who is working (doc 33).",
+    // Visible by default like every entry here; the workspace's own
+    // `attendance_enabled` switch (0140, default off) is what decides whether
+    // any handset tracks anything. Switching the FEATURE off hides the pages
+    // and refuses the routes, but does not stop a phone mid-shift - it simply
+    // stops receiving the config block on its next refresh.
+    module: "aura",
+    group: "conversations",
+    hrefs: ["/owner/attendance", "/owner/settings/attendance"],
     defaultEnabled: true,
   },
   {

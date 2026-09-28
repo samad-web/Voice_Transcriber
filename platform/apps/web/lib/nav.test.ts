@@ -384,6 +384,12 @@ describe("ownerNavSectionsFor", () => {
     expect(sectionOf("/owner/invoices")).toBe("sales");
     expect(sectionOf("/owner/reports/sla")).toBe("reports");
     expect(sectionOf("/owner/productivity")).toBe("reports");
+    // Attendance sits beside Team activity (doc 33 §7.1); its settings with the team.
+    expect(sectionOf("/owner/attendance")).toBe("reports");
+    expect(sectionOf("/owner/settings/attendance")).toBe("settings");
+    expect(OWNER_SETTINGS_GROUPS.find((g) => g.key === "team")?.pages.map((p) => p.href)).toContain(
+      "/owner/settings/attendance",
+    );
     expect(sectionOf("/owner/lead-sources")).toBe("settings");
     expect(sectionOf("/owner/recycle-bin")).toBe("settings");
     expect(sectionOf("/owner/notifications")).toBe("account");

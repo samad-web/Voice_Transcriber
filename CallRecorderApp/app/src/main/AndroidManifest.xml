@@ -41,6 +41,24 @@
     <!-- Needed so EXTRA_INCOMING_NUMBER is populated (the number becomes the recording name) -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
+    <!-- Attendance (Build docs/33 §10). None of these adds any audio capture:
+         presence is measured from call activity, never from a microphone. -->
+    <!-- The shift service: a foreground service of type specialUse (see the property below). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Re-arm the shift-start alarm after a reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The presence check shows over the lock screen. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Shift start, reminders and presence-check deadlines on time; inexact fallback when refused. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- The guided setup asks for the exemption: Samsung's sleeping-apps list otherwise
+         kills the shift service mid-shift. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- network_lost / network_restored during a shift. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Finishing a heartbeat upload on a dozing phone (WorkManager declares it too). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -136,6 +154,55 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ── Attendance (Build docs/33) ── -->
+
+        <!-- The telecaller's Attendance screen (reached from MainActivity, behind the app lock). -->
+        <activity
+            android:name=".attendance.AttendanceActivity"
+            android:exported="false" />
+
+        <!-- The presence check. Shows over the lock screen from a full-screen-intent
+             notification; its own task so answering it never surfaces the rest of the app. -->
+        <activity
+            android:name=".attendance.PresenceCheckActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.voicetranscriber.callrecorder.presence"
+            android:turnScreenOn="true" />
+
+        <!-- Runs only inside a shift window. specialUse: no other foreground-service
+             type describes "keep a workday's presence timers and reminders running". -->
+        <service
+            android:name=".attendance.ShiftService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Workplace attendance during the employee's scheduled shift only: runs the shift's presence-check, break and reminder timers and sends a heartbeat every 2 minutes, all shown in an ongoing notification. Records no audio and nothing outside the shift. The app is distributed by the employer (sideloaded), not through Google Play." />
+        </service>
+
+        <receiver
+            android:name=".attendance.AttendanceAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".attendance.AttendanceActionReceiver"
+            android:exported="false" />
+
+        <!-- Exported only because BOOT_COMPLETED requires it; it acts on nothing but
+             system broadcasts, and only re-arms the stored schedule. -->
+        <receiver
+            android:name=".attendance.AttendanceBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

@@ -6,6 +6,7 @@ import { ExtractionSchema } from "@aura/shared";
 import { type AsrResult, transcribe } from "./asr";
 import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
 import { prepareAudioForAsr } from "./audio-prep";
+import { analyseDeadAirInBackground } from "./dead-air";
 import { projectLeadToCrm } from "./crm-objects";
 import { upsertLead } from "./leads";
 import { announce } from "./realtime";
@@ -968,6 +969,10 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
       if (!row?.s3_key) throw new Error("no recording for call");
       const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: row.s3_key }));
       const original = Buffer.from(await object.Body!.transformToByteArray());
+      // Dead air (doc 33 §5, 0140): four numbers from the audio just
+      // downloaded, in the background. Never awaited and never throws - it
+      // cannot delay or fail this call, and it costs no ASR.
+      analyseDeadAirInBackground(original, callId, orgId);
 
       // Strip the silence and cap the length before anyone is billed for it
       // (B2/B3). Never throws and never fails a call - a deployment without

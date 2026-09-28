@@ -5,6 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import com.voicetranscriber.callrecorder.attendance.AttendanceConfig
+import com.voicetranscriber.callrecorder.attendance.AttendanceJson
 import com.voicetranscriber.callrecorder.util.applyNgrokBypass
 
 /**
@@ -14,9 +16,26 @@ import com.voicetranscriber.callrecorder.util.applyNgrokBypass
  */
 object PlatformApi {
 
-    class ApiException(val code: Int, message: String) : Exception(message)
+    /** [body] is the raw error body, so callers can read a `{code}` such as "not_cancellable". */
+    class ApiException(val code: Int, message: String, val body: String? = null) : Exception(message) {
+        /** The `code` field of a JSON error body, if there is one. */
+        val errorCode: String?
+            get() = runCatching { JSONObject(body ?: "") }.getOrNull()?.let {
+                if (it.isNull("code")) null else it.optString("code", "").ifBlank { null }
+            }
 
-    private fun request(
+        /** The `message` field of a JSON error body (a string or the first of an array). */
+        val errorMessage: String?
+            get() = runCatching { JSONObject(body ?: "") }.getOrNull()?.let { o ->
+                when (val m = o.opt("message")) {
+                    is String -> m.ifBlank { null }
+                    is JSONArray -> m.optString(0, "").ifBlank { null }
+                    else -> null
+                }
+            }
+    }
+
+    internal fun request(
         baseUrl: String,
         method: String,
         path: String,
@@ -38,8 +57,8 @@ object PlatformApi {
             val code = connection.responseCode
             val text = (if (code in 200..299) connection.inputStream else connection.errorStream)
                 ?.bufferedReader()?.readText() ?: "{}"
-            if (code !in 200..299) throw ApiException(code, "HTTP $code: ${text.take(300)}")
-            return JSONObject(text)
+            if (code !in 200..299) throw ApiException(code, "HTTP $code: ${text.take(300)}", text)
+            return JSONObject(text.ifBlank { "{}" })
         } finally {
             connection.disconnect()
         }
@@ -82,10 +101,26 @@ object PlatformApi {
         val version: Int,
         /** Instance-wide mobile app-lock hash, or null when the org hasn't set one. */
         val appLockPasswordHash: String?,
+        /**
+         * The attendance block (doc 33), or null when the server omitted it -
+         * which means attendance is OFF for this phone and everything
+         * attendance-related must stop.
+         */
+        val attendance: AttendanceConfig? = null,
+        /** The raw block, stored as-is so it can be re-parsed offline. */
+        val attendanceJson: String? = null,
     )
 
-    fun fetchConfig(baseUrl: String, accessToken: String): DeviceConfig {
-        val response = request(baseUrl, "GET", "/devices/me/config", null, bearer = accessToken)
+    /**
+     * [versionCode] is sent as a query parameter so the server can tell a 1.2.0
+     * handset (ATTENDANCE_MIN_VERSION_CODE) from an older one on this very
+     * request, instead of waiting for the next update check to record it.
+     * Servers that do not read it ignore it.
+     */
+    fun fetchConfig(baseUrl: String, accessToken: String, versionCode: Int = -1): DeviceConfig {
+        val path = if (versionCode >= 0) "/devices/me/config?versionCode=$versionCode" else "/devices/me/config"
+        val response = request(baseUrl, "GET", path, null, bearer = accessToken)
+        val attendance = AttendanceJson.parseConfig(response)
         return DeviceConfig(
             recordingEnabled = response.getBoolean("recordingEnabled"),
             version = response.getInt("version"),
@@ -107,6 +142,8 @@ object PlatformApi {
             appLockPasswordHash =
                 if (response.isNull("appLockPasswordHash")) null
                 else response.optString("appLockPasswordHash", null),
+            attendance = attendance,
+            attendanceJson = if (attendance != null) response.optJSONObject("attendance")?.toString() else null,
         )
     }
 
