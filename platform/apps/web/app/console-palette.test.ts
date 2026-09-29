@@ -114,7 +114,7 @@ const GRADIENT_CHROME = [
   "components/mobile-nav.tsx",
   // The owner rail both of the above render - the same active-item fill, moved
   // into one file so the two breakpoints cannot drift apart.
-  "components/owner-rail-nav.tsx",
+  "components/console-rail-nav.tsx",
   "components/page-header.tsx",
   // A loading placeholder carries no meaning and is replaced within a second;
   // there is no data on screen for it to be confused with.

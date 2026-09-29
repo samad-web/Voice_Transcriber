@@ -42,6 +42,7 @@ import {
   SquareCheck,
   Target,
   ToggleLeft,
+  TrendingUp,
   Undo2,
   Unlink,
   Upload,
@@ -107,6 +108,22 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Instances",
     icon: Building2,
     title: "Instances",
+    context: "Platform",
+  },
+  // The tenant roster with each client's modules and features (0072/0093) and
+  // the platform storage quota.
+  //
+  // It was ORPHANED until doc 34 Part A: it lived in its own chrome-less
+  // `(admin)` group at /admin, was absent from this list, and `grep -rn
+  // 'href="/admin"'` across the whole app returned nothing - so the only way to
+  // reach it was typing a URL that `basePath` turned into /admin/admin, which
+  // nobody guesses. Part A moved it to (platform)/provisioning, where it gets
+  // the console's chrome and a rail entry like every other page.
+  {
+    href: "/provisioning",
+    label: "Provisioning",
+    icon: Package,
+    title: "Provisioning",
     context: "Platform",
   },
   // One client's team, roles and API keys. These were three top-level entries
@@ -360,6 +377,23 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/my-performance",
+    label: "My performance",
+    icon: TrendingUp,
+    title: "My performance",
+    context: "Reports",
+    // No `ownerRoles`, for the reason Team activity states below and one more
+    // besides: this page is ABOUT the reader. Every persona has a scorecard,
+    // and somebody with no calls attributed to them gets a page that says so
+    // rather than a 403 - which is the honest answer for a manager who has
+    // never held a handset, and the same distinction the staff scorecard draws
+    // between an unlinked identity and a zero.
+    //
+    // A telecaller cannot reach anybody else's card from here: the API's
+    // `telecaller` parameter is overruled by OwnerScopeGuard for an own-scoped
+    // persona, so the page renders their own card whatever the URL says.
+  },
+  {
     href: "/owner/productivity",
     label: "Team activity",
     icon: Gauge,
@@ -402,6 +436,20 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // half. That is a deliberate disclosure of deal values to the marketing
     // persona - narrower than the whole console, wider than nothing.
     ownerRoles: ["owner", "manager", "marketing"],
+  },
+  {
+    href: "/owner/performance",
+    label: "Performance",
+    icon: Milestone,
+    title: "Performance",
+    context: "Reports",
+    // Owner/manager only, and narrower than Sales overview, which marketing
+    // may also open. This page carries a per-person roll-up with quality
+    // scores in it - the same restriction Response times below carries, for
+    // the same reason: who reads the table naming colleagues is a management
+    // decision, not a default. The API enforces it (@RequireOwnerRole), so the
+    // nav entry is a courtesy rather than the control.
+    ownerRoles: ["owner", "manager"],
   },
   {
     href: "/owner/reports/sla",
@@ -924,9 +972,12 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/call-quality": "conversations",
 
   // Sales overview first for the personas that have it; a telecaller's first
-  // visible page here is Team activity, which is scoped to their own numbers.
+  // visible page here is My performance, which is their own scorecard - the
+  // page about them rather than about a team.
   "/owner/reports": "reports",
   "/owner/insights": "reports",
+  "/owner/my-performance": "reports",
+  "/owner/performance": "reports",
   "/owner/productivity": "reports",
   "/owner/attendance": "reports",
   "/owner/reports/sla": "reports",
@@ -1127,9 +1178,17 @@ export function ownerNavSectionsFor(
  * assert that every visible page is reachable exactly once.
  */
 
-/** One rail entry: Home, or a section. */
-export interface OwnerRailEntry {
-  key: NavSection | "home";
+/**
+ * One rail entry: Home, or a section.
+ *
+ * `key` spans BOTH consoles' section unions because one rail model now serves
+ * both (doc 34 SS3.1). The operator console used to render a flat grouped list
+ * instead, which is why these types were named "Owner"; the old names are kept
+ * as aliases below so the owner call sites did not all have to move in the same
+ * commit as the operator rail.
+ */
+export interface ConsoleRailEntry {
+  key: NavSection | PlatformNavSection | "home";
   label: string;
   icon: LucideIcon;
   /** Where the entry goes: the section's first page this reader can open. */
@@ -1138,14 +1197,23 @@ export interface OwnerRailEntry {
   items: NavItem[];
 }
 
-export interface OwnerRail {
-  primary: OwnerRailEntry[];
-  /** Pinned under the main list - Settings. */
-  footer: OwnerRailEntry[];
+export interface ConsoleRail {
+  primary: ConsoleRailEntry[];
+  /** Pinned under the main list - Settings on the owner rail, Platform on the operator one. */
+  footer: ConsoleRailEntry[];
 }
 
 /** Home plus the daily-work sections; Settings is pinned apart and not counted. */
 export const OWNER_RAIL_MAX_TOP_LEVEL = 7;
+
+/**
+ * The operator equivalent. Six today - Platform Hub plus the five headings in
+ * `PLATFORM_NAV_SECTIONS` - and it SHRINKS rather than grows: doc 34 Part B
+ * moves ten single-tenant screens under `/instances/[id]`, after which three of
+ * these sections have no pages left and disappear. Lower the cap then; do not
+ * raise it to make room for a tenant screen.
+ */
+export const PLATFORM_RAIL_MAX_TOP_LEVEL = 6;
 
 export function ownerRailFor(
   role: OwnerRole,
@@ -1153,8 +1221,8 @@ export function ownerRailFor(
   crmEnabled = true,
   callIntelEnabled = false,
   entitlement?: Entitlement,
-): OwnerRail {
-  const entries: OwnerRailEntry[] = ownerNavSectionsFor(
+): ConsoleRail {
+  const entries: ConsoleRailEntry[] = ownerNavSectionsFor(
     role,
     crmPrimary,
     crmEnabled,
@@ -1171,11 +1239,20 @@ export function ownerRailFor(
     };
   });
 
+  // The casts are because ConsoleRailEntry["key"] spans both consoles' section
+  // unions now (see the interface). Safe here: every entry in `entries` came from
+  // `ownerNavSectionsFor`, so its key is an owner section or "home", and "home"
+  // is excluded before either `includes` runs.
   return {
     primary: entries.filter(
-      (e) => e.key === "home" || (!OWNER_FOOTER_SECTIONS.includes(e.key) && !OWNER_OFF_RAIL_SECTIONS.includes(e.key)),
+      (e) =>
+        e.key === "home" ||
+        (!OWNER_FOOTER_SECTIONS.includes(e.key as NavSection) &&
+          !OWNER_OFF_RAIL_SECTIONS.includes(e.key as NavSection)),
     ),
-    footer: entries.filter((e) => e.key !== "home" && OWNER_FOOTER_SECTIONS.includes(e.key)),
+    footer: entries.filter(
+      (e) => e.key !== "home" && OWNER_FOOTER_SECTIONS.includes(e.key as NavSection),
+    ),
   };
 }
 
@@ -1191,14 +1268,22 @@ export function ownerRailFor(
  */
 export function ownerRailState(
   pathname: string,
-  rail: OwnerRail,
-): { activeKey: OwnerRailEntry["key"] | null; activeHref: string | null } {
+  rail: ConsoleRail,
+  /**
+   * This console's Home href - "/owner" for the owner rail, "/dashboard" for the
+   * operator one. It is a parameter rather than a constant because of the guard
+   * below: Home's href is a prefix of every other route in its console, so
+   * without an exact-match exception `navItemFor`'s longest-prefix search reports
+   * Home as active on pages that are nowhere near it.
+   */
+  homeHref = "/owner",
+): { activeKey: ConsoleRailEntry["key"] | null; activeHref: string | null } {
   const entries = [...rail.primary, ...rail.footer];
   const active = navItemFor(
     pathname,
     entries.flatMap((e) => e.items),
   );
-  if (!active || (active.href === "/owner" && pathname.replace(/\/+$/, "") !== "/owner")) {
+  if (!active || (active.href === homeHref && pathname.replace(/\/+$/, "") !== homeHref)) {
     return { activeKey: null, activeHref: null };
   }
   const entry = entries.find((e) => e.items.includes(active));
@@ -1227,8 +1312,13 @@ export interface OwnerTabs {
  * Those pages carry breadcrumbs back to their list, and a strip of the list's
  * siblings above one record is a second, competing answer to "where am I".
  */
-export function ownerTabsFor(pathname: string, rail: OwnerRail): OwnerTabs | null {
-  const { activeKey, activeHref } = ownerRailState(pathname, rail);
+export function ownerTabsFor(
+  pathname: string,
+  rail: ConsoleRail,
+  /** See `ownerRailState` - "/dashboard" on the operator console. */
+  homeHref = "/owner",
+): OwnerTabs | null {
+  const { activeKey, activeHref } = ownerRailState(pathname, rail, homeHref);
   if (!activeKey || !activeHref || activeKey === "home") return null;
   if (pathname.replace(/\/+$/, "") !== activeHref) return null;
   const entry = [...rail.primary, ...rail.footer].find((e) => e.key === activeKey);
@@ -1340,6 +1430,9 @@ const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
   "/slots": "growth",
 
   "/instances": "clients",
+  // Beside Instances: one is the list of clients, the other is what each of them
+  // is provisioned for. Both span tenants, so neither moves in Part B.
+  "/provisioning": "clients",
   // A client's people, their roles and their API keys - all three `org_id`
   // columns, so all three are questions about a client. They used to be three
   // entries under Access, which read as platform administration and is what this
@@ -1364,9 +1457,87 @@ const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
   "/operators": "access",
 };
 
-/** The operator nav as the sidebar renders it, Platform Hub above the first heading. */
+/** The operator nav as groups. Kept for the tab strip and the tests; the rail uses `platformRail`. */
 export function platformNavSections(): NavGroup[] {
   return groupNav(NAV_ITEMS, PLATFORM_NAV_SECTIONS, PLATFORM_SECTION_OF, "/dashboard");
+}
+
+/**
+ * Each operator section's rail icon. Same rule as OWNER_SECTION_ICONS: the most
+ * widely recognised glyph for the idea, not the most specific one.
+ *
+ * `clients` is Building2 and `access` is ShieldCheck, which are already the
+ * icons on the Instances and Superadmins ITEMS (NAV_ITEMS above). That repetition
+ * is deliberate while those sections hold one page each - the rail entry and its
+ * only tab should not disagree about what they depict.
+ */
+const PLATFORM_SECTION_ICONS: Record<PlatformNavSection, LucideIcon> = {
+  calls: Phone,
+  growth: TrendingUp,
+  clients: Building2,
+  setup: Plug,
+  access: ShieldCheck,
+};
+
+/**
+ * Pinned under the main list, the way Settings is on the owner rail. Platform
+ * administration is not daily work: it is the thing you go to deliberately,
+ * which is exactly what the owner console pins Settings apart for.
+ */
+const PLATFORM_FOOTER_SECTIONS: readonly PlatformNavSection[] = ["access"];
+
+/**
+ * Not in the rail AT ALL - reached through the account menu at the rail's foot
+ * (<AccountMenu area="platform">, components/sidebar.tsx). The operator's own
+ * profile and login activity live under /account/*, which is deliberately absent
+ * from NAV_ITEMS: those pages are about the person, not about the platform, and
+ * a rail entry for them would sit beside four entries that are.
+ *
+ * Empty today because /account/* has no NAV_ITEMS entry to exclude. It exists so
+ * that adding one does not silently put it in the rail - console-rail.test.ts
+ * asserts nothing in here is reachable from either list.
+ */
+export const PLATFORM_OFF_RAIL_SECTIONS: readonly PlatformNavSection[] = [];
+
+/**
+ * The operator rail: one entry per section, Platform Hub as Home, Access pinned
+ * at the foot (doc 34 SS3.1).
+ *
+ * Built from the SAME `groupNav` output the tab strip reads, for the same reason
+ * `ownerRailFor` is: a tab can then never be offered that the rail would hide,
+ * because there is one grouping and two views of it.
+ *
+ * Takes no arguments, and that is the honest shape rather than an oversight. The
+ * owner rail is filtered five ways - persona, CRM module, call intelligence,
+ * the 0093 features, the shadow-read flag - because a tenant's rail depends on
+ * what that tenant bought. An operator is an operator: every page here is open
+ * to all of them equally, which `P/operators/page.tsx` says in as many words.
+ * The one privilege that IS narrower (only the root may appoint a superadmin) is
+ * enforced inside the actions, not by hiding the page.
+ */
+export function platformRail(): ConsoleRail {
+  const entries: ConsoleRailEntry[] = platformNavSections().map((group) => {
+    const key = (group.key as PlatformNavSection | null) ?? "home";
+    return {
+      key,
+      label: key === "home" ? "Overview" : (group.label ?? key),
+      icon: key === "home" ? House : PLATFORM_SECTION_ICONS[key],
+      href: group.items[0].href,
+      items: group.items,
+    };
+  });
+
+  return {
+    primary: entries.filter(
+      (e) =>
+        e.key === "home" ||
+        (!PLATFORM_FOOTER_SECTIONS.includes(e.key as PlatformNavSection) &&
+          !PLATFORM_OFF_RAIL_SECTIONS.includes(e.key as PlatformNavSection)),
+    ),
+    footer: entries.filter(
+      (e) => e.key !== "home" && PLATFORM_FOOTER_SECTIONS.includes(e.key as PlatformNavSection),
+    ),
+  };
 }
 
 /** Longest-prefix match, so /instances/<id> still resolves to the Instances item. */

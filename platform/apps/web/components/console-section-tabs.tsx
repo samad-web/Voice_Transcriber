@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import type { OwnerRole } from "@aura/shared";
-import { ownerRailFor, ownerTabsFor, type Entitlement } from "@/lib/nav";
+import { ownerRailFor, ownerTabsFor, platformRail, type Entitlement, type NavArea } from "@/lib/nav";
 
 /**
- * The second level of the owner console's navigation: the pages of the
+ * The second level of a console's navigation: the pages of the
  * section you are in, as a strip across the top of the page (lib/nav.ts,
  * "THE RAIL AND THE TABS").
  *
@@ -35,22 +35,32 @@ import { ownerRailFor, ownerTabsFor, type Entitlement } from "@/lib/nav";
  * gradient: the rail entry above it already carries that, and two gradient
  * fills on one screen stop reading as "you are here".
  */
-export function OwnerSectionTabs({
+export function ConsoleSectionTabs({
+  area = "owner",
   ownerRole,
   crmPrimary,
   crmEnabled,
   callIntelEnabled,
   entitlement,
 }: {
-  ownerRole: OwnerRole;
-  crmPrimary: boolean;
-  crmEnabled: boolean;
-  callIntelEnabled: boolean;
-  entitlement: Entitlement;
+  /** Which console. The operator rail takes no entitlement props - see `platformRail`. */
+  area?: NavArea;
+  ownerRole?: OwnerRole;
+  crmPrimary?: boolean;
+  crmEnabled?: boolean;
+  callIntelEnabled?: boolean;
+  entitlement?: Entitlement;
 }) {
   const pathname = usePathname();
-  const rail = ownerRailFor(ownerRole, crmPrimary, crmEnabled, callIntelEnabled, entitlement);
-  const strip = ownerTabsFor(pathname, rail);
+  // Derived from the SAME function that builds each console's rail, so a tab can
+  // never be offered that the rail would hide. The home href differs per console
+  // and has to be passed through: it is a prefix of every other route in its
+  // console, so the longest-prefix search needs the exact-match exception.
+  const owner = area === "owner";
+  const rail = owner
+    ? ownerRailFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled, entitlement)
+    : platformRail();
+  const strip = ownerTabsFor(pathname, rail, owner ? "/owner" : "/dashboard");
   if (!strip) return null;
 
   const tab =

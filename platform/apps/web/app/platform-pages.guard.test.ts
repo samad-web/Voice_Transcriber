@@ -33,7 +33,7 @@ import { blankNonCode, bodyBraceAfter, matchDelimiter } from "@/lib/test-support
 
 /** This test file lives at `app/`, the common ancestor of both groups. */
 const APP_DIR = fileURLToPath(new URL(".", import.meta.url));
-const GROUPS = ["(platform)", "(admin)"];
+const GROUPS = ["(platform)"];
 
 /**
  * The pages that call the API directly today, first inventoried 2026-08-16 while
@@ -47,7 +47,11 @@ const GROUPS = ["(platform)", "(admin)"];
  * correct: the destination gates. Only the one page that replaced them reads.
  */
 const KNOWN_DIRECT_CALL_PAGES = [
-  "(admin)/admin/page.tsx",
+  // Was "(admin)/admin/page.tsx". Doc 34 Part A moved it into the operator
+  // console, where the (platform) layout gates it exactly as the deleted
+  // (admin) layout did - same three decisions, same order. Its own
+  // operatorGate() is untouched and is still what this suite checks.
+  "(platform)/provisioning/page.tsx",
   "(platform)/agents/page.tsx",
   "(platform)/automations/page.tsx",
   "(platform)/calls/page.tsx",

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { BackButton } from "@/components/back-button";
 import { BreadcrumbProvider } from "@/components/breadcrumbs";
+import { ConsoleSectionTabs } from "@/components/console-section-tabs";
 import { MobileNav } from "@/components/mobile-nav";
 import { NavHistoryProvider } from "@/components/nav-history-provider";
 import { NoConsoleAccess } from "@/components/no-console-access";
@@ -53,6 +54,17 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           <ThemeToggle />
           <RealtimeIndicator />
         </div>
+        {/* The section's pages as tabs - the rail's second level, the same strip
+            the owner console draws. Rendered HERE rather than per page for the
+            two reasons the component's own header gives: thirty-odd pages each
+            remembering a line is how one of them forgets, and the layout keeps
+            the strip on screen while the next tab's server data loads instead of
+            flashing it away and back.
+
+            It matters more here than on the owner side. This console has no
+            breadcrumbs by design (see the note above), so the strip is the only
+            "where am I inside this section" signal on the page. */}
+        <ConsoleSectionTabs area="platform" />
         {children}
       </main>
     </div>

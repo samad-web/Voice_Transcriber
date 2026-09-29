@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Lock, Menu, X } from "lucide-react";
 import { Logo } from "@aura/ui";
 import type { OwnerRole, StorageSummary } from "@aura/shared";
-import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
+import { navItemFor, ownerRailFor, platformRail, type Entitlement, type NavArea } from "@/lib/nav";
 import { AccountMenu } from "@/components/account-menu";
 import { BackButton } from "@/components/back-button";
 import { SetupProgress } from "@/components/setup-progress";
 import { accountCrumbsFor } from "@/lib/account-menu";
-import { OwnerRailNav } from "@/components/owner-rail-nav";
+import { ConsoleRailNav } from "@/components/console-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 /**
@@ -63,14 +62,11 @@ export function MobileNav({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   // Same rail as <Sidebar> at each console - see there. Only the breakpoint differs.
-  const ownerRail =
+  const rail =
     area === "owner"
       ? ownerRailFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled, entitlement)
-      : null;
-  const groups = platformNavSections();
-  const items = ownerRail
-    ? [...ownerRail.primary, ...ownerRail.footer].flatMap((entry) => entry.items)
-    : groups.flatMap((group) => group.items);
+      : platformRail();
+  const items = [...rail.primary, ...rail.footer].flatMap((entry) => entry.items);
   const current = navItemFor(pathname, items);
 
   // Focus management for the drawer-as-dialog: the trigger opens it, the close
@@ -228,49 +224,7 @@ export function MobileNav({
               </div>
 
               <div className="flex-1 space-y-4 p-3">
-                {ownerRail ? (
-                  <OwnerRailNav rail={ownerRail} pathname={pathname} variant="drawer" />
-                ) : null}
-                {ownerRail ? null : groups.map((group) => (
-                  <section
-                    key={group.key ?? "top"}
-                    aria-label={group.label ?? undefined}
-                    className="space-y-0.5"
-                  >
-                    {group.label ? (
-                      <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase">
-                        {group.label}
-                      </h2>
-                    ) : null}
-                    {group.items.map((item) => {
-                      const Icon = item.icon;
-                      // Reuse the same longest-prefix match `current` already
-                      // holds (used above for the header title) instead of
-                      // testing each item's own prefix independently - otherwise
-                      // Dashboard ("/owner") matches every owner route's prefix
-                      // test too, and renders active alongside the real page.
-                      const isActive = item === current;
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          aria-current={isActive ? "page" : undefined}
-                          style={
-                            isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined
-                          }
-                          className={`flex w-full items-center gap-3 rounded-full px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out ${
-                            // Same brand-register active state as <Sidebar>; the two
-                            // rails must agree on what "you are here" looks like.
-                            isActive ? "text-white" : "text-text-muted active:bg-surface-hover"
-                          }`}
-                        >
-                          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                          <span className="truncate">{item.label}</span>
-                        </Link>
-                      );
-                    })}
-                  </section>
-                ))}
+                <ConsoleRailNav rail={rail} pathname={pathname} variant="drawer" />
               </div>
 
               <div className="space-y-3 border-t border-border p-4">

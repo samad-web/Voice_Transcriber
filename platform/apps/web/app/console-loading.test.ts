@@ -50,7 +50,7 @@ import { NAV_ITEMS, OWNER_NAV_ITEMS } from "@/lib/nav";
 const APP = __dirname;
 
 /** The route groups that are consoles. `login`, `docs` and `events` are not. */
-const CONSOLE_GROUPS = ["(owner)", "(platform)", "(admin)", "(dashboard)"];
+const CONSOLE_GROUPS = ["(owner)", "(platform)", "(dashboard)"];
 
 /**
  * Pages that deliberately have no loader, and why. Keyed by the page's directory
@@ -77,10 +77,15 @@ const NO_LOADER: Record<string, string> = {
 /**
  * The groups whose LAYOUT draws `<main className="... space-y-*">`, so a loader
  * there is one of that `<main>`'s direct children and must be a fragment.
- * `(admin)` and `(dashboard)` are not on it, and that is not an oversight: the
- * admin page draws its own full-page `<main>` (its layout adds "no chrome"), and
- * `(dashboard)` has no layout at all - so a faithful loader for either has to
- * draw its own shell, and a single root element is correct there.
+ * `(dashboard)` is not on it, and that is not an oversight: it has no layout at
+ * all, so a faithful loader there has to draw its own shell and a single root
+ * element is correct.
+ *
+ * `(admin)` used to be the other exception - it drew its own full-page `<main>`
+ * because its layout added no chrome. Doc 34 Part A deleted that group: its one
+ * page was orphaned (in no rail, linked from nowhere, reachable only by typing
+ * /admin/admin) and now lives at `(platform)/provisioning`, where the layout
+ * supplies the rhythm and the loader is a fragment like every other one here.
  */
 const RHYTHM_GROUPS = ["(owner)", "(platform)"];
 

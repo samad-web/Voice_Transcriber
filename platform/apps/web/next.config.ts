@@ -58,6 +58,12 @@ const nextConfig: NextConfig = {
       { source: "/devices", destination: "/instances", permanent: false },
       { source: "/devices/activation", destination: "/instances/new", permanent: false },
       { source: "/compliance", destination: "/instances", permanent: false },
+      // The provisioning page left the chrome-less `(admin)` group for the
+      // operator console (doc 34 Part A). With `basePath` its old URL was
+      // /admin/admin, so this mostly protects a runbook or a browser history
+      // entry rather than anything a person could have navigated to - it was in
+      // no rail and nothing linked to it.
+      { source: "/admin", destination: "/provisioning", permanent: false },
     ];
   },
 };

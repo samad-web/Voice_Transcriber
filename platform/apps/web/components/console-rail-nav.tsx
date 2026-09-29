@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ownerRailState, type OwnerRail, type OwnerRailEntry } from "@/lib/nav";
+import { ownerRailState, type ConsoleRail, type ConsoleRailEntry } from "@/lib/nav";
 
 /**
  * The owner console's rail: Home and the daily-work sections, then Settings
  * pinned apart below them (lib/nav.ts, "THE RAIL AND THE TABS").
  *
  * One link per section and nothing folded away. A section's own pages are the
- * tabs across the top of the page (<OwnerSectionTabs>), so the rail only has to
+ * tabs across the top of the page (<ConsoleSectionTabs>), so the rail only has to
  * answer "which part of the business", and the whole of it fits on one screen
  * without a disclosure somebody has to know to open.
  *
@@ -16,7 +16,7 @@ import { ownerRailState, type OwnerRail, type OwnerRailEntry } from "@/lib/nav";
  * about what is top-level or what "you are here" looks like. `variant` only
  * changes the tap target height - a thumb needs more than a cursor.
  */
-export function OwnerRailNav({
+export function ConsoleRailNav({
   rail,
   pathname,
   variant,
@@ -24,7 +24,7 @@ export function OwnerRailNav({
    *  the mobile nav has no collapsed state of its own. */
   collapsed = false,
 }: {
-  rail: OwnerRail;
+  rail: ConsoleRail;
   pathname: string;
   variant: "sidebar" | "drawer";
   collapsed?: boolean;
@@ -32,7 +32,7 @@ export function OwnerRailNav({
   const { activeKey } = ownerRailState(pathname, rail);
   const pad = variant === "drawer" ? "py-3" : "py-2";
 
-  const link = (entry: OwnerRailEntry) => {
+  const link = (entry: ConsoleRailEntry) => {
     const Icon = entry.icon;
     const isActive = entry.key === activeKey;
     return (

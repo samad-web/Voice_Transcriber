@@ -17,7 +17,7 @@ import { OrgTimeProvider } from "@/components/org-time";
 import { FullscreenToggle } from "@/components/fullscreen-toggle";
 import { GlobalSearch } from "@/components/global-search";
 import { MobileNav } from "@/components/mobile-nav";
-import { OwnerSectionTabs } from "@/components/owner-section-tabs";
+import { ConsoleSectionTabs } from "@/components/console-section-tabs";
 import { TenantContextSwitcher, type TenantChip } from "@/components/tenant-context-switcher";
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
@@ -327,7 +327,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         ) : null}
         {/* The section's pages as tabs - the rail's second level. Drawn here
             rather than per page so it stays put while the next tab loads. */}
-        <OwnerSectionTabs
+        <ConsoleSectionTabs
           ownerRole={owner.membership.ownerRole}
           crmPrimary={crmPrimary}
           crmEnabled={crmEnabled}

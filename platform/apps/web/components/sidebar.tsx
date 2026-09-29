@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Lock, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Logo } from "@aura/ui";
 import type { OwnerRole, StorageSummary } from "@aura/shared";
-import { navItemFor, ownerRailFor, platformNavSections, type Entitlement, type NavArea } from "@/lib/nav";
+import { ownerRailFor, platformRail, type Entitlement, type NavArea } from "@/lib/nav";
 import { AccountMenu } from "@/components/account-menu";
 import { SetupProgress } from "@/components/setup-progress";
-import { OwnerRailNav } from "@/components/owner-rail-nav";
+import { ConsoleRailNav } from "@/components/console-rail-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 
 export function Sidebar({
@@ -87,22 +86,16 @@ export function Sidebar({
       return next;
     });
   };
-  // The owner console gets one entry per section, Settings pinned apart
-  // (nav.ts, "THE RAIL AND THE TABS"); the operator console keeps its grouped
-  // rail, which is fifteen links and reads fine under five headings.
-  const ownerRail =
+  // BOTH consoles now get one entry per section with the section's pages as tabs
+  // across the top (nav.ts, "THE RAIL AND THE TABS"). The operator console used
+  // to render a flat grouped list here instead - fifteen links under five
+  // headings - which was a fair reading while it genuinely owned fifteen
+  // platform pages. It does not: ten of them are single-tenant screens, so the
+  // rail was mostly a second, weaker copy of the owner console (doc 34 SS4).
+  const rail =
     area === "owner"
       ? ownerRailFor(ownerRole ?? "owner", crmPrimary, crmEnabled, callIntelEnabled, entitlement)
-      : null;
-  const groups = platformNavSections();
-  // Longest-prefix match against every item at once, not each item tested
-  // independently - otherwise Dashboard (href "/owner") matches the prefix
-  // test on every other owner route too, and both it and the real current
-  // item render as active together.
-  const active = navItemFor(
-    pathname,
-    groups.flatMap((group) => group.items),
-  );
+      : platformRail();
 
   return (
     <aside
@@ -154,52 +147,7 @@ export function Sidebar({
         </div>
 
         <nav aria-label="Main" className="space-y-4">
-          {ownerRail ? (
-            <OwnerRailNav rail={ownerRail} pathname={pathname} variant="sidebar" collapsed={collapsed} />
-          ) : null}
-          {ownerRail ? null : groups.map((group) => (
-            // A <section> per group with its heading as the accessible name,
-            // so a screen reader can move between them the way a sighted
-            // reader skims the headings - a flat list of links with visual
-            // separators only would announce as one run of two dozen.
-            <section
-              key={group.key ?? "top"}
-              aria-label={group.label ?? undefined}
-              className="space-y-0.5"
-            >
-              {group.label && !collapsed ? (
-                <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wide text-text-subtle uppercase">
-                  {group.label}
-                </h2>
-              ) : null}
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = item === active;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={isActive ? "page" : undefined}
-                    title={collapsed ? item.label : undefined}
-                    style={isActive ? { backgroundImage: "var(--brand-gradient)" } : undefined}
-                    className={`flex w-full items-center rounded-full px-3 py-2 text-sm font-medium transition-colors duration-150 ease-out ${
-                      collapsed ? "justify-center" : "gap-3"
-                    } ${
-                      isActive
-                        ? // The gradient fill is the "you are here" signal now -
-                          // white holds contrast against every stop (same pairing
-                          // marketing's CTA already ships in production).
-                          "text-white"
-                        : "text-text-muted hover:bg-surface-hover hover:text-text"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    {collapsed ? null : <span className="truncate">{item.label}</span>}
-                  </Link>
-                );
-              })}
-            </section>
-          ))}
+          <ConsoleRailNav rail={rail} pathname={pathname} variant="sidebar" collapsed={collapsed} />
         </nav>
       </div>
 

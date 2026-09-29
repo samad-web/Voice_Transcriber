@@ -88,7 +88,7 @@ export default async function AdminPage({
   ]);
 
   return (
-    <main className="min-h-dvh p-4 sm:p-6 md:p-8 space-y-6">
+    <>
       <div className="flex items-center gap-3">
         {/* The mark: bg-text/text-bg rather than literal black/white, so it
             still reads as a filled square with an inverted glyph once dark
@@ -289,6 +289,6 @@ export default async function AdminPage({
           </Card>
         </div>
       )}
-    </main>
+    </>
   );
 }

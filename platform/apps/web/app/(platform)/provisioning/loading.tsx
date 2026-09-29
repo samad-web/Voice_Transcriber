@@ -122,17 +122,21 @@ function PanelTable({ cols, rows }: { cols: PanelCol[]; rows: number }) {
 }
 
 /**
- * Mirrors (admin)/admin/page.tsx. Unlike every other console page this one draws
- * its own full-page <main> shell - the (admin) layout adds no chrome - so the
- * loader has to as well, or the skeleton would sit flush against the viewport and
- * jump when the page arrives. The heading is static, so it is real; below it, the
- * provisioning panel (strip with its action, tenant / modules / WhatsApp / configure
- * table), the tenants panel (tenant / region / calls / devices / status), and the
- * global pipeline health card (four stage tiles, then a queue summary line).
+ * Mirrors (platform)/provisioning/page.tsx. A FRAGMENT, not a <main>: this page
+ * used to live in the chrome-less `(admin)` group and drew its own full-page
+ * shell, and the loader had to match. Doc 34 Part A moved it into the operator
+ * console - it was orphaned there, in no rail and linked from nowhere - so the
+ * `(platform)` layout now supplies the <main> and its spacing rhythm, and a
+ * second one here would double the padding and fight `space-y-*`.
+ *
+ * The heading is static, so it is real; below it, the provisioning panel (strip
+ * with its action, tenant / modules / WhatsApp / configure table), the tenants
+ * panel (tenant / region / calls / devices / status), and the global pipeline
+ * health card (four stage tiles, then a queue summary line).
  */
-export default function AdminLoading() {
+export default function ProvisioningLoading() {
   return (
-    <main className="min-h-dvh space-y-6 p-4 sm:p-6 md:p-8">
+    <>
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-text text-lg font-semibold text-bg select-none">
           A
@@ -192,6 +196,6 @@ export default function AdminLoading() {
           <Skeleton className="h-3 w-28" />
         </div>
       </Card>
-    </main>
+    </>
   );
 }
