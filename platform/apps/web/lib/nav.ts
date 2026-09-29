@@ -86,9 +86,6 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Platform Hub", icon: Activity, title: "Platform Hub" },
-  { href: "/calls", label: "Call Log Explorer", icon: Phone, title: "Call Log Explorer" },
-  { href: "/search", label: "Search", icon: Search, title: "Transcript Search" },
-  { href: "/agents", label: "AI Agent Studio", icon: Sparkles, title: "AI Agent Studio" },
   {
     href: "/slots",
     label: "Booking Slots",
@@ -129,36 +126,6 @@ export const NAV_ITEMS: NavItem[] = [
   // One client's team, roles and API keys. These were three top-level entries
   // under an "Access" heading, which said they were platform entities; all three
   // are per-org rows behind RLS. See app/(platform)/client-config/page.tsx.
-  {
-    href: "/client-config",
-    label: "Configuration",
-    icon: UserCog,
-    title: "Client Configuration",
-    context: "Client",
-  },
-  { href: "/crm", label: "CRM Integrations", icon: Plug, title: "CRM Integrations" },
-  {
-    href: "/custom-fields",
-    label: "Custom Fields",
-    icon: SlidersHorizontal,
-    title: "Custom Fields",
-    context: "Platform",
-  },
-  {
-    href: "/targets",
-    label: "Targets",
-    icon: Target,
-    title: "Targets",
-    context: "Platform",
-  },
-  {
-    href: "/automations",
-    label: "Automations",
-    icon: Workflow,
-    title: "Automations",
-    context: "Platform",
-  },
-  { href: "/usage", label: "Usage", icon: BarChart3, title: "Usage & Billing" },
   // Visible to every operator, writable only by the root (migration 0089).
   // Deliberately not hidden from the rest: knowing who else administers the
   // platform is not a privilege, and a list nobody can see is a list nobody
@@ -1207,13 +1174,17 @@ export interface ConsoleRail {
 export const OWNER_RAIL_MAX_TOP_LEVEL = 7;
 
 /**
- * The operator equivalent. Six today - Platform Hub plus the five headings in
- * `PLATFORM_NAV_SECTIONS` - and it SHRINKS rather than grows: doc 34 Part B
- * moves ten single-tenant screens under `/instances/[id]`, after which three of
- * these sections have no pages left and disappear. Lower the cap then; do not
- * raise it to make room for a tenant screen.
+ * The operator equivalent. THREE today - Overview, Growth and Clients, with
+ * Platform pinned at the foot - because doc 34 Part B moved ten single-tenant
+ * screens under `/instances/[id]` and two whole sections ("Call intelligence",
+ * "CRM setup") went with them.
+ *
+ * Four is the cap rather than a target. A rail this short is the honest size of
+ * the platform surface: the console looked large before only because it was
+ * borrowing the tenant's screens. Do not raise this to make room for another
+ * per-tenant page - that page belongs under an instance.
  */
-export const PLATFORM_RAIL_MAX_TOP_LEVEL = 6;
+export const PLATFORM_RAIL_MAX_TOP_LEVEL = 4;
 
 export function ownerRailFor(
   role: OwnerRole,
@@ -1411,47 +1382,27 @@ export function ownerNavItemsFor(
  * client that is merely unprovisioned.
  */
 export const PLATFORM_NAV_SECTIONS = [
-  { key: "calls", label: "Call intelligence" },
   { key: "growth", label: "Growth" },
   { key: "clients", label: "Clients" },
-  { key: "setup", label: "CRM setup" },
-  { key: "access", label: "Access" },
+  { key: "access", label: "Platform" },
 ] as const;
 
 export type PlatformNavSection = (typeof PLATFORM_NAV_SECTIONS)[number]["key"];
 
 /** Which group each operator page belongs to - same shape as OWNER_SECTION_OF. */
 const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
-  "/calls": "calls",
-  "/search": "calls",
-  "/agents": "calls",
-
   "/leads": "growth",
   "/slots": "growth",
 
   "/instances": "clients",
   // Beside Instances: one is the list of clients, the other is what each of them
-  // is provisioned for. Both span tenants, so neither moves in Part B.
+  // is provisioned for. Both span tenants, which is exactly what the ten pages
+  // removed from this map did NOT do.
   "/provisioning": "clients",
-  // A client's people, their roles and their API keys - all three `org_id`
-  // columns, so all three are questions about a client. They used to be three
-  // entries under Access, which read as platform administration and is what this
-  // consolidation set right.
-  "/client-config": "clients",
-  // Beside Instances, not under Access: the page is one tenant's consumption and
-  // bill, which is a question about a client, not a credential.
-  "/usage": "clients",
 
-  "/crm": "setup",
-  "/custom-fields": "setup",
-  "/automations": "setup",
-  // A target is what that tenant's reports are measured against - configuring
-  // the CRM, not using it, which the operator console never does.
-  "/targets": "setup",
-
-  // Filed explicitly, not left to the fallback. Superadmins is now the ONLY
-  // member of this section, and an unfiled page silently joins the last group -
-  // so with it unfiled, "Access" would have been a heading rendered entirely by
+  // Filed explicitly, not left to the fallback. Superadmins is the ONLY member
+  // of this section, and an unfiled page silently joins the last group - so with
+  // it unfiled, "Platform" would have been a heading rendered entirely by
   // accident, and nav.test.ts's "none over nothing" case would have passed on
   // the fallback rather than on the map.
   "/operators": "access",
@@ -1472,10 +1423,8 @@ export function platformNavSections(): NavGroup[] {
  * only tab should not disagree about what they depict.
  */
 const PLATFORM_SECTION_ICONS: Record<PlatformNavSection, LucideIcon> = {
-  calls: Phone,
   growth: TrendingUp,
   clients: Building2,
-  setup: Plug,
   access: ShieldCheck,
 };
 

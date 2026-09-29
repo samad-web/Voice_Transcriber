@@ -426,20 +426,41 @@ describe("platformNavSections", () => {
   });
 
   it("files pages under the heading they were placed under, not the fallback", () => {
-    // An unfiled page silently joins the LAST group (Access), so a typo'd key in
-    // the map would still pass "nothing is lost". Pin one page per section.
-    expect(sectionOf("/calls")).toBe("calls");
+    // An unfiled page silently joins the LAST group (Platform), so a typo'd key
+    // in the map would still pass "nothing is lost". Pin one page per section.
     expect(sectionOf("/leads")).toBe("growth");
+    expect(sectionOf("/slots")).toBe("growth");
     expect(sectionOf("/instances")).toBe("clients");
-    expect(sectionOf("/usage")).toBe("clients");
-    // A client's team, roles and keys. It reaching "clients" rather than
-    // "access" IS the consolidation - see PLATFORM_SECTION_OF's note.
-    expect(sectionOf("/client-config")).toBe("clients");
-    expect(sectionOf("/targets")).toBe("setup");
-    // Access holds exactly one page now, and it is the one that must be pinned:
-    // it is also the only page reachable by the fallback, so if its map entry is
+    expect(sectionOf("/provisioning")).toBe("clients");
+    // Platform holds exactly one page, and it is the one that must be pinned: it
+    // is also the only page reachable by the fallback, so if its map entry is
     // ever dropped this assertion is what notices.
     expect(sectionOf("/operators")).toBe("access");
+  });
+
+  it("files no per-tenant screen at the top level at all", () => {
+    // Doc 34 Part B: these nine were top-level operator pages that each resolved
+    // ONE tenant from `?org=` and drew a switcher, and `/calls`/`/crm` were
+    // outright duplicates of screens the instance page already had. They live
+    // under /instances/<id>/ now.
+    //
+    // Asserted as absence from the whole nav rather than from the section map,
+    // because filing is not the failure this guards against - reintroducing a
+    // per-tenant page to the platform rail is, and that would show up here first.
+    for (const href of [
+      "/calls",
+      "/search",
+      "/agents",
+      "/crm",
+      "/custom-fields",
+      "/automations",
+      "/targets",
+      "/usage",
+      "/client-config",
+    ]) {
+      expect([href, NAV_ITEMS.some((i) => i.href === href)]).toEqual([href, false]);
+      expect([href, sectionOf(href)]).toEqual([href, undefined]);
+    }
   });
 });
 

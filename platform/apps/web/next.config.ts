@@ -64,6 +64,42 @@ const nextConfig: NextConfig = {
       // entry rather than anything a person could have navigated to - it was in
       // no rail and nothing linked to it.
       { source: "/admin", destination: "/provisioning", permanent: false },
+
+      /*
+       * Doc 34 Part B: nine single-tenant screens moved under the client they
+       * are about. Each of them used to carry its tenant in `?org=` and draw a
+       * `<TenantSwitcher>`; the tenant is a path segment now.
+       *
+       * `has` both MATCHES the query parameter and captures it as `:org` for the
+       * destination - a plain `source` cannot move a query value into the path.
+       * The no-`?org=` case is handled by the second entry of each pair, which
+       * sends the reader to the client list: "pick a customer first" is the
+       * honest answer, and strictly better than the old behaviour of silently
+       * rendering whichever tenant `DEV_ORG_ID` happened to name.
+       *
+       * TEMPORARY. Keep these for one release, then delete them - an undated
+       * temporary redirect is a permanent one. Before deleting, grep the Android
+       * app and the marketing site too, not just apps/web.
+       */
+      ...[
+        ["/calls", "calls"],
+        ["/search", "search"],
+        ["/agents", "agents"],
+        ["/crm", "lead-delivery"],
+        ["/custom-fields", "fields"],
+        ["/automations", "automations"],
+        ["/targets", "targets"],
+        ["/usage", "usage"],
+        ["/client-config", "access"],
+      ].flatMap(([source, seg]) => [
+        {
+          source,
+          has: [{ type: "query" as const, key: "org" }],
+          destination: `/instances/:org/${seg}`,
+          permanent: false,
+        },
+        { source, destination: "/instances", permanent: false },
+      ]),
     ];
   },
 };

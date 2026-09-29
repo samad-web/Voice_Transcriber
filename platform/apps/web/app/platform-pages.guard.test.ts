@@ -47,32 +47,42 @@ const GROUPS = ["(platform)"];
  * correct: the destination gates. Only the one page that replaced them reads.
  */
 const KNOWN_DIRECT_CALL_PAGES = [
+  // ── Platform-wide ────────────────────────────────────────────────────────
+  "(platform)/dashboard/page.tsx",
   // Was "(admin)/admin/page.tsx". Doc 34 Part A moved it into the operator
   // console, where the (platform) layout gates it exactly as the deleted
   // (admin) layout did - same three decisions, same order. Its own
   // operatorGate() is untouched and is still what this suite checks.
   "(platform)/provisioning/page.tsx",
-  "(platform)/agents/page.tsx",
-  "(platform)/automations/page.tsx",
-  "(platform)/calls/page.tsx",
-  "(platform)/client-config/page.tsx",
-  "(platform)/crm/page.tsx",
-  "(platform)/custom-fields/page.tsx",
-  "(platform)/dashboard/page.tsx",
-  "(platform)/instances/[id]/calls/page.tsx",
-  "(platform)/instances/[id]/page.tsx",
   // The superadmin list (migration 0089). It reaches /v1/admin/operators with a
   // bare `fetch` rather than apiGetAs, because the route is cross-tenant -
   // there is no org to scope it to - so DIRECT_API_CALL below does not match
   // it. Listed here so its `operatorGate()` reads as deliberate rather than as
   // the inconsistency this suite is looking for.
   "(platform)/operators/page.tsx",
+
+  // ── One customer, under /instances/[id] ──────────────────────────────────
+  // Doc 34 Part B moved nine of these in from the top level and split four more
+  // out of the instance page's client-side tab strip. Every one reads ONE
+  // tenant's rows, and every one takes that tenant from `[id]` rather than from
+  // `?org=` - so the gate matters here exactly as much as it did before, and the
+  // race it guards against (Next resolving a layout and its page in one pass) is
+  // now two layouts deep.
+  "(platform)/instances/[id]/page.tsx",
+  "(platform)/instances/[id]/access/page.tsx",
+  "(platform)/instances/[id]/agents/page.tsx",
+  "(platform)/instances/[id]/audit/page.tsx",
+  "(platform)/instances/[id]/automations/page.tsx",
+  "(platform)/instances/[id]/calls/page.tsx",
+  "(platform)/instances/[id]/devices/page.tsx",
+  "(platform)/instances/[id]/fields/page.tsx",
+  "(platform)/instances/[id]/lead-delivery/page.tsx",
   // Joined the list when DIRECT_API_CALL learned about `resolveTenantScope`. It
-  // reads the platform-wide tenant list on the render path and had no gate at
-  // all - see the note in its own header.
-  "(platform)/search/page.tsx",
-  "(platform)/targets/page.tsx",
-  "(platform)/usage/page.tsx",
+  // reads on the render path and had no gate at all - see its own header.
+  "(platform)/instances/[id]/search/page.tsx",
+  "(platform)/instances/[id]/settings/page.tsx",
+  "(platform)/instances/[id]/targets/page.tsx",
+  "(platform)/instances/[id]/usage/page.tsx",
 ];
 
 /**
@@ -90,8 +100,22 @@ const KNOWN_DIRECT_CALL_PAGES = [
  * "makes no direct API call", which put it in the exempt bucket at the bottom of
  * this file and turned its correct `operatorGate()` into a failure.
  */
+/*
+ * `load*` is in this pattern because doc 34 Part B put the instance routes' reads
+ * behind named loaders in `instance-data.ts` - `loadOrg`, `loadVitals`,
+ * `loadAudit` and the rest - each of which is an `apiGetAs` call and nothing
+ * else. Without that alternative, seven pages that read one tenant's rows on the
+ * render path stopped matching here and were silently reclassified as exempt
+ * while keeping their `operatorGate()`. Coverage fell from twelve guarded pages
+ * to nine and the suite still passed its own "nothing is lost" case, because that
+ * case can only check the pages it DID find.
+ *
+ * So any indirection that ends in a fetch has to be named here. Moving a fetch
+ * into a helper is not an exemption; it is a rename of the thing this suite
+ * exists to look for.
+ */
 const DIRECT_API_CALL =
-  /\bapiGetAs\s*[<(]|\bapiGetAdmin\s*[<(]|\bapiTry\s*[<(]|\bresolveTenantScope\s*\(/;
+  /\bapiGetAs\s*[<(]|\bapiGetAdmin\s*[<(]|\bapiTry\s*[<(]|\bresolveTenantScope\s*\(|\bload[A-Z][A-Za-z0-9_$]*\s*\(/;
 const GUARD_CALL = /\boperatorGate\s*\(\s*\)/;
 const GUARD_IMPORT =
   /import\s*\{[^}]*\boperatorGate\b[^}]*\}\s*from\s*["']@\/lib\/operator-gate["']/;

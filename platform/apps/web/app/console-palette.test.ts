@@ -87,9 +87,8 @@ const LEGACY_STOCK_PALETTE: string[] = [
 
 /** The same ratchet for hand-rolled state chips outside the strict scope. */
 const LEGACY_CHIPS = [
-  "app/(platform)/calls/calls-explorer.tsx",
-  "app/(platform)/crm/integration-card.tsx",
-  "app/(platform)/instances/[id]/instance-tabs.tsx",
+  "app/(platform)/instances/[id]/calls/calls-explorer.tsx",
+  "app/(platform)/instances/[id]/integration-card.tsx",
   "app/login/login-form.tsx",
 ];
 

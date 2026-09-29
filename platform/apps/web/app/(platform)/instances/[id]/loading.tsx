@@ -1,19 +1,6 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { Card, Skeleton } from "@aura/ui";
-import { PageHeaderSkeleton, TabsSkeleton } from "@/components/skeletons";
 
-/** Widths for the six vitals cells, so the strip does not read as six identical bars. Literal classes. */
-const VITALS = [
-  { label: "w-10", value: "w-12", hint: "w-28" },
-  { label: "w-16", value: "w-16", hint: "w-20" },
-  { label: "w-14", value: "w-8", hint: "w-16" },
-  { label: "w-20", value: "w-10", hint: "w-20" },
-  { label: "w-16", value: "w-10", hint: "w-24" },
-  { label: "w-20", value: "w-8", hint: "w-24" },
-] as const;
-
-/** The overview's quick-action buttons ("Open call log", "Issue enrollment key", ...). */
+/** The overview's quick-action links ("Open call log", "Issue enrollment key", ...). */
 const JUMP_W = ["w-32", "w-44", "w-48", "w-32"] as const;
 
 /** Recent-calls rows: the width of the call's name and of its device. */
@@ -30,55 +17,18 @@ const CALL_ROWS = [
 const CALL_TRACKS = "minmax(0,2.2fr) minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1fr)";
 
 /**
- * Mirrors instances/[id]/page.tsx on its default (Overview) tab: the back link
- * (static, so real), the tenant-named header (fetched, so skeletal), the vitals
- * card (a status/org/region/consent strip over six metric cells), the tab strip,
- * the quick-action buttons and the "Recent calls" panel - a titled card holding a
- * call / device / duration / status table.
+ * Mirrors instances/[id]/page.tsx - the Overview panel and nothing else: the
+ * quick-action links and the "Recent calls" panel, a titled card holding a call /
+ * device / duration / status table.
  *
- * The real page nests vitals, tabs and panel in one `gap-5` column (InstanceTabs);
- * here they are direct children, so <main>'s own spacing applies between them.
+ * It used to also draw the back link, the tenant header, the vitals card and the
+ * tab strip. All four moved into `layout.tsx` (doc 34 Part B), which means they
+ * are ALREADY on screen while this fallback shows - drawing skeletons of them
+ * here would stack a second, grey copy of the header under the real one.
  */
-export default function InstanceDetailLoading() {
+export default function InstanceOverviewLoading() {
   return (
     <>
-      <Link
-        href="/instances"
-        className="inline-flex items-center gap-1.5 self-start rounded-sm text-sm font-medium text-text-muted transition-colors duration-150 ease-out hover:text-text"
-      >
-        <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
-        All instances
-      </Link>
-
-      <PageHeaderSkeleton context="Instance" />
-
-      <Card className="overflow-hidden p-0">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-bg-subtle px-4 py-2.5 sm:px-5">
-          <Skeleton className="h-6 w-16 rounded-full" />
-          <Skeleton className="h-3 w-44" />
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-3 w-28" />
-          <Skeleton className="h-3 w-36 sm:ml-auto" />
-        </div>
-        <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 lg:grid-cols-6">
-          {VITALS.map((v, i) => (
-            <div key={i} className="bg-surface px-4 py-3 sm:px-5">
-              <div className="flex h-4 items-center">
-                <Skeleton className={`h-2.5 ${v.label}`} />
-              </div>
-              <div className="mt-1 flex h-7.5 items-center">
-                <Skeleton className={`h-6 ${v.value}`} />
-              </div>
-              <div className="mt-0.5 flex h-4 items-center">
-                <Skeleton className={`h-2.5 ${v.hint}`} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <TabsSkeleton tabs={5} />
-
       <div className="flex flex-wrap gap-2">
         {JUMP_W.map((w, i) => (
           <Skeleton key={i} className={`h-9.5 rounded-md ${w}`} />

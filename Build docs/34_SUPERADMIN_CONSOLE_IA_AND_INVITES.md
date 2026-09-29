@@ -1,8 +1,8 @@
 # 34 - The superadmin console: navigation, tenant-screen relocation, and Google invites
 
 **Written for:** the Claude Code session or engineer who will build this in `platform/`.
-**Status:** plan and implementation prompt, 2026-09-29. **Part A is BUILT** (SS3.5) and not
-deployed; Parts B and C are not started.
+**Status:** plan and implementation prompt, 2026-09-29. **Parts A and B are BUILT** (SS3.5, SS6.4)
+and not deployed; Part C is not started.
 **Companion docs:**
 - 23 (nav fix plan; breadcrumbs, section maps)
 - 28 (navigation architecture, Back button; the operator layout's gaps are catalogued there)
@@ -361,6 +361,25 @@ same two-level treatment as the console itself:
 Seven section tabs, each with 1-3 pages. Reuse `ConsoleSectionTabs` for the inner strip as well;
 do not write a third tab component.
 
+## SS5.1 Two of the ten are not moves - they are DELETIONS
+
+Found while starting Part B, and it changes the work materially. For two screens the instance-side
+destination **already exists and is the better page**:
+
+| Screen | What is actually there |
+|---|---|
+| `/calls` (140 lines) | `P/instances/[id]/calls/page.tsx` already exists, at **242 lines**, and is richer: stat cards, an `?instance=` narrowing filter, and triage status buckets. It already imports `CallsExplorer` from the top-level `calls/` folder. The top-level page is the thin "cross-tenant with a switcher" variant. |
+| `/crm` (69 lines) | The instance page's **"Lead delivery" tab** (`P/instances/[id]/page.tsx:1118-1141`) already renders the same `<CrmManager>` with the same three fetches, importing it from `../../crm/crm-manager`. The top-level page is `resolveTenantScope` + `TenantSwitcher` wrapped around that same component. |
+
+So for these two, Part B **deletes the top-level page and relocates the shared child components**
+into the instance tree. Nothing is rebuilt, and no behaviour is ported: the destination is already
+the one people should have been using. The top-level pages exist because the instance versions were
+added later and nobody removed the originals.
+
+That also means the instance page is **already** the pattern this plan argues for - it was reached
+twice, ad hoc, for the two screens somebody happened to need there. Part B is finishing a migration
+that is half done, not starting one.
+
 ## SS6. Part B implementation
 
 ### SS6.1 Do NOT fold these into `instances/[id]/page.tsx`
@@ -419,6 +438,102 @@ an undated temporary redirect is permanent.
   with hrefs relative to `/instances/[id]`, and build them with the same `groupNav`.
 - `navItemFor` is longest-prefix (`:1408-1412`), so `/instances/<id>/calls` resolves to the
   Instances item. Verify with a test; do not assume.
+
+## SS6.4 PART B IS BUILT - 2026-09-29
+
+Landed on `crm-phases-on-origin`. Typecheck clean, 1007 web tests pass (995 after Part A). Not
+deployed.
+
+**The operator rail is now three primary entries and one footer entry:**
+
+| Rail entry | Pages |
+|---|---|
+| Overview | `/dashboard` |
+| Growth | `/leads`, `/slots` |
+| Clients | `/instances`, `/provisioning` |
+| Platform (footer) | `/operators` |
+
+`NAV_ITEMS` went from sixteen entries to six. Two whole sections - "Call intelligence" and "CRM
+setup" - disappeared, because every page filed under them was one tenant's screen.
+`PLATFORM_RAIL_MAX_TOP_LEVEL` is 4, and its comment says the cap is a ceiling rather than a target.
+
+**What happened to each of the ten:**
+
+| Old | New |
+|---|---|
+| `/calls` | **deleted**; `/instances/[id]/calls` already existed and was richer. `calls-explorer`, `actions.ts`, `call-access-request`, `call-access-actions` moved in beside it. |
+| `/crm` | **deleted**; became `/instances/[id]/lead-delivery`. `crm-manager`, `integration-card`, `provider-picker` moved up; `crm/actions.ts` became `instances/[id]/crm-actions.ts` to avoid colliding with the `actions.ts` already there. |
+| `/search`, `/agents`, `/targets`, `/automations`, `/usage` | moved to `/instances/[id]/<same>` |
+| `/custom-fields` | `/instances/[id]/fields` |
+| `/client-config` | `/instances/[id]/access` |
+
+Each moved page now takes its tenant from `params.id` instead of `?org=`, and **every
+`<TenantSwitcher>` is gone** - ten copies of "whose data is this?" replaced by a path segment and
+one header. `/dashboard` keeps its switcher (SS7).
+
+**The 1171-line instance page is split.** `instance-tabs.tsx` is rewritten from a client-side
+`hidden`-panel switcher into a route-based strip of thirteen tabs, and:
+
+- `layout.tsx` (new) draws the back link, the tenant header, the vitals strip and the strip, over
+  `loadVitals` - six reads shared by all thirteen routes.
+- `page.tsx` is Overview alone; `devices/`, `settings/`, `lead-delivery/`, `audit/` are new routes.
+- `instance-ui.tsx` (new) holds the shared types, tone maps and the four components
+  (`TablePanel`, `Metric`, `Section`, `InstanceHeading`).
+- `instance-data.ts` (new) holds one loader per read, so a route fetches only what it renders. The
+  old page issued **all fourteen** requests on every visit to look at any one panel.
+- `data-goto-tab` / `data-goto-anchor` delegation is **deleted**. `Metric` takes only `href` now,
+  and the jumps are ordinary links - so the vitals cells and Overview's quick actions can be
+  middle-clicked, bookmarked and returned from for the first time.
+- The three redirect stubs `/team`, `/roles`, `/api-keys` were pointing at `/client-config?tab=X`,
+  which no longer exists; they now go to `/instances/<org>/access?tab=X`, or to `/instances` when
+  they have no `?org=` to build a path from.
+- Nine `has`-matched redirects carry `?org=` into the path, plus a no-`org` fallback each to
+  `/instances`. **Temporary - delete after one release**, and grep the Android app and marketing
+  site first, not just `apps/web`.
+
+### The coverage hole this refactor opened, and closed
+
+Moving the reads behind named loaders made `platform-pages.guard.test.ts` **blind to seven pages**.
+Its `DIRECT_API_CALL` pattern matched `apiGetAs` / `apiGetAdmin` / `apiTry` / `resolveTenantScope`,
+and `loadOrg(orgId)` is none of those - so seven pages that read one tenant's rows on the render
+path were silently reclassified as *exempt* while still calling `operatorGate()`. Guarded pages fell
+from twelve to nine and **the suite still passed its own "nothing is lost" case**, because that case
+can only check the pages it found.
+
+Caught by the sibling assertion ("every page with no direct API call also has no `operatorGate()`
+call"), which exists precisely to notice this. `DIRECT_API_CALL` now also matches `load[A-Z]...(`,
+with a comment saying that moving a fetch into a helper is a rename of the thing the suite looks
+for, not an exemption from it. **Any future indirection that ends in a fetch has to be named there.**
+
+This is the `isolation-suite-drift` failure mode in a different suite: a guard that looks like
+coverage while checking nothing.
+
+### Two pre-existing bugs found and fixed in passing
+
+1. **The owner console linked to an operator-only route.** `(owner)/owner/performance` told a
+   customer "Set one on Targets", linking to `/targets` - which was never a page in that console.
+   `(platform)/layout.tsx` redirects an owner to `/owner`, so the link had always bounced whoever
+   followed it. Targets are set *for* a customer, not *by* them, so the copy now names who to ask
+   instead of offering a door that does not open.
+2. **`instance-tabs.tsx` was on the hand-rolled-chip backlog** in `console-palette.test.ts`. The
+   rewrite uses the kit, so it was struck off - which that suite's "a fixed file must be struck
+   off" case required, and is why the ratchet exists.
+
+### Deviations from the plan above
+
+- **SS5's seven instance sections became thirteen flat tabs.** Grouping `targets` / `fields` /
+  `automations` under a "Configuration" sub-strip would have put a FOURTH navigation level inside
+  the rail's second. Thirteen short labels in a horizontal scroller is the lesser evil; if it grows
+  again the answer is fewer screens, not more levels. Written down in `INSTANCE_TABS`' own comment.
+- **The audit page gained a one-line intro.** `console-loading.test.ts` requires a `(platform)`
+  loader to be a fragment of two or more blocks, so `<main>`'s `space-y-*` has something to space.
+  The audit page was a single panel. Rather than pad the loader with a skeleton of nothing - which
+  would have made it lie about the page - the page now says the two things its table cannot: that
+  the ledger is append-only, and that it shows the newest 200 of a longer history.
+- **`settings`' "Access" section is renamed "Owner sign-ins",** because Access is now a sibling tab
+  about team, roles and keys. Two tabs called Access on one strip is a worse problem than a rename.
+
+---
 
 ## SS7. `/dashboard` is the one honest hybrid - leave it alone this round
 

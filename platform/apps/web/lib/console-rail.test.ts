@@ -228,13 +228,14 @@ describe("ownerSettingsGroupsFor", () => {
  */
 describe("platformRail", () => {
   it("gives Overview plus a section per heading, with Platform pinned apart", () => {
+    // THREE primary entries. That is the honest size of the platform surface
+    // after doc 34 Part B - "Call intelligence" and "CRM setup" disappeared
+    // entirely, because every page filed under them was one tenant's screen.
     const rail = platformRail();
     expect(rail.primary.map((e) => [e.key, e.label])).toEqual([
       ["home", "Overview"],
-      ["calls", "Call intelligence"],
       ["growth", "Growth"],
       ["clients", "Clients"],
-      ["setup", "CRM setup"],
     ]);
     expect(rail.footer.map((e) => [e.key, e.href])).toEqual([["access", "/operators"]]);
   });
@@ -254,7 +255,7 @@ describe("platformRail", () => {
     const href = (key: string) =>
       [...platformRail().primary, ...platformRail().footer].find((e) => e.key === key)?.href;
     expect(href("home")).toBe("/dashboard");
-    expect(href("calls")).toBe("/calls");
+    expect(href("growth")).toBe("/leads");
     expect(href("clients")).toBe("/instances");
     expect(href("access")).toBe("/operators");
   });
@@ -279,11 +280,10 @@ describe("ownerRailState on the operator rail", () => {
   });
 
   it("lights up the section on every one of its pages", () => {
-    expect(state("/search").activeKey).toBe("calls");
-    expect(state("/agents").activeKey).toBe("calls");
+    expect(state("/leads").activeKey).toBe("growth");
     expect(state("/slots").activeKey).toBe("growth");
-    expect(state("/usage").activeKey).toBe("clients");
-    expect(state("/targets").activeKey).toBe("setup");
+    expect(state("/instances").activeKey).toBe("clients");
+    expect(state("/provisioning").activeKey).toBe("clients");
     expect(state("/operators").activeKey).toBe("access");
   });
 
@@ -306,14 +306,10 @@ describe("ownerTabsFor on the operator rail", () => {
   const tabs = (path: string) => ownerTabsFor(path, rail, "/dashboard");
 
   it("draws the section's pages in order, with the current one marked", () => {
-    const strip = tabs("/search");
-    expect(strip?.label).toBe("Call intelligence");
-    expect(strip?.activeHref).toBe("/search");
-    expect(strip?.tabs.map((t) => t.label)).toEqual([
-      "Call Log Explorer",
-      "Search",
-      "AI Agent Studio",
-    ]);
+    const strip = tabs("/leads");
+    expect(strip?.label).toBe("Growth");
+    expect(strip?.activeHref).toBe("/leads");
+    expect(strip?.tabs.map((t) => t.label)).toEqual(["Funnel Leads", "Booking Slots"]);
   });
 
   it("draws nothing on Overview, or below a tab's own page", () => {
@@ -327,17 +323,10 @@ describe("ownerTabsFor on the operator rail", () => {
     expect(tabs("/operators")).toBeNull();
   });
 
-  it("gives Clients its four pages TODAY, and loses two of them in Part B", () => {
-    // Pinned deliberately as a tripwire on the Part B migration rather than as a
-    // claim that this grouping is right. Configuration and Usage are both
-    // single-tenant screens reached with `?org=` (doc 34 SS4.1), so both move
-    // under /instances/<id>; when they do, Clients holds Instances alone and this
-    // case should become `expect(tabs("/instances")).toBeNull()`.
-    expect(tabs("/instances")?.tabs.map((t) => t.href)).toEqual([
-      "/instances",
-      "/provisioning",
-      "/client-config",
-      "/usage",
-    ]);
+  it("gives Clients the two pages that really do span tenants", () => {
+    // Was four. Configuration and Usage were both single-tenant screens reached
+    // with `?org=` and moved under /instances/<id> in Part B; what is left is the
+    // client list and what each client is provisioned for.
+    expect(tabs("/instances")?.tabs.map((t) => t.href)).toEqual(["/instances", "/provisioning"]);
   });
 });

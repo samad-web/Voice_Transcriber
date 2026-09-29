@@ -7,7 +7,7 @@ import { Pager, PAGE_SIZE } from "@/components/pager";
 import { operatorGate } from "@/lib/operator-gate";
 import { operatorCaller } from "@/lib/operator-guard";
 import { apiGetAs } from "@/lib/server-api";
-import { CallsExplorer, type CallRow } from "../../../calls/calls-explorer";
+import { CallsExplorer, type CallRow } from "./calls-explorer";
 
 interface Org {
   id: string;

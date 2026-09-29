@@ -36,15 +36,29 @@ const GROUP_DIR = fileURLToPath(new URL(".", import.meta.url));
  *  passing vacuously. A new file must not fail here; it must fail on its
  *  missing guard. */
 const KNOWN_ACTION_FILES = [
-  "agents/actions.ts",
-  "calls/actions.ts",
-  "client-config/keys-actions.ts",
-  "client-config/roles-actions.ts",
-  "client-config/team-actions.ts",
-  "crm/actions.ts",
+  // Doc 34 Part B moved almost every one of these under `instances/[id]/`, with
+  // the screen that owns them. `crm/actions.ts` became `instances/[id]/crm-
+  // actions.ts` rather than keeping its name, because that directory already had
+  // an `actions.ts` of its own - the same `<something>-actions.ts` convention the
+  // Access tabs and `(owner)` already use where one directory holds several.
+  "instances/[id]/access/keys-actions.ts",
+  "instances/[id]/access/roles-actions.ts",
+  "instances/[id]/access/team-actions.ts",
   "instances/[id]/actions.ts",
+  "instances/[id]/agents/actions.ts",
+  "instances/[id]/automations/actions.ts",
+  "instances/[id]/calls/actions.ts",
+  "instances/[id]/calls/call-access-actions.ts",
+  "instances/[id]/crm-actions.ts",
+  "instances/[id]/fields/actions.ts",
+  "instances/[id]/search/actions.ts",
+  "instances/[id]/targets/actions.ts",
   "instances/new/actions.ts",
-  "search/actions.ts",
+  // Genuinely platform-wide, and the ones that stayed put.
+  "leads/actions.ts",
+  "operators/actions.ts",
+  "provisioning/actions.ts",
+  "slots/actions.ts",
 ];
 
 const GUARD_CALL = /\brequireOperator\s*\(\s*\)/;
