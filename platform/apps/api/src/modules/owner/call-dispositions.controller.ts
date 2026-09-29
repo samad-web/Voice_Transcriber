@@ -17,7 +17,7 @@ import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard"
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 
-const COLUMNS = `id, key, label, lead_quality, color, icon, sort_order, is_active, created_at`;
+const COLUMNS = `id, key, label, lead_quality, color, icon, sort_order, is_active, resolves_on_first_call, created_at`;
 
 /**
  * The tenant's own vocabulary for how a call ended (migration 0097).
@@ -80,10 +80,18 @@ export class CallDispositionsController {
       const {
         rows: [row],
       } = await client.query(
-        `INSERT INTO call_dispositions (org_id, key, label, lead_quality, color, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO call_dispositions (org_id, key, label, lead_quality, color, sort_order, resolves_on_first_call)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING ${COLUMNS}`,
-        [orgId, key, input.label, input.leadQuality ?? null, input.color, input.sortOrder],
+        [
+          orgId,
+          key,
+          input.label,
+          input.leadQuality ?? null,
+          input.color,
+          input.sortOrder,
+          input.resolvesOnFirstCall,
+        ],
       );
       return { disposition: row };
     });
@@ -116,6 +124,10 @@ export class CallDispositionsController {
       if (p.color !== undefined) set("color", p.color);
       if (p.sortOrder !== undefined) set("sort_order", p.sortOrder);
       if (p.isActive !== undefined) set("is_active", p.isActive);
+      // Present-vs-undefined again, for the reason the Update schema states:
+      // an omitted flag must stay as it is, not fall back to false.
+      if (p.resolvesOnFirstCall !== undefined)
+        set("resolves_on_first_call", p.resolvesOnFirstCall);
       if (sets.length === 0) throw new BadRequestException("no fields to update");
       sets.push("updated_at = now()");
 

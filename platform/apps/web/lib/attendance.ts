@@ -33,6 +33,12 @@ export interface AttendanceChannel {
   provider: string;
   /** False while Meta has not approved `attendance_request_alert`; such a channel cannot be picked. */
   templateApproved: boolean | null;
+  /**
+   * False while Meta has not approved `attendance_absence_alert` (0143).
+   * Reported only - unlike `templateApproved` this never blocks the channel,
+   * because a workspace without it still gets absence alerts in the console.
+   */
+  absenceTemplateApproved: boolean | null;
 }
 
 export interface AttendanceSettings {
@@ -45,6 +51,10 @@ export interface AttendanceSettings {
   canEditWhatsapp: boolean;
   channels: AttendanceChannel[];
   approversWithoutWhatsapp: { membershipId: string; name: string }[];
+  /** The shift-not-started wording (0143). Null = the workspace has never set one. */
+  absentMessage: string | null;
+  /** What null renders as, so the editor can show it as a placeholder. */
+  absentMessageDefault: string;
 }
 
 export interface BreakSlot {

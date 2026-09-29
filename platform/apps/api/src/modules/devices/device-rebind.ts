@@ -206,3 +206,67 @@ export async function restoreDevice(
   );
   return { id: deviceId, previousStatus: device.status, wasRemoved: device.removed_at !== null };
 }
+
+/**
+ * Take a handset off the fleet list - the operator's Delete and the client
+ * console's Remove, one implementation so the two cannot drift into two ideas
+ * of what removing a phone destroys.
+ *
+ * Two tiers, decided by the data rather than by the caller, because
+ * `calls.device_id` has no cascade and a handset that recorded anything cannot
+ * be DELETEd without taking that history with it:
+ *
+ *  - **no calls**  → the row goes outright. `device_health` cascades and
+ *                    `leads.telecaller_device_id` nulls (0010), so a test
+ *                    enrollment or a mis-scanned QR leaves nothing behind.
+ *  - **has calls** → de-enrolled: `removed_at` stamped and `status` dropped to
+ *                    `logged_out`, so it leaves every listing AND stops
+ *                    authenticating, while its calls, leads and telecaller
+ *                    attribution keep resolving everywhere they already do.
+ *
+ * Deliberately NOT a wipe: wiping destroys the recordings still sitting on the
+ * handset, which is a separate and more destructive choice with its own button.
+ * Taking a phone off a list must not silently reach out and erase it.
+ *
+ * Reversible in the de-enrolled case - `restoreDevice` above clears
+ * `removed_at` - which is the whole reason removing is offered to a client at
+ * all. The hard-delete case has nothing left to restore, and nothing that
+ * would be missed.
+ */
+export async function removeDevice(
+  client: Queryable,
+  deviceId: string,
+): Promise<{
+  id: string;
+  outcome: "deleted" | "de-enrolled";
+  calls: number;
+  label: string | null;
+  previousStatus: DeviceStatus;
+}> {
+  const device = await lockDevice(client, deviceId);
+  if (!device) throw new NotFoundException("no such handset in this workspace");
+  // Not an error worth a 500, but not a silent no-op either: a second remove on
+  // the same row means the screen the person is looking at is stale.
+  if (device.removed_at) {
+    throw new ConflictException("that handset has already been removed from the fleet");
+  }
+
+  const {
+    rows: [{ calls }],
+  } = await client.query<{ calls: number }>(
+    "SELECT count(*)::int AS calls FROM calls WHERE device_id = $1",
+    [deviceId],
+  );
+
+  const outcome = calls === 0 ? ("deleted" as const) : ("de-enrolled" as const);
+  if (outcome === "deleted") {
+    await client.query("DELETE FROM devices WHERE id = $1", [deviceId]);
+  } else {
+    await client.query(
+      "UPDATE devices SET removed_at = now(), status = 'logged_out' WHERE id = $1",
+      [deviceId],
+    );
+  }
+
+  return { id: deviceId, outcome, calls, label: device.label, previousStatus: device.status };
+}

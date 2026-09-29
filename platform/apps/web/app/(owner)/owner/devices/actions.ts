@@ -167,6 +167,35 @@ export async function revokeDeviceAction(id: string): Promise<{ error?: string }
 }
 
 /**
+ * Take a handset off the list for good.
+ *
+ * `outcome` says what actually happened, which the caller reports back: a
+ * phone that never recorded anything is deleted outright, one that did is
+ * de-enrolled so its calls keep resolving. The API decides which from the
+ * data - see removeDevice - so this cannot promise the wrong one.
+ */
+export async function removeDeviceAction(
+  id: string,
+): Promise<{ error?: string; outcome?: "deleted" | "de-enrolled"; calls?: number }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/devices/${id}`, {
+      method: "DELETE",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const data = (await res.json()) as { outcome: "deleted" | "de-enrolled"; calls: number };
+    revalidatePath("/owner", "layout");
+    return { outcome: data.outcome, calls: data.calls };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
  * Undo a retire (0130). The phone still holds its key, so it re-enables at its
  * next check-in - which the API triggers with a push rather than waiting for
  * the hourly poll.

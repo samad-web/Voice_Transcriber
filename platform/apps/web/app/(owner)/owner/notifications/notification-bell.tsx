@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AlarmClock,
   ArrowRightLeft,
@@ -107,6 +108,21 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+  /*
+   * Close the panel when the route actually changes, rather than from each
+   * link's own onClick.
+   *
+   * Closing in the handler unmounted the <Link> in the same tick as the click,
+   * and the navigation went with it - "Review queue" and "Notification
+   * settings" did nothing at all, and so did every notification row with a
+   * link_path. Reacting to the destination instead means the panel closes only
+   * once the move has actually happened, and a link that goes nowhere (already
+   * on that page) correctly leaves it open.
+   */
+  const pathname = usePathname();
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
   /**
    * Ids already shown, so only rows that are NEW to this tab raise a toast.
    * Null until the first load: what is waiting when the page opens is the
@@ -328,9 +344,12 @@ export function NotificationBell() {
                 {row.link_path ? (
                   <Link
                     href={row.link_path}
+                    // Marks read, but does NOT close the panel - closing here
+                    // unmounts this link in the same tick as the click and the
+                    // navigation is lost. The route change closes it instead;
+                    // see the pathname effect above.
                     onClick={() => {
                       if (row.read_at === null) markOne(row.id);
-                      setOpen(false);
                     }}
                     className="block px-3 py-2.5 hover:bg-surface-hover"
                   >
@@ -358,18 +377,14 @@ export function NotificationBell() {
       ) : null}
 
       <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs">
-        <Link
-          href="/owner/review"
-          onClick={() => setOpen(false)}
-          className="text-text-muted underline hover:text-text"
-        >
+        {/* No onClick: see the pathname effect. Closing the panel from the
+            click handler removed these links mid-click and the navigation
+            never happened - which is exactly how both of these read as dead
+            buttons. */}
+        <Link href="/owner/review" className="text-text-muted underline hover:text-text">
           Review queue
         </Link>
-        <Link
-          href="/owner/notifications"
-          onClick={() => setOpen(false)}
-          className="text-text-muted underline hover:text-text"
-        >
+        <Link href="/owner/notifications" className="text-text-muted underline hover:text-text">
           Notification settings
         </Link>
       </div>

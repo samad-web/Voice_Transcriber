@@ -109,6 +109,8 @@ export const NotificationKind = z.enum([
   "attendance_away",
   /** A stretch of a day needs a person to decide what it was (0140 §4 review). */
   "attendance_review",
+  /** 0143: a telecaller never started a shift whose grace period has passed. */
+  "attendance_absent",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

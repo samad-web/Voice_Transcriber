@@ -331,6 +331,31 @@ export interface OwnerCall {
   /** The first later call that reached them, if any - see missed-callback-sql.ts. */
   returned_at?: string | null;
   return_direction?: string | null;
+  /**
+   * Where this call sits in the run of calls with this person, counting from
+   * 1 - so `sequence > 1` is a follow-up. Null when the number was withheld
+   * and no history can be built. Optional: an API older than this sends
+   * neither, and the row then shows no follow-up chip rather than claiming
+   * every call is a first one.
+   */
+  sequence?: number | null;
+  calls_in?: number | null;
+  calls_out?: number | null;
+  is_follow_up?: boolean | null;
+}
+
+/** One earlier call with the same person, for the drawer's history section. */
+export interface PreviousCall {
+  id: string;
+  direction: string;
+  started_at: string;
+  duration_s: number;
+  status: string;
+  missed_reason: string | null;
+  disposition_key: string | null;
+  telecaller: string | null;
+  summary: string | null;
+  sentiment: string | null;
 }
 
 /**
@@ -381,6 +406,12 @@ export interface OwnerCallDetail {
   }>;
   /** Null when no SOP is active, or the call had no speaker separation to score from. */
   sop: CallSopResult | null;
+  /**
+   * Earlier calls with this same person, newest first, at most 20. Empty when
+   * this is a first call or the number was withheld. Optional so an older API
+   * renders the drawer without the history section rather than breaking.
+   */
+  previous?: PreviousCall[];
   transcriptRedacted: boolean;
   /**
    * A reply drafter is switched on AND this reader may read the transcript it

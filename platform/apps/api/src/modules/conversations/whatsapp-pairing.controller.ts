@@ -7,6 +7,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  NotFoundException,
   Post,
   Req,
   ServiceUnavailableException,
@@ -16,6 +17,7 @@ import { z } from "zod";
 import { decryptSecret, encryptSecret } from "@aura/db";
 import { normalizePeerAddress } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { evolutionInstanceName } from "./evolution-instance-name";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { orgPhoneCountry, whatsappPhone } from "../../common/console-phone";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
@@ -30,6 +32,7 @@ import {
   getEvolutionQr,
   getEvolutionStatus,
   logoutEvolutionInstance,
+  reconnectEvolutionInstance,
   requestEvolutionPairingCode,
 } from "./evolution-client";
 
@@ -147,9 +150,14 @@ export class WhatsAppPairingController {
         connected: false,
         number: null,
         channelId: null,
+        state: admin ? ("unlinked" as const) : ("unconfigured" as const),
+        canReconnect: false,
+        // No env-var names: the person reading this cannot set them, and
+        // "EVOLUTION_ADMIN_API_KEY" is a sentence they can do nothing with.
+        // Their provider can, and that is who this points them at.
         detail: admin
           ? null
-          : "This deployment has no WhatsApp relay configured, so a personal number cannot be linked. Your provider sets EVOLUTION_BASE_URL and EVOLUTION_ADMIN_API_KEY.",
+          : "WhatsApp is not set up on this deployment yet, so a personal number cannot be linked. Ask your provider to switch it on.",
       };
     }
 
@@ -159,6 +167,17 @@ export class WhatsAppPairingController {
     // Linked Devices on the handset - which changes nothing in our database.
     let connected = false;
     let detail: string | null = null;
+    /*
+     * The two ways "not connected" happens need opposite instructions, and the
+     * console could not tell them apart while this returned one boolean:
+     *
+     *   offline - the session still EXISTS on the relay, it just is not up.
+     *             A reconnect resumes it and the person touches nothing.
+     *   dropped - the account was removed from Linked Devices. Nothing to
+     *             resume; it needs a new QR, and telling somebody to "wait" is
+     *             telling them to wait forever.
+     */
+    let state: "connected" | "offline" | "dropped" | "unknown" = "unknown";
     const baseUrl = channel.api_base_url ?? admin?.baseUrl;
     if (channel.api_key && baseUrl) {
       try {
@@ -167,22 +186,80 @@ export class WhatsAppPairingController {
           token: decryptSecret(channel.api_key) ?? "",
         });
         connected = live.connected && live.loggedIn;
+        state = connected ? "connected" : live.loggedIn ? "offline" : "dropped";
         if (!connected) {
           detail = live.loggedIn
-            ? "Linked, but not connected to WhatsApp at the moment."
-            : "This number is no longer linked. Somebody removed Aura from Linked Devices on the phone.";
+            ? "Linked, but not connected to WhatsApp at the moment. Reconnecting usually fixes this without touching your phone."
+            : "This number is no longer linked. Somebody removed Aura from Linked Devices on the phone, so it has to be paired again.";
         }
       } catch (err) {
-        detail = err instanceof EvolutionError ? err.message : "Could not reach the WhatsApp relay.";
+        // Reaching the relay failed, which says nothing about whether the
+        // PHONE is still linked - so this is `unknown`, not `dropped`. Calling
+        // it dropped would send somebody to re-scan a QR over our own outage.
+        state = "unknown";
+        detail = "Could not reach WhatsApp just now, so this may be out of date.";
       }
     }
 
     return {
       available: admin !== null,
       connected,
+      state,
+      /** Only `offline` is worth a resume; `dropped` needs the phone. */
+      canReconnect: state === "offline" || state === "unknown",
       number: channel.inbound_address,
       channelId: channel.id,
       detail,
+    };
+  }
+
+  /**
+   * Try to bring a dropped session back up without sending anybody to their
+   * phone.
+   *
+   * Most "not connected" is a relay restart or a dropped socket, where the
+   * session still exists and resuming it costs one call. Only an account
+   * actually removed from Linked Devices needs a new QR, and this reports that
+   * honestly rather than spinning: it reconnects, re-reads the live status, and
+   * hands back what is now true. `paired: false` with `state: "dropped"` is the
+   * console's cue to offer the QR instead.
+   */
+  @Post("reconnect")
+  async reconnect(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
+    const me = requirePerson(req);
+    const admin = evolutionAdminFromEnv();
+    const channel = await this.personalChannel(orgId, me);
+    if (!channel?.api_key) throw new NotFoundException("you have no linked WhatsApp number");
+
+    const baseUrl = channel.api_base_url ?? admin?.baseUrl;
+    if (!baseUrl) {
+      throw new ServiceUnavailableException("WhatsApp is not set up on this deployment");
+    }
+    const instance = { baseUrl, token: decryptSecret(channel.api_key) ?? "" };
+
+    await reconnectEvolutionInstance(instance);
+
+    // Re-read rather than trusting the reconnect's own answer: the relay
+    // returning 200 means it ACCEPTED the request, not that WhatsApp let it
+    // back in. Only the status call knows that.
+    let connected = false;
+    let loggedIn = false;
+    try {
+      const live = await getEvolutionStatus(instance);
+      connected = live.connected && live.loggedIn;
+      loggedIn = live.loggedIn;
+    } catch {
+      /* Leave both false; the console re-reads status either way. */
+    }
+
+    return {
+      connected,
+      state: connected ? ("connected" as const) : loggedIn ? ("offline" as const) : ("dropped" as const),
+      detail: connected
+        ? null
+        : loggedIn
+          ? "Still not connected. Try again in a moment."
+          : "This number is no longer linked to Aura, so reconnecting cannot help - it has to be paired again from your phone.",
     };
   }
 
@@ -215,7 +292,7 @@ export class WhatsAppPairingController {
       // 503 rather than 400: nothing the caller sent is wrong, and no change to
       // their request will help. This is the operator's to fix.
       throw new ServiceUnavailableException(
-        "this deployment has no WhatsApp relay configured (EVOLUTION_BASE_URL, EVOLUTION_ADMIN_API_KEY)",
+        "WhatsApp is not set up on this deployment, so a personal number cannot be linked",
       );
     }
 
@@ -246,12 +323,16 @@ export class WhatsAppPairingController {
       }
     }
 
-    // One instance per PERSON per org (0125), named from both ids so a human
-    // looking at the relay's instance list can tell whose it is, and so the
-    // same person in two organisations gets two instances rather than one
-    // session serving both. Never named from the phone number - a number can
-    // move between people, an id cannot.
-    const instanceName = existing?.config?.evolutionInstance ?? `aura-${orgId}-${me}`;
+    // One instance per PERSON per org (0125). The name is what somebody reads
+    // in the relay's own manager console, so it is built from the workspace and
+    // the person - see evolutionInstanceName for why it still carries four hex
+    // characters on the end.
+    //
+    // Reused once set, never recomputed: `config.evolutionInstance` is the key
+    // we address the relay by, and a person renaming themselves must not orphan
+    // a live WhatsApp session.
+    const instanceName =
+      existing?.config?.evolutionInstance ?? (await this.newInstanceName(orgId, me));
     const token = existing?.api_key ? (decryptSecret(existing.api_key) ?? newToken()) : newToken();
 
     const channelId = await this.upsertChannel(orgId, me, {
@@ -400,6 +481,40 @@ export class WhatsAppPairingController {
   /* ── helpers ──────────────────────────────────────────────────────────── */
 
   /** The CALLER's own personal channel - never anybody else's (0125). */
+  /**
+   * The name this person's relay instance is created under, read off the
+   * workspace and the person rather than their ids.
+   *
+   * It used to be `aura-<orgId>-<userId>` - two uuids, seventy-eight
+   * characters - whose own comment said it was named "so a human looking at
+   * the relay's instance list can tell whose it is". It achieved the exact
+   * opposite: the manager console showed a column of indistinguishable hex.
+   *
+   * Falls back to the org's name, then to a constant, so a workspace with no
+   * instance row or a person with no display name still gets a legible name
+   * instead of "AURA-null-null".
+   */
+  private async newInstanceName(orgId: string, userId: string): Promise<string> {
+    const { rows } = await this.db.withOrg(orgId, (client) =>
+      client.query<{ instance: string | null; person: string | null }>(
+        `SELECT (SELECT i.name FROM instances i WHERE i.org_id = $1 ORDER BY i.created_at LIMIT 1)
+                  AS instance,
+                (SELECT COALESCE(u.name, split_part(u.email, '@', 1)) FROM users u WHERE u.id = $2)
+                  AS person`,
+        [orgId, userId],
+      ),
+    );
+    const org = await this.db.withOrg(orgId, (client) =>
+      client.query<{ name: string | null }>(`SELECT name FROM organizations WHERE id = $1`, [orgId]),
+    );
+    return evolutionInstanceName({
+      instance: rows[0]?.instance ?? org.rows[0]?.name ?? null,
+      person: rows[0]?.person ?? null,
+      orgId,
+      userId,
+    });
+  }
+
   private async personalChannel(orgId: string, ownerUserId: string): Promise<PersonalChannelRow | null> {
     return this.db.withOrg(orgId, async (client) => {
       const {

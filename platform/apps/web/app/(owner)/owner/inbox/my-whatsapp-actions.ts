@@ -18,10 +18,33 @@ import { apiErrorMessage } from "../lib/api-error";
  * is no action here that names anybody else.
  */
 
+/**
+ * Why this is not just `connected`.
+ *
+ *  unconfigured - the deployment cannot offer personal numbers at all.
+ *  unlinked     - nobody has linked one. Nothing is wrong.
+ *  connected    - healthy.
+ *  offline      - the session exists but is not up. A reconnect resumes it.
+ *  dropped      - removed from Linked Devices on the phone. Needs a new QR;
+ *                 reconnecting cannot help, and saying "retry" would be a lie.
+ *  unknown      - we could not reach the relay, so the phone's state is not
+ *                 something we know. Deliberately NOT `dropped`.
+ */
+export type PersonalWhatsAppState =
+  | "unconfigured"
+  | "unlinked"
+  | "connected"
+  | "offline"
+  | "dropped"
+  | "unknown";
+
 export interface PersonalWhatsAppStatus {
   /** The DEPLOYMENT can offer this at all - distinct from "you have not done it". */
   available: boolean;
   connected: boolean;
+  /** Optional so an API older than this still renders (falls back to `connected`). */
+  state?: PersonalWhatsAppState;
+  canReconnect?: boolean;
   number: string | null;
   channelId: string | null;
   detail: string | null;
@@ -105,6 +128,38 @@ export async function pollPersonalWhatsAppAction(): Promise<{ connected: boolean
     return { connected: Boolean(body.connected) };
   } catch {
     return { connected: false };
+  }
+}
+
+/**
+ * Ask the relay to resume a session that is linked but not up, without sending
+ * anybody to their phone. Reports what is true AFTER the attempt, so a
+ * `dropped` answer is the console's cue to offer a new QR instead of a retry.
+ */
+export async function reconnectPersonalWhatsAppAction(): Promise<{
+  connected?: boolean;
+  state?: PersonalWhatsAppState;
+  detail?: string | null;
+  error?: string;
+}> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in" };
+  try {
+    const res = await fetch(`${API_URL}/v1/messaging/whatsapp-personal/reconnect`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const body = (await res.json()) as {
+      connected: boolean;
+      state: PersonalWhatsAppState;
+      detail: string | null;
+    };
+    revalidatePath("/owner/inbox");
+    return { connected: body.connected, state: body.state, detail: body.detail };
+  } catch {
+    return { error: "API unreachable" };
   }
 }
 

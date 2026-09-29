@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { AlertTriangle, Check, CheckCheck, Clock } from "lucide-react";
 import {
   Button,
   ErrorBanner,
@@ -493,39 +494,90 @@ export function Inbox({ canReleaseOptOut = false }: { canReleaseOptOut?: boolean
               </div>
             ) : null}
 
-            <ul className="mt-4 space-y-3">
+            {/*
+              The chat canvas.
+
+              Laid out on WhatsApp's own conventions - bubbles that hug their
+              text, the sender's on the right, a day separator between dates,
+              a timestamp and delivery ticks tucked into the bubble's bottom
+              corner - because those conventions are what the people using this
+              already read fluently, and the previous outlined boxes with
+              "delivered" written out in words read as a log, not a
+              conversation.
+
+              Drawn with Aura's own tokens rather than WhatsApp's palette, so it
+              inherits dark mode and sits beside the rest of the console instead
+              of looking like a different product pasted in.
+            */}
+            <div className="mt-4 rounded-md bg-bg-subtle p-3">
               {thread.messages.length === 0 ? (
-                <li className="text-sm text-text-muted">No messages in this thread.</li>
+                <p className="py-6 text-center text-sm text-text-muted">
+                  No messages in this thread.
+                </p>
               ) : (
-                thread.messages.map((m) => (
-                  <li
-                    key={m.id}
-                    className={m.direction === "incoming" ? "pr-12" : "pl-12 text-right"}
-                  >
-                    <div
-                      className={
-                        "inline-block max-w-full rounded-md border p-3 text-left " +
-                        (m.direction === "incoming"
-                          ? "border-border bg-surface-hover"
-                          : "border-accent")
-                      }
-                    >
-                      {m.subject ? (
-                        <p className="mb-1 text-sm font-medium text-text">{m.subject}</p>
-                      ) : null}
-                      <p className="text-sm whitespace-pre-wrap text-text">{m.body}</p>
-                      <p className="mt-1 text-xs text-text-muted tabular-nums">
-                        {formatWhen(m.occurred_at, zone)}
-                        {m.status !== "received" ? ` · ${m.status}` : ""}
-                      </p>
-                      {m.error ? (
-                        <p className="mt-1 text-xs text-danger-text">{m.error}</p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))
+                <ul className="space-y-0.5">
+                  {thread.messages.map((m, i) => {
+                    const previous = i > 0 ? thread.messages[i - 1] : null;
+                    const outgoing = m.direction !== "incoming";
+                    // A new day gets a separator; the first message always does.
+                    const newDay = !previous || !sameDay(previous.occurred_at, m.occurred_at, zone);
+                    // Consecutive messages from the same side are one block:
+                    // only the last keeps a tail, and the gap between them is
+                    // tighter than the gap between speakers.
+                    const startsRun = newDay || !previous || previous.direction !== m.direction;
+
+                    return (
+                      <li key={m.id}>
+                        {newDay ? (
+                          <div className="flex justify-center py-3">
+                            <span className="rounded-full bg-surface px-3 py-1 text-xs font-medium text-text-muted shadow-sm">
+                              {dayLabel(m.occurred_at, zone)}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div
+                          className={`flex ${outgoing ? "justify-end" : "justify-start"} ${
+                            startsRun ? "mt-2" : ""
+                          }`}
+                        >
+                          <div
+                            className={
+                              "max-w-[85%] min-w-0 px-2.5 py-1.5 text-left shadow-sm sm:max-w-[75%] " +
+                              // Asymmetric corner on the speaker's side is the
+                              // bubble "tail", done with a radius rather than a
+                              // pseudo-element triangle: it survives every
+                              // theme and zoom level, which a hand-positioned
+                              // triangle does not.
+                              (outgoing
+                                ? "rounded-xl rounded-br-sm bg-accent-subtle text-text"
+                                : "rounded-xl rounded-bl-sm bg-surface text-text")
+                            }
+                          >
+                            {m.subject ? (
+                              <p className="mb-0.5 text-sm font-medium text-text">{m.subject}</p>
+                            ) : null}
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.body}</p>
+                            {/*
+                              Time and ticks on the same line as the text's end
+                              where they fit, which is why they are floated
+                              rather than stacked: a full-width row under a
+                              three-word message is most of the bubble.
+                            */}
+                            <span className="ml-2 inline-flex -translate-y-0.5 items-center gap-1 align-bottom text-[11px] text-text-muted tabular-nums">
+                              {formatClock(m.occurred_at, zone)}
+                              {outgoing ? <DeliveryTick status={m.status} /> : null}
+                            </span>
+                            {m.error ? (
+                              <p className="mt-1 text-xs text-danger-text">{m.error}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
-            </ul>
+            </div>
 
             {thread.conversation.opted_out ? (
               /*
@@ -673,6 +725,66 @@ function formatWhen(iso: string | null, zone: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return `${formatDayMonth(d, zone)}, ${formatTime(d, zone)}`;
+}
+
+/**
+ * Just the clock, for inside a bubble. The day is already stated by the
+ * separator above it, and repeating "22 Sep" on all forty of that day's
+ * messages is the noise the separator exists to remove.
+ */
+function formatClock(iso: string | null, zone: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : formatTime(d, zone);
+}
+
+/** The workspace's calendar day for an instant, as a comparable key. */
+function dayKey(iso: string | null, zone: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  // `en-CA` yields YYYY-MM-DD, which sorts and compares as a string. The zone
+  // is the WORKSPACE's (Build docs/30), never the reader's browser - two people
+  // in different countries must see the same message under the same date.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(d);
+}
+
+function sameDay(a: string | null, b: string | null, zone: string): boolean {
+  const left = dayKey(a, zone);
+  return left !== "" && left === dayKey(b, zone);
+}
+
+/** "Today" / "Yesterday" / "22 Sep" - the separator between days. */
+function dayLabel(iso: string | null, zone: string): string {
+  const key = dayKey(iso, zone);
+  if (!key) return "";
+  const now = new Date();
+  if (key === dayKey(now.toISOString(), zone)) return "Today";
+  const yesterday = new Date(now.getTime() - 86_400_000);
+  if (key === dayKey(yesterday.toISOString(), zone)) return "Yesterday";
+  const d = new Date(iso as string);
+  return formatDayMonth(d, zone);
+}
+
+/**
+ * WhatsApp's delivery ticks, on outgoing messages only.
+ *
+ * The states are the ones `conversation_messages.status` actually holds, so
+ * this cannot claim a message was read when the provider never said so. It
+ * replaces the word ("delivered") printed after the timestamp: a tick is read
+ * at a glance and takes none of the bubble's width.
+ */
+function DeliveryTick({ status }: { status: string }) {
+  if (status === "failed") {
+    return <AlertTriangle aria-label="Not delivered" className="h-3 w-3 text-danger-text" />;
+  }
+  if (status === "queued") return <Clock aria-label="Sending" className="h-3 w-3" />;
+  if (status === "read") {
+    return <CheckCheck aria-label="Read" className="h-3.5 w-3.5 text-accent" />;
+  }
+  if (status === "delivered") return <CheckCheck aria-label="Delivered" className="h-3.5 w-3.5" />;
+  if (status === "sent") return <Check aria-label="Sent" className="h-3.5 w-3.5" />;
+  return null;
 }
 
 /**

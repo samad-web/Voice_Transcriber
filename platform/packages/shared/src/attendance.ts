@@ -280,6 +280,14 @@ export const AttendanceSettingsInput = z
     leaveEscalationHours: z.number().int().min(1).max(168),
     whatsappAlerts: z.boolean(),
     whatsappChannelId: z.string().uuid().nullable(),
+    /**
+     * The shift-not-started wording (0143). `null` means "go back to the
+     * default preset" - distinct from omitting the field, which leaves
+     * whatever they had. The CONTENT is checked in the controller with
+     * `validateAbsenceMessage`, which can name the placeholder that is wrong;
+     * a zod refinement here could only say that the string failed.
+     */
+    absentMessage: z.string().max(600).nullable(),
   })
   .partial();
 export type AttendanceSettingsInput = z.infer<typeof AttendanceSettingsInput>;

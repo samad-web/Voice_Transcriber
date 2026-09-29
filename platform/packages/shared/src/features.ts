@@ -283,10 +283,18 @@ export const FEATURES: FeatureSpec[] = [
   {
     key: "productivity",
     label: "Productivity",
-    blurb: "Talk time, call volume and the idle gap between calls, per person.",
+    blurb:
+      "Talk time, call volume and the idle gap between calls, per person - and each " +
+      "person's own scorecard, where that output sits beside the quality of it.",
     module: "aura",
     group: "conversations",
-    hrefs: ["/owner/productivity"],
+    // Both pages, one key. They are two views of one thing: the list is the
+    // floor read by whoever supervises it, the scorecard is one column of that
+    // list read by the person it is about. A tenant that switched the list off
+    // and left the scorecard on would be running an appraisal surface nobody
+    // with the authority to act on it can see, and the reverse leaves reps
+    // measured by a page they cannot open.
+    hrefs: ["/owner/productivity", "/owner/my-performance"],
     defaultEnabled: true,
   },
   {
@@ -362,10 +370,16 @@ export const FEATURES: FeatureSpec[] = [
   {
     key: "reports",
     label: "Reports",
-    blurb: "Pipeline value, win rates, source attribution and per-rep results.",
+    blurb:
+      "Pipeline value, win rates, source attribution and per-rep results - and the " +
+      "command centre, where those sit beside campaign spend and the floor's activity.",
     module: "crm",
     group: "insights",
-    hrefs: ["/owner/reports"],
+    // Both, one key. The command centre is a reading of the same pipeline the
+    // Sales overview reports on, and a tenant with one switched off and the
+    // other on would be running two views of the same quarter that disagree
+    // about whether anybody may see it.
+    hrefs: ["/owner/reports", "/owner/performance"],
     defaultEnabled: true,
   },
   {

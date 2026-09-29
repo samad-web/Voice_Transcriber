@@ -169,7 +169,7 @@ describe("runCallLeadLink - missed-call notification (0134)", () => {
     orgQuery
       .mockResolvedValueOnce({ rowCount: 1, rows: [missedRow] }) // the UPDATE ... RETURNING
       .mockResolvedValueOnce({ rows: [] }) // SAVEPOINT
-      .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] }) // notifyMissedCallOwner's owner lookup
+      .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] }) // (spare: the notify is one statement)
       .mockResolvedValueOnce({ rowCount: 1, rows: [] }) // the notification INSERT
       .mockResolvedValueOnce({ rows: [] }); // RELEASE SAVEPOINT
 

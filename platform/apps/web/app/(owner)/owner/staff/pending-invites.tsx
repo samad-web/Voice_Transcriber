@@ -6,6 +6,7 @@ import { Copy } from "lucide-react";
 import { OWNER_ROLE_LABELS } from "@aura/shared";
 import { Button, Card, MonoLabel, StatusChip, useAlert, useConfirm, useToast } from "@aura/ui";
 import { resendInviteAction, revokeInviteAction } from "./actions";
+import { inviteMessage } from "./invite-text";
 import type { TeamInvite } from "./types";
 
 /** A row plus the expiry wording, worked out on the server (no hydration drift over time zones). */
@@ -123,10 +124,13 @@ function InviteRow({
     });
   };
 
+  // The address rides along with the link - see inviteMessage. Same text the
+  // Add-someone card copies, so an invite forwarded from either place carries
+  // the same instruction.
   const copy = (link: string) => {
     void navigator.clipboard
-      .writeText(link)
-      .then(() => toast("Invite link copied"))
+      .writeText(inviteMessage({ email: invite.email, link }))
+      .then(() => toast("Invite and sign-in address copied"))
       .catch(() =>
         alert({ title: "Couldn't copy the link", body: "Select the link and copy it by hand.", tone: "danger" }),
       );

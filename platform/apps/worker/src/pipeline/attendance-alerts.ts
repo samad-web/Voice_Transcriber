@@ -9,7 +9,9 @@ import {
   PRESENCE_RETENTION_DAYS,
   type RequestKind,
   type ResolvedBreak,
+  type ResolvedDay,
   resolveApprover,
+  renderAbsenceMessage,
   resolveTimeZone,
   shiftDateKey,
   todayIn,
@@ -20,21 +22,26 @@ import { sendPush } from "./fcm";
 import { announce } from "./realtime";
 
 /**
- * Attendance alerts (doc 33 §6.2-§6.4, migration 0140) - everything the worker
- * tells a PERSON, plus the one thing it tells a PHONE.
+ * Attendance alerts (doc 33 §6.2-§6.4, migrations 0140 and 0143) - everything
+ * the worker tells a PERSON, plus the one thing it tells a PHONE.
  *
  *   attendance_away           a telecaller did not answer a presence check
  *   attendance_break_overrun  a scheduled break ran BREAK_OVERRUN_ALERT_MINUTES over
  *   attendance_review         a day has stretches only a person can classify
+ *   attendance_absent         a shift's grace period passed with nobody there (0143)
  *   escalation                a pending request sat with its manager too long
  *
- * All four are CONSOLE notifications to the telecaller's approver (their
+ * All five are CONSOLE notifications to the telecaller's approver (their
  * reports-to manager) or, with none, every active owner - and escalation goes
  * to every owner by definition. Each is deduped through notifications'
  * (user_id, dedupe_key), so a sweep that sees the same fact twice writes one
- * row. Only escalation may also queue WhatsApp, and only while the workspace's
- * owner-set toggle is on: away and overrun alerts fire often and stay in the
- * console (doc 33 §6.4).
+ * row. Escalation and absence may also queue WhatsApp, and only while the
+ * workspace's owner-set toggle is on: away and overrun alerts fire often and
+ * stay in the console (doc 33 §6.4).
+ *
+ * Absence is also the ONE alert here whose wording is not written in this
+ * repo. The workspace chooses it (@aura/shared/attendance-absence-message);
+ * everything about when it fires is still decided below.
  *
  * `presence_check` is the phone half: an FCM wake-up for a handset whose
  * heartbeats stopped mid-shift, at most once per 10 minutes per phone.
@@ -44,6 +51,13 @@ interface Person {
   telecallerId: string;
   name: string;
   approverUserId: string | null;
+  /**
+   * The same approver as a MEMBERSHIP. A console notification is addressed to
+   * a user; a WhatsApp alert is addressed to a membership, because the number
+   * it goes to hangs off `memberships.whatsapp_number` and one person can hold
+   * a membership in more than one workspace.
+   */
+  approverMembershipId: string | null;
 }
 
 const LINK_TODAY = "/owner/attendance?tab=today";
@@ -105,6 +119,7 @@ async function people(client: Queryable): Promise<Map<string, Person>> {
           telecallerId: r.id,
           name: r.name,
           approverUserId: approver && r.ru_status === "active" ? r.rm_user : null,
+          approverMembershipId: approver && r.ru_status === "active" ? r.rm_id : null,
         },
       ];
     }),
@@ -145,18 +160,29 @@ async function insertNotification(
 export async function runAttendanceAlerts(now = Date.now()): Promise<number> {
   const { rows: orgs } = await getAdminPool().query<{
     id: string;
+    name: string | null;
     reporting_timezone: string | null;
     leave_escalation_hours: number;
     attendance_whatsapp_alerts: boolean;
+    attendance_absent_message: string | null;
   }>(
-    `SELECT id, reporting_timezone, leave_escalation_hours, attendance_whatsapp_alerts
+    `SELECT id, name, reporting_timezone, leave_escalation_hours, attendance_whatsapp_alerts,
+            attendance_absent_message
        FROM organizations WHERE status = 'active' AND attendance_enabled`,
   );
   let total = 0;
   for (const org of orgs) {
     try {
       const n = await withOrgContext(org.id, (client) =>
-        alertOrg(client, org.id, resolveTimeZone(org.reporting_timezone), org.leave_escalation_hours ?? 24, org.attendance_whatsapp_alerts === true, now),
+        alertOrg(
+          client,
+          org.id,
+          resolveTimeZone(org.reporting_timezone),
+          org.leave_escalation_hours ?? 24,
+          org.attendance_whatsapp_alerts === true,
+          now,
+          { workspace: org.name, absentMessage: org.attendance_absent_message },
+        ),
       );
       total += n;
       if (n > 0) announce(org.id, "notification", "created");
@@ -175,6 +201,7 @@ async function alertOrg(
   escalationHours: number,
   whatsappOn: boolean,
   now: number,
+  copy: { workspace: string | null; absentMessage: string | null },
 ): Promise<number> {
   const today = todayIn(zone, now);
   const staff = await people(client);
@@ -225,6 +252,17 @@ async function alertOrg(
       });
     }
   }
+
+  raised += await absenceAlerts(client, orgId, {
+    zone,
+    now,
+    today,
+    staff,
+    recipientsOf,
+    ownerMemberships: ownerList,
+    whatsappOn,
+    ...copy,
+  });
 
   // ── Days with stretches that need a person ──
   const { rows: review } = await client.query<{ telecaller_id: string; work_date: string; review_count: number }>(
@@ -323,6 +361,171 @@ async function alertOrg(
         );
       }
     }
+  }
+  return raised;
+}
+
+// ── Never started the shift (0143) ──────────────────────────────────────────
+
+/**
+ * The one alert whose WORDING belongs to the workspace
+ * (@aura/shared/attendance-absence-message). Everything about WHEN it fires is
+ * still decided here, from the shift pattern the workspace already configured.
+ *
+ * ── WHEN ───────────────────────────────────────────────────────────────────
+ *
+ * Once the grace period on today's shift has passed with no check-in at all.
+ * NOT at the end of the shift, where `attendance_days.status` finally turns
+ * 'absent': that is the moment the fact becomes certain and also the moment it
+ * stops being useful, because the day is over and there was never a window in
+ * which the manager could do anything. The grace period is the workspace's own
+ * statement of how late is too late, so it is the honest trigger.
+ *
+ * The cost of that choice is that somebody who walks in twenty minutes late
+ * has already been reported. That is why none of the ten presets accuses
+ * anybody of anything: at this moment nobody knows why the person is not
+ * there, and the alert says only that they have not started.
+ *
+ * Exactly one alert per person per work date, held by
+ * `attendance_whatsapp_outbox_absent_once` and by the notification dedupe key.
+ * If they arrive later nothing takes it back - and nothing chases them either.
+ *
+ * ── WHO IS SKIPPED, AND WHY ────────────────────────────────────────────────
+ *
+ *   - a day that is not a working day for them: off, holiday, or approved
+ *     leave. `book.resolve` already folds approved requests in.
+ *   - anybody on HALF-DAY leave. Their shift window is part leave and part
+ *     work, and this sweep does not know which half has started; an alert that
+ *     fires because somebody is on approved morning leave is the single worst
+ *     thing this feature could do, so it stays quiet instead.
+ *   - anybody with no active handset. They have no way to check in, so the
+ *     alert would fire every working day and mean nothing.
+ *   - a shift that has already ended. A worker that was down for the whole
+ *     shift misses the alert rather than sending it at midnight.
+ */
+/**
+ * Is this person's shift one that could be reported as not started, at this
+ * moment? Null when it could not, for any of the reasons in the docblock
+ * above. Says nothing about whether they actually turned up - that is a
+ * question for `presence_events`, and this narrows the set it has to be asked
+ * about.
+ *
+ * Pure, and exported, because it is the whole of the WHEN and the rest of the
+ * sweep is database plumbing around it.
+ */
+export function shiftNotStartedWindow(
+  day: ResolvedDay,
+  now: number,
+): { start: number; end: number; grace: number } | null {
+  if (day.kind !== "work" || !day.shiftStart || !day.shiftEnd) return null;
+  // Half-day leave: part of this window is approved absence and this function
+  // cannot tell which part has begun. Silence beats accusing somebody who
+  // filed leave and had it granted.
+  if (day.halfDay) return null;
+  const start = Date.parse(day.shiftStart);
+  const end = Date.parse(day.shiftEnd);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (now < start + day.graceMinutes * 60_000) return null;
+  if (now > end) return null;
+  return { start, end, grace: day.graceMinutes };
+}
+
+async function absenceAlerts(
+  client: Queryable,
+  orgId: string,
+  ctx: {
+    zone: string;
+    now: number;
+    today: string;
+    staff: Map<string, Person>;
+    recipientsOf: (telecallerId: string) => string[];
+    ownerMemberships: { membershipId: string; userId: string }[];
+    whatsappOn: boolean;
+    workspace: string | null;
+    absentMessage: string | null;
+  },
+): Promise<number> {
+  const { rows: handsets } = await client.query<{ telecaller_id: string }>(
+    `SELECT DISTINCT d.telecaller_id FROM devices d
+      WHERE d.removed_at IS NULL AND d.status = 'active' AND d.telecaller_id IS NOT NULL`,
+  );
+  const candidates = handsets.map((h) => h.telecaller_id).filter((id) => ctx.staff.has(id));
+  if (candidates.length === 0) return 0;
+
+  const book = await loadScheduleBook(client, candidates, shiftDateKey(ctx.today, -1), ctx.today, ctx.zone);
+  const due: { person: Person; date: string; start: number; end: number; grace: number; shiftName: string | null }[] = [];
+  for (const id of candidates) {
+    const { date, day } = workDayAt(book, id, ctx.now, ctx.today);
+    const window = shiftNotStartedWindow(day, ctx.now);
+    if (!window) continue;
+    due.push({
+      person: ctx.staff.get(id)!,
+      date,
+      ...window,
+      shiftName: book.patternOn(id, date)?.name ?? null,
+    });
+  }
+  if (due.length === 0) return 0;
+
+  /*
+   * Checked in = an explicit shift_start, or a call. The hour of slack before
+   * the shift matches the classifier's own window (resolveDay in @aura/shared)
+   * so the two cannot disagree about who turned up: an alert for somebody the
+   * timesheet later shows as present would destroy trust in both.
+   */
+  const { rows: checkedIn } = await client.query<{ telecaller_id: string }>(
+    `SELECT DISTINCT telecaller_id FROM presence_events
+      WHERE telecaller_id = ANY($1::uuid[])
+        AND kind IN ('shift_start', 'call_start')
+        AND occurred_at >= $2::timestamptz AND occurred_at <= $3::timestamptz`,
+    [
+      due.map((d) => d.person.telecallerId),
+      new Date(Math.min(...due.map((d) => d.start)) - 3_600_000).toISOString(),
+      new Date(ctx.now).toISOString(),
+    ],
+  );
+  const present = new Set(checkedIn.map((r) => r.telecaller_id));
+
+  let raised = 0;
+  for (const d of due) {
+    if (present.has(d.person.telecallerId)) continue;
+    const message = renderAbsenceMessage(ctx.absentMessage, {
+      name: d.person.name,
+      shiftName: d.shiftName,
+      shiftStart: d.start,
+      shiftEnd: d.end,
+      graceMinutes: d.grace,
+      now: ctx.now,
+      zone: ctx.zone,
+      workspace: ctx.workspace,
+    });
+    const n = await insertNotification(client, orgId, ctx.recipientsOf(d.person.telecallerId), {
+      kind: "attendance_absent",
+      // The title stays ours and stays plain, so the bell reads consistently
+      // however the workspace has worded the message underneath it.
+      title: `${d.person.name} has not started their shift`,
+      body: message,
+      link: LINK_TODAY,
+      dedupe: `attendance_absent:${d.person.telecallerId}:${d.date}`,
+    });
+    raised += n;
+    /*
+     * Queued only when the notification was actually new. `n === 0` means the
+     * dedupe key caught it, so this is a re-run of a sweep that has already
+     * alerted - and the partial unique index would reject the row anyway.
+     */
+    if (n === 0 || !ctx.whatsappOn) continue;
+    const memberships = d.person.approverMembershipId
+      ? [d.person.approverMembershipId]
+      : ctx.ownerMemberships.map((o) => o.membershipId);
+    if (memberships.length === 0) continue;
+    await client.query(
+      `INSERT INTO attendance_whatsapp_outbox
+         (org_id, telecaller_id, work_date, recipient_membership_id, reason, message)
+       SELECT $1, $2, $3::date, unnest($4::uuid[]), 'absent', $5
+       ON CONFLICT DO NOTHING`,
+      [orgId, d.person.telecallerId, d.date, memberships, message],
+    );
   }
   return raised;
 }

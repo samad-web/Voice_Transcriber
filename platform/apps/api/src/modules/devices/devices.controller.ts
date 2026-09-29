@@ -45,6 +45,7 @@ import {
   hardwareHashFor,
   lockDevice,
   rebindDevice,
+  removeDevice,
   restoreDevice,
 } from "./device-rebind";
 import { auditActor } from "../../common/audit-actor";
@@ -1043,32 +1044,10 @@ export class DevicesController {
     @Req() req: PrincipalRequest,
   ) {
     return this.db.withOrg(orgId, async (client) => {
-      const {
-        rows: [device],
-      } = await client.query(
-        "SELECT id, label, status, removed_at FROM devices WHERE id = $1",
-        [id],
-      );
-      if (!device) throw new NotFoundException("device not found in this org");
-      // Not an error worth a 500, but not a silent no-op either: a second
-      // Delete on the same row means the operator is looking at a stale table.
-      if (device.removed_at) {
-        throw new ConflictException("that handset has already been removed from the fleet");
-      }
-
-      const {
-        rows: [{ calls }],
-      } = await client.query("SELECT count(*)::int AS calls FROM calls WHERE device_id = $1", [id]);
-
-      const outcome: "deleted" | "de-enrolled" = calls === 0 ? "deleted" : "de-enrolled";
-      if (outcome === "deleted") {
-        await client.query("DELETE FROM devices WHERE id = $1", [id]);
-      } else {
-        await client.query(
-          "UPDATE devices SET removed_at = now(), status = 'logged_out' WHERE id = $1",
-          [id],
-        );
-      }
+      // Shared with the client console's own Remove - see removeDevice, which
+      // holds the no-calls/has-calls rule both consoles must apply identically.
+      const { outcome, calls, label, previousStatus } = await removeDevice(client, id);
+      const device = { label, status: previousStatus };
 
       // After the write, and safe there: audit_log.target_id is plain `text`
       // with no FK back to devices (0001), so the trail survives the hard

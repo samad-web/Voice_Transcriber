@@ -13,6 +13,8 @@ export interface Disposition {
   color: string;
   sort_order: number;
   is_active: boolean;
+  /** Does this outcome settle the customer's question? Feeds FCR (0144). */
+  resolves_on_first_call: boolean;
 }
 
 /**

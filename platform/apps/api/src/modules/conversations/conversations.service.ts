@@ -112,9 +112,15 @@ export class ConversationsService {
       config: Record<string, unknown> | null;
       owner_user_id: string | null;
     }>(
+      // `<> 'disabled'` and not `= 'active'` since 0142. A channel marked
+      // `disconnected` has a link that dropped, which is not a reason to refuse
+      // a message that somehow still arrives: a relay that reconnects and
+      // flushes what it buffered would otherwise have that flush dropped here,
+      // by us, for a fault we had already noticed. `disabled` still refuses -
+      // that one is a person's decision, not a provider's failure.
       `SELECT id, org_id, workspace_id, channel, provider, forward_secret, config, owner_user_id
          FROM messaging_channels
-        WHERE webhook_token = $1 AND status = 'active'`,
+        WHERE webhook_token = $1 AND status <> 'disabled'`,
       [token],
     );
     const row = rows[0];

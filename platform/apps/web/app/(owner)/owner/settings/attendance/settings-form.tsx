@@ -243,6 +243,23 @@ export function AttendanceSettingsForm({ initial }: { initial: AttendanceSetting
           <ErrorBanner>{waError}</ErrorBanner>
         ) : null}
 
+        {/*
+          Reported, not enforced. Absence alerts (0143) carry the workspace's
+          own wording, which Meta will only deliver through a template of its
+          own; until that is approved those alerts stay in the console. Said
+          here rather than in the editor because it is a property of the NUMBER,
+          not of the message - and it must not block turning alerts on, since
+          request alerts are unaffected.
+        */}
+        {alerts && selectedChannel?.absenceTemplateApproved === false ? (
+          <p className="text-sm text-text-muted">
+            Requests will reach WhatsApp. Shift-not-started alerts will stay in the console until
+            Meta approves a Utility template named{" "}
+            <span className="font-mono text-xs text-text">attendance_absence_alert</span> with 2
+            variables (the message, and a link) on this number.
+          </p>
+        ) : null}
+
         {canEditWa ? (
           <div>
             <Button type="button" variant="secondary" disabled={pending || !waDirty} onClick={saveWhatsapp}>

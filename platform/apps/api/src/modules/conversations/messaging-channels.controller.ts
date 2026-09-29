@@ -335,7 +335,7 @@ export class MessagingChannelsController {
         if (!baseUrl) {
           return this.recordProbe(client, orgId, id, {
             outcome: "provider_error",
-            detail: "This deployment has no Evolution host configured, so there is nothing to check.",
+            detail: "WhatsApp is not set up on this deployment, so there is nothing to check.",
           });
         }
         const probe = await probeEvolutionChannel({
@@ -374,8 +374,27 @@ export class MessagingChannelsController {
     const {
       rows: [updated],
     } = await client.query(
+      // The probe also moves `status` (0142), because a measurement nobody acts
+      // on is how a tenant's number sat "active" for eleven days with
+      // last_inbound_at still null. Only between 'active' and 'disconnected':
+      // 'disabled' is a person's decision and a probe must never overrule it in
+      // either direction.
+      //
+      // Only `credentials_rejected` demotes. That outcome means the phone
+      // dropped us and retrying cannot help (see probeEvolutionChannel);
+      // `unreachable` and `provider_error` are the ones that heal on their own,
+      // and demoting on those would flap the state on every blip.
       `UPDATE messaging_channels
-          SET last_probe_at = now(), last_probe_outcome = $3, last_probe_detail = $4
+          SET last_probe_at = now(), last_probe_outcome = $3, last_probe_detail = $4,
+              status = CASE
+                WHEN $3::text = 'credentials_rejected' AND status = 'active'
+                  THEN 'disconnected'
+                -- Heals itself the moment it answers again, so a reconnect
+                -- needs no separate repair step.
+                WHEN $3::text = 'ok' AND status = 'disconnected'
+                  THEN 'active'
+                ELSE status
+              END
         WHERE id = $1 AND org_id = $2
       RETURNING ${CHANNEL_COLUMNS}`,
       [id, orgId, probe.outcome, probe.detail],

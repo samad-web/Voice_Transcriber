@@ -98,6 +98,15 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     icon: "alarm",
     needsAction: false,
   },
+  // 0143. `needsAction: false` deliberately: whether a missing telecaller is a
+  // problem is the manager's call and there is nothing to decide in the
+  // console, unlike a leave request. It is loud in the bell, not a queue item.
+  attendance_absent: {
+    label: "Shift not started",
+    description: "A telecaller has not started a shift whose grace period has passed.",
+    icon: "alarm",
+    needsAction: false,
+  },
   task_assigned: {
     label: "Task assigned",
     description: "Somebody gave you a task to accept or decline.",

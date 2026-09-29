@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   NotFoundException,
@@ -20,7 +21,7 @@ import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard"
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { FcmService } from "../../fcm/fcm.service";
-import { lockDevice, restoreDevice } from "./device-rebind";
+import { lockDevice, removeDevice, restoreDevice } from "./device-rebind";
 
 /**
  * The client's own handsets: see them, pair a new one, retire an old one
@@ -119,7 +120,11 @@ export class OwnerDevicesController {
            FROM devices d
            JOIN instances i ON i.id = d.instance_id
            LEFT JOIN telecallers t ON t.id = d.telecaller_id
-          WHERE d.org_id = $1
+          -- A removed handset is off the list by definition: that is the
+          -- difference between Remove and Retire, and without this the client
+          -- would remove a phone and watch it stay exactly where it was. Its
+          -- calls are untouched and still resolve everywhere else.
+          WHERE d.org_id = $1 AND d.removed_at IS NULL
           ORDER BY d.status = 'active' DESC, d.created_at DESC`,
         [orgId],
       );
@@ -312,6 +317,56 @@ export class OwnerDevicesController {
         [orgId, req.principal?.userId ?? "owner-console", id],
       );
       return { revoked: true };
+    });
+  }
+
+  /**
+   * Take a handset off the list for good - the client's own Remove.
+   *
+   * Retiring and removing are different questions and the console offers both:
+   * retiring takes a phone off the floor and keeps it on the list (it may come
+   * back on Monday), removing is for the handset that left the company, the
+   * test enrollment, the mis-scanned QR. Until this route existed a client
+   * could only retire, so every phone the tenant had ever paired stayed on the
+   * screen forever and "retired last year" read exactly like "retired today".
+   *
+   * `removeDevice` decides what removing MEANS from the data, not from the
+   * caller: a phone that never recorded anything goes outright, one that did
+   * is de-enrolled so its calls keep resolving. See that function.
+   *
+   * Owner and manager, the same tier as revoke and restore beside it - and
+   * reversible through restore in the de-enrolled case, which is what makes it
+   * safe to hand to a client at all.
+   */
+  @Delete(":id")
+  @RequireOwnerRole("owner", "manager")
+  async remove(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Req() req: PrincipalRequest,
+  ) {
+    return this.db.withOrg(orgId, async (client) => {
+      const result = await removeDevice(client, id);
+
+      // After the write, and safe there: audit_log.target_id is plain `text`
+      // with no FK back to devices (0001), so the trail survives the hard
+      // delete that is the whole point of the first branch.
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+         VALUES ($1, 'user', $2, 'device.remove', 'device', $3, $4)`,
+        [
+          orgId,
+          req.principal?.userId ?? "owner-console",
+          id,
+          JSON.stringify({
+            outcome: result.outcome,
+            calls: result.calls,
+            label: result.label,
+            previousStatus: result.previousStatus,
+          }),
+        ],
+      );
+      return { id, outcome: result.outcome, calls: result.calls };
     });
   }
 

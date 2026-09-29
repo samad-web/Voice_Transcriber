@@ -46,6 +46,15 @@ const ListQuery = z.object({
    */
   missed: z.enum(["all", "waiting", "returned"]).optional(),
   sentiment: z.enum(["positive", "neutral", "negative"]).optional(),
+  /**
+   * Repeat contacts only ("true" - somebody here has spoken to this person
+   * before) or first-time contacts only ("false"). See HISTORY_JOIN.
+   *
+   * A call with no number is in NEITHER list. It cannot be matched to anybody,
+   * so calling it a first-time contact would be a claim the data does not
+   * support - the same reason the missed filter's "waiting" leaves those out.
+   */
+  followUp: z.enum(["true", "false"]).optional(),
   /** The handset, not the person - `devices.id`, as the dashboard ranks them. */
   deviceId: z.string().uuid().optional(),
   /**
@@ -141,6 +150,59 @@ const LEAD_JOIN = `
   LEFT JOIN leads lead ON lead.id = c.lead_id`;
 
 /**
+ * How many times this person has been spoken to, and where this call sits in
+ * that run - the follow-up notion the OPERATOR explorer has had all along
+ * (calls.controller.ts's CONTACT_HISTORY_JOIN), ported to the client's own log.
+ *
+ * MATCHED THE FORMAT-TOLERANT WAY, which the operator version is not. That one
+ * joins on `remote_number_hash` alone - the digits exactly as the handset
+ * reported them - and 0133's header spells out why that is not enough: the
+ * same customer arrives as "+919876543210" on the way in and "9876543210" when
+ * somebody dials back from the keypad. Three digests, one person, and a call
+ * history that silently drops half the conversation. So this matches on
+ * `remote_number_key` (the last ten digits) and falls back to the exact hash
+ * for rows written before that column existed.
+ *
+ * Two UNION branches rather than one OR, so each uses its own index
+ * (calls_number_key_started / calls_number_hash_started) instead of the planner
+ * giving up and scanning - the same shape, and the same reason, as
+ * MISSED_CALLBACK_JOIN beside it. UNION and not UNION ALL, because nearly every
+ * row carries BOTH a key and a hash and ALL would count each call twice.
+ *
+ * Deliberately NOT bounded by the list's date window. "Have we spoken before"
+ * is a fact about the relationship, not about the fortnight on screen - bound
+ * it and a third call reads as a first one merely because the earlier two fell
+ * outside the filter.
+ *
+ * A withheld number has neither key nor hash and gets no history at all: every
+ * such call would otherwise look like the same mystery caller ringing back,
+ * which is worse than admitting we do not know.
+ *
+ * `x.org_id = c.org_id` is stated even though RLS already confines both sides
+ * to the tenant. Two reasons: the indexes LEAD on org_id, so naming it is what
+ * lets the planner seek rather than filter after the fact; and a join that
+ * matches customers by phone number is the last place to rely on an invisible
+ * predicate being switched on - it is correct today because a superuser
+ * connection (which FORCE RLS does not apply to) is the one case where it
+ * would not be, and read-only tooling connects exactly that way.
+ */
+const HISTORY_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT count(*) FILTER (WHERE m.direction = 'incoming')::int  AS calls_in,
+           count(*) FILTER (WHERE m.direction = 'outgoing')::int  AS calls_out,
+           count(*) FILTER (WHERE (m.started_at, m.id) <= (c.started_at, c.id))::int AS sequence
+      FROM (
+        (SELECT x.id, x.direction, x.started_at
+           FROM calls x
+          WHERE x.org_id = c.org_id AND x.remote_number_key = c.remote_number_key)
+        UNION
+        (SELECT x.id, x.direction, x.started_at
+           FROM calls x
+          WHERE x.org_id = c.org_id AND x.remote_number_hash = c.remote_number_hash)
+      ) m
+  ) h ON ${HAS_NUMBER}`;
+
+/**
  * The client's own call log (`call_intel` module, org-modules.ts).
  *
  * WHY THIS IS NOT `GET /v1/calls`. The operator explorer's list is built for
@@ -182,7 +244,8 @@ export class OwnerCallsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const dates = CallLogDateQuery.safeParse(query);
     if (!dates.success) throw new BadRequestException(dates.error.issues);
-    const { state, direction, missed, sentiment, deviceId, q, limit, offset } = parsed.data;
+    const { state, direction, missed, sentiment, deviceId, q, followUp, limit, offset } =
+      parsed.data;
     const { period, from, to, sort } = dates.data;
     // A whitelisted keyword, never caller text - the only thing interpolated.
     const order = sort === "oldest" ? "ASC" : "DESC";
@@ -212,6 +275,11 @@ export class OwnerCallsController {
                    WHEN 'waiting'  THEN cb.returned_at IS NULL AND ${HAS_NUMBER}
                    WHEN 'returned' THEN cb.returned_at IS NOT NULL
                  END))
+            -- Repeat contacts, or first-timers. The NOT NULL test drops the
+            -- numberless calls from both sides rather than letting them fall
+            -- into "first time" by default - see the ListQuery comment.
+            AND ($10::bool IS NULL OR
+                 (h.sequence IS NOT NULL AND (h.sequence > 1) = $10::bool))
             AND c.started_at >= w.from_at AND c.started_at < w.to_at`;
       const filters = [
         state ?? null,
@@ -223,6 +291,7 @@ export class OwnerCallsController {
         to ?? null,
         period ?? null,
         missed ?? null,
+        followUp === undefined ? null : followUp === "true",
       ];
 
       const { rows } = await client.query(
@@ -235,19 +304,22 @@ export class OwnerCallsController {
                 ca.quality_score,
                 lead.id AS lead_id, lead.title AS lead_title,
                 c.missed_reason, ${HAS_NUMBER} AS has_number,
-                cb.returned_at, cb.return_direction
+                cb.returned_at, cb.return_direction,
+                h.calls_in, h.calls_out, h.sequence,
+                (h.sequence > 1) AS is_follow_up
            FROM calls c
            CROSS JOIN w
            LEFT JOIN devices d ON d.id = c.device_id
            ${READ_JOIN}
            ${LEAD_JOIN}
            ${MISSED_CALLBACK_JOIN}
+           ${HISTORY_JOIN}
           ${where}
           -- The id breaks ties so a page boundary never falls between two calls
           -- that started in the same second - jumping to page 7 and back must
           -- show the same rows.
           ORDER BY c.started_at ${order}, c.id ${order}
-          LIMIT $10 OFFSET $11`,
+          LIMIT $11 OFFSET $12`,
         [...filters, limit, offset],
       );
 
@@ -256,7 +328,8 @@ export class OwnerCallsController {
       } = await client.query<{ total: number; range_from: string | null; range_to: string | null }>(
         // The read join is not optional in the count even though it selects
         // nothing from it: `where` filters on ci.sentiment and ci.summary -
-        // and the callback join likewise, for the missed filter's `cb`.
+        // the callback join likewise for the missed filter's `cb`, and the
+        // history join for the follow-up filter's `h`.
         // The window's dates ride along as scalar subqueries, so they come back
         // even when nothing matched - "no calls on 13 Sep" needs the date too.
         `${WINDOW_CTE}
@@ -268,6 +341,7 @@ export class OwnerCallsController {
            LEFT JOIN devices d ON d.id = c.device_id
            ${READ_JOIN}
            ${MISSED_CALLBACK_JOIN}
+           ${HISTORY_JOIN}
           ${where}`,
         filters,
       );
@@ -321,16 +395,77 @@ export class OwnerCallsController {
                 ca.quality_score,
                 lead.id AS lead_id, lead.title AS lead_title,
                 c.missed_reason, ${HAS_NUMBER} AS has_number,
-                cb.returned_at, cb.return_direction
+                cb.returned_at, cb.return_direction,
+                h.calls_in, h.calls_out, h.sequence,
+                (h.sequence > 1) AS is_follow_up
            FROM calls c
            LEFT JOIN devices d ON d.id = c.device_id
            ${READ_JOIN}
            ${LEAD_JOIN}
            ${MISSED_CALLBACK_JOIN}
+           ${HISTORY_JOIN}
           WHERE c.id = $1`,
         [callId],
       );
       if (!call) throw new NotFoundException("call not found");
+
+      /*
+       * Everything said to this person BEFORE this call - the drawer's
+       * "Previous calls" section.
+       *
+       * Same person by the same rule HISTORY_JOIN counts on (number key, hash
+       * as the fallback), so the list underneath can never disagree with the
+       * "3rd call" the row claims.
+       *
+       * Strictly earlier, by (started_at, id) - the same composite the list
+       * pages on, so two calls in the same second still order the one way and
+       * this call never appears in its own history.
+       *
+       * Capped at twenty: this is context for the call being read, not an
+       * account history, and the lead drawer already has the full run for
+       * anybody who wants it. The summary rides along because "what was that
+       * one about" is the whole question being asked; the transcript does not,
+       * since reading it is gated per account (see this method's header).
+       */
+      const { rows: previous } = call.has_number
+        ? await client.query(
+            // Self-contained on the call id: the number key and hash are read
+            // in the CTE rather than selected into the response above, because
+            // nothing outside this query has any use for them and a digest of
+            // a customer's phone number is not something to hand out for free.
+            `WITH me AS (
+               SELECT org_id, remote_number_key, remote_number_hash, started_at, id
+                 FROM calls WHERE id = $1
+             )
+             SELECT p.id, p.direction, p.started_at, p.duration_s, p.status,
+                    p.missed_reason, p.disposition_key,
+                    COALESCE(pd.telecaller_name, pd.label) AS telecaller,
+                    pt.intelligence ->> 'summary'   AS summary,
+                    pt.intelligence ->> 'sentiment' AS sentiment
+               FROM (
+                 (SELECT x.id, x.direction, x.started_at, x.duration_s, x.status,
+                         x.missed_reason, x.disposition_key, x.device_id
+                    FROM calls x, me
+                   WHERE x.org_id = me.org_id
+                     AND x.remote_number_key = me.remote_number_key
+                     AND (x.started_at, x.id) < (me.started_at, me.id))
+                 UNION
+                 (SELECT x.id, x.direction, x.started_at, x.duration_s, x.status,
+                         x.missed_reason, x.disposition_key, x.device_id
+                    FROM calls x, me
+                   WHERE x.org_id = me.org_id
+                     AND x.remote_number_hash = me.remote_number_hash
+                     AND (x.started_at, x.id) < (me.started_at, me.id))
+               ) p
+               LEFT JOIN devices pd ON pd.id = p.device_id
+               LEFT JOIN LATERAL (
+                 SELECT t.intelligence FROM transcripts t WHERE t.call_id = p.id LIMIT 1
+               ) pt ON true
+              ORDER BY p.started_at DESC, p.id DESC
+              LIMIT 20`,
+            [callId],
+          )
+        : { rows: [] };
 
       const {
         rows: [transcript],
@@ -422,6 +557,8 @@ export class OwnerCallsController {
         analytics: analytics ?? null,
         facts,
         sop: sop ?? null,
+        /** Earlier calls with this same person, newest first (at most 20). */
+        previous,
         transcriptRedacted: !canRead,
         // "Draft a follow-up" is offered only where it can succeed: a drafter
         // is on, and this reader may read the words it would paraphrase.

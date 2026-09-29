@@ -25,6 +25,7 @@ import {
 import { LocalTime } from "@/components/local-time";
 import { PhonePairFields, usePhoneErrors } from "@/components/phone-pair-fields";
 import { inviteTeamMemberAction, issueInviteAction } from "./actions";
+import { inviteMessage } from "./invite-text";
 import type { IssuedInvite, TeamTelecaller } from "./types";
 
 /** Invite link lifetimes offered. The API accepts 1-168 hours. */
@@ -146,10 +147,12 @@ export function InviteForm({
 
   // Sync handler, promise voided - an async onClick turns a rejected clipboard
   // write into an unhandled rejection (see owner-accounts.tsx).
-  const copyLink = (link: string) => {
+  // Copies the link WITH the address it belongs to - see inviteMessage for why
+  // the bare URL was not enough.
+  const copyLink = (link: string, email: string) => {
     void navigator.clipboard
-      .writeText(link)
-      .then(() => toast("Invite link copied"))
+      .writeText(inviteMessage({ email, link }))
+      .then(() => toast("Invite and sign-in address copied"))
       .catch(() =>
         alert({
           title: "Couldn't copy the link",
@@ -183,7 +186,12 @@ export function InviteForm({
             <code className="block min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm break-all text-text">
               {issued.link}
             </code>
-            <Button type="button" variant="secondary" onClick={() => copyLink(issued.link)} aria-label="Copy invite link">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => copyLink(issued.link, issued.invite.email)}
+              aria-label="Copy invite link and sign-in address"
+            >
               <Copy className="h-4 w-4" />
               Copy
             </Button>

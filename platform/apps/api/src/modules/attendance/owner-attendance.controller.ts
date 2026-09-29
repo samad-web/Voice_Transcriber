@@ -21,10 +21,14 @@ import {
 import type { Response } from "express";
 import { z } from "zod";
 import {
+  ATTENDANCE_ABSENCE_WABA_TEMPLATE,
+  ATTENDANCE_ABSENCE_WABA_TEMPLATE_PARAMS,
   AttendanceSettingsInput,
   canDecideRequest,
   dayKeyIn,
+  DEFAULT_ABSENCE_MESSAGE,
   ExceptionInput,
+  validateAbsenceMessage,
   liveBoardState,
   OnBehalfRequestInput,
   PeopleUpdateInput,
@@ -233,15 +237,45 @@ export class OwnerAttendanceController {
         });
       }
 
+      /*
+       * The wording is a MANAGER-level setting, not an owner-level one: it
+       * changes what an alert says, not who it reaches or which number it
+       * leaves from - and those two are the reasons `whatsappAlerts` is
+       * owner-only. Refused here rather than in zod so the reply can name the
+       * placeholder that is wrong (0143).
+       */
+      // Cleared textarea === "put the default back", the same as an explicit
+      // null. Refusing an empty box would be a lecture in place of the obvious
+      // reading of what the person just did.
+      const absentMessage =
+        input.absentMessage === undefined ? undefined : (input.absentMessage?.trim() ? input.absentMessage.trim() : null);
+      if (absentMessage !== undefined && absentMessage !== null) {
+        const problem = validateAbsenceMessage(absentMessage);
+        if (problem) throw new BadRequestException({ code: "absent_message_invalid", message: problem });
+      }
+
       try {
         await client.query(
+          // The wording needs a flag of its own rather than COALESCE: NULL is
+          // a MEANING here ("use the default"), not an absent argument, so the
+          // trick the other two columns use cannot express it.
           `UPDATE organizations
               SET attendance_enabled = COALESCE($2, attendance_enabled),
                   leave_escalation_hours = COALESCE($3, leave_escalation_hours),
                   attendance_whatsapp_alerts = $4,
-                  attendance_whatsapp_channel_id = $5::uuid
+                  attendance_whatsapp_channel_id = $5::uuid,
+                  attendance_absent_message =
+                    CASE WHEN $6::boolean THEN $7::text ELSE attendance_absent_message END
             WHERE id = $1`,
-          [orgId, input.enabled ?? null, input.leaveEscalationHours ?? null, alerts, channelId],
+          [
+            orgId,
+            input.enabled ?? null,
+            input.leaveEscalationHours ?? null,
+            alerts,
+            channelId,
+            absentMessage !== undefined,
+            absentMessage ?? null,
+          ],
         );
       } catch (err) {
         if ((err as { code?: string }).code === "23514") {
@@ -257,6 +291,7 @@ export class OwnerAttendanceController {
           leaveEscalationHours: before.leave_escalation_hours,
           whatsappAlerts: before.attendance_whatsapp_alerts,
           whatsappChannelId: before.attendance_whatsapp_channel_id,
+          absentMessage: before.attendance_absent_message,
         },
         after: input,
       });
@@ -1255,10 +1290,11 @@ export class OwnerAttendanceController {
       leave_escalation_hours: number;
       attendance_whatsapp_alerts: boolean;
       attendance_whatsapp_channel_id: string | null;
+      attendance_absent_message: string | null;
       reporting_timezone: string | null;
     }>(
       `SELECT attendance_enabled, leave_escalation_hours, attendance_whatsapp_alerts,
-              attendance_whatsapp_channel_id, reporting_timezone
+              attendance_whatsapp_channel_id, attendance_absent_message, reporting_timezone
          FROM organizations WHERE id = $1`,
       [orgId],
     );
@@ -1274,12 +1310,15 @@ export class OwnerAttendanceController {
       leave_escalation_hours: number;
       attendance_whatsapp_alerts: boolean;
       attendance_whatsapp_channel_id: string | null;
+      attendance_absent_message: string | null;
       reporting_timezone: string | null;
-      channels: { id: string; label: string; provider: string; templateApproved: boolean | null }[] | null;
+      channels:
+        | { id: string; label: string; provider: string; templateApproved: boolean | null; absenceTemplateApproved: boolean | null }[]
+        | null;
       no_whatsapp: { membershipId: string; name: string }[] | null;
     }>(
       `SELECT o.attendance_enabled, o.leave_escalation_hours, o.attendance_whatsapp_alerts,
-              o.attendance_whatsapp_channel_id, o.reporting_timezone,
+              o.attendance_whatsapp_channel_id, o.attendance_absent_message, o.reporting_timezone,
               (SELECT json_agg(json_build_object(
                         'id', c.id,
                         'label', COALESCE(NULLIF(btrim(c.display_name), ''), c.inbound_address, initcap(c.provider)),
@@ -1287,7 +1326,14 @@ export class OwnerAttendanceController {
                         'templateApproved', CASE WHEN c.provider = 'waba' THEN EXISTS (
                             SELECT 1 FROM message_templates mt
                              WHERE mt.channel_id = c.id AND mt.name = $2 AND mt.status = 'approved'
-                               AND jsonb_array_length(COALESCE(mt.variables, '[]'::jsonb)) = $3) END)
+                               AND jsonb_array_length(COALESCE(mt.variables, '[]'::jsonb)) = $3) END,
+                        -- Reported, never enforced: a workspace without this
+                        -- template still gets absence alerts in the console,
+                        -- so it must not block turning WhatsApp alerts on.
+                        'absenceTemplateApproved', CASE WHEN c.provider = 'waba' THEN EXISTS (
+                            SELECT 1 FROM message_templates mt
+                             WHERE mt.channel_id = c.id AND mt.name = $4 AND mt.status = 'approved'
+                               AND jsonb_array_length(COALESCE(mt.variables, '[]'::jsonb)) = $5) END)
                       ORDER BY c.created_at)
                  FROM messaging_channels c
                 WHERE c.org_id = o.id AND c.channel = 'whatsapp' AND c.provider IN ('waba', 'wasi')
@@ -1302,7 +1348,13 @@ export class OwnerAttendanceController {
                            (m.scope_type = 'org') DESC, m.id) a
                 WHERE NOT a.has_number) AS no_whatsapp
          FROM organizations o WHERE o.id = $1`,
-      [orgId, ATTENDANCE_WABA_TEMPLATE, ATTENDANCE_WABA_TEMPLATE_PARAMS],
+      [
+        orgId,
+        ATTENDANCE_WABA_TEMPLATE,
+        ATTENDANCE_WABA_TEMPLATE_PARAMS,
+        ATTENDANCE_ABSENCE_WABA_TEMPLATE,
+        ATTENDANCE_ABSENCE_WABA_TEMPLATE_PARAMS,
+      ],
     );
     if (!row) throw new NotFoundException("organization not found");
     return {
@@ -1310,6 +1362,13 @@ export class OwnerAttendanceController {
       leaveEscalationHours: row.leave_escalation_hours,
       whatsappAlerts: row.attendance_whatsapp_alerts,
       whatsappChannelId: row.attendance_whatsapp_channel_id,
+      // Null all the way to the editor, which shows the default as a
+      // placeholder. Sending the resolved default instead would make a
+      // workspace that has never touched it look like one that chose it, and
+      // reword their alert behind their back the next time we improve the
+      // default.
+      absentMessage: row.attendance_absent_message,
+      absentMessageDefault: DEFAULT_ABSENCE_MESSAGE,
       timeZone: resolveTimeZone(row.reporting_timezone),
       canEditWhatsapp: scope.role === "owner",
       channels: row.channels ?? [],

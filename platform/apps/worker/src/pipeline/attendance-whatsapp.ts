@@ -1,5 +1,14 @@
 import { decryptSecret, getAdminPool, withOrgContext } from "@aura/db";
-import { attendanceAlertText, describeRequest, type LeaveType, type HalfDay, type RequestKind, resolveTimeZone } from "@aura/shared";
+import {
+  ATTENDANCE_ABSENCE_WABA_TEMPLATE,
+  ATTENDANCE_ABSENCE_WABA_TEMPLATE_PARAMS,
+  attendanceAlertText,
+  describeRequest,
+  type LeaveType,
+  type HalfDay,
+  type RequestKind,
+  resolveTimeZone,
+} from "@aura/shared";
 import type { Queryable } from "./attendance-schedule";
 
 /**
@@ -78,6 +87,12 @@ export function requestsLink(env: NodeJS.ProcessEnv = process.env): string | nul
   return base ? `${base}/owner/attendance?tab=requests` : null;
 }
 
+/** The live board, where an absence alert is acted on. Null when unset. */
+export function boardLink(env: NodeJS.ProcessEnv = process.env): string | null {
+  const base = env.PUBLIC_APP_URL?.trim().replace(/\/+$/, "");
+  return base ? `${base}/owner/attendance?tab=today` : null;
+}
+
 async function sendWasiText(
   channel: { apiBaseUrl: string; apiKey: string; wasiClientId: string },
   to: string,
@@ -144,9 +159,12 @@ async function sendCloudTemplate(
 
 interface DueRow {
   id: string;
-  reason: "new_request" | "escalation";
+  reason: "new_request" | "escalation" | "absent";
   attempts: number;
-  request_status: string;
+  /** Null on an 'absent' row - there is no request behind it. */
+  request_status: string | null;
+  /** The text already rendered when the row was queued. 'absent' rows only. */
+  message: string | null;
   kind: RequestKind;
   leave_type: string | null;
   start_date: string | null;
@@ -220,6 +238,7 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
       api_base_url: string | null;
       config: { wasiClientId?: string; phoneNumberId?: string } | null;
       template_language: string | null;
+      absence_template_language: string | null;
       channel_id: string | null;
     }>(
       `SELECT o.reporting_timezone AS zone, o.attendance_whatsapp_alerts AS alerts,
@@ -228,14 +247,18 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
               (SELECT mt.language FROM message_templates mt
                 WHERE mt.channel_id = c.id AND mt.name = $2 AND mt.status = 'approved'
                   AND jsonb_array_length(COALESCE(mt.variables, '[]'::jsonb)) = 3
-                ORDER BY (mt.language = 'en') DESC, mt.language LIMIT 1) AS template_language
+                ORDER BY (mt.language = 'en') DESC, mt.language LIMIT 1) AS template_language,
+              (SELECT mt.language FROM message_templates mt
+                WHERE mt.channel_id = c.id AND mt.name = $3 AND mt.status = 'approved'
+                  AND jsonb_array_length(COALESCE(mt.variables, '[]'::jsonb)) = $4
+                ORDER BY (mt.language = 'en') DESC, mt.language LIMIT 1) AS absence_template_language
          FROM organizations o
          LEFT JOIN messaging_channels c ON c.id = o.attendance_whatsapp_channel_id
         WHERE o.id = $1`,
-      [orgId, ATTENDANCE_WABA_TEMPLATE],
+      [orgId, ATTENDANCE_WABA_TEMPLATE, ATTENDANCE_ABSENCE_WABA_TEMPLATE, ATTENDANCE_ABSENCE_WABA_TEMPLATE_PARAMS],
     );
     const { rows } = await client.query<DueRow>(
-      `SELECT x.id, x.reason, x.attempts, r.status AS request_status, r.kind, r.leave_type,
+      `SELECT x.id, x.reason, x.attempts, x.message, r.status AS request_status, r.kind, r.leave_type,
               r.start_date::text AS start_date, r.end_date::text AS end_date, r.half_day,
               r.starts_at, r.ends_at, t.display_name AS telecaller_name,
               COALESCE(NULLIF(btrim(m.whatsapp_number), ''),
@@ -245,8 +268,11 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
                          ORDER BY (m2.scope_type = 'org') DESC LIMIT 1)) AS whatsapp_number,
               (m.status = 'active' AND u.status = 'active') AS recipient_active
          FROM attendance_whatsapp_outbox x
-         JOIN attendance_requests r ON r.id = x.request_id
-         JOIN telecallers t ON t.id = r.telecaller_id
+         -- LEFT, and the telecaller joined from either side: an 'absent' row
+         -- has no request, and an inner join would drop it from this queue
+         -- silently, leaving it 'queued' for ever with nothing to explain it.
+         LEFT JOIN attendance_requests r ON r.id = x.request_id
+         JOIN telecallers t ON t.id = COALESCE(r.telecaller_id, x.telecaller_id)
          JOIN memberships m ON m.id = x.recipient_membership_id
          JOIN users u ON u.id = m.user_id
         WHERE x.status = 'queued' AND x.next_attempt_at <= now()
@@ -259,6 +285,7 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
   const org = plan.org;
   const zone = resolveTimeZone(org.zone);
   const link = requestsLink();
+  const absenceLink = boardLink();
 
   // Decide per row before sending anything.
   const outcomes: { id: string; outcome: Parameters<typeof settle>[2] }[] = [];
@@ -273,8 +300,16 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
       skip("outbound WhatsApp is switched off on this deployment (WHATSAPP_SENDING_ENABLED)");
       continue;
     }
-    if (row.request_status !== "pending") {
-      skip(`the request was ${row.request_status.replace("_", " ")} before this was sent`);
+    // Nobody is nagged about a request that was decided while the row waited.
+    // An absence has nothing to decide, so there is nothing to re-check: the
+    // person either started their shift before the row was queued or they did
+    // not, and the sweep already settled that.
+    if (row.reason !== "absent" && row.request_status !== "pending") {
+      skip(`the request was ${(row.request_status ?? "removed").replace("_", " ")} before this was sent`);
+      continue;
+    }
+    if (row.reason === "absent" && !row.message?.trim()) {
+      outcomes.push({ id: row.id, outcome: { status: "failed", error: "the queued row carries no message text" } });
       continue;
     }
     if (!org.channel_id || org.channel_status !== "active" || org.owner_user_id !== null || !["waba", "wasi"].includes(org.provider ?? "")) {
@@ -290,7 +325,9 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
       skip("the recipient has no WhatsApp number on their staff profile");
       continue;
     }
-    if (!link) {
+    // An absence points at the live board, a request at the Requests tab.
+    const rowLink = row.reason === "absent" ? absenceLink : link;
+    if (!rowLink) {
       outcomes.push({ id: row.id, outcome: { status: "failed", error: "the worker has no PUBLIC_APP_URL, so the message would carry no link" } });
       continue;
     }
@@ -315,7 +352,42 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
         providerId = await sendWasiText(
           { apiBaseUrl: org.api_base_url, apiKey: decryptSecret(org.api_key) ?? "", wasiClientId: org.config.wasiClientId },
           to,
-          attendanceAlertText({ reason: row.reason, telecallerName: row.telecaller_name, link, ...request }),
+          row.reason === "absent"
+            ? `${row.message!.trim()} ${rowLink}`
+            : attendanceAlertText({ reason: row.reason, telecallerName: row.telecaller_name, link: rowLink, ...request }),
+          fetchImpl,
+        );
+      } else if (row.reason === "absent") {
+        /*
+         * WABA cannot carry the workspace's own wording without its own
+         * approved template: Meta will not let a business open a conversation
+         * with free text, and `attendance_request_alert` says "request" in its
+         * approved body - sending an absence through it would put a sentence
+         * about leave on a manager's phone about somebody who simply did not
+         * turn up.
+         *
+         * So it is skipped, loudly, and the console notification still
+         * arrives - that one is never gated on Meta.
+         */
+        if (!org.absence_template_language) {
+          skip(
+            `the "${ATTENDANCE_ABSENCE_WABA_TEMPLATE}" template is not approved on this WhatsApp Business number, ` +
+              `so this alert stayed in the console`,
+          );
+          continue;
+        }
+        if (!org.api_key || !org.config?.phoneNumberId) {
+          outcomes.push({ id: row.id, outcome: { status: "failed", error: "the WhatsApp channel is missing its Cloud API credentials" } });
+          continue;
+        }
+        providerId = await sendCloudTemplate(
+          { accessToken: decryptSecret(org.api_key) ?? "", phoneNumberId: org.config.phoneNumberId },
+          to,
+          {
+            name: ATTENDANCE_ABSENCE_WABA_TEMPLATE,
+            language: org.absence_template_language,
+            params: [row.message!.trim(), rowLink],
+          },
           fetchImpl,
         );
       } else {
@@ -337,7 +409,7 @@ async function drainOrg(orgId: string, fetchImpl: typeof fetch): Promise<number>
             params: [
               row.telecaller_name,
               `${row.kind === "leave" ? "leave" : row.kind === "break" ? "break" : "hours change"}: ${what}${row.reason === "escalation" ? " (still waiting)" : ""}`,
-              link,
+              rowLink,
             ],
           },
           fetchImpl,

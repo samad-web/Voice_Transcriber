@@ -20,6 +20,7 @@ import {
   disconnectPersonalWhatsAppAction,
   personalWhatsAppStatusAction,
   pollPersonalWhatsAppAction,
+  reconnectPersonalWhatsAppAction,
   startPersonalWhatsAppAction,
   type PersonalWhatsAppPairing,
   type PersonalWhatsAppStatus,
@@ -67,12 +68,36 @@ export function MyWhatsApp() {
   const confirm = useConfirm();
   const toast = useToast();
 
+  const [reconnecting, setReconnecting] = useState(false);
+
   const load = useCallback(async () => {
     setStatus(await personalWhatsAppStatusAction());
   }, []);
 
+  /*
+   * Re-read on a timer, not only on mount.
+   *
+   * A WhatsApp session dies on the PHONE and nothing tells this browser. Read
+   * once and the card keeps claiming "Linked" for a number that stopped
+   * delivering hours ago - which is exactly how a tenant sat with a dead link
+   * and a green chip while not one message arrived. A minute is far below the
+   * cost of noticing late and far above the cost of the request.
+   *
+   * Paused while the tab is hidden: a background tab polling forever is a
+   * battery and a rate-limit problem, and the answer is re-read on return
+   * anyway.
+   */
   useEffect(() => {
     void load();
+    const tick = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const timer = window.setInterval(tick, 60_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [load]);
 
   // Nothing is known yet. Renders nothing rather than a button that might be
@@ -143,6 +168,95 @@ export function MyWhatsApp() {
     );
   }
 
+  /*
+   * A number that WAS linked and is not working now.
+   *
+   * Given its own branch, loudly, because the quiet grey "Not linked" chip it
+   * used to share with "never linked" is how a dead number goes unnoticed: the
+   * two look identical, but one of them means messages are being missed RIGHT
+   * NOW and somebody has to act. `danger` is the tone the console reserves for
+   * that, and the detail line says which of the two faults it is.
+   *
+   * Reconnect is offered only where it can work (`canReconnect`): an account
+   * removed from Linked Devices cannot be resumed, and a button that retried
+   * forever would be worse than no button.
+   */
+  const broken = status.number && (status.state === "offline" || status.state === "unknown");
+  if (broken) {
+    return (
+      <div className="space-y-2 rounded-md border border-danger-border bg-danger-subtle p-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <MonoLabel>My WhatsApp</MonoLabel>
+              <StatusChip tone="danger">Disconnected</StatusChip>
+              <span className="font-mono text-xs text-text-muted">{status.number}</span>
+            </div>
+            <p className="text-sm text-text">
+              {status.detail ??
+                "This number is not connected, so new messages are not arriving and you cannot reply."}
+            </p>
+            {privacy}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {status.canReconnect !== false ? (
+              <Button
+                size="sm"
+                loading={reconnecting}
+                onClick={() =>
+                  void (async () => {
+                    setReconnecting(true);
+                    const res = await reconnectPersonalWhatsAppAction();
+                    setReconnecting(false);
+                    if (res.error) {
+                      await alert({
+                        title: "Couldn't reconnect",
+                        body: res.error,
+                        tone: "danger",
+                      });
+                      return;
+                    }
+                    await load();
+                    if (res.connected) {
+                      toast("WhatsApp reconnected");
+                      router.refresh();
+                    } else if (res.state === "dropped") {
+                      // Not a failure to report as an error - it is the answer.
+                      // The card re-renders into the "link again" branch.
+                      await alert({
+                        title: "It needs pairing again",
+                        body:
+                          res.detail ??
+                          "This number is no longer linked to Aura, so reconnecting cannot bring it back. Link it again from your phone.",
+                      });
+                    } else {
+                      toast("Still not connected - try again in a moment");
+                    }
+                  })()
+                }
+              >
+                Reconnect
+              </Button>
+            ) : null}
+            <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+              Link it again
+            </Button>
+          </div>
+        </div>
+
+        <PairDialog
+          open={open}
+          onClose={() => setOpen(false)}
+          onLinked={() => {
+            setOpen(false);
+            void load();
+            router.refresh();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -151,10 +265,11 @@ export function MyWhatsApp() {
             <MonoLabel>My WhatsApp</MonoLabel>
             {/* "No longer linked" is a different situation from "never
                 linked", and only one of them means somebody unlinked it on
-                the phone - so the number is shown when we know it. */}
+                the phone - so the number is shown when we know it. A dropped
+                link is shown in danger tone above; this is the quiet case. */}
             {status.number ? (
               <>
-                <StatusChip tone="outline">Not linked</StatusChip>
+                <StatusChip tone="danger">Not linked</StatusChip>
                 <span className="font-mono text-xs text-text-muted">{status.number}</span>
               </>
             ) : null}

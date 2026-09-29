@@ -138,7 +138,9 @@ async function call(
 
 function networkReason(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  if (err.name === "TimeoutError") return "Evolution did not answer in time";
+  // No vendor name: this reaches a customer, who has no idea what Evolution is
+  // and cannot act on knowing. The relay is ours as far as they are concerned.
+  if (err.name === "TimeoutError") return "WhatsApp did not answer in time";
   const cause = (err as { cause?: unknown }).cause;
   if (cause instanceof Error) {
     const code = (cause as { code?: string }).code;
@@ -351,6 +353,35 @@ export async function getEvolutionStatus(instance: EvolutionInstance): Promise<E
     loggedIn: readBool(data, ["LoggedIn", "loggedIn", "logged_in"]),
     name: firstString(data, ["Name", "name"]),
   };
+}
+
+/**
+ * `POST /instance/reconnect` - ask the relay to bring an existing session back
+ * up without pairing again.
+ *
+ * Worth trying before sending somebody to their phone, because the two failures
+ * behind "not connected" need opposite responses. A relay that restarted, or a
+ * socket that dropped, still HOLDS the session: reconnecting resumes it and the
+ * person does nothing. An account that was removed from Linked Devices holds
+ * nothing, and no amount of reconnecting will help - that one needs a new QR.
+ *
+ * So this returns whether it actually worked rather than throwing: the caller
+ * re-reads status afterwards and, if the account is still not logged in, falls
+ * through to offering a fresh pairing. A failed reconnect is a normal answer
+ * here, not an error.
+ */
+export async function reconnectEvolutionInstance(instance: EvolutionInstance): Promise<boolean> {
+  try {
+    const result = await call(instance.baseUrl, instance.token, "/instance/reconnect", {
+      method: "POST",
+      timeoutMs: 10_000,
+    });
+    return result.status >= 200 && result.status < 300;
+  } catch {
+    // Unreachable, timed out, or refused - all of them mean "that did not
+    // work", which is the only thing the caller does anything with.
+    return false;
+  }
 }
 
 function readBool(source: Record<string, unknown>, keys: string[]): boolean {

@@ -23,6 +23,7 @@ import {
   mintPairingTokenAction,
   pairingStatusAction,
   refreshDevicesAction,
+  removeDeviceAction,
   revokeDeviceAction,
   type DeviceHealth,
   type DeviceStaleness,
@@ -101,6 +102,7 @@ export function DevicesClient({
   const attempt = useRef(0);
   const alert = useAlert();
   const confirm = useConfirm();
+  const toast = useToast();
 
   const multiInstance = data.instances.length > 1;
 
@@ -149,6 +151,38 @@ export function DevicesClient({
       await refreshDevicesAction();
     });
   }, []);
+
+  /**
+   * Take a handset off the list.
+   *
+   * The dialog says which of the two things will happen, because they are
+   * genuinely different and the person deciding cannot see the call count
+   * behind the row: a phone that never recorded is gone for good, one that did
+   * keeps every call and can be brought back. Guessing wrong in either
+   * direction is the thing that stops somebody clicking.
+   */
+  const remove = (device: OwnerDevice) => {
+    startTransition(async () => {
+      const hasCalls = device.callCount > 0;
+      const ok = await confirm({
+        title: `Remove ${device.label || "this handset"}?`,
+        body: hasCalls
+          ? `It comes off this list and stops recording for good. Its ${device.callCount} call${
+              device.callCount === 1 ? "" : "s"
+            }, leads and telecaller attribution all stay exactly as they are - nothing in your reports changes. An owner or manager can bring it back.`
+          : "This handset never recorded a call, so it will be deleted outright. There is nothing to keep and this cannot be undone.",
+        confirmLabel: "Remove handset",
+        tone: "danger",
+      });
+      if (!ok) return;
+      const result = await removeDeviceAction(device.id);
+      if (result.error) {
+        await alert({ title: "Couldn't remove the handset", body: result.error, tone: "danger" });
+        return;
+      }
+      toast(result.outcome === "deleted" ? "Handset deleted" : "Handset removed");
+    });
+  };
 
   const revoke = (device: OwnerDevice) => {
     startTransition(async () => {
@@ -295,10 +329,23 @@ export function DevicesClient({
                     )}
                   </p>
                 </div>
-                {data.canRevoke && device.status === "active" && (
-                  <Button size="sm" variant="ghost" onClick={() => revoke(device)} disabled={pending}>
-                    Retire
-                  </Button>
+                {/* Retire is for a phone coming back on Monday; Remove is for
+                    one that has left. Both are owner/manager. Retire is only
+                    offered while the handset is live - retiring a retired
+                    phone is a no-op - but Remove applies whatever state it is
+                    in, which is the gap that left retired phones on this list
+                    with no action at all. */}
+                {data.canRevoke && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {device.status === "active" && (
+                      <Button size="sm" variant="ghost" onClick={() => revoke(device)} disabled={pending}>
+                        Retire
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => remove(device)} disabled={pending}>
+                      Remove
+                    </Button>
+                  </div>
                 )}
               </li>
             ))}

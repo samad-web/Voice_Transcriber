@@ -43,6 +43,8 @@ export * from "./api-scopes";
 export * from "./report-builder";
 export * from "./lead-intake";
 export * from "./call-dispositions";
+export * from "./agent-scorecard";
+export * from "./performance-overview";
 export * from "./integrations";
 export * from "./linkedin";
 export * from "./whatsapp-qualification";
@@ -73,5 +75,6 @@ export * from "./user-agent";
 export * from "./auth-events";
 export * from "./safe-path";
 export * from "./attendance";
+export * from "./attendance-absence-message";
 
 export * from "./time";

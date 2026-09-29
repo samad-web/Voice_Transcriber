@@ -86,6 +86,31 @@ const MISSED = [
   { key: "returned", label: "Recovered" },
 ] as const;
 
+/**
+ * Repeat contacts, or people being spoken to for the first time.
+ *
+ * "Follow-ups" is the one a manager opens: it answers "how much of today was
+ * chasing people we had already reached", which the log could not say before.
+ * Calls with no number are in neither list - see the API's ListQuery.
+ */
+const FOLLOW_UP = [
+  { key: "true", label: "Follow-ups only" },
+  { key: "false", label: "First-time only" },
+] as const;
+
+/**
+ * How this call is numbered in the run with this person - "3rd call".
+ *
+ * Ordinals rather than "x3": the row is a single call, and the question it
+ * answers is which one this is, not how many there have been in total.
+ */
+export function ordinal(n: number): string {
+  // 11th, 12th, 13th are the exceptions the last-digit rule gets wrong.
+  const teens = n % 100;
+  if (teens >= 11 && teens <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
 /** What became of a missed call, in the words every surface uses (@aura/shared). */
 function missedSummary(call: OwnerCall): { text: string; waiting: boolean } {
   const cb = { returnedAt: call.returned_at ?? null, returnDirection: call.return_direction ?? null };
@@ -174,6 +199,7 @@ export function CallsExplorer({
   const missed = params.get("missed");
   const sentiment = params.get("sentiment");
   const deviceId = params.get("deviceId");
+  const followUp = params.get("followUp");
   const period = params.get("period");
   const from = params.get("from");
   const to = params.get("to");
@@ -214,6 +240,12 @@ export function CallsExplorer({
       key: "deviceId",
       label: `Telecaller: ${telecaller?.telecaller_name ?? telecaller?.label ?? "Unnamed handset"}`,
       onRemove: () => setParam("deviceId", null),
+    });
+  if (followUp)
+    tags.push({
+      key: "followUp",
+      label: `Contact: ${FOLLOW_UP.find((f) => f.key === followUp)?.label ?? followUp}`,
+      onRemove: () => setParam("followUp", null),
     });
 
   return (
@@ -277,7 +309,14 @@ export function CallsExplorer({
               <button
                 type="button"
                 onClick={() =>
-                  setParams({ state: null, sentiment: null, direction: null, missed: null, deviceId: null })
+                  setParams({
+                    state: null,
+                    sentiment: null,
+                    direction: null,
+                    missed: null,
+                    deviceId: null,
+                    followUp: null,
+                  })
                 }
                 className="px-1.5 text-xs font-medium text-text-muted underline underline-offset-2 hover:text-text"
               >
@@ -328,6 +367,21 @@ export function CallsExplorer({
             <option value="">Both directions</option>
             <option value="incoming">Incoming</option>
             <option value="outgoing">Outgoing</option>
+          </Select>
+
+          <Select
+            size="sm"
+            aria-label="First-time or follow-up"
+            value={followUp ?? ""}
+            onChange={(e) => setParam("followUp", e.target.value || null)}
+            className="h-8 w-40"
+          >
+            <option value="">Any contact</option>
+            {FOLLOW_UP.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.label}
+              </option>
+            ))}
           </Select>
 
           <AdvancedFiltersPopover
@@ -435,6 +489,16 @@ export function CallsExplorer({
                     </TableCell>
                     <TableCell>
                       <span className="block font-medium text-text">{contact(call)}</span>
+                      {/* Which call in the run this is. Only on a repeat: a
+                          "1st call" chip on every first-time row would be
+                          noise on the majority of the log, and the absence of
+                          the chip already says it. Muted, not coloured - this
+                          is context, not a state or a problem. */}
+                      {call.sequence && call.sequence > 1 ? (
+                        <span className="mt-1 block text-xs text-text-muted">
+                          {ordinal(call.sequence)} call with this person
+                        </span>
+                      ) : null}
                       {/* The state, in the row, in words - not just as the
                           coloured rule at the row's left edge. The rule is an
                           accelerator for scanning a hundred rows; this is what
@@ -1059,6 +1123,59 @@ export function CallDrawer({
                       Create or link one from Unmatched calls
                     </Link>
                   ) : null}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {/*
+            What was said to this person before today.
+
+            High in the drawer, directly under the call itself, because it is
+            the context you read the call WITH - "third time this week" changes
+            what the summary above means. The lead drawer has the same person's
+            calls, but only for a number that became a lead; this is reachable
+            from any call in the log.
+
+            Read-only: the summaries are the information wanted here, and a row
+            that navigated would have to re-open the drawer on a different call
+            mid-read. `previous` is absent on an older API and empty on a first
+            call - both simply render nothing.
+          */}
+          {detail?.previous && detail.previous.length > 0 ? (
+            <section className="space-y-2 border-t border-border pt-4">
+              <MonoLabel>
+                Previous calls with this person
+                {call.sequence && call.sequence > 1 ? ` · this is the ${ordinal(call.sequence)}` : ""}
+              </MonoLabel>
+              <ul className="space-y-2.5">
+                {detail.previous.map((prev) => {
+                  const prevMissed = prev.direction === "incoming" && prev.duration_s <= 0;
+                  return (
+                    <li key={prev.id} className="border-l-2 border-border pl-3">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="text-xs font-medium text-text tabular-nums">
+                          <Time iso={prev.started_at} mode="datetime" />
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {humanize(prev.direction)}
+                          {" · "}
+                          {prevMissed
+                            ? (missedReasonLabel(prev.missed_reason) ?? "Missed")
+                            : formatDuration(prev.duration_s)}
+                          {prev.telecaller ? ` · ${prev.telecaller}` : ""}
+                        </span>
+                      </div>
+                      {prev.summary ? (
+                        <p className="mt-0.5 text-xs leading-relaxed text-text-muted">{prev.summary}</p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              {detail.previous.length === 20 ? (
+                <p className="text-xs text-text-subtle">
+                  Showing the 20 most recent earlier calls.
                 </p>
               ) : null}
             </section>

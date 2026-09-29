@@ -328,7 +328,7 @@ export class WhatsAppSendController {
           const baseUrl = channel.api_base_url ?? evolutionAdminFromEnv()?.baseUrl;
           if (!baseUrl) {
             throw new BadRequestException(
-              "this deployment has no Evolution host configured, so a personal number cannot send",
+              "WhatsApp is not set up on this deployment, so a personal number cannot send",
             );
           }
           const out = await sendEvolutionText(

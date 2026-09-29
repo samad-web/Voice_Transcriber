@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useDraftState } from "@/lib/use-server-state";
 import { DispositionColor, overQualified, QUALITY_ASSERTING_WARN_AT } from "@aura/shared";
-import { Button, Card, Input, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
+import { Button, Card, Checkbox, Input, MonoLabel, Select, StatusChip, useAlert } from "@aura/ui";
 import {
   createDispositionAction,
   updateDispositionAction,
@@ -140,6 +140,18 @@ export function DispositionsEditor({ initial }: { initial: Disposition[] }) {
                 </option>
               ))}
             </Select>
+            {/* What makes first-call resolution countable at all (0144).
+                Deliberately a separate control from the lead-quality select
+                beside it, and never derived from it: the best sales outcome
+                ("Interested") is precisely the one that guarantees a callback,
+                so a rule tying resolution to a hot lead would score the floor
+                on exactly the wrong calls. */}
+            <Checkbox
+              label="Settled"
+              title={`Does "${row.label}" mean the customer needed nothing further?`}
+              checked={row.resolves_on_first_call}
+              onChange={(e) => patch(row, { resolvesOnFirstCall: e.target.checked })}
+            />
             <span className="flex-1" />
             {!row.is_active ? <StatusChip tone="outline">retired</StatusChip> : null}
             <Button
@@ -177,6 +189,12 @@ export function DispositionsEditor({ initial }: { initial: Disposition[] }) {
         Retiring an outcome hides it from the buttons and leaves it readable on every call that was
         already marked with it.
       </p>
+      <p className="text-xs text-text-muted">
+        Tick <strong className="text-text">Settled</strong> on the outcomes that mean the customer
+        needed nothing further. Those are what first-call resolution counts on each
+        person&rsquo;s scorecard, and until at least one is ticked the figure stays blank rather
+        than reading as nobody resolving anything.
+      </p>
     </Card>
   );
 }
@@ -188,5 +206,7 @@ function toRow(update: Record<string, unknown>): Partial<Disposition> {
   if ("leadQuality" in update) row.lead_quality = update.leadQuality as Disposition["lead_quality"];
   if ("color" in update) row.color = update.color as string;
   if ("isActive" in update) row.is_active = update.isActive as boolean;
+  if ("resolvesOnFirstCall" in update)
+    row.resolves_on_first_call = update.resolvesOnFirstCall as boolean;
   return row;
 }

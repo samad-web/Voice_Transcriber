@@ -10,6 +10,7 @@ import type {
 } from "@/lib/attendance";
 import { getOrgTimeZone } from "@/lib/org-time";
 import { ownerTry, requireFeature, requireOwnerRoles } from "@/lib/owner-context";
+import { AbsenceMessageEditor } from "./absence-message-editor";
 import { ExceptionsEditor } from "./exceptions-editor";
 import { PatternsEditor } from "./patterns-editor";
 import { PeopleTable } from "./people-table";
@@ -92,6 +93,11 @@ export default async function AttendanceSettingsPage({
       <PageHeader title="Attendance settings" context="Settings" />
 
       <AttendanceSettingsForm initial={settings.data} />
+
+      {/* Under the alert settings, because it is the wording of one of them. */}
+      <div className="mt-4">
+        <AbsenceMessageEditor initial={settings.data} />
+      </div>
 
       {patterns.ok ? (
         <PatternsEditor initial={patternList} zone={zone} />

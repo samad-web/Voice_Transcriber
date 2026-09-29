@@ -31,6 +31,16 @@ export const CallDispositionInput = z.object({
   leadQuality: LeadTemperature.nullish(),
   color: DispositionColor.default("grey"),
   sortOrder: z.number().int().min(0).max(999).default(0),
+  /**
+   * Does this outcome mean the customer needed nothing further (0144)? Counts
+   * the call towards FCR on the agent scorecard.
+   *
+   * Never inferred from `leadQuality`, and the two must not be collapsed: the
+   * best sales outcome ("Interested") is precisely the one that guarantees a
+   * callback, so a rule tying resolution to a hot lead would score the floor
+   * on exactly the wrong calls.
+   */
+  resolvesOnFirstCall: z.boolean().default(false),
 });
 export type CallDispositionInput = z.infer<typeof CallDispositionInput>;
 
@@ -40,6 +50,15 @@ export const CallDispositionUpdate = z.object({
   color: DispositionColor.optional(),
   sortOrder: z.number().int().min(0).max(999).optional(),
   isActive: z.boolean().optional(),
+  /**
+   * `.optional()` and deliberately NOT `.default(false)` like the create
+   * schema above. A default on a PATCH field turns "the caller did not mention
+   * this" into "the caller set it to false", so renaming a disposition would
+   * silently clear its resolution flag and take the tenant's FCR to 0% with no
+   * edit anybody made. That is the live trap already found in the outreach
+   * cadences PATCH; this schema must not reproduce it.
+   */
+  resolvesOnFirstCall: z.boolean().optional(),
 });
 export type CallDispositionUpdate = z.infer<typeof CallDispositionUpdate>;
 

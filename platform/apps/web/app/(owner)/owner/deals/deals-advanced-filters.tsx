@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
 import { Popover } from "@aura/ui";
 import { FilterTag } from "@/components/filter-tag";
@@ -39,6 +40,18 @@ export function DealsAdvancedFilters({
   tagChoices: readonly Choice[];
 }) {
   const [open, setOpen] = useState(false);
+  /*
+   * Closes on arrival rather than on click - closing from the link's onClick
+   * unmounts it mid-click and the filter never applies. This one keys on the
+   * QUERY too, not just the path: every link here goes to the same page and
+   * only the search string changes, so a pathname-only effect would never
+   * fire.
+   */
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname, search]);
 
   const tags: { key: string; label: string; href: string }[] = [];
   const stageLabel = labelFor(stageChoices, current.stage);
@@ -96,7 +109,6 @@ export function DealsAdvancedFilters({
       >
         <Link
           href={dealsHref(current, { staleOnly: !current.staleOnly })}
-          onClick={() => setOpen(false)}
           aria-current={current.staleOnly ? "true" : undefined}
           className={`block rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ease-out ${
             current.staleOnly ? "bg-text font-medium text-bg" : "text-text hover:bg-surface-hover"

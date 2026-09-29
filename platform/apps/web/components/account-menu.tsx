@@ -1,7 +1,8 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Bell, Building2, ChevronsUpDown, Clock, History, LogOut, Receipt, User, type LucideIcon } from "lucide-react";
 import { Popover, ProgressBar } from "@aura/ui";
 import {
@@ -96,6 +97,16 @@ export function AccountMenu({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  /*
+   * The menu closes on ARRIVAL, not on click. Closing from a link's own
+   * onClick unmounts that link in the same tick as the click and the
+   * navigation is lost - the same fault that made the notification bell's
+   * footer links do nothing at all.
+   */
+  const pathname = usePathname();
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
   const [everywhereOpen, setEverywhereOpen] = useState(false);
   const [signingOut, startSignOut] = useTransition();
   const panelId = useId();
@@ -168,7 +179,7 @@ export function AccountMenu({
               const Icon = ICONS[item.id];
               return (
                 <li key={item.id}>
-                  <Link href={item.href!} onClick={() => setOpen(false)} className={ROW}>
+                  <Link href={item.href!} className={ROW}>
                     <Icon className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
                     {item.label}
                   </Link>
