@@ -14,6 +14,7 @@ import {
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
+import { operatorInviteMessage } from "@/lib/invite-text";
 import {
   inviteOperatorAction,
   resendOperatorInviteAction,
@@ -132,7 +133,10 @@ function InviteForm({
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
   const [pending, startTransition] = useTransition();
-  const [link, setLink] = useState<string | null>(null);
+  // The link AND the address it is bound to. `email` is cleared from the form
+  // the moment the invite is issued, so FreshLink cannot read it from state -
+  // and without it the copied message could not name the account to use.
+  const [issued, setIssued] = useState<IssuedLink | null>(null);
   const alert = useAlert();
   const toast = useToast();
 
@@ -143,10 +147,21 @@ function InviteForm({
         await alert({ title: "Could not invite", body: result.error, tone: "danger" });
         return;
       }
-      setLink(result.link ?? null);
+      const to = email.trim().toLowerCase();
+      setIssued(
+        result.link
+          ? {
+              link: result.link,
+              email: to,
+              emailed: Boolean(result.emailed),
+              emailError: result.emailError ?? null,
+              expiresAt: result.expiresAt ?? null,
+            }
+          : null,
+      );
       setEmail("");
       setNote("");
-      if (result.emailed) toast(`Invite emailed to ${email}`);
+      if (result.emailed) toast(`Invite emailed to ${to}`);
       else if (result.emailError) toast(`Invite created - not emailed: ${result.emailError}`);
     });
   };
@@ -222,39 +237,112 @@ function InviteForm({
         </p>
       ) : null}
 
-      {link ? <FreshLink link={link} onDone={() => setLink(null)} /> : null}
+      {issued ? <FreshLink issued={issued} onDone={() => setIssued(null)} /> : null}
     </Card>
   );
 }
 
+export interface IssuedLink {
+  link: string;
+  /** The address the invite is bound to - see `operatorInviteMessage`. */
+  email: string;
+  emailed: boolean;
+  emailError: string | null;
+  /** ISO, when the issuing response gave one. */
+  expiresAt: string | null;
+}
+
 /**
- * The link, shown ONCE.
+ * The link, shown ONCE, with the instructions that have to travel beside it.
  *
  * Only its hash is stored, so this is the only moment it exists in readable
  * form - the same contract the enrollment key and the owner-account password
  * already make on this console. Resend is how a lost link is replaced, and it
  * retires the old one in the same step.
+ *
+ * ── WHY COPY MORE THAN THE URL ──────────────────────────────────────────────
+ *
+ * This copied a bare URL at first, which is the same mistake `invite-text.ts`
+ * was written to fix on the owner side. An invite is bound to ONE address. The
+ * link gets pasted into WhatsApp or email, and by the time it reaches the person
+ * the address it belongs to has been left behind on the screen it was copied
+ * from - so they continue with whichever Google account their browser was
+ * already holding, and the invite refuses them with nothing in the link to say
+ * which account it wanted.
+ *
+ * So the address and the one-use rule go on the clipboard WITH the link, and are
+ * on screen as well: the sender should not have to remember to type them, and
+ * should be able to read what they have just handed over.
  */
-function FreshLink({ link, onDone }: { link: string; onDone: () => void }) {
+function FreshLink({ issued, onDone }: { issued: IssuedLink; onDone: () => void }) {
   const toast = useToast();
+  const alert = useAlert();
+
+  const copy = (what: "message" | "link") => {
+    const text =
+      what === "message"
+        ? operatorInviteMessage({
+            email: issued.email,
+            link: issued.link,
+            expiresAt: issued.expiresAt,
+          })
+        : issued.link;
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() =>
+        toast(what === "message" ? "Invite and sign-in address copied" : "Link only copied"),
+      )
+      .catch(() =>
+        alert({
+          title: "Couldn't copy",
+          body: "Select the link and copy it by hand.",
+          tone: "danger",
+        }),
+      );
+  };
+
   return (
-    <div className="space-y-2 rounded-md border border-border-strong bg-bg-subtle p-3">
+    <div className="space-y-2.5 rounded-md border border-border-strong bg-bg-subtle p-3">
       <MonoLabel>Invite link - shown once</MonoLabel>
-      <code className="block overflow-x-auto rounded bg-surface px-2 py-1.5 font-mono text-xs break-all text-text">
-        {link}
-      </code>
+
+      <div className="flex items-stretch gap-2">
+        <code className="block min-w-0 flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 font-mono text-xs break-all text-text">
+          {issued.link}
+        </code>
+        <Button type="button" variant="secondary" onClick={() => copy("message")}>
+          <Copy aria-hidden="true" className="h-4 w-4" /> Copy
+        </Button>
+      </div>
+
+      {/* The instructions, on screen and not only on the clipboard. Whoever
+          sends this should be able to read what they are promising. */}
+      <ul className="space-y-1 text-xs leading-relaxed text-text-muted">
+        <li>
+          They must continue with the Google account for{" "}
+          <span className="font-medium text-text">{issued.email}</span>. Any other account is turned
+          away.
+        </li>
+        <li>
+          The link works once, and accepting makes them a superadmin immediately.
+          {issued.expiresAt ? (
+            <>
+              {" "}
+              It expires <LocalTime iso={issued.expiresAt} className="tabular-nums" />.
+            </>
+          ) : null}
+        </li>
+        <li>
+          {issued.emailed
+            ? "Already emailed to them - this copy is for passing on another way."
+            : issued.emailError
+              ? `NOT emailed: ${issued.emailError} Pass it on yourself.`
+              : "Not emailed - pass it on yourself. It is not shown again."}
+        </li>
+      </ul>
+
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => {
-            navigator.clipboard
-              ?.writeText(link)
-              .then(() => toast("Invite link copied"))
-              .catch(() => toast("Could not copy - select the text instead"));
-          }}
-        >
-          <Copy aria-hidden="true" className="h-4 w-4" /> Copy link
+        <Button type="button" variant="ghost" onClick={() => copy("link")}>
+          Copy link only
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           Done
@@ -277,7 +365,7 @@ function InviteRow({
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
-  const [fresh, setFresh] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<IssuedLink | null>(null);
 
   const resend = (send: boolean) => {
     startTransition(async () => {
@@ -286,7 +374,17 @@ function InviteRow({
         await alert({ title: "Could not resend", body: result.error, tone: "danger" });
         return;
       }
-      setFresh(result.link ?? null);
+      setFresh(
+        result.link
+          ? {
+              link: result.link,
+              email: invite.email,
+              emailed: Boolean(result.emailed),
+              emailError: result.emailError ?? null,
+              expiresAt: result.expiresAt ?? null,
+            }
+          : null,
+      );
       if (result.emailed) toast(`Invite re-sent to ${invite.email}`);
     });
   };
@@ -336,7 +434,7 @@ function InviteRow({
       {/* Resend issues a NEW token, so the replacement link appears here to be
           copied - there is no "show me the existing link", because only its hash
           was ever stored. */}
-      {fresh ? <FreshLink link={fresh} onDone={() => setFresh(null)} /> : null}
+      {fresh ? <FreshLink issued={fresh} onDone={() => setFresh(null)} /> : null}
     </li>
   );
 }

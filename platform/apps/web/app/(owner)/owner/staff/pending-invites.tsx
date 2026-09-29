@@ -6,7 +6,7 @@ import { Copy } from "lucide-react";
 import { OWNER_ROLE_LABELS } from "@aura/shared";
 import { Button, Card, MonoLabel, StatusChip, useAlert, useConfirm, useToast } from "@aura/ui";
 import { resendInviteAction, revokeInviteAction } from "./actions";
-import { inviteMessage } from "./invite-text";
+import { inviteMessage } from "@/lib/invite-text";
 import type { TeamInvite } from "./types";
 
 /** A row plus the expiry wording, worked out on the server (no hydration drift over time zones). */

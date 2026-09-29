@@ -37,6 +37,12 @@ export interface OperatorInviteResult {
   emailed?: boolean;
   /** Set when mailing was asked for and did not happen. Not a failure. */
   emailError?: string | null;
+  /**
+   * ISO, so the copied message can say when the link dies - the same sentence
+   * the emailed version carries. Without it the two disagree about what the
+   * recipient was told, depending only on how it reached them.
+   */
+  expiresAt?: string;
 }
 
 const NOT_ROOT = "Only the root operator can invite a superadmin.";
@@ -127,9 +133,15 @@ async function post(path: string, body: unknown): Promise<OperatorInviteResult> 
       link?: string;
       emailed?: boolean;
       emailError?: string | null;
+      invite?: { expiresAt?: string };
     };
     revalidatePath("/operators");
-    return { link: data.link, emailed: data.emailed, emailError: data.emailError ?? null };
+    return {
+      link: data.link,
+      emailed: data.emailed,
+      emailError: data.emailError ?? null,
+      expiresAt: data.invite?.expiresAt,
+    };
   } catch {
     return { error: "API unreachable" };
   }
