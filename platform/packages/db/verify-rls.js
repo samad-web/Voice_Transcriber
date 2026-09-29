@@ -49,9 +49,15 @@ const APP_URL =
 
 /**
  * Tables in the public schema that legitimately have no org_id, and therefore
- * no org_isolation policy. FOUR ENTRIES, ON PURPOSE: this is an allowlist, so
- * adding a fifth requires a reviewed edit to this file rather than a silent
- * pass. Anything else that turns up without an org_id fails the run.
+ * no org_isolation policy. SHORT ON PURPOSE: this is an allowlist, so adding to
+ * it requires a reviewed edit to this file with a comment saying why, rather
+ * than a silent pass. Anything else that turns up without an org_id fails the
+ * run - which is how 0145's `platform_operator_invites` was caught before it
+ * reached a deploy.
+ *
+ * (This said "FOUR ENTRIES" while the set held six. A count in prose next to a
+ * list that grows is a comment that lies on the next commit, so it is gone
+ * rather than corrected.)
  *
  *   users             platform-level humans; tenancy comes from `memberships`.
  *                     NOTE that this table holds email, password_hash and
@@ -93,6 +99,22 @@ const NON_TENANT_TABLES = new Set([
   //                     through the admin pool; `aura_app` is revoked outright,
   //                     and so are the Supabase API roles.
   "platform_operators",
+  // platform_operator_invites
+  //                     0145. A pending invitation to become a superadmin, and
+  //                     so the same answer as platform_operators above: a
+  //                     superadmin belongs to no tenant, and an org_id here
+  //                     would be a fiction rather than a boundary. It is
+  //                     deliberately NOT org_invites with a nullable org_id -
+  //                     that table's every policy assumes a non-null tenant, and
+  //                     a row granting platform-wide authority does not belong
+  //                     in it.
+  //
+  //                     Reached only through the admin pool. 0145 REVOKEs it
+  //                     from `aura_app` and from all three Supabase API roles,
+  //                     REVOKE-before-GRANT as 0089 does, and that was verified
+  //                     against a real Postgres rather than read: all four hold
+  //                     no SELECT and no INSERT.
+  "platform_operator_invites",
   // auth_events         0127. A PERSON's sign-in history, which spans every
   //                     workspace they belong to - and platform operators, who
   //                     belong to none, have one too. The boundary is the
