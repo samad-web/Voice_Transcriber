@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { SupabaseAdminService } from "../owner/supabase-admin.service";
 import { AdminController } from "./admin.controller";
+import { OperatorInvitesController } from "./operator-invites.controller";
+import { OperatorInvitesService } from "./operator-invites.service";
 import { OperatorsController } from "./operators.controller";
 
 /**
@@ -10,9 +12,14 @@ import { OperatorsController } from "./operators.controller";
  * `OwnerModule`: it holds no state - two env vars and a `fetch` - so a second
  * instance costs nothing, and providing it locally keeps this module from
  * depending on the tenant-facing one just to mint a password.
+ *
+ * `OperatorInvitesService` (0145) is here for the same reason it is not in
+ * OwnerModule: it is the invite path with no organization in it, so it shares
+ * only the token, mail and acceptance-guard helpers with the tenant-scoped
+ * `InvitesService`, and none of that module's org context.
  */
 @Module({
-  controllers: [AdminController, OperatorsController],
-  providers: [SupabaseAdminService],
+  controllers: [AdminController, OperatorsController, OperatorInvitesController],
+  providers: [SupabaseAdminService, OperatorInvitesService],
 })
 export class AdminModule {}

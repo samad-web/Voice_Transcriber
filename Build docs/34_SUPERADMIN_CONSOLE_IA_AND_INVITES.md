@@ -1,8 +1,8 @@
 # 34 - The superadmin console: navigation, tenant-screen relocation, and Google invites
 
 **Written for:** the Claude Code session or engineer who will build this in `platform/`.
-**Status:** plan and implementation prompt, 2026-09-29. **Parts A and B are BUILT** (SS3.5, SS6.4)
-and not deployed; Part C is not started.
+**Status:** 2026-09-29. **ALL THREE PARTS ARE BUILT** (SS3.5, SS6.4, SS11.7) and NOT DEPLOYED.
+Migration 0145 has not been run on production. Deploy notes in SS16; read SS15 first.
 **Companion docs:**
 - 23 (nav fix plan; breadcrumbs, section maps)
 - 28 (navigation architecture, Back button; the operator layout's gaps are catalogued there)
@@ -695,6 +695,53 @@ Gate the form on `canManage` (already passed to the manager, `P/operators/page.t
 the *accept with Google* promise on `googleSignInEnabled()` - `P/instances/[id]/page.tsx:37`
 already imports that helper for exactly this purpose.
 
+## SS11.7 PART C IS BUILT - 2026-09-29
+
+Landed on `crm-phases-on-origin`. API typecheck clean and 942 API tests pass; web typecheck clean
+and 1016 web tests pass. Migration 0145 verified against a real Postgres (SS12.1). **Not deployed,
+and 0145 has not been run on production.**
+
+| Piece | Where |
+|---|---|
+| Migration | `db/migrations/0145_platform_operator_invites.sql` + the generated Supabase twin. `node scripts/sync-supabase-migrations.js` reports "already up to date", so the pair cannot drift the way 0144's did. |
+| Shared acceptance checks | **New** `api/owner/invite-guards.ts`: `refuse`, `InviteRefusal`, `assertInvitePending`, `assertMayAcceptInvite`. These were PRIVATE methods on `InvitesService`; they moved rather than being reimplemented, and `InvitesService` now calls the shared copies. |
+| Service | `api/admin/operator-invites.service.ts` - list / issue / resend / revoke / preview / prepare / accept / `knows`. Every statement on `db.adminPool()`: there is no org to set an RLS context with. |
+| Controller | `api/admin/operator-invites.controller.ts`, four routes under `admin/operator-invites`, same guards as `OperatorsController`. |
+| Mail | `operatorInviteMailContent` + `sendOperatorInviteMail` in `api/owner/invite-mail.ts` - a separate builder, not an optional `orgName`. |
+| Acceptance | The existing public `auth/invites/{preview,prepare,accept}` now dispatch on `operatorInvites.knows(token)` and return `kind: "org" | "operator"`. |
+| Web actions | **New** `P/operators/invite-actions.ts` - where `requireMax()` actually runs. |
+| Web UI | **New** `P/operators/operator-invites.tsx` - invite form, outstanding invites with resend/withdraw, and invite history. Wired into `P/operators/page.tsx`. |
+| Callback | `app/auth/callback/route.ts` sends an operator acceptance to `/dashboard`, not `/owner`. |
+| Tests | **New** `invite-guards.spec.ts` (9 cases, each refusal pinned by code, including the masked-address one); operator-mail cases appended to `invite-mail.spec.ts`; `guard-mounting.spec.ts` and `platform-actions.guard.test.ts` updated. |
+
+### Three plan corrections the code forced
+
+1. **SS11.2 said the API should enforce `requireMax` semantics. It cannot, and must not pretend to.**
+   `admin/operators.controller.ts`'s own header explains why: every console request arrives on one
+   shared `ADMIN_API_KEY` and is minted `platform_admin`, so the API cannot tell one operator from
+   another, and a header claiming an identity would be forgeable by anyone holding that key. "Only
+   the root may invite a superadmin" therefore lives in `invite-actions.ts`, exactly where appointing
+   one already did. What the API *does* enforce is the two invariants that need no identity: the root
+   address is never invited (it is configured, not a row), and neither is an existing superadmin.
+2. **The `requireOperator()` indirection was rejected by the guard suite, correctly.** The actions
+   first shared an `assertRoot()` helper that called `requireOperator()` then `requireMax()`.
+   `platform-actions.guard.test.ts` reads the source and demands `await requireOperator()` as the
+   literal first statement of every exported action - so the helper satisfied nothing. It is inlined
+   in all three now. **This is the same failure mode as Part B's `DIRECT_API_CALL` hole**: a helper
+   that looks like a refactor and is actually a hole in a source-scan guard. Twice in one branch is
+   worth remembering.
+3. **`confirm({ tone: "danger" })` was wrong for withdrawing an invite.** That tone makes the dialog
+   demand a typed confirmation word - right for erasing a customer's recordings, heavy for an action
+   that destroys nothing and can be undone by inviting again. Also `AlertOptions`/`ConfirmOptions`
+   take `body`, not `description`.
+
+### And one stale claim in this document, now corrected
+
+SS4.3(2) said `20260101000144_disposition_resolution.sql` had no `packages/db` twin. **It has one as
+of 2026-09-29 13:00**, created outside this session - another line of work was in the tree at the
+same time (the `call-quality` disposition files are modified there). The orphan is resolved; the
+numbering warning stands, which is why this migration took 0145.
+
 ## SS12. Part C tests
 
 - Token reuse: an accepted invite is refused; a revoked one is refused; an expired one is
@@ -708,6 +755,39 @@ already imports that helper for exactly this purpose.
   matters - a Server Action's id ships in the client bundle.
 - Grants: assert `anon` cannot select from `platform_operator_invites`. The REVOKE trap is a
   silent failure, so it needs an explicit test rather than a careful read.
+
+## SS12.1 What was actually verified against Postgres - 2026-09-29
+
+Docker WAS available on this machine, contrary to the usual state, so 0145 was checked for real
+rather than read carefully. A throwaway `postgres:16-alpine`, the four Supabase roles and a stub
+`platform_operators` table; the migration applied clean (`CREATE TABLE / COMMENT / CREATE INDEX x2 /
+DO / REVOKE / DO`), then:
+
+| Claim | Result |
+|---|---|
+| `anon`, `authenticated`, `service_role`, `aura_app` hold no SELECT and no INSERT | **confirmed false for all four privileges** - the REVOKE-before-GRANT block does what 0089's does |
+| The email CHECK rejects `Mixed@Case.com` | refused |
+| The email CHECK rejects `'  '` | refused |
+| A second LIVE invite for one address is refused | refused on `platform_operator_invites_live` |
+| A new invite after the first was ACCEPTED is allowed | allowed |
+| A new invite after one was REVOKED is allowed | allowed |
+| `token_hash` is globally unique | refused on the token_hash key |
+
+**The one thing this caught.** The service mapped any `23505` to "already has an invite
+outstanding". Two unique indexes raise that code, and a node-pg check confirmed they are
+distinguishable:
+
+```
+live-index violation -> code: 23505 | constraint: platform_operator_invites_live
+token collision      -> code: 23505 | constraint: platform_operator_invites_token_hash_key
+```
+
+So the catch now matches on the constraint name. A 1-in-2^256 token collision reported as "revoke it
+first" would have sent the root looking for an invite that does not exist - not a bug anyone would
+ever hit, but the fix costs one condition and the wrong message is the kind that wastes an hour.
+
+The scratch container was removed afterwards. **None of this touched production**, and 0145 still
+has to be run there.
 
 ## SS13. Part C non-goals
 

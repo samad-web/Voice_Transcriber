@@ -55,6 +55,9 @@ const KNOWN_ACTION_FILES = [
   "instances/[id]/targets/actions.ts",
   "instances/new/actions.ts",
   // Genuinely platform-wide, and the ones that stayed put.
+  // Superadmin invitations (0145, doc 34 Part C). The root-only check that
+  // matters is `requireMax()`, which the API cannot make - see that file.
+  "operators/invite-actions.ts",
   "leads/actions.ts",
   "operators/actions.ts",
   "provisioning/actions.ts",

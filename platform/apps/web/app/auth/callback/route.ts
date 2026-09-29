@@ -109,6 +109,22 @@ export async function GET(request: NextRequest) {
       await discardSession();
       return failed(typeof accepted.body.code === "string" ? accepted.body.code : "accept_failed");
     }
+    // A SUPERADMIN invite (doc 34 Part C). There is no workspace to open and no
+    // active-org cookie to set: accepting wrote a `platform_operators` row, so
+    // `isOperator` will now let this session into the operator console, and the
+    // operator console is where they belong. Sending them to /owner instead -
+    // which is what this handler did for every acceptance before - would bounce
+    // them straight back out, since an operator has no membership anywhere.
+    if (accepted.body.kind === "operator") {
+      await recordAuthEvent({
+        kind: "sign_in",
+        authUserId: data.user.id,
+        sessionId,
+        console: "operator",
+      });
+      return to(origin, "/dashboard", { joined: "1" });
+    }
+
     const orgId = typeof accepted.body.orgId === "string" ? accepted.body.orgId : null;
     // Open the workspace they just joined, not whichever they joined first.
     // A preference only - getPrincipal re-checks it against the session.

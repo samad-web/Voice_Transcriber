@@ -20,6 +20,16 @@ import {
   type InviteStatus,
 } from "./invite-token";
 import { SupabaseAdminService, type AuthUser } from "./supabase-admin.service";
+import {
+  assertInvitePending,
+  assertMayAcceptInvite,
+  refuse,
+  type InviteRefusal,
+} from "./invite-guards";
+
+// Re-exported: this module was the only home of the refusal union, and the
+// controllers and web tier import it from here.
+export type { InviteRefusal };
 
 /**
  * Invite by link, finish with Google (migration 0137).
@@ -92,22 +102,6 @@ export interface IssuedInvite {
 }
 
 /** Refusals the invite page and callback turn into sentences. */
-export type InviteRefusal =
-  | "invalid"
-  | "expired"
-  | "accepted"
-  | "revoked"
-  | "not_signed_in"
-  | "unverified_email"
-  | "not_google"
-  | "email_mismatch"
-  | "unlinked_login"
-  | "other_login"
-  | "not_configured";
-
-function refuse(status: number, code: InviteRefusal, message: string, extra: Record<string, unknown> = {}): never {
-  throw new HttpException({ code, message, ...extra }, status);
-}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -264,7 +258,7 @@ export class InvitesService {
     }
     const row = await this.findByToken(token);
     if (!row) refuse(404, "invalid", "This invite link isn't valid.");
-    this.assertPending(row);
+    assertInvitePending(row);
 
     const ensured = await this.supabase.ensureUser(row.email, { invited_to_org: row.org_id });
     if (ensured.created) {
@@ -292,11 +286,11 @@ export class InvitesService {
     }
     const found = await this.findByToken(token);
     if (!found) refuse(404, "invalid", "This invite link isn't valid.");
-    this.assertPending(found);
+    assertInvitePending(found);
 
     const user = await this.supabase.userFromAccessToken(accessToken);
     if (!user) refuse(401, "not_signed_in", "Your Google sign-in didn't complete. Try again.");
-    this.assertMayAccept(found, user);
+    assertMayAcceptInvite(found, user);
 
     // Decided BEFORE the transaction, because each needs a GoTrue round trip
     // and a row lock should not be held across the internet.
@@ -327,7 +321,7 @@ export class InvitesService {
       );
       const invite = rows[0];
       if (!invite) refuse(404, "invalid", "This invite link isn't valid.");
-      this.assertPending(invite);
+      assertInvitePending(invite);
 
       // One human, one `users` row. Looked up case-insensitively because
       // `users.email` is unique on its raw value - an INSERT ... ON CONFLICT
@@ -614,27 +608,6 @@ export class InvitesService {
       [hashInviteToken(token)],
     );
     return rows[0] ?? null;
-  }
-
-  private assertPending(row: InviteRow): void {
-    const status = inviteStatus(row);
-    if (status === "expired") refuse(410, "expired", "This invite has expired. Ask whoever invited you to send a new one.");
-    if (status === "accepted") refuse(410, "accepted", "This invite has already been used. Sign in instead.");
-    if (status === "revoked") refuse(410, "revoked", "This invite was withdrawn. Ask whoever invited you for a new one.");
-  }
-
-  private assertMayAccept(invite: InviteRow, user: AuthUser): void {
-    if (!user.emailVerified || !user.email) {
-      refuse(403, "unverified_email", "Google didn't confirm an email address for that account.");
-    }
-    if (!user.providers.includes("google")) {
-      refuse(403, "not_google", "Finish accepting this invite by continuing with Google.");
-    }
-    if (user.email !== invite.email) {
-      refuse(403, "email_mismatch", `This invite is for ${maskEmail(invite.email)}. Continue with the Google account for that address.`, {
-        invitedEmail: maskEmail(invite.email),
-      });
-    }
   }
 
   /**

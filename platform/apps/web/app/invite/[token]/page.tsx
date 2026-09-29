@@ -14,8 +14,18 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
 };
 
+/**
+ * `kind` distinguishes the two invites this page serves (doc 34 Part C). An org
+ * invite joins one workspace; an operator invite makes somebody a superadmin
+ * across every customer, which has no org name and no tenant role to show and
+ * had better not be worded as though it did.
+ *
+ * The API sets `kind` on every preview, including the dead ones, so the older
+ * responses cannot be mistaken for operator invites by omission.
+ */
 type Preview =
   | {
+      kind?: "org";
       status: "pending";
       orgName: string;
       email: string;
@@ -24,7 +34,14 @@ type Preview =
       invitedByName: string | null;
       expiresAt: string;
     }
-  | { status: "invalid" | "expired" | "accepted" | "revoked" }
+  | {
+      kind: "operator";
+      status: "pending";
+      email: string;
+      invitedBy: string;
+      expiresAt: string;
+    }
+  | { kind?: "org" | "operator"; status: "invalid" | "expired" | "accepted" | "revoked" }
   | { status: "unavailable" };
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -106,22 +123,46 @@ export default async function InvitePage({
           <Logo size={40} priority />
           <div>
             <p className="text-sm leading-tight font-semibold text-text">Aura Platform</p>
-            <MonoLabel className="mt-0.5">Workspace invite</MonoLabel>
+            <MonoLabel className="mt-0.5">
+              {preview.status === "pending" && preview.kind === "operator"
+                ? "Administrator invite"
+                : "Workspace invite"}
+            </MonoLabel>
           </div>
         </div>
 
         {preview.status === "pending" ? (
           <>
             <div className="space-y-1.5">
-              <h1 className="text-2xl leading-tight font-semibold text-text">Join {preview.orgName}</h1>
-              <p className="text-sm leading-relaxed text-text-muted">
-                {preview.invitedByName ? `${preview.invitedByName} invited you` : "You've been invited"} to join as{" "}
-                <span className="font-medium text-text">{preview.roleLabel}</span>.
-              </p>
+              {preview.kind === "operator" ? (
+                <>
+                  <h1 className="text-2xl leading-tight font-semibold text-text">
+                    Administer Aura
+                  </h1>
+                  {/* Says plainly what is being granted. Somebody accepting this
+                      gets access across every customer workspace, and an invite
+                      that read like "join a team" would be the wrong amount of
+                      pause before a click that wide. */}
+                  <p className="text-sm leading-relaxed text-text-muted">
+                    {preview.invitedBy} invited you to become a{" "}
+                    <span className="font-medium text-text">superadmin</span> on this Aura platform -
+                    administrative access across every customer workspace, not access to one of
+                    them.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-2xl leading-tight font-semibold text-text">Join {preview.orgName}</h1>
+                  <p className="text-sm leading-relaxed text-text-muted">
+                    {preview.invitedByName ? `${preview.invitedByName} invited you` : "You've been invited"} to join as{" "}
+                    <span className="font-medium text-text">{preview.roleLabel}</span>.
+                  </p>
+                </>
+              )}
             </div>
 
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-md border border-border bg-surface-hover p-3 text-sm">
-              {preview.name ? (
+              {preview.kind !== "operator" && preview.name ? (
                 <>
                   <dt className="text-text-muted">Name</dt>
                   <dd className="min-w-0 break-words text-text">{preview.name}</dd>

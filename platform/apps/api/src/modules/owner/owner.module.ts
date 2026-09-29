@@ -16,8 +16,10 @@ import { OwnerTeamController } from "./owner-team.controller";
 import { OwnerInvitesController } from "./owner-invites.controller";
 import { AuthInvitesController } from "./auth-invites.controller";
 import { InstanceInvitesController } from "./instance-invites.controller";
+import { OperatorInvitesService } from "../admin/operator-invites.service";
 import { InvitesService } from "./invites.service";
 import { StaffPerformanceController } from "./staff-performance.controller";
+import { OwnerPerformanceController } from "./owner-performance.controller";
 import { LeadsController } from "./leads.controller";
 import { OwnerController } from "./owner.controller";
 import { OwnersController } from "./owners.controller";
@@ -61,6 +63,7 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     // ...and the operator inviting an instance's first owner.
     InstanceInvitesController,
     StaffPerformanceController,
+    OwnerPerformanceController,
     LeadsController,
     LeadBoardsController,
     OwnerController,
@@ -71,6 +74,13 @@ import { SupabaseAdminService } from "./supabase-admin.service";
     PlanUsageController,
     TimeSettingsController,
   ],
-  providers: [OwnerAccountsService, SupabaseAdminService, InvitesService],
+  // `OperatorInvitesService` is PROVIDED here, not imported from AdminModule.
+  // AuthInvitesController is the one public route pair that serves both kinds of
+  // invite (doc 34 Part C), and the service is stateless - a DbService and a
+  // SupabaseAdminService - so a second instance costs nothing, exactly the
+  // reasoning AdminModule gives for providing SupabaseAdminService locally.
+  // Importing AdminModule here instead would make the tenant-facing module
+  // depend on the cross-tenant one, which is the wrong direction.
+  providers: [OwnerAccountsService, SupabaseAdminService, InvitesService, OperatorInvitesService],
 })
 export class OwnerModule {}

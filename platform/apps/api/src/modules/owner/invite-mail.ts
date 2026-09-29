@@ -86,6 +86,50 @@ export function inviteMailContent(input: InviteMailInput): { subject: string; bo
   };
 }
 
+export interface OperatorInviteMailInput {
+  to: string;
+  inviterName: string | null;
+  link: string;
+  expiresAt: Date;
+}
+
+/**
+ * The superadmin version (doc 34 Part C).
+ *
+ * A SEPARATE builder rather than an optional `orgName` threaded through the one
+ * above. A platform operator belongs to no organization, so there is no name to
+ * put in that subject line - and an optional field is how `invited you to null`
+ * reaches somebody's inbox. Two small builders cannot produce that sentence.
+ *
+ * The body says plainly what is being granted. An invitation to administer every
+ * customer on the platform should not read like an invitation to join a
+ * workspace, because the two need very different amounts of thought from whoever
+ * receives one unexpectedly.
+ */
+export function operatorInviteMailContent(input: OperatorInviteMailInput): {
+  subject: string;
+  body: string;
+} {
+  const who = input.inviterName?.trim() || "An Aura administrator";
+  const expires = input.expiresAt.toUTCString().replace(" GMT", " UTC");
+  return {
+    subject: `${who} invited you to administer Aura`,
+    body: [
+      `${who} has invited you to become a superadmin on the Aura platform.`,
+      "",
+      "This is administrative access across every customer workspace, not access to one of them.",
+      "",
+      "Accept the invite and sign in with your Google account:",
+      input.link,
+      "",
+      `Use the Google account for ${input.to} - the invite only works for that address.`,
+      `This link expires on ${expires} and can be used once.`,
+      "",
+      "If you weren't expecting this, ignore this email and tell whoever runs your Aura platform.",
+    ].join("\n"),
+  };
+}
+
 /** Send one invite. Throws on any SMTP failure; the caller reports it. */
 export async function sendInviteMail(
   config: PlatformMailConfig,
@@ -97,5 +141,25 @@ export async function sendInviteMail(
     from: config.fromEmail,
     to: input.to,
     mime: buildMime({ to: input.to, subject, body, fromEmail: config.fromEmail, fromName: config.fromName }),
+  });
+}
+
+/** Send one superadmin invite. Throws on any SMTP failure; the caller reports it. */
+export async function sendOperatorInviteMail(
+  config: PlatformMailConfig,
+  input: OperatorInviteMailInput,
+  send: typeof sendSmtpMessage = sendSmtpMessage,
+): Promise<void> {
+  const { subject, body } = operatorInviteMailContent(input);
+  await send(config.smtp, {
+    from: config.fromEmail,
+    to: input.to,
+    mime: buildMime({
+      to: input.to,
+      subject,
+      body,
+      fromEmail: config.fromEmail,
+      fromName: config.fromName,
+    }),
   });
 }

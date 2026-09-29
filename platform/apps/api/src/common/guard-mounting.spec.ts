@@ -39,6 +39,7 @@ import { RequestMethod, type Type } from "@nestjs/common";
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { HealthController } from "../health/health.controller";
 import { AdminController } from "../modules/admin/admin.controller";
+import { OperatorInvitesController } from "../modules/admin/operator-invites.controller";
 import { OperatorsController } from "../modules/admin/operators.controller";
 import { AgentsController } from "../modules/agents/agents.controller";
 import { OwnerAgentsController } from "../modules/agents/owner-agents.controller";
@@ -125,6 +126,7 @@ import { CallTriageController } from "../modules/owner/call-triage.controller";
 import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
 import { IntegrationsController } from "../modules/owner/integrations.controller";
 import { TelecallerProductivityController } from "../modules/owner/telecaller-productivity.controller";
+import { OwnerPerformanceController } from "../modules/owner/owner-performance.controller";
 import { CallInsightsController } from "../modules/owner/call-insights.controller";
 import { CallSopsController } from "../modules/owner/call-sops.controller";
 import { OwnersController } from "../modules/owner/owners.controller";
@@ -166,6 +168,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   AuthController,
   ApiKeysController,
   AdminController,
+  OperatorInvitesController,
   OperatorsController,
   AgentsController,
   OwnerAgentsController,
@@ -188,6 +191,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   CallDispositionsController,
   IntegrationsController,
   TelecallerProductivityController,
+  OwnerPerformanceController,
   CallSopsController,
   CallInsightsController,
   OwnerController,
@@ -605,6 +609,23 @@ const CROSS_TENANT = [
   // row, so the admin key cannot mint a confirmed login for a stranger.
   "POST /admin/operators/:email/login",
   "POST /admin/operators/:email/password",
+  // Superadmin invitations (0145, doc 34 Part C). Cross-tenant for the same
+  // reason as everything above: platform staff belong to no org, so there is no
+  // tenant for TenantGuard to scope these to.
+  //
+  // "Only the root may invite a superadmin" is enforced in the web tier's
+  // requireMax(), not here, exactly as appointing one is. The invariants this
+  // layer holds without knowing the caller are in the service: the root address
+  // is never invited (it is configured, not a row) and neither is somebody who
+  // already appears in platform_operators.
+  //
+  // The ACCEPTANCE routes are not here - they are the public
+  // /auth/invites/{preview,prepare,accept} above, which now dispatch on which
+  // table holds the token.
+  "GET /admin/operator-invites",
+  "POST /admin/operator-invites",
+  "POST /admin/operator-invites/:id/resend",
+  "DELETE /admin/operator-invites/:id",
   "GET /analytics/fleet",
   // Platform Hub KPIs (dashboard overhaul): both answer a fleet-wide question
   // with no single org to scope to, same reasoning as /analytics/fleet above.
@@ -720,6 +741,19 @@ const OWNER_ROLE_ROUTES = [
   // not happen is a telecaller reading the floor's. The narrowing comes from
   // OwnerScopeGuard, which is never inert.
   "GET /owner/productivity",
+  // One person's scorecard, same class and therefore the same guards. Its
+  // `telecaller` query parameter is NOT an authorisation - OwnerScopeGuard's
+  // answer overrules it for an own-scoped persona, so a telecaller reads their
+  // own card whatever id they pass. Placed here rather than under a role
+  // requirement for exactly the reason the read above is: a rep is entitled to
+  // their own numbers.
+  "GET /owner/productivity/scorecard",
+  // The command centre. Unlike the two productivity reads above, this one
+  // declares a REAL owner/manager requirement: its response carries a per-
+  // person roll-up with quality scores in it, which is the staff scorecard's
+  // restriction for the staff scorecard's reason - who reads the table naming
+  // colleagues is a management decision, not a default.
+  "GET /owner/performance",
   // Call insights: the floor-wide read of every call, and the same read as a
   // PDF. Owner/manager at class level - a REAL requirement, unlike the
   // productivity read above, because it ranks named colleagues and summarises
@@ -829,6 +863,9 @@ const OWNER_ROLE_ROUTES = [
   "GET /messaging/whatsapp-personal",
   "POST /messaging/whatsapp-personal",
   "GET /messaging/whatsapp-personal/poll",
+  // Resume a linked-but-offline session without sending anybody to their
+  // phone (0142's disconnected state). Same per-person tier as the rest.
+  "POST /messaging/whatsapp-personal/reconnect",
   "DELETE /messaging/whatsapp-personal",
   "GET /owner/devices",
   "POST /owner/devices/pairing-token",
@@ -836,6 +873,10 @@ const OWNER_ROLE_ROUTES = [
   // like the list it is a subset of - see the handler.
   "GET /owner/devices/pairing-token/:id",
   "POST /owner/devices/:id/revoke",
+  // Taking a handset off the list for good, as opposed to retiring it. Same
+  // owner-or-manager tier as revoke and restore, and reversible in the
+  // de-enrolled case - see removeDevice for which of the two it does.
+  "DELETE /owner/devices/:id",
   // Device recovery (0130): undo a retire, and mint a pairing code bound to one
   // existing handset. Both owner-or-manager - the retire tier, not the
   // delegable pairing capability - because each can put a person's identity
@@ -1753,8 +1794,15 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // and twenty tenant-scoped /owner/attendance routes.
     // 503: GET /tasks/assignable-people (0141) - the task assignee picker,
     // already narrowed by task:assign_up before it returns.
-    expect(ROUTES).toHaveLength(503);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(503);
+    // 504: DELETE /owner/devices/:id - the client's own handset Remove, the
+    // counterpart to the operator's long-standing DELETE /devices/:id.
+    // 505: POST /messaging/whatsapp-personal/reconnect (0142).
+    // 506: GET /owner/productivity/scorecard - the agent scorecard (0144).
+    // 507: GET /owner/performance - the command centre.
+    // 511: plus the four superadmin-invite routes (0145, doc 34 Part C), all
+    // cross-tenant - platform staff belong to no org.
+    expect(ROUTES).toHaveLength(511);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(511);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1792,14 +1840,18 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 403: plus invite by link's four /owner/invites routes (0137).
     // 404: plus POST /org/branding/upload-url.
     // 429: plus GET /tasks/assignable-people (0141).
-    expect(tenantScoped).toHaveLength(429);
+    // 430: plus DELETE /owner/devices/:id.
+    // 431: plus the personal-WhatsApp reconnect (0142).
+    // 432: plus the agent scorecard (0144).
+    // 433: plus the command centre.
+    expect(tenantScoped).toHaveLength(433);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(503); // = ROUTES.length: every route in exactly one class
+    ).toBe(511); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 422 principal routes", () => {
@@ -1831,7 +1883,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // GET /analytics/active-users + /analytics/booking-rate, which reached
     // CROSS_TENANT without this count moving.
     // 459: plus GET /tasks/assignable-people (0141).
-    expect(principalRoutes).toHaveLength(459);
+    // 460: plus DELETE /owner/devices/:id.
+    // 461: plus the personal-WhatsApp reconnect (0142).
+    // 462: plus the agent scorecard (0144).
+    // 463: plus the command centre.
+    // 467: plus the four superadmin-invite routes (0145).
+    expect(principalRoutes).toHaveLength(467);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
