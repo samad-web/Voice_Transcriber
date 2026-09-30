@@ -285,6 +285,11 @@ async function bootstrap() {
       `(transcode → asr[${asr}]) + aura.analyze x${process.env.ANALYZE_PREFETCH ?? 8} ` +
       `(extract → lead) + aura.enrich x${process.env.ENRICH_PREFETCH ?? 4} ` +
       "(intelligence → crm) " +
+      // The export lane says its own prefetch for the same reason the other
+      // three do: this banner is how somebody reading `docker logs` confirms a
+      // lane is actually consuming, and a lane missing from it reads as a lane
+      // that did not start.
+      `+ aura.export x${process.env.EXPORT_PREFETCH ?? 2} (data exports) ` +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
       "+ booking confirmations + call reminders + form nudges" +
       (metaMcp ? " + meta-mcp lead pull" : "") +
