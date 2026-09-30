@@ -297,7 +297,9 @@ function rowsLabel(job: ExportJobRow): string {
 }
 
 /**
-
+ * An expired, failed or cancelled job keeps its row and its counts, greyed,
+ * with Run again beside it. The history is worth more than the file.
+ */
 function canRunAgain(job: ExportJobRow): boolean {
   return ["failed", "expired", "cancelled"].includes(job.status);
 }
