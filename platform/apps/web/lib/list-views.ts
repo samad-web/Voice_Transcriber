@@ -45,6 +45,7 @@ export const LIST_DEFINITIONS: Readonly<Record<ListKey, ListDefinition>> = {
       "sourceChannel",
       "assignedTo",
       "responded",
+      "stalledDays",
       "createdFrom",
       "createdTo",
       "sort",

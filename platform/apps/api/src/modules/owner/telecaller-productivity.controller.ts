@@ -1,6 +1,13 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
-import type { AgentScorecard, PeerMedians, ScorecardDay } from "@aura/shared";
+import {
+  DEFAULT_STAGE_SLA_DAYS,
+  leadHeldByParam,
+  parseLeadStages,
+  type AgentScorecard,
+  type PeerMedians,
+  type ScorecardDay,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard } from "../../common/owner-role.guard";
@@ -142,11 +149,26 @@ const SUMMARY_SQL = (scopeAnd: string) => `
  * the same seven days on both pages.
  */
 const SCORECARD_WINDOW = `
+  org AS (
+    SELECT COALESCE(o.reporting_timezone, 'Asia/Kolkata') AS zone,
+           o.response_sla_minutes,
+           o.lead_stages
+      FROM organizations o LIMIT 1
+  ),
   w AS (
-    SELECT ($1::date)::timestamp AT TIME ZONE zone     AS from_at,
-           (($2::date + 1))::timestamp AT TIME ZONE zone AS to_at
-      FROM (SELECT COALESCE(o.reporting_timezone, 'Asia/Kolkata') AS zone
-              FROM organizations o LIMIT 1) tz
+    SELECT ($1::date)::timestamp AT TIME ZONE org.zone       AS from_at,
+           (($2::date + 1))::timestamp AT TIME ZONE org.zone AS to_at
+      FROM org
+  ),
+  -- Whose card this is, and whether they have a platform login behind them.
+  --
+  -- \`telecallers.user_id\` (0017) is the ONLY bridge between a lead (which
+  -- belongs to a telecaller) and a task (which belongs to a user), and it is
+  -- nullable. Everything task-shaped below is gated on it, and the response
+  -- reports \`linked: false\` rather than a row of zeroes - see @aura/shared's
+  -- \`TaskLoad\`. Migration 0093's header is where that split is written down.
+  me AS (
+    SELECT t.id, t.user_id, t.display_name FROM telecallers t WHERE t.id = $3
   )`;
 
 /**
@@ -275,6 +297,178 @@ fcr_configured AS (
   ) AS configured
 )`;
 
+/**
+ * "This lead is held by the person whose card this is", bound to $3.
+ *
+ * NOT `ownerScopeClause("lead", scope, …)`, which is the other question and would
+ * be the wrong answer here: that one returns null for an unscoped caller, so a
+ * manager opening a rep's card would have got the whole floor's leads rolled into
+ * that rep's pipeline. Both spellings come from the one predicate in @aura/shared
+ * so they cannot drift apart.
+ */
+const LEAD_HELD_BY_CALLER = leadHeldByParam(3, "l");
+
+/**
+ * What came out of the dialling: the leads this person is answerable for.
+ *
+ * ── THE COHORT IS LEADS CREATED IN THE WINDOW ───────────────────────────────
+ *
+ * Not leads WON in it. The denominator has to be a cohort for the rate to mean
+ * anything, and this is the same cohort `/v1/owner/performance` uses for the
+ * desk-wide conversion rate - so a rep's own 14% and their manager's desk 11%
+ * are computed the same way and nobody has to reconcile them in a review. It is
+ * also the pessimistic reading, because a lead created on the last day of the
+ * range has had no chance to convert, and the page says so.
+ *
+ * ── AND WHOSE LEAD IT IS ────────────────────────────────────────────────────
+ *
+ * `leadHeldBy` from @aura/shared - assignment where somebody set one, the
+ * write-once attribution where nobody has. That predicate is shared with the
+ * persona scope filter precisely so "this person's lead" cannot come to mean two
+ * things; see its own header for why the union rather than assignment alone.
+ */
+const SCORECARD_PIPELINE_CTE = (held: string) => `
+pipeline AS (
+  SELECT count(*)::int                                   AS leads_worked,
+         count(*) FILTER (WHERE l.status = 'won')::int    AS won,
+         count(*) FILTER (WHERE l.status = 'lost')::int   AS lost,
+         count(*) FILTER (WHERE l.status = 'open')::int   AS open_count,
+         COALESCE(sum(l.value_num) FILTER (WHERE l.status = 'won'), 0)::float AS won_value
+    FROM leads l
+   CROSS JOIN w
+   WHERE l.created_at >= w.from_at
+     AND l.created_at <  w.to_at
+     AND ${held}
+)`;
+
+/**
+ * Time in stage, over this person's WHOLE OPEN BOOK - not over the window.
+ *
+ * ── WHY THIS ONE IGNORES THE DATE RANGE ─────────────────────────────────────
+ *
+ * "Which of my leads have gone quiet" is a present-tense question. Narrowed to
+ * the range, a rep reading last week would be told nothing is stuck while nine
+ * leads from March sat untouched, and the number would shrink every time
+ * somebody looked at a shorter period - which is the opposite of what a warning
+ * should do. The page labels this panel as "now" for that reason.
+ *
+ * `worst_days` and `worst_stage` describe the oldest BREACHED lead, not the
+ * oldest open one: the sentence they feed is inside the warning, and naming a
+ * healthy lead there would make the warning wrong.
+ *
+ * The threshold arrives as $4 rather than being written in: @aura/shared owns
+ * DEFAULT_STAGE_SLA_DAYS, the response carries the number it used, and the
+ * click-through puts that same number in the URL - so the tile, the sentence and
+ * the list it opens cannot disagree about which leads are stuck.
+ */
+const SCORECARD_SLA_CTE = (held: string) => `
+stage_sla AS (
+  SELECT count(*)::int AS open_count,
+         count(*) FILTER (
+           WHERE l.stage_changed_at <= now() - make_interval(days => $4::int)
+         )::int AS breached,
+         -- Never answered at all, and already past the org's response SLA
+         -- (0119's response_sla_minutes). A worse failure than a stalled lead
+         -- and counted separately: that one was worked and went quiet, this one
+         -- was never picked up.
+         count(*) FILTER (
+           WHERE l.first_responded_at IS NULL
+             AND l.created_at <= now() - make_interval(mins => org.response_sla_minutes)
+         )::int AS unanswered,
+         -- The oldest breached lead. array_agg + FILTER rather than a second
+         -- ordered subquery over the same rows: one pass, and an empty filter
+         -- yields NULL rather than a zero that would read as "0 days stuck".
+         (array_agg((EXTRACT(EPOCH FROM (now() - l.stage_changed_at)) / 86400)::int
+                    ORDER BY l.stage_changed_at)
+          FILTER (WHERE l.stage_changed_at <= now() - make_interval(days => $4::int)))[1]
+           AS worst_days,
+         (array_agg(l.stage ORDER BY l.stage_changed_at)
+          FILTER (WHERE l.stage_changed_at <= now() - make_interval(days => $4::int)))[1]
+           AS worst_stage
+    FROM leads l
+   CROSS JOIN org
+   WHERE l.status = 'open'
+     AND ${held}
+)`;
+
+/**
+ * Follow-ups, for the person behind this card.
+ *
+ * ── WHY A TASK IS "THEIRS" TWO DIFFERENT WAYS ───────────────────────────────
+ *
+ * `tasks.assignee_user_id` is the PRIMARY assignee and is what reminders, the
+ * SLA and the compliance report read (0135 says so explicitly). But 0135 also
+ * made a task shareable: a rep can be the second name on one and never appear in
+ * that column. Counting the column alone would tell somebody they have no
+ * follow-ups while three sat on their list.
+ *
+ * So a task counts when they are on `task_assignees` and have not declined, OR
+ * when they are the primary and the task has NO assignee rows at all - which is
+ * 0135's own rule for a pre-migration task and for anything the worker's
+ * automation routed, where there was nobody to ask. Declined is excluded: coming
+ * off a task is the point of declining it.
+ *
+ * ── AND WHY completed IS WINDOWED WHILE THE REST IS NOT ─────────────────────
+ *
+ * "How many did I finish in this period" and "how far behind am I" are both
+ * questions a rep opens the page with, and only the first is about the window.
+ * Windowing `overdue` would report a clean slate to somebody carrying nine
+ * missed follow-ups from March. The page labels which is which.
+ */
+const SCORECARD_TASKS_CTE = `
+tasks_load AS (
+  SELECT (SELECT user_id FROM me) IS NOT NULL AS linked,
+         count(*) FILTER (
+           WHERE t.status = 'done'
+             AND t.completed_at >= w.from_at
+             AND t.completed_at <  w.to_at
+         )::int AS completed,
+         count(*) FILTER (
+           WHERE t.status = 'open'
+             AND t.due_on IS NOT NULL
+             AND t.due_on < (SELECT day FROM today_row)
+         )::int AS overdue,
+         count(*) FILTER (
+           WHERE t.status = 'open' AND t.due_on = (SELECT day FROM today_row)
+         )::int AS due_today,
+         count(*) FILTER (WHERE t.status = 'open')::int AS open_total
+    FROM tasks t
+   CROSS JOIN w
+   WHERE (SELECT user_id FROM me) IS NOT NULL
+     AND (
+       EXISTS (
+         SELECT 1 FROM task_assignees ta
+          WHERE ta.task_id = t.id
+            AND ta.user_id = (SELECT user_id FROM me)
+            AND ta.status <> 'declined'
+       )
+       OR (
+         t.assignee_user_id = (SELECT user_id FROM me)
+         AND NOT EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id)
+       )
+     )
+)`;
+
+/**
+ * Today, in the ORG's calendar - for the progress tracker and for deciding what
+ * "overdue" means above.
+ *
+ * `now() AT TIME ZONE org.zone` and never this server's date, which is UTC and
+ * the wrong day for five and a half hours of every Indian evening. A LEFT JOIN
+ * so a rep who has not dialled yet gets a real 0 rather than no row, which is
+ * the whole point of a tracker read at 9 AM.
+ */
+const SCORECARD_TODAY_CTE = `
+today_row AS (
+  SELECT (now() AT TIME ZONE org.zone)::date        AS day,
+         COALESCE(s.calls_total, 0)::int            AS calls,
+         COALESCE(s.calls_connected, 0)::int        AS connected
+    FROM org
+    LEFT JOIN telecaller_daily_stats s
+      ON s.telecaller_id = $3
+     AND s.day = (now() AT TIME ZONE org.zone)::date
+)`;
+
 /** The daily strip, oldest first - the rollup already holds exactly this. */
 const SCORECARD_DAYS_CTE = `
 days AS (
@@ -327,10 +521,33 @@ per_person AS (
   SELECT s.telecaller_id,
          sum(s.calls_total)::int        AS calls,
          sum(s.calls_connected)::int    AS connected,
-         sum(s.total_call_seconds)::int AS talk_seconds
+         sum(s.total_call_seconds)::int AS talk_seconds,
+         -- Days WORKED, not days elapsed: the rollup only writes a day somebody
+         -- made a call on, so this is the right denominator for "calls on a
+         -- typical day" and a weekend does not halve it.
+         count(*)::int                  AS active_days
     FROM telecaller_daily_stats s
    WHERE s.day >= $1::date AND s.day <= $2::date
    GROUP BY s.telecaller_id
+),
+-- The floor's conversion, for the rep's own rate to be read against.
+--
+-- Grouped on COALESCE(assigned, attributed), which is \`leadHeldBy\` expressed as
+-- a grouping key rather than as a predicate: assignment where somebody set one,
+-- attribution where nobody has. Writing it any other way here would put a rep's
+-- own numerator (which uses the union) over a floor median that used only one of
+-- the two columns, and every rep would read as off the median on a metric where
+-- half of them must be on either side of it.
+leads_per_person AS (
+  SELECT COALESCE(l.assigned_telecaller_id, l.telecaller_id) AS telecaller_id,
+         count(*)::int                                  AS leads,
+         count(*) FILTER (WHERE l.status = 'won')::int   AS won
+    FROM leads l
+   CROSS JOIN w
+   WHERE l.created_at >= w.from_at
+     AND l.created_at <  w.to_at
+     AND COALESCE(l.assigned_telecaller_id, l.telecaller_id) IS NOT NULL
+   GROUP BY 1
 ),
 -- The quality half has no rollup to read, so it is aggregated from \`calls\`
 -- per person - the same shape the single-person \`analysed\` CTE above uses, so
@@ -393,10 +610,23 @@ SELECT count(*)::int AS floor_size,
        )::float AS csat,
        percentile_cont(0.5) WITHIN GROUP (
          ORDER BY f.resolved::float / NULLIF(f.eligible, 0)
-       )::float AS fcr_rate
+       )::float AS fcr_rate,
+       -- Only people who actually held leads contribute: NULLIF drops a rep with
+       -- no book out of the ordering rather than entering them as a 0% converter
+       -- and dragging the floor's midpoint down for everyone else.
+       percentile_cont(0.5) WITHIN GROUP (
+         ORDER BY lp.won::float / NULLIF(lp.leads, 0)
+       )::float AS conversion_rate,
+       -- The tracker's pace. A median over PEOPLE, each one's own calls-per-worked-
+       -- day - not total calls over total days, which is a floor average weighted
+       -- by whoever dialled most and is not a typical day for anybody.
+       percentile_cont(0.5) WITHIN GROUP (
+         ORDER BY p.calls::float / NULLIF(p.active_days, 0)
+       )::float AS calls_per_active_day
   FROM per_person p
-  LEFT JOIN quality_per_person q ON q.telecaller_id = p.telecaller_id
-  LEFT JOIN fcr_per_person f     ON f.telecaller_id = p.telecaller_id
+  LEFT JOIN quality_per_person q  ON q.telecaller_id = p.telecaller_id
+  LEFT JOIN fcr_per_person f      ON f.telecaller_id = p.telecaller_id
+  LEFT JOIN leads_per_person lp   ON lp.telecaller_id = p.telecaller_id
 )`;
 
 /**
@@ -426,6 +656,29 @@ interface ScorecardRow {
   fcr: { eligible: number; resolved: number } | null;
   fcr_configured: boolean | null;
   days: ScorecardDay[] | null;
+  today: { day: string; calls: number; connected: number } | null;
+  pipeline: {
+    leads_worked: number;
+    won: number;
+    lost: number;
+    open_count: number;
+    won_value: number;
+  } | null;
+  stage_sla: {
+    open_count: number;
+    breached: number;
+    unanswered: number;
+    worst_days: number | null;
+    worst_stage: string | null;
+  } | null;
+  tasks_load: {
+    linked: boolean;
+    completed: number;
+    overdue: number;
+    due_today: number;
+    open_total: number;
+  } | null;
+  lead_stages: unknown;
   peers: {
     floor_size: number;
     calls: number | null;
@@ -434,6 +687,8 @@ interface ScorecardRow {
     qa_score: number | null;
     csat: number | null;
     fcr_rate: number | null;
+    conversion_rate: number | null;
+    calls_per_active_day: number | null;
   } | null;
 }
 
@@ -445,6 +700,8 @@ const NO_PEERS: PeerMedians = {
   qaScore: null,
   csat: null,
   fcrRate: null,
+  conversionRate: null,
+  callsPerActiveDay: null,
 };
 
 /**
@@ -455,7 +712,7 @@ const NO_PEERS: PeerMedians = {
  * was. The derivations in @aura/shared turn these into dashes rather than
  * zeroes because each one tests its sample size first.
  */
-function emptyScorecard(from: string, to: string): AgentScorecard {
+function emptyScorecard(from: string, to: string, today = ""): AgentScorecard {
   return {
     telecallerId: "",
     displayName: "You",
@@ -481,6 +738,22 @@ function emptyScorecard(from: string, to: string): AgentScorecard {
     fcrEligibleCalls: 0,
     fcrResolvedCalls: 0,
     fcrConfigured: false,
+    // Real zeroes for the counts and `linked: false` for the bridge, which is the
+    // honest reading: somebody with no telecaller identity holds no leads and
+    // their tasks cannot be found from here. `linked: false` and 0 completed are
+    // NOT the same claim, and the page words them differently.
+    pipeline: { leadsWorked: 0, won: 0, lost: 0, open: 0, wonValue: 0 },
+    tasks: { linked: false, completed: 0, overdue: 0, dueToday: 0, openTotal: 0 },
+    sla: {
+      breached: 0,
+      open: 0,
+      worstDays: null,
+      worstStage: null,
+      thresholdDays: DEFAULT_STAGE_SLA_DAYS,
+      unanswered: 0,
+    },
+    // `inRange: false` keeps the tracker off a card that has nothing to track.
+    today: { day: today, calls: 0, connected: 0, pace: null, paceSource: null, inRange: false },
     peer: NO_PEERS,
   };
 }
@@ -533,21 +806,39 @@ ${SCORECARD_QUALITY_CTE.trim()},
 ${SCORECARD_FCR_CTE.trim()},
 ${SCORECARD_FCR_CONFIGURED_CTE.trim()},
 ${SCORECARD_DAYS_CTE.trim()},
+${SCORECARD_TODAY_CTE.trim()},
+${SCORECARD_PIPELINE_CTE(LEAD_HELD_BY_CALLER).trim()},
+${SCORECARD_SLA_CTE(LEAD_HELD_BY_CALLER).trim()},
+${SCORECARD_TASKS_CTE.trim()},
 ${SCORECARD_PEERS_CTE.trim()}
-SELECT (SELECT t.display_name FROM telecallers t WHERE t.id = $3) AS display_name,
+SELECT (SELECT m.display_name FROM me m) AS display_name,
        row_to_json(totals)       AS totals,
        row_to_json(sop)          AS sop,
        row_to_json(quality)      AS quality,
        row_to_json(fcr)          AS fcr,
        fcr_configured.configured AS fcr_configured,
        days.series               AS days,
-       row_to_json(peers)        AS peers
+       row_to_json(today_row)    AS today,
+       row_to_json(pipeline)     AS pipeline,
+       row_to_json(stage_sla)    AS stage_sla,
+       row_to_json(tasks_load)   AS tasks_load,
+       row_to_json(peers)        AS peers,
+       -- The tenant's own stage vocabulary, so worst_stage (a key) can be
+       -- printed as the label the reader sees on the board. Resolved in
+       -- TypeScript with parseLeadStages rather than by a lateral join here:
+       -- one shared parser, and a malformed jsonb falls back to the defaults
+       -- instead of taking the page down.
+       (SELECT org.lead_stages FROM org) AS lead_stages
   FROM totals
   CROSS JOIN sop
   CROSS JOIN quality
   CROSS JOIN fcr
   CROSS JOIN fcr_configured
   CROSS JOIN days
+  CROSS JOIN today_row
+  CROSS JOIN pipeline
+  CROSS JOIN stage_sla
+  CROSS JOIN tasks_load
   CROSS JOIN peers`;
 
 @Controller("owner/productivity")
@@ -700,7 +991,16 @@ export class TelecallerProductivityController {
     }
 
     return this.db.withOrg(orgId, async (client) => {
-      const { rows } = await client.query<ScorecardRow>(SCORECARD_SQL, [from, to, telecallerId]);
+      const { rows } = await client.query<ScorecardRow>(SCORECARD_SQL, [
+        from,
+        to,
+        telecallerId,
+        // The stage threshold. @aura/shared owns the number; it travels in the
+        // response and again in the click-through URL, so the tile, the warning
+        // sentence and the list it opens all apply the same one. When a
+        // per-workspace threshold exists this is the single line that changes.
+        DEFAULT_STAGE_SLA_DAYS,
+      ]);
       const row = rows[0];
       if (!row) return { from, to, scope: scope.scope, scorecard: emptyScorecard(from, to) };
 
@@ -712,6 +1012,35 @@ export class TelecallerProductivityController {
        * colleague the threshold exists to protect.
        */
       const smallFloor = (peers?.floor_size ?? 0) < MIN_PEER_FLOOR;
+      const today = row.today?.day ?? "";
+
+      /**
+       * The tracker's pace: what a typical day looks like, and whose typical day
+       * it is.
+       *
+       * The floor's median first, because "is 40 calls a normal day here" is the
+       * question a rep actually has. Their OWN median when the floor is too small
+       * to publish one - the same MIN_PEER_FLOOR threshold that withholds every
+       * other comparison, for the same reason: on a floor of three, a median plus
+       * your own number is a colleague's number.
+       *
+       * Null when neither exists (a rep's first day), and the page then prints
+       * the count with no bar rather than a bar measured against nothing.
+       */
+      const ownPerDay =
+        (row.totals?.active_days ?? 0) > 0
+          ? Math.round((row.totals?.calls ?? 0) / (row.totals?.active_days ?? 1))
+          : null;
+      const floorPerDay =
+        !smallFloor && peers?.calls_per_active_day != null
+          ? Math.round(peers.calls_per_active_day)
+          : null;
+      const pace: { pace: number | null; paceSource: "floor" | "own" | null } =
+        floorPerDay != null
+          ? { pace: floorPerDay, paceSource: "floor" }
+          : ownPerDay != null
+            ? { pace: ownPerDay, paceSource: "own" }
+            : { pace: null, paceSource: null };
 
       return {
         from,
@@ -751,6 +1080,46 @@ export class TelecallerProductivityController {
           fcrResolvedCalls: row.fcr?.resolved ?? 0,
           fcrConfigured: row.fcr_configured ?? false,
 
+          pipeline: {
+            leadsWorked: row.pipeline?.leads_worked ?? 0,
+            won: row.pipeline?.won ?? 0,
+            lost: row.pipeline?.lost ?? 0,
+            open: row.pipeline?.open_count ?? 0,
+            wonValue: row.pipeline?.won_value ?? 0,
+          },
+
+          tasks: {
+            linked: row.tasks_load?.linked ?? false,
+            completed: row.tasks_load?.completed ?? 0,
+            overdue: row.tasks_load?.overdue ?? 0,
+            dueToday: row.tasks_load?.due_today ?? 0,
+            openTotal: row.tasks_load?.open_total ?? 0,
+          },
+
+          sla: {
+            breached: row.stage_sla?.breached ?? 0,
+            open: row.stage_sla?.open_count ?? 0,
+            worstDays: row.stage_sla?.worst_days ?? null,
+            // The tenant's own label for the stage, not its key. Falls back to
+            // the key rather than to "unknown": a stage that was renamed after
+            // the lead landed in it still reads as something.
+            worstStage: stageLabel(row.lead_stages, row.stage_sla?.worst_stage ?? null),
+            thresholdDays: DEFAULT_STAGE_SLA_DAYS,
+            unanswered: row.stage_sla?.unanswered ?? 0,
+          },
+
+          today: {
+            day: today,
+            calls: row.today?.calls ?? 0,
+            connected: row.today?.connected ?? 0,
+            ...pace,
+            // The range is inclusive calendar dates in the org's zone and `today`
+            // came from the same zone, so this is a string comparison and not a
+            // clock: no chance of the tracker appearing on a June range because
+            // the server happened to be in a different day.
+            inRange: today >= from && today <= to,
+          },
+
           peer: smallFloor
             ? NO_PEERS
             : {
@@ -760,6 +1129,8 @@ export class TelecallerProductivityController {
                 qaScore: peers?.qa_score ?? null,
                 csat: peers?.csat ?? null,
                 fcrRate: peers?.fcr_rate ?? null,
+                conversionRate: peers?.conversion_rate ?? null,
+                callsPerActiveDay: peers?.calls_per_active_day ?? null,
               },
         } satisfies AgentScorecard,
       };
@@ -782,4 +1153,22 @@ export class TelecallerProductivityController {
    * worker, the same way the other backfills in scripts/ work. Wire a route
    * when there is a queue behind it.
    */
+}
+
+/**
+ * A stage KEY as the label the reader sees on their board.
+ *
+ * Stage names are tenant data (`organizations.lead_stages`, 0010) and every
+ * report that prints one has to go through the tenant's own list or it will say
+ * "negotiation" at somebody whose board says "Site visit booked".
+ *
+ * Falls back to the key when the list does not contain it, which happens when a
+ * stage is deleted while leads are still sitting in it - `leads.stage` is a key
+ * and not a foreign key, exactly so that case does not lose the lead. The key is
+ * at least true; "Unknown" would be a claim about the data rather than about the
+ * configuration.
+ */
+function stageLabel(raw: unknown, key: string | null): string | null {
+  if (!key) return null;
+  return parseLeadStages(raw).find((s) => s.key === key)?.label ?? key;
 }

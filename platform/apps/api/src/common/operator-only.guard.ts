@@ -70,7 +70,14 @@ export class OperatorOnlyGuard implements CanActivate {
     const consoleUser = z.string().uuid().safeParse(principal.userId);
     if (consoleUser.success) {
       throw new ForbiddenException(
-        "this is a platform operator endpoint - use the handset pairing page in your console",
+        // Deliberately no "use X in your console instead" advice any more. This
+        // guard covers three unrelated families now - instance/enrollment (0096),
+        // the operator's side of the call-access gate (0122) and the two
+        // reprocess routes (0147) - and the old text named the handset pairing
+        // page, which was already wrong for four of the nine routes and would be
+        // wrong for a client asking to reprocess a call, whose actual answer is
+        // "report the problem and we will".
+        "this is a platform operator endpoint",
       );
     }
     return true;

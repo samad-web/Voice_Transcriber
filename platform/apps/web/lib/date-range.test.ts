@@ -147,3 +147,94 @@ describe("resolving and naming", () => {
     expect(windowTitle({ kind: "fixed", from: "2026-09-01", to: "2026-09-30" })).toBe("1 – 30 Sep 2026");
   });
 });
+
+describe("calendar periods", () => {
+  it("reads a named period off the URL", () => {
+    expect(parseDateWindow({ period: "week" })).toEqual({
+      window: { kind: "calendar", unit: "week" },
+      invalid: false,
+    });
+    expect(parseDateWindow({ period: "month" }).window).toEqual({ kind: "calendar", unit: "month" });
+  });
+
+  it("falls back and says so on a period it cannot read", () => {
+    expect(parseDateWindow({ period: "fortnight" })).toEqual({
+      window: { kind: "relative", days: 30 },
+      invalid: true,
+    });
+  });
+
+  it("prefers the named period over a count, which is a contradictory URL", () => {
+    expect(parseDateWindow({ period: "month", days: "7" }).window).toEqual({
+      kind: "calendar",
+      unit: "month",
+    });
+  });
+
+  it("starts the week on Monday", () => {
+    // 2026-09-30 is a Wednesday.
+    expect(resolveDateWindow({ kind: "calendar", unit: "week" }, "2026-09-30")).toEqual({
+      from: "2026-09-28",
+      to: "2026-09-30",
+    });
+  });
+
+  it("treats Sunday as the END of its week, not the start of the next", () => {
+    // 2026-10-04 is a Sunday; its week began Monday the 28th of September.
+    expect(resolveDateWindow({ kind: "calendar", unit: "week" }, "2026-10-04")).toEqual({
+      from: "2026-09-28",
+      to: "2026-10-04",
+    });
+  });
+
+  it("is a single day when today IS Monday", () => {
+    expect(resolveDateWindow({ kind: "calendar", unit: "week" }, "2026-09-28")).toEqual({
+      from: "2026-09-28",
+      to: "2026-09-28",
+    });
+  });
+
+  it("starts the month on the first and ends it TODAY, never on its last day", () => {
+    expect(resolveDateWindow({ kind: "calendar", unit: "month" }, "2026-09-03")).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-03",
+    });
+  });
+
+  it("stays symbolic in the URL, so a copied link still means this month", () => {
+    // The whole reason calendar is its own window kind: baked dates would have
+    // meant September forever.
+    expect(dateWindowQuery({ kind: "calendar", unit: "month" })).toBe("period=month");
+    expect(dateWindowHref("/owner/performance", { kind: "calendar", unit: "week" })).toBe(
+      "/owner/performance?period=week",
+    );
+  });
+
+  it("says 'so far', because the period runs to today", () => {
+    expect(windowPhrase({ kind: "calendar", unit: "week" })).toBe("this week so far");
+    expect(windowTitle({ kind: "calendar", unit: "month" })).toBe("This month so far");
+  });
+
+  it("offers no calendar pills unless the page asks for them", () => {
+    const plain = rangePresets("/owner/calls", { kind: "relative", days: 30 });
+    expect(plain.map((p) => p.key)).toEqual(["1", "7", "30", "90"]);
+  });
+
+  it("puts the calendar pills after Today and before the rolling windows", () => {
+    const pills = rangePresets("/owner/performance", { kind: "calendar", unit: "week" }, {
+      calendar: true,
+    });
+    expect(pills.map((p) => p.key)).toEqual(["1", "week", "month", "7", "30", "90"]);
+    expect(pills.find((p) => p.active)?.key).toBe("week");
+  });
+
+  it("keeps a page's other parameters across a calendar pill", () => {
+    const pills = rangePresets("/owner/productivity", { kind: "relative", days: 30 }, {
+      calendar: true,
+      keep: { sort: "calls" },
+    });
+    expect(pills.find((p) => p.key === "month")?.href).toBe(
+      "/owner/productivity?period=month&sort=calls",
+    );
+  });
+});

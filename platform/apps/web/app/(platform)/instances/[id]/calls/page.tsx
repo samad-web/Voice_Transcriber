@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Activity, ArrowLeft, Phone, Timer } from "lucide-react";
 import { Card, EmptyState, MonoLabel, StatCard } from "@aura/ui";
+import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager, PAGE_SIZE } from "@/components/pager";
 import { operatorGate } from "@/lib/operator-gate";
 import { operatorCaller } from "@/lib/operator-guard";
-import { apiGetAs } from "@/lib/server-api";
+import { apiGetAs, apiTry } from "@/lib/server-api";
+import { CallAccessRequest } from "./call-access-request";
 import { CallsExplorer, type CallRow } from "./calls-explorer";
 
 interface Org {
@@ -76,11 +78,16 @@ export default async function InstanceCallsPage({
 
   const statsQuery = instanceId ? `?instanceId=${instanceId}` : "";
 
-  const [list, instanceList, overview] = await Promise.all([
+  const [listResult, instanceList, overview] = await Promise.all([
     // The call log is gated on the tenant's own administrator (0122); the
     // instance list and the aggregates beside it are not, so only this one
     // names the operator.
-    apiGetAs<{ calls: CallRow[]; total: number }>(
+    //
+    // `apiTry`, not `apiGetAs`: the gate answers 403, and collapsing that to
+    // null made a customer exercising their own privacy choice indistinguishable
+    // from a dead API - which is exactly what this page then told the operator
+    // it was. The 403 has a screen of its own; see below.
+    apiTry<{ calls: CallRow[]; total: number }>(
       `/v1/calls?${query.toString()}`,
       orgId,
       await operatorCaller(),
@@ -90,6 +97,7 @@ export default async function InstanceCallsPage({
   ]);
 
   const instances = instanceList?.instances ?? [];
+  const list = listResult.ok ? listResult.data : null;
   const calls = list?.calls ?? [];
   const active = instances.find((i) => i.id === instanceId);
 
@@ -198,14 +206,18 @@ export default async function InstanceCallsPage({
         </div>
       </div>
 
-      {list === null ? (
-        <Card>
-          <MonoLabel>API offline</MonoLabel>
-          <p className="mt-2 text-sm text-text-muted">
-            Could not reach the API - start it with{" "}
-            <code className="font-mono">pnpm --filter @aura/api dev</code>.
-          </p>
-        </Card>
+      {!listResult.ok && listResult.kind === "forbidden" ? (
+        // The customer has not agreed to let us read their calls (0122). Not a
+        // fault and not a paywall, so it gets the screen built for it rather
+        // than an error card - with the two honest ways forward on it: ask, or
+        // carry a code they read out.
+        <CallAccessRequest orgId={orgId} tenantName={org.name} message={listResult.message} />
+      ) : !listResult.ok ? (
+        // Everything else. `LoadFailure` instead of the hand-written card that
+        // stood here: it said "API offline" for every failure and told the
+        // reader to run `pnpm --filter @aura/api dev`, a developer instruction
+        // that had been shipping to production.
+        <LoadFailure what="this call log" failure={listResult} />
       ) : calls.length === 0 ? (
         <EmptyState
           icon={<Phone className="h-8 w-8" />}
@@ -222,8 +234,11 @@ export default async function InstanceCallsPage({
         />
       ) : (
         <>
+          {/* `list?.total` rather than `list.total`: the branch above proves
+              the fetch succeeded, but that narrowing lives on `listResult` and
+              does not follow the unwrapped alias. */}
           <Pager
-            total={list.total}
+            total={list?.total ?? calls.length}
             page={pageNo}
             hrefFor={(p) => href({ page: p })}
           />

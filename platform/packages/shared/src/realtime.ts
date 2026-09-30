@@ -47,6 +47,11 @@ export const KNOWN_TOPICS = [
   "deal",
   "device",
   "duplicate",
+  // Data exports (0148, doc 35). The worker announces on every throttled
+  // progress write, so a job's row count climbs while somebody watches it. The
+  // console still re-reads through the authorised path - only "something
+  // changed" travels on the bus, never an exported row.
+  "export",
   "import",
   "interaction",
   "invoice",

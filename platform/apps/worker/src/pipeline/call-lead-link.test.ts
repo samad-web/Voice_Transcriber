@@ -81,16 +81,63 @@ describe("runCallLeadLink - the match itself", () => {
     expect(withOrgContext).toHaveBeenCalledWith("org-1", expect.any(Function));
   });
 
-  it("joins on workspace_id, not org_id", async () => {
+  it("asks the database for the match instead of writing its own join", async () => {
     const { runCallLeadLink } = await load();
     await runCallLeadLink();
-    // Two workspaces in one org are two separate books of business, and the
-    // unique index the match relies on is per WORKSPACE. Widening this to
-    // org_id would put another team's call on this team's lead - and it would
-    // also make the match ambiguous, since two workspaces may legitimately
-    // hold a lead with the same number.
-    expect(updateSql()).toContain("l.workspace_id = c.workspace_id");
-    expect(updateSql()).toContain("l.contact_number_hash = c.remote_number_hash");
+    // 0146 moved the rule into lead_for_unlinked_call, because the same question
+    // is now asked from the lead side too (inheritCallsForLead). Two copies of
+    // "who does this number belong to" in two files drift the first time either
+    // is widened, and a drifted match puts one customer's conversation on
+    // another customer's card without throwing anything.
+    //
+    // The workspace scoping this test used to assert lives inside that function
+    // now - and the arguments below are what keep it able to apply it. Passing
+    // org_id here instead of workspace_id would be the regression.
+    expect(updateSql()).toContain(
+      "lead_for_unlinked_call(c2.workspace_id, c2.remote_number_hash, c2.remote_number_key)",
+    );
+    // No hand-written lead join left to disagree with it.
+    expect(updateSql()).not.toContain("FROM leads");
+  });
+
+  it("links nothing when the match declines to choose", async () => {
+    const { runCallLeadLink } = await load();
+    await runCallLeadLink();
+    // lead_for_unlinked_call returns NULL for an ambiguous number - two leads in
+    // the workspace whose normalised keys collide. That call must stay in the
+    // triage queue for a person, not be attached to whichever row the planner
+    // reached first. Without this guard the UPDATE would set lead_id = NULL,
+    // silently un-linking instead.
+    expect(updateSql()).toContain("m.lead_id IS NOT NULL");
+  });
+
+  it("counts only matchable calls against the batch cap", async () => {
+    const { runCallLeadLink } = await load();
+    await runCallLeadLink();
+    const sql = updateSql();
+    // The cap has to bound rows this tick can LINK. With the match applied
+    // outside the LIMIT, a tenant whose oldest calls are all unmatchable - wrong
+    // numbers nobody has dismissed yet - would spend its entire batch re-reading
+    // them every five minutes while the matchable calls behind them were never
+    // reached, and the triage queue would look permanently stuck.
+    const limitAt = sql.indexOf("LIMIT $1");
+    const guardAt = sql.indexOf("AND m2.lead_id IS NOT NULL");
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(limitAt).toBeGreaterThan(guardAt);
+  });
+
+  it("considers a call that has only a normalised key", async () => {
+    const { runCallLeadLink } = await load();
+    await runCallLeadLink();
+    // 0146. A call whose hash matches no lead can still match one on the key -
+    // that is the entire point of the column. Requiring remote_number_hash IS
+    // NOT NULL here, as this swept used to, would exclude exactly those rows.
+    expect(updateSql()).toContain(
+      "(c2.remote_number_hash IS NOT NULL OR c2.remote_number_key IS NOT NULL)",
+    );
+    expect(orgListSql()).toContain(
+      "(c.remote_number_hash IS NOT NULL OR c.remote_number_key IS NOT NULL)",
+    );
   });
 
   it("never touches a call somebody has dismissed", async () => {
@@ -116,7 +163,7 @@ describe("runCallLeadLink - the match itself", () => {
     const { runCallLeadLink } = await load();
     await runCallLeadLink();
     const sql = updateSql();
-    expect(sql).toContain("ORDER BY started_at ASC");
+    expect(sql).toContain("ORDER BY c2.started_at ASC");
     expect(sql).toContain("LIMIT $1");
   });
 

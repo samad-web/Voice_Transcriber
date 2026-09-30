@@ -6,11 +6,13 @@ import { LeadBoardsController } from "./lead-boards.controller";
 import { CallInsightsController } from "./call-insights.controller";
 import { CallSopsController } from "./call-sops.controller";
 import { OwnerCallsController } from "./owner-calls.controller";
+import { OwnerCallIssuesController } from "./owner-call-issues.controller";
 import { CallTriageController } from "./call-triage.controller";
 import { CallDispositionsController } from "./call-dispositions.controller";
 import { IntegrationsController } from "./integrations.controller";
 import { OrgFeaturesController } from "./org-features.controller";
 import { TelecallerProductivityController } from "./telecaller-productivity.controller";
+import { TeamActivityController } from "./team-activity.controller";
 import { OwnerRolesController } from "./owner-roles.controller";
 import { OwnerTeamController } from "./owner-team.controller";
 import { OwnerInvitesController } from "./owner-invites.controller";
@@ -48,8 +50,12 @@ import { SupabaseAdminService } from "./supabase-admin.service";
   controllers: [
     CallInsightsController,
     TelecallerProductivityController,
+    TeamActivityController,
     CallSopsController,
     OwnerCallsController,
+    // 0147: the client reports a problem with a processed call, since
+    // reprocessing it themselves is no longer theirs to do (doc 36).
+    OwnerCallIssuesController,
     CallTriageController,
     CallDispositionsController,
     IntegrationsController,

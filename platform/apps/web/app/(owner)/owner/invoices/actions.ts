@@ -46,11 +46,21 @@ export interface Invoice {
   owner_user_id: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Who it is for, resolved by the LIST endpoint's join. Absent from a detail
+   * read and from a mutation's echo, which return the row unjoined - so the
+   * list is the only place that may render them, and a detail screen resolves
+   * a name through `RecordPicker` instead.
+   */
+  account_name?: string | null;
+  contact_name?: string | null;
 }
 
 export interface InvoiceItem {
   id: string;
   product_id: string | null;
+  /** The linked catalogue entry's name, resolved by the API's LEFT JOIN. */
+  product_name: string | null;
   description: string;
   quantity: string;
   unit_price: string;
@@ -90,6 +100,14 @@ export interface InvoiceDiscount {
 
 export interface InvoicePatch {
   status?: InvoiceStatus;
+  /**
+   * Who the invoice is for. `null` clears the link; omitting the field leaves it
+   * alone - the API distinguishes the two by `!== undefined`, so these must
+   * never be defaulted on the way out.
+   */
+  accountId?: string | null;
+  contactId?: string | null;
+  dealId?: string | null;
   discount?: InvoiceDiscount;
   dueDate?: string | null;
   notes?: string | null;

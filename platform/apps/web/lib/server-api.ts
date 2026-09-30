@@ -234,6 +234,19 @@ export async function apiGetAdmin<T>(path: string): Promise<T | null> {
 }
 
 /**
+ * `apiGetAdmin` with the REASON kept, the cross-tenant twin of `apiTry`.
+ *
+ * Prefer this in new code for the same reason `apiTry` is preferred over
+ * `apiGetAs`: a collapsed failure renders as "API offline" whatever actually
+ * went wrong. That cost real time on `/targets`, where a permanent 403 from a
+ * guard the operator console can never satisfy read as a dev-environment
+ * problem for weeks.
+ */
+export async function apiTryAdmin<T>(path: string): Promise<ApiResult<T>> {
+  return request<T>(path, crossTenantHeaders, null);
+}
+
+/**
  * apiGet against an explicit tenant org.
  *
  * Kept exactly as it was - `T | null`, never throws - because ~35 call sites

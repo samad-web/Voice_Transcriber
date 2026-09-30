@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { SupabaseAdminService } from "../owner/supabase-admin.service";
 import { AdminController } from "./admin.controller";
+import { AdminCallIssuesController } from "./admin-call-issues.controller";
 import { OperatorInvitesController } from "./operator-invites.controller";
 import { OperatorInvitesService } from "./operator-invites.service";
 import { OperatorsController } from "./operators.controller";
@@ -19,7 +20,15 @@ import { OperatorsController } from "./operators.controller";
  * `InvitesService`, and none of that module's org context.
  */
 @Module({
-  controllers: [AdminController, OperatorsController, OperatorInvitesController],
+  // `AdminCallIssuesController` (0147, doc 36) is the escalation queue: one work
+  // list across every tenant, which is why it belongs to this module and not to
+  // the tenant-facing one that holds its client-side half.
+  controllers: [
+    AdminController,
+    OperatorsController,
+    OperatorInvitesController,
+    AdminCallIssuesController,
+  ],
   providers: [SupabaseAdminService, OperatorInvitesService],
 })
 export class AdminModule {}

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -20,6 +21,25 @@ import { defineConfig } from "vitest/config";
  * that silently needs docker is a unit-test job that is red on every laptop.
  */
 export default defineConfig({
+  /**
+   * `tests/` lives at the workspace ROOT, which is not a package and therefore
+   * has no `@aura/*` dependencies to resolve through. The same problem was
+   * solved for `pg` by making it a root devDependency (see the header above);
+   * an alias is used here instead because the workspace packages are sources we
+   * already own, and adding them to the root's dependency list would put a
+   * workspace link in the lockfile purely so a test file could import it -
+   * which is also how a filtered `pnpm add` has orphaned packages here before.
+   *
+   * Points at `src`, not `dist`, so an integration test always exercises the
+   * code in the tree rather than whatever was last built.
+   */
+  resolve: {
+    alias: {
+      "@aura/shared": resolve(__dirname, "packages/shared/src/index.ts"),
+      "@aura/db": resolve(__dirname, "packages/db/src/index.ts"),
+      "@aura/queue": resolve(__dirname, "packages/queue/src/index.ts"),
+    },
+  },
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",

@@ -228,14 +228,20 @@ describe("ownerSettingsGroupsFor", () => {
  */
 describe("platformRail", () => {
   it("gives Overview plus a section per heading, with Platform pinned apart", () => {
-    // THREE primary entries. That is the honest size of the platform surface
-    // after doc 34 Part B - "Call intelligence" and "CRM setup" disappeared
-    // entirely, because every page filed under them was one tenant's screen.
+    // FOUR primary entries, which is now exactly PLATFORM_RAIL_MAX_TOP_LEVEL.
+    // Three of them are the honest size of the platform surface after doc 34
+    // Part B - "Call intelligence" and "CRM setup" disappeared entirely, because
+    // every page filed under them was one tenant's screen - and Support joined
+    // them in 0147 (doc 36) carrying the cross-tenant escalation queue.
+    //
+    // The rail is FULL. A fifth section forces a real IA decision rather than a
+    // quiet fourth-plus-one, and the cap test below is what makes that happen.
     const rail = platformRail();
     expect(rail.primary.map((e) => [e.key, e.label])).toEqual([
       ["home", "Overview"],
       ["growth", "Growth"],
       ["clients", "Clients"],
+      ["support", "Support"],
     ]);
     expect(rail.footer.map((e) => [e.key, e.href])).toEqual([["access", "/operators"]]);
   });

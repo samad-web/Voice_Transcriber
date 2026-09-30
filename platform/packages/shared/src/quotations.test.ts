@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { computeDocumentTotals, computeLineTotal, splitGst } from "./quotations";
+import {
+  QUOTATION_MANUAL_MOVES,
+  QUOTATION_STATUSES,
+  canMoveQuotation,
+  canReviseQuotation,
+  computeDocumentTotals,
+  computeLineTotal,
+  quotationEditable,
+  quotationRevisionNumber,
+  splitGst,
+  type QuotationStatus,
+} from "./quotations";
 
 describe("computeLineTotal", () => {
   it("applies the line discount before tax", () => {
@@ -60,5 +71,92 @@ describe("splitGst", () => {
   it("splits an odd total without losing a paisa", () => {
     const { cgst, sgst } = splitGst(101, false);
     expect(cgst + sgst).toBe(101);
+  });
+});
+
+// ── The lifecycle (doc 37, R5) ──────────────────────────────────────────────
+
+describe("QUOTATION_MANUAL_MOVES", () => {
+  it("covers every status, so a new one cannot be added without deciding its moves", () => {
+    for (const status of QUOTATION_STATUSES) {
+      expect(QUOTATION_MANUAL_MOVES[status]).toBeDefined();
+    }
+    expect(Object.keys(QUOTATION_MANUAL_MOVES).sort()).toEqual([...QUOTATION_STATUSES].sort());
+  });
+
+  it("never offers `expired` - only the calendar may set it", () => {
+    // Setting it by hand on a quotation still inside its validity would leave the
+    // status contradicting the date on the customer's copy, and the sweep that
+    // owns it would never put it back.
+    for (const from of QUOTATION_STATUSES) {
+      expect(QUOTATION_MANUAL_MOVES[from]).not.toContain("expired");
+      expect(canMoveQuotation(from, "expired")).toBe(from === "expired");
+    }
+  });
+
+  it("never offers `superseded` - only raising a revision may set it", () => {
+    for (const from of QUOTATION_STATUSES) {
+      expect(QUOTATION_MANUAL_MOVES[from]).not.toContain("superseded");
+    }
+  });
+
+  it("walks draft to sent to an answer, and no further", () => {
+    expect(canMoveQuotation("draft", "sent")).toBe(true);
+    expect(canMoveQuotation("sent", "accepted")).toBe(true);
+    expect(canMoveQuotation("sent", "rejected")).toBe(true);
+
+    // The ends are terminal: a rejected quotation walked back to draft and
+    // rewritten destroys the record of what the customer turned down. Revise it.
+    expect(canMoveQuotation("accepted", "draft")).toBe(false);
+    expect(canMoveQuotation("rejected", "draft")).toBe(false);
+    expect(canMoveQuotation("expired", "draft")).toBe(false);
+    expect(canMoveQuotation("superseded", "draft")).toBe(false);
+    // And a sent quotation cannot be pulled back to a draft either.
+    expect(canMoveQuotation("sent", "draft")).toBe(false);
+  });
+
+  it("accepts the current status as a no-op, so a form may post every field", () => {
+    for (const status of QUOTATION_STATUSES) {
+      expect(canMoveQuotation(status, status)).toBe(true);
+    }
+  });
+});
+
+describe("quotationEditable", () => {
+  it("is true only for a draft", () => {
+    expect(quotationEditable("draft")).toBe(true);
+    for (const status of QUOTATION_STATUSES.filter((s) => s !== "draft")) {
+      expect(quotationEditable(status)).toBe(false);
+    }
+  });
+});
+
+describe("canReviseQuotation", () => {
+  it("covers everything issued, and nothing else", () => {
+    // A draft is edited directly; a superseded row's newest revision is the one
+    // to carry forward, and revising an old generation would fork the family.
+    const revisable: QuotationStatus[] = ["sent", "accepted", "rejected", "expired"];
+    for (const status of QUOTATION_STATUSES) {
+      expect(canReviseQuotation(status)).toBe(revisable.includes(status));
+    }
+  });
+
+  it("never overlaps with being editable - one or the other, never both", () => {
+    for (const status of QUOTATION_STATUSES) {
+      expect(quotationEditable(status) && canReviseQuotation(status)).toBe(false);
+    }
+  });
+});
+
+describe("quotationRevisionNumber", () => {
+  it("appends the generation to the root's number", () => {
+    expect(quotationRevisionNumber("Q-2026-0007", 2)).toBe("Q-2026-0007-r2");
+    expect(quotationRevisionNumber("Q-2026-0007", 3)).toBe("Q-2026-0007-r3");
+  });
+
+  it("is given the ROOT's number, so generations do not nest", () => {
+    // The controller passes the root's number, never the parent's - otherwise
+    // revision 3 raised off r2 would read `Q-2026-0007-r2-r3`.
+    expect(quotationRevisionNumber("Q-2026-0007", 3)).not.toContain("-r2-");
   });
 });

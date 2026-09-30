@@ -1,3 +1,5 @@
+import type { ActivityEvent, LeaderboardRow, WorkloadRow } from "@aura/shared";
+
 /** One person's totals over the requested range. Shapes `GET /v1/owner/productivity`. */
 export interface TelecallerProductivityRow {
   telecaller_id: string;
@@ -53,4 +55,34 @@ export interface ProductivityResponse {
   talk_metrics_available: boolean;
   /** False when no SOP is defined, or none of the range's calls could be scored. */
   sop_scoring_available: boolean;
+}
+
+/**
+ * `GET /v1/owner/team-activity` - the feed, the workload matrix and the board.
+ *
+ * A separate response from `ProductivityResponse` above because it comes from a
+ * separate controller, for the reason that controller's header gives: one reads a
+ * single rollup and aggregates calls, the other reads five tables across two
+ * ledgers and produces a chronology. The page fetches both concurrently and
+ * either may fail without taking the other down.
+ */
+export interface TeamActivityResponse {
+  from: string;
+  to: string;
+  /** "own" when the viewer is a persona narrowed to their own records. */
+  scope: "all" | "own";
+  events: ActivityEvent[];
+  /** The feed hit its cap, so the range holds more than came back. */
+  feedTruncated: boolean;
+  /**
+   * Always true, and the page always says so: a call is not linked to the lead it
+   * was about, so a rep who rang somebody without moving their card leaves nothing
+   * in the feed. Carried as a field rather than assumed, so the day the worker
+   * starts writing that link the note can be switched off from one place.
+   */
+  callsNotInFeed: boolean;
+  workload: WorkloadRow[];
+  leaderboard: LeaderboardRow[];
+  /** The threshold behind "gone quiet", so the page quotes the number it used. */
+  stageSlaDays: number;
 }

@@ -4,13 +4,30 @@ import { notifyMissedCallOwner } from "./missed-call-notify";
 import { announce } from "./realtime";
 
 /**
- * Attach calls to the leads they were about (migration 0094).
+ * Attach calls to the leads they were about (migration 0094, widened by 0146).
  *
- * `calls.remote_number_hash` and `leads.contact_number_hash` are the same
- * HMAC, and leads_workspace_contact_hash is unique per workspace, so this is a
- * deterministic equijoin: a call matches exactly one lead or none. There is no
+ * The match itself is no longer written here. `lead_for_unlinked_call` (0146)
+ * holds it, because the same question is now asked from the other direction
+ * too - `inheritCallsForLead` in @aura/db, called by every door that creates a
+ * lead - and two copies of "who does this number belong to" in two files would
+ * drift the first time either was widened. The failure mode of a drifted match
+ * is one customer's conversation on another customer's card, and it throws
+ * nothing.
+ *
+ * What the rule says, in short: an exact `contact_number_hash` match wins
+ * (unique per workspace, so no tie to break); failing that a normalised
+ * `contact_number_key` match, but only when it is unambiguous; otherwise
+ * nothing, and the call stays in the triage queue for a person. Still no
  * threshold, no scoring and nothing to tune - which is the reason it can run
  * unattended.
+ *
+ * ── WHY THERE IS STILL A SWEEP ──────────────────────────────────────────────
+ *
+ * 0146 added a pass on the lead side, in the lead's own transaction, so a card
+ * reaches a telecaller with its history already on it. That pass is optimistic
+ * and allowed to do nothing: it is capped, it uses SKIP LOCKED, and it swallows
+ * its own failures. This sweep is what makes the whole thing correct anyway. It
+ * is the convergence guarantee and it must not be removed.
  *
  * ── WHY A SWEEP AND NOT A TRIGGER ───────────────────────────────────────────
  *
@@ -32,9 +49,17 @@ import { announce } from "./realtime";
  *      missed sweep tick is a row that gets picked up on the next one.
  *
  * The cost of that choice is latency: a call is unmatched for up to one
- * interval. That is invisible on the lead page (the call is minutes old and
- * nobody is looking) and correct on the triage queue, which is a work list
- * somebody opens, not a live feed.
+ * interval. For a CALL arriving that is the right trade - the call is minutes
+ * old, nobody is looking, and the triage queue is a work list somebody opens
+ * rather than a live feed.
+ *
+ * For a LEAD arriving it was not, which is what 0146 corrects and why the lead
+ * side is a synchronous pass instead of the trigger this reasoning rejected.
+ * Note that objection 2 above never applied to that direction: a lead is
+ * created a few times an hour, not a few times a minute, and the lookup is on
+ * the lead's own transaction rather than on call ingest. Objections 1 and 3 are
+ * why that pass is an optimistic addition to this sweep and not a replacement
+ * for it.
  *
  * ── WHAT IT DELIBERATELY DOES NOT DO ────────────────────────────────────────
  *
@@ -91,21 +116,32 @@ async function linkOrg(orgId: string): Promise<number> {
   return withOrgContext(orgId, async (client) => {
     const result = await client.query<LinkedCall>(
       `UPDATE calls c
-          SET lead_id          = l.id,
+          SET lead_id          = m.lead_id,
               lead_link_source = 'auto',
               lead_linked_at   = now()
-         FROM leads l
-        WHERE c.id IN (
-                SELECT id FROM calls
-                 WHERE lead_id IS NULL
-                   AND lead_link_dismissed_at IS NULL
-                   AND remote_number_hash IS NOT NULL
-                 ORDER BY started_at ASC
+         FROM (
+                SELECT c2.id, m2.lead_id
+                  FROM calls c2
+                  CROSS JOIN LATERAL (
+                    SELECT lead_for_unlinked_call(c2.workspace_id, c2.remote_number_hash,
+                                                  c2.remote_number_key) AS lead_id
+                  ) m2
+                 WHERE c2.lead_id IS NULL
+                   AND c2.lead_link_dismissed_at IS NULL
+                   AND (c2.remote_number_hash IS NOT NULL OR c2.remote_number_key IS NOT NULL)
+                   -- Inside the LIMIT, not outside it. The cap has to count
+                   -- rows this tick can actually LINK: a tenant whose oldest
+                   -- calls are all unmatchable (wrong numbers nobody has
+                   -- dismissed yet) would otherwise spend its whole batch
+                   -- re-reading them every five minutes while the matchable
+                   -- calls behind them were never reached.
+                   AND m2.lead_id IS NOT NULL
+                 ORDER BY c2.started_at ASC
                  LIMIT $1
-              )
-          AND l.workspace_id        = c.workspace_id
-          AND l.contact_number_hash = c.remote_number_hash
-        RETURNING c.id, l.id AS lead_id, c.direction, c.duration_s, c.status,
+              ) m
+        WHERE c.id = m.id
+          AND m.lead_id IS NOT NULL
+        RETURNING c.id, c.lead_id, c.direction, c.duration_s, c.status,
                   c.remote_name, c.remote_number_prefix, c.remote_number_last3`,
       [BATCH],
     );
@@ -153,7 +189,7 @@ export async function runCallLeadLink(): Promise<number> {
            WHERE c.org_id = o.id
              AND c.lead_id IS NULL
              AND c.lead_link_dismissed_at IS NULL
-             AND c.remote_number_hash IS NOT NULL
+             AND (c.remote_number_hash IS NOT NULL OR c.remote_number_key IS NOT NULL)
         )`,
   );
   if (orgs.length === 0) return 0;

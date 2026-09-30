@@ -3,6 +3,7 @@ import { type PoolClient, withOrgContext } from "@aura/db";
 import { analyzeTranscript } from "@aura/llm";
 import { type PipelineMessage, publishEnrich } from "@aura/queue";
 import { ExtractionSchema } from "@aura/shared";
+import { recordReprocessOutcome } from "./call-issue-followup";
 import { type AsrResult, transcribe } from "./asr";
 import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
 import { prepareAudioForAsr } from "./audio-prep";
@@ -704,6 +705,21 @@ export async function runPostAsrStages(
     );
   });
   console.log(`call ${callId}: COMPLETE`);
+
+  /*
+   * Tell any open escalation ticket how its re-run turned out (0147, doc 36).
+   *
+   * Swallowed on failure, like the enrich publish below and for the same reason:
+   * the call is COMPLETE as of the line above, and a support ticket that never
+   * learns the outcome is cosmetic beside a call that failed to finish because a
+   * ticket write threw. It is also a no-op for the overwhelming majority of
+   * calls - one indexed lookup that finds nothing.
+   */
+  try {
+    await recordReprocessOutcome(orgId, callId);
+  } catch (err) {
+    console.error(`call ${callId}: recording the re-run outcome failed:`, err);
+  }
 
   // The lead, the contact and the deal this call produced are committed and
   // visible as of the line above. The `call` topic was already announced by the

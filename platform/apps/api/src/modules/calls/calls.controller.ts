@@ -28,10 +28,13 @@ import { CallAccessGuard, CallContent } from "../../common/call-access.guard";
 import { PermissionsGuard, RequirePermission } from "../../common/permissions.guard";
 import { principalHasPermission, type PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
+import { OperatorOnlyGuard } from "../../common/operator-only.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 import { auditActor } from "../../common/audit-actor";
+import { HAS_RECORDING } from "./recording-sql";
+import { rewindForReprocess } from "./reprocess";
 
 const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -550,6 +553,7 @@ export class CallsController {
                 c.device_id, d.label AS device_label,
                 i.id AS instance_id, i.name AS instance_name,
                 c.remote_number_prefix, c.remote_number_last3, c.remote_name,
+                ${HAS_RECORDING} AS has_recording,
                 h.calls_in, h.calls_out, h.sequence,
                 h.sequence > 1 AS is_follow_up
            FROM calls c
@@ -680,7 +684,14 @@ export class CallsController {
       } = await client.query(`SELECT s3_key FROM recordings WHERE call_id = $1`, [callId]);
       if (!rec) throw new NotFoundException("no recording for this call");
 
-      const url = await this.s3.presignedGetUrl(rec.s3_key, 300);
+      // Expiry left at the service's default (30 min), NOT the 300s this used
+      // to pass. A player holds the URL for the whole listen and re-requests
+      // ranges from it on every seek, so the signature has to outlive the
+      // recording - see `presignedGetUrl`, whose own docblock says 300s was
+      // shorter than a six-minute call. The inline row player re-signs itself
+      // on a mid-stream failure, but that recovery should be for the 40-minute
+      // outlier, not for every ordinary call.
+      const url = await this.s3.presignedGetUrl(rec.s3_key);
 
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
@@ -696,47 +707,34 @@ export class CallsController {
    * Re-run the pipeline for a finished call - e.g. after an agent/model change.
    * Only terminal states (COMPLETE or FAILED_*) may be rewound to UPLOADED so
    * an in-flight call is never disturbed; the queue is just the wake-up.
+   *
+   * ── OPERATORS ONLY, SINCE 0147 (doc 36 §2) ────────────────────────────────
+   *
+   * This spends: the recording goes back through the ASR provider and the
+   * analyzer, both billed, on a transcript already paid for once. From 0147 that
+   * decision is ours and not the client's - their route to a bad transcript is
+   * to REPORT it (`call_issue_reports`), and we press this from the escalation
+   * queue once the ticket's snapshot says a second run could plausibly differ.
+   *
+   * `OperatorOnlyGuard` and not `@RequireOwnerRole`, because the persona guard
+   * refuses the bare admin key this console arrives on. It was deliberately
+   * mounted here rather than trusting the deletion of the owner-side route:
+   * `AdminKeyGuard + TenantGuard` admits ANY owner-console request, so without
+   * it the client tier kept the permission and merely lost the button - which
+   * that guard's own header calls "not a boundary, an absence of traffic".
    */
   @Post(":id/reprocess")
-  @UseGuards(AdminKeyGuard, TenantGuard)
+  @UseGuards(AdminKeyGuard, TenantGuard, OperatorOnlyGuard)
   async reprocess(
     @OrgId() orgId: string,
     @Param("id", ParseUUIDPipe) callId: string,
     @Req() req: PrincipalRequest,
   ) {
+    // The state machine lives in `rewindForReprocess`, shared with the
+    // escalation queue's own reprocess (0147) so the two can never disagree
+    // about which states are terminal.
     const result = await this.db.withOrg(orgId, async (client) => {
-      const {
-        rows: [call],
-      } = await client.query(`SELECT status FROM calls WHERE id = $1`, [callId]);
-      if (!call) throw new NotFoundException("call not found");
-      // TRANSCRIPTION_OFF is reprocessable on purpose: turning transcription
-      // back on and pressing Reprocess is how a customer's backlog gets picked
-      // up, so it must be rewindable like any other terminal state.
-      const terminal =
-        call.status === "COMPLETE" ||
-        call.status === "TRANSCRIPTION_OFF" ||
-        String(call.status).startsWith("FAILED_");
-      if (!terminal) {
-        throw new ConflictException(
-          `call is ${call.status}; only COMPLETE, TRANSCRIPTION_OFF or FAILED_* calls can be reprocessed`,
-        );
-      }
-
-      // A person deciding to retry resets the automatic budget: they may well
-      // have fixed the cause, and inheriting the attempt count from the old
-      // problem would let one more failure permanently retire the call.
-      await client.query(
-        `UPDATE calls
-            SET status = 'UPLOADED', pipeline_attempts = 0, next_attempt_at = NULL
-          WHERE id = $1
-            AND (status IN ('COMPLETE', 'TRANSCRIPTION_OFF') OR status LIKE 'FAILED_%')`,
-        [callId],
-      );
-      await client.query(
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, $5, $2, 'call.reprocess', 'call', $3, $4)`,
-        [orgId, auditActor(req).id, callId, JSON.stringify({ from: call.status }), auditActor(req).type],
-      );
+      await rewindForReprocess(client, { orgId, callId, actor: auditActor(req) });
       return { status: "UPLOADED" as const };
     });
 
@@ -764,7 +762,9 @@ export class CallsController {
    * cannot enqueue the same call twice.
    */
   @Post("reprocess-backlog")
-  @UseGuards(AdminKeyGuard, TenantGuard)
+  // Operators only since 0147, same reasoning as the single-call route above -
+  // and more so here, where one press can spend a month of stored audio.
+  @UseGuards(AdminKeyGuard, TenantGuard, OperatorOnlyGuard)
   async reprocessBacklog(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = ReprocessBacklogBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);

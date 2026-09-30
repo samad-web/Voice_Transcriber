@@ -315,9 +315,25 @@ function topLevelElements(html: string): number {
   return top;
 }
 
+/**
+ * The 5s default is not enough for the FIRST case in this suite.
+ *
+ * Each case dynamically imports a real loader, so the first one pays to
+ * transform that loader's whole module graph - which reaches @aura/shared. It
+ * has been climbing as that package grows (migration 0148 added two modules to
+ * its index and tipped this over), and the failure is always the same shape:
+ * one timeout on whichever case happens to be first, every other case passing
+ * in milliseconds.
+ *
+ * That is a property of the harness, not of the loaders, so the timeout is
+ * raised rather than the suite being split or the import being warmed by hand.
+ * If this ever fails at 30s, something is genuinely wrong with a loader.
+ */
+const COLD_IMPORT_TIMEOUT_MS = 30_000;
+
 describe("every loader renders a skeleton, unwrapped and unannounced", () => {
   for (const loader of loaders) {
-    it(loader.rel, async () => {
+    it(loader.rel, { timeout: COLD_IMPORT_TIMEOUT_MS }, async () => {
       const mod = (await import(/* @vite-ignore */ pathToFileURL(loader.abs).href)) as {
         default: ComponentType;
       };

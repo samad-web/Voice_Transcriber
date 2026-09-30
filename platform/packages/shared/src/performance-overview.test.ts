@@ -65,6 +65,8 @@ function overview(over: Partial<PerformanceOverview> = {}): PerformanceOverview 
     },
     marketing: { campaigns: [], channels: [], totalSpend: null, spendRecorded: false },
     team: [],
+    funnel: [],
+    daily: [],
     goals: [],
     ...over,
   };

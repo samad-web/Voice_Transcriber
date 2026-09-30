@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -165,6 +166,21 @@ export class S3Service {
    * `audio/mp4` would have Android hand the download to a media player instead
    * of the package installer.
    */
+  /**
+   * Remove one object. Added for the export engine (0148), where a person can
+   * delete their own finished export from the exports centre.
+   *
+   * The INTERNAL client, like every other server-side operation here: this runs
+   * inside the compose network and should not take the public TLS hop.
+   *
+   * Idempotent by S3's own contract - deleting an absent key succeeds - which is
+   * what the caller wants: the purge sweep deletes the object BEFORE clearing
+   * the row's key, so a retry after a crash in between must not fail.
+   */
+  async deleteObject(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
   async presignedGetUrl(
     key: string,
     expiresIn = 1800,

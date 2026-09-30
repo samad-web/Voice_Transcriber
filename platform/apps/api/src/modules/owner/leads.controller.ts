@@ -83,6 +83,24 @@ const ListQuery = z.object({
    */
   minAgeDays: z.coerce.number().int().min(0).max(3650).optional(),
   maxAgeDays: z.coerce.number().int().min(0).max(3650).optional(),
+  /**
+   * Open, and sitting in the SAME STAGE for at least this many days.
+   *
+   * ── WHY THIS IS NOT minAgeDays ──────────────────────────────────────────
+   *
+   * The two look interchangeable and measure opposite things. `minAgeDays` is
+   * on `created_at`: how long ago the lead ARRIVED. This is on
+   * `stage_changed_at`: how long since it last MOVED. A lead that arrived in
+   * January and has been advancing steadily every week is old and perfectly
+   * healthy; one that arrived on Monday and has not moved since is new and
+   * stuck. Only the second is worth somebody's morning.
+   *
+   * Added for the time-in-stage warning on a rep's own scorecard, which
+   * reports a count of these and has to be able to open exactly them - a
+   * warning with nowhere to go is a number people learn to scroll past.
+   * Implies `status = 'open'`: a closed lead is not stalled, it is finished.
+   */
+  stalledDays: z.coerce.number().int().min(1).max(3650).optional(),
   /** Nobody has touched it yet (0093's first_responded_at). */
   unresponded: z.coerce.boolean().optional(),
   /** Free text over the card heading, contact name and summary. */
@@ -362,6 +380,7 @@ export class LeadsController {
       sourceChannel,
       minAgeDays,
       maxAgeDays,
+      stalledDays,
       unresponded,
       q,
       createdFrom,
@@ -430,6 +449,14 @@ export class LeadsController {
         // +1 because the bucket is inclusive: "at most 7 days old" includes
         // everything up to the instant it turns 8.
         add("l.created_at > now() - make_interval(days => $?::int + 1)", maxAgeDays);
+      }
+      // Stalled: open and not moved for N days. A date bound rather than
+      // arithmetic per row, the same reason the two age filters above give, and
+      // `status = 'open'` is part of the definition rather than something the
+      // caller has to remember to add.
+      if (stalledDays !== undefined) {
+        where.push("l.status = 'open'");
+        add("l.stage_changed_at <= now() - make_interval(days => $?::int)", stalledDays);
       }
       if (unresponded) where.push("l.first_responded_at IS NULL");
       if (q) {
@@ -611,7 +638,20 @@ export class LeadsController {
 
       // Calls reached through the contact hash, so the history survives the
       // lead being re-derived - plus the originating call when there is no
-      // number to match on.
+      // number to match on, plus anything actually LINKED to this lead.
+      //
+      // That third arm is 0146's, and it is what makes the drawer agree with
+      // the rest of the product. The hash alone misses two populations: a call
+      // matched on the normalised key (a lead stored as +9198…, the call log as
+      // 098…), and a call a person placed here by hand from the triage queue.
+      // Both have `calls.lead_id` set and neither has a matching hash, so until
+      // now the timeline showed nothing while the call count, the response-time
+      // report and the triage queue all counted them.
+      //
+      // Scoped to the lead's WORKSPACE. RLS keeps this inside the org, and an
+      // org can hold several workspaces that are separate books of business -
+      // 0094 is explicit that the hash is unique per workspace and not per org,
+      // so an unscoped hash match can put another desk's calls on this card.
       //
       // With `call_intel` on, every row also carries its OWN read rather than
       // the lead's: a first call that went well and a third that went badly is
@@ -625,13 +665,19 @@ export class LeadsController {
                 COALESCE(d.telecaller_name, d.label) AS telecaller${intel ? CALL_HISTORY_INTEL_COLUMNS : ""}
            FROM calls c
            LEFT JOIN devices d ON d.id = c.device_id${intel ? CALL_HISTORY_INTEL_JOIN : ""}
-          WHERE ($1::text IS NOT NULL AND c.remote_number_hash = $1)
-             OR c.id = $2 OR c.id = $3
+          WHERE (($1::text IS NOT NULL AND c.remote_number_hash = $1
+                    AND c.workspace_id = $5::uuid)
+                 OR c.lead_id = $4::uuid
+                 OR c.id = $2 OR c.id = $3)
           ORDER BY c.started_at DESC
           LIMIT 50`,
-        // No leadId param: an unused placeholder has no inferable type and
-        // Postgres rejects the statement outright.
-        [lead.contact_number_hash, lead.first_call_id, lead.last_call_id],
+        [
+          lead.contact_number_hash,
+          lead.first_call_id,
+          lead.last_call_id,
+          leadId,
+          lead.workspace_id,
+        ],
       );
 
       // The lead's OWN board's columns for its stage picker, and every board
@@ -689,7 +735,7 @@ export class LeadsController {
       const {
         rows: [lead],
       } = await client.query(
-        `SELECT contact_number_hash, first_call_id, last_call_id FROM leads
+        `SELECT workspace_id, contact_number_hash, first_call_id, last_call_id FROM leads
           WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$2")}` : ""}`,
         owned ? [leadId, owned.value] : [leadId],
       );
@@ -703,9 +749,23 @@ export class LeadsController {
            FROM calls c
            LEFT JOIN devices d ON d.id = c.device_id
           WHERE c.id = $1
-            AND (($2::text IS NOT NULL AND c.remote_number_hash = $2)
+            AND ((($2::text IS NOT NULL AND c.remote_number_hash = $2)
+                    AND c.workspace_id = $6::uuid)
+                 OR c.lead_id = $5::uuid
                  OR c.id = $3 OR c.id = $4)`,
-        [callId, lead.contact_number_hash, lead.first_call_id, lead.last_call_id],
+        // The same three arms the drawer lists on, and they have to stay the
+        // same three: this is the authorization gate for the transcript, the
+        // recording and the analytics behind every row it shows. A row visible
+        // in the list and 404 when opened is the mismatch; so is the reverse,
+        // which would be a leak.
+        [
+          callId,
+          lead.contact_number_hash,
+          lead.first_call_id,
+          lead.last_call_id,
+          leadId,
+          lead.workspace_id,
+        ],
       );
       if (!call) throw new NotFoundException("call not found for this lead");
 

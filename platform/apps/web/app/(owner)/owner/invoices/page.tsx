@@ -3,6 +3,7 @@ import Link from "next/link";
 import { formatDateKey } from "@aura/shared";
 import {
   EmptyState,
+  MonoLabel,
   StatusChip,
   Table,
   TableBody,
@@ -16,6 +17,7 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { Pager } from "@/components/pager";
 import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
+import { CustomerCell } from "../customer-cell";
 import { formatMoney } from "../lib/format-money";
 import type { Invoice, InvoiceStatus, PaymentSettingsResponse } from "./actions";
 import { PaymentSettingsCard } from "./payment-settings";
@@ -56,16 +58,18 @@ interface ListResponse {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; offset?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; offset?: string }>;
 }) {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/invoices");
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
   const status = sp.status ?? "";
+  const search = sp.q ?? "";
 
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
   if (status) query.set("status", status);
+  if (search) query.set("q", search);
   if (offset > 0) query.set("offset", String(offset));
 
   const result = await ownerTry<ListResponse>(`/v1/invoices?${query}`);
@@ -104,8 +108,12 @@ export default async function InvoicesPage({
 
       <nav className="flex flex-wrap gap-1.5" aria-label="Filter by status">
         {STATUSES.map((s) => {
+          // The search survives a status change, and vice versa below. A tab that
+          // silently dropped the search box's contents would read as the search
+          // having failed.
           const next = new URLSearchParams();
           if (s.value) next.set("status", s.value);
+          if (search) next.set("q", search);
           const href = next.toString() ? `/owner/invoices?${next}` : "/owner/invoices";
           return (
             <FilterLink key={s.value || "all"} active={s.value === status} href={href}>
@@ -115,17 +123,41 @@ export default async function InvoicesPage({
         })}
       </nav>
 
-      {data.invoices.length === 0 ? (
-        <EmptyState
-          title="No invoices yet"
-          description="Invoices are created from an accepted quotation - open one and use Create invoice."
+      {/* A plain GET form, like the price list's. The status goes along as a
+          hidden field because a bare form submits only its own inputs, which
+          would drop the active tab. */}
+      <form className="max-w-sm">
+        {status ? <input type="hidden" name="status" value={status} /> : null}
+        <MonoLabel>Search</MonoLabel>
+        <input
+          type="search"
+          name="q"
+          aria-label="Search invoices"
+          defaultValue={search}
+          placeholder="Number, company or person"
+          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-surface px-3 text-sm text-text placeholder:text-text-muted"
         />
+      </form>
+
+      {data.invoices.length === 0 ? (
+        search || status ? (
+          <EmptyState
+            title="No invoices match"
+            description="Nothing here matches that search and filter. Clear one of them to see more."
+          />
+        ) : (
+          <EmptyState
+            title="No invoices yet"
+            description="Invoices are created from an accepted quotation - open one and use Create invoice."
+          />
+        )
       ) : (
         <>
           <Table caption="Invoices">
             <TableHead>
               <tr>
                 <TableHeaderCell>Number</TableHeaderCell>
+                <TableHeaderCell>For</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
                 <TableHeaderCell>Total</TableHeaderCell>
                 <TableHeaderCell>Amount paid</TableHeaderCell>
@@ -142,6 +174,14 @@ export default async function InvoicesPage({
                     >
                       {invoice.invoice_number}
                     </Link>
+                  </TableCell>
+                  <TableCell className="text-text-muted">
+                    <CustomerCell
+                      accountId={invoice.account_id}
+                      accountName={invoice.account_name}
+                      contactId={invoice.contact_id}
+                      contactName={invoice.contact_name}
+                    />
                   </TableCell>
                   <TableCell>
                     <StatusChip tone={statusTone(invoice.status)}>{invoice.status}</StatusChip>

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { QuotationStatus } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
 
@@ -10,7 +11,13 @@ import { ownerHeaders } from "../actions";
  * mutation revalidates the pages it feeds.
  */
 
-export type QuotationStatus = "draft" | "sent" | "accepted" | "rejected" | "expired";
+/**
+ * Re-exported from `@aura/shared` rather than declared here. It used to be a
+ * hand-written union, one of seven places that spelled the statuses out - and
+ * the one most likely to drift, because nothing fails when a web union is
+ * missing a value the API can return.
+ */
+export type { QuotationStatus };
 
 export interface Quotation {
   id: string;
@@ -30,13 +37,29 @@ export interface Quotation {
   valid_until: string | null;
   notes: string | null;
   owner_user_id: string | null;
+  /** 1 for an original. A revision carries its generation (migration 0149). */
+  revision: number;
+  /** The quotation this was raised from, or null for an original. */
+  revision_of: string | null;
+  /** The first quotation in the family. Null means this row IS the root. */
+  root_id: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Who it is for, resolved by the LIST endpoint's join. Absent from a detail
+   * read and from a mutation's echo, which return the row unjoined - so the
+   * list is the only place that may render them, and a detail screen resolves
+   * a name through `RecordPicker` instead.
+   */
+  account_name?: string | null;
+  contact_name?: string | null;
 }
 
 export interface QuotationItem {
   id: string;
   product_id: string | null;
+  /** The linked catalogue entry's name, resolved by the API's LEFT JOIN. */
+  product_name: string | null;
   description: string;
   quantity: string;
   unit_price: string;
@@ -74,6 +97,14 @@ export interface QuotationCreateInput {
 
 export interface QuotationPatch {
   status?: QuotationStatus;
+  /**
+   * Who the quotation is for. `null` clears the link; omitting the field leaves
+   * it alone - the API distinguishes the two by `!== undefined`, so these must
+   * never be defaulted on the way out.
+   */
+  accountId?: string | null;
+  contactId?: string | null;
+  dealId?: string | null;
   discount?: QuotationDiscount;
   validUntil?: string | null;
   notes?: string | null;
@@ -108,6 +139,46 @@ export async function createQuotationAction(
     if (!res.ok) return { error: await message(res) };
     const data = (await res.json()) as { quotation: Quotation; items: QuotationItem[] };
     revalidatePath("/owner/quotations");
+    return data;
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/** One row of a quotation's revision history, as the detail endpoint returns it. */
+export interface QuotationRevision {
+  id: string;
+  quotation_number: string;
+  status: QuotationStatus;
+  revision: number;
+  total: string;
+  currency: string;
+  created_at: string;
+}
+
+/**
+ * Raise a new revision of an issued quotation.
+ *
+ * The original keeps its number and its lines and becomes `superseded`; the new
+ * one is `<number>-r2` in draft. Nothing is overwritten, which is the whole
+ * point - a sent quotation's numbers are what a customer was told.
+ */
+export async function reviseQuotationAction(
+  id: string,
+): Promise<{ quotation?: Quotation; items?: QuotationItem[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/quotations/${id}/revise`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await message(res) };
+    const data = (await res.json()) as { quotation: Quotation; items: QuotationItem[] };
+    revalidatePath("/owner/quotations");
+    revalidatePath(`/owner/quotations/${id}`);
     return data;
   } catch {
     return { error: "API unreachable" };

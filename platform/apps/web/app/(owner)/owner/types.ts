@@ -1,6 +1,10 @@
 import {
   DEFAULT_TIME_ZONE,
   formatRelative,
+  type CallIssueCategory,
+  type CallIssueResolution,
+  type CallIssueSeverity,
+  type CallIssueStatus,
   type LeadTemperature,
   type TaskAssignee,
   type TaskAssigneeStatus,
@@ -328,6 +332,13 @@ export interface OwnerCall {
   missed_reason?: string | null;
   /** Whether the call carries a number anybody could ring back. */
   has_number?: boolean;
+  /**
+   * Whether stored audio exists to stream - what decides if the row gets a
+   * player. Not derivable from `status`: AWAITING_AUDIO and FAILED_UPLOAD have
+   * none, while TRANSCRIPTION_OFF has a perfectly playable one. Optional so an
+   * API older than this shows no player rather than a button that 404s.
+   */
+  has_recording?: boolean;
   /** The first later call that reached them, if any - see missed-callback-sql.ts. */
   returned_at?: string | null;
   return_direction?: string | null;
@@ -876,4 +887,38 @@ export interface CustomFieldDefinition {
   sort_order: number;
   status: "active" | "archived";
   created_at: string;
+}
+
+/**
+ * One report a client filed about a processed call (0147, doc 36).
+ *
+ * snake_case because the API returns the row, as every other owner list here
+ * does. The operator's own emails are deliberately absent from the payload -
+ * `acknowledged` says somebody here has it without naming which of our staff.
+ */
+export interface CallIssueSummary {
+  id: string;
+  ref: number;
+  call_id: string;
+  category: CallIssueCategory;
+  severity: CallIssueSeverity;
+  status: CallIssueStatus;
+  description: string;
+  at_seconds: number | null;
+  reported_by_user_id: string | null;
+  reported_by_name: string;
+  reported_by_role: string;
+  reported_at: string;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  resolution: CallIssueResolution | null;
+  resolution_note: string | null;
+  resolved_at: string | null;
+  client_confirmed_at: string | null;
+  reprocess_count: number;
+  last_reprocess_at: string | null;
+  call_started_at: string;
+  call_direction: "incoming" | "outgoing";
+  call_duration_s: number;
+  telecaller: string | null;
 }

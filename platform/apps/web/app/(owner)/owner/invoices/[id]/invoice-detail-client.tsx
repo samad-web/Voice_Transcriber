@@ -1,8 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useDraftState, useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
+import {
+  GST_STATES,
+  computeDocumentTotals,
+  gstStateName,
+  isGstStateCode,
+  isInterStateSupply,
+  splitGst,
+} from "@aura/shared";
 import {
   Button,
   Card,
@@ -21,18 +28,23 @@ import {
   useToast,
 } from "@aura/ui";
 import { Time } from "@/components/org-time";
+import { useDraftState, useServerState } from "@/lib/use-server-state";
+import { LineItemEditor } from "../../line-item-editor";
+import type { Product } from "../../products/actions";
+import { RecordPicker } from "../../record-picker";
 import {
   createPaymentLinkAction,
   updateInvoiceAction,
   type Invoice,
   type InvoiceItem,
+  type InvoicePatch,
   type Payment,
   type PaymentProvider,
   type InvoiceStatus,
 } from "../actions";
 import { selectableStatuses } from "../status-moves";
 import { formatMoney } from "../../lib/format-money";
-import { sourceToLineItemRows, useLineItemRows } from "../../use-line-item-rows";
+import { previewLineInputs, sourceToLineItemRows, useLineItemRows } from "../../use-line-item-rows";
 
 const PROVIDER_LABEL: Record<PaymentProvider, string> = { razorpay: "Razorpay", stripe: "Stripe" };
 
@@ -49,18 +61,33 @@ function paymentTone(status: Payment["status"]): "solid" | "outline" | "danger" 
  * own island of state: the payment link it mints has nowhere else to live
  * (the payments list the API returns has no URL field, only an id), so it
  * must survive whatever else on this page saves and re-renders around it.
+ *
+ * Lines can now be taken off the price list, and the Totals card is computed
+ * from the rows on screen (including the CGST/SGST-vs-IGST split) by the same
+ * `@aura/shared` functions the API uses when it writes the columns - see the
+ * quotation editor's header for why one engine rather than two.
  */
 export function InvoiceDetail({
   invoice: initialInvoice,
   items: initialItems,
   payments,
   gateways,
+  products,
+  homeStateCode,
 }: {
   invoice: Invoice;
   items: InvoiceItem[];
   payments: Payment[];
   /** Which gateways a link can go through. Absent from an older API: Razorpay only. */
   gateways?: Record<PaymentProvider, boolean>;
+  /** The active price list for the line picker, or `null` if this role may not read it. */
+  products: Product[] | null;
+  /**
+   * The workspace's own GST state (`org_business_profile.state_code`, 0126).
+   * With it and a place of supply, the intra/inter-state question answers itself
+   * and stops being asked. Null when the workspace has never saved one.
+   */
+  homeStateCode: string | null;
 }) {
   const [invoice, setInvoice] = useServerState(initialInvoice);
   const [status, setStatus] = useDraftState<InvoiceStatus>(initialInvoice.status);
@@ -72,7 +99,10 @@ export function InvoiceDetail({
   const [placeOfSupply, setPlaceOfSupply] = useDraftState(initialInvoice.place_of_supply ?? "");
   const [headerPending, startHeader] = useTransition();
 
-  const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows(initialItems);
+  // Held whole, because `LineItemEditor` takes it whole; `rows` and the two
+  // helpers below are the parts this component still needs for itself.
+  const lineItems = useLineItemRows(initialItems);
+  const { rows, setRows, parse } = lineItems;
   const [discountType, setDiscountType] = useDraftState<"none" | "percent" | "amount">(
     initialInvoice.discount_type ?? "none",
   );
@@ -82,8 +112,73 @@ export function InvoiceDetail({
   const [interState, setInterState] = useDraftState<boolean>(initialInvoice.is_inter_state ?? false);
   const [itemsPending, startItems] = useTransition();
 
+  // Recomputed from the rows on screen on every keystroke, through the same two
+  // functions the API runs before it writes subtotal/cgst/sgst/igst/total. No
+  // effect, no state, no request.
+  const discountNumber = Number(discountValue.trim() || "0");
+  const preview = computeDocumentTotals(previewLineInputs(rows), {
+    type: discountType === "none" ? null : discountType,
+    // A half-typed discount is not a discount. Submit-time validation is what
+    // tells somebody about it, rather than a total that reads NaN as they type.
+    value: Number.isFinite(discountNumber) && discountNumber >= 0 ? discountNumber : 0,
+  });
+  /**
+   * The intra/inter-state question, answered from the two states when both are
+   * known - `isInterStateSupply` is the same rule the API applies before it
+   * writes the split, so the preview and the save cannot disagree. `null` means
+   * it cannot be told, and the rep's own answer stands.
+   *
+   * Derived from the SAVED place of supply, not the draft in the selector: the
+   * items PATCH does not carry the place of supply, so the server will derive
+   * from what is stored. Previewing off the draft would show a split that
+   * pressing Save items does not produce. The hint under the GST row is how the
+   * draft gets acknowledged instead.
+   */
+  const derivedInterState = isInterStateSupply(homeStateCode, invoice.place_of_supply);
+  const effectiveInterState = derivedInterState ?? interState;
+  /** What the treatment WOULD become once the header's draft place of supply is saved. */
+  const draftInterState = isInterStateSupply(homeStateCode, placeOfSupply);
+
+  const gst = splitGst(preview.taxTotal, effectiveInterState);
+  // Exact comparison: both sides are round2 output from the same function.
+  const unsaved =
+    preview.subtotal !== Number(invoice.subtotal) ||
+    preview.total !== Number(invoice.total) ||
+    gst.cgst !== Number(invoice.cgst ?? 0) ||
+    gst.sgst !== Number(invoice.sgst ?? 0) ||
+    gst.igst !== Number(invoice.igst ?? 0);
+
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [paymentPending, startPayment] = useTransition();
+
+  const [linkPending, startLink] = useTransition();
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  /**
+   * Attach or detach the company, person or deal this invoice is for. Saves on
+   * pick, optimistically, rolling back if the API refuses - see the quotation
+   * editor's `saveLink` for the reasoning.
+   *
+   * Not gated on `moneyLocked`: the API locks the lines, the discount and the
+   * GST treatment on a settled document but not who it is addressed to, and a
+   * client-only lock the server does not share is theatre. Whether an issued
+   * invoice should be re-pointable at all is a question for the document state
+   * machine, not for this component.
+   */
+  const saveLink = (patch: InvoicePatch, optimistic: Partial<Invoice>) => {
+    const previous = invoice;
+    setInvoice({ ...invoice, ...optimistic });
+    setLinkError(null);
+    startLink(async () => {
+      const result = await updateInvoiceAction(previous.id, patch);
+      if (result.error || !result.invoice) {
+        setInvoice(previous);
+        setLinkError(result.error ?? "Could not save that link");
+        return;
+      }
+      setInvoice(result.invoice);
+    });
+  };
 
   // A link already out through one gateway pins the invoice to it (the API
   // refuses the other). Otherwise every gateway the org can use is offered,
@@ -201,7 +296,14 @@ export function InvoiceDetail({
     }
   };
 
-  const balanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
+  /** What the invoice as EDITED would leave outstanding - what the card shows. */
+  const balanceDue = preview.total - Number(invoice.amount_paid || 0);
+  /**
+   * What the invoice as SAVED leaves outstanding. The Collect Payment guard uses
+   * this one and not the preview: a gateway link is minted for the stored total,
+   * so an unsaved edit must not be able to open or close that button.
+   */
+  const savedBalanceDue = Number(invoice.total) - Number(invoice.amount_paid || 0);
   // Mirrors the API's lock: once money is in, or the invoice is closed, the
   // lines, discount and GST treatment are a settled tax document.
   const moneyLocked =
@@ -210,148 +312,71 @@ export function InvoiceDetail({
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
       <div className="space-y-6">
-        <Card>
-          <MonoLabel>Line items</MonoLabel>
-
-          <div className="mt-3">
-            <Table caption="Invoice line items">
-              <TableHead>
-                <tr>
-                  <TableHeaderCell>Description</TableHeaderCell>
-                  <TableHeaderCell>Qty</TableHeaderCell>
-                  <TableHeaderCell>Unit price</TableHeaderCell>
-                  <TableHeaderCell>Discount %</TableHeaderCell>
-                  <TableHeaderCell>Tax %</TableHeaderCell>
-                  <TableHeaderCell>Line total</TableHeaderCell>
-                  <TableHeaderCell>
-                    <span className="sr-only">Remove</span>
-                  </TableHeaderCell>
-                </tr>
-              </TableHead>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.key}>
-                    <TableCell>
-                      <Input
-                        aria-label="Description"
-                        value={row.description}
-                        onChange={(e) => updateRow(row.key, { description: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        aria-label="Quantity"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={row.quantity}
-                        onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        aria-label="Unit price"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={row.unitPrice}
-                        onChange={(e) => updateRow(row.key, { unitPrice: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        aria-label="Discount percent"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={row.discountPct}
-                        onChange={(e) => updateRow(row.key, { discountPct: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        aria-label="Tax rate percent"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={row.taxRate}
-                        onChange={(e) => updateRow(row.key, { taxRate: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell className="tabular-nums text-text-muted">
-                      {row.lineTotal ? formatMoney(row.lineTotal, invoice.currency) : "unsaved"}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeRow(row.key)}
-                        disabled={rows.length === 1}
-                      >
-                        Remove
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell colSpan={7}>
-                    <Button type="button" variant="secondary" size="sm" onClick={addRow}>
-                      + Add item
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4">
-            <FormField label="GST" name="gstTreatment">
-              <Select
-                value={interState ? "inter" : "intra"}
-                disabled={moneyLocked}
-                onChange={(e) => setInterState(e.target.value === "inter")}
-              >
-                <option value="intra">CGST + SGST (same state)</option>
-                <option value="inter">IGST (another state)</option>
-              </Select>
-            </FormField>
-            <div />
-            <FormField label="Discount type" name="discountType">
-              <Select
-                value={discountType}
-                onChange={(e) => setDiscountType(e.target.value as typeof discountType)}
-              >
-                <option value="none">None</option>
-                <option value="percent">Percent</option>
-                <option value="amount">Amount</option>
-              </Select>
-            </FormField>
-            <FormField label="Discount value" name="discountValue">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={discountType === "none"}
-                value={discountValue}
-                onChange={(e) => setDiscountValue(e.target.value)}
-              />
-            </FormField>
-          </div>
-
-          <div className="mt-4 flex items-center justify-end gap-3">
-            {moneyLocked ? (
-              <p className="text-xs text-text-muted">
-                {invoice.status === "void"
-                  ? "This invoice is void."
-                  : "Payment has been received, so the lines, discount and GST are locked."}
-              </p>
-            ) : null}
-            <Button type="button" loading={itemsPending} disabled={moneyLocked} onClick={saveItems}>
-              Save items
-            </Button>
-          </div>
-        </Card>
+        <LineItemEditor
+          caption="Invoice line items"
+          currency={invoice.currency}
+          products={products}
+          items={lineItems}
+          discountType={discountType}
+          onDiscountTypeChange={setDiscountType}
+          discountValue={discountValue}
+          onDiscountValueChange={setDiscountValue}
+          readOnly={moneyLocked}
+          readOnlyNote={
+            invoice.status === "void"
+              ? "This invoice is void."
+              : "Payment has been received, so the lines, discount and GST are locked."
+          }
+          extraControls={
+            <>
+              <FormField label="GST" name="gstTreatment">
+                {derivedInterState === null ? (
+                  // Still a question, because one of the two states is unknown:
+                  // set a place of supply below, and the workspace's own state
+                  // under Account -> Time & location, and it stops being asked.
+                  <>
+                    <Select
+                      value={interState ? "inter" : "intra"}
+                      disabled={moneyLocked}
+                      onChange={(e) => setInterState(e.target.value === "inter")}
+                    >
+                      <option value="intra">CGST + SGST (same state)</option>
+                      <option value="inter">IGST (another state)</option>
+                    </Select>
+                    <p className="mt-1 text-xs text-text-muted">
+                      {homeStateCode
+                        ? "Pick a place of supply and this is worked out for you."
+                        : "Set your workspace's state under Account → Time & location and this is worked out for you."}
+                    </p>
+                  </>
+                ) : (
+                  // Not a control: under GST the comparison IS the rule, so a
+                  // rep who could override it could only be making a mistake.
+                  <p className="text-sm text-text">
+                    {derivedInterState ? "IGST" : "CGST + SGST"}
+                    <span className="mt-0.5 block text-xs text-text-muted">
+                      {derivedInterState
+                        ? `${gstStateName(homeStateCode)} to ${gstStateName(invoice.place_of_supply)}`
+                        : `Both in ${gstStateName(homeStateCode)}`}
+                    </span>
+                  </p>
+                )}
+                {/* The header's place of supply has been changed but not saved,
+                    and saving it will move the tax between heads. */}
+                {draftInterState !== null && draftInterState !== effectiveInterState ? (
+                  <p className="mt-1 text-xs text-text-muted">
+                    Saving the place of supply below makes this{" "}
+                    {draftInterState ? "IGST" : "CGST + SGST"}.
+                  </p>
+                ) : null}
+              </FormField>
+              {/* Keeps the discount pair together on the next grid row. */}
+              <div />
+            </>
+          }
+          saving={itemsPending}
+          onSave={saveItems}
+        />
 
         <Card>
           <MonoLabel>Payments</MonoLabel>
@@ -422,7 +447,24 @@ export function InvoiceDetail({
               />
             </FormField>
             <FormField label="Place of supply" name="placeOfSupply">
-              <Input value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)} />
+              {/* A GST state, not free text: it is half of what decides IGST vs
+                  CGST + SGST, and "Bangalore office" decides nothing. An invoice
+                  saved before this was a list keeps its own value as an extra
+                  option, so opening an old invoice cannot silently blank it. */}
+              <Select
+                value={placeOfSupply}
+                onChange={(e) => setPlaceOfSupply(e.target.value)}
+              >
+                <option value="">Not stated</option>
+                {placeOfSupply && !isGstStateCode(placeOfSupply) ? (
+                  <option value={placeOfSupply}>{placeOfSupply} (as previously entered)</option>
+                ) : null}
+                {GST_STATES.map((state) => (
+                  <option key={state.code} value={state.code}>
+                    {state.name}
+                  </option>
+                ))}
+              </Select>
             </FormField>
             <FormField label="Notes" name="notes">
               <textarea
@@ -444,48 +486,51 @@ export function InvoiceDetail({
             <div className="flex justify-between">
               <dt className="text-text-muted">Subtotal</dt>
               <dd className="font-medium text-text tabular-nums">
-                {formatMoney(invoice.subtotal, invoice.currency)}
+                {formatMoney(preview.subtotal, invoice.currency)}
               </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-text-muted">Discount</dt>
+              {/* The percentage AND what it comes to. A bare "10%" left the one
+                  number a customer will ask about to be worked out by hand. */}
               <dd className="font-medium text-text tabular-nums">
-                {invoice.discount_type
-                  ? invoice.discount_type === "percent"
-                    ? `${Number(invoice.discount_value ?? 0)}%`
-                    : formatMoney(invoice.discount_value, invoice.currency)
-                  : "-"}
+                {discountType === "none"
+                  ? "-"
+                  : discountType === "percent"
+                    ? `${Number.isFinite(discountNumber) ? discountNumber : 0}% · ${formatMoney(preview.discountAmount, invoice.currency)}`
+                    : formatMoney(preview.discountAmount, invoice.currency)}
               </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-text-muted">Tax</dt>
               <dd className="font-medium text-text tabular-nums">
-                {formatMoney(invoice.tax_total, invoice.currency)}
+                {formatMoney(preview.taxTotal, invoice.currency)}
               </dd>
             </div>
-            {/* The API returns these as Postgres numeric strings (e.g. "0.00"),
-                which are truthy even at zero - comparing the raw field would
-                show a "₹0.00" row on every domestic invoice. */}
-            {Number(invoice.cgst ?? 0) > 0 || Number(invoice.sgst ?? 0) > 0 ? (
+            {/* Driven by the GST selector above rather than by the stored
+                columns, so switching intra-state to inter-state moves the tax
+                between these two rows as you choose it. `> 0` because a zero
+                head is noise on the document, not information. */}
+            {gst.cgst > 0 || gst.sgst > 0 ? (
               <div className="flex justify-between">
                 <dt className="text-text-muted">CGST + SGST</dt>
                 <dd className="font-medium text-text tabular-nums">
-                  {formatMoney(Number(invoice.cgst ?? 0) + Number(invoice.sgst ?? 0), invoice.currency)}
+                  {formatMoney(gst.cgst + gst.sgst, invoice.currency)}
                 </dd>
               </div>
             ) : null}
-            {Number(invoice.igst ?? 0) > 0 ? (
+            {gst.igst > 0 ? (
               <div className="flex justify-between">
                 <dt className="text-text-muted">IGST</dt>
                 <dd className="font-medium text-text tabular-nums">
-                  {formatMoney(invoice.igst, invoice.currency)}
+                  {formatMoney(gst.igst, invoice.currency)}
                 </dd>
               </div>
             ) : null}
             <div className="flex justify-between border-t border-border pt-2">
               <dt className="font-medium text-text">Total</dt>
               <dd className="font-semibold text-text tabular-nums">
-                {formatMoney(invoice.total, invoice.currency)}
+                {formatMoney(preview.total, invoice.currency)}
               </dd>
             </div>
             <div className="flex justify-between">
@@ -501,22 +546,71 @@ export function InvoiceDetail({
               </dd>
             </div>
           </dl>
+          {unsaved ? (
+            <p className="mt-3 text-xs text-text-muted">
+              These are the edits on screen. Save items to store them - the issued
+              invoice still totals {formatMoney(invoice.total, invoice.currency)}, and a payment link
+              collects that amount until it is saved.
+            </p>
+          ) : null}
         </Card>
 
         <Card>
-          <MonoLabel>Linked to</MonoLabel>
-          <dl className="mt-3 space-y-2.5 text-xs">
+          <MonoLabel>Invoice for</MonoLabel>
+          {/* These three were printed as raw uuids, which told the reader nothing
+              and could not be changed from here at all. The API's PATCH has
+              always accepted all three. */}
+          <dl className="mt-3 space-y-3 text-xs">
             <div>
-              <dt className="text-text-muted">Account</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{invoice.account_id ?? "-"}</dd>
+              <dt className="text-text-muted">Company</dt>
+              <dd className="mt-1">
+                <RecordPicker
+                  objectType="account"
+                  value={invoice.account_id}
+                  disabled={linkPending}
+                  onChange={(next) => saveLink({ accountId: next }, { account_id: next })}
+                />
+                {invoice.account_id ? (
+                  <Link
+                    href={`/owner/accounts/${invoice.account_id}`}
+                    className="mt-1 inline-block text-xs text-accent-text hover:underline"
+                  >
+                    Open company
+                  </Link>
+                ) : null}
+              </dd>
             </div>
             <div>
-              <dt className="text-text-muted">Contact</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{invoice.contact_id ?? "-"}</dd>
+              <dt className="text-text-muted">Person</dt>
+              <dd className="mt-1">
+                <RecordPicker
+                  objectType="contact"
+                  value={invoice.contact_id}
+                  disabled={linkPending}
+                  onChange={(next) => saveLink({ contactId: next }, { contact_id: next })}
+                />
+                {invoice.contact_id ? (
+                  <Link
+                    href={`/owner/contacts/${invoice.contact_id}`}
+                    className="mt-1 inline-block text-xs text-accent-text hover:underline"
+                  >
+                    Open person
+                  </Link>
+                ) : null}
+              </dd>
             </div>
             <div>
               <dt className="text-text-muted">Deal</dt>
-              <dd className="mt-0.5 font-medium break-words text-text">{invoice.deal_id ?? "-"}</dd>
+              <dd className="mt-1">
+                <RecordPicker
+                  objectType="deal"
+                  value={invoice.deal_id}
+                  disabled={linkPending}
+                  onChange={(next) => saveLink({ dealId: next }, { deal_id: next })}
+                />
+                {/* No "Open deal" link: deals have no detail route - they live on
+                    the board and the table at /owner/deals. */}
+              </dd>
             </div>
             {invoice.quotation_id ? (
               <div>
@@ -532,6 +626,11 @@ export function InvoiceDetail({
               </div>
             ) : null}
           </dl>
+          {linkError ? (
+            <p role="alert" className="mt-2 text-xs text-orange-text">
+              {linkError}
+            </p>
+          ) : null}
         </Card>
 
         <Card>
@@ -581,7 +680,7 @@ export function InvoiceDetail({
               size="sm"
               className="mt-3"
               loading={paymentPending}
-              disabled={invoice.status === "void" || balanceDue <= 0}
+              disabled={invoice.status === "void" || savedBalanceDue <= 0}
               onClick={collectPayment}
             >
               Collect Payment

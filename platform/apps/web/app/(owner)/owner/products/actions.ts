@@ -50,6 +50,40 @@ async function message(res: Response): Promise<string> {
   return typeof detail === "string" ? detail : `API ${res.status}`;
 }
 
+/**
+ * The ACTIVE price list, for the quotation and invoice line-item pickers.
+ *
+ * `status=active` is sent explicitly rather than left to the list endpoint's
+ * default (`status <> 'archived'`). The two select the same rows today, but a
+ * quotation must never be priced off a withdrawn catalogue entry, and that
+ * requirement should be visible here rather than inferred from a default three
+ * layers away.
+ *
+ * It goes through the ordinary products list endpoint, so it inherits that
+ * route's `product:view` gate: a role that may not read the price list gets a
+ * 403 here too, and the picker that called this hides itself rather than
+ * offering a control that cannot work. Same reasoning as
+ * crm-actions.ts's searchRecordsAction.
+ */
+export async function searchProductsAction(
+  q: string,
+): Promise<{ products?: Product[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  const query = new URLSearchParams({ status: "active", limit: "10" });
+  if (q.trim()) query.set("q", q.trim());
+
+  try {
+    const res = await fetch(`${API_URL}/v1/products?${query}`, { headers, cache: "no-store" });
+    if (!res.ok) return { error: await message(res) };
+    const data = (await res.json()) as { products: Product[] };
+    return { products: data.products };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 export async function createProductAction(
   input: ProductInput,
 ): Promise<{ product?: Product; error?: string }> {

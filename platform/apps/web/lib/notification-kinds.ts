@@ -16,7 +16,7 @@ export interface NotificationKindSpec {
   label: string;
   /** What choosing Instant or Digest for this kind actually affects. */
   description: string;
-  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed";
+  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed" | "download" | "upload";
   /**
    * Somebody has to DO something, not merely know something. These are what
    * the bell's "Needs action" tab shows.
@@ -33,6 +33,28 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     description: "Someone outside your team asked to view your call logs and recordings.",
     icon: "shield-alert",
     needsAction: true,
+  },
+  // Beside it, for the same reason: the other kind whose subject is us rather
+  // than the business's own work. "Needs action" because the last thing we say
+  // on a ticket is usually a question or an answer waiting to be accepted, and
+  // a reported problem nobody comes back to is the one that gets repeated on
+  // the phone instead.
+  call_issue_update: {
+    label: "Reported problem updated",
+    description: "We replied to a problem you reported about one of your calls.",
+    icon: "clipboard-check",
+    needsAction: true,
+  },
+  // Third in the governance cluster (0148, doc 35): the subject is somebody on
+  // the team taking the workspace's data out of it. `needsAction: false` for
+  // the reason attendance_absent is - whether an export is a problem is the
+  // owner's judgement and there is nothing to decide in the console. It is
+  // loud in the bell, not a queue item.
+  export_created: {
+    label: "Export started",
+    description: "Somebody in your workspace started exporting data. Owners are always told.",
+    icon: "upload",
+    needsAction: false,
   },
   lead_assigned: {
     label: "Lead assigned",
@@ -148,6 +170,21 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     label: "Report ready",
     description: "A scheduled report finished.",
     icon: "file-text",
+    needsAction: false,
+  },
+  // 0148. Both go to the person who asked, and neither is "needs action": a
+  // file waiting to be downloaded expires on its own, and a failed export has
+  // a Run again button on the job itself rather than a decision in the bell.
+  export_ready: {
+    label: "Export ready",
+    description: "A data export you asked for is ready to download.",
+    icon: "download",
+    needsAction: false,
+  },
+  export_failed: {
+    label: "Export failed",
+    description: "A data export you asked for could not be finished.",
+    icon: "download",
     needsAction: false,
   },
   // Not "needs action": nothing is refused at 100 %, and the conversation it

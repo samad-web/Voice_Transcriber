@@ -357,6 +357,31 @@ describe("InvoicesController.update", () => {
         };
       }
       if (sql.includes("FROM payments WHERE invoice_id")) return { rows: [{ n: paidPayments }] };
+      // The org's GST state, read only when the place of supply is a state code.
+      if (sql.includes("FROM org_business_profile")) return { rows: [{ state_code: "27" }] };
+      // fetchItems() - the display rows, LEFT JOINed to products so a line can
+      // name the catalogue entry it came off. Aliased (`invoice_items i`), which
+      // is what distinguishes it from the recompute read below.
+      if (sql.includes("FROM invoice_items i")) {
+        return {
+          rows: [
+            {
+              id: "item-1",
+              product_id: null,
+              product_name: null,
+              description: "Consulting",
+              hsn_sac: null,
+              quantity: "1",
+              unit_price: "100",
+              discount_pct: "0",
+              tax_rate: "18",
+              line_total: "118",
+              position: 0,
+            },
+          ],
+        };
+      }
+      // The re-read that recomputes totals when a PATCH omits `items`.
       if (sql.includes("FROM invoice_items WHERE invoice_id")) {
         return { rows: [{ quantity: 1, unitPrice: 100, discountPct: 0, taxRate: 18 }] };
       }
@@ -416,5 +441,54 @@ describe("InvoicesController.update", () => {
     expect(upd.params[23]).toBe(true);
     // and status is not written when not sent
     expect(upd.params[7]).toBeNull();
+  });
+
+  // ── The derived GST treatment (doc 37, R3) ────────────────────────────────
+
+  it("derives the split from the STORED place of supply when the edit omits it", async () => {
+    // A line edit on an invoice whose place of supply is Karnataka, from an org
+    // in Maharashtra. The stored `is_inter_state` says intra-state, and it is
+    // overruled - otherwise a line edit keeps billing the rep's old answer on a
+    // document whose place of supply is perfectly well known.
+    const { db, queries } = harness({
+      status: "draft",
+      is_inter_state: false,
+      place_of_supply: "29",
+    });
+    await patch(db, { notes: "only notes" });
+    const upd = queries.find((q) => q.sql.includes("UPDATE invoices SET"))!;
+    expect(upd.params[11]).toBe(0); // cgst
+    expect(upd.params[12]).toBe(0); // sgst
+    expect(upd.params[13]).toBe(18); // igst
+    expect(upd.params[23]).toBe(true); // is_inter_state
+  });
+
+  it("derives from the NEW place of supply when the edit sets one", async () => {
+    const { db, queries } = harness({
+      status: "draft",
+      is_inter_state: true,
+      place_of_supply: "29",
+    });
+    // Moved to the org's own state: 18 on 100 splits into two halves of 9.
+    await patch(db, { placeOfSupply: "27" });
+    const upd = queries.find((q) => q.sql.includes("UPDATE invoices SET"))!;
+    expect(upd.params[11]).toBe(9);
+    expect(upd.params[12]).toBe(9);
+    expect(upd.params[13]).toBe(0);
+    expect(upd.params[23]).toBe(false);
+  });
+
+  it("leaves a free-text place of supply on the rep's own answer", async () => {
+    // Every invoice stored before the console sent state codes looks like this,
+    // and none of them may change its tax split.
+    const { db, queries } = harness({
+      status: "draft",
+      is_inter_state: true,
+      place_of_supply: "Bangalore",
+    });
+    await patch(db, { notes: "only notes" });
+    const upd = queries.find((q) => q.sql.includes("UPDATE invoices SET"))!;
+    expect(upd.params[13]).toBe(18); // still IGST, as stored
+    expect(upd.params[23]).toBe(true);
   });
 });

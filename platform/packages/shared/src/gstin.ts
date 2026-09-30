@@ -74,6 +74,30 @@ export function gstStateName(code: string | null | undefined): string | null {
   return GST_STATES.find((s) => s.code === code)?.name ?? null;
 }
 
+/**
+ * Whether a supply is inter-state: the supplier's own state against the place of
+ * supply. Same state is CGST + SGST, different states is IGST.
+ *
+ * `null` means the question cannot be answered from these two values - one of
+ * them is missing or is not a GST state code (a place of supply stored as free
+ * text, an org that has never saved its state, a non-Indian org that never
+ * will). A caller that gets `null` must fall back to whatever it was told
+ * rather than guess, because guessing wrong on a tax document is worse than
+ * asking.
+ *
+ * Here rather than in the API because the console recomputes the same answer as
+ * somebody changes the place-of-supply selector, with no round trip. One rule in
+ * one place, for the same reason `quotations.ts` owns the money arithmetic: two
+ * copies of a tax rule agree right up until one of them is edited.
+ */
+export function isInterStateSupply(
+  homeStateCode: string | null | undefined,
+  placeOfSupplyCode: string | null | undefined,
+): boolean | null {
+  if (!isGstStateCode(homeStateCode) || !isGstStateCode(placeOfSupplyCode)) return null;
+  return homeStateCode !== placeOfSupplyCode;
+}
+
 /** Same pattern as the migration's CHECK. */
 export const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 export const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/;

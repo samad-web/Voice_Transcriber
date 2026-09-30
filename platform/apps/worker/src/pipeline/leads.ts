@@ -9,7 +9,7 @@ import {
   stageAfter,
   type LeadQualification,
 } from "@aura/shared";
-import { isLeadStageMove, recordLeadStageTransition } from "@aura/db";
+import { inheritCallsForLeadSafely, isLeadStageMove, recordLeadStageTransition } from "@aura/db";
 import { confidenceScore, type DbClient } from "./crm-dispatch";
 
 /**
@@ -33,6 +33,13 @@ interface CallRow {
   telecaller_id: string | null;
   remote_name: string | null;
   remote_number_hash: string | null;
+  /**
+   * The call's normalised match key (0133). Carried through onto the lead as
+   * `contact_number_key` (0146) so a later web-form or ad arrival for the same
+   * person - which reports the number in a different format, and therefore
+   * hashes differently - can still find this lead's calls.
+   */
+  remote_number_key: string | null;
   remote_number_prefix: string | null;
   remote_number_last3: string | null;
   started_at: Date | null;
@@ -81,7 +88,7 @@ export async function upsertLead(
     rows: [row],
   } = await client.query<CallRow>(
     `SELECT c.workspace_id, c.device_id, d.telecaller_id, c.remote_name, c.remote_number_hash,
-            c.remote_number_prefix, c.remote_number_last3, c.started_at,
+            c.remote_number_key, c.remote_number_prefix, c.remote_number_last3, c.started_at,
             c.agent_id, c.agent_version,
             COALESCE(a.lead_rules, '{}'::jsonb) AS lead_rules,
             o.lead_stages,
@@ -166,6 +173,7 @@ export async function upsertLead(
     row.telecaller_id,           // $18
     temperature,                 // $19
     advanceTo,                   // $20
+    row.remote_number_key,       // $21
   ];
 
   // A numberless call (the handset had no call-log permission) has no dedup
@@ -236,11 +244,12 @@ export async function upsertLead(
     rows: [lead],
   } = await client.query<{ id: string; created: boolean; stage: string; status: string }>(
     `INSERT INTO leads
-       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
+       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_key,
+        contact_number_prefix,
         contact_number_last3, title, stage, score, value_num, summary, facts,
         telecaller_device_id, telecaller_id, first_call_id, last_call_id, agent_id, agent_version,
         last_activity_at, temperature, call_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $18, $14, $14, $15, $16, $17, $19,
+     VALUES ($1, $2, $3, $4, $21, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $18, $14, $14, $15, $16, $17, $19,
              GREATEST(1, (SELECT count(*)::int FROM calls c
                            WHERE c.workspace_id = $2 AND c.remote_number_hash = $4)))
      ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
@@ -252,6 +261,10 @@ export async function upsertLead(
        -- a write-once snapshot of who first qualified the lead, and must never
        -- move to whoever's device happens to make the next call.
        contact_name = COALESCE(leads.contact_name, EXCLUDED.contact_name),
+       -- Fill it, never move it. A lead that already has a key was keyed off
+       -- the number it arrived with, and re-keying it would silently change
+       -- which calls it inherits (0146).
+       contact_number_key = COALESCE(leads.contact_number_key, EXCLUDED.contact_number_key),
        -- Upgrade the heading only when this call is what finally named them.
        title = CASE
                  WHEN leads.contact_name IS NULL AND EXCLUDED.contact_name IS NOT NULL
@@ -336,6 +349,20 @@ export async function upsertLead(
       console.error(`lead ${lead.id}: stage ledger write failed (non-blocking):`, err);
     }
   }
+
+  // Every call this number ever made, onto the card (0146).
+  //
+  // Run on the UPDATE path too, not only on create. This is the door a FOLLOW-UP
+  // call comes through, and the call that triggered this run is itself unlinked
+  // at this point - `calls.lead_id` is written by nothing else on the analyze
+  // path. So the same pass that gives a new lead its history is what attaches
+  // each later call to an existing one, and neither has to wait for the sweep.
+  await inheritCallsForLeadSafely(client, orgId, {
+    leadId: lead.id,
+    workspaceId: row.workspace_id,
+    contactNumberHash: hash,
+    contactNumberKey: row.remote_number_key,
+  });
 
   return {
     leadId: lead.id,

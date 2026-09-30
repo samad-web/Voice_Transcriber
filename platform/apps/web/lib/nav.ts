@@ -20,6 +20,7 @@ import {
   Languages,
   Layers,
   LayoutGrid,
+  LifeBuoy,
   LineChart,
   ListFilter,
   Megaphone,
@@ -136,6 +137,16 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ShieldCheck,
     title: "Superadmins",
     context: "Platform",
+  },
+  // The escalation queue (0147, doc 36). Every tenant's reported call problems in
+  // one work list - the other end of the Report button that replaced the client's
+  // Reprocess. Open to every operator; see the page's own header for why.
+  {
+    href: "/support",
+    label: "Escalations",
+    icon: LifeBuoy,
+    title: "Escalations",
+    context: "Support",
   },
 ];
 
@@ -1384,6 +1395,10 @@ export function ownerNavItemsFor(
 export const PLATFORM_NAV_SECTIONS = [
   { key: "growth", label: "Growth" },
   { key: "clients", label: "Clients" },
+  // 0147: what clients have told us is wrong. Its own section rather than a page
+  // under Clients, because it is a WORK LIST - the thing an operator opens
+  // first - and Clients is where you go to look one customer up.
+  { key: "support", label: "Support" },
   { key: "access", label: "Platform" },
 ] as const;
 
@@ -1405,6 +1420,8 @@ const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
   // it unfiled, "Platform" would have been a heading rendered entirely by
   // accident, and nav.test.ts's "none over nothing" case would have passed on
   // the fallback rather than on the map.
+  "/support": "support",
+
   "/operators": "access",
 };
 
@@ -1425,6 +1442,7 @@ export function platformNavSections(): NavGroup[] {
 const PLATFORM_SECTION_ICONS: Record<PlatformNavSection, LucideIcon> = {
   growth: TrendingUp,
   clients: Building2,
+  support: LifeBuoy,
   access: ShieldCheck,
 };
 

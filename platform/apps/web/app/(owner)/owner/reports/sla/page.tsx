@@ -4,6 +4,7 @@ import { DEFAULT_TIME_ZONE, todayIn } from "@aura/shared";
 import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
+import { ReportSection } from "@/components/report-section";
 import { parseDateWindow, rangePresets, resolveDateWindow } from "@/lib/date-range";
 import { getOwner, ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 
@@ -509,13 +510,14 @@ function fmtPct(value: number | null): string {
   return value === null ? "-" : `${value}%`;
 }
 
+/**
+ * The markup moved to `components/report-section.tsx` when the analytics overhaul
+ * needed a second one - see its header for why it is not the kit's
+ * `SectionHeading`. Kept as a local alias so this page's own call sites are
+ * untouched, and so there is exactly one implementation of the heading.
+ */
 function SectionHeading({ title, note }: { title: string; note?: string }) {
-  return (
-    <div className="mt-2">
-      <h2 className="text-lg font-semibold text-text">{title}</h2>
-      {note ? <p className="mt-0.5 text-xs text-text-muted">{note}</p> : null}
-    </div>
-  );
+  return <ReportSection title={title} note={note} />;
 }
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

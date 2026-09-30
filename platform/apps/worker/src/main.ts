@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { consumeAnalyze, consumeEnrich, consumePipeline } from "@aura/queue";
+import { consumeAnalyze, consumeEnrich, consumeExport, consumePipeline } from "@aura/queue";
 import { warnIfSecretsUnencrypted } from "@aura/db";
 import { WorkerModule } from "./worker.module";
 import { analyzeCall, processCall } from "./pipeline/pipeline";
@@ -30,6 +30,7 @@ import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
 import { startCallLeadLinkSweep } from "./pipeline/call-lead-link";
 import { startMissedCallLeadSweep } from "./pipeline/missed-call-leads";
 import { startFollowupReminderSweep } from "./pipeline/followup-reminders";
+import { startDocumentDateSweep } from "./pipeline/document-dates";
 import { startSheetsSync } from "./pipeline/sheets-sync";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
@@ -38,6 +39,8 @@ import { startChannelWatchdog } from "./pipeline/channel-watchdog";
 import { startSlaBreachSweep } from "./pipeline/sla-breach";
 import { startReportScheduleSweep } from "./pipeline/report-schedules";
 import { startRecycleBinPurge } from "./pipeline/recycle-bin-purge";
+import { runExportJob } from "./pipeline/export";
+import { startExportSweep } from "./pipeline/export-sweep";
 import { startAttendanceClassifier } from "./pipeline/attendance-classify";
 import { startAttendanceAlerts } from "./pipeline/attendance-alerts";
 import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
@@ -60,6 +63,12 @@ async function bootstrap() {
   // on the board before a message reaches this queue - so it is the right lane
   // to let fall behind under load.
   await consumeEnrich(enrichCall);
+  // Data exports (doc 35, migration 0148). A fourth lane rather than more
+  // prefetch on an existing one: this work is DATABASE-bound where the three
+  // above are provider-latency-bound, so it gets its own dial (EXPORT_PREFETCH,
+  // default 2) and a per-org cap of 2 enforced in the claim itself. Raise it
+  // against DB_POOL_MAX and the console's latency, never against CPU.
+  await consumeExport(runExportJob);
   // And its durable half, because a queue is only a wake-up signal: this finds
   // calls whose enrichment message was lost, whose worker died mid-read, or
   // whose retry is now due. Without it a lost message would hold that call's
@@ -201,6 +210,12 @@ async function bootstrap() {
   // It nags the REP and never the customer: safety rule 3 holds, and 0048's
   // table cannot reach anybody who has not already signed in.
   startFollowupReminderSweep();
+  // Quotation `expired` and invoice `overdue` (doc 37, R4). Both statuses have
+  // been legal since 0059/0060 and nothing ever set either, so `valid_until` and
+  // `due_date` were decorative and 0088's "overdue" report filtered on a value
+  // only a human could type. Two UPDATEs in the org's own day; it notifies
+  // nobody and sends nothing.
+  startDocumentDateSweep();
   // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
   // threads and writes a scored PROPOSAL a person then approves - it creates no
   // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only
@@ -228,6 +243,12 @@ async function bootstrap() {
   // module header and design doc D6 for the reasoning and the seam.
   startReportScheduleSweep();
   startRecycleBinPurge();
+  // The export lane's durable half: jobs whose queue message was lost, and
+  // workers that died mid-stream. Without it a broker restart during a publish
+  // strands a job in 'queued' forever while the console shows "Waiting to
+  // start" - the same class of silent stranding the enrichment sweep exists
+  // for.
+  startExportSweep();
   // Attendance (doc 33, migration 0140), only for orgs that switched it on.
   // The classifier rebuilds today, yesterday and any day the API marked, and
   // fills telecaller_daily_stats.presence_seconds - pure computation. The

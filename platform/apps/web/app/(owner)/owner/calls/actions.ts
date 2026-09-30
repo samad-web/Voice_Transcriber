@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { API_URL } from "@/lib/server-api";
 import { apiErrorMessage } from "../lib/api-error";
 import { ownerHeaders } from "../actions";
-import type { CallNote, OwnerCallDetail } from "../types";
+import type { CallIssueSummary, CallNote, OwnerCallDetail } from "../types";
 
 /**
  * One call in full, for the drawer.
@@ -119,36 +119,90 @@ export async function fetchOwnerCallAudioAction(
   }
 }
 
-/**
- * Re-run the pipeline for one call.
- *
- * The 409 is passed through in the API's own words rather than flattened to a
- * generic failure: it names the status the call is actually in, which is the
- * one thing that tells a reader "it is still working, wait" instead of
- * "something broke". 403 means manager rather than owner - reprocessing spends
- * money, so the API keeps it to the account holder.
+/*
+ * `reprocessOwnerCallAction` stood here until 0147 (doc 36 §2). The route it
+ * called - `POST /v1/owner/calls/:id/reprocess` - is gone, and the two that
+ * remain are operator-only, so there is deliberately no client-side caller for
+ * a reprocess anywhere in this console. A client with a bad transcript reports
+ * it; we re-run the call from the escalation queue.
  */
-export async function reprocessOwnerCallAction(
-  callId: string,
-): Promise<{ status?: string; error?: string }> {
+
+// ── Reporting a problem with a call (0147, doc 36) ───────────────────────────
+
+/**
+ * File a report.
+ *
+ * Every refusal the API can give here is a sentence somebody can act on, so
+ * none of them collapse to "API 4xx":
+ *   409 - they have already reported this exact problem on this call;
+ *   429 - the workspace is at its open-report ceiling;
+ *   403 - `call_intel` is off for the instance.
+ */
+export async function fileCallIssueAction(input: {
+  callId: string;
+  category: string;
+  severity: string;
+  description: string;
+  atSeconds?: number | null;
+}): Promise<{ ref?: number; id?: string; error?: string }> {
   const headers = await ownerHeaders();
   if (!headers) return { error: "Not signed in as an instance owner" };
 
   try {
-    const res = await fetch(`${API_URL}/v1/owner/calls/${callId}/reprocess`, {
+    const res = await fetch(`${API_URL}/v1/owner/call-issues`, {
       method: "POST",
-      headers,
+      headers: { ...headers, "content-type": "application/json" },
       cache: "no-store",
+      body: JSON.stringify({
+        callId: input.callId,
+        category: input.category,
+        severity: input.severity,
+        description: input.description,
+        // Omitted rather than null: the API's schema makes it optional, and a
+        // null would be a value the zod object has to be taught to tolerate.
+        ...(input.atSeconds === null || input.atSeconds === undefined
+          ? {}
+          : { atSeconds: Math.max(0, Math.round(input.atSeconds)) }),
+      }),
     });
     if (res.status === 403) {
-      return { error: "Only the account owner can reprocess a call." };
+      return { error: "Call intelligence is not enabled for this instance." };
     }
-    if (res.status === 409) {
-      const detail = (await res.json().catch(() => null)) as { message?: string } | null;
-      return { error: detail?.message ?? "This call is still being processed." };
+    if (res.status === 409 || res.status === 429) {
+      return { error: await apiErrorMessage(res) };
     }
-    if (!res.ok) return { error: `API ${res.status}` };
-    return { status: ((await res.json()) as { status: string }).status };
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const body = (await res.json()) as { id: string; ref: number };
+    // The drawer re-reads its own list, but the call log's row chips and any
+    // other view of this call are server-rendered.
+    revalidatePath("/owner/calls");
+    return { id: body.id, ref: body.ref };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+/**
+ * The reports already filed against one call, for the drawer.
+ *
+ * Its own round trip, for the same reason the notes are: a report is filed while
+ * the drawer is open and the list has to be re-read afterwards, and folding it
+ * into the detail response would mean re-fetching the transcript to show a
+ * sentence somebody just typed.
+ */
+export async function fetchCallIssuesAction(
+  callId: string,
+): Promise<{ reports?: CallIssueSummary[]; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/owner/call-issues?state=all&callId=${encodeURIComponent(callId)}`,
+      { headers, cache: "no-store" },
+    );
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    return { reports: ((await res.json()) as { reports: CallIssueSummary[] }).reports };
   } catch {
     return { error: "API unreachable" };
   }

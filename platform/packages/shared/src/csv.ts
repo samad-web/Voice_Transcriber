@@ -58,6 +58,29 @@ export function toCsv<T>(columns: Array<CsvColumn<T>>, rows: T[]): string {
   return `${lines.join("\r\n")}\r\n`;
 }
 
+/**
+ * ONE row, terminated, for a writer that streams instead of building a string.
+ *
+ * The export worker (doc 35, migration 0148) cannot use `toCsv`: that takes the
+ * whole result set as an array, which is precisely what an export of a million
+ * leads must never hold in memory. So it writes a header line and then one of
+ * these per row, straight into a file handle.
+ *
+ * Deliberately built from the SAME `csvCell` as `toCsv` rather than being a
+ * second encoder. That is the whole point of this module's existence - see the
+ * header on why two CSV encoders in one product is how you get an export that
+ * quotes correctly and a template that does not. `csvRow` and `toCsv` must
+ * agree cell for cell, and csv.test.ts asserts they do.
+ */
+export function csvRow<T>(columns: Array<CsvColumn<T>>, row: T): string {
+  return `${columns.map((c) => csvCell(c.value(row))).join(",")}\r\n`;
+}
+
+/** The header line on its own, for the same streaming writer. */
+export function csvHeader<T>(columns: Array<CsvColumn<T>>): string {
+  return `${columns.map((c) => csvCell(c.header)).join(",")}\r\n`;
+}
+
 /** Render already-positional rows - the template writer's shape, where the
  *  header list and each row are just parallel arrays of literals. */
 export function toCsvGrid(headers: string[], rows: string[][]): string {

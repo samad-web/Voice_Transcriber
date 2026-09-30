@@ -2,18 +2,35 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, EmptyState, MonoLabel } from "@aura/ui";
-import { DEFAULT_TIME_ZONE, todayIn } from "@aura/shared";
+import {
+  DEFAULT_TIME_ZONE,
+  LEADERBOARD_METRICS,
+  type LeaderboardMetric,
+  todayIn,
+} from "@aura/shared";
 import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { PageHeader } from "@/components/page-header";
+import { ReportSection } from "@/components/report-section";
 import {
   DEFAULT_RANGE_DAYS,
   dateWindowHref,
   parseDateWindow,
   rangePresets,
   resolveDateWindow,
+  windowPhrase,
 } from "@/lib/date-range";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
-import type { ProductivityResponse, TelecallerProductivityRow } from "./types";
+import {
+  ActivityFeed,
+  LeaderboardPanel,
+  NothingYet,
+  WorkloadPanel,
+} from "./activity-panels";
+import type {
+  ProductivityResponse,
+  TeamActivityResponse,
+  TelecallerProductivityRow,
+} from "./types";
 
 export const metadata: Metadata = { title: "Team activity" };
 
@@ -74,20 +91,54 @@ export default async function ProductivityPage({
   const sp = await searchParams;
   const { window, invalid } = parseDateWindow(sp);
   const sort = String(Array.isArray(sp.sort) ? sp.sort[0] : (sp.sort ?? "calls"));
+  const boardRaw = String(Array.isArray(sp.board) ? sp.board[0] : (sp.board ?? "won"));
+  // Validated against the shared list rather than trusted: this value reaches
+  // `leaderboardValue`'s switch, and an unknown key there would fall through to
+  // an unranked board with no explanation on screen.
+  const board = (LEADERBOARD_METRICS.some((m) => m.key === boardRaw)
+    ? boardRaw
+    : "won") as LeaderboardMetric;
 
   // The API takes dates only, and compares them with a `date` the worker
   // derived in the org's zone - so they are the org's dates too, counted from
   // its own today rather than this server's UTC one.
   const zone = owner.membership.reportingTimezone ?? DEFAULT_TIME_ZONE;
-  const requested = resolveDateWindow(window, todayIn(zone));
-  const data = await ownerGet<ProductivityResponse>(
-    `/v1/owner/productivity?${new URLSearchParams({ ...requested, sort })}`,
-  );
-  const shown = { from: data?.from ?? requested.from, to: data?.to ?? requested.to };
+  const today = todayIn(zone);
+  const requested = resolveDateWindow(window, today);
+
+  /**
+   * Two endpoints, concurrently, and EITHER MAY FAIL ALONE.
+   *
+   * Both use `ownerGet`, which yields null rather than throwing, because the two
+   * halves of this page are independent: a workspace whose lead ledger is empty
+   * must still get the call table, and a rollup that has not run must not take
+   * the feed down with it. Each section below renders its own absence.
+   *
+   * Concurrent rather than sequential for the reason the latency note gives -
+   * Mumbai to Seoul is ~125ms per round trip, and these are two of them.
+   */
+  const [data, activity] = await Promise.all([
+    ownerGet<ProductivityResponse>(
+      `/v1/owner/productivity?${new URLSearchParams({ ...requested, sort })}`,
+    ),
+    ownerGet<TeamActivityResponse>(`/v1/owner/team-activity?${new URLSearchParams(requested)}`),
+  ]);
+  const shown = {
+    from: data?.from ?? activity?.from ?? requested.from,
+    to: data?.to ?? activity?.to ?? requested.to,
+  };
 
   const rows: TelecallerProductivityRow[] = data?.telecallers ?? [];
   const benchmarks = data?.benchmarks;
   const talkAvailable = data?.talk_metrics_available ?? false;
+  const rangeLabel = windowPhrase(window, shown);
+  const keep = { sort, board };
+  // Everything empty at once gets ONE message rather than four panels each
+  // apologising separately - which is what a workspace on its first day saw.
+  const nothingAtAll =
+    rows.length === 0 &&
+    (activity?.events.length ?? 0) === 0 &&
+    (activity?.workload.length ?? 0) === 0;
 
   return (
     <>
@@ -96,17 +147,63 @@ export default async function ProductivityPage({
       {/* Sort stays a plain link, not client state: the API already sorts, so
           shipping JavaScript to re-sort a list the server ordered would be a
           bundle for nothing. The range is the shared control; a new range
-          keeps the sort, and a new sort keeps the range. */}
+          keeps the sort and the board metric, and a new sort keeps the range. */}
       <DateRangeBar
         path="/owner/productivity"
-        presets={rangePresets("/owner/productivity", window, { keep: { sort } })}
+        presets={rangePresets("/owner/productivity", window, { calendar: true, keep })}
         from={shown.from}
         to={shown.to}
-        keep={{ sort }}
-        today={todayIn(zone)}
+        keep={keep}
+        today={today}
       />
       {invalid ? <DateRangeNotice fallbackDays={DEFAULT_RANGE_DAYS} /> : null}
       <DateRangeSummary from={shown.from} to={shown.to} zone={zone} />
+
+      {nothingAtAll ? <NothingYet /> : null}
+
+      {/* ── THE THREE PANELS THIS PAGE EXISTS FOR NOW ───────────────────────
+          Feed, then workload, then the board. That order is the order a manager
+          asks the questions in: what happened, who needs help, and only then who
+          is ahead. A leaderboard at the top turns the page into a ranking, which
+          is the least useful of the three and the one most likely to be argued
+          with. */}
+      {activity ? (
+        <>
+          <ActivityFeed
+            events={activity.events}
+            zone={zone}
+            today={today}
+            truncated={activity.feedTruncated}
+          />
+          <WorkloadPanel rows={activity.workload} rangeLabel={rangeLabel} />
+          <LeaderboardPanel
+            rows={activity.leaderboard}
+            metric={board}
+            rangeLabel={rangeLabel}
+            hrefFor={(m) =>
+              dateWindowHref("/owner/productivity", window, { keep: { sort, board: m } })
+            }
+          />
+        </>
+      ) : !nothingAtAll ? (
+        <Card className="space-y-1.5">
+          <MonoLabel>Activity could not be loaded</MonoLabel>
+          <p className="text-sm leading-relaxed text-text-muted">
+            The feed, the workload matrix and the leaderboard are unavailable just now. The call
+            figures below come from a different query and are unaffected.
+          </p>
+        </Card>
+      ) : null}
+
+      {/* ── AND THE TABLE, WHICH IS KEPT ────────────────────────────────────
+          Not replaced by the panels above. It is the only place on the platform
+          where talk ratio, idle gap and SOP adherence are compared ACROSS people,
+          and those three are what a coaching conversation is actually built on.
+          What it is no longer is the whole page. */}
+      <ReportSection
+        title="Time on the phones"
+        note={`Calls, talk time and idle gaps over ${rangeLabel}`}
+      />
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="flex items-center gap-2">
@@ -114,7 +211,7 @@ export default async function ProductivityPage({
           {SORTS.map((s) => (
             <Link
               key={s.key}
-              href={dateWindowHref("/owner/productivity", window, { keep: { sort: s.key } })}
+              href={dateWindowHref("/owner/productivity", window, { keep: { sort: s.key, board } })}
               aria-current={s.key === sort ? "page" : undefined}
               className={
                 s.key === sort
@@ -162,10 +259,15 @@ export default async function ProductivityPage({
       )}
 
       {rows.length === 0 ? (
-        <EmptyState
-          title="No calls in this range"
-          description="Once calls are attributed to a telecaller they are rolled up here within fifteen minutes."
-        />
+        // Only when something else on the page DID load - otherwise `NothingYet`
+        // above has already said it once, and two empty states stacked read as
+        // two separate faults.
+        nothingAtAll ? null : (
+          <EmptyState
+            title="No calls in this range"
+            description="Once calls are attributed to a telecaller they are rolled up here within fifteen minutes."
+          />
+        )
       ) : (
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[52rem] text-sm">

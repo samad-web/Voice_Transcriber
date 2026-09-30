@@ -11,6 +11,8 @@
  * numbers it needs.
  */
 
+import { taskCompliance } from "@aura/shared";
+
 // ── Response time ───────────────────────────────────────────────────────────
 
 /**
@@ -162,11 +164,21 @@ export interface ComplianceCounts {
  * Returns `null`, not 0, when nothing was due. "No tasks were due" and "every
  * task due was missed" are opposite facts and 0% cannot mean both - the same
  * rule migration 0088 applies to its nullable metric columns.
+ *
+ * ── WHY THE RATIO ITSELF IS IMPORTED ────────────────────────────────────────
+ *
+ * The analytics overhaul put a follow-up compliance tile on a rep's own
+ * scorecard, which is a web page and cannot import this module. So the ratio
+ * moved to `@aura/shared`'s `taskCompliance` and this function became the
+ * percentage form of it. A second copy would have been the drift that matters
+ * most here: the compliance REPORT and the rep's own TILE are read side by side
+ * in the review where somebody argues about what "compliant" means, and two
+ * implementations is an argument nobody can settle. This file keeps the
+ * percentage, the rounding and its tests; shared keeps the definition.
  */
 export function compliancePct(counts: ComplianceCounts): number | null {
-  const settled = counts.completed + counts.overdue;
-  if (settled === 0) return null;
-  return round1((counts.completed / settled) * 100);
+  const ratio = taskCompliance(counts);
+  return ratio === null ? null : round1(ratio * 100);
 }
 
 /** Whole days a task is past due. 0 when it is not overdue. */

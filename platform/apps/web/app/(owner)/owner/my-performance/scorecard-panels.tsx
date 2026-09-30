@@ -4,9 +4,15 @@ import {
   type AgentScorecard,
   type FocusArea,
   type ScorecardDay,
+  type TodayProgress,
   MIN_QUALITY_SAMPLE,
   csatIndex,
+  loadHeadline,
+  paceLabel,
   rate,
+  showTracker,
+  trackerFill,
+  workQueue,
 } from "@aura/shared";
 import { barPercent, countAxis, dayName } from "@/lib/dashboard-charts";
 import {
@@ -340,6 +346,29 @@ export function HowToRead({ card }: { card: AgentScorecard }) {
         Average call length counts connected calls only. Counting the ones that rang out would drag
         it down every time you dial more.
       </p>
+      <p>
+        <strong className="text-text">Lead conversion</strong> is over the leads that ARRIVED in
+        this range, including yesterday&rsquo;s, which have had no chance to convert yet. It is the
+        pessimistic reading and it is the same one your manager&rsquo;s page uses, so the two cannot
+        disagree.
+      </p>
+      <p>
+        <strong className="text-text">Leads on time</strong> and{" "}
+        <strong className="text-text">What is waiting</strong> describe your book as it stands NOW,
+        not the date range above - a lead that went quiet in March is still quiet when you read last
+        week. A lead counts as gone quiet after {card.sla.thresholdDays} days in the same stage.
+      </p>
+      {!card.tasks.linked ? (
+        <p>
+          Follow-ups are blank because your telecaller record is not linked to a console login, and
+          a task belongs to a login rather than to a handset. Nothing is wrong with your work - the
+          two halves simply cannot be joined for you yet. An owner links them on{" "}
+          <Link href="/owner/staff" className="underline hover:text-text">
+            Staff
+          </Link>
+          .
+        </p>
+      ) : null}
       {!card.fcrConfigured ? (
         <p>
           First-call resolution is blank because nobody has marked which call outcomes count as
@@ -362,6 +391,143 @@ export function HowToRead({ card }: { card: AgentScorecard }) {
           negative one. It is a prompt to listen back, not a score against you.
         </p>
       ) : null}
+    </Card>
+  );
+}
+
+// ── Today ────────────────────────────────────────────────────────────────────
+
+/**
+ * The daily progress tracker: what you have done today, against what a typical
+ * day looks like here.
+ *
+ * ── WHY THE BAR IS NOT A TARGET ─────────────────────────────────────────────
+ *
+ * Nobody sets a daily call target in this platform - `sales_targets` (0050)
+ * carries `won_value` and `won_count` and nothing else. A tracker reading "38 of
+ * 60" would be quoting a number the tenant never agreed to, on the screen a rep
+ * is measured by, and the first person to ask where 60 came from would be owed an
+ * apology. So the bar measures against a DESCRIPTION - the floor's median calls
+ * on a day somebody worked, or this rep's own median on a floor too small to
+ * publish one - and `paceLabel` names which, in words, under every bar.
+ *
+ * It follows that being "past" the bar is not winning and being short of it is
+ * not failing. The wording is deliberately flat for that reason: a count, then
+ * what the count is being compared with. No green, no tick, no "83% of goal".
+ *
+ * ── AND WHY IT CAN VANISH ENTIRELY ──────────────────────────────────────────
+ *
+ * Hidden unless today falls inside the range being read. On a "1 - 30 June"
+ * range opened in September, "3 calls today" is true, irrelevant, and sitting
+ * directly above numbers from June - which is exactly how a reader concludes the
+ * whole page is about today.
+ */
+export function DailyTracker({ today }: { today: TodayProgress }) {
+  if (!showTracker(today)) return null;
+
+  const fill = trackerFill(today);
+  const pace = paceLabel(today.paceSource);
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <MonoLabel>Today</MonoLabel>
+        <span className="text-xs text-text-subtle tabular-nums">
+          {today.connected} connected
+        </span>
+      </div>
+
+      <div className="flex items-baseline gap-2">
+        <span className="text-3xl font-semibold tabular-nums text-text">{today.calls}</span>
+        <span className="text-sm text-text-muted">
+          {today.pace == null
+            ? `call${today.calls === 1 ? "" : "s"} so far`
+            : `of ${today.pace} calls`}
+        </span>
+      </div>
+
+      {/* No bar at all without a pace, rather than a bar that is secretly a
+          fraction of nothing. */}
+      {fill != null ? (
+        <div
+          role="progressbar"
+          aria-label="Calls today against a typical day"
+          aria-valuenow={today.calls}
+          aria-valuemin={0}
+          aria-valuemax={today.pace ?? undefined}
+          className="h-2 w-full overflow-hidden rounded-full bg-border"
+        >
+          <div
+            className="h-full rounded-full bg-accent transition-[width] duration-200 ease-out"
+            style={{ width: `${Math.round(fill * 100)}%` }}
+          />
+        </div>
+      ) : null}
+
+      <p className="text-xs text-text-subtle">
+        {pace
+          ? `Measured against ${pace} - not a target. Nobody sets a daily call quota here, so the bar describes the floor rather than asking anything of you.`
+          : "There is nothing to compare today against yet, so this is just the count."}
+      </p>
+    </Card>
+  );
+}
+
+// ── What is waiting ──────────────────────────────────────────────────────────
+
+/**
+ * The queue: work sitting undone, worst first, each row a link to exactly the
+ * records it counted.
+ *
+ * ── WHY THIS IS A SEPARATE PANEL FROM "WHAT TO WORK ON" ─────────────────────
+ *
+ * @aura/shared's `workQueue` sets out the whole argument. In short: that panel is
+ * a REVIEW - patterns the AI heard, capped at three, ordered by how much evidence
+ * sits behind each. This one is a TO-DO LIST - facts about customers who are
+ * waiting, which need no sample to be true and have somewhere to be acted on.
+ * Merged, a tone average would have competed with a person nobody rang back for
+ * the same three slots.
+ *
+ * Every row links, and the threshold rides along in the URL so the list opens on
+ * the same leads this panel counted.
+ */
+export function WorkQueuePanel({ card }: { card: AgentScorecard }) {
+  const items = workQueue(card);
+
+  return (
+    <Card className="space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <MonoLabel>What is waiting</MonoLabel>
+        <span className="text-xs text-text-subtle">{loadHeadline(card)}</span>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm text-text-muted">
+          Nothing is overdue and nothing has gone quiet.{" "}
+          {card.tasks.linked
+            ? "Your leads are all inside the stage window and every follow-up is on time."
+            : "Your leads are all inside the stage window. Follow-ups are not shown - see the note at the foot of the page."}
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {items.map((item) => (
+            <li key={item.key} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5 first:pt-0 last:pb-0">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-sm font-medium text-text">{item.title}</p>
+                <p className="text-sm text-text-muted">{item.detail}</p>
+              </div>
+              {item.href ? (
+                <Link
+                  href={item.href}
+                  className="shrink-0 text-sm font-medium text-text underline underline-offset-2 hover:text-text-muted"
+                >
+                  Open
+                </Link>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

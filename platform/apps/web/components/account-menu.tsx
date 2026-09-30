@@ -3,7 +3,7 @@
 import { useEffect, useId, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Building2, ChevronsUpDown, Clock, History, LogOut, Receipt, User, type LucideIcon } from "lucide-react";
+import { Bell, Download, Building2, ChevronsUpDown, Clock, History, LogOut, Receipt, User, type LucideIcon } from "lucide-react";
 import { Popover, ProgressBar } from "@aura/ui";
 import {
   OWNER_ROLE_LABELS,
@@ -32,6 +32,7 @@ const ICONS: Record<AccountMenuItemId, LucideIcon> = {
   time: Clock,
   plan: Receipt,
   login_activity: History,
+  data: Download,
   sign_out_all: LogOut,
   sign_out: LogOut,
 };

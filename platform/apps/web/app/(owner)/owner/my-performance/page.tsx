@@ -1,6 +1,17 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { CheckCheck, Gauge, PhoneCall, Smile, Timer, Trophy } from "lucide-react";
+import {
+  Banknote,
+  CheckCheck,
+  Gauge,
+  Hourglass,
+  ListChecks,
+  PhoneCall,
+  Smile,
+  Target,
+  Timer,
+  Trophy,
+} from "lucide-react";
 import { Card, StatCard } from "@aura/ui";
 import {
   DEFAULT_TIME_ZONE,
@@ -12,8 +23,11 @@ import {
   fcrRate,
   focusAreas,
   headline,
+  leadConversionRate,
   qaScore,
+  slaCompliance,
   standing,
+  taskCompliance,
   todayIn,
 } from "@aura/shared";
 import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
@@ -27,11 +41,13 @@ import {
 } from "@/lib/date-range";
 import { getOwner, ownerTry, requireFeature } from "@/lib/owner-context";
 import {
+  DailyTracker,
   DailyTrend,
   FocusPanel,
   HowToRead,
   QualityBreakdown,
   SentimentSplit,
+  WorkQueuePanel,
 } from "./scorecard-panels";
 
 export const metadata: Metadata = { title: "My performance" };
@@ -93,6 +109,22 @@ function hhmm(seconds: number): string {
 
 function percent(value: number | null): string {
   return value == null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+/**
+ * Money, abbreviated the way this console writes it.
+ *
+ * Lifted from the command centre's own `money` rather than imported from it:
+ * these are two page modules, neither of which should import the other's private
+ * helper, and the abbreviation is four lines. If a third page needs it, it moves
+ * to the kit - not into a cross-page import.
+ */
+function money(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  if (Math.abs(value) >= 10_000_000) return `${(value / 10_000_000).toFixed(1)}Cr`;
+  if (Math.abs(value) >= 100_000) return `${(value / 100_000).toFixed(1)}L`;
+  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
+  return Math.round(value).toLocaleString();
 }
 
 /**
@@ -160,6 +192,9 @@ export default async function MyPerformancePage({
   const csat = csatIndex(card.sentiment);
   const fcr = fcrRate(card);
   const areas = focusAreas(card);
+  const conversion = leadConversionRate(card.pipeline);
+  const compliance = taskCompliance(card.tasks);
+  const slaPct = slaCompliance(card.sla);
 
   // Whose card this is. Only ever somebody else's for an owner or a manager -
   // the API's scope decides, and `scope: "own"` means it narrowed to the
@@ -175,7 +210,10 @@ export default async function MyPerformancePage({
 
       <DateRangeBar
         path="/owner/my-performance"
-        presets={rangePresets("/owner/my-performance", window, keep ? { keep } : undefined)}
+        // `calendar: true`: every figure on this page is period-to-date, so "this
+        // week" and "this month" mean something here in a way they would not on a
+        // call log. See rangePresets' own note on why it is opt-in.
+        presets={rangePresets("/owner/my-performance", window, { calendar: true, ...(keep ? { keep } : {}) })}
         from={shown.from}
         to={shown.to}
         keep={keep}
@@ -197,10 +235,12 @@ export default async function MyPerformancePage({
         </Card>
       ) : null}
 
+      <DailyTracker today={card.today} />
+
       {/* ── OUTPUT ──────────────────────────────────────────────────────────
           The filled KPI band: what you did. Four tiles, because a fifth pushes
-          the quality row below the fold on a laptop and the whole argument of
-          this page is that the two are read together. */}
+          the row below it off the fold on a laptop and the argument of this page
+          is that the bands are read together. */}
       <section aria-label="Output" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Calls"
@@ -239,6 +279,74 @@ export default async function MyPerformancePage({
             card.activeDays > 0
               ? `${hhmm(Math.round(card.talkSeconds / card.activeDays))} on an average day`
               : undefined
+          }
+        />
+      </section>
+
+      {/* ── WHAT CAME OF IT ─────────────────────────────────────────────────
+          The band this page used to be missing. Everything above is a measure of
+          ACTIVITY - a rep who reads only that row optimises for dials. These four
+          are the outcomes the activity was for, and they are the numbers a review
+          actually turns on: did the leads convert, were the promises kept, is
+          anything going cold in your name.
+
+          `tone="plain"` like the quality row below: the kit reserves the fill for
+          one headline band, and two filled bands compete for the same glance. */}
+      <section aria-label="Pipeline and follow-ups" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          tone="plain"
+          label="Lead conversion"
+          value={percent(conversion)}
+          icon={<Target aria-hidden="true" className="h-4 w-4" />}
+          // Names the cohort, because the denominator is the one thing people
+          // argue about: leads CREATED in this range, so a lead that arrived
+          // yesterday is counted and has had no chance to convert.
+          context={
+            conversion == null
+              ? `${card.pipeline.won} won of ${card.pipeline.leadsWorked} leads - too few to give a rate`
+              : `${card.pipeline.won} won of the ${card.pipeline.leadsWorked} leads you took here`
+          }
+          footer={versus(
+            standing(conversion, card.peer.conversionRate),
+            percent(card.peer.conversionRate),
+          )}
+        />
+        <StatCard
+          tone="plain"
+          label="Closed won"
+          value={card.pipeline.won}
+          icon={<Banknote aria-hidden="true" className="h-4 w-4" />}
+          context={
+            card.pipeline.wonValue > 0
+              ? `${money(card.pipeline.wonValue)} in value`
+              : `${card.pipeline.lost} lost · ${card.pipeline.open} still open`
+          }
+        />
+        <StatCard
+          tone="plain"
+          label="Follow-ups kept"
+          value={card.tasks.linked ? percent(compliance) : "—"}
+          icon={<ListChecks aria-hidden="true" className="h-4 w-4" />}
+          // The three blank states read differently on purpose: no login behind
+          // this person, nothing came due, and everything due was missed are
+          // three different facts and none of them is the other two.
+          context={
+            !card.tasks.linked
+              ? "not linked to a console login"
+              : compliance == null
+                ? "nothing came due in this range"
+                : `${card.tasks.completed} done · ${card.tasks.overdue} past due`
+          }
+        />
+        <StatCard
+          tone="plain"
+          label="Leads on time"
+          value={percent(slaPct)}
+          icon={<Hourglass aria-hidden="true" className="h-4 w-4" />}
+          context={
+            slaPct == null
+              ? "no open leads in your name"
+              : `${card.sla.open - card.sla.breached} of ${card.sla.open} moved inside ${card.sla.thresholdDays} days`
           }
         />
       </section>
@@ -303,6 +411,11 @@ export default async function MyPerformancePage({
           }
         />
       </section>
+
+      {/* Above the charts, deliberately. A rep opening this page has a finite
+          amount of attention, and four people waiting for a call back spend it
+          better than a bar chart of last fortnight. */}
+      <WorkQueuePanel card={card} />
 
       <DailyTrend days={card.days} />
 

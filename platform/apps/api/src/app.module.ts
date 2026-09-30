@@ -38,6 +38,7 @@ import { ProductsModule } from "./modules/products/products.module";
 import { QuotationsModule } from "./modules/quotations/quotations.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ImportModule } from "./modules/import/import.module";
+import { ExportsModule } from "./modules/exports/exports.module";
 import { MetaAdsModule } from "./modules/meta-ads/meta-ads.module";
 import { LeadIntakeModule } from "./modules/lead-intake/lead-intake.module";
 import { LeadRoutingModule } from "./modules/lead-routing/lead-routing.module";
@@ -99,6 +100,7 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     QuotationsModule,
     InvoicesModule,
     ImportModule,
+    ExportsModule,
     MetaAdsModule,
     LeadIntakeModule,
     LeadRoutingModule,

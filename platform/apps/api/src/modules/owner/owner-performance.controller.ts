@@ -3,6 +3,8 @@ import { z } from "zod";
 import type {
   CampaignPerformance,
   ChannelPerformance,
+  FunnelStep,
+  OverviewDay,
   PerformanceOverview,
   TeamMemberLine,
 } from "@aura/shared";
@@ -72,11 +74,109 @@ const RangeQuery = z.object({
  * something nobody has.
  */
 const PERFORMANCE_SQL = `
-WITH w AS (
-  SELECT ($1::date)::timestamp AT TIME ZONE zone       AS from_at,
-         (($2::date + 1))::timestamp AT TIME ZONE zone AS to_at
-    FROM (SELECT COALESCE(o.reporting_timezone, 'Asia/Kolkata') AS zone
-            FROM organizations o LIMIT 1) tz
+WITH org AS (
+  SELECT COALESCE(o.reporting_timezone, 'Asia/Kolkata') AS zone,
+         o.lead_stages
+    FROM organizations o LIMIT 1
+),
+w AS (
+  SELECT ($1::date)::timestamp AT TIME ZONE org.zone       AS from_at,
+         (($2::date + 1))::timestamp AT TIME ZONE org.zone AS to_at
+    FROM org
+),
+-- ── The funnel's columns: the tenant's own OPEN stages, in board order ──────
+--
+-- Terminal stages are excluded, the same rule the deals funnel follows: "Lost"
+-- is not a position in a funnel, it is what happened to leads that stopped at
+-- one. Won is handled as a high-water mark below rather than as a column, so the
+-- funnel's last bar is the last real stage before the sale.
+--
+-- WITH ORDINALITY is what gives each stage its position. The jsonb array's ORDER
+-- is the board's order - there is no explicit rank column - so the position has
+-- to come from the array itself.
+stages AS (
+  SELECT (s.ordinality - 1)::int AS position,
+         s.value ->> 'key'       AS key,
+         s.value ->> 'label'     AS label
+    FROM org,
+         jsonb_array_elements(org.lead_stages) WITH ORDINALITY AS s(value, ordinality)
+   WHERE s.value ->> 'terminal' IS NULL
+),
+-- ── How far each lead in the cohort ever got ────────────────────────────────
+--
+-- The furthest OPEN stage, as a high-water mark, so the funnel is monotonic: a
+-- lead now in Negotiation counts at every stage up to it, and one that was moved
+-- backwards still counts at its furthest.
+--
+-- THREE SOURCES, and all three are load-bearing:
+--
+--   the ledger        lead_stage_transitions (0075) - every stage it was in.
+--   its current stage because nothing wrote that ledger until the 2026-09-21
+--                     fix. On any workspace older than that most leads have NO
+--                     transitions, and a funnel built on the ledger alone would
+--                     collapse every one of them onto the entry stage - drawing
+--                     a catastrophic drop-off that is an artefact of when the
+--                     ledger started, not of anything the floor did.
+--   status = 'won'    a win reached everything. Its own stage is the terminal
+--                     one, which is not a position, and its transitions may go
+--                     straight from New to Won.
+--
+-- Floored at 0: every lead that exists entered the pipeline. Dropping the
+-- unknowns would make the top of the funnel smaller than the number of leads
+-- created, shrinking every denominator below it and flattering every rate.
+lead_reach AS (
+  SELECT l.id,
+         CASE
+           WHEN l.status = 'won' THEN (SELECT max(position) FROM stages)
+           ELSE GREATEST(COALESCE(max(hist.position), 0), COALESCE(max(cur.position), 0))
+         END AS furthest
+    FROM leads l
+   CROSS JOIN w
+    LEFT JOIN lead_stage_transitions t ON t.lead_id = l.id
+    LEFT JOIN stages hist ON hist.key = t.to_stage
+    LEFT JOIN stages cur  ON cur.key  = l.stage
+   WHERE l.created_at >= w.from_at
+     AND l.created_at <  w.to_at
+   GROUP BY l.id, l.status
+),
+funnel AS (
+  SELECT st.position,
+         st.key,
+         st.label,
+         count(lr.id)::int AS reached
+    FROM stages st
+    LEFT JOIN lead_reach lr ON lr.furthest >= st.position
+   GROUP BY st.position, st.key, st.label
+),
+-- ── The daily series behind the sparklines ──────────────────────────────────
+--
+-- DENSE: one row per calendar day in the range whether anything happened or not.
+-- A sparkline that omits quiet days compresses a fortnight of nothing into one
+-- flat step and reads as steady activity - and unlike a rep's call rollup, where
+-- an absent day is a weekend rather than a zero, a day on which the business
+-- acquired no leads genuinely is a zero.
+--
+-- Bucketed in the ORG's zone, so a lead that arrived at 11 PM in Mumbai lands on
+-- the day the floor would say it did rather than on the UTC day after.
+calendar AS (
+  SELECT gs::date AS day
+    FROM generate_series($1::date, $2::date, interval '1 day') gs
+),
+leads_by_day AS (
+  SELECT (l.created_at AT TIME ZONE org.zone)::date AS day, count(*)::int AS leads
+    FROM leads l CROSS JOIN org CROSS JOIN w
+   WHERE l.created_at >= w.from_at AND l.created_at < w.to_at
+   GROUP BY 1
+),
+wins_by_day AS (
+  SELECT (l.stage_changed_at AT TIME ZONE org.zone)::date AS day,
+         count(*)::int                                   AS won,
+         COALESCE(sum(l.value_num), 0)::float            AS won_value
+    FROM leads l CROSS JOIN org CROSS JOIN w
+   WHERE l.status = 'won'
+     AND l.stage_changed_at >= w.from_at
+     AND l.stage_changed_at <  w.to_at
+   GROUP BY 1
 ),
 sales AS (
   SELECT
@@ -198,17 +298,36 @@ campaign_rows AS (
 ),
 channel_rows AS (
   SELECT coalesce(json_agg(c ORDER BY c.leads DESC), '[]'::json) AS rows FROM channels c
+),
+funnel_rows AS (
+  SELECT coalesce(json_agg(f ORDER BY f.position), '[]'::json) AS rows FROM funnel f
+),
+daily_rows AS (
+  SELECT coalesce(json_agg(d ORDER BY d.day), '[]'::json) AS rows
+    FROM (
+      SELECT c.day::text                     AS day,
+             COALESCE(lb.leads, 0)::int      AS leads,
+             COALESCE(wb.won, 0)::int        AS won,
+             COALESCE(wb.won_value, 0)::float AS won_value
+        FROM calendar c
+        LEFT JOIN leads_by_day lb ON lb.day = c.day
+        LEFT JOIN wins_by_day  wb ON wb.day = c.day
+    ) d
 )
 SELECT row_to_json(sales)    AS sales,
        row_to_json(velocity) AS velocity,
        campaign_rows.rows    AS campaigns,
        channel_rows.rows     AS channels,
-       team_rows.rows        AS team
+       team_rows.rows        AS team,
+       funnel_rows.rows      AS funnel,
+       daily_rows.rows       AS daily
   FROM sales
   CROSS JOIN velocity
   CROSS JOIN campaign_rows
   CROSS JOIN channel_rows
-  CROSS JOIN team_rows`;
+  CROSS JOIN team_rows
+  CROSS JOIN funnel_rows
+  CROSS JOIN daily_rows`;
 
 /**
  * Below this many scored calls a person's quality average is withheld from the
@@ -254,6 +373,8 @@ interface RawRow {
     leads: number;
     won: number;
   }> | null;
+  funnel: Array<{ position: number; key: string; label: string; reached: number }> | null;
+  daily: Array<{ day: string; leads: number; won: number; won_value: number }> | null;
 }
 
 @Controller("owner/performance")
@@ -310,6 +431,41 @@ export class OwnerPerformanceController {
 
       const spends = campaigns.map((c) => c.spend).filter((s): s is number => s != null && s > 0);
 
+      /**
+       * The funnel, with each step's conversion from the one before it.
+       *
+       * Computed here rather than in SQL because `conversionFromPrevious` needs
+       * the previous ROW, and a window function over the funnel CTE would put a
+       * second place where "what share got through" is defined - the one thing
+       * @aura/shared's header for these derivations says must not happen. The SQL
+       * produces monotonic counts; this turns them into rates.
+       *
+       * `droppedBefore` is the absolute count that stopped at the previous step,
+       * which is what the page leads with: "38% drop-off" and "eleven people"
+       * prompt different conversations and only the second one can be worked.
+       */
+      const steps = row?.funnel ?? [];
+      const funnel: FunnelStep[] = steps.map((s, i) => {
+        const previous = i === 0 ? null : (steps[i - 1]?.reached ?? 0);
+        return {
+          stage: s.key,
+          label: s.label,
+          reached: s.reached,
+          conversionFromPrevious:
+            previous === null || previous === 0
+              ? null
+              : Number((s.reached / previous).toFixed(4)),
+          droppedBefore: previous === null ? 0 : Math.max(0, previous - s.reached),
+        };
+      });
+
+      const daily: OverviewDay[] = (row?.daily ?? []).map((d) => ({
+        day: d.day,
+        leads: d.leads,
+        won: d.won,
+        wonValue: d.won_value,
+      }));
+
       const overview: PerformanceOverview = {
         from,
         to,
@@ -334,6 +490,8 @@ export class OwnerPerformanceController {
           spendRecorded: spends.length > 0,
         },
         team,
+        funnel,
+        daily,
         // Composed by the console from GET /targets/attainment - see the
         // class header for why it is not re-derived here.
         goals: [],

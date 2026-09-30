@@ -8,7 +8,9 @@ import {
   type DetectableProject,
 } from "@aura/shared";
 import {
+  contactNumberMatchKey,
   findLiveContact,
+  inheritCallsForLeadSafely,
   leadBoardStages,
   projectFactsToCustomFields,
   queueContactCreated,
@@ -170,11 +172,18 @@ const MIN_PHONE_DIGITS = 6;
 function phoneParts(raw: string | null | undefined) {
   const digits = (raw ?? "").replace(/\D+/gu, "");
   if (digits.length < MIN_PHONE_DIGITS) {
-    return { digits: "", hash: null, prefix: null, last3: null };
+    return { digits: "", hash: null, key: null, prefix: null, last3: null };
   }
   return {
     digits,
     hash: createHash("sha256").update(digits).digest("hex"),
+    // The normalised match key (0133's phoneMatchDigits, hashed the same way
+    // calls.controller.ts hashes it). `hash` above is the DEDUP key and must
+    // keep hashing the digits exactly as they arrived; this one exists only so
+    // a lead can find its calls when the two sides wrote the number in
+    // different formats - which, for every door that reaches this function, is
+    // the normal case rather than the exception. See migration 0146.
+    key: contactNumberMatchKey(raw),
     prefix: digits.slice(0, 5) || null,
     last3: digits.slice(-3),
   };
@@ -194,6 +203,12 @@ const LEAD_RETOUCH_SET = `
   -- Stage and status are the owner's, never an integration's: a
   -- re-push must not drag a lead someone is negotiating back to New.
   contact_name = COALESCE(leads.contact_name, excluded.contact_name),
+  -- The normalised match key (0146). Fill, never move: re-keying an
+  -- existing lead would silently change which calls it inherits.
+  -- Always null on the email-only path - that path matches a lead
+  -- precisely because no usable number arrived - so COALESCE makes it a
+  -- no-op there rather than an exception to the shared rule.
+  contact_number_key = COALESCE(leads.contact_number_key, excluded.contact_number_key),
   summary      = COALESCE(excluded.summary, leads.summary),
   facts        = leads.facts || excluded.facts,
   value_num    = COALESCE(excluded.value_num, leads.value_num),
@@ -370,11 +385,12 @@ export class CrmIngestService {
           // board_id is deliberately absent from DO UPDATE SET: an existing
           // lead stays on its board (see CreateLeadInput.boardId).
           `INSERT INTO leads (org_id, workspace_id, contact_name, contact_number_hash,
+                              contact_number_key,
                               contact_number_prefix, contact_number_last3, title, stage, status,
                               summary, facts, value_num, call_count, last_activity_at,
                               source_channel, lead_source_id, marketing_source_id,
                               assigned_telecaller_id, source_created_at, source_ref, board_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now(),
+           VALUES ($1, $2, $3, $4, $20, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, 0, now(),
                    $13, $14, $15, $16, $17, $18, $19)
            ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
            DO UPDATE SET ${LEAD_RETOUCH_SET}
@@ -399,6 +415,7 @@ export class CrmIngestService {
             input.sourceCreatedAt ?? null,
             input.sourceRef ?? null,
             boardId,
+            phone.key,
           ],
         ));
       } else if (!contactCreated) {
@@ -440,7 +457,11 @@ export class CrmIngestService {
                           $6::numeric AS value_num, $7::text AS source_channel,
                           $8::uuid AS lead_source_id, $9::uuid AS marketing_source_id,
                           $10::uuid AS assigned_telecaller_id,
-                          $11::timestamptz AS source_created_at, $12::text AS source_ref) AS excluded
+                          $11::timestamptz AS source_created_at, $12::text AS source_ref,
+                          -- Always null here (this path runs only when no usable
+                          -- number arrived), and bound anyway so LEAD_RETOUCH_SET
+                          -- stays ONE text that applies verbatim to both paths.
+                          $13::text AS contact_number_key) AS excluded
             WHERE leads.id = (
                     SELECT l.id
                       FROM contacts c
@@ -470,6 +491,11 @@ export class CrmIngestService {
             input.assignedTelecallerId ?? null,
             input.sourceCreatedAt ?? null,
             input.sourceRef ?? null,
+            // Null by construction on this path: both `hash` and `key` share a
+            // six-digit floor, so no hash means no key either. Passed rather
+            // than hard-coded so the two stay tied together if either floor
+            // ever moves.
+            phone.key,
           ],
         ));
       }
@@ -521,6 +547,26 @@ export class CrmIngestService {
         `UPDATE contacts SET source_lead_id = COALESCE(source_lead_id, $2) WHERE id = $1`,
         [contact.id, lead.id],
       );
+
+      // ── The calls that already happened (migration 0146) ─────────────────
+      //
+      // This door is the reason 0146 exists. A web form, a WhatsApp
+      // qualification or a CTI push arrives for a number the floor has usually
+      // already rung, and the sweep that attached that history ran up to five
+      // minutes later - after `routeLead` below had already handed the card to
+      // a telecaller, who then rang a number they had no idea had been rung
+      // three times this week.
+      //
+      // Before the deal and before routing, so the card is complete at the
+      // moment it is assigned. One round trip, capped, and it cannot fail the
+      // lead: `inheritCallsForLeadSafely` holds a savepoint and swallows its
+      // own errors, and anything it leaves behind is the sweep's.
+      await inheritCallsForLeadSafely(client, orgId, {
+        leadId: lead.id,
+        workspaceId: org.workspace_id,
+        contactNumberHash: phone.hash,
+        contactNumberKey: phone.key,
+      });
 
       // ── Deal, on the org's default pipeline ──────────────────────────────
       // resolveDealPipeline is the one rule every door uses (doc 23, B2).

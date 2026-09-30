@@ -15,6 +15,7 @@ export * from "./lead-routing";
 export * from "./crm-projection";
 export * from "./lead-stage-history";
 export * from "./lead-boards";
+export * from "./call-lead-link";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 

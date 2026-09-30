@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Banknote, Gauge, Target, TrendingUp, Users } from "lucide-react";
-import { StatCard } from "@aura/ui";
+import { Sparkline, StatCard } from "@aura/ui";
 import {
   DEFAULT_TIME_ZONE,
   type Attainment,
   type PerformanceOverview,
   conversionRate,
+  leadsPerWeek,
   overviewHeadline,
   todayIn,
   winRate,
+  winsPerWeek,
 } from "@aura/shared";
 import { DateRangeBar, DateRangeNotice, DateRangeSummary } from "@/components/date-range-bar";
 import { LoadFailure } from "@/components/load-failure";
@@ -19,11 +21,14 @@ import {
   parseDateWindow,
   rangePresets,
   resolveDateWindow,
+  spanDays,
+  windowPhrase,
 } from "@/lib/date-range";
 import { getOwner, ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import {
   CampaignsPanel,
   ChannelsPanel,
+  FunnelPanel,
   GoalsPanel,
   StandingChip,
   TeamPanel,
@@ -123,6 +128,13 @@ export default async function PerformancePage({
 
   const conversion = conversionRate(data.sales);
   const win = winRate(data.sales);
+  // Inclusive calendar days in the org's zone, from the API's own echo - so the
+  // per-week figures are counted over the days actually reported rather than over
+  // whatever the URL asked for.
+  const span = spanDays(shown.from, shown.to);
+  const rangeLabel = windowPhrase(window, shown);
+  const leadSeries = data.daily.map((d) => d.leads);
+  const wonSeries = data.daily.map((d) => d.won);
 
   return (
     <>
@@ -130,7 +142,9 @@ export default async function PerformancePage({
 
       <DateRangeBar
         path="/owner/performance"
-        presets={rangePresets("/owner/performance", window)}
+        // Calendar periods belong here most of all: a target is set against a
+        // month, and "this month so far" is the range a quarter gets called on.
+        presets={rangePresets("/owner/performance", window, { calendar: true })}
         from={shown.from}
         to={shown.to}
         today={todayIn(zone)}
@@ -154,12 +168,32 @@ export default async function PerformancePage({
           value={data.sales.leadsCreated}
           icon={<Users aria-hidden="true" className="h-4 w-4" />}
           context="created in this range"
+          // The sparkline is DECORATIVE and aria-hidden by construction: the tile
+          // already states the total in text and the funnel below carries the
+          // shape in a table twin. It earns its place by answering "is that 200
+          // steady or is it one good Tuesday", which a single number cannot.
+          footer={
+            leadSeries.length > 1 ? (
+              <>
+                <Sparkline values={leadSeries} filled />
+                <span>per day</span>
+              </>
+            ) : undefined
+          }
         />
         <StatCard
           label="Closed won"
           value={money(data.sales.wonValue)}
           icon={<Banknote aria-hidden="true" className="h-4 w-4" />}
           context={`${data.sales.won} deal${data.sales.won === 1 ? "" : "s"} closed in this range`}
+          footer={
+            wonSeries.length > 1 ? (
+              <>
+                <Sparkline values={wonSeries} filled />
+                <span>per day</span>
+              </>
+            ) : undefined
+          }
         />
         <StatCard
           label="Open pipeline"
@@ -228,6 +262,16 @@ export default async function PerformancePage({
           context={`${data.team.reduce((n, m) => n + m.calls, 0)} calls between them`}
         />
       </section>
+
+      {/* Above the campaign tables: the funnel is the answer to "where is the
+          pipeline leaking", which is the question this page is opened with, and
+          the marketing panels below are about where the leads came from. */}
+      <FunnelPanel
+        funnel={data.funnel}
+        leadsPerWeek={leadsPerWeek(data.sales.leadsCreated, span)}
+        winsPerWeek={winsPerWeek(data.sales.won, span)}
+        rangeLabel={rangeLabel}
+      />
 
       <GoalsPanel goals={data.goals} />
 

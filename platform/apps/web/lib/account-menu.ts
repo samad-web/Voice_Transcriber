@@ -30,6 +30,7 @@ export type AccountPage =
   | "time"
   | "plan"
   | "login_activity"
+  | "data"
   | "get_started";
 
 export type AccountMenuItemId =
@@ -39,6 +40,7 @@ export type AccountMenuItemId =
   | "time"
   | "plan"
   | "login_activity"
+  | "data"
   | "sign_out_all"
   | "sign_out";
 
@@ -61,6 +63,11 @@ const OWNER_HREFS: Record<AccountPage, string> = {
   time: "/owner/account/time",
   plan: "/owner/account/plan",
   login_activity: "/owner/account/login-activity",
+  // The exports centre (0148, doc 35). Under Account rather than on the rail:
+  // people open it monthly, and an eighth rail entry would cost every other
+  // section a slot in the eye's first pass. Export itself lives where the data
+  // is, on each list page's toolbar.
+  data: "/owner/account/data",
   get_started: "/owner/get-started",
 };
 
@@ -118,6 +125,10 @@ export function accountMenuItemsFor(area: AccountArea, ownerRole?: OwnerRole | n
   page("time", "time", "Time & location");
   page("plan", "plan", "Plan & usage");
   page("login_activity", "login_activity", "Login activity");
+  // Everyone, not just owners: the page shows a person their OWN exports, and
+  // only an owner sees the whole workspace's. Restricting the menu entry would
+  // hide a telecaller's own downloads from them.
+  page("data", "data", "Your data");
   items.push({ id: "sign_out_all", label: "Log out from all devices", group: "session" });
   items.push({ id: "sign_out", label: "Sign out", group: "session" });
   return items;

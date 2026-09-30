@@ -2,8 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { computeDocumentTotals } from "@aura/shared";
 import { Button, Dialog, FormField, Input, Select, useAlert } from "@aura/ui";
-import { createLineItemRow, useLineItemRows } from "../use-line-item-rows";
+import { formatMoney } from "../lib/format-money";
+import { PriceListPicker } from "../price-list-picker";
+import type { Product } from "../products/actions";
+import {
+  createLineItemRow,
+  previewLineInputs,
+  rowLineTotal,
+  useLineItemRows,
+} from "../use-line-item-rows";
 import { createQuotationAction } from "./actions";
 
 /**
@@ -12,10 +21,15 @@ import { createQuotationAction } from "./actions";
  * discount, and a repeatable line-item list, because that is everything the
  * create endpoint strictly needs.
  *
+ * Lines come off the price list (`products`) or are typed by hand, and the
+ * running total is computed from them by the same `@aura/shared` function the
+ * API will use when it saves - before this, you priced a quotation blind and
+ * found out what it came to on the page after.
+ *
  * On success the browser is sent straight to the new quotation's detail page
  * - there's nothing useful left to do from the list.
  */
-export function NewQuotationDialog() {
+export function NewQuotationDialog({ products }: { products: Product[] | null }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [currency, setCurrency] = useState("INR");
@@ -23,9 +37,18 @@ export function NewQuotationDialog() {
   const [discountValue, setDiscountValue] = useState("0");
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
-  const { rows, setRows, updateRow, removeRow, addRow, parse } = useLineItemRows();
+  const { rows, setRows, updateRow, removeRow, addRow, addProductRow, unlinkRow, parse } =
+    useLineItemRows();
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
+
+  const discountNumber = Number(discountValue.trim() || "0");
+  const preview = computeDocumentTotals(previewLineInputs(rows), {
+    type: discountType === "none" ? null : discountType,
+    // A half-typed discount is not a discount; validation on submit is what
+    // tells somebody about it, not a total that reads NaN while they type.
+    value: Number.isFinite(discountNumber) && discountNumber >= 0 ? discountNumber : 0,
+  });
 
   const reset = () => {
     setCurrency("INR");
@@ -154,6 +177,20 @@ export function NewQuotationDialog() {
                 <div key={row.key} className="rounded-md border border-border p-3">
                   <div className="flex items-start gap-2">
                     <div className="flex-1 space-y-2">
+                      {row.productId ? (
+                        <p className="flex items-center gap-2 text-xs text-text-muted">
+                          <span className="min-w-0 truncate">
+                            Price list: {row.productName ?? "linked item"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => unlinkRow(row.key)}
+                            className="shrink-0 hover:text-text"
+                          >
+                            Unlink
+                          </button>
+                        </p>
+                      ) : null}
                       <Input
                         aria-label="Description"
                         placeholder="Description"
@@ -200,6 +237,13 @@ export function NewQuotationDialog() {
                           onChange={(e) => updateRow(row.key, { taxRate: e.target.value })}
                         />
                       </div>
+                      <p className="text-xs text-text-muted tabular-nums">
+                        Line total:{" "}
+                        {(() => {
+                          const live = rowLineTotal(row);
+                          return live === null ? "-" : formatMoney(live, currency);
+                        })()}
+                      </p>
                     </div>
                     <Button
                       type="button"
@@ -214,9 +258,47 @@ export function NewQuotationDialog() {
                 </div>
               ))}
             </div>
-            <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={addRow}>
-              + Add item
-            </Button>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={addRow}>
+                + Add item
+              </Button>
+              <PriceListPicker
+                currency={currency}
+                initialProducts={products}
+                onPick={(product) => addProductRow(product, currency)}
+              />
+            </div>
+
+            <dl className="mt-4 space-y-1.5 border-t border-border pt-3 text-xs">
+              <div className="flex justify-between">
+                <dt className="text-text-muted">Subtotal</dt>
+                <dd className="font-medium text-text tabular-nums">
+                  {formatMoney(preview.subtotal, currency)}
+                </dd>
+              </div>
+              {preview.discountAmount > 0 ? (
+                <div className="flex justify-between">
+                  <dt className="text-text-muted">Discount</dt>
+                  <dd className="font-medium text-text tabular-nums">
+                    -{formatMoney(preview.discountAmount, currency)}
+                  </dd>
+                </div>
+              ) : null}
+              {preview.taxTotal > 0 ? (
+                <div className="flex justify-between">
+                  <dt className="text-text-muted">Tax</dt>
+                  <dd className="font-medium text-text tabular-nums">
+                    {formatMoney(preview.taxTotal, currency)}
+                  </dd>
+                </div>
+              ) : null}
+              <div className="flex justify-between border-t border-border pt-1.5">
+                <dt className="font-medium text-text">Total</dt>
+                <dd className="font-semibold text-text tabular-nums">
+                  {formatMoney(preview.total, currency)}
+                </dd>
+              </div>
+            </dl>
           </div>
         </div>
       </Dialog>

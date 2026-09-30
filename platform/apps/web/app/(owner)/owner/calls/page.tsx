@@ -118,6 +118,13 @@ export default async function CallsPage({
         // queue exists for this workspace, since a link into a switched-off
         // feature is a link to a 404.
         triageHref={owner && ownerFeatures(owner).has("call_triage") ? "/owner/calls/triage" : null}
+        // Decided here, from the membership, rather than left to the API's 403:
+        // the recording column is only drawn for an account that holds
+        // `recordings_listen`, so a manager without it never presses a play
+        // button whose only possible outcome is a refusal. The API still
+        // enforces it - this only stops the console offering what it knows it
+        // cannot deliver.
+        canListen={owner?.membership.recordingsListen ?? false}
         dispositions={dispositions?.dispositions ?? []}
         calls={data.calls}
         telecallers={overview?.telecallers ?? []}

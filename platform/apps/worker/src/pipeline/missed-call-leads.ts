@@ -1,4 +1,10 @@
-import { getAdminPool, projectLeadToCrm, routeLead, withOrgContext } from "@aura/db";
+import {
+  getAdminPool,
+  inheritCallsForLeadSafely,
+  projectLeadToCrm,
+  routeLead,
+  withOrgContext,
+} from "@aura/db";
 import { dueDate, entryStage, leadTitle, parseLeadStages, statusForStage } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
 import { notifyMissedCallOwner } from "./missed-call-notify";
@@ -61,6 +67,8 @@ interface CallRow {
   telecaller_id: string | null;
   remote_name: string | null;
   remote_number_hash: string;
+  /** Carried onto the lead as `contact_number_key` (0133, 0146). */
+  remote_number_key: string | null;
   remote_number_prefix: string | null;
   remote_number_last3: string | null;
   started_at: string;
@@ -85,7 +93,8 @@ export async function createLeadFromMissedCall(client: DbClient, orgId: string, 
     rows: [call],
   } = await client.query<CallRow>(
     `SELECT c.workspace_id, c.device_id, c.telecaller_id, c.remote_name,
-            c.remote_number_hash, c.remote_number_prefix, c.remote_number_last3,
+            c.remote_number_hash, c.remote_number_key, c.remote_number_prefix,
+            c.remote_number_last3,
             c.started_at, c.lead_id, o.lead_stages
        FROM calls c
        JOIN organizations o ON o.id = c.org_id
@@ -103,13 +112,16 @@ export async function createLeadFromMissedCall(client: DbClient, orgId: string, 
     rows: [lead],
   } = await client.query<{ id: string; created: boolean }>(
     `INSERT INTO leads
-       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
+       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_key,
+        contact_number_prefix,
         contact_number_last3, title, stage, status, telecaller_device_id, telecaller_id,
         assigned_telecaller_id, first_call_id, last_call_id, last_activity_at, call_count,
         source_channel, temperature, temperature_source)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $12, $13, 1, 'missed_call', 'hot', 'auto')
+     VALUES ($1, $2, $3, $4, $14, $5, $6, $7, $8, $9, $10, $11, $11, $12, $12, $13, 1, 'missed_call', 'hot', 'auto')
      ON CONFLICT (workspace_id, contact_number_hash) WHERE contact_number_hash IS NOT NULL
-     DO UPDATE SET last_activity_at = GREATEST(leads.last_activity_at, EXCLUDED.last_activity_at)
+     DO UPDATE SET
+       contact_number_key = COALESCE(leads.contact_number_key, EXCLUDED.contact_number_key),
+       last_activity_at   = GREATEST(leads.last_activity_at, EXCLUDED.last_activity_at)
      RETURNING id, (xmax = 0) AS created`,
     [
       orgId,
@@ -125,6 +137,7 @@ export async function createLeadFromMissedCall(client: DbClient, orgId: string, 
       call.telecaller_id,
       callId,
       call.started_at,
+      call.remote_number_key,
     ],
   );
   if (!lead) return false;
@@ -135,6 +148,22 @@ export async function createLeadFromMissedCall(client: DbClient, orgId: string, 
       WHERE id = $1`,
     [callId, lead.id],
   );
+
+  // The rest of this number's history, not just the call that made the lead
+  // (0146). A missed caller is very often a number the floor has already rung -
+  // that is exactly why it was in the call log - and the telecaller about to be
+  // told to call them back should see those attempts on the card, not learn
+  // about them by ringing a fourth time.
+  //
+  // AFTER the statement above, so the triggering call is already linked and
+  // cannot be re-counted; and before the notification below, so whoever opens
+  // the notice finds a complete card.
+  await inheritCallsForLeadSafely(client, orgId, {
+    leadId: lead.id,
+    workspaceId: call.workspace_id,
+    contactNumberHash: call.remote_number_hash,
+    contactNumberKey: call.remote_number_key,
+  });
 
   // A lead the conflict path just discovered was NOT actually unknown - some
   // other write beat this sweep to it. Notify like any other missed call

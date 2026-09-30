@@ -42,8 +42,40 @@ export const ANALYZE_QUEUE = "aura.analyze";
  */
 export const ENRICH_QUEUE = "aura.enrich";
 
+/**
+ * Data exports (migration 0148, doc 35).
+ *
+ * A fourth lane rather than a second broker. The request that prompted this
+ * named Redis/Celery or SQS; both were declined for reasons doc 35 SS1.3 sets
+ * out, and the short version is that the durability argument does not apply
+ * here - `export_jobs` is the record, this is a wake-up, and a dropped message
+ * costs latency until the sweep notices rather than a job.
+ *
+ * Its own queue rather than more prefetch on an existing one, for the same
+ * reason the analyze and enrich lanes are separate: this work is
+ * DATABASE-bound, not provider-latency-bound. Eight concurrent full-table scans
+ * against a database 125ms away is how an export makes the console slow for
+ * everybody, so it is throttled separately and hard (EXPORT_PREFETCH, default
+ * 2) rather than sharing a dial with work that parallelises freely.
+ */
+export const EXPORT_QUEUE = "aura.export";
+
 export interface PipelineMessage {
   callId: string;
+  orgId: string;
+}
+
+/**
+ * Deliberately the job ID and nothing else - not the datasets, the format or
+ * the scope.
+ *
+ * A message that carried the job's parameters could be redelivered after the
+ * row changed (a cancel, a retry that narrowed something) and would then do the
+ * stale thing while the row said otherwise. Carrying only the id means every
+ * redelivery reads the current truth.
+ */
+export interface ExportMessage {
+  jobId: string;
   orgId: string;
 }
 
@@ -67,11 +99,12 @@ async function getChannel(): Promise<amqp.Channel> {
     await channel.assertQueue(PIPELINE_QUEUE, { durable: true });
     await channel.assertQueue(ANALYZE_QUEUE, { durable: true });
     await channel.assertQueue(ENRICH_QUEUE, { durable: true });
+    await channel.assertQueue(EXPORT_QUEUE, { durable: true });
   }
   return channel;
 }
 
-async function publishTo(queue: string, message: PipelineMessage): Promise<void> {
+async function publishTo(queue: string, message: PipelineMessage | ExportMessage): Promise<void> {
   const ch = await getChannel();
   ch.sendToQueue(queue, Buffer.from(JSON.stringify(message)), {
     persistent: true,
@@ -101,10 +134,10 @@ export async function publishEnrich(message: PipelineMessage): Promise<void> {
  * waiting on a provider, so a value above 1 costs little beyond the provider's
  * own rate limit and the database connections the handler opens.
  */
-async function consumeOn(
+async function consumeOn<T>(
   queue: string,
   prefetch: number,
-  handler: (message: PipelineMessage) => Promise<void>,
+  handler: (message: T) => Promise<void>,
 ): Promise<void> {
   const ch = await (await getConnection()).createChannel();
   consumerChannels.push(ch);
@@ -114,7 +147,7 @@ async function consumeOn(
     if (!msg) return;
     void (async () => {
       try {
-        await handler(JSON.parse(msg.content.toString()) as PipelineMessage);
+        await handler(JSON.parse(msg.content.toString()) as T);
         ch.ack(msg);
       } catch (err) {
         // Failure is recorded in the calls state machine by the handler;
@@ -166,6 +199,30 @@ export async function consumeEnrich(
   handler: (message: PipelineMessage) => Promise<void>,
 ): Promise<void> {
   await consumeOn(ENRICH_QUEUE, Number(process.env.ENRICH_PREFETCH ?? 4), handler);
+}
+
+/** Wake a consumer for an export job that has been written and is queued. */
+export async function publishExport(message: ExportMessage): Promise<void> {
+  await publishTo(EXPORT_QUEUE, message);
+}
+
+/**
+ * Exports: the streaming read, the serializer and the upload.
+ *
+ * Default 2, against the other lanes' 8 and 4, and the low number is the
+ * point. Those lanes spend their time WAITING on a provider, so a higher
+ * prefetch costs almost nothing; this one spends it reading the tenant's own
+ * database, which is the resource every console request also needs. Raise it
+ * against DB_POOL_MAX and the console's latency, never against CPU.
+ *
+ * The per-ORG cap of 2 (EXPORT_LIMITS.concurrentPerOrg) sits on top and is a
+ * different thing: this limits one worker, that stops a single tenant's twelve
+ * bulk exports starving everybody else's.
+ */
+export async function consumeExport(
+  handler: (message: ExportMessage) => Promise<void>,
+): Promise<void> {
+  await consumeOn(EXPORT_QUEUE, Number(process.env.EXPORT_PREFETCH ?? 2), handler);
 }
 
 /**

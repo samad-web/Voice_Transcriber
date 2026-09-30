@@ -94,7 +94,7 @@ describe("CrmIngestService.writeLead - email only", () => {
     };
     await service.createLead(ORG, input);
     const [update] = find(EMAIL_UPDATE);
-    // $1 contact, $2 workspace, then $3..$12 in the order the alias names them.
+    // $1 contact, $2 workspace, then $3..$13 in the order the alias names them.
     expect(update.params).toEqual([
       KNOWN_CONTACT,
       WS,
@@ -108,9 +108,14 @@ describe("CrmIngestService.writeLead - email only", () => {
       input.assignedTelecallerId,
       input.sourceCreatedAt,
       "form-42",
+      // contact_number_key (0146). Always null on this path - it runs precisely
+      // because no usable number arrived - but bound, so LEAD_RETOUCH_SET stays
+      // one text that applies verbatim to the phone path too.
+      null,
     ]);
     expect(update.sql).toMatch(/\$3::text AS contact_name, \$4::text AS summary, \$5::jsonb AS facts/);
     expect(update.sql).toMatch(/\$10::uuid AS assigned_telecaller_id/);
+    expect(update.sql).toMatch(/\$13::text AS contact_number_key/);
   });
 
   it("applies the phone path's first-touch rules verbatim", async () => {

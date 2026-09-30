@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, CalendarDays, ChevronDown, Play, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronDown, Flag, Play, Search, SlidersHorizontal, X } from "lucide-react";
 import {
+  CALL_ISSUE_CATEGORIES,
   CALL_LOG_PERIODS,
+  callIssueRef,
   callLogPeriodLabel,
   callbackLabel,
   callbackState,
@@ -34,19 +36,20 @@ import {
   callState,
   pipelineStage,
   useAlert,
-  useConfirm,
-  useToast,
 } from "@aura/ui";
 import { FilterTag } from "@/components/filter-tag";
+import { InlineRecordingPlayer } from "@/components/inline-recording-player";
 import { Time, useOrgTimeZone } from "@/components/org-time";
 import { PageNav } from "@/components/page-nav";
 import { InlineListSkeleton } from "@/components/skeletons";
+import { claimPlayback, releasePlayback } from "@/lib/audio-playback";
 import { pageState } from "@/lib/pagination";
 import { CallReadChips, TranscriptBody, TranscriptSkeleton, humanize } from "../call-intel";
 import {
   formatDuration,
   num,
   relativeTime,
+  type CallIssueSummary,
   type CallNote,
   type OwnerCall,
   type OwnerCallDetail,
@@ -57,11 +60,12 @@ import {
   fetchOwnerCallAction,
   fetchOwnerCallAudioAction,
   fetchOwnerCallNotesAction,
-  reprocessOwnerCallAction,
+  fetchCallIssuesAction,
 } from "./actions";
 import type { Disposition } from "./actions";
 import { CallFollowUp } from "./call-follow-up";
 import { DispositionPicker } from "./disposition-picker";
+import { ReportIssueDialog } from "./report-issue-dialog";
 
 const STATES = [
   { key: "complete", label: "Done" },
@@ -151,6 +155,7 @@ export function CallsExplorer({
   range,
   sort,
   triageHref = null,
+  canListen = false,
 }: {
   calls: OwnerCall[];
   /** For the handset filter. Empty simply drops that chip row. */
@@ -169,6 +174,12 @@ export function CallsExplorer({
   sort: CallLogSort;
   /** The unmatched-call queue, when this workspace has it; null hides the pointer. */
   triageHref?: string | null;
+  /**
+   * Whether this account holds `recordings_listen`. False drops the whole
+   * Recording column rather than filling it with fifty dashes - the same thing
+   * this table already does with a column that has nothing to say.
+   */
+  canListen?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -445,12 +456,17 @@ export function CallsExplorer({
           </p>
         ) : (
           <div tabIndex={0} role="region" aria-label="Calls" className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+            <table
+              className={`w-full ${canListen ? "min-w-[1080px]" : "min-w-[900px]"} border-collapse text-left text-sm`}
+            >
               <TableHead>
                 <tr>
                   <TableHeaderCell>When</TableHeaderCell>
                   <TableHeaderCell>Contact</TableHeaderCell>
                   <TableHeaderCell className="text-right">Length</TableHeaderCell>
+                  {/* Beside Length, not out at the end: how long the call was
+                      and hearing it are the same question asked two ways. */}
+                  {canListen ? <TableHeaderCell>Recording</TableHeaderCell> : null}
                   <TableHeaderCell>Telecaller</TableHeaderCell>
                   <TableHeaderCell>The AI read</TableHeaderCell>
                   <TableHeaderCell>Lead</TableHeaderCell>
@@ -537,6 +553,24 @@ export function CallsExplorer({
                         formatDuration(call.duration_s)
                       )}
                     </TableCell>
+                    {canListen ? (
+                      <TableCell>
+                        {call.has_recording ? (
+                          <InlineRecordingPlayer
+                            callId={call.id}
+                            label={contact(call)}
+                            durationS={call.duration_s}
+                            fetchUrl={fetchOwnerCallAudioAction}
+                          />
+                        ) : (
+                          // A missed call, or one whose audio never reached
+                          // storage. Nothing to offer, and a disabled play
+                          // button on a third of the log would only invite
+                          // presses that cannot work.
+                          <span className="text-text-subtle">-</span>
+                        )}
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       {call.telecaller ?? <span className="text-text-subtle">-</span>}
                     </TableCell>
@@ -918,9 +952,7 @@ export function CallDrawer({
   dispositions: Disposition[];
   triageHref: string | null;
 }) {
-  const confirm = useConfirm();
   const alert = useAlert();
-  const toast = useToast();
   const [detail, setDetail] = useState<OwnerCallDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<CallNote[] | null>(null);
@@ -928,6 +960,15 @@ export function CallDrawer({
   const [noteBusy, setNoteBusy] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Reporting a problem (0147, doc 36). `issues` is null until the fetch lands,
+  // so "none yet" and "not asked yet" stay distinguishable.
+  const [issues, setIssues] = useState<CallIssueSummary[] | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  /* The <audio> element, read ONLY when the dialog opens, to prefill "where in
+     the call". Not state: currentTime changes continuously while playing, and
+     holding it in state would re-render the drawer on every tick of a recording
+     somebody is listening to. */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     setDetail(null);
@@ -937,6 +978,8 @@ export function CallDrawer({
     // Audio is per-call: leaving it behind would have the next call opened play
     // the previous one's recording.
     setAudioUrl(null);
+    setIssues(null);
+    setReportOpen(false);
     if (!call) return;
     let cancelled = false;
     void fetchOwnerCallAction(call.id).then((result) => {
@@ -951,6 +994,13 @@ export function CallDrawer({
     void fetchOwnerCallNotesAction(call.id).then((result) => {
       if (cancelled) return;
       setNotes(result.notes ?? []);
+    });
+    // Same shape and the same reason as the notes: reported separately, re-read
+    // after a write, and a failure here degrades to "no reports" rather than
+    // blocking the panel the AI read was opened for.
+    void fetchCallIssuesAction(call.id).then((result) => {
+      if (cancelled) return;
+      setIssues(result.reports ?? []);
     });
     return () => {
       cancelled = true;
@@ -986,37 +1036,6 @@ export function CallDrawer({
     setAudioUrl(result.url ?? null);
   }
 
-  async function reprocess() {
-    if (!call) return;
-    // Confirmed, not because the action is hard to undo - it is not - but
-    // because it SPENDS: the call goes back through the ASR provider and the
-    // analyzer, both billed, on a transcript already paid for once. The dialog
-    // is the only place a reader is told that before it happens.
-    const ok = await confirm({
-      title: "Reprocess this call?",
-      body: "The recording is transcribed and analysed again from scratch. This costs the same as a new call, and the current transcript and AI read are replaced.",
-      confirmLabel: "Reprocess",
-      tone: "danger",
-      // No type-DELETE gate. `tone: "danger"` turns it on by default and this
-      // is the case it is wrong for: nothing is destroyed, the transcript is
-      // rebuilt rather than removed, and the worst outcome is a second ASR
-      // bill. Making somebody type DELETE for that teaches them to type DELETE
-      // without reading, which is exactly the reflex the gate exists to stop
-      // on the dialogs that do erase things.
-      requireTyped: false,
-    });
-    if (!ok) return;
-
-    setPending(true);
-    const result = await reprocessOwnerCallAction(call.id);
-    setPending(false);
-    if (result.error) {
-      await alert({ title: "Couldn't reprocess the call", body: result.error, tone: "danger" });
-      return;
-    }
-    toast("Queued - this call will update as the pipeline works through it.");
-  }
-
   if (!call) return null;
 
   const analytics = detail?.analytics ?? null;
@@ -1026,10 +1045,6 @@ export function CallDrawer({
   // one, and the drawer opening should not blank a chip that was on screen a
   // moment ago while the fetch is in flight.
   const qualityScore = num(analytics?.quality_score ?? call.quality_score ?? null);
-  const isTerminal =
-    call.status === "COMPLETE" ||
-    call.status === "TRANSCRIPTION_OFF" ||
-    call.status.startsWith("FAILED");
   const facts = (detail?.facts ?? []).filter(
     (f) => f.value_text !== null || f.value_num !== null || f.value_bool !== null,
   );
@@ -1441,7 +1456,10 @@ export function CallDrawer({
             </Button>
           </div>
 
-          {/* Playback and reprocess - neither exists for a call with no recording. */}
+          {/* Playback. Reporting a problem sits BELOW this block rather than in
+              it: a call with no recording can still be reported (0133 missed
+              calls have a wrong outcome or are missing from the log), and this
+              section does not exist for one. */}
           {noAudio ? null : (
             <div className="space-y-2 border-t border-border pt-4">
               {/* A recording is streamed from a signed URL and has no caption
@@ -1451,9 +1469,16 @@ export function CallDrawer({
               {audioUrl ? (
                 <audio
                   key={audioUrl}
+                  ref={audioRef}
                   controls
                   preload="metadata"
                   src={audioUrl}
+                  // The drawer opens OVER the call log, whose rows now have
+                  // players of their own. Claiming the console's single
+                  // playback slot here is what stops this recording and a row's
+                  // from playing over each other - see lib/audio-playback.ts.
+                  onPlay={(e) => claimPlayback(e.currentTarget)}
+                  onPause={(e) => releasePlayback(e.currentTarget)}
                   className="w-full"
                 />
               ) : null}
@@ -1471,27 +1496,111 @@ export function CallDrawer({
                 </Button>
 
                 {/*
-                  Hidden rather than disabled while the pipeline still holds the
-                  call: the API answers 409 for a non-terminal status, and a
-                  button whose only outcome is an error is worse than no button.
+                  A "Reprocess" button stood here until 0147 (doc 36 §2). It
+                  spent money at the ASR provider on every press, and a client
+                  pressing it could not say what was wrong - so a run that
+                  changed nothing looked exactly like one that fixed it. What
+                  replaced it is the Report button below, outside this block.
                 */}
-                {isTerminal ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void reprocess()}
-                    disabled={pending}
-                  >
-                    <RefreshCw aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
-                    {pending ? "Working…" : "Reprocess"}
-                  </Button>
-                ) : null}
               </div>
             </div>
           )}
+
+          {/* ── Something wrong with this call? (0147, doc 36) ────────────── */}
+          <div className="space-y-2 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-sans text-xs font-semibold tracking-wide text-text-muted uppercase">
+                Something wrong with this call?
+              </h3>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setReportOpen(true)}
+              >
+                <Flag aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />
+                Report a problem
+              </Button>
+            </div>
+
+            {issues === null ? null : issues.length === 0 ? (
+              <p className="font-sans text-xs text-text-muted">
+                Tell us what is wrong - the wrong words, the wrong language, a recording that will
+                not play - and we will look at it and re-run the call if that is what it needs.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {issues.map((issue) => (
+                  <li
+                    key={issue.id}
+                    className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-text"
+                  >
+                    <span className="font-mono text-text-muted">{callIssueRef(issue.ref)}</span>
+                    <span className="font-medium">
+                      {CALL_ISSUE_CATEGORIES[issue.category].client}
+                    </span>
+                    {/* A ticket status is a CATEGORY, not one of the four call
+                        states, so it takes no hue - see the colour rule in
+                        packages/ui/src/state.tsx. `outline` is the grey one. */}
+                    <StatusChip tone="outline">{reportStatusLabel(issue)}</StatusChip>
+                    <span className="text-text-subtle">
+                      {relativeTime(issue.reported_at)} by {issue.reported_by_name}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </aside>
+
+      <ReportIssueDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        callId={call.id}
+        hasRecording={!noAudio}
+        /* Read at RENDER time rather than on open, which is the same thing here:
+           the dialog is only mounted open once and reads this prop as its initial
+           state. `currentTime` is 0 on a player nobody has touched, and 0 is not
+           a moment worth prefilling - hence the null. */
+        atSeconds={
+          audioRef.current && audioRef.current.currentTime > 0
+            ? audioRef.current.currentTime
+            : null
+        }
+        onFiled={() => {
+          void fetchCallIssuesAction(call.id).then((result) => setIssues(result.reports ?? []));
+        }}
+      />
     </>
   );
+}
+
+/**
+ * What a client should read on their own report.
+ *
+ * Deliberately not the raw status. `awaiting_client` means WE asked THEM
+ * something, and a chip saying "awaiting client" to the client is the console
+ * talking about them in the third person - the one status whose wording has to
+ * flip perspective. `duplicate` and `rejected` are merged into "Closed" here
+ * because the reason is in the resolution note beside it, and a bare "Rejected"
+ * chip reads as a verdict on the person rather than on the report.
+ */
+function reportStatusLabel(issue: CallIssueSummary): string {
+  switch (issue.status) {
+    case "open":
+      return "Sent";
+    case "acknowledged":
+      return "Seen by our team";
+    case "in_progress":
+      return "Being looked at";
+    case "awaiting_client":
+      return "Waiting on your reply";
+    case "resolved":
+      return issue.client_confirmed_at ? "Fixed" : "Answered - please confirm";
+    case "withdrawn":
+      return "Withdrawn";
+    default:
+      return "Closed";
+  }
 }

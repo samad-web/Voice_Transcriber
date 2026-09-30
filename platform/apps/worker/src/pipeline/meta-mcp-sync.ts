@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { assertPublicHttpUrl, decryptSecret, getAdminPool, withOrgContext } from "@aura/db";
+import {
+  assertPublicHttpUrl,
+  contactNumberMatchKey,
+  decryptSecret,
+  getAdminPool,
+  inheritCallsForLeadSafely,
+  withOrgContext,
+} from "@aura/db";
 import {
   entryStage,
   findTool,
@@ -231,6 +238,9 @@ export async function ingestLead(
 
   const digits = phoneDigits(lead.phone);
   const hash = digits ? createHash("sha256").update(digits).digest("hex") : null;
+  // 0146. A Meta lead reports the international form, a handset's call log the
+  // national one, so this is the only column that can match the two.
+  const numberKey = contactNumberMatchKey(lead.phone);
   const title = lead.fullName?.trim() || lead.email?.trim() || (digits ? `${digits.slice(0, 5)}…` : "Meta lead");
   const activityAt = lead.createdTime ? new Date(lead.createdTime) : new Date();
 
@@ -238,9 +248,10 @@ export async function ingestLead(
     rows: [row],
   } = await client.query<{ id: string }>(
     `INSERT INTO leads
-       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
+       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_key,
+        contact_number_prefix,
         contact_number_last3, title, stage, summary, facts, last_activity_at, call_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11,
+     VALUES ($1, $2, $3, $4, $12, $5, $6, $7, $8, $9, $10::jsonb, $11,
              -- An ad lead has had no calls. Starting at 0 rather than the
              -- column default of 1 keeps "calls" on the board honest.
              0)
@@ -250,6 +261,8 @@ export async function ingestLead(
        -- never to an incoming lead. Someone who filled in an ad form after
        -- already being in Negotiation does not go back to New.
        contact_name = COALESCE(leads.contact_name, EXCLUDED.contact_name),
+       -- Fill, never move (0146).
+       contact_number_key = COALESCE(leads.contact_number_key, EXCLUDED.contact_number_key),
        summary      = COALESCE(EXCLUDED.summary, leads.summary),
        facts        = leads.facts || EXCLUDED.facts,
        last_activity_at = GREATEST(leads.last_activity_at, EXCLUDED.last_activity_at)
@@ -275,6 +288,7 @@ export async function ingestLead(
         ),
       ),
       activityAt,
+      numberKey,
     ],
   );
 
@@ -282,6 +296,16 @@ export async function ingestLead(
     eventId,
     row.id,
   ]);
+
+  // Every call this number has already had, onto the new card (0146) - before
+  // the projection, so the deal is created over a lead whose call_count is
+  // already true.
+  await inheritCallsForLeadSafely(client, connection.org_id, {
+    leadId: row.id,
+    workspaceId: org.workspace_id,
+    contactNumberHash: hash,
+    contactNumberKey: numberKey,
+  });
 
   // Project the ad lead onto Contact + Deal, through the SAME function the
   // call pipeline uses (pipeline.ts). Without this an ad lead reaches the

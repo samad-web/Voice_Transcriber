@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Body,
-  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -14,7 +13,6 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { publishPipeline } from "@aura/queue";
 import { CallLogDateQuery } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
@@ -24,6 +22,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 import { AgentsService, replyDrafterActive } from "../agents/agents.service";
+import { HAS_RECORDING } from "../calls/recording-sql";
 import { HAS_NUMBER, IS_MISSED, MISSED_CALLBACK_JOIN } from "./missed-callback-sql";
 
 const CreateNoteBody = z.object({
@@ -304,6 +303,7 @@ export class OwnerCallsController {
                 ca.quality_score,
                 lead.id AS lead_id, lead.title AS lead_title,
                 c.missed_reason, ${HAS_NUMBER} AS has_number,
+                ${HAS_RECORDING} AS has_recording,
                 cb.returned_at, cb.return_direction,
                 h.calls_in, h.calls_out, h.sequence,
                 (h.sequence > 1) AS is_follow_up
@@ -395,6 +395,7 @@ export class OwnerCallsController {
                 ca.quality_score,
                 lead.id AS lead_id, lead.title AS lead_title,
                 c.missed_reason, ${HAS_NUMBER} AS has_number,
+                ${HAS_RECORDING} AS has_recording,
                 cb.returned_at, cb.return_direction,
                 h.calls_in, h.calls_out, h.sequence,
                 (h.sequence > 1) AS is_follow_up
@@ -696,7 +697,11 @@ export class OwnerCallsController {
       } = await client.query(`SELECT s3_key FROM recordings WHERE call_id = $1`, [callId]);
       if (!rec) throw new NotFoundException("no recording for this call");
 
-      const url = await this.s3.presignedGetUrl(rec.s3_key, 300);
+      // Default expiry (30 min), not the 300s this used to pass - the signature
+      // has to cover the whole listen, not the click that started it. Same
+      // change, same reasoning as the operator route; `presignedGetUrl`'s
+      // docblock has the detail.
+      const url = await this.s3.presignedGetUrl(rec.s3_key);
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
          VALUES ($1, 'user', $2, 'recording.playback', 'call', $3, $4)`,
@@ -816,56 +821,35 @@ export class OwnerCallsController {
     });
   }
 
-  @Post(":id/reprocess")
-  @RequireOwnerRole("owner")
-  async reprocess(
-    @Req() req: PrincipalRequest,
-    @OrgId() orgId: string,
-    @Param("id", ParseUUIDPipe) callId: string,
-  ) {
-    const result = await this.db.withOrg(orgId, async (client) => {
-      if (!(await orgHasModule(client, "call_intel"))) {
-        throw new ForbiddenException("call intelligence is not enabled for this instance");
-      }
-      const {
-        rows: [call],
-      } = await client.query(`SELECT status FROM calls WHERE id = $1`, [callId]);
-      if (!call) throw new NotFoundException("call not found");
-
-      const terminal =
-        call.status === "COMPLETE" ||
-        call.status === "TRANSCRIPTION_OFF" ||
-        String(call.status).startsWith("FAILED_");
-      if (!terminal) {
-        throw new ConflictException(
-          `call is ${call.status}; only COMPLETE, TRANSCRIPTION_OFF or FAILED_* calls can be reprocessed`,
-        );
-      }
-
-      await client.query(
-        `UPDATE calls
-            SET status = 'UPLOADED', pipeline_attempts = 0, next_attempt_at = NULL
-          WHERE id = $1
-            AND (status IN ('COMPLETE', 'TRANSCRIPTION_OFF') OR status LIKE 'FAILED_%')`,
-        [callId],
-      );
-      await client.query(
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, 'user', $2, 'call.reprocess', 'call', $3, $4)`,
-        [
-          orgId,
-          req.principal?.userId ?? "owner",
-          callId,
-          JSON.stringify({ from: call.status, via: "owner-console" }),
-        ],
-      );
-      return { status: "UPLOADED" as const };
-    });
-
-    // Source of truth is the DB flip above; the queue is only a wake-up.
-    await publishPipeline({ callId, orgId });
-    return result;
-  }
+  /*
+   * `POST :id/reprocess` USED TO LIVE HERE, and was deleted by 0147 (doc 36 §2).
+   *
+   * It was owner-only - the one route in this controller that narrowed the class
+   * decorator - because re-running ASR and analyze spends real money at the
+   * providers on a transcript already paid for once.
+   *
+   * Three things were wrong with offering it to the client at all:
+   *
+   *   * it spends on every press, with no ceiling and nobody's approval;
+   *   * it is the wrong instrument for the problem they have. Nobody wants the
+   *     pipeline run again; they want the transcript to be RIGHT, and a second
+   *     run of the same audio through the same engine usually produces the same
+   *     words;
+   *   * it captured nothing. A client could press it five times and never tell
+   *     us what was wrong, and a reprocess that changed nothing looked exactly
+   *     like one that fixed it.
+   *
+   * What replaces it: the client REPORTS the problem (`call_issue_reports`,
+   * 0147) and we press Reprocess from the escalation queue, where the ticket's
+   * frozen snapshot can prove whether the second run differed at all.
+   *
+   * The two surviving reprocess routes are on `CallsController`
+   * (`POST /calls/:id/reprocess`, `POST /calls/reprocess-backlog`) and now carry
+   * `OperatorOnlyGuard`. Deleting this route alone would have removed the door
+   * and left the permission: those two were `AdminKeyGuard + TenantGuard` only,
+   * which admits any owner-console request. Do not re-add a client-facing
+   * reprocess here without reading that guard's header.
+   */
 
   /** See the class docblock: identity from the principal, grant from the row. */
   private async canReadTranscript(

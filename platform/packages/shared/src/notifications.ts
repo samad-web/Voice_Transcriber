@@ -111,6 +111,48 @@ export const NotificationKind = z.enum([
   "attendance_review",
   /** 0143: a telecaller never started a shift whose grace period has passed. */
   "attendance_absent",
+  /**
+   * We have answered a problem this business reported about one of its calls
+   * (migration 0147, doc 36) - acknowledged it, asked them something, or
+   * resolved it.
+   *
+   * ONE kind for the whole thread, not one per state. The bell's job is to get
+   * somebody to open the ticket; a second kind for the same conversation is the
+   * noise that teaches people to stop reading it. The dedupe key carries the
+   * status, so five internal notes do not ring five times.
+   *
+   * Goes to the person who filed it, falling back to every member holding the
+   * `owner` persona when they have since left - resolved at notify time, the
+   * same rule 0122 uses when no call-access administrator is named.
+   */
+  "call_issue_update",
+  /**
+   * An export you asked for is ready to download (migration 0148, doc 35).
+   * Goes to the requester only.
+   */
+  "export_ready",
+  /**
+   * An export you asked for failed for good - after its retries, not on the
+   * first stumble. The requester only, for the same reason `export_ready` is:
+   * nobody else was waiting for the file.
+   */
+  "export_failed",
+  /**
+   * SOMEBODY STARTED AN EXPORT in this workspace (migration 0148, doc 35).
+   * Goes to every member holding the `owner` persona, and never to the person
+   * who ran it.
+   *
+   * The governance kind, and the reason it is separate from `export_ready`
+   * rather than a flavour of it: an owner must be able to digest "somebody
+   * exported something" without also silencing the bell for their own files.
+   *
+   * Fires at CREATION, not completion. The act worth recording is the
+   * request - a job that then fails, is cancelled or expires unread is still
+   * somebody who asked for the data. The alert carries no download link, and
+   * the download route's ownership check is unchanged by it: an owner learns
+   * that an export happened, not what was in it.
+   */
+  "export_created",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

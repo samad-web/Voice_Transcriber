@@ -13,12 +13,14 @@ const routeLead = vi.fn();
 const notifyMissedCallOwner = vi.fn();
 const adminQuery = vi.fn();
 const withOrgContext = vi.fn();
+const inheritCallsForLeadSafely = vi.fn();
 
 vi.mock("@aura/db", () => ({
   getAdminPool: () => ({ query: adminQuery }),
   withOrgContext: (orgId: string, fn: (client: unknown) => unknown) => withOrgContext(orgId, fn) as unknown,
   projectLeadToCrm: (...args: unknown[]) => projectLeadToCrm(...args),
   routeLead: (...args: unknown[]) => routeLead(...args),
+  inheritCallsForLeadSafely: (...args: unknown[]) => inheritCallsForLeadSafely(...args),
 }));
 
 vi.mock("./missed-call-notify", () => ({
@@ -32,6 +34,7 @@ beforeEach(() => {
   notifyMissedCallOwner.mockReset().mockResolvedValue(true);
   adminQuery.mockReset().mockResolvedValue({ rows: [] });
   withOrgContext.mockReset();
+  inheritCallsForLeadSafely.mockReset().mockResolvedValue({ linked: 0, capped: false });
 });
 
 async function load() {
@@ -44,6 +47,9 @@ const CALL_ROW = {
   telecaller_id: "tc-1",
   remote_name: null,
   remote_number_hash: "hash-1",
+  // A different value from the hash on purpose (0133): the two are digests of
+  // two different digit strings on any real row.
+  remote_number_key: "key-1",
   remote_number_prefix: "98765",
   remote_number_last3: "210",
   started_at: "2026-09-22T09:00:00.000Z",
@@ -97,6 +103,24 @@ describe("createLeadFromMissedCall - a genuinely new lead", () => {
 
     // Never routed - the call already had a telecaller.
     expect(routeLead).not.toHaveBeenCalled();
+
+    // The number's earlier calls, onto the new card (0146). A missed caller is
+    // very often a number the floor has already rung - that is why it is in the
+    // call log at all - and the telecaller about to be told to ring back should
+    // see those attempts rather than discover them by ringing a fourth time.
+    expect(inheritCallsForLeadSafely).toHaveBeenCalledWith(c, "org-1", {
+      leadId: "lead-1",
+      workspaceId: "ws-1",
+      contactNumberHash: "hash-1",
+      contactNumberKey: "key-1",
+    });
+    // AFTER the statement that links the triggering call, so that call is
+    // already attached and cannot be counted twice.
+    const linkAt = c.query.mock.calls.findIndex((q) => String(q[0]).includes("UPDATE calls"));
+    expect(linkAt).toBeGreaterThan(-1);
+    expect(inheritCallsForLeadSafely.mock.invocationCallOrder[0]).toBeGreaterThan(
+      c.query.mock.invocationCallOrder[linkAt],
+    );
 
     // Exactly one notification, straight from this function (not routeLead's).
     expect(notifyMissedCallOwner).toHaveBeenCalledTimes(1);

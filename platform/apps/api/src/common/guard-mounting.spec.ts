@@ -107,6 +107,7 @@ import { PaymentsController } from "../modules/invoices/payments.controller";
 import { RazorpayWebhookController } from "../modules/invoices/razorpay-webhook.controller";
 import { StripeWebhookController } from "../modules/invoices/stripe-webhook.controller";
 import { ImportController } from "../modules/import/import.controller";
+import { ExportsController } from "../modules/exports/exports.controller";
 import { MetaOAuthController } from "../modules/meta-ads/meta-oauth.controller";
 import { MetaWebhookController } from "../modules/meta-ads/meta-webhook.controller";
 import { ReportBuilderController } from "../modules/report-builder/report-builder.controller";
@@ -122,10 +123,13 @@ import { OwnerRolesController } from "../modules/owner/owner-roles.controller";
 import { OrgFeaturesController } from "../modules/owner/org-features.controller";
 import { StaffPerformanceController } from "../modules/owner/staff-performance.controller";
 import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
+import { OwnerCallIssuesController } from "../modules/owner/owner-call-issues.controller";
+import { AdminCallIssuesController } from "../modules/admin/admin-call-issues.controller";
 import { CallTriageController } from "../modules/owner/call-triage.controller";
 import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
 import { IntegrationsController } from "../modules/owner/integrations.controller";
 import { TelecallerProductivityController } from "../modules/owner/telecaller-productivity.controller";
+import { TeamActivityController } from "../modules/owner/team-activity.controller";
 import { OwnerPerformanceController } from "../modules/owner/owner-performance.controller";
 import { CallInsightsController } from "../modules/owner/call-insights.controller";
 import { CallSopsController } from "../modules/owner/call-sops.controller";
@@ -187,10 +191,13 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   LeadsController,
   LeadBoardsController,
   OwnerCallsController,
+  OwnerCallIssuesController,
+  AdminCallIssuesController,
   CallTriageController,
   CallDispositionsController,
   IntegrationsController,
   TelecallerProductivityController,
+  TeamActivityController,
   OwnerPerformanceController,
   CallSopsController,
   CallInsightsController,
@@ -328,6 +335,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // the same administrative tier scripts/backfill-crm-objects.js already
   // operates at, not a per-record CrmPermissionsGuard surface.
   ImportController,
+  ExportsController,
   // Kailash gap Milestone 4: Meta Lead Ads capture (migration 0063).
   // MetaOAuthController mixes both regimes in one class, like TagsController
   // does - `start`, the pending-choice pair and `disconnect` need a signed-in
@@ -657,15 +665,37 @@ const CROSS_TENANT = [
   // tenant, because a lead has no tenant until it is converted.
   "GET /admin/funnel-criteria",
   "PUT /admin/funnel-criteria",
+  // The escalation queue (0147, doc 36 §10): every tenant's reported call
+  // problems in ONE work list, which is the whole point and the reason there is
+  // no org to scope to. Writes drop into `withOrg(report.org_id)` once the ticket
+  // says which tenant it belongs to; only this lookup is genuinely cross-tenant.
+  //
+  // They are ALSO OperatorOnlyGuard'd (see OPERATOR_ONLY_ROUTES): a tenant must
+  // never reach another tenant's complaints, and `@CrossTenant()` on its own
+  // would let any console user who found the URL do exactly that.
+  "GET /admin/call-issues",
+  "GET /admin/call-issues/stats",
+  "GET /admin/call-issues/:id",
+  "PATCH /admin/call-issues/:id",
+  "POST /admin/call-issues/:id/notes",
+  "POST /admin/call-issues/:id/reprocess",
+  "POST /admin/call-issues/:id/resolve",
+  "POST /admin/call-issues/:id/reopen",
 ];
 
 /**
- * The operator's instance surface (migration 0096's sibling fix). These mint
- * enrollment tokens, and an enrollment token puts a device into the tenant -
- * so a tenant console user is refused outright, while the bare platform admin
- * key passes. Neither OrgRoleGuard (inert: it admits any `viaAdminKey` caller,
- * which every owner-console request is) nor OwnerRoleGuard (refuses the bare
- * admin key the operator console uses) could express that.
+ * Routes that belong to the PLATFORM OPERATOR and to nobody's own console.
+ *
+ * Three families now, added for three different reasons, and the shared shape is
+ * that neither OrgRoleGuard (inert: it admits any `viaAdminKey` caller, which
+ * every owner-console request is) nor OwnerRoleGuard (refuses the bare admin key
+ * the operator console uses) could express any of them:
+ *
+ *   * the instance surface (migration 0096's sibling fix) - these mint
+ *     enrollment tokens, and an enrollment token puts a device into the tenant;
+ *   * the operator's side of the call-access gate (0122) - a tenant reaching the
+ *     surface where the vendor ASKS could approve their vendor's own request;
+ *   * the two reprocess routes (0147) - they spend at the ASR provider.
  */
 const OPERATOR_ONLY_ROUTES = [
   "POST /instances",
@@ -683,6 +713,32 @@ const OPERATOR_ONLY_ROUTES = [
   "POST /call-access/requests",
   "POST /call-access/requests/:id/otp",
   "POST /call-access/requests/:id/redeem",
+  // The two reprocess routes (0147, doc 36 §2). Guarded for a third reason
+  // again: not to keep a tenant out of an operator surface, nor to stop them
+  // approving their own vendor's request, but because pressing these SPENDS at
+  // the ASR provider and the analyzer. That decision left the client with 0147 -
+  // their route to a bad transcript is `call_issue_reports`, and we re-run the
+  // call from the escalation queue.
+  //
+  // `@RequireOwnerRole` could not express this: it refuses the bare admin key
+  // the operator console arrives on. And deleting the owner-side route was not
+  // enough on its own - these two were AdminKeyGuard + TenantGuard, which admits
+  // any owner-console request, so the client tier would have kept the permission
+  // and merely lost the button.
+  "POST /calls/:id/reprocess",
+  "POST /calls/reprocess-backlog",
+  // The escalation queue itself (0147). Guarded for the first of the three
+  // reasons again - to keep a tenant OUT of an operator surface - and here the
+  // surface holds every OTHER tenant's complaints, so it is the one place where
+  // a missing guard would be a cross-customer leak rather than a lockout.
+  "GET /admin/call-issues",
+  "GET /admin/call-issues/stats",
+  "GET /admin/call-issues/:id",
+  "PATCH /admin/call-issues/:id",
+  "POST /admin/call-issues/:id/notes",
+  "POST /admin/call-issues/:id/reprocess",
+  "POST /admin/call-issues/:id/resolve",
+  "POST /admin/call-issues/:id/reopen",
 ];
 
 /** §2.3 - one route on the whole platform. */
@@ -706,7 +762,9 @@ const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
  *   - `GET /devices/me/calls/:callId`, which is device-authenticated: the
  *     handset reading back its own call, with no operator anywhere near it.
  *   - the write routes (`reprocess`, `reprocess-backlog`). They spend money
- *     and they move a call through the pipeline; they return no content.
+ *     and they move a call through the pipeline; they return no content. Since
+ *     0147 they carry OperatorOnlyGuard, which answers a different question
+ *     from this one: that guard asks who may SPEND, this gate asks who may READ.
  */
 const CALL_CONTENT_ROUTES = [
   "GET /calls",
@@ -748,6 +806,13 @@ const OWNER_ROLE_ROUTES = [
   // requirement for exactly the reason the read above is: a rep is entitled to
   // their own numbers.
   "GET /owner/productivity/scorecard",
+  // The team-activity feed, workload matrix and leaderboard - a different
+  // controller (TeamActivityController) serving the same page as the two reads
+  // above, and mounting the same stack for the same reason. A rep is entitled to
+  // see the floor's activity; what they must not see is records outside their own
+  // book, and every one of that statement's ten reads carries
+  // `ownerScopeClause` for the object it touches rather than relying on a role.
+  "GET /owner/team-activity",
   // The command centre. Unlike the two productivity reads above, this one
   // declares a REAL owner/manager requirement: its response carries a per-
   // person roll-up with quality scores in it, which is the staff scorecard's
@@ -959,21 +1024,40 @@ const OWNER_ROLE_ROUTES = [
   "GET /owner/calls/:id/audio",
   "GET /owner/calls/:id/notes",
   "POST /owner/calls/:id/notes",
-  // OWNER ONLY - the one route in this controller that narrows the class
-  // decorator, via `getAllAndOverride`. A reprocess re-runs ASR and analyze
-  // against the paid providers, so it is a spending decision and belongs with
-  // the account holder rather than with everyone who can read the log.
+  // `POST /owner/calls/:id/reprocess` was the one route here that narrowed the
+  // class decorator to owner alone, because re-running ASR and analyze spends at
+  // the paid providers. 0147 (doc 36 §2) deleted it outright rather than
+  // narrowing it further: the client's route to a bad transcript is now to
+  // report it, and the two surviving reprocess routes on CallsController carry
+  // OperatorOnlyGuard - see OPERATOR_ONLY_ROUTES. This controller therefore has
+  // NO route that narrows the class decorator any more, which is why nothing
+  // below is owner-only.
+  //
   // What a PERSON said the call was (0097), in the tenant's own vocabulary,
   // as opposed to the AI's reading already on the row. Class-level
   // owner/manager like the rest of the log: it re-rates the lead behind the
   // call, which is a decision about somebody else's pipeline.
   "POST /owner/calls/:id/disposition",
-  "POST /owner/calls/:id/reprocess",
   // A follow-up drafted by the tenant's reply drafter (0121). Returns text and
   // sends nothing; class-level owner/manager, plus call_intel and the reader's
   // own recordings_listen checked in the handler, because a draft recaps the
   // transcript.
   "POST /owner/calls/:id/draft-reply",
+  // The client's side of the escalation channel (0147, doc 36). Owner and
+  // manager, matching the call log exactly: you may report a problem with a call
+  // if you may see the call. Nothing here is narrowed to the reporter by the
+  // guard - a report belongs to the business, not to the person who typed it -
+  // except `withdraw`, which the handler limits to its author or an owner.
+  "POST /owner/call-issues",
+  "GET /owner/call-issues",
+  "GET /owner/call-issues/:id",
+  "POST /owner/call-issues/:id/replies",
+  "POST /owner/call-issues/:id/withdraw",
+  // OWNER ONLY - the one route on that controller that narrows the class
+  // decorator, and the replacement for the narrowing `reprocess` used to do.
+  // Accepting the vendor's answer on the business's behalf is the account
+  // holder's decision.
+  "POST /owner/call-issues/:id/confirm",
   // The vocabulary itself. GET carries no @RequireOwnerRole - every
   // surface showing a call needs the labels to render a chip, and a
   // telecaller reading a bare key helps nobody. Defining the list is
@@ -1464,6 +1548,10 @@ const CRM_PERMISSION_ROUTES = [
   "GET /quotations/:id",
   "POST /quotations",
   "PATCH /quotations/:id",
+  // `quotation:create`, not `edit`: revising WRITES A NEW quotation and leaves
+  // the original alone (doc 37 R5, migration 0149). A role that may edit a
+  // quotation but not raise one must not be able to mint a revision.
+  "POST /quotations/:id/revise",
   "GET /invoices",
   "GET /invoices/:id",
   "POST /invoices",
@@ -1801,8 +1889,27 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 507: GET /owner/performance - the command centre.
     // 511: plus the four superadmin-invite routes (0145, doc 34 Part C), all
     // cross-tenant - platform staff belong to no org.
-    expect(ROUTES).toHaveLength(511);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(511);
+    // 510: MINUS POST /owner/calls/:id/reprocess, deleted by 0147 (doc 36 §2).
+    // The first route this inventory has ever lost: the client tier no longer
+    // has any way to spend at the ASR provider, and the two operator reprocess
+    // routes it leaves behind are in OPERATOR_ONLY_ROUTES.
+    // 516: plus the client's six call-issue routes (0147) - file, list, read,
+    // reply, withdraw, confirm. What the deleted button became.
+    // 517: plus GET /owner/team-activity - the feed, workload matrix and
+    // leaderboard behind the Team activity page (the analytics overhaul).
+    // Tenant-scoped, and in OWNER_ROLE_ROUTES with the two productivity reads
+    // it sits beside.
+    // 523: plus the data export engine's six routes (0148, doc 35) - the
+    // dataset catalogue, create, list, read, download and cancel. All six are
+    // AdminKeyGuard + TenantGuard + OwnerScopeGuard; the per-dataset grid check
+    // is hand-rolled in the controller because a bulk export spans nine object
+    // types and @RequireCrmPermission takes one.
+    // 531: plus the escalation queue's eight (0147, doc 36) - all cross-tenant
+    // AND operator-only, the first routes to be both.
+    // 532: plus POST /quotations/:id/revise (0149, doc 37 R5). Tenant-scoped,
+    // and on `quotation:create` rather than `edit` - it writes a new document.
+    expect(ROUTES).toHaveLength(532);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(532);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1844,17 +1951,23 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 431: plus the personal-WhatsApp reconnect (0142).
     // 432: plus the agent scorecard (0144).
     // 433: plus the command centre.
-    expect(tenantScoped).toHaveLength(433);
+    // 432: minus the deleted owner reprocess route (0147).
+    // 438: plus the client's six call-issue routes (0147).
+    // 439: plus GET /owner/team-activity (the analytics overhaul).
+    // 445: plus the export engine's six (0148). All tenant-scoped - there is
+    // no cross-tenant export and no operator surface that produces one.
+    // 446: plus the quotation revise route (0149).
+    expect(tenantScoped).toHaveLength(446);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(511); // = ROUTES.length: every route in exactly one class
+    ).toBe(532); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 422 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 423 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -1888,7 +2001,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 462: plus the agent scorecard (0144).
     // 463: plus the command centre.
     // 467: plus the four superadmin-invite routes (0145).
-    expect(principalRoutes).toHaveLength(467);
+    // 466: minus the deleted owner reprocess route (0147).
+    // 472: plus the client's six call-issue routes (0147).
+    // 473: plus GET /owner/team-activity (the analytics overhaul).
+    // 479: plus the export engine's six (0148).
+    // 487: plus the escalation queue's eight (0147).
+    // 488: plus the quotation revise route (0149).
+    expect(principalRoutes).toHaveLength(488);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -2035,9 +2154,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
-  it("mounts OperatorOnlyGuard on exactly the instance and call-access routes, after TenantGuard", () => {
+  it("mounts OperatorOnlyGuard on exactly the instance, call-access and reprocess routes, after TenantGuard", () => {
     // A route that LOSES this guard reopens the gap it closed: enrollment-token
-    // minting reachable by any tenant console user. A route that GAINS it
+    // minting reachable by any tenant console user, or - since 0147 - a client
+    // able to spend at the ASR provider again. A route that GAINS it
     // unexpectedly is a silent lockout of the operator console.
     const operatorOnly = ROUTES.filter((r) => r.guards.includes("OperatorOnlyGuard"));
     expect(sorted(operatorOnly.map((r) => r.route))).toEqual(sorted(OPERATOR_ONLY_ROUTES));

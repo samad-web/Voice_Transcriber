@@ -71,6 +71,11 @@ const CALL_ROW = {
   telecaller_id: null,
   remote_name: "Rajesh",
   remote_number_hash: "sha256:abcdef",
+  // 0133's normalised match key. Deliberately a DIFFERENT value from the hash
+  // here: on a real row they are two digests of two different digit strings,
+  // and a test that reused one value would pass even if the code carried the
+  // wrong column onto the lead.
+  remote_number_key: "sha256:last10",
   remote_number_prefix: "98765",
   remote_number_last3: "321",
   started_at: new Date("2026-08-06T09:14:00.000Z"),
@@ -105,6 +110,10 @@ interface FakeDbOptions {
   log?: string[];
   /** Make the ledger insert throw, as a failed statement would. */
   ledgerFails?: boolean;
+  /** The retroactive call-inheritance pass (0146). */
+  inherits?: Recorded[];
+  /** Make that pass throw, as a failed statement would. */
+  inheritFails?: boolean;
 }
 
 function fakeDb(opts: FakeDbOptions = {}): DbClient {
@@ -114,6 +123,14 @@ function fakeDb(opts: FakeDbOptions = {}): DbClient {
       opts.log?.push(sql.replace(/\s+/g, " ").trim());
       if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT)\b/.test(sql)) {
         return { rows: [] as R[], rowCount: 0 };
+      }
+      // Before the FOR UPDATE branch: the inheritance statement claims its rows
+      // with FOR UPDATE SKIP LOCKED and would otherwise be answered by the
+      // prior-stage read.
+      if (sql.includes("lead_for_unlinked_call")) {
+        if (opts.inheritFails) throw new Error("simulated inheritance failure");
+        opts.inherits?.push({ sql, params: params ?? [] });
+        return { rows: [{ linked: 3 }] as R[], rowCount: 1 };
       }
       if (sql.includes("FOR UPDATE")) {
         const rows = opts.prior ? [opts.prior] : [];
@@ -318,14 +335,71 @@ describe("upsertLead", () => {
     expect(log).not.toContain("RELEASE SAVEPOINT lead_stage_ledger");
   });
 
-  it("spends no savepoint on a call that moved nothing", async () => {
+  it("spends no LEDGER savepoint on a call that moved nothing", async () => {
     const log: string[] = [];
     await upsertLead(
       fakeDb({ log, created: false, prior: { stage: "qualified", status: "open" }, after: { stage: "qualified", status: "open" } }),
       ORG_ID,
       CALL_ID,
     );
-    expect(log.some((s) => s.startsWith("SAVEPOINT"))).toBe(false);
+    expect(log).not.toContain("SAVEPOINT lead_stage_ledger");
+    // The inheritance pass (0146) has one of its own and always spends it: it
+    // runs on every call, not only on a stage move, because a follow-up call is
+    // itself unlinked at this point and this is what attaches it. Named
+    // separately so a failure in either cannot roll back the other.
+    expect(log).toContain("SAVEPOINT lead_call_inherit");
+  });
+
+  it("carries the call's normalised key onto the lead, and never moves an existing one", async () => {
+    const inserts: Recorded[] = [];
+    await upsertLead(fakeDb({ inserts }), ORG_ID, CALL_ID);
+    // 0146. Without this column a lead created from a call is invisible to the
+    // web-form or ad arrival for the same person later, because those report the
+    // number in the international form and hash differently.
+    expect(inserts[0].sql).toContain("contact_number_key");
+    expect(inserts[0].params).toContain("sha256:last10");
+    // Fill, never move. Re-keying a lead on a later call would silently change
+    // which calls it inherits.
+    expect(inserts[0].sql).toMatch(
+      /contact_number_key = COALESCE\(leads\.contact_number_key, EXCLUDED\.contact_number_key\)/,
+    );
+  });
+
+  it("attaches the number's earlier calls to the lead, by both identifiers", async () => {
+    const inherits: Recorded[] = [];
+    await upsertLead(fakeDb({ inherits }), ORG_ID, CALL_ID);
+    expect(inherits).toHaveLength(1);
+    // The lead, its WORKSPACE (not the org - the hash is unique per workspace),
+    // and both match keys. A missing key here is not an error, it is a silently
+    // narrower match.
+    expect(inherits[0].params.slice(0, 4)).toEqual([
+      "lead-1",
+      CALL_ROW.workspace_id,
+      CALL_ROW.remote_number_hash,
+      CALL_ROW.remote_number_key,
+    ]);
+  });
+
+  it("runs the inheritance on an UPDATE too, not only when the lead is new", async () => {
+    const inherits: Recorded[] = [];
+    // A follow-up call to a number that already has a card. The call that
+    // triggered this run is itself unlinked at this point - nothing else on the
+    // analyze path writes calls.lead_id - so skipping the pass here would leave
+    // every second and later call waiting on the sweep.
+    await upsertLead(fakeDb({ inherits, created: false, prior: { stage: "new", status: "open" } }), ORG_ID, CALL_ID);
+    expect(inherits).toHaveLength(1);
+  });
+
+  it("keeps a failed inheritance inside its savepoint, so the lead survives", async () => {
+    const log: string[] = [];
+    const result = await upsertLead(fakeDb({ log, inheritFails: true }), ORG_ID, CALL_ID);
+    // The whole point of the savepoint. Without it the failed statement marks
+    // the pipeline's transaction aborted and the COMMIT fails too - so a fault
+    // in a convenience pass would cost the lead itself, which the sweep would
+    // then never link because there would be nothing to link it to.
+    expect(result).toEqual({ leadId: "lead-1", created: true, reason: "created" });
+    expect(log).toContain("ROLLBACK TO SAVEPOINT lead_call_inherit");
+    expect(log).not.toContain("RELEASE SAVEPOINT lead_call_inherit");
   });
 
   it("rates the lead from the call, and never lets a null rating erase an earlier one", async () => {

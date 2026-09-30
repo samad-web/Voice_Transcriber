@@ -4,6 +4,7 @@ import { Card, Skeleton } from "@aura/ui";
 import { OWNER_ROLE_ADMINS } from "@aura/shared";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
+import { ExportButton } from "@/components/export-button";
 import { viewQueryFrom } from "@/lib/list-views";
 import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
 import { SavedViewsBar } from "../saved-views/saved-views-bar";
@@ -30,6 +31,37 @@ interface ListResponse {
  * list is a shareable URL and large pipelines never ship every row to the
  * browser to be filtered there.
  */
+/**
+ * The filters in force, in the words the drawer shows a person.
+ *
+ * Deliberately only the ones somebody CHOSE - `limit` and `sort` are plumbing,
+ * and listing them would make "No filters" almost never true.
+ */
+const EXPORTABLE_FILTERS = [
+  "boardId",
+  "stage",
+  "status",
+  "q",
+  "telecallerId",
+  "projectId",
+  "minAgeDays",
+  "maxAgeDays",
+] as const;
+
+function leadExportFilters(sp: Record<string, string | string[] | undefined>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of EXPORTABLE_FILTERS) {
+    const value = Array.isArray(sp[key]) ? sp[key]?.[0] : sp[key];
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+function leadFilterSummary(sp: Record<string, string | string[] | undefined>): string {
+  const parts = Object.entries(leadExportFilters(sp)).map(([key, value]) => `${key}: ${String(value)}`);
+  return parts.length > 0 ? parts.join(" - ") : "No filters";
+}
+
 export default async function LeadsPage({
   searchParams,
 }: {
@@ -57,6 +89,10 @@ export default async function LeadsPage({
     "projectId",
     "minAgeDays",
     "maxAgeDays",
+    // Open and not moved for N days - the scorecard's time-in-stage warning
+    // clicks through to exactly the leads it counted. Distinct from the two
+    // above, which are on arrival date; see the API's own note.
+    "stalledDays",
     "unresponded",
     "sourceChannel",
     "assignedTo",
@@ -99,7 +135,22 @@ export default async function LeadsPage({
 
   return (
     <>
-      <PageHeader title="All leads" context="Leads" />
+      <PageHeader
+        title="All leads"
+        context="Leads"
+        // Export is pre-filled from what is on screen (doc 35 SS8.2): the
+        // filters in force and the row count the API just returned. Somebody
+        // who has filtered to 40 rows and presses Export means those 40, and
+        // making them say so again in a modal is where exports get abandoned.
+        actions={
+          <ExportButton
+            dataset="leads"
+            filterSummary={leadFilterSummary(sp)}
+            filters={leadExportFilters(sp)}
+            viewRows={data.total ?? null}
+          />
+        }
+      />
       <SavedViewsBar list="leads" views={views} current={viewQueryFrom("leads", sp)} allLabel="All leads" />
       {/* useSearchParams needs a Suspense boundary to keep this page static-shell
           renderable; the table is the only client piece on the page. */}

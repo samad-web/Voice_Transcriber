@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
+import { inheritCallsForLeadSafely } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
@@ -284,21 +285,29 @@ export class CallTriageController {
 
       const {
         rows: [lead],
-      } = await client.query<{ id: string }>(
+      } = await client.query<{
+        id: string;
+        workspace_id: string;
+        contact_number_hash: string | null;
+        contact_number_key: string | null;
+      }>(
         `INSERT INTO leads
-           (org_id, workspace_id, contact_name, contact_number_hash,
+           (org_id, workspace_id, contact_name, contact_number_hash, contact_number_key,
             contact_number_prefix, contact_number_last3, title, stage,
             telecaller_device_id, telecaller_id, first_call_id, last_call_id,
             last_activity_at, source_channel, call_count)
          SELECT c.org_id, c.workspace_id, c.remote_name, c.remote_number_hash,
+                c.remote_number_key,
                 c.remote_number_prefix, c.remote_number_last3, $2, COALESCE($3, 'new'),
                 c.device_id, c.telecaller_id, c.id, c.id,
                 c.started_at, 'call', 1
            FROM calls c WHERE c.id = $1
          ON CONFLICT (workspace_id, contact_number_hash)
            WHERE contact_number_hash IS NOT NULL
-         DO UPDATE SET last_activity_at = GREATEST(leads.last_activity_at, EXCLUDED.last_activity_at)
-         RETURNING id`,
+         DO UPDATE SET
+           contact_number_key = COALESCE(leads.contact_number_key, EXCLUDED.contact_number_key),
+           last_activity_at   = GREATEST(leads.last_activity_at, EXCLUDED.last_activity_at)
+         RETURNING id, workspace_id, contact_number_hash, contact_number_key`,
         [id, title, parsed.data.stage ?? null],
       );
       if (!lead) throw new BadRequestException("could not create a lead from this call");
@@ -314,6 +323,26 @@ export class CallTriageController {
           WHERE id = $1`,
         [id, lead.id],
       );
+
+      // The rest of the queue for this same number (0146).
+      //
+      // Pressing Create on one call used to link exactly that one call, leaving
+      // its six siblings sitting in the queue for the sweep - so the manager who
+      // had just triaged this number saw the count go down by one and the same
+      // person reappear six times. A person making a decision about a NUMBER has
+      // made it about every call to that number.
+      //
+      // `lead_link_source` stays 'auto' for these, not 'console': the person
+      // judged this call, and the others follow by the same deterministic match
+      // the sweep would have used. Only the row they actually looked at is
+      // recorded as a human decision.
+      await inheritCallsForLeadSafely(client, orgId, {
+        leadId: lead.id,
+        workspaceId: lead.workspace_id,
+        contactNumberHash: lead.contact_number_hash,
+        contactNumberKey: lead.contact_number_key,
+      });
+
       void req;
       return { ok: true, leadId: lead.id };
     });

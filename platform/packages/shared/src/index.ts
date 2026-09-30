@@ -45,6 +45,7 @@ export * from "./lead-intake";
 export * from "./call-dispositions";
 export * from "./agent-scorecard";
 export * from "./performance-overview";
+export * from "./team-activity";
 export * from "./integrations";
 export * from "./linkedin";
 export * from "./whatsapp-qualification";
@@ -78,3 +79,6 @@ export * from "./attendance";
 export * from "./attendance-absence-message";
 
 export * from "./time";
+export * from "./call-issues";
+export * from "./export-datasets";
+export * from "./owner-scope";

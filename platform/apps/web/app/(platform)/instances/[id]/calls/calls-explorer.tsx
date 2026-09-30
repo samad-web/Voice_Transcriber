@@ -27,8 +27,10 @@ import {
   useAlert,
   useToast,
 } from "@aura/ui";
+import { InlineRecordingPlayer } from "@/components/inline-recording-player";
 import { LocalTime } from "@/components/local-time";
 import { LoadingRegion } from "@/components/skeletons";
+import { claimPlayback, releasePlayback } from "@/lib/audio-playback";
 import {
   addCallNoteAction,
   getCallAudioAction,
@@ -56,6 +58,13 @@ export interface CallRow {
   remote_number_prefix?: string | null;
   remote_number_last3?: string | null;
   remote_name?: string | null;
+  /**
+   * Whether stored audio exists to stream - what decides if the row gets a
+   * player. Not derivable from `status`: AWAITING_AUDIO and FAILED_UPLOAD have
+   * none, while TRANSCRIPTION_OFF has a perfectly playable one. Optional so an
+   * API older than this shows no player rather than a button that 404s.
+   */
+  has_recording?: boolean;
   /**
    * Contact history, computed per call by the API. All null when the number was
    * withheld - there is no history to count, and showing "1st call" for every
@@ -201,6 +210,17 @@ export function CallsExplorer({
   const [pending, startTransition] = useTransition();
   const alert = useAlert();
   const toast = useToast();
+
+  /**
+   * What an inline row player calls to get its signed URL. Memoised on `orgId`
+   * so the identity is stable across the table's re-renders - a fresh function
+   * every render would be a changed prop on every player on the page, and this
+   * log paints 100 rows.
+   */
+  const playRecording = useCallback(
+    (callId: string) => getCallAudioAction(callId, orgId),
+    [orgId],
+  );
 
   const openDrawer = useCallback(
     (callId: string) => {
@@ -358,7 +378,7 @@ export function CallsExplorer({
           real primitives. */}
       <div tabIndex={0} role="region" aria-label="Call log" className="overflow-x-auto">
         <table
-          className={`w-full ${showInstance ? "min-w-[1000px]" : "min-w-[870px]"} border-collapse text-left text-sm`}
+          className={`w-full ${showInstance ? "min-w-[1180px]" : "min-w-[1050px]"} border-collapse text-left text-sm`}
         >
           <caption className="sr-only">Call log</caption>
           <TableHead>
@@ -370,6 +390,10 @@ export function CallsExplorer({
               {showInstance ? <TableHeaderCell>Instance</TableHeaderCell> : null}
               <TableHeaderCell>Device</TableHeaderCell>
               <TableHeaderCell>Duration</TableHeaderCell>
+              {/* Beside Duration and Source - the three facts about the audio
+                  itself, before the pipeline columns that describe what was
+                  done with it. */}
+              <TableHeaderCell>Recording</TableHeaderCell>
               <TableHeaderCell>Source</TableHeaderCell>
               <TableHeaderCell>Consent</TableHeaderCell>
               <TableHeaderCell>Pipeline</TableHeaderCell>
@@ -452,6 +476,24 @@ export function CallsExplorer({
                 <TableCell className="text-xs">{c.device_label ?? "-"}</TableCell>
                 <TableCell className="text-xs tabular-nums">
                   {formatDuration(c.duration_s)}
+                </TableCell>
+                <TableCell>
+                  {c.has_recording ? (
+                    <InlineRecordingPlayer
+                      callId={c.id}
+                      label={callLabel(c)}
+                      durationS={c.duration_s}
+                      // Bound to this tenant. Reading a call under the wrong org
+                      // context is a 404 under RLS, and the operator console is
+                      // the one tier that can be looking at somebody else's.
+                      fetchUrl={playRecording}
+                    />
+                  ) : (
+                    // AWAITING_AUDIO, FAILED_UPLOAD or a missed call - the three
+                    // states an operator most often opens this log to see, and
+                    // exactly the ones with nothing to play.
+                    <span className="text-xs text-text-subtle">-</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-xs text-text-muted">
                   {c.audio_source_used ?? "-"}
@@ -1002,6 +1044,13 @@ export function CallsExplorer({
                             controls
                             preload="metadata"
                             src={audioUrl}
+                            // The drawer opens OVER the call log, whose rows now
+                            // have players of their own. Claiming the console's
+                            // single playback slot here is what stops this
+                            // recording and a row's from playing over each
+                            // other - see lib/audio-playback.ts.
+                            onPlay={(e) => claimPlayback(e.currentTarget)}
+                            onPause={(e) => releasePlayback(e.currentTarget)}
                             className="w-full"
                           />
                           <a

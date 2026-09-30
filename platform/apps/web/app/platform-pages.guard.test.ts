@@ -60,6 +60,12 @@ const KNOWN_DIRECT_CALL_PAGES = [
   // it. Listed here so its `operatorGate()` reads as deliberate rather than as
   // the inconsistency this suite is looking for.
   "(platform)/operators/page.tsx",
+  // The escalation queue (0147, doc 36). Reads the cross-tenant queue and its
+  // tiles with `apiTryAdmin`, so it is a direct caller and gates like one. Its
+  // WRITES go through Server Actions that each re-assert `requireOperator()`,
+  // because those carry `x-operator-email` and every mutation on that controller
+  // refuses without a name on it.
+  "(platform)/support/page.tsx",
 
   // ── One customer, under /instances/[id] ──────────────────────────────────
   // Doc 34 Part B moved nine of these in from the top level and split four more
@@ -114,8 +120,12 @@ const KNOWN_DIRECT_CALL_PAGES = [
  * into a helper is not an exemption; it is a rename of the thing this suite
  * exists to look for.
  */
+// `apiTryAdmin` is matched explicitly and NOT by the `apiTry` alternative: that
+// one requires a `<` or `(` straight after the name, so `apiTryAdmin<T>(…)` slips
+// past it. A cross-tenant read that went unrecognised here would be a page
+// allowed to skip its gate, which is the one thing this file exists to prevent.
 const DIRECT_API_CALL =
-  /\bapiGetAs\s*[<(]|\bapiGetAdmin\s*[<(]|\bapiTry\s*[<(]|\bresolveTenantScope\s*\(|\bload[A-Z][A-Za-z0-9_$]*\s*\(/;
+  /\bapiGetAs\s*[<(]|\bapiGetAdmin\s*[<(]|\bapiTryAdmin\s*[<(]|\bapiTry\s*[<(]|\bresolveTenantScope\s*\(|\bload[A-Z][A-Za-z0-9_$]*\s*\(/;
 const GUARD_CALL = /\boperatorGate\s*\(\s*\)/;
 const GUARD_IMPORT =
   /import\s*\{[^}]*\boperatorGate\b[^}]*\}\s*from\s*["']@\/lib\/operator-gate["']/;

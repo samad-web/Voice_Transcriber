@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { routeLead } from "@aura/db";
+import { contactNumberMatchKey, inheritCallsForLeadSafely, routeLead } from "@aura/db";
 import { entryStage, parseLeadStages, phoneDigits, statusForStage } from "@aura/shared";
 import type { LeadSourceKind } from "@aura/shared";
 import type { DbClient } from "./crm-dispatch";
@@ -149,6 +149,10 @@ export async function ingestIntakeLead(
 
   const digits = phoneDigits(lead.phone);
   const hash = digits ? createHash("sha256").update(digits).digest("hex") : null;
+  // The normalised key (0146), from the RAW phone rather than from `digits`:
+  // both reduce to the same ten digits, and going through the same helper the
+  // call side uses is what keeps the two in step.
+  const numberKey = contactNumberMatchKey(lead.phone);
   const title =
     lead.name?.trim() || lead.email?.trim() || (digits ? `${digits.slice(0, 5)}…` : "Ad lead");
   const stages = parseLeadStages(org.lead_stages);
@@ -167,11 +171,12 @@ export async function ingestIntakeLead(
     rows: [row],
   } = await client.query<{ id: string; created: boolean }>(
     `INSERT INTO leads
-       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_prefix,
+       (org_id, workspace_id, contact_name, contact_number_hash, contact_number_key,
+        contact_number_prefix,
         contact_number_last3, title, stage, status, summary, facts, last_activity_at, call_count,
         source_channel, lead_source_id, marketing_source_id, assigned_telecaller_id,
         source_created_at, source_ref)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12,
+     VALUES ($1, $2, $3, $4, $19, $5, $6, $7, $8, $9, $10, $11::jsonb, $12,
              -- An ad lead has had no calls. Starting at 0 rather than the
              -- column default of 1 keeps "calls" on the board honest.
              0, $13, $14, $15, $16, $17, $18)
@@ -182,6 +187,9 @@ export async function ingestIntakeLead(
        -- an ad form after already being in Negotiation does not go back to New,
        -- and first-touch attribution is never re-credited to a later channel.
        contact_name = COALESCE(leads.contact_name, EXCLUDED.contact_name),
+       -- Fill, never move: re-keying an existing lead would change which calls
+       -- it inherits (0146).
+       contact_number_key = COALESCE(leads.contact_number_key, EXCLUDED.contact_number_key),
        summary      = COALESCE(EXCLUDED.summary, leads.summary),
        facts        = leads.facts || EXCLUDED.facts,
        source_channel      = COALESCE(leads.source_channel, EXCLUDED.source_channel),
@@ -218,8 +226,26 @@ export async function ingestIntakeLead(
       // claim that made the metric wrong.
       lead.occurredAt ?? null,
       lead.externalId,
+      numberKey,
     ],
   );
+
+  // ── The calls that already happened (0146) ─────────────────────────────────
+  //
+  // This is the door the whole feature was written for. A web form, an ad or a
+  // CTI push arrives for a number the floor has often already rung several
+  // times, and until now that history reached the card up to five minutes later
+  // - or, when the form reported "+919876543210" and the handset logged
+  // "9876543210", never at all.
+  //
+  // BEFORE the projection and the routing below. Routing is what hands the card
+  // to a telecaller, and the point is that it is complete when they get it.
+  await inheritCallsForLeadSafely(client, orgId, {
+    leadId: row.id,
+    workspaceId: org.workspace_id,
+    contactNumberHash: hash,
+    contactNumberKey: numberKey,
+  });
 
   // Project onto Contact + Deal through the SAME function the call pipeline
   // uses. Without it the lead reaches the board and is invisible on Deals,

@@ -528,6 +528,20 @@ const ROUTES: RouteCase[] = [
     witness: bCall,
     negative: async () => {
       expectDenied(await post(A, `/calls/${B.callId}/reprocess`), 404, /call not found/);
+      // 0147 (doc 36 §2): the same route with a REAL USER behind it is refused
+      // outright, by OperatorOnlyGuard rather than by tenancy. Reprocessing
+      // spends at the ASR provider and the analyzer, and that decision left the
+      // client tier - their route to a bad transcript is to report it.
+      //
+      // Asserted HERE, in the negative, for the reason isolation-suite-drift
+      // exists: the positive below now exercises an OPERATOR-shaped request (the
+      // bare admin key, which `asTenant` sends and this guard admits), so on its
+      // own it would read as coverage of a client path that no longer exists.
+      expectDenied(
+        await call(asTenantOwner(A), "POST", `/calls/${A.callId}/reprocess`),
+        403,
+        /platform operator endpoint/,
+      );
     },
     positive: async () => {
       const res = await post(A, `/calls/${A.callId}/reprocess`);
@@ -547,6 +561,14 @@ const ROUTES: RouteCase[] = [
       const res = await post(A, "/calls/reprocess-backlog", { statuses: ["COMPLETE"] });
       expectOk(res);
       expect(res.body.requeued).toBe(1);
+      // And the client tier cannot reach it at all since 0147 - more plainly
+      // here than on the single-call route, because one press of this can spend
+      // a month of stored audio. Same reasoning as case 27's second assertion.
+      expectDenied(
+        await call(asTenantOwner(A), "POST", "/calls/reprocess-backlog", { statuses: ["COMPLETE"] }),
+        403,
+        /platform operator endpoint/,
+      );
     },
     positive: async () => {
       // Asserted, not ignored: the rewind and the audit row share one

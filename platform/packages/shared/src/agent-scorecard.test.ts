@@ -10,9 +10,18 @@ import {
   fcrRate,
   focusAreas,
   headline,
+  leadConversionRate,
+  leadWinRate,
+  loadHeadline,
+  paceLabel,
   qaScore,
   rate,
+  showTracker,
+  slaCompliance,
   standing,
+  taskCompliance,
+  trackerFill,
+  workQueue,
 } from "./agent-scorecard";
 
 /** A card with everything healthy and well-sampled; each test spoils one part. */
@@ -42,6 +51,20 @@ function card(over: Partial<AgentScorecard> = {}): AgentScorecard {
     fcrEligibleCalls: 40,
     fcrResolvedCalls: 20,
     fcrConfigured: true,
+    pipeline: { leadsWorked: 50, won: 10, lost: 15, open: 25, wonValue: 500_000 },
+    // Nothing overdue and nothing due today: the fixture is the HEALTHY card, and
+    // `workQueue` is asserted to be empty on it. The compliance tests pass their
+    // own counts in, so the ratio does not need a failure planted here.
+    tasks: { linked: true, completed: 18, overdue: 0, dueToday: 0, openTotal: 9 },
+    sla: {
+      breached: 0,
+      open: 25,
+      worstDays: null,
+      worstStage: null,
+      thresholdDays: 14,
+      unanswered: 0,
+    },
+    today: { day: "2026-09-30", calls: 30, connected: 18, pace: 40, paceSource: "floor", inRange: true },
     peer: {
       calls: 100,
       connectRate: 0.6,
@@ -49,6 +72,8 @@ function card(over: Partial<AgentScorecard> = {}): AgentScorecard {
       qaScore: 80,
       csat: 60,
       fcrRate: 0.5,
+      conversionRate: 0.2,
+      callsPerActiveDay: 40,
     },
     ...over,
   };
@@ -235,5 +260,131 @@ describe("headline", () => {
 
   it("says so plainly when the range is empty", () => {
     expect(headline(card({ calls: 0 }))).toBe("No calls logged in this range yet.");
+  });
+});
+
+describe("leadConversionRate / leadWinRate", () => {
+  it("converts leads worked into wins", () => {
+    expect(leadConversionRate(card().pipeline)).toBeCloseTo(0.2);
+  });
+
+  it("refuses a conversion rate below the same floor the desk-wide one uses", () => {
+    const thin = card({ pipeline: { leadsWorked: 4, won: 1, lost: 1, open: 2, wonValue: 0 } });
+    expect(leadConversionRate(thin.pipeline)).toBeNull();
+  });
+
+  it("takes win rate over leads closed either way, not over every lead", () => {
+    // 10 won of 25 closed = 0.4, not 10/50.
+    expect(leadWinRate(card().pipeline)).toBeCloseTo(0.4);
+  });
+});
+
+describe("taskCompliance", () => {
+  it("divides by promises whose time has come, never by every open task", () => {
+    expect(taskCompliance({ completed: 18, overdue: 2 })).toBeCloseTo(0.9);
+  });
+
+  it("refuses to call an empty week perfect", () => {
+    expect(taskCompliance({ completed: 0, overdue: 0 })).toBeNull();
+  });
+
+  it("reports a total miss as zero, which is different from nothing due", () => {
+    expect(taskCompliance({ completed: 0, overdue: 3 })).toBe(0);
+  });
+});
+
+describe("slaCompliance", () => {
+  it("reports the share of the open book that is still moving", () => {
+    expect(slaCompliance({ breached: 5, open: 25 })).toBeCloseTo(0.8);
+  });
+
+  it("refuses to call an empty book compliant", () => {
+    expect(slaCompliance({ breached: 0, open: 0 })).toBeNull();
+  });
+});
+
+describe("the daily tracker", () => {
+  it("stays hidden when today is outside the range being read", () => {
+    expect(showTracker(card({ today: { ...card().today, inRange: false } }).today)).toBe(false);
+  });
+
+  it("fills to the share of the pace reached", () => {
+    expect(trackerFill(card().today)).toBeCloseTo(0.75);
+  });
+
+  it("clamps rather than overflowing its track", () => {
+    expect(trackerFill({ ...card().today, calls: 400 })).toBe(1);
+  });
+
+  it("draws no bar at all when there is no pace to compare against", () => {
+    expect(trackerFill({ ...card().today, pace: null, paceSource: null })).toBeNull();
+  });
+
+  it("names where the pace came from, every time", () => {
+    expect(paceLabel("floor")).toBe("the floor's typical day");
+    expect(paceLabel("own")).toBe("your own typical day");
+    expect(paceLabel(null)).toBeNull();
+  });
+});
+
+describe("workQueue", () => {
+  it("is empty on a clean card, which the page states in words", () => {
+    expect(workQueue(card())).toEqual([]);
+  });
+
+  it("puts a lead nobody answered above leads that merely went quiet", () => {
+    const loaded = card({
+      sla: { ...card().sla, unanswered: 1, breached: 9, worstDays: 40, worstStage: "Contacted" },
+    });
+    expect(workQueue(loaded).map((i) => i.key)).toEqual(["unanswered", "stalled"]);
+  });
+
+  it("puts overdue follow-ups above stalled leads and due-today last", () => {
+    const loaded = card({
+      tasks: { linked: true, completed: 0, overdue: 3, dueToday: 2, openTotal: 5 },
+      sla: { ...card().sla, breached: 4, worstDays: 20, worstStage: "New" },
+    });
+    expect(workQueue(loaded).map((i) => i.key)).toEqual(["overdue", "stalled", "due-today"]);
+  });
+
+  it("says nothing about tasks for somebody with no platform login", () => {
+    const unlinked = card({
+      tasks: { linked: false, completed: 0, overdue: 0, dueToday: 0, openTotal: 0 },
+    });
+    expect(workQueue(unlinked)).toEqual([]);
+  });
+
+  it("omits the age clause rather than printing a null day count", () => {
+    const loaded = card({ sla: { ...card().sla, breached: 2, worstDays: null } });
+    expect(workQueue(loaded)[0]!.detail).not.toContain("null");
+  });
+
+  it("gives every item somewhere to go", () => {
+    const loaded = card({
+      sla: { ...card().sla, unanswered: 2, breached: 2, worstDays: 30, worstStage: "New" },
+      tasks: { linked: true, completed: 0, overdue: 1, dueToday: 1, openTotal: 2 },
+    });
+    expect(workQueue(loaded).every((i) => i.href !== null)).toBe(true);
+  });
+});
+
+describe("loadHeadline", () => {
+  it("names both halves of what somebody is carrying", () => {
+    expect(loadHeadline(card())).toBe("You are carrying 25 open leads and 9 open follow-ups.");
+  });
+
+  it("leaves the task half out entirely for an unlinked person", () => {
+    const unlinked = card({
+      tasks: { linked: false, completed: 0, overdue: 0, dueToday: 0, openTotal: 0 },
+    });
+    expect(loadHeadline(unlinked)).toBe("You are carrying 25 open leads.");
+  });
+
+  it("says nothing is open rather than reporting two zeroes", () => {
+    const clear = card({
+      sla: { ...card().sla, open: 0 },
+      tasks: { linked: true, completed: 4, overdue: 0, dueToday: 0, openTotal: 0 },
+    });
+    expect(loadHeadline(clear)).toBe("Nothing open in your name right now.");
   });
 });

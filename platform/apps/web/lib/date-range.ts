@@ -26,10 +26,49 @@ import { formatReportRange, isCalendarDate, shiftDateKey } from "@aura/shared";
  * (`invalid`), rather than rendering a page-sized 400.
  */
 
-export type DateWindow = { kind: "relative"; days: number } | { kind: "fixed"; from: string; to: string };
+/**
+ * A CALENDAR period - "this week", "this month" - as opposed to a rolling count.
+ *
+ * ── WHY THIS IS A THIRD KIND AND NOT A FIXED RANGE ──────────────────────────
+ *
+ * The obvious implementation resolves "This month" to `?from=2026-09-01&to=
+ * 2026-09-30` when the pill is rendered, and it is wrong for the reason the
+ * header above already gives for `days`: a link copied today would still mean
+ * September when somebody opened it in November. "This month" has to stay
+ * SYMBOLIC in the URL and be resolved against the org's own today on each read,
+ * exactly as `days` is.
+ *
+ * ── AND WHY IT IS NOT JUST ANOTHER `days` COUNT ─────────────────────────────
+ *
+ * Because they answer different questions and people ask both. "Last 30 days" is
+ * a rolling window - it is the right shape for "how are we doing lately", and it
+ * never changes length. "This month" is a period somebody is accountable FOR: it
+ * is what a target is set against, what a review covers, and it gets longer every
+ * day until it resets. On the 2nd of the month the two differ by twenty-nine days
+ * and only one of them answers "are we going to make the number".
+ */
+export type CalendarUnit = "week" | "month";
+
+export type DateWindow =
+  | { kind: "relative"; days: number }
+  | { kind: "calendar"; unit: CalendarUnit }
+  | { kind: "fixed"; from: string; to: string };
 
 /** 1 is "Today" - the org's today, the same count the API resolves in its zone. */
 export const RANGE_PRESETS = [1, 7, 30, 90] as const;
+
+/**
+ * The calendar pills, in the order they are offered.
+ *
+ * Week before month, and both after "Today", so the row reads shortest-first like
+ * the rolling presets do and the eye does not have to sort it.
+ */
+export const CALENDAR_PRESETS = ["week", "month"] as const;
+
+export const CALENDAR_LABEL: Record<CalendarUnit, string> = {
+  week: "This week",
+  month: "This month",
+};
 export const DEFAULT_RANGE_DAYS = 30;
 /** A year and a day, so "this time last year" is always expressible. */
 export const MAX_RANGE_DAYS = 366;
@@ -68,6 +107,14 @@ export function parseDateWindow(
     return { window: { kind: "fixed", from: lo, to: hi }, invalid: false };
   }
 
+  // Before `days`, and both before the default: a URL carrying both is a caller
+  // contradicting itself, and the named period is the more specific request.
+  const period = first(sp.period);
+  if (period !== undefined && period !== "") {
+    if (!(CALENDAR_PRESETS as readonly string[]).includes(period)) return fallback;
+    return { window: { kind: "calendar", unit: period as CalendarUnit }, invalid: false };
+  }
+
   const raw = first(sp.days) ?? (opts.legacyDaysKey ? first(sp[opts.legacyDaysKey]) : undefined);
   if (raw === undefined || raw === "") return { window: { kind: "relative", days: defaultDays }, invalid: false };
   const days = Number(raw);
@@ -82,12 +129,39 @@ export function parseDateWindow(
  */
 export function resolveDateWindow(window: DateWindow, today: string): { from: string; to: string } {
   if (window.kind === "fixed") return { from: window.from, to: window.to };
+  if (window.kind === "calendar") return { from: calendarStart(window.unit, today), to: today };
   return { from: shiftDateKey(today, -(window.days - 1)), to: today };
+}
+
+/**
+ * The first day of the calendar period `today` falls in.
+ *
+ * ── TWO DECISIONS WORTH STATING ─────────────────────────────────────────────
+ *
+ * The week starts MONDAY. `weekdayName` in @aura/shared is Monday-first (ISO)
+ * and the missed-call heatmap's rows already are, so a Sunday-first week here
+ * would be the only Sunday-first thing in the console.
+ *
+ * The period ends TODAY, not on its last calendar day. A range running to the
+ * 30th on the 3rd of the month would report twenty-seven days of zeroes and
+ * every rate would be computed over a denominator that has not happened - which
+ * is how "this month's conversion rate" reads as a collapse on the 2nd. Every
+ * figure on these pages is therefore period-to-date, and the summary line prints
+ * the two real dates so nobody has to infer it.
+ */
+function calendarStart(unit: CalendarUnit, today: string): string {
+  if (unit === "month") return `${today.slice(0, 7)}-01`;
+  // getUTCDay is 0 for Sunday; shift it to an ISO 1-7 so Monday is the origin.
+  const dow = new Date(`${today.slice(0, 10)}T00:00:00Z`).getUTCDay();
+  const iso = dow === 0 ? 7 : dow;
+  return shiftDateKey(today, -(iso - 1));
 }
 
 /** The window as query parameters - for the API and for links alike. */
 export function dateWindowParams(window: DateWindow): Record<string, string> {
-  return window.kind === "fixed" ? { from: window.from, to: window.to } : { days: String(window.days) };
+  if (window.kind === "fixed") return { from: window.from, to: window.to };
+  if (window.kind === "calendar") return { period: window.unit };
+  return { days: String(window.days) };
 }
 
 /** `days=30` or `from=…&to=…`, ready to put after a `?` or an `&`. */
@@ -97,6 +171,10 @@ export function dateWindowQuery(window: DateWindow): string {
 
 export function isPresetWindow(window: DateWindow, days: number): boolean {
   return window.kind === "relative" && window.days === days;
+}
+
+export function isCalendarWindow(window: DateWindow, unit: CalendarUnit): boolean {
+  return window.kind === "calendar" && window.unit === unit;
 }
 
 type Keep = Record<string, string | null | undefined>;
@@ -138,14 +216,40 @@ export function presetLabel(days: number): string {
 export function rangePresets(
   path: string,
   window: DateWindow,
-  opts: { defaultDays?: number; keep?: Keep; presets?: readonly number[] } = {},
+  opts: {
+    defaultDays?: number;
+    keep?: Keep;
+    presets?: readonly number[];
+    /**
+     * Also offer "This week" and "This month".
+     *
+     * Opt-in rather than on everywhere, because a calendar period is only
+     * meaningful where the page's figures are period-to-date. It is right on the
+     * three analytics screens and wrong on, say, a call log whose default is "any
+     * date" - there, a pill that silently means "since Monday" is a filter
+     * somebody did not ask for. Pass `calendar: true` on a page that wants both
+     * shapes.
+     */
+    calendar?: boolean;
+  } = {},
 ): RangePreset[] {
-  return (opts.presets ?? RANGE_PRESETS).map((days) => ({
+  const rolling = (opts.presets ?? RANGE_PRESETS).map((days) => ({
     key: String(days),
     label: presetLabel(days),
     href: dateWindowHref(path, { kind: "relative", days }, opts),
     active: isPresetWindow(window, days),
   }));
+  if (!opts.calendar) return rolling;
+  const calendar = CALENDAR_PRESETS.map((unit) => ({
+    key: unit,
+    label: CALENDAR_LABEL[unit],
+    href: dateWindowHref(path, { kind: "calendar", unit }, opts),
+    active: isCalendarWindow(window, unit),
+  }));
+  // "Today" first, then the two calendar periods, then the rolling windows: the
+  // row reads shortest-first, and a reader looking for "this month" finds it
+  // beside "this week" rather than after "Last 90 days".
+  return [rolling[0]!, ...calendar, ...rolling.slice(1)];
 }
 
 /**
@@ -180,6 +284,10 @@ export function periodPresets(
  */
 export function windowPhrase(window: DateWindow, echo?: { from?: string; to?: string }): string {
   if (window.kind === "relative") return window.days === 1 ? "today" : `last ${window.days} days`;
+  // "so far" is load-bearing: the period runs to TODAY, not to its last calendar
+  // day, and a comparison sentence reading "this month" would invite the reader
+  // to take it as the whole month.
+  if (window.kind === "calendar") return window.unit === "week" ? "this week so far" : "this month so far";
   return formatReportRange(echo?.from ?? window.from, echo?.to ?? window.to);
 }
 

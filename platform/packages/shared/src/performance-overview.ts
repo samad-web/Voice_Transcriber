@@ -124,6 +124,26 @@ export interface PerformanceOverview {
 
   team: TeamMemberLine[];
 
+  /**
+   * The lead funnel over the window, entry stage first, terminal stages left
+   * out. Empty for a workspace whose stage ledger has no rows in the range -
+   * which the page reports as "no history yet" rather than as an empty funnel.
+   */
+  funnel: FunnelStep[];
+
+  /**
+   * One row per day in the range, oldest first, DENSE - a day with no leads is a
+   * zero row and not a missing one.
+   *
+   * Dense because these drive sparklines, and a sparkline that silently omits
+   * quiet days compresses a fortnight of nothing into a single flat step and
+   * reads as steady activity. The rollup-backed charts elsewhere are sparse for
+   * the opposite and equally deliberate reason (a rep's weekend is not a day
+   * they made zero calls); a calendar day on which the business acquired no
+   * leads genuinely is a zero.
+   */
+  daily: OverviewDay[];
+
   /** The quarter's targets, from `sales_targets` (0050). */
   goals: Attainment[];
 }
@@ -282,4 +302,126 @@ export function overviewHeadline(o: PerformanceOverview): string {
     return `All ${o.goals.length} target${o.goals.length === 1 ? " is" : "s are"} at or ahead of pace.`;
   }
   return `${behind} of ${o.goals.length} target${o.goals.length === 1 ? "" : "s"} ${behind === 1 ? "is" : "are"} behind pace.`;
+}
+
+// ── The funnel, and where it leaks ───────────────────────────────────────────
+
+/**
+ * How many leads reached each stage, and how many stopped there.
+ *
+ * ── "REACHED" IS A HIGH-WATER MARK, READ FROM THE LEDGER ────────────────────
+ *
+ * A lead sitting in Negotiation obviously passed Contacted, so counting only
+ * each lead's CURRENT stage draws a funnel with holes in it. Worse, a LOST lead
+ * has had its `stage` overwritten with the terminal value, erasing how far it
+ * got - which would make a lead that died in Negotiation indistinguishable from
+ * one that died on first contact.
+ *
+ * So `reached` is the furthest stage each lead was EVER in, taken from
+ * `lead_stage_transitions` (0075) - the ledger that exists for exactly this. The
+ * deals funnel in reports.service.ts does the same thing against
+ * `deal_stage_transitions`, and this is deliberately the same shape rather than
+ * a second idea about what a funnel is.
+ *
+ * Floored at the entry stage: every lead that exists entered the pipeline,
+ * whatever else is unknown about it. Dropping the unknowns would make the top of
+ * the funnel smaller than the number of leads created, shrinking every
+ * denominator below it and flattering every conversion rate on the page.
+ */
+export interface FunnelStep {
+  /** The stage key. Tenant data (`organizations.lead_stages`), never an enum. */
+  stage: string;
+  /** The tenant's own label for it - "Enrolled", "Admitted", "Won". */
+  label: string;
+  reached: number;
+  /**
+   * Share of the PREVIOUS step that got here, 0-1. Null on the first step
+   * (nothing precedes it) and null when the previous step is empty.
+   */
+  conversionFromPrevious: number | null;
+  /**
+   * How many stopped at the previous step and never reached this one. The
+   * absolute number, because "38% drop-off" and "eleven people" prompt different
+   * conversations and only the second one can be worked.
+   */
+  droppedBefore: number;
+}
+
+/** One day of the range, for the sparklines on the headline tiles. */
+export interface OverviewDay {
+  /** Calendar date in the org's reporting zone. */
+  day: string;
+  /** Leads created on this day. */
+  leads: number;
+  /** Leads that went won on this day. */
+  won: number;
+  /** Value of those wins. */
+  wonValue: number;
+}
+
+/**
+ * The step with the largest absolute drop-off - the one place on the funnel
+ * worth a decision.
+ *
+ * Absolute and not proportional, on purpose. The steepest PERCENTAGE drop is
+ * almost always the last step before a win, where the base is smallest and two
+ * leads make it look catastrophic. The largest COUNT is where the leads actually
+ * are, and it is the only one of the two that changes what anybody does on
+ * Monday.
+ *
+ * Null when nothing has dropped anywhere, which is either a perfect quarter or,
+ * far more often, a workspace whose stage ledger is empty.
+ */
+export function worstDropOff(steps: readonly FunnelStep[]): FunnelStep | null {
+  let worst: FunnelStep | null = null;
+  for (const step of steps) {
+    if (step.droppedBefore > 0 && (!worst || step.droppedBefore > worst.droppedBefore)) {
+      worst = step;
+    }
+  }
+  return worst;
+}
+
+/**
+ * The funnel's one sentence: where the leaks are, in the tenant's own stage
+ * names.
+ *
+ * Says nothing at all rather than something vacuous when there is no leak to
+ * name. "The funnel is performing well" is the kind of line that teaches people
+ * the insight row is decoration.
+ */
+export function funnelInsight(steps: readonly FunnelStep[]): string | null {
+  if (steps.length < 2) return null;
+  const worst = worstDropOff(steps);
+  if (!worst) return null;
+  const entered = steps[0]?.reached ?? 0;
+  if (entered <= 0) return null;
+  const sharePct = Math.round((worst.droppedBefore / entered) * 100);
+  return `Most leads stop before ${worst.label}: ${worst.droppedBefore} of the ${entered} that entered (${sharePct}%) never got that far.`;
+}
+
+/**
+ * Lead velocity: new leads per seven days, over the window.
+ *
+ * ── WHY PER WEEK AND NOT PER DAY ────────────────────────────────────────────
+ *
+ * Per day, every B2B floor reads "3.4 leads a day" and has to multiply in their
+ * head, because nobody plans in days - and the figure swings on whether the
+ * window happened to include a weekend. Per week is the unit a pipeline is
+ * actually discussed in, and a seven-day window contains exactly one of whatever
+ * weekly pattern the business has.
+ *
+ * `spanDays` is passed in rather than derived from `from`/`to` here: the range is
+ * inclusive calendar days in the org's zone, and that arithmetic belongs to
+ * whoever owns the range, not to this file.
+ */
+export function leadsPerWeek(leadsCreated: number, spanDays: number): number | null {
+  if (spanDays <= 0) return null;
+  return Number(((leadsCreated / spanDays) * 7).toFixed(1));
+}
+
+/** Wins per seven days, same reasoning as `leadsPerWeek`. */
+export function winsPerWeek(won: number, spanDays: number): number | null {
+  if (spanDays <= 0) return null;
+  return Number(((won / spanDays) * 7).toFixed(1));
 }

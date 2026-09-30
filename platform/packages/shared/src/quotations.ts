@@ -105,3 +105,102 @@ export function splitGst(taxTotal: number, interState: boolean): { cgst: number;
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+
+// ── The quotation lifecycle (doc 37, R5) ────────────────────────────────────
+
+/**
+ * Every status a quotation can hold. `superseded` arrived with revisions
+ * (migration 0149); the other five have existed since 0059.
+ *
+ * ONE definition, here, because there were seven: two zod enums in the
+ * controller, the DB CHECK, its Supabase mirror, a `QuotationStatus` union in
+ * the web's actions, the detail page's `STATUS_OPTIONS` and the list page's
+ * filter tabs. `notifications.kind` is the standing lesson - its CHECK and its
+ * zod enum drifted apart and threw 23514 at runtime - so the enum, the moves and
+ * the locks live together and everything else imports them.
+ */
+export const QUOTATION_STATUSES = [
+  "draft",
+  "sent",
+  "accepted",
+  "rejected",
+  "expired",
+  "superseded",
+] as const;
+export type QuotationStatus = (typeof QUOTATION_STATUSES)[number];
+
+/**
+ * The status moves a PERSON may make by hand.
+ *
+ * ── TWO STATUSES NOBODY MAY TYPE ────────────────────────────────────────────
+ *
+ * `expired` is absent from every list: it means "the date on the document has
+ * passed", and only the calendar can make that true. Setting it by hand on a
+ * quotation still inside its validity would leave the status contradicting the
+ * `valid_until` printed on the customer's copy, and the sweep that owns it
+ * (worker `document-dates.ts`) would never put it back. `superseded` is absent
+ * for the same kind of reason: it means a revision has replaced this row, and
+ * only creating that revision makes it so.
+ *
+ * This mirrors the rule `MANUAL_STATUS_MOVES` already applies to invoices, where
+ * `paid` is never a manual move because only a recorded payment makes it.
+ *
+ * ── WHY THE ENDS ARE TERMINAL ───────────────────────────────────────────────
+ *
+ * `accepted`, `rejected`, `expired` and `superseded` lead nowhere. Before this,
+ * PATCH took any status from any status, so a rejected quotation could be walked
+ * back to `draft` and rewritten - destroying the record of what the customer
+ * actually turned down. With revisions there is a better answer for all four:
+ * revise it, which keeps the old document intact and numbered.
+ */
+export const QUOTATION_MANUAL_MOVES: Record<QuotationStatus, readonly QuotationStatus[]> = {
+  draft: ["sent"],
+  sent: ["accepted", "rejected"],
+  accepted: [],
+  rejected: [],
+  expired: [],
+  superseded: [],
+};
+
+/** Sending the CURRENT status back is a no-op, not a move - a form may post every field. */
+export function canMoveQuotation(from: QuotationStatus, to: QuotationStatus): boolean {
+  if (from === to) return true;
+  return QUOTATION_MANUAL_MOVES[from].includes(to);
+}
+
+/**
+ * Whether the line items, the discount and the dates may still be changed.
+ *
+ * Only a draft. Once a quotation has been sent, its numbers are what a customer
+ * was told; editing them in place rewrites history and leaves the copy in their
+ * inbox disagreeing with the row. The invoice side has had this since 0139
+ * (`moneyLocked`); the quotation side had no lock at all, and `PATCH` would
+ * happily `DELETE` and re-insert the lines of a document already out for
+ * signature.
+ */
+export function quotationEditable(status: QuotationStatus): boolean {
+  return status === "draft";
+}
+
+/**
+ * Whether a new revision may be raised from this one.
+ *
+ * Anything that has been issued and is not already replaced. Not a `draft` -
+ * there is nothing to preserve, so edit it - and not a `superseded` row, because
+ * the newest revision is the one to carry forward; revising an old one would
+ * fork the family.
+ */
+export function canReviseQuotation(status: QuotationStatus): boolean {
+  return status === "sent" || status === "accepted" || status === "rejected" || status === "expired";
+}
+
+/**
+ * A revision's document number: the ROOT's number with the revision appended,
+ * so `Q-2026-0007` begets `Q-2026-0007-r2`, `-r3` and so on.
+ *
+ * The root's number, never the immediate parent's, or revision 3 off revision 2
+ * would read `Q-2026-0007-r2-r3`.
+ */
+export function quotationRevisionNumber(rootNumber: string, revision: number): string {
+  return `${rootNumber}-r${revision}`;
+}

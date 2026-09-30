@@ -19,6 +19,7 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
 import { RecordScope, scopeClause, type CrmRecordScope } from "../../common/crm-scope";
+import { orgGstStateCode, resolveGstTreatment } from "../../common/gst-treatment";
 import { assertInOrg } from "../../common/org-references";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -102,6 +103,8 @@ const UpdateInvoiceBody = z.object({
 
 const ListQuery = z.object({
   status: z.enum(["draft", "sent", "paid", "overdue", "void"]).optional(),
+  /** Invoice number, or the name of the company or person it is for. */
+  q: z.string().max(200).optional(),
   dealId: z.string().uuid().optional(),
   /** Everything raised for one person or company - the contact and account pages' reverse lookup (doc 23, H2). */
   contactId: z.string().uuid().optional(),
@@ -119,6 +122,29 @@ const INVOICE_COLUMNS = `id, workspace_id, account_id, contact_id, deal_id, quot
   customer_gstin, place_of_supply, total, amount_paid, due_date, notes, owner_user_id,
   created_at, updated_at`;
 
+/**
+ * The same columns for the list query, which joins and so must qualify them -
+ * `tax_total`'s expression included. Written out rather than derived from the
+ * constant above: that one is also a `RETURNING` list, where a table alias is a
+ * syntax error, and it already contains an expression that string surgery on
+ * commas would not survive.
+ */
+const INVOICE_LIST_COLUMNS = `inv.id, inv.workspace_id, inv.account_id, inv.contact_id, inv.deal_id,
+  inv.quotation_id, inv.invoice_number, inv.status, inv.currency, inv.subtotal, inv.discount_type,
+  inv.discount_value, inv.cgst, inv.sgst, inv.igst,
+  (inv.cgst + inv.sgst + inv.igst) AS tax_total, inv.is_inter_state, inv.payment_provider,
+  inv.customer_gstin, inv.place_of_supply, inv.total, inv.amount_paid, inv.due_date, inv.notes,
+  inv.owner_user_id, inv.created_at, inv.updated_at`;
+
+/**
+ * Who the invoice is for, resolved to a name. The list rendered no customer at
+ * all, so a page of invoices was numbers and amounts with nothing to say whose
+ * they were. LEFT JOIN: an invoice with no customer attached still belongs.
+ */
+const INVOICE_LIST_JOINS = `FROM invoices inv
+    LEFT JOIN accounts a ON a.id = inv.account_id
+    LEFT JOIN contacts c ON c.id = inv.contact_id`;
+
 type QueryClient = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
 
 @Controller("invoices")
@@ -135,42 +161,51 @@ export class InvoicesController {
   ) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { status, dealId, contactId, accountId, limit, offset } = parsed.data;
+    const { status, q, dealId, contactId, accountId, limit, offset } = parsed.data;
 
     return this.db.withOrg(orgId, async (client) => {
       const where = ["1=1"];
       const params: unknown[] = [];
       if (status) {
         params.push(status);
-        where.push(`status = $${params.length}`);
+        where.push(`inv.status = $${params.length}`);
+      }
+      if (q) {
+        params.push(`%${q}%`);
+        const p = `$${params.length}`;
+        // The customer's name as well as the number, because nobody remembers an
+        // invoice number. A row with no customer simply does not match, which is
+        // right: searching for a name should not return the unattached ones.
+        where.push(`(inv.invoice_number ILIKE ${p} OR a.name ILIKE ${p} OR c.display_name ILIKE ${p})`);
       }
       if (dealId) {
         params.push(dealId);
-        where.push(`deal_id = $${params.length}`);
+        where.push(`inv.deal_id = $${params.length}`);
       }
       if (contactId) {
         params.push(contactId);
-        where.push(`contact_id = $${params.length}`);
+        where.push(`inv.contact_id = $${params.length}`);
       }
       if (accountId) {
         params.push(accountId);
-        where.push(`account_id = $${params.length}`);
+        where.push(`inv.account_id = $${params.length}`);
       }
       if (recordScope.scope === "owned") {
         params.push(recordScope.userId);
-        where.push(`owner_user_id = $${params.length}`);
+        where.push(`inv.owner_user_id = $${params.length}`);
       }
       params.push(limit, offset);
       const { rows } = await client.query(
-        `SELECT ${INVOICE_COLUMNS}, count(*) OVER()::int AS total_count
-           FROM invoices
+        `SELECT ${INVOICE_LIST_COLUMNS}, a.name AS account_name, c.display_name AS contact_name,
+                count(*) OVER()::int AS total_count
+           ${INVOICE_LIST_JOINS}
           WHERE ${where.join(" AND ")}
-          ORDER BY created_at DESC
+          ORDER BY inv.created_at DESC
           LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params,
       );
       return {
-        invoices: rows.map(({ total_count: _t, ...i }) => i),
+        invoices: rows.map(({ total_count: _t, ...row }) => row),
         total: rows[0]?.total_count ?? 0,
         limit,
         offset,
@@ -208,7 +243,13 @@ export class InvoicesController {
         razorpay: states.razorpay.available,
         stripe: states.stripe.available,
       };
-      return { invoice, items, payments, gateways };
+      // The org's own GST state, so the console can say WHY it is showing
+      // CGST + SGST rather than IGST - and recompute that as somebody changes
+      // the place of supply, without asking the server again. Null when the
+      // workspace has never saved a state, which is when the treatment stays a
+      // question the rep answers.
+      const homeStateCode = await orgGstStateCode(client, orgId);
+      return { invoice, items, payments, gateways, homeStateCode };
     });
   }
 
@@ -301,7 +342,8 @@ export class InvoicesController {
       const {
         rows: [existing],
       } = await client.query(
-        `SELECT id, status, amount_paid, discount_type, discount_value, is_inter_state
+        `SELECT id, status, amount_paid, discount_type, discount_value, is_inter_state,
+                place_of_supply
            FROM invoices WHERE id = $1 ${scoped ? `AND ${scoped}` : ""}
            FOR UPDATE`,
         scoped ? [id, recordScope.userId] : [id],
@@ -372,7 +414,15 @@ export class InvoicesController {
       // restate it. The old code kept the previous split whenever interState
       // was omitted, so a line edit left CGST/SGST summing to the OLD tax
       // against a NEW total (doc 26 defect 5).
-      const interState: boolean = p.interState ?? existing.is_inter_state ?? false;
+      const stated: boolean = p.interState ?? existing.is_inter_state ?? false;
+      // The place of supply as it will STAND after this update - the new one when
+      // the edit sets it, the stored one otherwise. Deriving off `p` alone would
+      // let a line edit fall back to the rep's old answer on an invoice whose
+      // place of supply is perfectly well known.
+      const placeOfSupply =
+        p.placeOfSupply !== undefined ? p.placeOfSupply : (existing.place_of_supply ?? null);
+      const treatment = await resolveGstTreatment(client, orgId, placeOfSupply, stated);
+      const interState = treatment.interState;
       const gst = splitGst(totals.taxTotal, interState);
 
       const {
@@ -435,7 +485,13 @@ export class InvoicesController {
         type: p.discount.type,
         value: p.discount.value,
       });
-      const gst = splitGst(totals.taxTotal, p.interState);
+      // Derived from the org's own state against the place of supply when both
+      // are GST state codes, and the caller's `interState` otherwise - which is
+      // what create-from-quotation always falls back to, since a quotation
+      // carries no place of supply.
+      const treatment = await resolveGstTreatment(client, orgId, p.placeOfSupply, p.interState);
+      const interState = treatment.interState;
+      const gst = splitGst(totals.taxTotal, interState);
 
       // Doc 23, A2 - see common/org-references.ts. Covers both the plain
       // create and create-from-quotation, which re-parses into this shape.
@@ -478,7 +534,7 @@ export class InvoicesController {
             p.dueDate ?? null,
             p.notes ?? null,
             recordScope.scope === "owned" ? recordScope.userId : null,
-            p.interState,
+            interState,
           ],
         );
         await this.insertItems(client, orgId, invoice.id, p.items as any[]);
@@ -521,11 +577,20 @@ export class InvoicesController {
     }
   }
 
+  /**
+   * The line items, each carrying the NAME of the catalogue entry it came off
+   * rather than only its uuid - same reasoning as the quotation controller's
+   * fetchItems(). LEFT JOIN, so archiving a product never hides a line off a
+   * tax document that has already been issued.
+   */
   private async fetchItems(client: QueryClient, invoiceId: string) {
     const { rows } = await client.query(
-      `SELECT id, product_id, description, hsn_sac, quantity, unit_price, discount_pct, tax_rate,
-              line_total, position
-         FROM invoice_items WHERE invoice_id = $1 ORDER BY position ASC`,
+      `SELECT i.id, i.product_id, p.name AS product_name, i.description, i.hsn_sac, i.quantity,
+              i.unit_price, i.discount_pct, i.tax_rate, i.line_total, i.position
+         FROM invoice_items i
+         LEFT JOIN products p ON p.id = i.product_id
+        WHERE i.invoice_id = $1
+        ORDER BY i.position ASC`,
       [invoiceId],
     );
     return rows;

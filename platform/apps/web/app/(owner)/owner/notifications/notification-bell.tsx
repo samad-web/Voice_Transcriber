@@ -10,6 +10,7 @@ import {
   Bell,
   ClipboardCheck,
   Clock,
+  Download,
   FileText,
   HardDrive,
   Hourglass,
@@ -17,6 +18,7 @@ import {
   PhoneMissed,
   Plug,
   ShieldAlert,
+  Upload,
   UserPlus,
   Zap,
   type LucideIcon,
@@ -72,6 +74,13 @@ const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
   "shield-alert": ShieldAlert,
   "hard-drive": HardDrive,
   "phone-missed": PhoneMissed,
+  // The export engine's two halves (0148): `upload` while the job is being
+  // built, `download` once there is a file to fetch. The map is typed as a
+  // Record over `NotificationKindSpec["icon"]`, so adding a kind that names an
+  // icon nobody has drawn yet fails the build here rather than rendering a
+  // blank square in the bell.
+  upload: Upload,
+  download: Download,
 };
 
 type Tab = "all" | "action";

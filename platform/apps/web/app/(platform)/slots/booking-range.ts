@@ -49,6 +49,14 @@ export function parseBookingWindow(sp: SearchParams): { window: BookingWindow; i
   // `days` and `from`/`to` read exactly as every other report reads them.
   const parsed = parseDateWindow(sp, { maxDays: 366 });
   if (parsed.invalid) return { window: DEFAULT_BOOKING_WINDOW, invalid: true };
+  // A CALENDAR window ("this week", "this month") is not expressible here, and
+  // this page offers no pill that produces one - it can only arrive from a
+  // hand-typed `?period=`, or from somebody pasting a link copied off an
+  // analytics screen. Treated as unreadable rather than coerced: a booking
+  // window looks FORWARD (`next`) as often as back, and quietly turning "this
+  // month" into "the last N days" would show a scheduler a past range it did not
+  // ask for. `invalid` is what already makes the page say so.
+  if (parsed.window.kind === "calendar") return { window: DEFAULT_BOOKING_WINDOW, invalid: true };
   return {
     window: parsed.window.kind === "fixed" ? parsed.window : { kind: "last", days: parsed.window.days },
     invalid: false,

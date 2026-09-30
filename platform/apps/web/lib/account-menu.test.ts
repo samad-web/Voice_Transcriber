@@ -20,6 +20,7 @@ describe("accountMenuItemsFor (doc 27 §2.2)", () => {
       "time",
       "plan",
       "login_activity",
+      "data",
       "sign_out_all",
       "sign_out",
     ]);
@@ -33,18 +34,20 @@ describe("accountMenuItemsFor (doc 27 §2.2)", () => {
       "time",
       "plan",
       "login_activity",
+      "data",
       "sign_out_all",
       "sign_out",
     ]);
   });
 
   it.each(["telecaller", "sales", "marketing"] as const)(
-    "gives a %s only Profile, notifications, Login activity and the two sign-outs",
+    "gives a %s only Profile, notifications, Login activity, Your data and the two sign-outs",
     (role) => {
       expect(ids(accountMenuItemsFor("owner", role))).toEqual([
         "profile",
         "notifications",
         "login_activity",
+        "data",
         "sign_out_all",
         "sign_out",
       ]);
