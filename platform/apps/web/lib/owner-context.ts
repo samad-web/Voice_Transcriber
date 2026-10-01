@@ -73,6 +73,13 @@ export interface OwnerMembership {
   /** organizations.whatsapp_provider (migration 0104) - which connect flow the
    *  WhatsApp Setup page offers. 'none' or 'wasi'. */
   whatsappProvider: string;
+  /**
+   * organizations.call_escalation_enabled (migration 0151, Build docs/38) -
+   * whether telecallers may hand a call up to a senior or a manager. Off means
+   * the Escalations rail item is hidden and a telecaller is never shown the
+   * feature at all. A convenience for the console; the API's 403 is the control.
+   */
+  callEscalationEnabled: boolean;
   /** organizations.branding (migration 0065), already parsed. Carried on the
    *  membership rather than fetched per page - see `getOwnerBranding`. */
   branding: Branding;
@@ -218,11 +225,16 @@ if (AUTH_ENABLED && OPERATOR_EMAILS.length === 0) {
 }
 
 interface RawMembership
-  extends Omit<OwnerMembership, "ownerRole" | "branding" | "guideCompletedAt" | "guideDismissedAt" | "storage"> {
+  extends Omit<
+    OwnerMembership,
+    "ownerRole" | "branding" | "guideCompletedAt" | "guideDismissedAt" | "storage" | "callEscalationEnabled"
+  > {
   /** Optional on the wire: an API deployed ahead of migrations 0128/0129 omits them. */
   guideCompletedAt?: string | null;
   guideDismissedAt?: string | null;
   storage?: StorageSummary | null;
+  /** Optional on the wire: an API deployed ahead of migration 0151 omits it. */
+  callEscalationEnabled?: boolean;
   ownerRole: string | null;
   /** Straight off the API as jsonb - `parseBranding` gives it a shape below. */
   branding: unknown;
@@ -310,6 +322,10 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
       // never set is off would be debugging the wrong thing entirely.
       featureOverrides: {},
       whatsappProvider: "wasi",
+      // On locally, for the reason featureOverrides is empty: a laptop renders
+      // the whole console. DEV_CALL_ESCALATION=0 renders it switched off, to
+      // check what a telecaller sees then. The API still reads the real column.
+      callEscalationEnabled: process.env.DEV_CALL_ESCALATION !== "0",
       // Local dev runs unbranded: the console renders in the stock palette,
       // which is what you want when checking a change against the design system.
       branding: {},
@@ -373,6 +389,9 @@ export const getPrincipal = cache(async (): Promise<Principal | null> => {
     // cannot yet tell us otherwise.
     featureOverrides: m.featureOverrides ?? {},
     whatsappProvider: m.whatsappProvider ?? "none",
+    // Off when an API ahead of 0151 omits it - the column's own default, and
+    // the direction that shows a telecaller nothing they cannot use.
+    callEscalationEnabled: m.callEscalationEnabled ?? false,
     branding: parseBranding(m.branding),
     // Same fail-towards-asking default the API applies: a console deployed
     // ahead of migration 0106 sees `undefined` and must treat it as "not

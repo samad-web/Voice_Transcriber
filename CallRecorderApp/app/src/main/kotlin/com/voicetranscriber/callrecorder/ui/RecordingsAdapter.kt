@@ -11,6 +11,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.card.MaterialCardView
 import com.voicetranscriber.callrecorder.R
 import com.voicetranscriber.callrecorder.databinding.ItemRecordingBinding
+import com.voicetranscriber.callrecorder.escalation.EscalationStore
+import com.voicetranscriber.callrecorder.escalation.EscalationView
 import com.voicetranscriber.callrecorder.recordings.SourceRegistry
 import com.voicetranscriber.callrecorder.storage.RecordingEntity
 
@@ -21,9 +23,28 @@ class RecordingsAdapter(
     private val onEdit: (RecordingEntity) -> Unit,
     private val onEnterSelection: (RecordingEntity) -> Unit,
     private val onToggleSelect: (RecordingEntity) -> Unit,
+    private val onEscalate: (RecordingEntity) -> Unit,
 ) : ListAdapter<RecordingEntity, RecordingsAdapter.VH>(DIFF) {
 
     private var playingId: Long? = null
+
+    /** Call escalations (Build docs/38): the config + the latest escalation per server call id. */
+    private var escalation = EscalationStore.State(null, emptyMap())
+
+    /**
+     * Rebinds only the rows whose escalation changed - a switched-off feature
+     * arrives here as an empty map, so every row that showed a status loses it.
+     * The menu reads [escalation] when it opens, so it needs no rebind.
+     */
+    fun setEscalationState(state: EscalationStore.State) {
+        val old = escalation.byCall
+        escalation = state
+        val changed = (old.keys + state.byCall.keys).filterTo(HashSet()) { old[it] != state.byCall[it] }
+        if (changed.isEmpty()) return
+        currentList.forEachIndexed { pos, item ->
+            if (item.remoteCallId != null && item.remoteCallId in changed) notifyItemChanged(pos, PAYLOAD_ESCALATION)
+        }
+    }
 
     // --- multi-select state ---
     private var selectionMode = false
@@ -72,6 +93,15 @@ class RecordingsAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) =
         holder.bind(getItem(position), isPlaying = getItem(position).id == playingId)
 
+    /** An escalation-only change touches just the status line - no full rebind, no flicker. */
+    override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads.all { it == PAYLOAD_ESCALATION }) {
+            holder.bindEscalation(getItem(position))
+        } else {
+            onBindViewHolder(holder, position)
+        }
+    }
+
     inner class VH(private val binding: ItemRecordingBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: RecordingEntity, isPlaying: Boolean) {
             val ctx = binding.root.context
@@ -99,6 +129,7 @@ class RecordingsAdapter(
             val extra = item.note ?: item.transcript
             binding.transcript.text = extra
             binding.transcript.visibility = if (extra.isNullOrBlank()) View.GONE else View.VISIBLE
+            bindEscalation(item)
 
             binding.play.setImageResource(
                 if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
@@ -131,13 +162,55 @@ class RecordingsAdapter(
             }
         }
 
+        /** "Escalated · waiting" / "Picked up by Priya" / "Answered by Priya: ..." - or nothing. */
+        fun bindEscalation(item: RecordingEntity) {
+            val ctx = binding.root.context
+            val view = item.remoteCallId?.let { escalation.byCall[it] }
+            val text = when (val s = view?.rowStatus()) {
+                null -> null
+                is EscalationView.RowStatus.Waiting ->
+                    s.with?.let { ctx.getString(R.string.escalation_waiting_for, it) }
+                        ?: ctx.getString(R.string.escalation_waiting)
+                is EscalationView.RowStatus.PickedUp ->
+                    s.by?.let { ctx.getString(R.string.escalation_picked_up_by, it) }
+                        ?: ctx.getString(R.string.escalation_picked_up)
+                is EscalationView.RowStatus.Answered -> {
+                    val head = s.by?.let { ctx.getString(R.string.escalation_answered_by, it) }
+                        ?: ctx.getString(R.string.escalation_answered)
+                    val note = s.note?.replace(Regex("\\s+"), " ")?.trim()?.ifBlank { null }
+                    if (note == null) {
+                        head
+                    } else {
+                        val short = if (note.length > NOTE_PREVIEW_CHARS) note.take(NOTE_PREVIEW_CHARS).trimEnd() + "…" else note
+                        ctx.getString(R.string.escalation_answered_note, head, short)
+                    }
+                }
+            }
+            binding.escalationStatus.text = text
+            binding.escalationStatus.visibility = if (text == null) View.GONE else View.VISIBLE
+        }
+
         private fun showMenu(anchor: View, item: RecordingEntity) {
             PopupMenu(anchor.context, anchor).apply {
                 menuInflater.inflate(R.menu.menu_recording, menu)
+                // Call escalations (Build docs/38): only while the server sends the
+                // block, only for an uploaded call (the server knows it by
+                // remoteCallId), and only when that call has no live escalation.
+                val config = escalation.config
+                val canEscalate = config != null && item.remoteCallId != null && !escalation.isLive(item.remoteCallId)
+                menu.findItem(R.id.action_escalate)?.let { mi ->
+                    mi.isVisible = canEscalate
+                    if (canEscalate) {
+                        mi.title = config?.recipientName
+                            ?.let { anchor.context.getString(R.string.escalate_to, it) }
+                            ?: anchor.context.getString(R.string.escalate_to_manager)
+                    }
+                }
                 setOnMenuItemClickListener { mi ->
                     when (mi.itemId) {
                         R.id.action_edit -> onEdit(item)
                         R.id.action_share -> onShare(item)
+                        R.id.action_escalate -> onEscalate(item)
                         R.id.action_delete -> onDelete(item)
                     }
                     true
@@ -154,6 +227,11 @@ class RecordingsAdapter(
     }
 
     private companion object {
+        const val PAYLOAD_ESCALATION = "escalation"
+
+        /** How much of a manager's answer fits on the row; the line ellipsizes after two lines anyway. */
+        const val NOTE_PREVIEW_CHARS = 120
+
         val DIFF = object : DiffUtil.ItemCallback<RecordingEntity>() {
             override fun areItemsTheSame(a: RecordingEntity, b: RecordingEntity) = a.id == b.id
             override fun areContentsTheSame(a: RecordingEntity, b: RecordingEntity) = a == b

@@ -39,6 +39,14 @@ export const HandsetAlertKind = z.enum([
   "missed_callback",
   /** An owner or manager typed it on the Phones page. */
   "manager_message",
+  /**
+   * A call was escalated to this person (migration 0151, doc 38). Only reaches
+   * a recipient who is also a telecaller with a phone - a senior on the floor,
+   * a manager who takes calls. They answer it in the console.
+   */
+  "escalation_received",
+  /** An escalation this telecaller raised was answered. */
+  "escalation_update",
 ]);
 export type HandsetAlertKind = z.infer<typeof HandsetAlertKind>;
 
@@ -61,6 +69,10 @@ export const HANDSET_ALERT_STYLE: Record<HandsetAlertKind, HandsetAlertStyle> = 
   task_assigned: "notify",
   followup_due: "notify",
   missed_callback: "notify",
+  // A customer may still be waiting on the other end of an escalation, and the
+  // answer to one is a manager's instruction - the manager_message case.
+  escalation_received: "popup",
+  escalation_update: "popup",
 };
 
 /**
@@ -74,6 +86,8 @@ export const HANDSET_ALERT_TTL_MINUTES: Record<HandsetAlertKind, number> = {
   task_assigned: 24 * 60,
   followup_due: 2 * 60,
   missed_callback: 12 * 60,
+  escalation_received: 12 * 60,
+  escalation_update: 24 * 60,
 };
 
 /**

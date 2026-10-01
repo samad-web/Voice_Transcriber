@@ -283,6 +283,65 @@ describe("ownerNavItemsFor - the client's feature switches", () => {
   });
 });
 
+/**
+ * The call-escalation switch (0151, Build docs/38). Like `call_intel`, the
+ * assertion that matters is the default: a caller that does not say the
+ * switch is on must hide the queue, because the promise to a telecaller is
+ * that they see nothing of it until the business turns it on.
+ */
+describe("ownerNavItemsFor - the call-escalation switch", () => {
+  const modules = ["aura", "crm", "call_intel", "wasi"];
+  const nav = (role: Parameters<typeof ownerNavItemsFor>[0], callEscalationEnabled?: boolean) =>
+    ownerNavItemsFor(role, false, true, true, { modules, features: {}, callEscalationEnabled }).map(
+      (i) => i.href,
+    );
+
+  it("hides the queue from everyone while the switch is off, or unsaid", () => {
+    for (const role of OwnerRole.options) {
+      expect([role, hrefs(role, false, true, true).includes("/owner/escalations")]).toEqual([role, false]);
+      expect([role, nav(role).includes("/owner/escalations")]).toEqual([role, false]);
+      expect([role, nav(role, false).includes("/owner/escalations")]).toEqual([role, false]);
+    }
+  });
+
+  it("shows it to every persona that takes or answers calls once it is on - never marketing", () => {
+    for (const role of ["owner", "manager", "telecaller", "sales"] as const) {
+      expect([role, nav(role, true).includes("/owner/escalations")]).toEqual([role, true]);
+    }
+    expect(nav("marketing", true)).not.toContain("/owner/escalations");
+  });
+
+  it("files it with the other call queues, and changes nothing else", () => {
+    const on = ownerNavSectionsFor("owner", false, true, true, { modules, features: {}, callEscalationEnabled: true });
+    expect(on.find((g) => g.items.some((i) => i.href === "/owner/escalations"))?.key).toBe("conversations");
+    expect(nav("owner", true).filter((h) => h !== "/owner/escalations")).toEqual(nav("owner", false));
+  });
+
+  it("keeps its settings page reachable while the switch is off - that is where it is turned on", () => {
+    for (const role of ["owner", "manager"] as const) {
+      expect([role, nav(role, false).includes("/owner/settings/escalations")]).toEqual([role, true]);
+    }
+    for (const role of ["telecaller", "sales", "marketing"] as const) {
+      expect([role, nav(role, true).includes("/owner/settings/escalations")]).toEqual([role, false]);
+    }
+    expect(
+      OWNER_SETTINGS_GROUPS.find((g) => g.key === "calls")?.pages.map((p) => p.href),
+    ).toContain("/owner/settings/escalations");
+  });
+
+  it("never lets a telecaller's Conversations open on the queue", () => {
+    // A section's rail link is its first visible page. The queue is filed last
+    // so a telecaller's Conversations still lands on a page they always have.
+    const groups = ownerNavSectionsFor("telecaller", false, true, true, {
+      modules,
+      features: {},
+      callEscalationEnabled: true,
+    });
+    const conversations = groups.find((g) => g.key === "conversations");
+    expect(conversations?.items[0]?.href).not.toBe("/owner/escalations");
+  });
+});
+
 describe("ownerNavSectionsFor", () => {
   const groups = (
     role: Parameters<typeof ownerNavSectionsFor>[0],

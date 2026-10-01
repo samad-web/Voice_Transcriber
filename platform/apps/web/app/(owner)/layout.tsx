@@ -141,9 +141,14 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   // worker use - one resolution, three tiers, so the rail can never offer a
   // page the API refuses. The page-level `requireFeature` is the backstop for
   // a bookmark, not the primary experience.
+  //
+  // The escalation switch (0151) rides on the same object, so every rail, tab
+  // strip, breadcrumb and Back button below hides the Escalations queue
+  // together while the workspace has it off.
   const entitlement = {
     modules: owner.membership.enabledModules,
     features: owner.membership.featureOverrides,
+    callEscalationEnabled: owner.membership.callEscalationEnabled,
   };
 
   // Read here, on the server, rather than baked into the client bundle: an

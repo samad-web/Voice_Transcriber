@@ -119,10 +119,41 @@ export async function fetchLeadAction(leadId: string): Promise<{
   try {
     const res = await fetch(`${API_URL}/v1/leads/${leadId}`, { headers, cache: "no-store" });
     if (!res.ok) return { error: `API ${res.status}` };
-    return (await res.json()) as { lead: Lead; calls: LeadCall[]; stages: Stage[]; boards: LeadBoardRef[] };
+    const body = (await res.json()) as {
+      lead: Lead;
+      calls: LeadCall[];
+      stages: Stage[];
+      boards: LeadBoardRef[];
+    };
+    return { ...body, calls: await withEscalationVisibility(body.calls ?? []) };
   } catch {
     return { error: "API unreachable" };
   }
+}
+
+/**
+ * Call escalations (0151): while the workspace switch is off, a telecaller or
+ * a rep is shown nothing about them - not the button, and not the chip on a
+ * call escalated before the switch went off, whose link would lead to a queue
+ * they cannot open. Owners and managers keep the chip: the queue stays open
+ * to them so nothing already raised is stranded (Build docs/38, "The switch").
+ *
+ * Decided here, on the server, from the membership the session already
+ * resolved - so the drawer, rendered from the board and the leads list alike,
+ * needs no flag threaded down to it. `can_escalate` is already false from the
+ * API in this state; it is cleared anyway so the two cannot disagree.
+ */
+async function withEscalationVisibility(calls: LeadCall[]): Promise<LeadCall[]> {
+  const owner = await getOwner();
+  const role = owner?.membership.ownerRole;
+  const admin = role === "owner" || role === "manager";
+  if (owner?.membership.callEscalationEnabled || admin) return calls;
+  return calls.map((call) => ({
+    ...call,
+    can_escalate: false,
+    escalation_id: null,
+    escalation_status: null,
+  }));
 }
 
 /**

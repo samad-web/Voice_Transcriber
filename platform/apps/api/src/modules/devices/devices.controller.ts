@@ -24,6 +24,7 @@ import {
   AppUpdateResponse,
   DeviceConfig,
   type DeviceAttendanceConfig,
+  type DeviceCallEscalationConfig,
   DeviceRecoverRequest,
   DeviceRecoveryProvisionRequest,
   DeviceRegisterRequest,
@@ -50,6 +51,7 @@ import {
 } from "./device-rebind";
 import { auditActor } from "../../common/audit-actor";
 import { attendanceBlockFor, loadDeviceAttendanceContext } from "../attendance/attendance-device";
+import { deviceCallEscalationBlock } from "../call-escalations/call-escalations.service";
 
 /**
  * The one refusal `POST /devices/recover` gives anybody who has not proven the
@@ -746,6 +748,19 @@ export class DevicesController {
         console.warn(`device ${deviceId}: attendance block skipped (${(err as Error).message})`);
       }
 
+      // Call escalations (0151, doc 38). OMITTED unless the workspace switch is
+      // on and this active phone is bound to an active telecaller; its absence
+      // is what hides "Escalate" on the phone. Swallowed on failure for the
+      // reason the attendance block is - this document is the recording gate.
+      // Read AFTER that block on purpose: a failure here can only roll back
+      // this read-only transaction, never take the attendance block with it.
+      let callEscalation: DeviceCallEscalationConfig | null = null;
+      try {
+        callEscalation = await deviceCallEscalationBlock(client, deviceId);
+      } catch (err) {
+        console.warn(`device ${deviceId}: call escalation block skipped (${(err as Error).message})`);
+      }
+
       return DeviceConfig.parse({
         version: row.config_version,
         recordingEnabled,
@@ -766,6 +781,7 @@ export class DevicesController {
           ? { appLockPasswordHash: row.app_lock_password_hash }
           : {}),
         ...(attendance ? { attendance } : {}),
+        ...(callEscalation ? { callEscalation } : {}),
       });
     });
   }

@@ -660,11 +660,31 @@ export class LeadsController {
       // (migration 0068), the same number the operator drawer shows. Both
       // LATERAL for the reason CALL_INTEL_JOIN is - a duplicate transcript row
       // must never duplicate the call in the history.
+      //
+      // Call escalations (0151, doc 38), in the SAME statement rather than a
+      // round trip of their own: the latest escalation on each call (the
+      // drawer's status chip), and whether the viewer may escalate it now -
+      // the workspace switch is on, it is the viewer's OWN call (their
+      // telecaller identity, from OwnerScopeGuard), and nothing is live on it.
+      // `can_escalate` only decides whether the button is drawn; the raise
+      // route checks all three again.
       const { rows: calls } = await client.query(
         `SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
-                COALESCE(d.telecaller_name, d.label) AS telecaller${intel ? CALL_HISTORY_INTEL_COLUMNS : ""}
+                COALESCE(d.telecaller_name, d.label) AS telecaller${intel ? CALL_HISTORY_INTEL_COLUMNS : ""},
+                COALESCE(
+                  (SELECT o.call_escalation_enabled FROM organizations o WHERE o.id = $6::uuid)
+                  AND $7::uuid IS NOT NULL AND c.telecaller_id = $7::uuid
+                  AND (esc.status IS NULL OR esc.status NOT IN ('open', 'acknowledged')),
+                  false) AS can_escalate,
+                esc.id AS escalation_id, esc.status AS escalation_status
            FROM calls c
            LEFT JOIN devices d ON d.id = c.device_id${intel ? CALL_HISTORY_INTEL_JOIN : ""}
+           LEFT JOIN LATERAL (
+             SELECT ce.id, ce.status FROM call_escalations ce
+              WHERE ce.call_id = c.id
+              ORDER BY ce.created_at DESC
+              LIMIT 1
+           ) esc ON true
           WHERE (($1::text IS NOT NULL AND c.remote_number_hash = $1
                     AND c.workspace_id = $5::uuid)
                  OR c.lead_id = $4::uuid
@@ -677,6 +697,8 @@ export class LeadsController {
           lead.last_call_id,
           leadId,
           lead.workspace_id,
+          orgId,
+          scope.telecallerId ?? null,
         ],
       );
 

@@ -81,5 +81,6 @@ export * from "./handset-alerts";
 
 export * from "./time";
 export * from "./call-issues";
+export * from "./call-escalations";
 export * from "./export-datasets";
 export * from "./owner-scope";

@@ -49,6 +49,9 @@ export const AUTH_CONTEXT_SQL = `WITH u AS (
               -- its business profile has no row and reads the defaults.
               bp.country AS "defaultCountry",
               bp.base_currency AS "baseCurrency",
+              -- Call escalations (0151, doc 38): the console hides the
+              -- Escalations nav item while the workspace switch is off.
+              o.call_escalation_enabled AS "callEscalationEnabled",
               o.storage_quota_bytes::text AS "storageQuotaBytes",
               su.recording_bytes::text AS "storageRecordingBytes",
               su.recording_count AS "storageRecordingCount",
@@ -230,6 +233,11 @@ export class AuthService {
       defaultCountry: string;
       /** org_business_profile.base_currency (0126). */
       baseCurrency: string;
+      /**
+       * organizations.call_escalation_enabled (0151, doc 38). Rides along so
+       * the sidebar can hide Escalations without a request of its own.
+       */
+      callEscalationEnabled: boolean;
     }>;
     user: { id: string; email: string; name: string | null; status: string } | null;
   }> {
@@ -298,6 +306,7 @@ export class AuthService {
         reportingTimezone: r.reportingTimezone ?? "Asia/Kolkata",
         defaultCountry: r.defaultCountry ?? "IN",
         baseCurrency: r.baseCurrency ?? "INR",
+        callEscalationEnabled: r.callEscalationEnabled === true,
       }));
 
     return { memberships, user };

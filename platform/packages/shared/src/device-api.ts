@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CaptureCapability } from "./enums";
 import { DeviceAttendanceConfig } from "./attendance";
+import { DeviceCallEscalationConfig } from "./call-escalations";
 
 /**
  * Device enrollment (design doc §3.2) + the activation gate:
@@ -133,6 +134,12 @@ export const DeviceConfig = z.object({
    * 1.1.x phone and a switched-off workspace therefore see the same document.
    */
   attendance: DeviceAttendanceConfig.optional(),
+  /**
+   * Call escalations (migration 0151, doc 38). OMITTED - never null - while
+   * the workspace's `call_escalation_enabled` is off or the device is bound to
+   * no active telecaller. Its absence is what hides "Escalate" on the phone.
+   */
+  callEscalation: DeviceCallEscalationConfig.optional(),
 });
 export type DeviceConfig = z.infer<typeof DeviceConfig>;
 

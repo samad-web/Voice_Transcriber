@@ -50,6 +50,7 @@ import { PublicApiModule } from "./modules/public-api/public-api.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AttendanceModule } from "./modules/attendance/attendance.module";
 import { HandsetAlertsModule } from "./modules/handset-alerts/handset-alerts.module";
+import { CallEscalationsModule } from "./modules/call-escalations/call-escalations.module";
 import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
 
 /**
@@ -111,6 +112,8 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     AttendanceModule,
     // Migration 0150: leads, tasks and manager messages on the telecaller's phone.
     HandsetAlertsModule,
+    // Doc 38 / migration 0151: a telecaller escalates a call to a senior or manager.
+    CallEscalationsModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

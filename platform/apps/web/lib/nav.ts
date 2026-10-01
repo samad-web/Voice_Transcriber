@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowBigUpDash,
   BarChart3,
   ChartColumn,
   Bell,
@@ -602,6 +603,23 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/escalations",
+    label: "Escalations",
+    icon: ArrowBigUpDash,
+    title: "Escalations",
+    context: "Conversations",
+    // Calls a telecaller handed up to a senior or a manager (0151, Build
+    // docs/38). Every persona that takes calls or answers them: a telecaller
+    // reads what they raised, and a senior - who is a telecaller or a rep -
+    // answers what was sent to them. The API decides which rows each one sees.
+    // Marketing takes no calls.
+    //
+    // HIDDEN while the workspace switch is off, for everyone - see
+    // `itemAllowedByEscalations`. The doc's promise is that a telecaller is
+    // shown nothing about a feature the business has not turned on.
+    ownerRoles: ["owner", "manager", "telecaller", "sales"],
+  },
+  {
     href: "/owner/features",
     label: "Turn features on/off",
     icon: ToggleLeft,
@@ -655,6 +673,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // who each telecaller reports to are running the floor. The WhatsApp
     // alert toggle inside it is narrower still - owners only - and the API
     // returns `canEditWhatsapp` so the page can say so rather than guess.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/settings/escalations",
+    label: "Escalations",
+    icon: ArrowBigUpDash,
+    title: "Escalation settings",
+    context: "Settings",
+    // Owner and manager, matching the settings controller (0151). The switch
+    // itself is narrower - owners only - and the API returns `canEditSwitch` so
+    // the page can say so rather than guess. NOT hidden while the switch is
+    // off: this is where it gets turned on.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -878,6 +908,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
       { href: "/owner/agents", blurb: "AI helpers that read calls and chats and pick out leads and details." },
       { href: "/owner/transcription", blurb: "The language your calls are in, and how transcripts are written." },
       { href: "/owner/call-access", blurb: "Whether our support team may open your call recordings." },
+      {
+        href: "/owner/settings/escalations",
+        blurb: "Let telecallers hand a call up to a senior or a manager, and choose who gets each one.",
+      },
     ],
   },
   {
@@ -948,6 +982,9 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   // The two call queues, beside the log they hang off.
   "/owner/calls/triage": "conversations",
   "/owner/call-quality": "conversations",
+  // The third call queue (0151): calls a telecaller handed up. Last, because
+  // for a telecaller the section's first page must be one they always have.
+  "/owner/escalations": "conversations",
 
   // Sales overview first for the personas that have it; a telecaller's first
   // visible page here is My performance, which is their own scorecard - the
@@ -1007,6 +1044,23 @@ export interface Entitlement {
   /** The org's own switches (migration 0101), sparse and raw - resolved by
    *  `enabledFeatures`, the one resolver the API and worker also call. */
   features: FeatureOverrides;
+  /**
+   * organizations.call_escalation_enabled (0151). Optional, and absent means
+   * OFF - the opposite of the rule above, on purpose. The Escalations queue is
+   * a switch the business turns on, and the doc's promise is that a telecaller
+   * sees nothing of it until then; a caller that forgets the flag must hide the
+   * page, not reveal it. Same reasoning as `callIntelEnabled` defaulting false.
+   */
+  callEscalationEnabled?: boolean;
+}
+
+/** The pages that exist only while the workspace's escalation switch is on (0151). */
+const CALL_ESCALATION_GATED_HREFS = ["/owner/escalations"];
+
+/** Hidden unless the entitlement says the switch is on - see `Entitlement.callEscalationEnabled`. */
+function itemAllowedByEscalations(href: string, entitlement?: Entitlement): boolean {
+  if (!CALL_ESCALATION_GATED_HREFS.includes(href)) return true;
+  return entitlement?.callEscalationEnabled === true;
 }
 
 /**
@@ -1127,6 +1181,7 @@ export function ownerNavSectionsFor(
     // forgets to pass it must hide the page, not reveal it.
     .filter((item) => callIntelEnabled || !CALL_INTEL_GATED_HREFS.includes(item.href))
     .filter((item) => itemAllowedByFeatures(item.href, entitlement))
+    .filter((item) => itemAllowedByEscalations(item.href, entitlement))
     .map((item) => withRoleLabel(item, role));
 
   const order = crmPrimary

@@ -2,6 +2,7 @@ package com.voicetranscriber.callrecorder.platform
 
 import android.content.Context
 import com.voicetranscriber.callrecorder.attendance.AttendanceController
+import com.voicetranscriber.callrecorder.escalation.EscalationStore
 import com.voicetranscriber.callrecorder.update.AppVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,6 +60,10 @@ object ActivationManager {
             // stop the shift service, and look for request decisions. An ABSENT block
             // means attendance is off for this phone and everything stops.
             AttendanceController.onConfig(context, config.attendance, config.attendanceJson)
+            // Call escalations (Build docs/38): an ABSENT block means the workspace
+            // switch is off (or the phone is unbound) - the menu item and every row
+            // status disappear with it.
+            EscalationStore.saveConfig(context, config.callEscalationJson)
             // recordingEnabled is the only capture knob the server config document
             // currently carries, so it fully drives the local gate (isRecordingAllowed).
             // TODO: when the server extends DeviceConfig with capture policy (e.g. a
@@ -79,6 +84,8 @@ object ActivationManager {
                 )
                 // A revoked device tracks nobody's attendance either.
                 AttendanceController.onConfig(context, null, null)
+                // ...and escalates nothing.
+                EscalationStore.saveConfig(context, null)
                 "Server rejected device (${e.code}) - recording disabled"
             } else {
                 "Config refresh failed: ${e.message}"
@@ -125,6 +132,7 @@ object ActivationManager {
 
     fun deactivate(context: Context) {
         AttendanceController.onConfig(context, null, null)
+        EscalationStore.clear(context)
         ActivationStore.clear(context)
         DeviceIdentity.wipe()
     }

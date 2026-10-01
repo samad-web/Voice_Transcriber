@@ -153,6 +153,18 @@ export const NotificationKind = z.enum([
    * that an export happened, not what was in it.
    */
   "export_created",
+  /**
+   * A telecaller escalated a call and it now sits with you (migration 0151,
+   * doc 38) - raised to you, or passed up to you by a senior. Goes to the
+   * assigned person, or to every owner and manager when nobody is.
+   */
+  "call_escalated",
+  /**
+   * An escalation you raised was answered. Only reaches a telecaller who has a
+   * console login; the phone gets the same news as an `escalation_update`
+   * phone alert.
+   */
+  "call_escalation_update",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

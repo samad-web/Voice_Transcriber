@@ -17,7 +17,14 @@ const T = "11111111-1111-4111-8111-111111111111";
 describe("handset alert styles", () => {
   it("pops up only what cannot wait", () => {
     const popups = HandsetAlertKind.options.filter((k) => HANDSET_ALERT_STYLE[k] === "popup");
-    expect(popups.sort()).toEqual(["lead_assigned", "manager_message"]);
+    // 0151 adds the two escalation kinds: the answer to an escalation IS a
+    // manager's message, and a new one may have a customer waiting on it.
+    expect(popups.sort()).toEqual([
+      "escalation_received",
+      "escalation_update",
+      "lead_assigned",
+      "manager_message",
+    ]);
   });
 
   it("gives every kind a lifetime", () => {

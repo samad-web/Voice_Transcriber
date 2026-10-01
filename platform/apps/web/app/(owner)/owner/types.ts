@@ -193,6 +193,18 @@ export interface LeadCall {
   outcome?: string | null;
   has_transcript?: boolean | null;
   quality_score?: string | number | null;
+  /**
+   * Call escalations (0151, Build docs/38). Optional because an API ahead of
+   * 0151 omits them, which reads as "never escalated, cannot escalate".
+   *
+   * `can_escalate` is the API's whole answer - the workspace switch is on, the
+   * call is the reader's own, and nothing is live on it already - so the
+   * console offers the button off this flag alone and never re-derives it.
+   * `escalation_id`/`escalation_status` are the LATEST escalation on the call.
+   */
+  can_escalate?: boolean;
+  escalation_id?: string | null;
+  escalation_status?: string | null;
 }
 
 /** One line of a diarized transcript - the shape the ASR pipeline stores. */

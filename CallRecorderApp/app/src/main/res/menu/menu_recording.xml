@@ -2,5 +2,12 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@+id/action_edit" android:title="@string/edit_recording" />
     <item android:id="@+id/action_share" android:title="@string/share_recording" />
+    <!-- Call escalations (Build docs/38). Hidden unless the server sent the
+         callEscalation block, the call is uploaded, and it has no live escalation;
+         RecordingsAdapter sets the title ("Escalate to Priya") when it shows it. -->
+    <item
+        android:id="@+id/action_escalate"
+        android:title="@string/escalate_to_manager"
+        android:visible="false" />
     <item android:id="@+id/action_delete" android:title="@string/delete" />
 </menu>

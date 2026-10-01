@@ -73,6 +73,20 @@
                 android:textAppearance="@style/TextAppearance.Material3.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:visibility="gone" />
+
+            <!-- Call escalations (Build docs/38): shown only for a call with a
+                 cached escalation - "Escalated · waiting", "Picked up by Priya",
+                 "Answered by Priya: ..." -->
+            <TextView
+                android:id="@+id/escalationStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+                android:textColor="?attr/colorPrimary"
+                android:visibility="gone" />
         </LinearLayout>
 
         <ImageButton

@@ -31,6 +31,9 @@ data class HandsetAlert(
     companion object {
         const val KIND_LEAD = "lead_assigned"
         const val KIND_MESSAGE = "manager_message"
+        /** Call escalations (0151): one was handed to me / one I raised changed. */
+        const val KIND_ESCALATION_RECEIVED = "escalation_received"
+        const val KIND_ESCALATION_UPDATE = "escalation_update"
 
         fun fromJson(o: JSONObject): HandsetAlert = HandsetAlert(
             id = o.getString("id"),

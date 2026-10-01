@@ -40,6 +40,8 @@ import com.voicetranscriber.callrecorder.attendance.AttendanceStore
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
 import com.voicetranscriber.callrecorder.databinding.ActivityMainBinding
 import com.voicetranscriber.callrecorder.databinding.SheetSettingsBinding
+import com.voicetranscriber.callrecorder.escalation.EscalationStore
+import com.voicetranscriber.callrecorder.escalation.EscalationSync
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.ingest.OemRecordingIngestor
 import com.voicetranscriber.callrecorder.upload.UploadScheduler
@@ -67,7 +69,7 @@ class MainActivity : AppCompatActivity() {
     private val adapter =
         RecordingsAdapter(
             ::togglePlayback, ::deleteRecording, ::shareRecording, ::editRecording,
-            ::enterSelection, ::toggleSelection,
+            ::enterSelection, ::toggleSelection, ::escalateRecording,
         )
     private val settings by lazy { CaptureSettings(this) }
     private val profile by lazy { TelecallerProfile(this) }
@@ -125,6 +127,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Call escalations (Build docs/38): the config block and each call's latest
+        // escalation. Process-wide, so a refresh a push triggers lands here too.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                EscalationStore.state(applicationContext).collect { adapter.setEscalationState(it) }
+            }
+        }
+
         requestRuntimePermissions()
         openAttendanceIfAsked(intent)
     }
@@ -141,6 +151,11 @@ class MainActivity : AppCompatActivity() {
         // Phone alerts (platform 0150): opening the app collects anything a push missed.
         if (com.voicetranscriber.callrecorder.platform.ActivationStore.isActivated(this)) {
             com.voicetranscriber.callrecorder.alerts.AlertSyncWorker.enqueue(this)
+        }
+        // Call escalations: has anyone picked up or answered mine? Throttled, quiet on failure.
+        if (EscalationStore.isEnabled(this)) {
+            val app = applicationContext
+            lifecycleScope.launch(Dispatchers.IO) { EscalationSync.refreshIfStale(app) }
         }
         askForFullScreenAlerts()
     }
@@ -494,6 +509,26 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    /**
+     * Call escalations (Build docs/38). The adapter only offers the item when it
+     * applies; this re-checks against the store as it is now, because the config
+     * or a status may have changed while the menu was open.
+     */
+    private fun escalateRecording(item: RecordingEntity) {
+        val state = EscalationStore.current(this)
+        val config = state.config ?: return
+        val callId = item.remoteCallId
+        if (callId == null) {
+            Toast.makeText(this, R.string.escalate_not_uploaded, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (state.isLive(callId)) {
+            Toast.makeText(this, R.string.escalate_already_live, Toast.LENGTH_SHORT).show()
+            return
+        }
+        EscalateDialog(this, config, callId).show()
     }
 
     private fun shareRecording(item: RecordingEntity) {

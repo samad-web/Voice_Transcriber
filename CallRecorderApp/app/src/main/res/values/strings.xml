@@ -230,4 +230,35 @@
     <string name="offline_title">No internet connection</string>
     <string name="offline_body">You won\'t get new leads or messages from your manager until you\'re back online. Turn on mobile data or Wi-Fi.</string>
     <string name="offline_turn_on">Turn on internet</string>
+
+    <!-- Call escalations (platform migration 0151, Build docs/38) -->
+    <string name="escalate_to">Escalate to %1$s</string>
+    <string name="escalate_to_manager">Escalate to manager</string>
+    <string name="escalate_your_managers">your managers</string>
+    <string name="escalate_goes_to">This goes to %1$s.</string>
+    <string name="escalate_reason_title">Why are you escalating this call?</string>
+    <string name="escalate_note_optional">Note (optional)</string>
+    <string name="escalate_note_required">Note - say what it is about</string>
+    <string name="escalate_note_needed">Say what the escalation is about.</string>
+    <string name="escalate_pick_reason">Choose a reason.</string>
+    <string name="escalate_send">Send</string>
+    <string name="escalate_sending">Sending…</string>
+    <string name="escalate_done">Escalated to %1$s</string>
+    <string name="escalate_duplicate">Already escalated to %1$s</string>
+    <string name="escalate_already_live">This call is already escalated.</string>
+    <string name="escalate_not_uploaded">This call has not been uploaded yet, so it cannot be escalated.</string>
+    <string name="escalate_err_disabled">Escalation is switched off for your workspace.</string>
+    <string name="escalate_err_not_found">This call was not found on the server, so it cannot be escalated.</string>
+    <string name="escalate_err_too_many">You have too many open escalations. Wait for one to be answered.</string>
+    <string name="escalate_err_invalid">Check the reason and the note, then try again.</string>
+    <string name="escalate_err_offline">No connection. Check your internet and try again.</string>
+    <string name="escalate_err_not_paired">This phone is not paired with a workspace.</string>
+    <string name="escalate_err_generic">Could not escalate the call. Try again.</string>
+    <string name="escalation_waiting">Escalated · waiting</string>
+    <string name="escalation_waiting_for">Escalated to %1$s · waiting</string>
+    <string name="escalation_picked_up">Picked up</string>
+    <string name="escalation_picked_up_by">Picked up by %1$s</string>
+    <string name="escalation_answered">Answered</string>
+    <string name="escalation_answered_by">Answered by %1$s</string>
+    <string name="escalation_answered_note">%1$s: %2$s</string>
 </resources>

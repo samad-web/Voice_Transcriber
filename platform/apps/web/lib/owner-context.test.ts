@@ -243,6 +243,7 @@ describe("isOperator", () => {
             enabledModules: ["aura", "crm"],
             featureOverrides: {},
             whatsappProvider: "none",
+            callEscalationEnabled: false,
             branding: {},
             // Irrelevant to this assertion - it is about `kind`, not about
             // onboarding - but the membership shape is exact, so a fixture
@@ -330,6 +331,9 @@ describe("getPrincipal", () => {
         // whole console - which is what this mode is for.
         featureOverrides: {},
         whatsappProvider: "wasi",
+        // On locally (0151), like the feature switches above - unless
+        // DEV_CALL_ESCALATION=0 asks to see the switched-off console.
+        callEscalationEnabled: true,
         // Local dev is unbranded on purpose - the console renders in the stock
         // palette, which is what you want when checking a change against the
         // design system.

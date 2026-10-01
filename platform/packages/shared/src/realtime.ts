@@ -40,6 +40,10 @@ export const KNOWN_TOPICS = [
   "attendance",
   "automation",
   "call",
+  // Call escalations (0151, doc 38). The owner routes announce it through the
+  // path (`/owner/call-escalations/*`); a raise from the phone arrives on the
+  // SILENT `devices/me` prefix, so that handler announces it explicitly.
+  "call-escalation",
   "campaign",
   "connection",
   "contact",

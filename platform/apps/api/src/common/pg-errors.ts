@@ -9,6 +9,16 @@ export function isUniqueViolation(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
 }
 
+/**
+ * `23514` is check_violation: a CHECK constraint, or a guard trigger that
+ * raises with that code (0151's `telecaller_escalate_to_guard`). Only a
+ * caller that knows WHICH check its statement can trip should map it to a
+ * 400; anywhere else it is a bug and stays a 500.
+ */
+export function isCheckViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: string }).code === "23514";
+}
+
 /** The index or constraint a unique violation collided with, when Postgres names one. */
 export function violatedConstraint(err: unknown): string | null {
   if (typeof err !== "object" || err === null) return null;

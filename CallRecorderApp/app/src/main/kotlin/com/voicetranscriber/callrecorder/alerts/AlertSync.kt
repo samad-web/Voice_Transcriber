@@ -3,6 +3,7 @@ package com.voicetranscriber.callrecorder.alerts
 import android.content.Context
 import android.util.Log
 import androidx.annotation.WorkerThread
+import com.voicetranscriber.callrecorder.escalation.EscalationSync
 
 /**
  * Collect waiting alerts, show the new ones, and report what happened.
@@ -40,5 +41,9 @@ object AlertSync {
         session.ack(delivered, opened)
         AlertStore.clearAcks(context, delivered, opened)
         if (fresh.isNotEmpty()) Log.i(TAG, "showed ${fresh.size} alert(s)")
+        // Call escalations (0151): an answer to one of mine changes a recording's
+        // row. Last, after the acks, and never throwing - a status read must not
+        // turn a delivered alert into a failed sync that is retried.
+        if (fresh.any(EscalationSync::isEscalationAlert)) EscalationSync.refreshQuietly(context)
     }
 }

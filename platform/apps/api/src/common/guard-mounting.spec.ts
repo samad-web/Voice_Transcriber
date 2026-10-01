@@ -159,6 +159,9 @@ import { DeviceAttendanceController } from "../modules/attendance/device-attenda
 import { OwnerAttendanceController } from "../modules/attendance/owner-attendance.controller";
 import { DeviceAlertsController } from "../modules/handset-alerts/device-alerts.controller";
 import { OwnerHandsetAlertsController } from "../modules/handset-alerts/owner-handset-alerts.controller";
+import { DeviceCallEscalationsController } from "../modules/call-escalations/device-call-escalations.controller";
+import { OwnerCallEscalationsController } from "../modules/call-escalations/owner-call-escalations.controller";
+import { OwnerCallEscalationSettingsController } from "../modules/call-escalations/owner-call-escalation-settings.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -435,6 +438,13 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // console's "Message phones" pair (OWNER_ROLE_ROUTES, owner+manager).
   DeviceAlertsController,
   OwnerHandsetAlertsController,
+  // 0151: call escalations (doc 38). The handset's raise + status list
+  // (DEVICE_AUTHED); the console's queue, which is OwnerScopeGuard'd with NO
+  // persona requirement - visibility is decided per row in SQL - and its
+  // settings, owner+manager with the switch owner-only (OWNER_ROLE_ROUTES).
+  DeviceCallEscalationsController,
+  OwnerCallEscalationsController,
+  OwnerCallEscalationSettingsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -582,6 +592,12 @@ const DEVICE_AUTHED = [
   // is joined from the device row, never taken from the request.
   "GET /devices/me/alerts",
   "POST /devices/me/alerts/ack",
+  // Call escalations (0151): escalating one of the bound telecaller's own
+  // calls, and the status of what they escalated. DeviceAuthGuard like every
+  // /devices/me route; the telecaller is joined from the device row, and the
+  // call must carry that telecaller - never an id taken from the body.
+  "POST /devices/me/calls/:callId/escalations",
+  "GET /devices/me/escalations",
 ];
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
@@ -1194,6 +1210,14 @@ const OWNER_ROLE_ROUTES = [
   // takes over a colleague's screen is not a telecaller's to send.
   "GET /owner/handset-alerts",
   "POST /owner/handset-alerts",
+  // Call escalation settings (0151, doc 38). Owner and manager at class level -
+  // the seniors and who each telecaller escalates to are a manager's job - and
+  // the workspace switch itself (PUT /) narrowed to owner. The escalation
+  // queue (`/owner/call-escalations`) is deliberately NOT here: it mounts
+  // OwnerScopeGuard alone and decides access per row.
+  "GET /owner/call-escalation-settings",
+  "PUT /owner/call-escalation-settings",
+  "PUT /owner/call-escalation-settings/routing",
   // ── Org configuration that checked nothing but tenant membership (doc 31 §2 X8) ──
   //
   // Every route below used to be plain AdminKeyGuard + TenantGuard, so a
@@ -1941,8 +1965,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // before spending, so whoever may read it is whoever may press them.
     // 537: plus phone alerts (0150) - two device-authed /devices/me/alerts
     // routes and the two tenant-scoped /owner/handset-alerts routes.
-    expect(ROUTES).toHaveLength(537);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(537);
+    // 550: plus call escalations (0151) - two device-authed /devices/me routes,
+    // the queue's eight tenant-scoped /owner/call-escalations routes and the
+    // three tenant-scoped /owner/call-escalation-settings routes.
+    expect(ROUTES).toHaveLength(550);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(550);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1992,14 +2019,16 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 446: plus the quotation revise route (0149).
     // 447: plus GET /calls/retry-summary.
     // 449: plus GET/POST /owner/handset-alerts (0150).
-    expect(tenantScoped).toHaveLength(449);
+    // 460: plus call escalations' eleven (0151) - the queue's eight and the
+    // settings' three.
+    expect(tenantScoped).toHaveLength(460);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(537); // = ROUTES.length: every route in exactly one class
+    ).toBe(550); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 423 principal routes", () => {
@@ -2044,7 +2073,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 488: plus the quotation revise route (0149).
     // 489: plus GET /calls/retry-summary.
     // 491: plus GET/POST /owner/handset-alerts (0150).
-    expect(principalRoutes).toHaveLength(491);
+    // 502: plus call escalations' eleven tenant-scoped routes (0151).
+    expect(principalRoutes).toHaveLength(502);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

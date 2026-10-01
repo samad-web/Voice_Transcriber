@@ -62,6 +62,21 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     icon: "inbox",
     needsAction: true,
   },
+  // Call escalations (0151, Build docs/38). Raised or passed on to you waits
+  // on you - a telecaller may still have the customer on the line, or be about
+  // to ring them back. The answer coming back is something to read, not to do.
+  call_escalated: {
+    label: "Call escalated to you",
+    description: "A telecaller asked you to help with one of their calls, or it was passed on to you.",
+    icon: "inbox",
+    needsAction: true,
+  },
+  call_escalation_update: {
+    label: "Escalation answered",
+    description: "Somebody answered a call you escalated.",
+    icon: "clipboard-check",
+    needsAction: false,
+  },
   missed_call: {
     label: "Missed call",
     description: "A call from one of your leads went unanswered, or a missed caller was turned into one.",

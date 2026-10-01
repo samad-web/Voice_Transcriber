@@ -7,6 +7,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import com.voicetranscriber.callrecorder.attendance.AttendanceConfig
 import com.voicetranscriber.callrecorder.attendance.AttendanceJson
+import com.voicetranscriber.callrecorder.escalation.EscalationConfig
+import com.voicetranscriber.callrecorder.escalation.EscalationJson
 import com.voicetranscriber.callrecorder.util.applyNgrokBypass
 
 /**
@@ -109,6 +111,14 @@ object PlatformApi {
         val attendance: AttendanceConfig? = null,
         /** The raw block, stored as-is so it can be re-parsed offline. */
         val attendanceJson: String? = null,
+        /**
+         * The call-escalation block (Build docs/38), or null when the server
+         * omitted it - the workspace switch is off or the phone is bound to no
+         * active telecaller - and the escalation menu and row statuses must go.
+         */
+        val callEscalation: EscalationConfig? = null,
+        /** The raw block, stored as-is so it can be re-parsed offline. */
+        val callEscalationJson: String? = null,
     )
 
     /**
@@ -121,6 +131,9 @@ object PlatformApi {
         val path = if (versionCode >= 0) "/devices/me/config?versionCode=$versionCode" else "/devices/me/config"
         val response = request(baseUrl, "GET", path, null, bearer = accessToken)
         val attendance = AttendanceJson.parseConfig(response)
+        // Never throws: a malformed block costs the phone the escalation menu,
+        // not recordingEnabled or the app lock below. Null and absent both read as off.
+        val callEscalation = EscalationJson.parseConfig(response)
         return DeviceConfig(
             recordingEnabled = response.getBoolean("recordingEnabled"),
             version = response.getInt("version"),
@@ -144,6 +157,9 @@ object PlatformApi {
                 else response.optString("appLockPasswordHash", null),
             attendance = attendance,
             attendanceJson = if (attendance != null) response.optJSONObject("attendance")?.toString() else null,
+            callEscalation = callEscalation,
+            callEscalationJson =
+                if (callEscalation != null) response.optJSONObject(EscalationJson.CONFIG_KEY)?.toString() else null,
         )
     }
 

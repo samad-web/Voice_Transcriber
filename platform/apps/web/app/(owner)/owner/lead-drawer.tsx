@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import {
@@ -15,11 +16,18 @@ import {
   useAlert,
   useToast,
 } from "@aura/ui";
-import { LEAD_TEMPERATURE_LABELS, LEAD_TEMPERATURE_ORDER } from "@aura/shared";
+import {
+  CALL_ESCALATION_STATUS_LABELS,
+  LEAD_TEMPERATURE_LABELS,
+  LEAD_TEMPERATURE_ORDER,
+  isLiveEscalation,
+  type CallEscalationStatus,
+} from "@aura/shared";
 import { Time, useOrgTimeZone } from "@/components/org-time";
 import { InlineListSkeleton } from "@/components/skeletons";
 import { fetchLeadAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
+import { EscalateCallDialog } from "./escalate-call-dialog";
 import { ProjectChip } from "./project-chip";
 import {
   boardRef,
@@ -47,6 +55,34 @@ import {
 export const TEXTAREA_CLASS =
   "w-full resize-y rounded-sm border border-border-strong bg-surface px-3 py-2 text-sm text-text " +
   "transition-colors duration-150 ease-out placeholder:text-text-muted hover:border-text-subtle";
+
+/**
+ * A call's escalation, on its row in Call history (0151): "Escalated · Waiting"
+ * or "Escalated · Picked up" while it is live, "Escalation answered" once it
+ * is, each a link into the queue's drawer. Nothing for a withdrawn one - the
+ * telecaller took it back, so there is nothing left to point at.
+ *
+ * Grey, never red: red means a MISSED call in this console, and an escalation
+ * waiting for an answer is not one. The chip's text carries the state.
+ */
+function EscalationChip({ id, status }: { id: string; status: string }) {
+  const live = isLiveEscalation(status);
+  if (!live && status !== "resolved") return null;
+  const label = live
+    ? `Escalated · ${CALL_ESCALATION_STATUS_LABELS[status as CallEscalationStatus]}`
+    : "Escalation answered";
+  return (
+    <Link
+      href={`/owner/escalations?open=${encodeURIComponent(id)}`}
+      // The row sits inside the drawer, but the same rows are drawn from list
+      // rows that open on click - following the link must not also be one.
+      onClick={(e) => e.stopPropagation()}
+      className="rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+    >
+      <StatusChip tone={live ? "outline" : "muted"}>{label}</StatusChip>
+    </Link>
+  );
+}
 
 /**
  * One lead, opened from either view.
@@ -81,6 +117,8 @@ export function LeadDrawer({
   const alert = useAlert();
   const toast = useToast();
   const zone = useOrgTimeZone();
+  /** The call whose Escalate dialog is open (0151), or null. */
+  const [escalating, setEscalating] = useState<string | null>(null);
 
   const leadId = lead?.id ?? null;
 
@@ -109,9 +147,15 @@ export function LeadDrawer({
   }, [leadId]);
 
   // Escape closes, and the page behind must not scroll under the panel.
+  //
+  // Not while a modal <dialog> is open over it (the Escalate dialog): Escape
+  // belongs to the topmost thing, and the keydown reaches this window listener
+  // before the dialog's own `cancel` closes it - so without the check one press
+  // would close the dialog and the drawer under it together.
   useEffect(() => {
     if (!lead) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && !document.querySelector("dialog[open]") && onClose();
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
@@ -194,6 +238,17 @@ export function LeadDrawer({
       toast(name ? `Moved to ${name}` : "Moved");
       onClose();
       router.refresh();
+    });
+  };
+
+  /**
+   * Re-read the call history after an escalation (0151), so the row swaps its
+   * Escalate button for the chip. Only the calls: the rest of the drawer did
+   * not change, and re-seeding it would drop an unsaved note.
+   */
+  const reloadCalls = () => {
+    void fetchLeadAction(lead.id).then((result) => {
+      if (result.calls) setCalls(result.calls);
     });
   };
 
@@ -468,11 +523,43 @@ export function LeadDrawer({
                         qualityScore={call.quality_score}
                       />
                     </div>
+                    {/* Escalations (0151). The chip from the call's latest
+                        escalation, and the button only where the API says
+                        this reader may raise one - their own call, the
+                        workspace switch on, nothing live on it already. */}
+                    {(call.escalation_id && call.escalation_status) || call.can_escalate ? (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 empty:hidden">
+                        {call.escalation_id && call.escalation_status ? (
+                          <EscalationChip id={call.escalation_id} status={call.escalation_status} />
+                        ) : null}
+                        {call.can_escalate ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEscalating(call.id);
+                            }}
+                          >
+                            Escalate
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {call.has_transcript ? <CallTranscript leadId={lead.id} call={call} /> : null}
                   </div>
                 ))}
               </div>
             )}
+            {escalating ? (
+              <EscalateCallDialog
+                open
+                callId={escalating}
+                onClose={() => setEscalating(null)}
+                onRaised={() => reloadCalls()}
+              />
+            ) : null}
           </div>
 
           <dl className="grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">
