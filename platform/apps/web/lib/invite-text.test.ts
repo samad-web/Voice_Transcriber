@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inviteMessage, operatorInviteMessage } from "./invite-text";
+import { inviteMessage, operatorInviteMessage, ownerInviteMessage } from "./invite-text";
 
 /**
  * The failure this text exists to prevent: an invite is bound to one address,
@@ -98,5 +98,49 @@ describe("operatorInviteMessage", () => {
       expect([String(bad), /expires/i.test(text)]).toEqual([String(bad), false]);
       expect(text).not.toContain("Invalid Date");
     }
+  });
+});
+
+/**
+ * The owner invite an operator issues from the instance page. It copied a bare
+ * URL until 2026-10-01, which is the exact failure `inviteMessage` was written
+ * to prevent on the owner side.
+ */
+describe("ownerInviteMessage", () => {
+  const link = "https://aura.sirahagents.com/admin/invite/abc123";
+
+  it("carries the address the invite is bound to, and the one-use rule", () => {
+    const text = ownerInviteMessage({ email: "riyaz@acme.com", link, workspace: "Acme" });
+    expect(text).toContain("riyaz@acme.com");
+    expect(text).toMatch(/only works for that address/i);
+    expect(text).toMatch(/used once/i);
+  });
+
+  it("says they are being made the owner of that workspace", () => {
+    expect(ownerInviteMessage({ email: "a@b.com", link, workspace: "Sirah Digital" })).toMatch(
+      /^You have been invited to Sirah Digital on Aura as its owner\.$/m,
+    );
+  });
+
+  it("still reads when the workspace name is blank", () => {
+    for (const blank of [undefined, null, "", "   "]) {
+      const text = ownerInviteMessage({ email: "a@b.com", link, workspace: blank });
+      expect(text).toContain("as the owner of a workspace");
+      expect(text).not.toMatch(/null|undefined| {2}on Aura/);
+    }
+  });
+
+  it("states the expiry in UTC and drops it rather than guess", () => {
+    expect(ownerInviteMessage({ email: "a@b.com", link, expiresAt: "2026-10-04T07:01:49Z" })).toContain(
+      "It expires on 4 Oct 2026 (UTC).",
+    );
+    const text = ownerInviteMessage({ email: "a@b.com", link, expiresAt: "not-a-date" });
+    expect(text).not.toMatch(/expires|Invalid Date/i);
+  });
+
+  it("stays plain text and ends with the link", () => {
+    const text = ownerInviteMessage({ email: "a@b.com", link, workspace: "Acme" });
+    expect(text).not.toMatch(/[*_`]/);
+    expect(text.trimEnd().endsWith(link)).toBe(true);
   });
 });

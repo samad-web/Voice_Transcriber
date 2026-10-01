@@ -66,6 +66,35 @@ export function operatorInviteMessage(input: {
 }
 
 /**
+ * The same thing for an OWNER invite issued from the operator console (the
+ * instance page's Owner Logins card, 0137).
+ *
+ * Separate from `inviteMessage` because it grants more: the recipient becomes
+ * the owner of the whole workspace, not a seat on someone else's team, and the
+ * message they read before clicking should say so. The workspace is always
+ * known here, but a blank name still falls back to a sentence that reads.
+ */
+export function ownerInviteMessage(input: {
+  email: string;
+  link: string;
+  workspace?: string | null;
+  /** ISO. Omitted or unparseable drops the sentence - see `expiryLine`. */
+  expiresAt?: string | null;
+}): string {
+  const workspace = input.workspace?.trim();
+  return [
+    workspace
+      ? `You have been invited to ${workspace} on Aura as its owner.`
+      : "You have been invited to Aura as the owner of a workspace.",
+    "",
+    `Sign in with this email: ${input.email}`,
+    `The invite only works for that address, and it can be used once.${expiryLine(input.expiresAt)}`,
+    "",
+    input.link,
+  ].join("\n");
+}
+
+/**
  * " It expires on 2 Oct 2026 (UTC)." or nothing at all.
  *
  * UTC and spelled out, matching the sentence the emailed version carries, so the

@@ -49,6 +49,7 @@ import { McpModule } from "./modules/mcp/mcp.module";
 import { PublicApiModule } from "./modules/public-api/public-api.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AttendanceModule } from "./modules/attendance/attendance.module";
+import { HandsetAlertsModule } from "./modules/handset-alerts/handset-alerts.module";
 import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
 
 /**
@@ -108,6 +109,8 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     SavedViewsModule,
     // Doc 33 / migration 0140: shifts, presence, leave and the timesheet.
     AttendanceModule,
+    // Migration 0150: leads, tasks and manager messages on the telecaller's phone.
+    HandsetAlertsModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

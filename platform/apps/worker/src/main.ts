@@ -44,6 +44,7 @@ import { startExportSweep } from "./pipeline/export-sweep";
 import { startAttendanceClassifier } from "./pipeline/attendance-classify";
 import { startAttendanceAlerts } from "./pipeline/attendance-alerts";
 import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
+import { startHandsetAlertSweep } from "./pipeline/handset-alerts";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -261,6 +262,13 @@ async function bootstrap() {
   startAttendanceClassifier();
   startAttendanceAlerts();
   startAttendanceWhatsappDrain();
+  // Phone alerts (migration 0150): new leads, tasks, timed follow-ups and
+  // missed call-backs raised for the telecaller's HANDSET, plus the push
+  // ladder that wakes the phone until it collects them (manager messages
+  // arrive here from the API). It reaches only the business's own phones and
+  // the push carries no content - the phone fetches it. A sweep, so it belongs
+  // on the single-replica side when the process is split.
+  startHandsetAlertSweep();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an
@@ -291,7 +299,7 @@ async function bootstrap() {
       // that did not start.
       `+ aura.export x${process.env.EXPORT_PREFETCH ?? 2} (data exports) ` +
       "+ reaper + crm outbox + pipeline retry + stall sweep + asr poll + funnel follow-ups " +
-      "+ booking confirmations + call reminders + form nudges" +
+      "+ booking confirmations + call reminders + form nudges + phone alerts" +
       (metaMcp ? " + meta-mcp lead pull" : "") +
       (linkedin ? " + linkedin lead pull" : "") +
       (sheets ? " + google sheets lead pull" : ""),

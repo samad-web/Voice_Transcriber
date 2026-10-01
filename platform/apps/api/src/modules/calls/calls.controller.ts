@@ -35,6 +35,17 @@ import { S3Service } from "../../s3/s3.service";
 import { auditActor } from "../../common/audit-actor";
 import { HAS_RECORDING } from "./recording-sql";
 import { rewindForReprocess } from "./reprocess";
+import {
+  FAILURE_STATUSES,
+  MAX_REPROCESS_PER_RUN,
+  ReprocessableStatus,
+  RetryWindowInput,
+  buildRetrySummarySql,
+  describeRetryWindow,
+  refineRetryWindow,
+  retryWindowSql,
+  toRetryWindow,
+} from "./retry-window";
 
 const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -101,29 +112,53 @@ const CompleteCallBody = z.object({
  * be rewound out from under the worker, and allowing arbitrary statuses here
  * would make that a one-typo mistake.
  */
-const ReprocessBacklogBody = z.object({
-  statuses: z
-    .array(
-      z.enum([
-        "TRANSCRIPTION_OFF",
-        "COMPLETE",
-        "FAILED_TRANSCODE",
-        "FAILED_ASR",
-        "FAILED_ANALYZE",
-        "FAILED_CRM",
-        // FAILED_UPLOAD deliberately excluded: it means the audio never reached
-        // S3 at all, so rewinding it to UPLOADED can only ever fail again at
-        // transcode. There is nothing here for a bulk "try these again" action
-        // to usefully retry - see 0101.
-      ]),
-    )
-    .min(1),
-  /** How far back to reach. Omitted or null means the whole history - which for
-   *  a dormant instance can be a lot of paid audio, so the console always asks. */
-  sinceDays: z.number().int().min(1).max(3650).nullable().optional(),
-  /** Backstop against a single click sweeping thousands of calls into the queue. */
-  limit: z.number().int().min(1).max(1000).default(500),
-});
+const ReprocessBacklogBody = z
+  .object({
+    statuses: z.array(ReprocessableStatus).min(1),
+    /** How far back to reach: a rolling day count, a calendar range in `from`/
+     *  `to`, or neither for the whole history - which for a dormant instance can
+     *  be a lot of paid audio, so the console always asks. One window, two
+     *  spellings, both defined in retry-window.ts beside the SQL they produce. */
+    ...RetryWindowInput,
+    /** Backstop against a single click sweeping thousands of calls into the queue. */
+    limit: z.number().int().min(1).max(MAX_REPROCESS_PER_RUN).default(500),
+  })
+  .superRefine(refineRetryWindow);
+
+/**
+ * What the console asks before it offers the button.
+ *
+ * Bulk reprocess spends at the ASR provider and the analyzer, and until this
+ * existed the only way to size that spend was to read a paginated call list and
+ * count. An operator choosing between "last 7 days" and "last 30" was therefore
+ * choosing between two numbers nobody had, which is how a one-click action
+ * becomes a surprise on an invoice.
+ *
+ * `statuses` defaults to the FAILURES rather than everything reprocessable: this
+ * read backs a panel about work that broke, and defaulting to COMPLETE would
+ * make the tenant's whole history the headline number.
+ */
+const RetrySummaryQuery = z
+  .object({
+    statuses: z
+      .union([z.array(ReprocessableStatus), ReprocessableStatus.transform((s) => [s])])
+      .optional(),
+    ...RetryWindowInput,
+    // A query string has no numbers, so the coercion has to be here rather than
+    // in the shared shape the JSON body reuses.
+    sinceDays: z.coerce.number().int().min(1).max(3650).nullable().optional(),
+  })
+  .superRefine(refineRetryWindow);
+
+/**
+ * The windows the console offers as one-click choices.
+ *
+ * 7 / 21 / 30 are the three spans an operator actually reaches for - this week,
+ * the fortnight-and-change a quiet outage hides in, and the month an invoice
+ * covers - and `null` is everything. All four are counted on every summary read,
+ * in one scan, so each chip can carry its own total before anything is pressed.
+ */
+const RETRY_PRESET_DAYS: Array<number | null> = [7, 21, 30, null];
 
 /**
  * How often we have dealt with the person on the other end, and where this call
@@ -501,6 +536,95 @@ export class CallsController {
   }
 
   /**
+   * How many calls a bulk reprocess WOULD touch, and how much audio that is.
+   *
+   * The read that makes `POST /calls/reprocess-backlog` an informed decision
+   * rather than a guess: counts and recorded seconds per pipeline state, for the
+   * window asked about and for each of the console's one-click presets at the
+   * same time. One scan for all of them, because the panel shows every chip's
+   * total at once and four round trips to render four numbers is four chances to
+   * disagree.
+   *
+   * Returns no call content - no transcript, no number, not even an id - so it
+   * carries OperatorOnlyGuard but not the 0122 call-access gate. What it exposes
+   * is the SHAPE of a tenant's processing failures, which is operational, and
+   * the operator who may press the button is the only one who can read it.
+   *
+   * ── DECLARED BEFORE `GET /:id` ON PURPOSE ───────────────────────────────────
+   *
+   * Nest matches routes in declaration order within a controller, so a literal
+   * path that lives below `@Get(":id")` is never reached: `retry-summary` would
+   * be read as an id and answered by ParseUUIDPipe with a 400. This handler
+   * therefore sits above the parameterised reads even though it belongs, by
+   * subject, next to the backlog action it sizes.
+   */
+  @Get("retry-summary")
+  @UseGuards(AdminKeyGuard, TenantGuard, OperatorOnlyGuard)
+  async retrySummary(@OrgId() orgId: string, @Query() query: unknown) {
+    const parsed = RetrySummaryQuery.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { statuses, sinceDays, from, to } = parsed.data;
+    const selected = toRetryWindow({ sinceDays, from, to });
+    const wanted = statuses ?? [...FAILURE_STATUSES];
+
+    // The query numbers its own placeholders, which is the one thing here a
+    // typecheck cannot judge - see buildRetrySummarySql's header.
+    const built = buildRetrySummarySql(RETRY_PRESET_DAYS, selected);
+
+    const rows = await this.db.withOrg(orgId, async (client) => {
+      const { rows } = await client.query<Record<string, unknown>>(built.sql, [
+        orgId,
+        wanted,
+        ...built.params,
+      ]);
+      return rows;
+    });
+
+    const num = (v: unknown) => Number(v ?? 0);
+    const sum = (key: string) => rows.reduce((t, r) => t + num(r[key]), 0);
+    /**
+     * The group's timestamps as ISO strings, sortable.
+     *
+     * `.toISOString()` rather than sorting what came back: node-postgres hands
+     * a timestamptz over as a JS Date, and `[Date].sort()` compares the two
+     * through `String()` - "Fri Sep 18 2026…" against "Sun Sep 27 2026…", which
+     * is alphabetical on the weekday name and puts the oldest failure wherever
+     * the calendar happens to land.
+     */
+    const dates = (key: string): string[] =>
+      rows
+        .map((r) => r[key])
+        .filter((v): v is string | Date => v instanceof Date || typeof v === "string")
+        .map((v) => (v instanceof Date ? v.toISOString() : v))
+        .sort();
+
+    return {
+      window: { sinceDays: sinceDays ?? null, from: from ?? null, to: to ?? null },
+      windowLabel: describeRetryWindow(selected),
+      // One entry per chip, in the order the console draws them.
+      presets: RETRY_PRESET_DAYS.map((days, i) => ({
+        days,
+        calls: sum(`p${i}_calls`),
+        seconds: sum(`p${i}_seconds`),
+      })),
+      total: { calls: sum("sel_calls"), seconds: sum("sel_seconds") },
+      // Only the states actually present, so the console's checkboxes are the
+      // tenant's real failures rather than a list of everything that can go
+      // wrong - which on a healthy instance is four empty rows.
+      statuses: rows
+        .filter((r) => num(r.sel_calls) > 0)
+        .map((r) => ({
+          status: String(r.status),
+          calls: num(r.sel_calls),
+          seconds: num(r.sel_seconds),
+        })),
+      oldest: dates("oldest")[0] ?? null,
+      newest: dates("newest").at(-1) ?? null,
+      maxPerRun: MAX_REPROCESS_PER_RUN,
+    };
+  }
+
+  /**
    * Listing for the web Call Explorer.
    *
    * Every row carries the instance it belongs to. Without that the console
@@ -768,7 +892,12 @@ export class CallsController {
   async reprocessBacklog(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = ReprocessBacklogBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { statuses, sinceDays, limit } = parsed.data;
+    const { statuses, sinceDays, from, to, limit } = parsed.data;
+    // The window and its SQL come from retry-window.ts, which `GET
+    // /calls/retry-summary` binds too - so the count the console showed and the
+    // rows this claims are the same rows. See that file's header.
+    const window = toRetryWindow({ sinceDays, from, to });
+    const win = retryWindowSql(window, 3);
 
     const claimed = await this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query<{ id: string }>(
@@ -778,12 +907,12 @@ export class CallsController {
             SELECT id FROM calls
              WHERE org_id = $1
                AND status = ANY($2::text[])
-               AND ($3::int IS NULL OR started_at >= now() - make_interval(days => $3))
+               AND ${win.sql}
              ORDER BY started_at DESC
-             LIMIT $4
+             LIMIT $${3 + win.params.length}
           )
         RETURNING id`,
-        [orgId, statuses, sinceDays ?? null, limit],
+        [orgId, statuses, ...win.params, limit],
       );
       if (rows.length > 0) {
         // orgId is bound TWICE, as $1 and $2, and that is not redundancy.
@@ -796,7 +925,23 @@ export class CallsController {
         await client.query(
           `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
            VALUES ($1, $5, $2, 'call.reprocess_backlog', 'organization', $3, $4::jsonb)`,
-          [orgId, auditActor(req).id, orgId, JSON.stringify({ statuses, sinceDays, count: rows.length }), auditActor(req).type],
+          [
+            orgId,
+            auditActor(req).id,
+            orgId,
+            // `window` as well as the raw fields: the ledger is read months
+            // later by somebody asking why an invoice moved, and "the last 21
+            // days" answers that where `{sinceDays: 21}` has to be decoded.
+            JSON.stringify({
+              statuses,
+              sinceDays: sinceDays ?? null,
+              from: from ?? null,
+              to: to ?? null,
+              window: describeRetryWindow(window),
+              count: rows.length,
+            }),
+            auditActor(req).type,
+          ],
         );
       }
       return rows.map((r) => r.id);
@@ -806,6 +951,13 @@ export class CallsController {
     // having been rewound. A publish that throws leaves the call in UPLOADED for
     // the stuck-upload sweep to re-wake rather than losing it.
     for (const callId of claimed) await publishPipeline({ callId, orgId });
-    return { requeued: claimed.length, statuses, sinceDays: sinceDays ?? null };
+    return {
+      requeued: claimed.length,
+      statuses,
+      sinceDays: sinceDays ?? null,
+      from: from ?? null,
+      to: to ?? null,
+      window: describeRetryWindow(window),
+    };
   }
 }

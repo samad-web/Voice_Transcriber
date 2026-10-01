@@ -10,6 +10,8 @@ import { operatorCaller } from "@/lib/operator-guard";
 import { apiGetAs, apiTry } from "@/lib/server-api";
 import { CallAccessRequest } from "./call-access-request";
 import { CallsExplorer, type CallRow } from "./calls-explorer";
+import { ReprocessFailed } from "./reprocess-failed";
+import type { RetrySummary } from "./retry-window";
 
 interface Org {
   id: string;
@@ -78,7 +80,7 @@ export default async function InstanceCallsPage({
 
   const statsQuery = instanceId ? `?instanceId=${instanceId}` : "";
 
-  const [listResult, instanceList, overview] = await Promise.all([
+  const [listResult, instanceList, overview, retrySummary] = await Promise.all([
     // The call log is gated on the tenant's own administrator (0122); the
     // instance list and the aggregates beside it are not, so only this one
     // names the operator.
@@ -94,6 +96,15 @@ export default async function InstanceCallsPage({
     ),
     apiGetAs<{ instances: InstanceRow[] }>("/v1/instances", orgId),
     apiGetAs<Overview>(`/v1/analytics/overview${statsQuery}`, orgId),
+    // What a bulk reprocess would cover, for the panel under the stat cards. The
+    // default window is the one the panel opens on (30 days); every other chip's
+    // total comes back in the same answer.
+    //
+    // No `operatorCaller()` on purpose: this read is operator-only and must NOT
+    // look like a person asking. It is also SECONDARY - a null here hides the
+    // panel's numbers and nothing else, which is why it is not awaited
+    // separately or allowed to fail the page.
+    apiGetAs<RetrySummary>("/v1/calls/retry-summary?sinceDays=30", orgId),
   ]);
 
   const instances = instanceList?.instances ?? [];
@@ -162,6 +173,23 @@ export default async function InstanceCallsPage({
           icon={<Activity className="h-4 w-4" />}
         />
       </div>
+
+      {/* Directly under the "N failed" stat, because that number is what sends
+          somebody looking for this. Hidden entirely when NOTHING has failed in
+          any window - not even the widest - since a panel offering to retry
+          nothing is a panel in the way. `null` (the read failed) still shows it:
+          "we could not count" is not "there is nothing". */}
+      {retrySummary === null || retrySummary.presets.some((p) => p.calls > 0) ? (
+        <ReprocessFailed
+          orgId={orgId}
+          initial={retrySummary}
+          // The bulk endpoint is tenant-scoped and has no instance filter, so
+          // this panel covers the whole customer even while the table below it
+          // is narrowed to one instance. Told to the operator rather than
+          // quietly honoured-or-not, and only where it can actually differ.
+          allInstances={instances.length > 1}
+        />
+      ) : null}
 
       {instances.length > 1 ? (
         <div className="space-y-2">

@@ -1035,7 +1035,10 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
         return;
       }
 
-      const result = await transcribe(audio, "audio/mp4");
+      // The duration goes in so the ASR validator can catch a timeline that
+      // claims to run past the end of the audio - the inline provider does that
+      // routinely, and a transcript is not evidence that its clock is real.
+      const result = await transcribe(audio, "audio/mp4", billableS);
       await withOrgContext(orgId, async (client) => {
         await persistTranscript(client, orgId, callId, result);
         // The inline provider diarizes as part of the same request rather

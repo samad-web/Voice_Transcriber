@@ -157,6 +157,8 @@ import { BrandingAssetsController } from "../modules/tenancy/branding-assets.con
 import { WorkspacesController } from "../modules/tenancy/workspaces.controller";
 import { DeviceAttendanceController } from "../modules/attendance/device-attendance.controller";
 import { OwnerAttendanceController } from "../modules/attendance/owner-attendance.controller";
+import { DeviceAlertsController } from "../modules/handset-alerts/device-alerts.controller";
+import { OwnerHandsetAlertsController } from "../modules/handset-alerts/owner-handset-alerts.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -429,6 +431,10 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // console's twenty (OWNER_ROLE_ROUTES), feature-gated on `attendance`.
   DeviceAttendanceController,
   OwnerAttendanceController,
+  // 0150: phone alerts. The handset's fetch + ack (DEVICE_AUTHED) and the
+  // console's "Message phones" pair (OWNER_ROLE_ROUTES, owner+manager).
+  DeviceAlertsController,
+  OwnerHandsetAlertsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -571,6 +577,11 @@ const DEVICE_AUTHED = [
   "GET /devices/me/attendance",
   "POST /devices/me/attendance/requests",
   "DELETE /devices/me/attendance/requests/:id",
+  // Phone alerts (0150): the phone collecting what it should show, and saying
+  // it showed it. DeviceAuthGuard like every /devices/me route; the telecaller
+  // is joined from the device row, never taken from the request.
+  "GET /devices/me/alerts",
+  "POST /devices/me/alerts/ack",
 ];
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
@@ -727,6 +738,12 @@ const OPERATOR_ONLY_ROUTES = [
   // and merely lost the button.
   "POST /calls/:id/reprocess",
   "POST /calls/reprocess-backlog",
+  // The read that sizes the bulk one: how many calls are in a window and how
+  // much recorded audio that is. A READ in a list of spends, which is the point -
+  // it is the number the operator is shown before pressing, so it has to be
+  // reachable by exactly the people who may press, and by nobody else. It is in
+  // no bucket below: it returns counts and seconds, never call content.
+  "GET /calls/retry-summary",
   // The escalation queue itself (0147). Guarded for the first of the three
   // reasons again - to keep a tenant OUT of an operator surface - and here the
   // surface holds every OTHER tenant's complaints, so it is the one place where
@@ -765,6 +782,12 @@ const PERMISSION_ROUTES = ["GET /calls/:id/audio"];
  *     and they move a call through the pipeline; they return no content. Since
  *     0147 they carry OperatorOnlyGuard, which answers a different question
  *     from this one: that guard asks who may SPEND, this gate asks who may READ.
+ *   - `GET /calls/retry-summary`, which is a read and still not gated here. What
+ *     it reads is how many calls failed in a window and how many seconds of
+ *     audio that is - the shape of the backlog, not a word of what was said. A
+ *     tenant who has not agreed to let us open their calls has not thereby asked
+ *     us to stop counting the ones our own pipeline dropped, and gating it would
+ *     mean the operator could spend on a backlog they are forbidden to size.
  */
 const CALL_CONTENT_ROUTES = [
   "GET /calls",
@@ -1166,6 +1189,11 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/attendance/requests/:id/decision",
   "GET /owner/attendance/review",
   "POST /owner/attendance/segments/:id/override",
+  // Phone alerts (0150): "Message phones" and its read receipts. Owner and
+  // manager at class level - the pair that may reassign leads; a popup that
+  // takes over a colleague's screen is not a telecaller's to send.
+  "GET /owner/handset-alerts",
+  "POST /owner/handset-alerts",
   // ── Org configuration that checked nothing but tenant membership (doc 31 §2 X8) ──
   //
   // Every route below used to be plain AdminKeyGuard + TenantGuard, so a
@@ -1908,8 +1936,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // AND operator-only, the first routes to be both.
     // 532: plus POST /quotations/:id/revise (0149, doc 37 R5). Tenant-scoped,
     // and on `quotation:create` rather than `edit` - it writes a new document.
-    expect(ROUTES).toHaveLength(532);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(532);
+    // 533: plus GET /calls/retry-summary. Tenant-scoped and operator-only, like
+    // the two reprocess routes it sizes: it is the count the console shows
+    // before spending, so whoever may read it is whoever may press them.
+    // 537: plus phone alerts (0150) - two device-authed /devices/me/alerts
+    // routes and the two tenant-scoped /owner/handset-alerts routes.
+    expect(ROUTES).toHaveLength(537);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(537);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -1957,14 +1990,16 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 445: plus the export engine's six (0148). All tenant-scoped - there is
     // no cross-tenant export and no operator surface that produces one.
     // 446: plus the quotation revise route (0149).
-    expect(tenantScoped).toHaveLength(446);
+    // 447: plus GET /calls/retry-summary.
+    // 449: plus GET/POST /owner/handset-alerts (0150).
+    expect(tenantScoped).toHaveLength(449);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(532); // = ROUTES.length: every route in exactly one class
+    ).toBe(537); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 423 principal routes", () => {
@@ -2007,7 +2042,9 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 479: plus the export engine's six (0148).
     // 487: plus the escalation queue's eight (0147).
     // 488: plus the quotation revise route (0149).
-    expect(principalRoutes).toHaveLength(488);
+    // 489: plus GET /calls/retry-summary.
+    // 491: plus GET/POST /owner/handset-alerts (0150).
+    expect(principalRoutes).toHaveLength(491);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

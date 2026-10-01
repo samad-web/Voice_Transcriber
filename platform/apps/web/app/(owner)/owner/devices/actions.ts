@@ -250,3 +250,77 @@ export async function mintRelinkTokenAction(
 export async function refreshDevicesAction(): Promise<void> {
   revalidatePath("/owner", "layout");
 }
+
+// ── Message phones (migration 0150) ─────────────────────────────────────────
+
+/** Mirrors `HandsetAlertDelivery` in @aura/shared - what one recipient's phone did with it. */
+export type HandsetDelivery = "read" | "delivered" | "sending" | "not_reached" | "no_phone";
+
+export interface HandsetRecipient {
+  telecallerId: string;
+  name: string;
+  /** An active paired phone: something can collect the message. */
+  hasPhone: boolean;
+  /** That phone can be woken by a push, not only by its hourly check. */
+  pushable: boolean;
+  /** Their phone is known to run an app too old to show alerts. */
+  needsUpdate: boolean;
+}
+
+export interface SentHandsetMessage {
+  batchId: string;
+  title: string;
+  body: string | null;
+  popup: boolean;
+  sentAt: string;
+  sentBy: string | null;
+  recipients: Array<{
+    telecallerId: string;
+    name: string;
+    delivery: HandsetDelivery;
+    deliveredAt: string | null;
+    openedAt: string | null;
+  }>;
+}
+
+export interface HandsetAlertsOverview {
+  recipients: HandsetRecipient[];
+  sent: SentHandsetMessage[];
+}
+
+/** Re-read the sent list - the panel polls this while a message is still on its way. */
+export async function handsetAlertsOverviewAction(): Promise<{ overview?: HandsetAlertsOverview; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/handset-alerts`, { headers, cache: "no-store" });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    return { overview: (await res.json()) as HandsetAlertsOverview };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
+export async function sendHandsetMessageAction(input: {
+  everyone: boolean;
+  telecallerIds: string[];
+  title?: string;
+  body: string;
+  popup: boolean;
+}): Promise<{ recipients?: number; phonesWoken?: number; error?: string }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/handset-alerts`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) return { error: await apiErrorMessage(res) };
+    const out = (await res.json()) as { recipients: number; phonesWoken: number };
+    return { recipients: out.recipients, phonesWoken: out.phonesWoken };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}

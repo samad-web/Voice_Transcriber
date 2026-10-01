@@ -47,14 +47,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Re-arm the shift-start alarm after a reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- The presence check shows over the lock screen. -->
+    <!-- The presence check, new leads and managers' messages show over the lock screen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Shift start, reminders and presence-check deadlines on time; inexact fallback when refused. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- The guided setup asks for the exemption: Samsung's sleeping-apps list otherwise
          kills the shift service mid-shift. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- network_lost / network_restored during a shift. -->
+    <!-- network_lost / network_restored during a shift, and the "no internet" notice. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Finishing a heartbeat upload on a dozing phone (WorkManager declares it too). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -136,7 +136,8 @@
             android:foregroundServiceType="microphone" />
 
         <!-- FCM push receiver: wakes the app for instant logout/wipe/ping from
-             the platform console instead of waiting for the ~1h config poll. -->
+             the platform console instead of waiting for the ~1h config poll,
+             and for phone alerts (new leads, tasks, managers' messages). -->
         <service
             android:name=".platform.AuraFirebaseMessagingService"
             android:exported="false">
@@ -174,6 +175,24 @@
             android:showWhenLocked="true"
             android:taskAffinity="com.voicetranscriber.callrecorder.presence"
             android:turnScreenOn="true" />
+
+        <!-- Phone alerts (platform 0150): new leads and managers' messages over the
+             lock screen from a full-screen-intent notification, or one alert opened
+             from the shade. Its own task, like the presence check, so answering it
+             never surfaces the rest of the app. -->
+        <activity
+            android:name=".alerts.AlertActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.voicetranscriber.callrecorder.alerts"
+            android:turnScreenOn="true" />
+
+        <!-- "Got it" on an alert notification. -->
+        <receiver
+            android:name=".alerts.AlertActionReceiver"
+            android:exported="false" />
 
         <!-- Runs only inside a shift window. specialUse: no other foreground-service
              type describes "keep a workday's presence timers and reminders running". -->

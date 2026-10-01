@@ -42,8 +42,12 @@ android {
         // forever and never be able to satisfy the prompt.
         // 10 / 1.2.0: attendance (Build docs/33). The server only sends the
         // attendance block to handsets at ATTENDANCE_MIN_VERSION_CODE (10) or above.
-        versionCode = 10
-        versionName = "1.2.0"
+        // 11 / 1.2.1: phone alerts (platform 0150) + the "no internet" notice. The
+        // worker only pushes `alert` to handsets at HANDSET_ALERTS_MIN_VERSION_CODE
+        // (11) or with no reported version. 1.2.0/10 was built but never
+        // published, and does NOT have alerts - do not publish that file.
+        versionCode = 11
+        versionName = "1.2.1"
     }
 
     signingConfigs {

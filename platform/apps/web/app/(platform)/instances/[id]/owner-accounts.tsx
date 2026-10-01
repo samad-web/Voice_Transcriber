@@ -5,6 +5,7 @@ import { AlertTriangle, Copy, Link2, Trash2, UserPlus } from "lucide-react";
 import { BrutalButton, Card, ConsolePanel, MonoLabel, StatusChip, useAlert, useConfirm, useToast } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { inputClass } from "@/lib/form";
+import { ownerInviteMessage } from "@/lib/invite-text";
 import {
   createOwnerAction,
   inviteOwnerAction,
@@ -52,8 +53,11 @@ export function OwnerAccounts({
   authConfigured,
   invites = [],
   inviteByLink,
+  workspace,
 }: {
   orgId: string;
+  /** The instance's name, for the copied invite message. */
+  workspace?: string | null;
   owners: OwnerRow[];
   authConfigured: boolean;
   invites?: InstanceInvite[];
@@ -469,7 +473,7 @@ export function OwnerAccounts({
         )}
       </div>
 
-      {invited?.link ? <InviteReveal outcome={invited} /> : null}
+      {invited?.link ? <InviteReveal outcome={invited} workspace={workspace} /> : null}
 
       {result?.password ? (
         <PasswordReveal email={result.forEmail ?? result.email ?? ""} password={result.password} />
@@ -485,40 +489,57 @@ export function OwnerAccounts({
   );
 }
 
-/** The invite link, shown once - only its hash is stored. Resend replaces a lost one. */
-function InviteReveal({ outcome }: { outcome: InviteOutcome }) {
+/**
+ * The invite link, shown once - only its hash is stored. Resend replaces a lost one.
+ *
+ * Copy puts the whole MESSAGE on the clipboard, not the bare URL - see
+ * `ownerInviteMessage` for why the address has to travel with the link. The
+ * panel shows that same message, so the sender reads exactly what they paste.
+ */
+function InviteReveal({ outcome, workspace }: { outcome: InviteOutcome; workspace?: string | null }) {
   const alert = useAlert();
   const toast = useToast();
   const link = outcome.link ?? "";
+  const message = ownerInviteMessage({
+    email: outcome.email ?? "",
+    link,
+    workspace,
+    expiresAt: outcome.expiresAt,
+  });
+
+  // Sync, promise voided - see PasswordReveal below.
+  const copy = (what: "message" | "link") => {
+    void navigator.clipboard
+      .writeText(what === "message" ? message : link)
+      .then(() => toast(what === "message" ? "Invite and sign-in address copied" : "Link only copied"))
+      .catch(() =>
+        alert({
+          title: "Couldn't copy the invite",
+          body: "Select it above and copy it by hand - it is not shown again.",
+          tone: "danger",
+        }),
+      );
+  };
 
   return (
     <div className="border-2 border-border-strong bg-surface p-3.5 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <MonoLabel>Invite link - shown once</MonoLabel>
+        <MonoLabel>Invite message - shown once</MonoLabel>
         <StatusChip tone="danger">Copy now</StatusChip>
       </div>
-      <p className="text-xs font-sans text-text break-all">{outcome.email}</p>
-      <ConsolePanel lines={[link]} tone="log" />
-      <BrutalButton
-        variant="secondary"
-        className="w-full"
-        // Sync onClick, promise voided - see PasswordReveal below.
-        onClick={() => {
-          void navigator.clipboard
-            .writeText(link)
-            .then(() => toast("Copied"))
-            .catch(() =>
-              alert({
-                title: "Couldn't copy the link",
-                body: "Select it above and copy it by hand - it is not shown again.",
-                tone: "danger",
-              }),
-            );
-        }}
-      >
+      {/* A blank line is an empty div, which collapses - keep its height. */}
+      <ConsolePanel lines={message.split("\n").map((line) => line || " ")} tone="log" />
+      <BrutalButton variant="secondary" className="w-full" onClick={() => copy("message")}>
         <Copy className="h-4 w-4" />
-        COPY LINK
+        COPY INVITE MESSAGE
       </BrutalButton>
+      <button
+        type="button"
+        onClick={() => copy("link")}
+        className="text-[10px] font-mono font-bold uppercase tracking-wider text-text-muted underline underline-offset-2 hover:text-text"
+      >
+        Copy link only
+      </button>
       <p className="text-[10px] font-mono text-text-muted leading-relaxed">
         {outcome.emailed
           ? "Also emailed to them. "

@@ -138,6 +138,33 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         renderGreeting() // keep the time-of-day greeting current
         invalidateOptionsMenu() // the Attendance item follows the latest config
+        // Phone alerts (platform 0150): opening the app collects anything a push missed.
+        if (com.voicetranscriber.callrecorder.platform.ActivationStore.isActivated(this)) {
+            com.voicetranscriber.callrecorder.alerts.AlertSyncWorker.enqueue(this)
+        }
+        askForFullScreenAlerts()
+    }
+
+    private var fullScreenAsked = false
+
+    /**
+     * Android 14 can withhold the full-screen permission, and then a new lead
+     * or a manager's message arrives as a banner instead of over the lock
+     * screen. Asked once per visit, and only when it is actually missing.
+     */
+    private fun askForFullScreenAlerts() {
+        if (fullScreenAsked || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        val nm = getSystemService(android.app.NotificationManager::class.java) ?: return
+        if (nm.canUseFullScreenIntent()) return
+        fullScreenAsked = true
+        com.google.android.material.snackbar.Snackbar
+            .make(binding.root, R.string.alert_allow_popups, com.google.android.material.snackbar.Snackbar.LENGTH_INDEFINITE)
+            .setAction(R.string.alert_allow) {
+                val pkg = android.net.Uri.parse("package:$packageName")
+                runCatching { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)) }
+                    .onFailure { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)) }
+            }
+            .show()
     }
 
     /** Reminder and prompt notifications reach the Attendance screen through LockActivity. */

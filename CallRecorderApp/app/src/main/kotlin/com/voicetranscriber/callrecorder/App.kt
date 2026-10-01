@@ -4,7 +4,10 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.google.android.material.color.DynamicColors
+import com.voicetranscriber.callrecorder.alerts.AlertNotifications
 import com.voicetranscriber.callrecorder.attendance.AttendanceController
+import com.voicetranscriber.callrecorder.connectivity.ConnectivityCheckWorker
+import com.voicetranscriber.callrecorder.connectivity.ConnectivityWatch
 import com.voicetranscriber.callrecorder.ingest.MissedCallSyncWorker
 import com.voicetranscriber.callrecorder.ingest.OemIngestWorker
 import com.voicetranscriber.callrecorder.platform.ConfigRefreshWorker
@@ -77,6 +80,14 @@ class App : Application() {
         // invisible state - the handset keeps working and just never gets
         // another push.
         FcmTokenManager.ensureSynced(this)
+        // Phone alerts (platform 0150): the channels the server's leads, tasks and
+        // managers' messages arrive on. The FCM `alert` push does the rest.
+        AlertNotifications.createChannels(this)
+        // "No internet" notice: an instant network callback while this process lives,
+        // and a ~15-minute check for when it does not. Both no-op until paired.
+        ConnectivityWatch.createChannel(this)
+        ConnectivityWatch.start(this)
+        ConnectivityCheckWorker.schedule(this)
         // Attendance (Build docs/33): creates its notification channels and, if the
         // process died mid-shift, restores the shift (logging app_start or boot for the
         // gap) and re-arms the next shift's alarm. A no-op while attendance is off.

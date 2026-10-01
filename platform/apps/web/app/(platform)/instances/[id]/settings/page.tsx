@@ -115,6 +115,7 @@ export default async function InstanceSettingsPage({
       >
         <OwnerAccounts
           orgId={orgId}
+          workspace={org.name}
           owners={owners}
           authConfigured={ownerData.authConfigured}
           invites={inviteData?.invites ?? []}

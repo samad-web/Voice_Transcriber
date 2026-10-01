@@ -3,7 +3,8 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet, ownerTry } from "@/lib/owner-context";
 import { DevicesClient } from "./devices-client";
-import type { DevicesResponse, FleetHealthResponse } from "./actions";
+import { MessagePhones } from "./message-phones";
+import type { DevicesResponse, FleetHealthResponse, HandsetAlertsOverview } from "./actions";
 
 export const metadata: Metadata = { title: "Phones" };
 
@@ -33,9 +34,13 @@ export const metadata: Metadata = { title: "Phones" };
  * somebody opens when they are already having trouble with a phone.
  */
 export default async function DevicesPage() {
-  const [result, fleetHealth] = await Promise.all([
+  // The third fetch is "Message phones" (0150). Owner and manager only - the
+  // API answers 403 to anyone else, ownerGet turns that into null, and the
+  // panel is simply absent. Survivable for the same reason fleet health is.
+  const [result, fleetHealth, alerts] = await Promise.all([
     ownerTry<DevicesResponse>("/v1/owner/devices"),
     ownerGet<FleetHealthResponse>("/v1/devices/fleet-health"),
+    ownerGet<HandsetAlertsOverview>("/v1/owner/handset-alerts"),
   ]);
 
   if (!result.ok) {
@@ -56,6 +61,7 @@ export default async function DevicesPage() {
         transcribed and turned into leads. An owner decides who on the team may pair a new one -
         that is a setting on the Team page.
       </p>
+      {alerts && <MessagePhones initial={alerts} />}
       <DevicesClient data={data} health={fleetHealth?.devices ?? []} />
     </>
   );

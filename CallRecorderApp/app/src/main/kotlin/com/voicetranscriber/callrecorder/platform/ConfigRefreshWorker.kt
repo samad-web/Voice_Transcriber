@@ -34,6 +34,9 @@ class ConfigRefreshWorker(
         return try {
             val result = ActivationManager.refreshConfig(context)
             Log.i(TAG, result)
+            // Phone alerts whose push never arrived (a sleeping phone, a dropped
+            // FCM connection) are collected here at the latest.
+            com.voicetranscriber.callrecorder.alerts.AlertSyncWorker.enqueue(context)
             Result.success()
         } catch (t: Throwable) {
             Log.w(TAG, "config refresh failed (attempt ${runAttemptCount + 1})", t)

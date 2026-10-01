@@ -77,6 +77,7 @@ export * from "./auth-events";
 export * from "./safe-path";
 export * from "./attendance";
 export * from "./attendance-absence-message";
+export * from "./handset-alerts";
 
 export * from "./time";
 export * from "./call-issues";

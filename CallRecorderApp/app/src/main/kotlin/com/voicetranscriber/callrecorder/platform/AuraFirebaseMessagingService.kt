@@ -3,6 +3,8 @@ package com.voicetranscriber.callrecorder.platform
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.voicetranscriber.callrecorder.alerts.AlertSync
+import com.voicetranscriber.callrecorder.alerts.AlertSyncWorker
 import com.voicetranscriber.callrecorder.attendance.AttendanceController
 import com.voicetranscriber.callrecorder.attendance.AttendanceSyncWorker
 
@@ -13,9 +15,12 @@ import com.voicetranscriber.callrecorder.attendance.AttendanceSyncWorker
  * service is invoked even when the app is in the background or killed by the
  * system.
  *
- * Currently handles one action:
+ * Actions:
  *   `config_refresh` — the same [ActivationManager.refreshConfig] that
  *   [ConfigRefreshWorker] runs on its ~1h poll, but instantly.
+ *   `presence_check` — attendance (doc 33).
+ *   `alert` — a phone alert is waiting (platform 0150); the push carries no
+ *   content, the phone fetches it.
  *
  * Both callbacks below hand off to WorkManager rather than doing the work here.
  * Android gives a high-priority data message ~20 seconds, but this service is
@@ -41,6 +46,19 @@ class AuraFirebaseMessagingService : FirebaseMessagingService() {
             "presence_check" -> {
                 AttendanceController.presenceCheck(applicationContext)
                 AttendanceSyncWorker.enqueue(applicationContext)
+            }
+            // Phone alerts (platform 0150): a lead, task or manager's message is
+            // waiting. The ONE exception to the hand-off rule above, because a
+            // popup that waits for WorkManager's scheduling is not a popup: fetch
+            // and show inline, inside the window the high-priority push grants.
+            // Nothing is lost if this process dies halfway - the server keeps the
+            // alert until a phone acks it and pushes again a minute later - and
+            // any failure falls back to the durable worker.
+            "alert" -> {
+                val ok = runCatching { AlertSync.sync(applicationContext) }
+                    .onFailure { Log.w(TAG, "inline alert sync failed - handing to the worker", it) }
+                    .isSuccess
+                if (!ok) AlertSyncWorker.enqueue(applicationContext)
             }
             else -> Log.w(TAG, "Unknown FCM action: $action")
         }

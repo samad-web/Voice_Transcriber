@@ -212,4 +212,22 @@
     <string name="att_break_length">Break from %1$s for…</string>
     <string name="att_break_in_past">That time has already passed.</string>
     <string name="att_break_outside_shift">The break must be inside your shift (%1$s - %2$s).</string>
+
+    <!-- Phone alerts (platform migration 0150) -->
+    <string name="alert_channel_popup">New leads and messages</string>
+    <string name="alert_channel_popup_desc">Leads assigned to you and messages from your manager. Shown over the lock screen.</string>
+    <string name="alert_channel_notify">Tasks and follow-ups</string>
+    <string name="alert_channel_notify_desc">New tasks, follow-ups that are due, and missed calls to return.</string>
+    <string name="alert_popup_many">%1$d new alerts</string>
+    <string name="alert_got_it">Got it</string>
+    <string name="alert_from">From %1$s</string>
+    <string name="alert_allow_popups">Allow Aura to show new leads and messages over the lock screen.</string>
+    <string name="alert_allow">Allow</string>
+
+    <!-- No internet notice -->
+    <string name="offline_channel">No internet</string>
+    <string name="offline_channel_desc">Shown while this phone has no working internet, so it cannot receive leads or messages.</string>
+    <string name="offline_title">No internet connection</string>
+    <string name="offline_body">You won\'t get new leads or messages from your manager until you\'re back online. Turn on mobile data or Wi-Fi.</string>
+    <string name="offline_turn_on">Turn on internet</string>
 </resources>

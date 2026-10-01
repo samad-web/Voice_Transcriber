@@ -6,6 +6,7 @@ import { call } from "@/lib/action-call";
 import { requireOperator } from "@/lib/operator-guard";
 import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 import type { Credentials } from "../enrollment-credentials";
+import type { RetrySummary } from "./calls/retry-window";
 
 /**
  * The most dangerous file in the console: every action here takes an `orgId`
@@ -178,32 +179,88 @@ export async function setModuleEnabledAction(input: {
 /**
  * Rewind a backlog of terminal calls for one instance.
  *
- * Used when transcription is switched back on: the calls that arrived while it
- * was off are sitting in TRANSCRIPTION_OFF with their audio intact, and this is
- * what picks them up. `sinceDays: null` means the entire history, which is why
- * the caller is made to choose rather than defaulting to it - a dormant instance
- * can hold months of stored audio and transcribing it costs real money.
+ * Two callers, two jobs. The transcription toggle uses it when transcription is
+ * switched back on: the calls that arrived while it was off are sitting in
+ * TRANSCRIPTION_OFF with their audio intact, and this is what picks them up. The
+ * calls page's Reprocess panel uses it for the other job - a provider outage
+ * left a week of FAILED_ASR and somebody has to run them again.
+ *
+ * The window is one of three things and never two: `sinceDays` for a rolling
+ * count, `from`/`to` for a calendar range, or nothing at all for the entire
+ * history. The API refuses a request carrying both. `sinceDays: null` means
+ * everything, which is why the caller is made to choose rather than defaulting
+ * to it - a dormant instance can hold months of stored audio and transcribing it
+ * costs real money.
  */
 export async function reprocessBacklogAction(input: {
   orgId: string;
   statuses: string[];
-  sinceDays: number | null;
-}): Promise<{ requeued?: number; error?: string }> {
+  sinceDays?: number | null;
+  from?: string;
+  to?: string;
+  limit?: number;
+}): Promise<{ requeued?: number; window?: string; error?: string }> {
   try {
     await requireOperator();
   } catch {
     return { error: "Not authorized" };
   }
-  const { orgId, ...rest } = input;
-  const res = await call<{ requeued?: number }>(`/v1/calls/reprocess-backlog`, {
+  const { orgId, statuses, sinceDays, from, to, limit } = input;
+  const res = await call<{ requeued?: number; window?: string }>(`/v1/calls/reprocess-backlog`, {
     method: "POST",
-    body: rest,
+    // Assembled field by field rather than spread, because WHICH fields are
+    // absent is the contract: a `sinceDays` carried alongside a range is a 400,
+    // and a spread of the caller's object is one stray property away from
+    // sending both.
+    body: {
+      statuses,
+      ...(from && to ? { from, to } : { sinceDays: sinceDays ?? null }),
+      ...(limit ? { limit } : {}),
+    },
     orgId,
   });
   if (res.error) return { error: res.error };
   revalidatePath(`/instances/${orgId}`);
   revalidatePath(`/instances/${orgId}/calls`);
-  return { requeued: res.data?.requeued ?? 0 };
+  return { requeued: res.data?.requeued ?? 0, window: res.data?.window };
+}
+
+/**
+ * What a reprocess WOULD cover - the count behind every chip on the panel.
+ *
+ * Read on demand rather than only at page load, because the custom range is
+ * typed: an operator entering 18-27 September needs that window's total before
+ * they press anything, and the presets' totals have to come back in the same
+ * answer so the comparison is like for like.
+ */
+export async function retrySummaryAction(input: {
+  orgId: string;
+  statuses?: string[];
+  sinceDays?: number | null;
+  from?: string;
+  to?: string;
+}): Promise<{ summary?: RetrySummary; error?: string }> {
+  try {
+    await requireOperator();
+  } catch {
+    return { error: "Not authorized" };
+  }
+  const { orgId, statuses, sinceDays, from, to } = input;
+  const query = new URLSearchParams();
+  for (const status of statuses ?? []) query.append("statuses", status);
+  if (from && to) {
+    query.set("from", from);
+    query.set("to", to);
+  } else if (sinceDays != null) {
+    query.set("sinceDays", String(sinceDays));
+  }
+  const qs = query.toString();
+  const res = await call<RetrySummary>(`/v1/calls/retry-summary${qs ? `?${qs}` : ""}`, {
+    method: "GET",
+    orgId,
+  });
+  if (res.error) return { error: res.error };
+  return { summary: res.data };
 }
 
 /**
