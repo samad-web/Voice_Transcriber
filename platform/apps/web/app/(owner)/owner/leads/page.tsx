@@ -46,6 +46,10 @@ const EXPORTABLE_FILTERS = [
   "projectId",
   "minAgeDays",
   "maxAgeDays",
+  // Which pipeline the list is showing (0154). On the export drawer's summary
+  // for the same reason the others are: a spreadsheet of archived leads that
+  // did not say so would be read as the live pipeline.
+  "archived",
 ] as const;
 
 function leadExportFilters(sp: Record<string, string | string[] | undefined>): Record<string, unknown> {
@@ -99,6 +103,9 @@ export default async function LeadsPage({
     "responded",
     "createdFrom",
     "createdTo",
+    // The Archived filter (0154). Absent means the live pipeline, which is
+    // what every other caller of this page gets.
+    "archived",
   ]) {
     const value = one(key);
     if (value) query.set(key, value);

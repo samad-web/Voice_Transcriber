@@ -10,7 +10,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { DEFAULT_SOP_STEPS, MAX_SOP_STEPS, SopSteps } from "@aura/shared";
+import {
+  DEFAULT_SOP_STEPS,
+  MAX_SOP_STEPS,
+  ScriptAdherenceMode,
+  SopSteps,
+} from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
@@ -43,6 +48,8 @@ import { DbService } from "../../db/db.service";
  * per-row narrowing to fall back on because an SOP has no owner. So the whole
  * controller carries a real `@RequireOwnerRole` rather than relying on scope.
  */
+
+const ModeBody = z.object({ mode: ScriptAdherenceMode });
 
 const SopBody = z.object({
   name: z.string().min(1).max(120),
@@ -78,12 +85,78 @@ export class CallSopsController {
           ORDER BY id, version DESC`,
         [orgId],
       );
+      const {
+        rows: [org],
+      } = await client.query<{ script_adherence_mode: string }>(
+        `SELECT script_adherence_mode FROM organizations WHERE id = $1`,
+        [orgId],
+      );
       return {
         sops: rows,
         maxSteps: MAX_SOP_STEPS,
         /** A starting point to edit, never something already in force. */
         defaultSteps: DEFAULT_SOP_STEPS,
+        /** Which measure is in force (0155) - 'ai' or 'sop'. */
+        mode: ScriptAdherenceMode.catch("ai").parse(org?.script_adherence_mode),
       };
+    });
+  }
+
+  /**
+   * Choose the measure: the model's own read, or this floor's checklist (0155).
+   *
+   * ── WHY THE SWITCH ALSO MOVES THE ACTIVE FLAG ───────────────────────────────
+   *
+   * Two pieces of state could disagree - the mode, and `call_sops.is_active` -
+   * and the worker reads BOTH (mode first, then the active SOP). Left
+   * independent they would produce a console that says "Your call checklist"
+   * over an org with nothing activated, scoring nothing and reporting nothing,
+   * with no error anywhere. So this endpoint keeps them in step inside one
+   * transaction:
+   *
+   *   -> 'sop' with no active SOP is refused, and says what to do about it.
+   *      Writing a checklist is a real decision with real text in it; silently
+   *      activating the LAST version somebody edited is the kind of help that
+   *      scores a floor against a draft.
+   *   -> 'ai' deactivates the SOP, because leaving it flagged active while
+   *      nothing reads it is a trap for the next person to open this code.
+   *
+   * Past `call_sop_results` are untouched either way - 0091's rule: they are
+   * the record of what was judged, not a live view.
+   */
+  @Post("mode")
+  @RequireOwnerRole("owner", "manager")
+  async setMode(@OrgId() orgId: string, @Body() body: unknown) {
+    const parsed = ModeBody.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { mode } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      if (mode === "sop") {
+        const {
+          rows: [active],
+        } = await client.query<{ id: string }>(
+          `SELECT id FROM call_sops WHERE org_id = $1 AND is_active LIMIT 1`,
+          [orgId],
+        );
+        if (!active) {
+          throw new BadRequestException(
+            "Write and save your call checklist first - there is nothing to score against yet.",
+          );
+        }
+      } else {
+        await client.query(
+          `UPDATE call_sops SET is_active = false WHERE org_id = $1 AND is_active`,
+          [orgId],
+        );
+      }
+
+      await client.query(`UPDATE organizations SET script_adherence_mode = $2 WHERE id = $1`, [
+        orgId,
+        mode,
+      ]);
+      await this.audit(client, orgId, orgId, "sop.mode", { mode });
+      return { mode };
     });
   }
 
@@ -130,6 +203,11 @@ export class CallSopsController {
          RETURNING id, version, name, steps, is_active, created_at`,
         [orgId, name, JSON.stringify(steps), activate],
       );
+      // Activating a checklist IS choosing to be scored against it (0155), so
+      // the mode follows rather than being a second thing to remember. Without
+      // this an owner can save seven steps, see them marked active, and be
+      // scored by the model instead - with nothing on the screen admitting it.
+      if (activate) await this.useSop(client, orgId);
       await this.audit(client, orgId, row.id, "sop.create", { version: row.version, name });
       return row;
     });
@@ -176,6 +254,7 @@ export class CallSopsController {
          RETURNING id, version, name, steps, is_active, created_at`,
         [id, orgId, Number(current.max) + 1, name, JSON.stringify(steps), activate],
       );
+      if (activate) await this.useSop(client, orgId);
       await this.audit(client, orgId, id, "sop.version", { version: row.version, name });
       return row;
     });
@@ -196,11 +275,28 @@ export class CallSopsController {
         `UPDATE call_sops SET is_active = false WHERE org_id = $1 AND is_active RETURNING id`,
         [orgId],
       );
+      // The mirror of `useSop`: with no checklist in force there is nothing for
+      // 'sop' mode to score, so the measure falls back to the model's own read
+      // rather than to nothing at all (0155).
+      await client.query(
+        `UPDATE organizations SET script_adherence_mode = 'ai' WHERE id = $1`,
+        [orgId],
+      );
       if ((res.rowCount ?? 0) > 0) {
         await this.audit(client, orgId, res.rows[0].id, "sop.deactivate", {});
       }
       return { deactivated: res.rowCount ?? 0 };
     });
+  }
+
+  /** Put this org's checklist in force as the adherence measure (0155). */
+  private async useSop(
+    client: Parameters<Parameters<DbService["withOrg"]>[1]>[0],
+    orgId: string,
+  ): Promise<void> {
+    await client.query(`UPDATE organizations SET script_adherence_mode = 'sop' WHERE id = $1`, [
+      orgId,
+    ]);
   }
 
   private async audit(

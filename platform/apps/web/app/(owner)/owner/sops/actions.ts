@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { SopSteps, type SopStep } from "@aura/shared";
+import { ScriptAdherenceMode, SopSteps, type SopStep } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
 import { errorText, ownerHeaders, type ActionResult } from "../actions";
@@ -78,4 +78,26 @@ export async function saveSopAction(input: {
  */
 export async function deactivateSopAction(): Promise<ActionResult> {
   return post("/v1/owner/sops/deactivate", {});
+}
+
+/**
+ * Choose the measure: AI scoring, or this floor's own checklist (0155).
+ *
+ * The API refuses 'sop' when nothing is activated, with a sentence saying so -
+ * forwarded as-is rather than reworded here, because it is the API that knows
+ * whether there is a checklist to score against.
+ *
+ * Revalidates the insights and call pages as well as the two `post` already
+ * does: the switch changes which adherence figure those screens can show, and
+ * a stale page would keep printing the number the workspace just stopped using.
+ */
+export async function setAdherenceModeAction(mode: unknown): Promise<ActionResult> {
+  const parsed = ScriptAdherenceMode.safeParse(mode);
+  if (!parsed.success) return { error: "Choose AI scoring or your call checklist." };
+  const result = await post("/v1/owner/sops/mode", { mode: parsed.data });
+  if (!result.error) {
+    revalidatePath("/owner/insights");
+    revalidatePath("/owner/calls");
+  }
+  return result;
 }

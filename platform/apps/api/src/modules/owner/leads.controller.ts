@@ -103,6 +103,18 @@ const ListQuery = z.object({
   stalledDays: z.coerce.number().int().min(1).max(3650).optional(),
   /** Nobody has touched it yet (0093's first_responded_at). */
   unresponded: z.coerce.boolean().optional(),
+  /**
+   * The leads somebody has PUT AWAY (migration 0154) - and only those.
+   *
+   * Absent, which is every existing caller, means the live pipeline:
+   * `archived_at IS NULL` joins the predicate whether or not this is sent.
+   * There is deliberately no "both" value. A mixed list is the state archiving
+   * exists to prevent, and a count that silently included rows the reader had
+   * hidden is the bug, not a feature - the one place the two meet is the
+   * single-record read, which stays reachable so a shared deep link does not
+   * 404 the day somebody archives the lead.
+   */
+  archived: z.coerce.boolean().optional(),
   /** Free text over the card heading, contact name and summary. */
   q: z.string().max(200).optional(),
   /**
@@ -178,6 +190,11 @@ const LEAD_COLUMNS = `
   -- the second one: a rating somebody picked reads differently from one the
   -- AI guessed, and hiding that difference is what makes people mistrust both.
   l.temperature, l.temperature_source,
+  -- Put away, and when (0154). Carried on every view rather than only the
+  -- archived list: the drawer opens from a deep link that does not know, and a
+  -- lead that is archived must say so wherever it is read instead of looking
+  -- like an ordinary open lead whose board column has gone missing.
+  l.archived_at,
   l.notes, l.facts, l.contact_name, l.contact_number_prefix, l.contact_number_last3,
   l.call_count, l.last_activity_at, l.stage_changed_at, l.created_at,
   l.telecaller_device_id, l.last_call_id,
@@ -386,6 +403,7 @@ export class LeadsController {
       createdFrom,
       createdTo,
       responded,
+      archived,
       sort,
       limit,
       offset,
@@ -420,6 +438,13 @@ export class LeadsController {
       // own records.
       const scoped = ownerScopeFilter("lead", scope, "l");
       if (scoped) add(scoped.sql, scoped.value);
+
+      // Archived or live, never both (0154) - second in the list for the same
+      // reason the persona narrowing is first: it is not one of the reader's
+      // filters, it is the definition of which pipeline they are looking at.
+      // `leads_org_activity_live` and `leads_org_stage_live` are partial over
+      // this exact predicate, so the default list keeps its index.
+      where.push(archived ? "l.archived_at IS NOT NULL" : "l.archived_at IS NULL");
 
       if (boardId === "main") where.push("l.board_id IS NULL");
       else if (boardId) add("l.board_id = $?", boardId);
@@ -523,7 +548,12 @@ export class LeadsController {
       const stages = board.stages;
 
       const params: unknown[] = [perStage];
-      const boardWhere: string[] = [];
+      // An archived lead is off the board entirely, with no filter to bring it
+      // back (0154). The board is a place to work, not a place to look things
+      // up, and the per-column counts and value subtotals are computed from
+      // these same rows - a hidden card still swelling its column's total
+      // would make the one number people read off this screen wrong.
+      const boardWhere: string[] = ["l.archived_at IS NULL"];
       if (boardId === null) {
         boardWhere.push("l.board_id IS NULL");
       } else {
@@ -926,6 +956,90 @@ export class LeadsController {
       }
 
       return { updated: updated.length, skipped: ids.length - updated.length };
+    });
+  }
+
+  /**
+   * Put a lead away, or take it back out (migration 0154).
+   *
+   * ── WHY THIS IS NOT A FIELD ON PATCH ────────────────────────────────────────
+   *
+   * `UpdateLeadBody` is what the owner KEEPS on a card - its title, its note,
+   * its rating, its column. Archiving is not an edit of the lead, it is a
+   * decision about whether the lead is in the working list at all, and the two
+   * want different shapes: an explicit, auditable act with its own name, which
+   * a `PATCH {archived: true}` buried among six optional fields is not. It also
+   * means a client cannot archive by accident while saving a note.
+   *
+   * ── WHAT IT IS AND IS NOT ───────────────────────────────────────────────────
+   *
+   * NOT a delete. Nothing is removed and nothing is scheduled to be: the calls,
+   * the notes, the tasks, the stage ledger and every report that ranges over
+   * them are untouched. The lead leaves the list and the board, and the Archived
+   * filter is where it lives afterwards. 0108 drew that line and this keeps to
+   * it.
+   *
+   * `lead:edit`, the same grant a stage move needs: hiding a lead from the
+   * floor's list changes what everybody else sees, so it is not a read.
+   * Idempotent on purpose - archiving an archived lead keeps the FIRST
+   * archived_at rather than restamping it, because "when was this put away" is
+   * a fact about the decision and a double click must not rewrite it.
+   */
+  @Post(":id/archive")
+  @RequireCrmPermission("lead", "edit")
+  async archive(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) leadId: string,
+    @OwnerScope() scope: OwnerRecordScope,
+  ) {
+    return this.setArchived(req, orgId, leadId, scope, true);
+  }
+
+  @Post(":id/unarchive")
+  @RequireCrmPermission("lead", "edit")
+  async unarchive(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) leadId: string,
+    @OwnerScope() scope: OwnerRecordScope,
+  ) {
+    return this.setArchived(req, orgId, leadId, scope, false);
+  }
+
+  private async setArchived(
+    req: PrincipalRequest,
+    orgId: string,
+    leadId: string,
+    scope: OwnerRecordScope,
+    archived: boolean,
+  ) {
+    const actorId = req.principal?.userId ?? null;
+    return this.db.withOrg(orgId, async (client) => {
+      // The persona narrowing folded into the UPDATE, not checked after it -
+      // the detail read's reasoning, for the same reason: a lead that is not
+      // this person's to see must answer 404 here too, rather than confirming
+      // it exists by refusing differently.
+      // No alias - a bare `UPDATE leads`, the same way the PATCH below takes it.
+      const owned = ownerScopeFilter("lead", scope, "");
+      const params: unknown[] = [leadId, archived ? actorId : null];
+      const sql = `UPDATE leads
+                      SET archived_at = ${archived ? "COALESCE(archived_at, now())" : "NULL"},
+                          archived_by = $2
+                    WHERE id = $1${owned ? ` AND ${owned.sql.replace(/\$\?/g, "$3")}` : ""}
+                RETURNING id, archived_at`;
+      if (owned) params.push(owned.value);
+      const {
+        rows: [lead],
+      } = await client.query<{ id: string; archived_at: string | null }>(sql, params);
+      if (!lead) throw new NotFoundException("lead not found");
+
+      await client.query(
+        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+         VALUES ($1, 'user', $2, $3, 'lead', $4)`,
+        [orgId, actorId ?? "unknown", archived ? "lead.archive" : "lead.unarchive", leadId],
+      );
+      return { lead };
     });
   }
 

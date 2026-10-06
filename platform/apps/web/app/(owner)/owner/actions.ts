@@ -103,6 +103,40 @@ export async function updateLeadAction(
   return result.error ? { error: result.error } : { lead: result.data?.lead };
 }
 
+/**
+ * Put a lead away, or take it back out (migration 0154).
+ *
+ * POST and not a field on `updateLeadAction`, matching the API: archiving is a
+ * decision about whether the lead is in the working list at all, not an edit
+ * of what is on the card, and it must not be possible to do it by accident
+ * while saving a note.
+ *
+ * Revalidates the board and the list as well as the drawer's page, because the
+ * card leaves both the moment this returns - and `/owner` too, whose pipeline
+ * tiles count the same rows.
+ */
+export async function setLeadArchivedAction(
+  leadId: string,
+  archived: boolean,
+): Promise<ActionResult & { archivedAt?: string | null }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/leads/${leadId}/${archived ? "archive" : "unarchive"}`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const body = (await res.json()) as { lead?: { archived_at: string | null } };
+    for (const p of ["/owner/board", "/owner/leads", "/owner"]) revalidatePath(p);
+    return { archivedAt: body.lead?.archived_at ?? null };
+  } catch {
+    return { error: "API unreachable" };
+  }
+}
+
 /** Lead detail for the drawer: the full record plus its call history. */
 export async function fetchLeadAction(leadId: string): Promise<{
   lead?: Lead;

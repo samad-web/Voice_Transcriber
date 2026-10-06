@@ -10,11 +10,13 @@ import type { Task } from "./types";
 /**
  * The people a task can be given to, loaded once per list.
  *
- * `null` while loading, `[]` when the roster could not be read - a persona the
- * API will not show the member list to, or a failed request. Callers treat
- * both as "no picker": the task is still created, just unassigned, and the API
- * remains the control over who may be assigned what (`assertMembers` in
- * tasks.controller.ts refuses anyone outside the org).
+ * `null` while loading, `[]` when there is nobody to offer - a persona the API
+ * will not show the member list to, a failed request, or every candidate
+ * filtered out server-side (an owner alone in a workspace with self-tasks off,
+ * migration 0156). Callers treat them all as "no picker": the task is still
+ * created, just unassigned, and the API remains the control over who may be
+ * assigned what (`assertMembers` and `assertSelfAssignAllowed` in
+ * tasks.controller.ts refuse anyone it will not accept).
  */
 export function useAssigneeOptions(): AssigneeOption[] | null {
   const [options, setOptions] = useState<AssigneeOption[] | null>(null);
@@ -64,7 +66,17 @@ export function PeoplePicker({
 
   if (people === null) return <p className="text-sm text-text-muted">Loading your team…</p>;
   if (people.length === 0) {
-    return <p className="text-sm text-text-muted">Your team list isn&apos;t available, so this task will be unassigned.</p>;
+    // Worded for both reasons the list can come back empty, because this
+    // component cannot tell them apart and the old copy ("your team list
+    // isn't available") was a lie in the second case: the roster failed, OR
+    // everybody it would have offered was filtered out by the API - a solo
+    // owner in a workspace with self-tasks switched off (0156) being the
+    // ordinary example, during setup.
+    return (
+      <p className="text-sm text-text-muted">
+        There&apos;s nobody to give this to, so it will sit in the unassigned queue.
+      </p>
+    );
   }
 
   return (

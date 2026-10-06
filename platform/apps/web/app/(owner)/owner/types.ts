@@ -38,6 +38,13 @@ export interface Lead {
   last_activity_at: string;
   stage_changed_at: string;
   created_at: string;
+  /**
+   * When somebody put this lead away (migration 0154), or null for the live
+   * pipeline. Not a delete: an archived lead keeps every call, note and task,
+   * and the reports keep counting it - it is off the list and the board, and
+   * reachable under the Archived filter.
+   */
+  archived_at?: string | null;
   telecaller_device_id: string | null;
   last_call_id: string | null;
   telecaller: string | null;

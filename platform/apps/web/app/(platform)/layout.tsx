@@ -7,6 +7,7 @@ import { NavHistoryProvider } from "@/components/nav-history-provider";
 import { NoConsoleAccess } from "@/components/no-console-access";
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
+import { ScrollTopOnNavigate } from "@/components/scroll-top-on-navigate";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getPrincipal, isOperator } from "@/lib/owner-context";
@@ -37,6 +38,11 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         visible. */}
     <BreadcrumbProvider>
     <NavHistoryProvider area="platform" orgId={null}>
+    {/* Beside the Back button's provider, not by coincidence: one decides
+        where Back goes, the other where the next screen starts. The operator
+        rail is thirty-odd pages of long tables, so this is the console where
+        the router's scroll-the-changed-segment default was most visible. */}
+    <ScrollTopOnNavigate />
     <div className="min-h-dvh flex flex-col md:flex-row">
       <Sidebar email={user?.email} />
       <MobileNav email={user?.email} />

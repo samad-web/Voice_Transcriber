@@ -35,22 +35,17 @@ import {
   Plug,
   Receipt,
   Route,
-  Search,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   Smartphone,
   Sparkles,
   SquareCheck,
-  Target,
   ToggleLeft,
   TrendingUp,
   Undo2,
   Unlink,
   Upload,
-  UserCog,
   Users,
-  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -676,6 +671,18 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/settings/tasks",
+    label: "Tasks",
+    icon: SquareCheck,
+    title: "Task settings",
+    context: "Settings",
+    // Owner and manager, matching the settings controller (0156). The switch
+    // itself is narrower - owners only - and the API returns `canEdit` so the
+    // page can say so rather than guess. A manager needs the page either way:
+    // whether tasks land on them is something they have to be able to read.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/settings/escalations",
     label: "Escalations",
     icon: ArrowBigUpDash,
@@ -888,6 +895,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
         href: "/owner/settings/attendance",
         blurb: "Shifts, breaks, holidays, who approves leave, and whether phones track attendance.",
       },
+      {
+        href: "/owner/settings/tasks",
+        blurb: "Whether owners and managers are given tasks, or only hand them out.",
+      },
     ],
   },
   {
@@ -904,7 +915,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
     key: "calls",
     label: "Calls & AI",
     pages: [
-      { href: "/owner/sops", blurb: "The steps a good call should follow, used to score every call." },
+      {
+        href: "/owner/sops",
+        blurb: "Score calls with AI, or against the steps you write yourself.",
+      },
       { href: "/owner/agents", blurb: "AI helpers that read calls and chats and pick out leads and details." },
       { href: "/owner/transcription", blurb: "The language your calls are in, and how transcripts are written." },
       { href: "/owner/call-access", blurb: "Whether our support team may open your call recordings." },

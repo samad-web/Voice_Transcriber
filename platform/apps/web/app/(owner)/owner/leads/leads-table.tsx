@@ -166,6 +166,8 @@ export function LeadsTable({
   const channel = params.get("sourceChannel") ?? "";
   const assignedTo = params.get("assignedTo") ?? "";
   const responded = params.get("responded") ?? "";
+  /** "1" = the Archived list; "" = the pipeline. Never both (0154). */
+  const archived = params.get("archived") ?? "";
   const createdFrom = params.get("createdFrom");
   const createdTo = params.get("createdTo");
 
@@ -225,6 +227,12 @@ export function LeadsTable({
       key: "channel",
       label: `Came in through: ${CHANNEL_OPTIONS.find((o) => o.value === channel)?.label ?? channel}`,
       onRemove: () => setParam("sourceChannel", null),
+    });
+  if (archived)
+    tags.push({
+      key: "archived",
+      label: "Archived leads",
+      onRemove: () => setParam("archived", null),
     });
   if (createdFrom || createdTo)
     tags.push({
@@ -394,6 +402,21 @@ export function LeadsTable({
                 {o.label}
               </option>
             ))}
+          </Select>
+
+          {/* Archived, beside Status and not inside it (migration 0154). The
+              two are different axes: a lead put away may still be open, won or
+              lost, and folding "Archived" into that select would make the four
+              read as mutually exclusive and quietly hide the Won ones. */}
+          <Select
+            size="sm"
+            aria-label="Archived"
+            value={archived}
+            onChange={(e) => setParam("archived", e.target.value || null)}
+            className="h-8 w-32"
+          >
+            <option value="">In the pipeline</option>
+            <option value="1">Archived</option>
           </Select>
 
           {/* Only where the roster could be read (owner/manager) - a telecaller's

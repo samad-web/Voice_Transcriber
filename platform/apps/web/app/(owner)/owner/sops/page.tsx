@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import type { SopStep } from "@aura/shared";
+import type { ScriptAdherenceMode, SopStep } from "@aura/shared";
 import { Card, MonoLabel } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 import { getOwner, ownerGet, requireFeature } from "@/lib/owner-context";
+import { AdherenceModeSwitch } from "./mode-switch";
 import { SopEditor } from "./sop-editor";
 
 export const metadata: Metadata = { title: "Call checklist" };
@@ -21,6 +22,8 @@ interface SopsResponse {
   sops: SopRow[];
   maxSteps: number;
   defaultSteps: SopStep[];
+  /** Which adherence measure is in force (0155). */
+  mode?: ScriptAdherenceMode;
 }
 
 /**
@@ -46,18 +49,25 @@ export default async function SopsPage() {
   const data = await ownerGet<SopsResponse>("/v1/owner/sops");
   const sops = data?.sops ?? [];
   const active = sops.find((s) => s.is_active) ?? null;
+  const mode: ScriptAdherenceMode = data?.mode ?? "ai";
 
   return (
     <>
       <PageHeader title="Call checklist" context="Settings" />
 
+      {/* First on the page, above the explanation and the editor: it is the
+          question the rest of the page is an answer to, and an owner who picks
+          AI scoring is done here. */}
+      <AdherenceModeSwitch mode={mode} hasChecklist={Boolean(active)} />
+
       <Card className="space-y-2">
         <MonoLabel>What this does</MonoLabel>
         <p className="max-w-prose text-sm leading-relaxed text-text-muted">
-          Each step below is checked against every recorded call, and the result is shown on the
-          call with the exact words the agent used. A step is only marked as followed when there is
-          a quote to back it up — if the recording does not settle it, it is left out of the score
-          rather than counted against the rep.
+          {mode === "sop"
+            ? "Each step below is checked against every recorded call, and the result is shown on the call with the exact words the agent used."
+            : "Once you switch the scoring above to your checklist, each step below is checked against every recorded call, and the result is shown on the call with the exact words the agent used."}{" "}
+          A step is only marked as followed when there is a quote to back it up — if the recording
+          does not settle it, it is left out of the score rather than counted against the rep.
         </p>
         <p className="max-w-prose text-sm leading-relaxed text-text-muted">
           Write each step as something you could point at in a transcript.{" "}

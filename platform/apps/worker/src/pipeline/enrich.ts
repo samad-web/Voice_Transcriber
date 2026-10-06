@@ -72,6 +72,8 @@ interface EnrichInputs {
   direction: string | null;
   vocabulary: string[];
   leadId: string | null;
+  /** Which adherence measure this workspace chose (0155): 'ai' or 'sop'. */
+  adherenceMode: string | null;
 }
 
 /**
@@ -166,6 +168,7 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
       } = await client.query<EnrichInputs>(
         `SELECT t.text, t.segments, t.diarized, c.direction,
                 c.telecaller_id AS "telecallerId", c.started_at AS "startedAt", o.vocabulary,
+                o.script_adherence_mode AS "adherenceMode",
                 (SELECT l.id FROM leads l
                   WHERE l.first_call_id = c.id OR l.last_call_id = c.id LIMIT 1) AS "leadId"
            FROM calls c
@@ -186,7 +189,21 @@ export async function enrichCall({ callId, orgId }: PipelineMessage): Promise<vo
        * `consent_disclosure`, the one step with legal weight rather than
        * commercial weight. A false pass there is worse than no score.
        */
-      const sop = row?.diarized === true ? await loadActiveSop(client, orgId) : null;
+      /*
+       * And only when the workspace asked to be scored against its own
+       * checklist (0155). 'ai' means the owner chose the model's general read
+       * of the call, so the steps never enter the prompt and no
+       * `call_sop_results` row is written - one adherence number on the call,
+       * which is the point of the switch.
+       *
+       * Read off the org row that is already joined, so this costs nothing.
+       * A NULL (a row written before 0155 on a database mid-migration) is
+       * treated as 'ai', the column's own default.
+       */
+      const sop =
+        row?.diarized === true && row.adherenceMode === "sop"
+          ? await loadActiveSop(client, orgId)
+          : null;
       return { row, sop };
     });
   } catch (err) {

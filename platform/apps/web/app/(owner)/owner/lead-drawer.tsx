@@ -25,7 +25,7 @@ import {
 } from "@aura/shared";
 import { Time, useOrgTimeZone } from "@/components/org-time";
 import { InlineListSkeleton } from "@/components/skeletons";
-import { fetchLeadAction, updateLeadAction } from "./actions";
+import { fetchLeadAction, setLeadArchivedAction, updateLeadAction } from "./actions";
 import { CallReadChips, CallTranscript } from "./call-intel";
 import { EscalateCallDialog } from "./escalate-call-dialog";
 import { ProjectChip } from "./project-chip";
@@ -242,6 +242,37 @@ export function LeadDrawer({
   };
 
   /**
+   * Put the lead away, or take it back out (migration 0154).
+   *
+   * Closes the drawer and refreshes rather than patching the row, and that is
+   * the honest behaviour either way round: the card has just left the list it
+   * was opened from - the pipeline, or the Archived filter - so leaving it on
+   * screen with a changed label would show a lead where it no longer is.
+   *
+   * No confirmation. Archiving is not a delete: nothing is removed, the
+   * Archived filter is one click away, and Restore is the same button. A
+   * confirm dialog on a reversible, visible action is the thing that teaches
+   * people to click through the ones that matter.
+   */
+  const setArchived = (archived: boolean) => {
+    startTransition(async () => {
+      const result = await setLeadArchivedAction(lead.id, archived);
+      if (result.error) {
+        await alert({
+          title: archived ? "Couldn't archive the lead" : "Couldn't restore the lead",
+          body: result.error,
+          tone: "danger",
+        });
+        return;
+      }
+      toast(archived ? "Lead archived" : "Lead restored");
+      onChanged?.(lead.id, { archived_at: result.archivedAt ?? null });
+      onClose();
+      router.refresh();
+    });
+  };
+
+  /**
    * Re-read the call history after an escalation (0151), so the row swaps its
    * Escalate button for the chip. Only the calls: the rest of the drawer did
    * not change, and re-seeding it would drop an unsaved note.
@@ -253,6 +284,7 @@ export function LeadDrawer({
   };
 
   const stageOptions = own.stages ?? stages;
+  const archived = Boolean(lead.archived_at);
 
   const facts = Object.entries(lead.facts ?? {}).filter(
     ([, value]) => value !== null && value !== "",
@@ -278,6 +310,10 @@ export function LeadDrawer({
               <StatusChip tone={lead.status === "won" ? "solid" : "muted"}>
                 {lead.status}
               </StatusChip>
+              {/* Beside the status and not instead of it: archived is the other
+                  axis (0154), and an archived lead can perfectly well still be
+                  open. A drawer deep-link is how most people meet one. */}
+              {archived ? <StatusChip tone="muted">archived</StatusChip> : null}
               <span className="text-xs text-text-muted tabular-nums">
                 {lead.call_count} call{lead.call_count === 1 ? "" : "s"} ·{" "}
                 {relativeTime(lead.last_activity_at, zone)}
@@ -586,6 +622,23 @@ export function LeadDrawer({
               </dd>
             </div>
           </dl>
+
+          {/* Last in the drawer, under the facts rather than beside the stage
+              buttons: it is the one control here that takes the lead off the
+              screen, and it should not sit where somebody is aiming for
+              "Negotiation". Plainly worded for the same reason - the sentence
+              is what tells a first-time reader this is not a delete. */}
+          <div className="space-y-2 border-t border-border pt-4">
+            <MonoLabel>{archived ? "Archived" : "Archive"}</MonoLabel>
+            <p className="text-xs leading-relaxed text-text-muted">
+              {archived
+                ? "This lead is out of the pipeline and off the board. Its calls, notes and tasks are all still here, and the reports still count it."
+                : "Takes the lead off the board and out of the list without deleting anything. You will find it under the Archived filter, and you can bring it back at any time."}
+            </p>
+            <Button type="button" variant="ghost" loading={pending} onClick={() => setArchived(!archived)}>
+              {archived ? "Restore to the pipeline" : "Archive this lead"}
+            </Button>
+          </div>
         </div>
       </aside>
     </>

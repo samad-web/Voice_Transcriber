@@ -63,6 +63,7 @@ import { OutboundMailController } from "../modules/connections/outbound-mail.con
 import { ReportsController } from "../modules/reports/reports.controller";
 import { CommissionPlansController } from "../modules/reports/commission-plans.controller";
 import { TargetsController } from "../modules/reports/targets.controller";
+import { TaskSettingsController } from "../modules/tasks/task-settings.controller";
 import { TasksController } from "../modules/tasks/tasks.controller";
 import { PipelinesController } from "../modules/crm-objects/pipelines.controller";
 import { CustomFieldsController } from "../modules/custom-fields/custom-fields.controller";
@@ -248,6 +249,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   InteractionsController,
   CallIntegrityController,
   TasksController,
+  TaskSettingsController,
   ReportsController,
   CommissionPlansController,
   TargetsController,
@@ -874,6 +876,16 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/sops",
   "POST /owner/sops/:id/versions",
   "POST /owner/sops/deactivate",
+  // Which adherence measure the workspace uses (0155) - AI scoring, or this
+  // floor's checklist. Same tier as writing the checklist for the same reason:
+  // it decides what every rep's adherence number MEANS.
+  "POST /owner/sops/mode",
+  // Task settings (0156): whether owners and managers are given tasks. Reading
+  // it is owner-or-manager - a manager has to be able to see whether work
+  // lands on them - and the write is owner alone, because the column is one
+  // per org and a manager flipping it would be deciding it for every owner.
+  "GET /owner/task-settings",
+  "PUT /owner/task-settings",
   "PATCH /owner/telecallers/:deviceId",
   // The workspace's own team roster (migration 0079). Both routes declare a
   // real requirement rather than mounting the guard inertly, and the two are
@@ -1442,6 +1454,12 @@ const CRM_PERMISSION_ROUTES = [
   // The console's "New lead" (0136) - `lead:create`, seeded by 0136 from
   // `lead:edit` so nobody who could work a lead lost the ability to add one.
   "POST /leads",
+  // Archive and restore (0154). `lead:edit`, the same grant a stage move
+  // needs: putting a lead away changes what the whole floor's list shows, so
+  // it is not a read - and deliberately not `lead:delete`, because nothing is
+  // deleted and the Archived filter keeps it in plain sight.
+  "POST /leads/:id/archive",
+  "POST /leads/:id/unarchive",
   // ── Lead boards (0136) ──
   // Reading boards is `lead:view`; making, reshaping, routing and deleting
   // them are the `lead_board` object's create/edit/delete - admin-only by
@@ -1968,8 +1986,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 550: plus call escalations (0151) - two device-authed /devices/me routes,
     // the queue's eight tenant-scoped /owner/call-escalations routes and the
     // three tenant-scoped /owner/call-escalation-settings routes.
-    expect(ROUTES).toHaveLength(550);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(550);
+    // 555: plus the console-polish five, all tenant-scoped - lead archive and
+    // restore (0154), the script-adherence mode switch (0155) and task
+    // settings' GET/PUT (0156).
+    expect(ROUTES).toHaveLength(555);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(555);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2021,14 +2042,16 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 449: plus GET/POST /owner/handset-alerts (0150).
     // 460: plus call escalations' eleven (0151) - the queue's eight and the
     // settings' three.
-    expect(tenantScoped).toHaveLength(460);
+    // 465: plus lead archive/restore (0154), the adherence mode switch (0155)
+    // and task settings' GET/PUT (0156).
+    expect(tenantScoped).toHaveLength(465);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
       unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(550); // = ROUTES.length: every route in exactly one class
+    ).toBe(555); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 423 principal routes", () => {
@@ -2074,7 +2097,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 489: plus GET /calls/retry-summary.
     // 491: plus GET/POST /owner/handset-alerts (0150).
     // 502: plus call escalations' eleven tenant-scoped routes (0151).
-    expect(principalRoutes).toHaveLength(502);
+    // 507: plus the console-polish five (0154-0156), all tenant-scoped.
+    expect(principalRoutes).toHaveLength(507);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

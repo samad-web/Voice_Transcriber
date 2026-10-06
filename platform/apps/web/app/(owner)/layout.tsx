@@ -21,6 +21,7 @@ import { ConsoleSectionTabs } from "@/components/console-section-tabs";
 import { TenantContextSwitcher, type TenantChip } from "@/components/tenant-context-switcher";
 import { RealtimeIndicator } from "@/components/realtime-indicator";
 import { RealtimeProvider } from "@/components/realtime-provider";
+import { ScrollTopOnNavigate } from "@/components/scroll-top-on-navigate";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
@@ -240,6 +241,10 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           entitlement,
         }}
       >
+      {/* And beside them, for the matching reason: those two decide where Back
+          goes, this one where the next screen starts. See lib/scroll-top.ts -
+          the layout's own tab strip is what made the router scroll past it. */}
+      <ScrollTopOnNavigate />
       <Sidebar
         email={owner.email}
         area="owner"

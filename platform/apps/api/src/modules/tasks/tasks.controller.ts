@@ -331,14 +331,17 @@ export class TasksController {
         name: string | null;
         email: string;
         owner_role: string | null;
+        self_tasks: boolean | null;
       }>(
-        `SELECT u.id AS user_id, u.name, u.email, m.owner_role
+        `SELECT u.id AS user_id, u.name, u.email, m.owner_role,
+                (SELECT owner_self_tasks FROM organizations WHERE id = $1) AS self_tasks
            FROM memberships m
            JOIN users u ON u.id = m.user_id
           WHERE m.org_id = $1
           ORDER BY u.email`,
         [orgId],
       );
+      const selfTasks = rows[0]?.self_tasks ?? false;
 
       const seen = new Set<string>();
       const people: Array<{ userId: string; name: string | null; email: string }> = [];
@@ -347,6 +350,15 @@ export class TasksController {
         seen.add(row.user_id);
         const persona = resolveOwnerRole(row.owner_role);
         if (!allowedUp && (persona === "owner" || persona === "manager")) continue;
+        // An owner or manager is kept off their OWN list while the workspace
+        // has self-tasks switched off (0156) - the picker must not offer what
+        // `assertSelfAssignAllowed` is about to refuse. Narrower than the
+        // assign-up filter above on purpose: this hides one row, the reader's
+        // own, and leaves every other owner and manager in place so a manager
+        // can still hand work to a colleague at their level.
+        if (!selfTasks && row.user_id === me && (persona === "owner" || persona === "manager")) {
+          continue;
+        }
         people.push({ userId: row.user_id, name: row.name, email: row.email });
       }
       return { people };
@@ -398,6 +410,7 @@ export class TasksController {
       await assertMembers(client, orgId, memberRefs(people));
       const me = actorUserId(req);
       await this.assertAssignUpAllowed(client, orgId, me, people);
+      await this.assertSelfAssignAllowed(client, orgId, me, people);
 
       const {
         rows: [task],
@@ -556,6 +569,9 @@ export class TasksController {
       await assertMembers(client, orgId, { assigneeUserId });
       const me = actorUserId(req);
       await this.assertAssignUpAllowed(client, orgId, me, assigneeUserId ? [assigneeUserId] : []);
+      // The bulk path too (0156), or "Reassign to me" on a selection of forty
+      // would be the way round the switch.
+      await this.assertSelfAssignAllowed(client, orgId, me, assigneeUserId ? [assigneeUserId] : []);
       // Before assignInBulk overwrites the column it reads - see materializePrimary.
       await materializePrimary(client, orgId, ids);
       const updated = await assignInBulk(client, {
@@ -625,6 +641,7 @@ export class TasksController {
       if (people) await assertMembers(client, orgId, memberRefs(people));
       const me = actorUserId(req);
       if (people) await this.assertAssignUpAllowed(client, orgId, me, people);
+      if (people) await this.assertSelfAssignAllowed(client, orgId, me, people);
       // Before the UPDATE below overwrites the column it reads.
       if (people) await materializePrimary(client, orgId, [id]);
 
@@ -758,6 +775,61 @@ export class TasksController {
    * client's own labels: a picker that has not been refreshed since a
    * persona change must not decide who gets a grant.
    */
+  /**
+   * Refuses an owner or a manager putting a task on THEMSELVES, unless the
+   * workspace has switched that on (migration 0156).
+   *
+   * ── WHY IT IS A SEPARATE CHECK FROM assertAssignUpAllowed ───────────────────
+   *
+   * They look like the same shape and they govern opposite directions.
+   * `assertAssignUpAllowed` is about handing work UP to somebody above you, and
+   * it explicitly exempts the actor themselves - an owner whose grant was
+   * removed must still be able to write their own follow-ups. This is the one
+   * case that exemption leaves open: the actor and the target being the same
+   * owner. Folding them together would mean either blocking assign-up for a
+   * workspace that only wanted self-tasks off, or losing the exemption that
+   * stops an owner locking themselves out.
+   *
+   * Only the OWNER and MANAGER personas. A telecaller writing their own
+   * follow-up is the normal way the product is used and is never gated. And
+   * never assign-up: a task a rep hands to their manager is somebody else's
+   * decision, and the manager still gets it.
+   *
+   * The persona comes from `memberships`, not from the session's own claim -
+   * the reason `assertMembers` queries the database: a console that has not
+   * reloaded since a persona change must not be the thing that decides.
+   */
+  private async assertSelfAssignAllowed(
+    client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> },
+    orgId: string,
+    actorId: string | null,
+    targetUserIds: string[],
+  ) {
+    if (!actorId || !targetUserIds.includes(actorId)) return;
+
+    const { rows } = await client.query(
+      `SELECT (SELECT owner_self_tasks FROM organizations WHERE id = $1) AS allowed,
+              m.owner_role
+         FROM memberships m
+        WHERE m.org_id = $1 AND m.user_id = $2::uuid
+        LIMIT 1`,
+      [orgId, actorId],
+    );
+    const row = (rows as Array<{ allowed: boolean | null; owner_role: string | null }>)[0];
+    // No membership row means the actor is not an owner or a manager OF THIS
+    // ORG, which is precisely the case this never gated - not a fail-open.
+    // (`task:create` is unreachable without a membership anyway.)
+    if (!row || row.allowed) return;
+    // NULL is the pre-persona owner (resolveOwnerRole), the same reading every
+    // other owner_role check in this repo takes - see migration 0153.
+    const persona = resolveOwnerRole(row.owner_role);
+    if (persona !== "owner" && persona !== "manager") return;
+
+    throw new ForbiddenException(
+      "This workspace does not put tasks on owners and managers. Turn it on in Settings → Tasks, or give the task to somebody on the floor.",
+    );
+  }
+
   private async assertAssignUpAllowed(
     client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> },
     orgId: string,

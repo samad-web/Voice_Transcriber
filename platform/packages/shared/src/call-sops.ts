@@ -76,6 +76,51 @@ export const SopSteps = z
   );
 
 /**
+ * Which measure of "did the rep follow the script" this workspace uses
+ * (migration 0155).
+ *
+ * Two scores have existed side by side since 0091 - the model's own 0-10
+ * (`call_analytics.quality_criteria -> scriptAdherence`, from 0069) and the
+ * tenant's per-step checklist - and nothing said which one counted. A manager
+ * with two numbers and no rule for choosing between them believes neither, so
+ * this is the rule:
+ *
+ *   'ai'  - the model's general read of a good call. No checklist goes into
+ *           the prompt and no `call_sop_results` row is written.
+ *   'sop' - the steps the owner or manager wrote, scored one by one with a
+ *           quote behind each.
+ *
+ * ONE value and not two booleans, deliberately: two switches allow "both",
+ * which is the state this exists to end, and "neither", which is a quality
+ * page that silently measures nothing.
+ *
+ * It does NOT govern the rest of the conversation read - the summary, the
+ * intent, the lead, and the other `quality_criteria` - which run in both modes.
+ */
+export const ScriptAdherenceMode = z.enum(["ai", "sop"]);
+export type ScriptAdherenceMode = z.infer<typeof ScriptAdherenceMode>;
+
+/** What the console shows beside each choice, in the words an owner reads. */
+export const SCRIPT_ADHERENCE_MODES: readonly {
+  value: ScriptAdherenceMode;
+  label: string;
+  blurb: string;
+}[] = [
+  {
+    value: "ai",
+    label: "AI scoring",
+    blurb:
+      "Every call is rated out of 10 on how it was handled, using our model's own read of a good sales call. Nothing to write or maintain, and it works from the first call.",
+  },
+  {
+    value: "sop",
+    label: "Your call checklist",
+    blurb:
+      "Every call is checked against the steps you write below, one by one, with the words the agent actually used as the evidence. Scores what your floor is told to do rather than what a model assumes.",
+  },
+];
+
+/**
  * One step's verdict on one call.
  *
  * `met` is deliberately THREE-valued. `null` means the transcript did not

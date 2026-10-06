@@ -73,6 +73,8 @@ const {
 
 /** What the transcripts row reports about ACOUSTIC separation. */
 let transcriptDiarized = true;
+/** The workspace's chosen adherence measure (migration 0155). */
+let adherenceMode: string | null = "sop";
 
 function fakeClient() {
   return {
@@ -94,6 +96,7 @@ function fakeClient() {
               startedAt: STARTED_AT,
               vocabulary: [],
               leadId: LEAD_ID,
+              adherenceMode,
             },
           ],
           rowCount: 1,
@@ -142,6 +145,7 @@ const INTEL = {
 beforeEach(() => {
   vi.clearAllMocks();
   transcriptDiarized = true;
+  adherenceMode = "sop";
   analyzeConversation.mockResolvedValue(INTEL);
   loadActiveSop.mockResolvedValue(SOP);
 });
@@ -167,6 +171,32 @@ describe("SOP scoring is gated on real speaker separation", () => {
     expect(loadActiveSop).not.toHaveBeenCalled();
     expect(analyzeConversation.mock.calls[0]?.[4]).toBeNull();
     expect(upsertSopResult).not.toHaveBeenCalled();
+  });
+
+  it("does not even LOAD the SOP when the workspace chose AI scoring", async () => {
+    // Migration 0155's switch. 'ai' means the owner picked the model's own read
+    // of the call, and the promise the console makes is that there is then ONE
+    // adherence number on the call. Loading the checklist anyway would write a
+    // second, contradictory one that nothing on screen admits to.
+    adherenceMode = "ai";
+
+    await enrichCall({ callId: CALL_ID, orgId: ORG_ID });
+
+    expect(loadActiveSop).not.toHaveBeenCalled();
+    expect(analyzeConversation.mock.calls[0]?.[4]).toBeNull();
+    expect(upsertSopResult).not.toHaveBeenCalled();
+    // The rest of the conversation read is untouched: the switch governs the
+    // adherence measure, not whether the call is analysed at all.
+    expect(upsertCallAnalytics).toHaveBeenCalled();
+  });
+
+  it("treats a NULL mode as AI, the column's own default", async () => {
+    // A row read while the migration is still rolling out across replicas.
+    adherenceMode = null;
+
+    await enrichCall({ callId: CALL_ID, orgId: ORG_ID });
+
+    expect(loadActiveSop).not.toHaveBeenCalled();
   });
 
   it("writes no row at all when the org has no active SOP", async () => {
