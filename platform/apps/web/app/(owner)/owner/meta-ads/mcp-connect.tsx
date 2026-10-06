@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useServerState, useDraftState } from "@/lib/use-server-state";
 import { CheckCircle2, Plug, TriangleAlert } from "lucide-react";
 import {
   Button,
@@ -16,6 +15,7 @@ import {
   useConfirm,
   useToast,
 } from "@aura/ui";
+import { useServerState, useDraftState } from "@/lib/use-server-state";
 import { Time } from "@/components/org-time";
 import {
   connectMetaMcpAction,

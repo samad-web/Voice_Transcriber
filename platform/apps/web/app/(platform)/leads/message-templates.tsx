@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import { BrutalButton, Card, StatusChip, useAlert, useToast } from "@aura/ui";
 import {
   PLACEHOLDER_HELP,
@@ -9,6 +8,7 @@ import {
   validateTemplateBody,
   validateTemplateSubject,
 } from "@aura/shared";
+import { useDraftState } from "@/lib/use-server-state";
 import {
   resetMessageTemplateAction,
   saveMessageTemplateAction,

@@ -1,7 +1,7 @@
+import { BRAND_LINE, WA_MESSAGES } from "@/lib/site";
 import { Container } from "../ui/layout";
 import { ButtonLink } from "../ui/button";
 import { WhatsAppCta } from "../ui/whatsapp-cta";
-import { BRAND_LINE, WA_MESSAGES } from "@/lib/site";
 
 /**
  * Hero - copy from doc 10 §5.1, near-verbatim, because it was written against

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import { Hourglass } from "lucide-react";
 import { Button, useToast } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import { MAX_STALE_AFTER_DAYS, MIN_STALE_AFTER_DAYS } from "@/lib/deal-staleness";
 import { setStaleAfterDaysAction } from "./stale-actions";
 

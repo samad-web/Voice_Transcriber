@@ -1,7 +1,7 @@
+import { OEM_MATRIX, STATUS_LABEL } from "@/lib/content/compatibility";
 import { Section, SectionHeading } from "../ui/layout";
 import { ButtonLink } from "../ui/button";
 import { ComparisonTable, Verdict } from "../ui/content";
-import { OEM_MATRIX, STATUS_LABEL } from "@/lib/content/compatibility";
 
 /**
  * Phone compatibility (doc 10 §3 row 8) - objection #2, answered on the

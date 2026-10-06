@@ -24,8 +24,8 @@ import {
 } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
 import { PhonePairFields, usePhoneErrors } from "@/components/phone-pair-fields";
-import { inviteTeamMemberAction, issueInviteAction } from "./actions";
 import { inviteMessage } from "@/lib/invite-text";
+import { inviteTeamMemberAction, issueInviteAction } from "./actions";
 import type { IssuedInvite, TeamTelecaller } from "./types";
 
 /** Invite link lifetimes offered. The API accepts 1-168 hours. */

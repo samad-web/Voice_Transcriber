@@ -1,6 +1,6 @@
+import { WA_MESSAGES } from "@/lib/site";
 import { Section, SectionHeading, Card } from "../ui/layout";
 import { WhatsAppCta } from "../ui/whatsapp-cta";
-import { WA_MESSAGES } from "@/lib/site";
 
 /**
  * Pricing - structure only, no numbers.

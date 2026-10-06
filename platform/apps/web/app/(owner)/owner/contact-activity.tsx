@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import {
   CalendarClock,
@@ -13,6 +12,7 @@ import {
   StickyNote,
 } from "lucide-react";
 import { Button, ErrorBanner, MonoLabel, StateChip, callState } from "@aura/ui";
+import { useServerState } from "@/lib/use-server-state";
 import { fullStamp, useOrgTimeZone } from "@/components/org-time";
 import {
   INTERACTION_LIMIT_MAX,

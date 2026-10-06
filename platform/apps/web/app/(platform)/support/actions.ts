@@ -1,15 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOperator } from "@/lib/operator-guard";
-import { getPrincipal, isOperator } from "@/lib/owner-context";
-import { API_URL, crossTenantHeaders, orgHeaders } from "@/lib/server-api";
 import type {
   CallIssueCategory,
   CallIssueResolution,
   CallIssueSeverity,
   CallIssueStatus,
 } from "@aura/shared";
+import { requireOperator } from "@/lib/operator-guard";
+import { getPrincipal, isOperator } from "@/lib/owner-context";
+import { API_URL, crossTenantHeaders, orgHeaders } from "@/lib/server-api";
 
 /**
  * The escalation queue's Server Actions (0147, doc 36 §13).

@@ -32,13 +32,13 @@ import {
 } from "@/lib/funnel/consent";
 import { slotBookedMessage, whatsappHref } from "@/lib/site";
 import { trackLead } from "@/components/meta-pixel";
+import type { OpenSlot } from "@/lib/funnel/slots";
 import {
   bookSlotAction,
   listOpenSlotsAction,
   submitContactAction,
   submitQualificationAction,
 } from "./actions";
-import type { OpenSlot } from "@/lib/funnel/slots";
 
 /**
  * The two-step funnel form.

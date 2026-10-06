@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { ButtonLink } from "./ui/button";
-import { HeaderCta } from "./header-cta";
 import { Logo } from "@/components/brand/logo";
 import { BRAND, CONSOLE_LOGIN_URL, NAV } from "@/lib/site";
+import { ButtonLink } from "./ui/button";
+import { HeaderCta } from "./header-cta";
 
 /**
  * Sticky header.

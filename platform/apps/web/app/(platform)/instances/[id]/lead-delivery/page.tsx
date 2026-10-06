@@ -1,5 +1,5 @@
-import { Card, EmptyState, MonoLabel } from "@aura/ui";
 import { Plug } from "lucide-react";
+import { Card, EmptyState, MonoLabel } from "@aura/ui";
 import { operatorGate } from "@/lib/operator-gate";
 import { CrmManager } from "../crm-manager";
 import { loadCrm, loadInstances, loadOrg } from "../instance-data";

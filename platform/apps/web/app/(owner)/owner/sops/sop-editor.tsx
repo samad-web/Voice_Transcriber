@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import type { SopStep } from "@aura/shared";
 import { Button, Card, Input, Label, MonoLabel, StatusChip, useAlert } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import { deactivateSopAction, saveSopAction } from "./actions";
 
 interface ActiveSop {

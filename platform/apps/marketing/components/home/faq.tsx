@@ -1,6 +1,6 @@
+import { FAQ } from "@/lib/content/faq";
 import { Section, SectionHeading } from "../ui/layout";
 import { FAQAccordion } from "../ui/content";
-import { FAQ } from "@/lib/content/faq";
 
 /** FAQ (doc 10 §3 row 12). The FAQPage JSON-LD is emitted from the page, from
  *  the same array this renders, so the markup can never describe questions the

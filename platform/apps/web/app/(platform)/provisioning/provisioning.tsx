@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
+import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import {
   ORG_MODULES,
@@ -23,6 +22,7 @@ import {
   useAlert,
   useToast,
 } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import { CopyValue } from "@/app/(platform)/instances/[id]/copy-value";
 import {
   provisionTenantAction,

@@ -22,17 +22,12 @@ export function DeviceActions({
   deviceId,
   label,
   status,
-  callCount,
-  leadCount,
 }: {
   orgId: string;
   deviceId: string;
   /** For the confirm dialog's copy - "Wipe device" alone reads as a template. */
   label: string;
   status: "active" | "logged_out" | "wiped" | "lost";
-  /** Calls this handset has uploaded. 0 (with no leads) = unpaired. */
-  callCount: number;
-  leadCount: number;
 }) {
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
@@ -42,15 +37,21 @@ export function DeviceActions({
   const name = label?.trim() || "this device";
 
   /*
-   * An unpaired device: enrolled, and then nothing. Removing one destroys a
-   * row and no history, which is why it is offered at all - but it is still a
-   * delete, and it still goes through the same type-DELETE gate as wiping a
-   * handset or dropping an instance. The brief for this console is that the
-   * gate is not graded by how much is being destroyed: an operator should
-   * never have to work out which deletes are the serious ones, because the
-   * moment some of them are cheap, the reflex generalises to all of them.
+   * NOTHING BELOW BRANCHES ON HOW MUCH A DELETE DESTROYS, AND THAT IS THE RULE.
+   *
+   * An unpaired device - enrolled, and then nothing - destroys a row and no
+   * history when removed, which is why removing one is offered at all. It is
+   * still a delete, and it still goes through the same type-DELETE gate as
+   * wiping a handset or dropping an instance. The brief for this console is
+   * that the gate is not graded by what is at stake: an operator should never
+   * have to work out which deletes are the serious ones, because the moment
+   * some of them are cheap the reflex generalises to all of them.
+   *
+   * So this component is not given the call and lead counts at all. It used to
+   * take them and compute an `unpaired` flag that nothing read - which looked,
+   * to anyone editing this file, like a grading rule half-built rather than one
+   * refused on purpose.
    */
-  const unpaired = callCount === 0 && leadCount === 0;
 
   const logout = () =>
     startTransition(async () => {

@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
+import { useTransition } from "react";
 import {
   canPairDevices,
   OWNER_ROLE_DESCRIPTIONS,
@@ -10,6 +9,7 @@ import {
   ownerRoleSeesAllRecords,
 } from "@aura/shared";
 import { Card, MonoLabel, Select, StatusChip, useAlert, useToast } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import { setTeamMemberAction } from "./actions";
 import type { TeamMember, TeamTelecaller } from "./types";
 

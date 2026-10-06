@@ -7,7 +7,6 @@ import type {
   Account,
   Contact,
   Deal,
-  DuplicateMatch,
   Interaction,
   RecordCustomField,
   Task,

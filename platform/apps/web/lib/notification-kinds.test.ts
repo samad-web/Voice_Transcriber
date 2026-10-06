@@ -1,5 +1,5 @@
-import { NotificationKind } from "@aura/shared";
 import { describe, expect, it } from "vitest";
+import { NotificationKind } from "@aura/shared";
 import {
   NOTIFICATION_KINDS,
   NOTIFICATION_KIND_ORDER,

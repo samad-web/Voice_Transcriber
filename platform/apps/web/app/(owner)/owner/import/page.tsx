@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
-import { requireOwnerFeature } from "@/lib/owner-features";
-import { ImportWizard } from "./import-client";
 import { requireFeature } from "@/lib/owner-context";
+import { ImportWizard } from "./import-client";
 
 export const metadata: Metadata = { title: "Import" };
 

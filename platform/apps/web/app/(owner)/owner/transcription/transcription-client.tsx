@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import {
@@ -11,6 +10,7 @@ import {
   VOCABULARY_MAX,
 } from "@aura/shared";
 import { Button, Card, Input, MonoLabel, Select, StatusChip } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import { updateTranscriptionAction } from "./actions";
 
 /** Auto-detect first, then alphabetical by label. Sorted once, not per render. */

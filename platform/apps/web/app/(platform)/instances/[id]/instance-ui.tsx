@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { Card, MonoLabel, STATE_TONE, StatusChip } from "@aura/ui";
+import { Card, MonoLabel, STATE_TONE } from "@aura/ui";
 import type { ConsoleState } from "@aura/ui";
 import type { OrgStorageFields } from "@/components/storage-vital";
 import type { CallRow } from "./calls/calls-explorer";

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useServerState } from "@/lib/use-server-state";
 import Link from "next/link";
 import { Plus, X } from "lucide-react";
 import {
@@ -16,6 +15,7 @@ import {
   StatusChip,
   useAlert,
 } from "@aura/ui";
+import { useServerState } from "@/lib/use-server-state";
 import { ProjectChip, PROJECT_COLORS } from "../project-chip";
 import { formatValue } from "../types";
 import type { Project } from "../types";

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Container } from "./ui/layout";
 import { Logo } from "@/components/brand/logo";
 import { LEGAL_PAGES } from "@/lib/legal";
 import { BRAND, BRAND_LINE, CONSOLE_LOGIN_URL, LEGAL_ENTITY, NAV } from "@/lib/site";
+import { Container } from "./ui/layout";
 
 /**
  * Footer.

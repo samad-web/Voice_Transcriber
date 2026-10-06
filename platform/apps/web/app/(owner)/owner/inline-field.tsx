@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import { Check, Loader2, Pencil } from "lucide-react";
+import { useDraftState } from "@/lib/use-server-state";
 
 /**
  * A field you edit where it sits - no modal, no Save button for the page.

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import {
   CRITERIA_FIELDS,
   CRITERIA_FIELD_OPTIONS,
@@ -12,6 +11,7 @@ import {
   type FunnelCriteria,
 } from "@aura/shared";
 import { Card, Select, StatusChip, useAlert, useToast } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import { saveFunnelCriteriaAction } from "./actions";
 
 /**

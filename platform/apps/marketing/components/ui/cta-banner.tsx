@@ -1,6 +1,6 @@
+import { FUNNEL_LIVE } from "@/lib/site";
 import { ButtonLink } from "./button";
 import { WhatsAppCta } from "./whatsapp-cta";
-import { FUNNEL_LIVE } from "@/lib/site";
 
 /**
  * A conversion band: one question, one primary WhatsApp CTA, one secondary.

@@ -1,5 +1,5 @@
-import { ButtonLink, type ButtonSize, type ButtonVariant } from "./button";
 import { whatsappHref } from "@/lib/site";
+import { ButtonLink, type ButtonSize, type ButtonVariant } from "./button";
 
 /**
  * The primary CTA (doc 10 §2). A plain `wa.me` deep link - no widget, no SDK,

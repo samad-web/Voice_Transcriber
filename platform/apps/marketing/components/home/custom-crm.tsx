@@ -1,9 +1,9 @@
+import { CONNECTOR_COUNT } from "@/lib/content/connectors";
+import { WA_MESSAGES, startHref } from "@/lib/site";
 import { Section, SectionHeading, Card } from "../ui/layout";
 import { ButtonLink } from "../ui/button";
 import { WhatsAppCta } from "../ui/whatsapp-cta";
 import { CTABanner } from "../ui/cta-banner";
-import { CONNECTOR_COUNT } from "@/lib/content/connectors";
-import { WA_MESSAGES, startHref } from "@/lib/site";
 
 /**
  * ═══ THE CUSTOM-CRM SECTION - doc 16 §4.1, in full ═══════════════════════════

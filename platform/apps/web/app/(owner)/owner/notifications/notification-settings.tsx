@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useDraftState } from "@/lib/use-server-state";
 import type { NotificationKind } from "@aura/shared";
 import { Button, FormField, InfoHint, Select, useAlert } from "@aura/ui";
+import { useDraftState } from "@/lib/use-server-state";
 import {
   NOTIFICATION_KINDS,
   NOTIFICATION_KIND_ORDER,

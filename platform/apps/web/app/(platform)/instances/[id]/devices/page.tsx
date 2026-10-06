@@ -200,8 +200,6 @@ export default async function InstanceDevicesPage({
                               deviceId={device.id}
                               label={device.label ?? "this device"}
                               status={device.status}
-                              callCount={device.call_count}
-                              leadCount={device.lead_count}
                             />
                           </TableCell>
                         </TableRow>

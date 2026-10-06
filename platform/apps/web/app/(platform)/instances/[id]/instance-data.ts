@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
+import type { CrmProviderSpec } from "@aura/shared";
 import { apiGetAs } from "@/lib/server-api";
 import { workspacesFor } from "@/lib/tenant-scope";
-import type { CrmProviderSpec } from "@aura/shared";
 import type { CallRow } from "./calls/calls-explorer";
 import type { Integration } from "./crm-manager";
 import type { OwnerRow } from "./owner-accounts";
