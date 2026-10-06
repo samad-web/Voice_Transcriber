@@ -52,7 +52,9 @@
  *
  * Requires `pnpm test:integration:up` and a built workspace (`pnpm -r build`).
  */
+import { Client } from "pg";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { APP_DATABASE_URL } from "./setup/env.js";
 import { runMigrations } from "./setup/migrate.js";
 import {
   CONTACT_A,
@@ -1737,5 +1739,468 @@ describe("links to another tenant's rows (doc 23, A1/A2)", () => {
     // tenant passes - and then sent that user a notification.
     expectDenied(await post(A, "/tasks", { title: "t", assigneeUserId: B.userId }), 400, /assigneeUserId/);
     expectOk(await post(A, "/tasks", { title: "t", assigneeUserId: A.userId }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Channel partners - the SECOND isolation axis (Build docs/39 §17, P4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything above this line is about ONE axis: `org_id = app.org_id`. P4 adds
+ * a second, because a channel partner sits INSIDE a tenant and must see almost
+ * none of it, and a second axis is precisely how the first one gets broken.
+ *
+ * §17 rule 3 names the cases: partner A cannot read partner B's submissions,
+ * and a partner cannot read the org's leads, contacts, calls or reports. They
+ * are below, in two halves, because the two halves fail differently:
+ *
+ *   HTTP   - the portal's own routes, exercised with a partner's real
+ *            credential. These prove the handlers scope correctly.
+ *   SQL    - the same questions asked of the DATABASE as the `aura_app` role,
+ *            with `app.partner_id` set exactly as `withPartnerContext` sets
+ *            it. These prove the boundary holds even for a query nobody has
+ *            written yet, which is the only version of the claim that will
+ *            still be true after the next screen is added.
+ *
+ * ── EVERY CASE REACHES THE THING IT IS TESTING ─────────────────────────────
+ *
+ * §17: "a case that 403s before reaching the handler proves nothing while
+ * still looking like coverage." So every HTTP case here asserts its POSITIVE
+ * control first - partner A reading their OWN row, with the same credential,
+ * the same route and the same shape - and only then the denial. If the module
+ * is not mounted, the guard refuses, the credential is wrong or the fixture
+ * never seeded, the positive control fails and the case is RED. There is no
+ * arrangement of those failures that produces a green denial.
+ *
+ * The SQL half has the same property in the other direction: each table is
+ * read TWICE, once with `app.partner_id` set and once without, and the
+ * unwalled read must return rows. A wall over an empty table proves nothing.
+ *
+ * ⚠ THESE REQUIRE `PartnersModule` IN `app.module.ts`. That file belongs to
+ * another change in this phase, so until the import lands every HTTP case here
+ * fails on its positive control with a 404. That is the correct behaviour for
+ * a suite whose whole job is to refuse to look green - do not "fix" it by
+ * deleting the control.
+ */
+describe("channel partners: the second RLS axis (doc 39 §17)", () => {
+  // Version-4-shaped, like every other id in this fixture: `ParseUUIDPipe` and
+  // zod's `.uuid()` both check the version nibble, and a nil-style id would
+  // turn a cross-partner test into a validation test (see tenants.ts's header).
+  const PARTNER_A = {
+    id: "00000000-0000-4000-8000-0000000000a1",
+    code: "PART-A",
+    userId: "00000000-0000-4000-8000-0000000000a2",
+    partnerUserId: "00000000-0000-4000-8000-0000000000a3",
+    subject: "00000000-0000-4000-8000-0000000000a4",
+    email: "partner-a@aura.test",
+    submissionId: "00000000-0000-4000-8000-0000000000a5",
+  };
+  const PARTNER_B = {
+    id: "00000000-0000-4000-8000-0000000000b1",
+    code: "PART-B",
+    userId: "00000000-0000-4000-8000-0000000000b2",
+    partnerUserId: "00000000-0000-4000-8000-0000000000b3",
+    subject: "00000000-0000-4000-8000-0000000000b4",
+    email: "partner-b@aura.test",
+    submissionId: "00000000-0000-4000-8000-0000000000b5",
+  };
+  /** Both partners are inside TENANT A's org. That is the point: the axis under
+   *  test is the one INSIDE a tenant, which `org_id` cannot express. */
+  const PLAN_A = "00000000-0000-4000-8000-0000000000a6";
+  const PLAN_B = "00000000-0000-4000-8000-0000000000b6";
+  const CONTACT_ROW = "00000000-0000-4000-8000-0000000000a7";
+
+  /**
+   * The portal's credential, exactly as `apps/web/app/(portal)/portal-context.ts`
+   * builds it: the admin key the web tier holds, plus the Supabase subject it
+   * resolved from a verified session. And NO `x-org-id` - the org is a property
+   * of the `partner_users` row, read from the database by the guard, never
+   * named by the caller. A credential that could name its own tenant would make
+   * every assertion below meaningless.
+   */
+  const asPartner = (p: { subject: string; code: string }): Caller => ({
+    label: `partner/${p.code}`,
+    headers: { "x-admin-key": adminKey(), "x-caller-auth-id": p.subject },
+  });
+
+  /**
+   * Ask the database a question as the RUNTIME role, with the settings
+   * `withPartnerContext` would have set.
+   *
+   * `APP_DATABASE_URL` is `aura_app`, which is NOBYPASSRLS (0001_init.sql).
+   * `queryRows` connects as the owner, which bypasses RLS entirely - using it
+   * here would make every one of these cases pass no matter what the policies
+   * said, which is the single easiest way to write an isolation suite that
+   * proves nothing.
+   */
+  async function asAppRole<T extends Record<string, unknown>>(
+    settings: { orgId: string; partnerId?: string },
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<T[]> {
+    const client = new Client({ connectionString: APP_DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.org_id', $1, true)", [settings.orgId]);
+      if (settings.partnerId) {
+        await client.query("SELECT set_config('app.partner_id', $1, true)", [settings.partnerId]);
+      }
+      const { rows } = await client.query<T>(sql, params);
+      await client.query("ROLLBACK");
+      return rows;
+    } finally {
+      await client.end();
+    }
+  }
+
+  const countAs = async (settings: { orgId: string; partnerId?: string }, table: string) =>
+    Number(
+      (await asAppRole<{ n: string }>(settings, `SELECT count(*)::text AS n FROM ${table}`))[0]!.n,
+    );
+
+  beforeEach(async () => {
+    // Seeded with SQL as the superuser, for the reason tenants.ts gives: if the
+    // fixture were created through the API, the API's own scoping would be
+    // deciding what "partner B's data" is, and a scoping bug would produce a
+    // fixture that agrees with the bug.
+    for (const p of [PARTNER_A, PARTNER_B]) {
+      await queryRows(
+        `INSERT INTO users (id, email, name, sso_subject) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET sso_subject = excluded.sso_subject`,
+        [p.userId, p.email, p.code, p.subject],
+      );
+    }
+    for (const [p, plan] of [
+      [PARTNER_A, PLAN_A],
+      [PARTNER_B, PLAN_B],
+    ] as const) {
+      await queryRows(
+        `INSERT INTO commission_plans (id, org_id, name, metric, rate_type, rate, payee_kind)
+         VALUES ($1, $2, $3, 'won_count', 'flat_per_unit', 5000, 'partner')`,
+        [plan, A.orgId, `${p.code} plan`],
+      );
+      await queryRows(
+        `INSERT INTO partners (id, org_id, name, kind, code, status, commission_plan_id)
+         VALUES ($1, $2, $3, 'broker', $4, 'active', $5)`,
+        [p.id, A.orgId, `${p.code} Realty`, p.code, plan],
+      );
+      await queryRows(
+        `INSERT INTO partner_users (id, org_id, partner_id, user_id, role)
+         VALUES ($1, $2, $3, $4, 'member')`,
+        [p.partnerUserId, A.orgId, p.id, p.userId],
+      );
+      await queryRows(
+        `INSERT INTO partner_submissions (id, org_id, partner_id, submitted_by, lead_name, lead_phone)
+         VALUES ($1, $2, $3, $4, $5, '919800000000')`,
+        [p.submissionId, A.orgId, p.id, p.partnerUserId, `${p.code} prospect`],
+      );
+    }
+    // One contact, so the wall's control read below is non-vacuous. The base
+    // fixture seeds leads, calls and memberships but no `contacts` row.
+    await queryRows(
+      `INSERT INTO contacts (id, org_id, workspace_id, display_name)
+       VALUES ($1, $2, $3, 'Wall control contact')
+       ON CONFLICT (id) DO NOTHING`,
+      [CONTACT_ROW, A.orgId, A.workspaceId],
+    );
+  });
+
+  // ── §17 rule 3, first half: partner A cannot read partner B ──────────────
+
+  describe("one partner cannot see another's rows", () => {
+    it("lists only its own submissions", async () => {
+      const res = await call(asPartner(PARTNER_A), "GET", "/portal/submissions");
+      // The control. A 403 from the guard, a 404 from an unmounted module or a
+      // mis-seeded fixture all fail HERE, before anything is claimed about
+      // partner B - which is what stops this case looking like coverage when
+      // it is not.
+      expectOk(res);
+      const ids = (res.body.submissions as Array<{ id: string }>).map((s) => s.id);
+      expect(ids, "partner A must see its own submission").toContain(PARTNER_A.submissionId);
+      expect(ids, "partner A must NOT see partner B's").not.toContain(PARTNER_B.submissionId);
+      // And the header counts are scoped too - a total computed over the whole
+      // org would tell a broker how many referrals their competitor sends.
+      expect(Number((res.body.totals as { total: string }).total)).toBe(1);
+    });
+
+    it("404s on another partner's submission while reading its own", async () => {
+      // Positive first, same route, same credential, same shape.
+      const own = await call(asPartner(PARTNER_A), "GET", `/portal/submissions/${PARTNER_A.submissionId}`);
+      expectOk(own);
+      expect(own.body.submission.id).toBe(PARTNER_A.submissionId);
+
+      // 404, not 403: the row is invisible to this transaction, so the handler
+      // looks it up, finds nothing and says so. A 403 here would mean the
+      // handler saw the row and declined - a different and much weaker property.
+      const other = await call(asPartner(PARTNER_A), "GET", `/portal/submissions/${PARTNER_B.submissionId}`);
+      expectStatus(other, 404, "another partner's submission");
+    });
+
+    it("never discloses the lead behind a submission, even its own", async () => {
+      const own = await call(asPartner(PARTNER_A), "GET", `/portal/submissions/${PARTNER_A.submissionId}`);
+      expectOk(own);
+      // §18: the outcome is coarse ON PURPOSE and there is no handle into the
+      // tenant's pipeline. A `lead_id` here is one `GET /leads/:id` away from
+      // the thing this entire phase exists to prevent.
+      expect(Object.keys(own.body.submission as Record<string, unknown>).sort()).toEqual(
+        [
+          "decided_at",
+          "id",
+          "lead_email",
+          "lead_name",
+          "lead_phone",
+          "note",
+          "outcome",
+          "reject_reason",
+          "submitted_at",
+        ].sort(),
+      );
+    });
+
+    it("sees only its own commission plan", async () => {
+      const res = await call(asPartner(PARTNER_A), "GET", "/portal/commissions");
+      expectOk(res);
+      expect(res.body.plan?.id, "partner A's own plan").toBe(PLAN_A);
+      expect(res.body.plan?.id).not.toBe(PLAN_B);
+    });
+
+    it("sees only its own people on the profile screen", async () => {
+      const res = await call(asPartner(PARTNER_A), "GET", "/portal/profile");
+      expectOk(res);
+      expect(res.body.partner.id).toBe(PARTNER_A.id);
+      const emails = (res.body.people as Array<{ email: string }>).map((p) => p.email);
+      expect(emails).toEqual([PARTNER_A.email]);
+    });
+
+    it("refuses a portal credential whose partner has been suspended", async () => {
+      // The control: it works first.
+      expectOk(await call(asPartner(PARTNER_A), "GET", "/portal/context"));
+      await queryRows(`UPDATE partners SET status = 'suspended' WHERE id = $1`, [PARTNER_A.id]);
+      expectStatus(
+        await call(asPartner(PARTNER_A), "GET", "/portal/context"),
+        403,
+        "a suspended partner",
+      );
+    });
+
+    it("refuses a tenant member who presents themselves as a partner", async () => {
+      // Tenant A's own owner, holding a real session subject, asking for the
+      // portal. "Has partner_users, no memberships" is the definition (§18), so
+      // a member fails the second half and is refused - which also means a
+      // tenant's staff cannot quietly browse the portal as a broker.
+      await queryRows(`UPDATE users SET sso_subject = $2 WHERE id = $1`, [
+        A.userId,
+        "00000000-0000-4000-8000-0000000000f9",
+      ]);
+      const res = await call(
+        {
+          label: "member-as-partner",
+          headers: { "x-admin-key": adminKey(), "x-caller-auth-id": "00000000-0000-4000-8000-0000000000f9" },
+        },
+        "GET",
+        "/portal/context",
+      );
+      expectStatus(res, 403, "a member of the tenant asking for the portal");
+    });
+  });
+
+  // ── §17 rule 3, second half: the org's own data ──────────────────────────
+
+  describe("a partner cannot read the org's leads, contacts, calls or reports", () => {
+    /**
+     * Asked of the DATABASE rather than of a route, deliberately.
+     *
+     * There IS no portal route that reads `leads`, so an HTTP-only version of
+     * this case could only assert that a URL 404s - which proves the route does
+     * not exist, not that the data is out of reach. The claim worth making is
+     * that a transaction carrying `app.partner_id` cannot read these tables AT
+     * ALL, however the query is written, which is what migration 0163's
+     * `partner_wall` makes true and what keeps being true after the sixth
+     * screen is added.
+     */
+    for (const table of ["leads", "calls", "contacts", "memberships", "telecallers"]) {
+      it(`${table} is empty for a partner and non-empty without one`, async () => {
+        // The control, FIRST. A wall over an empty table is not a wall.
+        const staff = await countAs({ orgId: A.orgId }, table);
+        expect(staff, `fixture must seed ${table} or this case proves nothing`).toBeGreaterThan(0);
+
+        const partner = await countAs({ orgId: A.orgId, partnerId: PARTNER_A.id }, table);
+        expect(partner, `${table} must be invisible to a partner`).toBe(0);
+      });
+    }
+
+    it("refuses a partner's INSERT as well as their SELECT", async () => {
+      // A restrictive policy with a USING clause and no WITH CHECK blocks reads
+      // and silently permits writes - the exact hole verify-rls.js's second
+      // check exists for. A partner who could INSERT a lead could also INSERT a
+      // membership.
+      await expect(
+        asAppRole(
+          { orgId: A.orgId, partnerId: PARTNER_A.id },
+          `INSERT INTO contacts (org_id, workspace_id, display_name) VALUES ($1, $2, 'smuggled')`,
+          [A.orgId, A.workspaceId],
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+
+    it("walls every org-scoped table except the four that are argued for", async () => {
+      // The structural statement, which covers the tables this suite has no
+      // fixture for - `reports`, `report_runs`, `recordings`, `transcripts`,
+      // `invoices` and the hundred-odd others. Asked of the catalog, so a table
+      // added by a later migration without a wall shows up here by name.
+      const open = await queryRows<{ table_name: string }>(
+        `SELECT c.table_name
+           FROM information_schema.columns c
+           JOIN information_schema.tables t
+             ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+          WHERE c.table_schema = 'public'
+            AND c.column_name  = 'org_id'
+            AND t.table_type   = 'BASE TABLE'
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_policies p
+               WHERE p.schemaname = 'public' AND p.tablename = c.table_name
+                 AND p.policyname IN ('partner_wall', 'partner_isolation')
+            )
+          ORDER BY 1`,
+      );
+      expect(open.map((r) => r.table_name)).toEqual([]);
+    });
+
+    it("every partner policy is RESTRICTIVE, not permissive", async () => {
+      // The failure that changes nothing visible and removes the whole
+      // boundary: Postgres ORs permissive policies, so a `partner_wall` created
+      // as PERMISSIVE sits beside `org_isolation`, admits every row it was
+      // meant to deny, and reads in pg_policies exactly like the thing that was
+      // supposed to be there.
+      const wrong = await queryRows<{ tablename: string; policyname: string }>(
+        `SELECT tablename, policyname FROM pg_policies
+          WHERE schemaname = 'public'
+            AND policyname IN ('partner_wall', 'partner_isolation')
+            AND permissive <> 'RESTRICTIVE'`,
+      );
+      expect(wrong).toEqual([]);
+    });
+
+    it("leaves staff reads untouched when the setting is absent", async () => {
+      // The other direction, and the one that would take the console down
+      // rather than leak anything: `current_setting('app.partner_id', true)`
+      // returns '' - not NULL - on a pooled connection that has previously
+      // served a partner, so a policy written as `IS NULL` would start
+      // throwing 22P02 at ordinary tenant reads, intermittently.
+      const client = new Client({ connectionString: APP_DATABASE_URL });
+      await client.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.org_id', $1, true)", [A.orgId]);
+        await client.query("SELECT set_config('app.partner_id', $1, true)", [PARTNER_A.id]);
+        await client.query("ROLLBACK");
+        // Same connection, fresh transaction, no partner: exactly what the pool
+        // hands the next request.
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.org_id', $1, true)", [A.orgId]);
+        const { rows } = await client.query<{ n: string }>(`SELECT count(*)::text AS n FROM leads`);
+        await client.query("ROLLBACK");
+        expect(Number(rows[0]!.n)).toBeGreaterThan(0);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  // ── The invariant the whole principal model rests on ─────────────────────
+
+  describe("a partner is not a member, and a member is not a partner", () => {
+    it("refuses a membership for somebody who is already a partner", async () => {
+      await expect(
+        queryRows(
+          `INSERT INTO memberships (org_id, user_id, scope_type, scope_id, role)
+           VALUES ($1, $2, 'org', $1, 'workspace_member')`,
+          [A.orgId, PARTNER_A.userId],
+        ),
+      ).rejects.toThrow(/channel partner in this workspace/);
+    });
+
+    it("refuses a partner_users row for somebody who is already a member", async () => {
+      await expect(
+        queryRows(
+          `INSERT INTO partner_users (org_id, partner_id, user_id) VALUES ($1, $2, $3)`,
+          [A.orgId, PARTNER_A.id, A.userId],
+        ),
+      ).rejects.toThrow(/already a member of the workspace/);
+    });
+
+    it("refuses a partner whose commission plan belongs to another tenant", async () => {
+      // Foreign keys do not see RLS (doc 23 A2), so the reference alone would
+      // happily cross tenants - on the one column that decides what somebody
+      // is paid.
+      const foreignPlan = "00000000-0000-4000-8000-0000000000c6";
+      await queryRows(
+        `INSERT INTO commission_plans (id, org_id, name, metric, rate_type, rate, payee_kind)
+         VALUES ($1, $2, 'B plan', 'won_count', 'flat_per_unit', 1, 'partner')`,
+        [foreignPlan, B.orgId],
+      );
+      await expect(
+        queryRows(`UPDATE partners SET commission_plan_id = $2 WHERE id = $1`, [
+          PARTNER_A.id,
+          foreignPlan,
+        ]),
+      ).rejects.toThrow(/same organisation/);
+    });
+
+    it("refuses a staff commission plan on a partner", async () => {
+      const staffPlan = "00000000-0000-4000-8000-0000000000c7";
+      await queryRows(
+        `INSERT INTO commission_plans (id, org_id, name, metric, rate_type, rate, payee_kind)
+         VALUES ($1, $2, 'Telecaller plan', 'won_value', 'percent', 2, 'user')`,
+        [staffPlan, A.orgId],
+      );
+      await expect(
+        queryRows(`UPDATE partners SET commission_plan_id = $2 WHERE id = $1`, [
+          PARTNER_A.id,
+          staffPlan,
+        ]),
+      ).rejects.toThrow(/payee_kind/);
+    });
+  });
+
+  // ── The submission path end to end ───────────────────────────────────────
+
+  it("a submission lands in the tenant's pipeline and in nobody else's portal", async () => {
+    const before = await queryRows<{ n: string }>(
+      `SELECT count(*)::text AS n FROM leads WHERE org_id = $1`,
+      [A.orgId],
+    );
+
+    const res = await call(asPartner(PARTNER_A), "POST", "/portal/submissions", {
+      name: "Referred prospect",
+      phone: "+919812300001",
+      note: "wants a 2BHK",
+    });
+    expectOk(res);
+
+    // It became a LEAD in tenant A, through the intake engine (§16).
+    const after = await queryRows<{ n: string }>(
+      `SELECT count(*)::text AS n FROM leads WHERE org_id = $1`,
+      [A.orgId],
+    );
+    expect(Number(after[0]!.n)).toBe(Number(before[0]!.n) + 1);
+
+    // And a vault row with the honest consent basis (§18): a broker's
+    // assurance is not consent, so it is 'unknown' and the org's own switch
+    // decides whether it is ever dialable.
+    const vault = await queryRows<{ source: string; consent_basis: string }>(
+      `SELECT source, consent_basis FROM contact_numbers WHERE org_id = $1 AND e164 = $2`,
+      [A.orgId, "+919812300001"],
+    );
+    expect(vault).toEqual([{ source: "partner", consent_basis: "unknown" }]);
+
+    // Partner B's portal does not have it.
+    const b = await call(asPartner(PARTNER_B), "GET", "/portal/submissions");
+    expectOk(b);
+    expect((b.body.submissions as Array<{ lead_name: string }>).map((s) => s.lead_name)).toEqual([
+      "PART-B prospect",
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HandsetState } from "./attendance";
 import { LeadSourceChannel } from "./lead-intake";
 
 /**
@@ -19,7 +20,7 @@ import { LeadSourceChannel } from "./lead-intake";
  * through it and asserts the split. That test cannot exist if the algorithm
  * needs a transaction.
  *
- * ── THE TWO STRATEGIES ────────────────────────────────────────────────────
+ * ── THE THREE STRATEGIES ──────────────────────────────────────────────────
  *
  *   round_robin - strict rotation over the target list. A, B, C, A, B, C.
  *                 A durable cursor, not a random pick, so the sequence is
@@ -27,6 +28,14 @@ import { LeadSourceChannel } from "./lead-intake";
  *                 "that one was Priya's turn".
  *
  *   percentage  - each telecaller carries a share of the volume: 50/30/20.
+ *
+ *   sticky      - a returning caller goes back to the person who already
+ *                 knows them, and anything stickiness cannot resolve falls
+ *                 through to one of the other two (migration 0160, Build
+ *                 docs/39 §14). It is a third strategy rather than a feature
+ *                 beside routing, so it inherits the match criteria, the
+ *                 priority order, the daily caps and the decision ledger
+ *                 instead of needing its own copy of each.
  *
  * ── WHY PERCENTAGE IS NOT A DICE ROLL ─────────────────────────────────────
  *
@@ -53,20 +62,92 @@ import { LeadSourceChannel } from "./lead-intake";
  * It is kept separate anyway: a cursor survives a target being paused and
  * resumed in a way a deficit does not, and "sequential" is a promise about
  * ORDER that a tenant picking round-robin is entitled to.
+ *
+ * ── WHY STICKY IS NOT ALLOWED TO GUESS ────────────────────────────────────
+ *
+ * `pickSticky` below has exactly one hard rule, and it is the whole phase:
+ * when two DIFFERENT people owned earlier leads from the same number, the
+ * lead goes to the fallback and the decision says so. It does not go to
+ * whoever spoke to them most recently.
+ *
+ * 0146 already made this call for the call-to-lead match, and its header is
+ * the argument: `leads.contact_number_key` is deliberately not unique, two
+ * leads in one workspace can legitimately share it, and "that collision is
+ * exactly the ambiguity lead_for_unlinked_call refuses to guess at". Recency
+ * would be right about half the time, and the wrong half is INVISIBLE - the
+ * prospect reaches the wrong person, and the right person never learns the
+ * call happened. A fallback assignment with a reason on it is a thing a
+ * manager can read; a silently misrouted customer is not.
  */
 
-export const LeadRoutingStrategy = z.enum(["round_robin", "percentage"]);
+// ── the vocabulary, which has a CHECK constraint as its twin ────────────────
+
+/**
+ * Pinned against `lead_routing_rules_strategy_check` (0105, widened by 0160).
+ *
+ * THE DRIFT TRAP. Widening this enum without the CHECK throws 23514 on the
+ * write and reads like a bug in the caller; widening the CHECK without this
+ * enum makes the API reject a strategy the database would accept. It has
+ * happened here already - `notifications.kind` drifted in both directions at
+ * once and broke lead routing while every type-check and lint stayed green.
+ *
+ * `lead-routing.test.ts` asserts the two sets are equal, by parsing the
+ * migration tree. Do not widen one of them alone.
+ */
+export const LeadRoutingStrategy = z.enum(["round_robin", "percentage", "sticky"]);
 export type LeadRoutingStrategy = z.infer<typeof LeadRoutingStrategy>;
+
+/**
+ * What a sticky rule does with a lead stickiness could not resolve - pinned
+ * against `lead_routing_rules_sticky_fallback_check` (0160).
+ *
+ * NOT the same set as the strategies: it is the two that can distribute a
+ * lead with no history behind it, plus 'unassigned'. 'sticky' itself is
+ * absent, because a sticky rule falling back to itself is an infinite regress
+ * and not a policy.
+ *
+ * 'unassigned' is a VALUE somebody picks, not the absence of one. NULL would
+ * also leave the lead unassigned, and the difference matters: a lead nobody
+ * chose to leave on the board is a lead the rule silently killed, so the
+ * column is NOT NULL for sticky rules by CHECK.
+ */
+export const LeadRoutingStickyFallback = z.enum(["round_robin", "percentage", "unassigned"]);
+export type LeadRoutingStickyFallback = z.infer<typeof LeadRoutingStickyFallback>;
 
 export const LEAD_ROUTING_STRATEGY_LABELS: Record<LeadRoutingStrategy, string> = {
   round_robin: "Round robin",
   percentage: "Percentage split",
+  sticky: "Sticky ownership",
 };
 
 export const LEAD_ROUTING_STRATEGY_BLURBS: Record<LeadRoutingStrategy, string> = {
   round_robin: "Each new lead goes to the next telecaller in the list, in order, and then round again.",
   percentage: "Each telecaller takes a fixed share of the volume - 50/30/20 - held exactly as leads arrive.",
+  sticky:
+    "A caller who has been here before goes back to the person who already knows them. " +
+    "Everything else - a new number, an owner who is off shift, or two people who both " +
+    "handled this number - goes to the fallback.",
 };
+
+export const LEAD_ROUTING_STICKY_FALLBACK_LABELS: Record<LeadRoutingStickyFallback, string> = {
+  round_robin: "Round robin",
+  percentage: "Percentage split",
+  unassigned: "Leave on the board, unassigned",
+};
+
+/**
+ * The window a tenant gets if they switch a rule to sticky without choosing
+ * one. A quarter: long enough to cover a re-enquiry cycle, short enough that
+ * somebody who left the desk four months ago stops collecting leads on the
+ * strength of one conversation.
+ *
+ * §14 does not state a default, so this is a decision rather than a reading of
+ * it. Both constants exist so the API and the console cannot pick different
+ * ones - the fallback especially, where the only wrong answer is the one that
+ * silently leaves leads on the board.
+ */
+export const STICKY_DEFAULT_WINDOW_DAYS = 90;
+export const STICKY_DEFAULT_FALLBACK: LeadRoutingStickyFallback = "round_robin";
 
 /**
  * Which leads a rule is about.
@@ -173,13 +254,85 @@ export interface RoutingCandidate {
   dailyCap: number | null;
   /** Already taken today, in the org's reporting timezone. */
   assignedToday: number;
+  /**
+   * This person's live handset state (`attendance_live_state.state`, 0140).
+   *
+   * STICKY ONLY. Round robin and percentage do not read it, and must not: they
+   * distribute over a rota the tenant maintains, and a rotation that silently
+   * skipped whoever had not opened the app would be a rotation nobody could
+   * predict. Stickiness is the one strategy that can concentrate a whole day's
+   * leads on ONE person, which is why it is the one that has to ask.
+   *
+   * Optional and `null`-able on purpose: a telecaller who has never reported
+   * presence has no row, which is normal for a console-only person with no
+   * handset. See `stickyOwnerOnShift` for what each case means.
+   */
+  handsetState?: HandsetState | null;
 }
 
 export type RoutingRefusal =
   | "no_targets"
   | "all_paused"
   | "all_capped"
-  | "no_share";
+  | "no_share"
+  /**
+   * A sticky rule resolved to nobody and its fallback is 'unassigned' - the
+   * tenant's own choice, not a failure. Distinct from the four above because
+   * nothing is wrong with the rule or the staffing.
+   */
+  | "sticky_unassigned"
+  /**
+   * A sticky rule with no window or no fallback. 0160's
+   * `lead_routing_rules_sticky_configured` CHECK makes this unreachable
+   * through the API; it is here for a hand-edited row and for a rule written
+   * before the constraint existed.
+   */
+  | "sticky_unconfigured"
+  /**
+   * `pickRoutingTarget` was asked for a sticky decision with no history to
+   * resolve it against - a caller that has not been taught to load it.
+   *
+   * It REFUSES rather than quietly running the fallback, and that direction is
+   * the whole point: a fallback here would look like a working sticky rule and
+   * silently never be sticky, which is the failure nobody finds. An
+   * unassigned lead is on the board where somebody can see it.
+   */
+  | "sticky_unresolved";
+
+/** How far the sticky resolution got, for the console and for the ledger. */
+export type StickyResolution =
+  /** One prior owner, available: the returning caller reached their person. */
+  | "matched"
+  /** Nobody in this workspace has spoken to this number inside the window. */
+  | "no_history"
+  /** Two or more DIFFERENT prior owners. Never guessed - see the file header. */
+  | "ambiguous"
+  /** One prior owner who could not take it. `unavailable` says why. */
+  | "owner_unavailable"
+  /** The rule is sticky and not configured, or no history was supplied. */
+  | "unresolvable";
+
+/** Why the one prior owner could not be given the lead. */
+export type StickyUnavailable =
+  /** They are not on this rule's target list - a leaver, or a different desk. */
+  | "not_on_rule"
+  /** Paused: leave, training, a bad week. */
+  | "paused"
+  /** At their daily cap. */
+  | "capped"
+  /** Attendance (0140) says OFF_SHIFT or AWAY. */
+  | "off_shift";
+
+/** What stickiness decided, alongside what the pick ended up being. */
+export interface StickyOutcome {
+  resolution: StickyResolution;
+  /** The prior owners considered, de-duplicated, as the caller supplied them. */
+  priorOwners: readonly StickyPriorOwner[];
+  /** Set only on `owner_unavailable`. */
+  unavailable: StickyUnavailable | null;
+  /** The strategy that actually made the pick, when sticky fell through. */
+  fellBackTo: LeadRoutingStickyFallback | null;
+}
 
 export interface RoutingDecision {
   /** The chosen target, or null when nobody could take it. */
@@ -190,6 +343,107 @@ export interface RoutingDecision {
   refusal: RoutingRefusal | null;
   /** What to store back on the rule. Unchanged for the percentage strategy. */
   nextCursor: number;
+  /**
+   * Set by the sticky strategy and by nothing else, so the console can badge
+   * an ambiguous collision without parsing `reason`. §14 asks for the
+   * collision to be VISIBLE; the prose is for a person, this is for the UI.
+   */
+  sticky?: StickyOutcome;
+}
+
+/**
+ * One earlier lead's owner, as the caller found them.
+ *
+ * Built by whoever loads the history - the executor in `@aura/db` reads
+ * `leads` by `(workspace_id, contact_number_key)` inside the window and groups
+ * by `assigned_telecaller_id`. Kept out of this file because it is a query,
+ * and the pick stays pure so a thousand leads can be run through it without a
+ * database.
+ */
+export interface StickyPriorOwner {
+  telecallerId: string;
+  /**
+   * For the reason prose. Nullable because the person may have been archived
+   * since, and a decision that cannot name them is still worth recording.
+   */
+  name: string | null;
+  /** How many leads from this number, inside the window, are theirs. */
+  leadCount: number;
+  /** The newest of those leads, ISO. For the prose only - NEVER a tie-break. */
+  lastLeadAt?: string | null;
+}
+
+/**
+ * Everything the sticky pick needs that it cannot compute.
+ *
+ * Deliberately the facts and not a database handle: the caller has already
+ * decided what "inside the window" means and who owned what, so this function
+ * stays testable and the window arithmetic happens once, in SQL, in the org's
+ * own timezone.
+ */
+export interface StickyContext {
+  /** `lead_routing_rules.sticky_window_days`. Null = rule not configured. */
+  windowDays: number | null;
+  /** `lead_routing_rules.sticky_fallback`. Null = rule not configured. */
+  fallback: LeadRoutingStickyFallback | null;
+  /**
+   * The distinct owners of prior leads from this number in this workspace,
+   * inside the window. Leads with no owner are not prior owners and must be
+   * left out by the caller - an unassigned lead from last month binds nobody.
+   */
+  priorOwners: readonly StickyPriorOwner[];
+  /**
+   * `organizations.attendance_enabled` (0140). FALSE for most tenants, and it
+   * is why the shift gate is conditional - see `stickyOwnerOnShift`.
+   */
+  attendanceTracked: boolean;
+}
+
+/**
+ * The handset states that mean "not at work right now".
+ *
+ * Only these two. The other six - ACTIVE, IN_CALL, PROMPTING, BREAK_DUE,
+ * ON_BREAK, TECHNICAL - are all somebody who is on shift: a fifteen-minute
+ * break, or a phone with no signal, is not a reason to take a customer off the
+ * person who knows them. `lead-routing.test.ts` enumerates every
+ * `HandsetState` and asserts which side it falls on, so a ninth state cannot
+ * be added without somebody deciding.
+ *
+ * PROMPTING is on the working side on purpose: the phone has asked "are you
+ * there" and not yet been answered. That becomes AWAY when the prompt expires,
+ * and until it does it is a question, not an answer.
+ */
+export const STICKY_OFF_SHIFT_STATES: readonly HandsetState[] = ["OFF_SHIFT", "AWAY"];
+
+/**
+ * Is this person at work, as far as the platform can actually tell?
+ *
+ * §14: "Attendance is a real coupling, not a nicety: a sticky owner who is
+ * absent must not accumulate leads all day." The gate is real. It is also
+ * conditional, in two ways that are both load-bearing:
+ *
+ *   1. ATTENDANCE IS OFF BY DEFAULT. `organizations.attendance_enabled`
+ *      defaults false (0140) and most tenants have never turned it on. Gating
+ *      on presence they do not collect would send every sticky lead to the
+ *      fallback, forever, for a reason nobody would connect to a switch on
+ *      another page - the feature would simply not work and would not say so.
+ *
+ *   2. NO ROW IS NOT ABSENCE. A telecaller with no `attendance_live_state` has
+ *      never reported presence: a console-only person with no handset, which
+ *      is an ordinary way to staff a desk. Treating silence as absence would
+ *      quietly exclude exactly those people from ever owning a repeat caller.
+ *
+ * So what blocks a sticky assignment is KNOWN absence, and the decision's
+ * reason distinguishes the three cases rather than flattening them.
+ */
+export function stickyOwnerOnShift(
+  candidate: Pick<RoutingCandidate, "handsetState">,
+  attendanceTracked: boolean,
+): boolean {
+  if (!attendanceTracked) return true;
+  const state = candidate.handsetState ?? null;
+  if (state === null) return true;
+  return !STICKY_OFF_SHIFT_STATES.includes(state);
 }
 
 /** Available to take a lead at all. */
@@ -338,6 +592,243 @@ function pickPercentage(candidates: readonly RoutingCandidate[], cursor: number)
   };
 }
 
+// ── sticky ──────────────────────────────────────────────────────────────────
+
+/** De-duplicate by person, keeping the first mention and summing their leads. */
+function distinctOwners(owners: readonly StickyPriorOwner[]): StickyPriorOwner[] {
+  const byId = new Map<string, StickyPriorOwner>();
+  for (const owner of owners) {
+    const seen = byId.get(owner.telecallerId);
+    if (!seen) {
+      byId.set(owner.telecallerId, { ...owner });
+      continue;
+    }
+    // A caller that grouped properly never hits this. One that returned a row
+    // per lead does, and silently counting that person twice would turn one
+    // owner into "two owners" and send every repeat caller to the fallback.
+    seen.leadCount += owner.leadCount;
+  }
+  return [...byId.values()];
+}
+
+/**
+ * One phrase for an owner, including the one nobody can name any more.
+ *
+ * A prior owner's row can outlive their telecaller record, and a decision that
+ * cannot name them is still worth recording - "somebody no longer on the
+ * roster already owns this number" is the sentence that tells a manager why
+ * the lead went to the fallback. Used by both the collision prose and the
+ * single-owner prose, so the two cannot describe the same person differently.
+ */
+function displayName(owner: StickyPriorOwner): string {
+  return owner.name ?? "somebody no longer on the roster";
+}
+
+function ownerNames(owners: readonly StickyPriorOwner[]): string {
+  return owners.map(displayName).join(" and ");
+}
+
+function leadsPhrase(count: number, windowDays: number): string {
+  const leads = count === 1 ? "1 earlier lead" : `${count} earlier leads`;
+  return `${leads} in the last ${windowDays} days`;
+}
+
+/**
+ * Attach the sticky story to whatever the fallback decided.
+ *
+ * ONE decision row per lead, so one sentence has to carry both halves: why
+ * stickiness did not place the lead, and what placed it instead. Splitting
+ * them would mean the ledger showed "Asha was next in the rotation" with no
+ * trace of the collision that sent it there - which is the one thing §14 asks
+ * to be visible.
+ */
+function withFallback(
+  inner: RoutingDecision,
+  stickyReason: string,
+  outcome: StickyOutcome,
+): RoutingDecision {
+  return {
+    ...inner,
+    reason: `${stickyReason}, so the fallback ran: ${inner.reason}`,
+    sticky: outcome,
+  };
+}
+
+/**
+ * A returning caller goes back to the person who already knows them.
+ *
+ * ── THE RESOLUTION ORDER, EXACTLY §14 ────────────────────────────────────
+ *
+ *   1. Prior leads in this workspace with the same `contact_number_key`,
+ *      inside the window. The caller has already done that query; what
+ *      arrives here is the distinct set of people who own them.
+ *   2. More than one distinct prior owner -> AMBIGUOUS -> the fallback. Not
+ *      the most recent. See the file header, and 0146 before it.
+ *   3. One prior owner who is on this rule, not paused, under their daily cap
+ *      and on shift -> they get it.
+ *   4. Otherwise -> the fallback.
+ *
+ * ── WHAT THE CURSOR DOES ──────────────────────────────────────────────────
+ *
+ * A sticky match does NOT advance it. The rotation is a queue of turns, and a
+ * repeat caller returning to their owner did not consume anybody's turn - the
+ * next genuinely new lead must still go to whoever was next. Falling through
+ * to round robin advances it exactly as round robin would, because that lead
+ * DID come out of the rotation.
+ */
+function pickSticky(
+  candidates: readonly RoutingCandidate[],
+  cursor: number,
+  sticky: StickyContext | undefined,
+): RoutingDecision {
+  // No history supplied at all. Refuse loudly rather than running the
+  // fallback: a fallback here is a rule that looks sticky, never is, and says
+  // nothing about it.
+  if (!sticky) {
+    return {
+      picked: null,
+      reason:
+        "this rule routes by sticky ownership and the caller did not load the number's " +
+        "history, so no decision could be made - the lead was left on the board",
+      refusal: "sticky_unresolved",
+      nextCursor: cursor,
+      sticky: {
+        resolution: "unresolvable",
+        priorOwners: [],
+        unavailable: null,
+        fellBackTo: null,
+      },
+    };
+  }
+
+  const { windowDays, fallback, attendanceTracked } = sticky;
+  if (windowDays === null || fallback === null) {
+    return {
+      picked: null,
+      reason:
+        "this sticky rule has no " +
+        (windowDays === null ? "window" : "fallback") +
+        " set, so it cannot decide anything - the lead was left on the board",
+      refusal: "sticky_unconfigured",
+      nextCursor: cursor,
+      sticky: {
+        resolution: "unresolvable",
+        priorOwners: distinctOwners(sticky.priorOwners),
+        unavailable: null,
+        fellBackTo: null,
+      },
+    };
+  }
+
+  const owners = distinctOwners(sticky.priorOwners);
+
+  const runFallback = (
+    resolution: StickyResolution,
+    unavailable: StickyUnavailable | null,
+    stickyReason: string,
+  ): RoutingDecision => {
+    const outcome: StickyOutcome = {
+      resolution,
+      priorOwners: owners,
+      unavailable,
+      fellBackTo: fallback,
+    };
+    if (fallback === "unassigned") {
+      return {
+        picked: null,
+        reason: `${stickyReason}, and this rule leaves those on the board for somebody to pick up`,
+        refusal: "sticky_unassigned",
+        nextCursor: cursor,
+        sticky: outcome,
+      };
+    }
+    const inner =
+      fallback === "round_robin"
+        ? pickRoundRobin(candidates, cursor)
+        : pickPercentage(candidates, cursor);
+    return withFallback(inner, stickyReason, outcome);
+  };
+
+  // ── 1 & 2. History, and the collision that must not be guessed at ────────
+  if (owners.length === 0) {
+    return runFallback("no_history", null, `nobody here has spoken to this number in ${windowDays} days`);
+  }
+  if (owners.length > 1) {
+    return runFallback(
+      "ambiguous",
+      null,
+      `earlier leads from this number belong to different people (${ownerNames(owners)}), ` +
+        "so stickiness would have had to guess",
+    );
+  }
+
+  // ── 3. One owner: are they actually able to take it? ─────────────────────
+  const owner = owners[0];
+  const history = leadsPhrase(owner.leadCount, windowDays);
+  const name = displayName(owner);
+
+  const candidate = candidates.find((c) => c.telecallerId === owner.telecallerId);
+  if (!candidate) {
+    // The person who owns the history is not on this rule's target list: they
+    // left, were archived, or work a different desk. Routing may only hand a
+    // lead to somebody the rule names - that list is also where `dailyCap`
+    // lives, so assigning off it would be an assignment with no ceiling.
+    return runFallback(
+      "owner_unavailable",
+      "not_on_rule",
+      `${name} owns this number (${history}) but is not on this rule`,
+    );
+  }
+  if (candidate.paused) {
+    return runFallback(
+      "owner_unavailable",
+      "paused",
+      `${candidate.name} owns this number (${history}) but is paused`,
+    );
+  }
+  if (candidate.dailyCap !== null && candidate.assignedToday >= candidate.dailyCap) {
+    return runFallback(
+      "owner_unavailable",
+      "capped",
+      `${candidate.name} owns this number (${history}) but has hit their daily cap of ${candidate.dailyCap}`,
+    );
+  }
+  if (!stickyOwnerOnShift(candidate, attendanceTracked)) {
+    return runFallback(
+      "owner_unavailable",
+      "off_shift",
+      `${candidate.name} owns this number (${history}) but attendance says they are ` +
+        (candidate.handsetState === "AWAY" ? "away" : "off shift"),
+    );
+  }
+
+  // ── 4. Sticky, and said in words a manager can check ─────────────────────
+  //
+  // The shift clause is three different sentences on purpose. "on shift" is a
+  // measurement; "attendance is off for this workspace" and "has never
+  // reported from a handset" are reasons the measurement does not exist, and a
+  // manager reading the ledger needs to know which one they are looking at
+  // before they conclude the gate works.
+  const shift = !attendanceTracked
+    ? "attendance is off for this workspace"
+    : candidate.handsetState === null || candidate.handsetState === undefined
+      ? "their shift is unknown - they have never reported from a handset"
+      : `they are on shift (${candidate.handsetState})`;
+
+  return {
+    picked: candidate,
+    reason: `${candidate.name} already owns this number - ${history}, and ${shift}`,
+    refusal: null,
+    nextCursor: cursor,
+    sticky: {
+      resolution: "matched",
+      priorOwners: owners,
+      unavailable: null,
+      fellBackTo: null,
+    },
+  };
+}
+
 /**
  * Who takes the next lead.
  *
@@ -346,12 +837,20 @@ function pickPercentage(candidates: readonly RoutingCandidate[], cursor: number)
  * which is always a valid outcome - an unassigned lead on the board is a
  * visible problem, and a lead force-fed to somebody over their cap is an
  * invisible one.
+ *
+ * `sticky` is required in practice by the sticky strategy and ignored by the
+ * other two. It is the LAST and OPTIONAL parameter so that every existing
+ * three-argument call site keeps compiling and keeps behaving identically -
+ * and so that one which has not been taught to load the history gets the loud
+ * `sticky_unresolved` refusal rather than a silent rotation.
  */
 export function pickRoutingTarget(
   strategy: LeadRoutingStrategy,
   candidates: readonly RoutingCandidate[],
   cursor: number,
+  sticky?: StickyContext,
 ): RoutingDecision {
+  if (strategy === "sticky") return pickSticky(candidates, cursor, sticky);
   return strategy === "round_robin"
     ? pickRoundRobin(candidates, cursor)
     : pickPercentage(candidates, cursor);
@@ -368,19 +867,33 @@ export function pickRoutingTarget(
  *
  * Daily caps are advanced alongside delivered counts, so the preview shows the
  * rotation genuinely stepping over somebody who fills up partway through.
+ *
+ * ── WHAT A STICKY PREVIEW MEANS ───────────────────────────────────────────
+ *
+ * One `sticky` context across every step, because there is no real lead and
+ * therefore no second number to resolve. The console passes the rule's own
+ * window and fallback with `priorOwners: []`, which answers the question
+ * somebody actually has in front of the rules page - "who gets the next lead
+ * from a number nobody has called?" - and shows the fallback sequence, which
+ * is what the overwhelming majority of leads will take.
+ *
+ * Passing a context WITH prior owners previews one returning caller instead,
+ * and then the same person legitimately appears over and over until their cap
+ * stops them. That is not a bug in the preview, it is what stickiness is.
  */
 export function simulateRouting(
   strategy: LeadRoutingStrategy,
   candidates: readonly RoutingCandidate[],
   cursor: number,
   count: number,
+  sticky?: StickyContext,
 ): RoutingDecision[] {
   const scratch = candidates.map((c) => ({ ...c }));
   const out: RoutingDecision[] = [];
   let nextCursor = cursor;
 
   for (let i = 0; i < Math.max(0, Math.trunc(count)); i += 1) {
-    const decision = pickRoutingTarget(strategy, scratch, nextCursor);
+    const decision = pickRoutingTarget(strategy, scratch, nextCursor, sticky);
     out.push(decision);
     nextCursor = decision.nextCursor;
     if (!decision.picked) break; // Nothing changes, so every later step is identical.
@@ -432,8 +945,17 @@ export const SHARE_TOTAL_TOLERANCE = 0.01;
 export function sharesProblem(
   strategy: LeadRoutingStrategy,
   targets: readonly { sharePct?: number | null; paused?: boolean | null }[],
+  /**
+   * A sticky rule's fallback. Required for a sticky rule whose fallback is
+   * 'percentage', because those shares are the ones that will actually run -
+   * on most leads, in fact, since most callers have no history. Without this
+   * the form would happily save 50/30 under a sticky rule and the fallback
+   * would hand out a split nobody chose.
+   */
+  stickyFallback?: LeadRoutingStickyFallback | null,
 ): string | null {
-  if (strategy !== "percentage") return null;
+  const splits = strategy === "percentage" || (strategy === "sticky" && stickyFallback === "percentage");
+  if (!splits) return null;
   if (targets.length === 0) return null; // An empty rule is allowed; it just routes nothing.
 
   const total = targets.reduce((sum, t) => sum + (t.sharePct ?? 0), 0);
@@ -477,8 +999,15 @@ export function shareReality(
     // Round robin promises everyone the same volume, so its "target" is an
     // even split - which is the number worth comparing against, and the one a
     // manager already has in their head.
+    //
+    // Sticky promises nothing about volume at all: it promises that a
+    // returning caller reaches their own person, and the resulting split is
+    // whatever the customers did. An even split is still the right comparison
+    // to draw, for the reason this function exists - "one person is taking 80%
+    // of this desk" is worth knowing whether or not it was promised, and on a
+    // sticky rule it is the warning that one owner is being buried.
     const targetPct =
-      strategy === "round_robin"
+      strategy !== "percentage"
         ? candidates.length > 0
           ? 100 / candidates.length
           : 0
@@ -528,7 +1057,71 @@ const RULE_FIELDS = {
   status: z.enum(["active", "paused"]),
   /** Restrict to one desk. NULL routes leads from every workspace in the org. */
   workspaceId: z.string().uuid().nullish(),
+
+  // ── sticky only (0160) ───────────────────────────────────────────────────
+  //
+  // Both `.nullish()` rather than defaulted, for two separate reasons:
+  //
+  //   * A DEFAULT here would write a window and a fallback onto every
+  //     round-robin rule anybody creates - configuration nobody chose, on a
+  //     column the migration deliberately leaves NULL for them.
+  //   * `LeadRoutingRulePatch` is built from these same fields and must fill
+  //     NOTHING (see the comment above). A `.default()` survives `.partial()`,
+  //     which is the bug that made the Pause button erase a rule's criteria.
+  //
+  // The defaults a sticky rule needs are applied by `resolveStickyConfig`,
+  // which both the create and the patch path call, so they cannot disagree.
+  //
+  // Ten years is the ceiling, not a recommendation: it is the point past
+  // which "sticky" is really "permanent", and a typed 36500 should be a
+  // sentence from the form rather than a 23514.
+  stickyWindowDays: z.number().int().min(1).max(3650).nullish(),
+  stickyFallback: LeadRoutingStickyFallback.nullish(),
 };
+
+/**
+ * The window and fallback a rule should be STORED with, given what the caller
+ * sent and what is already there.
+ *
+ * One function for create and patch, because the invariant it maintains is a
+ * database CHECK: `lead_routing_rules_sticky_configured` refuses a sticky rule
+ * with a NULL window or a NULL fallback. A caller that switched a rule to
+ * sticky with `PATCH { strategy }` alone - which is exactly what a strategy
+ * dropdown sends - would otherwise 23514, and a 23514 on a form is a 500 that
+ * reads like a platform fault.
+ *
+ * Two behaviours worth stating:
+ *
+ *   * A NON-sticky rule KEEPS a window and fallback somebody typed, exactly as
+ *     `share_pct` is kept on a round-robin rule: switching a rule to
+ *     percentage to try it and switching back must not silently discard the
+ *     configuration you had.
+ *   * `undefined` means "not sent" and falls through to the stored value;
+ *     `null` means "clear it" and is honoured, except on a sticky rule, where
+ *     the default takes over rather than writing a row the CHECK would reject.
+ */
+export function resolveStickyConfig(
+  strategy: LeadRoutingStrategy,
+  sent: {
+    stickyWindowDays?: number | null;
+    stickyFallback?: LeadRoutingStickyFallback | null;
+  },
+  stored?: {
+    stickyWindowDays?: number | null;
+    stickyFallback?: LeadRoutingStickyFallback | null;
+  },
+): { stickyWindowDays: number | null; stickyFallback: LeadRoutingStickyFallback | null } {
+  const windowDays =
+    (sent.stickyWindowDays !== undefined ? sent.stickyWindowDays : stored?.stickyWindowDays) ?? null;
+  const fallback =
+    (sent.stickyFallback !== undefined ? sent.stickyFallback : stored?.stickyFallback) ?? null;
+
+  if (strategy !== "sticky") return { stickyWindowDays: windowDays, stickyFallback: fallback };
+  return {
+    stickyWindowDays: windowDays ?? STICKY_DEFAULT_WINDOW_DAYS,
+    stickyFallback: fallback ?? STICKY_DEFAULT_FALLBACK,
+  };
+}
 
 export const LeadRoutingRuleInput = z.object({
   ...RULE_FIELDS,

@@ -58,6 +58,8 @@
  * catches the damage.
  */
 
+import { z } from "zod";
+
 /** Lower-cased, unaccented, punctuation-trimmed - the form every pattern runs on. */
 export function normalizeMessage(text: string): string {
   return text
@@ -201,3 +203,69 @@ export function readOptOut(text: string): OptOutVerdict {
   if (isProbableOptOut(text)) return { level: "probable" };
   return { level: "none" };
 }
+
+/**
+ * THE CHANNELS AN OPT-OUT CAN BE RECORDED ON - the twin of a database CHECK.
+ *
+ * `messaging_opt_outs.channel` (0111) is a text column with a CHECK, and
+ * migration 0158 widens it by one value:
+ *
+ *     ALTER TABLE messaging_opt_outs DROP CONSTRAINT IF EXISTS messaging_opt_outs_channel_check;
+ *     ALTER TABLE messaging_opt_outs ADD CONSTRAINT messaging_opt_outs_channel_check
+ *       CHECK (channel IN ('whatsapp', 'sms', 'email', 'call'));
+ *
+ * 'call' is there because somebody who says "stop calling me" belongs on the
+ * table that already models being left alone - with its two levels, its
+ * `source_message_id` provenance and its release-by-update path - rather than
+ * on a parallel list that would have to re-earn all three. Calling is a
+ * channel, not a new concept.
+ *
+ * ── WHY THE SET IS SPELLED IN TYPESCRIPT AT ALL ─────────────────────────────
+ *
+ * It was not, until now: the ingest path inserts the channel it was handed and
+ * nothing here named the permitted values. A CHECK and an implicit set of
+ * strings drift, in both directions, and the failure is a bare 23514 from
+ * Postgres that reads like a bug in whoever called the endpoint. That exact
+ * thing has already happened on this codebase with `notifications.kind` - both
+ * directions at once - and it silently broke lead routing. So the set is named,
+ * and opt-out.test.ts pins it against the constraint twice over - once as a
+ * transcribed literal and once read out of the migration itself, because those
+ * two fail in opposite directions. Widening either side alone now fails the
+ * suite instead of production.
+ *
+ * ── FOR A CALL OPT-OUT, peer_address IS THE NUMBER KEY ──────────────────────
+ *
+ * Not an E.164. The number vault (0157) holds the only copy of the number, and
+ * a suppression list that stores numbers defeats the point of the vault. The
+ * key is `sha256(phoneMatchDigits(n))`, the same value leads and calls join on.
+ *
+ * ── A LIVE BUG THIS CLOSES ──────────────────────────────────────────────────
+ *
+ * 'instagram' and 'facebook' are here to repair something that predates the
+ * dialer entirely. `ConversationChannel` has both; `recordOptOut` in
+ * conversations.service.ts inserts the inbound message's channel straight into
+ * `messaging_opt_outs.channel` with no filtering; and 0111's CHECK allowed only
+ * whatsapp/sms/email. So an Instagram or Messenger user typing "unsubscribe"
+ * threw 23514 and their request to stop being contacted was never recorded.
+ *
+ * Dropping the request is the worst of the three options that were available.
+ * The request is the same request whichever inbox it arrives in, and
+ * `peer_address` has always been channel-relative - a number key for a call, an
+ * address for email, a page-scoped id for these two - so there was never a
+ * shape problem here, only a missing literal.
+ *
+ * This enum and 0158's CHECK therefore carry all six, and the test below
+ * asserts `OptOutChannel` is now a strict superset of `ConversationChannel`.
+ * That assertion is the thing to update if a seventh inbox channel is ever
+ * added - a new `ConversationChannel` value with no matching CHECK literal
+ * reintroduces exactly this bug, and it will read like a caller error.
+ */
+export const OptOutChannel = z.enum([
+  "whatsapp",
+  "sms",
+  "email",
+  "call",
+  "instagram",
+  "facebook",
+]);
+export type OptOutChannel = z.infer<typeof OptOutChannel>;

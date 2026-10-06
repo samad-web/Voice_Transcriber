@@ -33,9 +33,11 @@
 --
 -- The worker is not changed either. Its projection writes by contact hash and
 -- knows nothing about this column, so a new call from an archived lead's number
--- lands on the lead as it always did. That is the right answer: the contact
--- coming back is the one event that should bring the card out of the drawer,
--- and the API un-archives on that path rather than the worker guessing.
+-- still lands on that lead: the call, the count and the timeline are all
+-- recorded as they always were. It does NOT come back out of the drawer on its
+-- own, and that is deliberate - archiving is a person's decision, and an
+-- automatic un-archive would hand a tenant who had just tidied a hundred leads
+-- a pipeline that refilled itself overnight. Un-archiving is a button.
 
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS archived_at timestamptz;
 

@@ -84,3 +84,16 @@ export * from "./call-issues";
 export * from "./call-escalations";
 export * from "./export-datasets";
 export * from "./owner-scope";
+export * from "./dialable";
+// Doc 39 P1-P6. Until these were exported here, their consumers deep-imported
+// `@aura/shared/dist/<name>` - which works and is the established fallback
+// (console-phone.ts does it for ./phone), but only because `phone` and
+// `import-phone` are deliberately NOT in the barrel: both pull in
+// libphonenumber, and a barrel that drags it into every consumer is a barrel
+// nobody can import cheaply. These five have no such cost, so they belong here
+// and the deep imports in the API can collapse onto them.
+export * from "./dialer";
+export * from "./web-forms";
+export * from "./resources";
+export * from "./appointments";
+export * from "./partners";

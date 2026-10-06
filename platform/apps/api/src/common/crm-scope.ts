@@ -72,6 +72,26 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   // A product is a shared catalogue entry, not a person's record - no owner
   // column exists and none of its routes use RecordScope/scopeClause.
   product: null,
+  // Neither has an owner, and both are in ALL_SCOPE_ONLY_OBJECTS so the console
+  // never offers an `owned` scope to begin with. A vault number belongs to a
+  // phone number rather than to a user; a suppression list is an obligation the
+  // whole org carries no matter who uploaded it.
+  contact_number: null,
+  dnc: null,
+  // Doc 39 P1-P6. The four nulls are all in ALL_SCOPE_ONLY_OBJECTS - a
+  // campaign, a public form, the partner roster and a unit of inventory are
+  // whole-org things nobody personally owns.
+  dial_campaign: null,
+  web_form: null,
+  partner: null,
+  resource: null,
+  // The exception, and the reason `appointment` is kept out of
+  // ALL_SCOPE_ONLY_OBJECTS: a telecaller scoped to `owned` should see their
+  // own diary and not the whole clinic's. Same column and same reasoning as
+  // `conversation` above - an UNASSIGNED appointment is invisible to an
+  // owned-scoped role, which is the intended reading: a booking nobody has
+  // been given belongs to whoever can see all of them.
+  appointment: "assigned_user_id",
   quotation: "owner_user_id",
   invoice: "owner_user_id",
   // ── `lead` HAS NO OWNER COLUMN, AND MUST NOT BE SCOPED FROM HERE ────────

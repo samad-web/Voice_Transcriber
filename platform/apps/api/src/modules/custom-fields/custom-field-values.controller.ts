@@ -12,8 +12,8 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import {
+  CustomFieldObjectType,
   CustomFieldValuesInput,
-  type CustomFieldObjectType,
   type CustomFieldSpec,
   type CustomFieldType,
   parseCustomFieldValue,
@@ -314,7 +314,16 @@ async function assertLookupTarget(
   // The definition is invalid rather than the value - CustomFieldDefinitionInput
   // refuses to create a lookup without a target, so this can only be an older
   // row, and blaming the person filling in the form would be wrong.
-  if (!lookupObjectType || !["contact", "account", "deal"].includes(lookupObjectType)) {
+  //
+  // Derived from `CustomFieldObjectType`, never a second hand-written list.
+  // This was `["contact", "account", "deal"]` until 0165 widened that enum to
+  // include `resource`, at which point a lookup field pointing at a resource
+  // could be DEFINED and then refused every value with "lookup field has no
+  // valid target object type" - a message that blames the person typing for a
+  // list they cannot see. Deriving it means the next widening cannot
+  // reintroduce that, and the pluralisation below already resolves correctly
+  // for every member (`contacts`, `accounts`, `deals`, `resources`).
+  if (!lookupObjectType || !CustomFieldObjectType.safeParse(lookupObjectType).success) {
     throw new BadRequestException("lookup field has no valid target object type");
   }
   const found = await client.query(`SELECT 1 FROM ${lookupObjectType}s WHERE id = $1`, [id]);

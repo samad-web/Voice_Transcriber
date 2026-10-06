@@ -69,6 +69,17 @@ export const MERGE_REFERENCES: Record<MergeObjectType, MergeReference[]> = {
     { table: "lead_score_events", column: "contact_id", kind: "scored" },
     { table: "contact_tags", column: "contact_id", kind: "pair", key: "tag_id" },
     { table: "contact_custom_field_values", column: "contact_id", kind: "pair", key: "field_id" },
+    // Doc 39. Both are `simple` for the same reason every row above is: the
+    // survivor inherits the work owed to the person, because the duplicate is
+    // the same human and the obligation did not stop existing when somebody
+    // tidied the list.
+    //
+    // Left behind, an appointment would vanish from the surviving contact's
+    // timeline while still occupying its resource - a chair booked for nobody
+    // - and a queued dial would sit pointing at a tombstone, so the agent who
+    // reached it would see a blank record and skip it.
+    { table: "appointments", column: "contact_id", kind: "simple" },
+    { table: "dial_queue_items", column: "contact_id", kind: "simple" },
   ],
   account: [
     { table: "contacts", column: "account_id", kind: "simple" },

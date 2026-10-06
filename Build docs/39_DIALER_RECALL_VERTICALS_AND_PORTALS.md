@@ -254,12 +254,27 @@ but kept it"* must not be a sentence anyone can say about this table.
 
 ### §2.1 Disclosure is audited; dialing is not separately audited
 
-A human revealing a number in the console is a disclosure and writes an `auth_events` row (0127
-— reuse it, do not invent a second audit table). A queue push to a handset is not separately
-audited because the dial attempt is already a durable record (§8).
+A human revealing a number in the console is a disclosure and writes an **`audit_log`** row. A
+queue push to a handset is not separately audited because the dial attempt is already a durable
+record (§8).
+
+> **Correction to this section's first draft, which said `auth_events` (0127).** That table
+> cannot take the row, for three independent reasons found during the build and each verified
+> against the migration: its `kind` column is `CHECK (kind IN ('sign_in','sign_in_failed',
+> 'sign_out','sign_out_all','password_changed'))` and nothing between 0127 and 0158 widens it,
+> so a sixth kind is a 23514 — the exact drift failure §4.1 warns about; `REVOKE ALL ON
+> auth_events FROM <api_role>` means a route running inside `withOrg` **physically cannot write
+> it**; and it is keyed on the person, with 0127 naming its org column `console_org_id`
+> specifically so nothing mistakes it for a tenant boundary — so a tenant asking *"who looked up
+> our customers' numbers?"* could never be answered from it.
+>
+> `audit_log` is not a second audit table, it is the **first** one: 0001_init, org-scoped,
+> append-only (UPDATE and DELETE revoked from `aura_app`), and already the home of 0122's
+> call-access disclosure trail. Its `action` is open text, so no CHECK moves. The instruction
+> that mattered — *do not invent a new audit table* — is honoured; the table named was wrong.
 
 **Only two routes in the entire API may serve `e164`:** `GET /numbers/:key/reveal` and the
-handset's `GET /device/dialer/next`. Add a spec that greps the API source for `e164` and asserts
+handset's `GET /devices/me/dialer/next`. Add a spec that greps the API source for `e164` and asserts
 the exact file list, the way `permissions-inventory.spec.ts` pins a set that would otherwise
 drift. A third reader must be a deliberate, reviewed change to that assertion.
 
@@ -278,8 +293,115 @@ Do not add a second privacy axis beside it — one axis, extended:
 
 **Backfill, for orgs already on `store_full_number`:** one statement seeds the vault from
 `calls.remote_number_full` with `source='call'`, `consent_basis='customer_initiated'` —
-`WHERE direction = 'in'` only. They rang us, which is the strongest basis there is. An *outbound*
-call proves nothing about consent and must not be backfilled as though it did.
+**`WHERE direction = 'incoming'`** only. They rang us, which is the strongest basis there is. An
+*outbound* call proves nothing about consent and must not be backfilled as though it did.
+
+> The first draft of this section wrote that predicate as `direction = 'in'`. **There is no such
+> value**: `calls.direction` has been `CHECK (direction IN ('incoming','outgoing'))` since
+> 0001_init.sql:141, and `CallDirection` in `packages/shared/src/enums.ts` agrees. The wrong
+> literal would not have errored — it would have matched zero rows, and a backfill that seeds
+> nothing is indistinguishable from one that ran correctly against a tenant who had no inbound
+> calls. 0157 therefore ends with a `RAISE NOTICE` stating how many numbers it seeded across how
+> many orgs, so a silent no-op is visible in the migration output rather than discovered weeks
+> later when the first campaign preview reports every lead as `no_number`.
+
+Two further constraints the backfill needs, neither of them in the DDL above: take
+`DISTINCT ON (org_id, number_key)` ordered by `started_at DESC`, so a number called fifty times
+seeds once from its most recent call; and guard the shape with
+`e164 ~ '^\+[1-9][0-9]{6,14}$'` before inserting, because `remote_number_full` was captured by
+handsets over several app versions and is not guaranteed to be E.164.
+
+### §3.1 The backfill cannot normalise a bare ten-digit number, and that needs a second pass
+
+A number stored as `9876543210` has no country code, and **the migration cannot add one.**
+libphonenumber does not exist inside Postgres, `'+9876543210'` would parse as country code 98,
+and there is nothing in the schema to borrow the right code from — `org_business_profile` (0126)
+holds an ISO-2 country, not a calling code, and an ISO-2 → calling-code table is 200 rows that
+have no business living in a migration.
+
+So 0157 seeds **only numbers that already carry their country code** and silently skips the rest.
+0133's own header notes that an *incoming* call usually arrives as `+919876543210`, and incoming
+is the only direction backfilled, so this should cover the large majority — but "should cover the
+majority" is not a number, and the failure mode is the quiet one: those leads simply report
+`no_number` in the first campaign preview, which looks like an empty vault rather than a partial
+one.
+
+**This is therefore a P0 deliverable, not a later cleanup.** Built as
+`platform/scripts/normalise-vault-numbers.js` — beside `backfill-leads.js` and
+`backfill-lead-temperature.js`, which is where every other one-off backfill in this repo lives.
+A script and not a migration, because it needs libphonenumber.
+
+1. It reads the rows 0157's shape guard rejected, resolves each against the owning org's country
+   from `org_business_profile` (0126), and upserts what parses. Re-runnable; `ON CONFLICT DO
+   NOTHING`, and a second run reports zero seeded rather than erroring.
+2. **Dry run is the default**; writing requires `--apply` spelled out. That inverts
+   `backfill-lead-temperature.js`'s convention deliberately: this script is normally first
+   pointed at a live tenant's call history, and the counts *are* the deliverable, so they must be
+   obtainable without writing a byte.
+3. It runs per-tenant reads and the insert through `withOrgContext` as `aura_app`, **with RLS
+   enforced** — not on the admin pool that `migrate.js`/`seed.js`/`verify-rls.js` use. Those
+   bypass RLS, which is tolerable for schema work and not tolerable on the one table in the
+   platform that holds a dialable number. Only the cross-tenant org list uses the admin pool.
+4. **Use `importPhone()` from `import-phone.ts`, not `checkPhone`/`toE164` from `phone.ts`.**
+   This section's first draft said "resolve through `@aura/shared/dist/phone`" and following that
+   literally would have been a bug: `phone.ts` is a *console form* validator and refuses an
+   explicit `+971 50 123 4567` under an IN org as `wrong_country`, on the reasoning that a human
+   at a form could have picked the wrong country from the dropdown. A call row has no dropdown.
+   `import-phone.ts` already solves exactly this problem for spreadsheet imports — it honours a
+   number that states its own country, and retries digits-only values against the org's calling
+   code *only*, so a bare foreign number is refused rather than guessed at. Neither module is in
+   the shared barrel (both pull in libphonenumber), so require them from their own dist files.
+
+### §3.2 The counts are four buckets, and two of them are recoverable
+
+Counted in **distinct numbers, not calls** — a number rung fifty times is one number, and the two
+units differ by an order of magnitude.
+
+| Bucket | Meaning | Recoverable? |
+|---|---|---|
+| **seeded** | Resolved and written | — |
+| **already in the vault** | 0157 got it | — |
+| **still-unparseable** | We had the org's country and libphonenumber still refused. No further information would change that | No |
+| **ambiguous** | Probably a real number, but more than one defensible reading and no honest basis to choose | **Yes** |
+
+"Already in the vault" is the bucket that makes `0 seeded` on a second run readable as *"nothing
+left to recover"* rather than *"nothing worked"*.
+
+Ambiguity has four distinct causes and each is reported separately, because the fix differs:
+`no_org_country` (no profile row at all — note `org_business_profile.country` is `NOT NULL
+DEFAULT 'IN'`, so a country can only be missing by the row being absent); `two_readings` (the
+digits are valid both as a national number and as `+digits`, and the two disagree —
+`importPhone` silently prefers the national reading, and the script refuses instead of
+preferring); `key_conflict` (two spellings share a `number_key` but resolve to different E.164s —
+choosing by recency would be inferring a country from whichever row was newer); and
+`key_disagrees` (`calls.remote_number_key` disagrees with the shared key helper on that row,
+meaning one of the two is wrong and the vault row would join to nothing).
+
+**Nothing is ever guessed.** `DEFAULT_PHONE_COUNTRY` is not used as a fallback — it exists for a
+console field a human can see and correct, and a wrong country code produces a number that dials
+a stranger. An org with no country is never dropped from the run; all its numbers land in
+`no_org_country` and the summary names it, because setting the country and re-running fixes it.
+
+### §3.3 What neither the script nor 0157 can promise
+
+Two honest limits, both worth knowing before a campaign is built on this data:
+
+1. **0157's `RAISE NOTICE` reports a total, not a coverage ratio.** It counts `source='call'` rows
+   in the whole vault, so it distinguishes "seeded nothing" from "seeded something" — it cannot
+   distinguish "seeded everything" from "seeded half". §3's claim that the notice makes the
+   failure visible holds only for the total no-op case. The script's four buckets are what
+   actually measure coverage.
+2. **Validity means length and plan shape, not "a human answers this".** `checkPhone` accepts
+   `+911234567890` because libphonenumber's current metadata calls it a valid Indian
+   `FIXED_LINE`; India's landline space is broad. So a junk ten-digit string inside that range
+   **will be seeded, with `consent_basis = 'customer_initiated'`** — the strongest basis — over
+   somebody who never rang anybody. This is deliberately **not** fixed by adding a stricter rule
+   here: the console's own `PhoneInput` accepts the same number, and two definitions of "valid"
+   agree only until somebody edits one. It does mean the still-unparseable count reads lower than
+   intuition suggests. Flagged in `phone.ts`'s header, which previously claimed the opposite.
+
+Run the script and read its output *before* P1's acceptance test, because "the dialer works" and
+"the dialer has anything to dial" are different claims and only the second one depends on this.
 
 ## §4. Suppression — migration 0158
 
@@ -357,21 +479,112 @@ check** immediately before `ACTION_CALL`.
 This is not tidiness. The reprocess-failed-calls panel shipped with one shared window predicate
 specifically so the preview and the bill could not disagree. A dialer with two copies of this
 logic will tell a supervisor "4,812 dialable" and then ring 4,900 — and the extra 88 are the ones
-on the DNC list. Quiet hours come from `quiet-hours.ts` (exists) resolved in the org's timezone
-(0132: `withOrgContext` sets `TimeZone` per org, so say UTC explicitly anywhere you need it).
+on the DNC list.
 
 The handset check is the one that must not be skipped as "redundant". A queue item built at 09:00
-and dialled at 21:30 by an agent working late is outside quiet hours *at dial time*, and only the
-third caller can know that.
+and dialled at 21:30 by an agent working late is outside the calling window *at dial time*, and
+only the third caller can know that.
+
+### §5.1 The calling window needed storage, and did not have any
+
+The first draft said quiet hours are "resolved in the org's timezone" and left it there. That was
+a hole, not an abbreviation: `quietHoursFromEnv` in `@aura/shared` is configured from
+`QUIET_HOURS_START` / `QUIET_HOURS_END` / `SCHEDULER_TIMEZONE` — **deployment-wide environment
+variables**. Falling back to those would have given every tenant on the VPS one shared calling
+window, so a clinic in Kerala and a desk selling into Dubai would be held by the same clock.
+
+0157 therefore adds two columns to `organizations`:
+
+| Column | Default | Why |
+|---|---|---|
+| `calling_window_start_hour` | `9` | Local hour from which outbound calls may be placed |
+| `calling_window_end_hour` | `21` | Exclusive — 21 means the last call may start at 20:59; 24 means end of day |
+
+**The default is 09:00–21:00 rather than "no window", and that is the one place in P0 where the
+permissive default is the wrong one.** India's telemarketing rules put outbound commercial calls
+inside those hours, and it is also simply what a person would call a reasonable hour. A tenant
+who has thought about it can widen or narrow; a tenant who has not is compliant by accident
+rather than exposed by accident. Nothing dials yet, so setting it correctly now is free.
+
+**The zone is deliberately not a third column.** `organizations.reporting_timezone` already
+exists and `org_reporting_tz()` (0132) already resolves it with an `Asia/Kolkata` fallback. A
+calling window in a different zone from the tenant's own reports would be a bug nobody would
+ever find.
+
+`quiet-hours.ts` models the *complement* of a calling window, so the conversion is a swap done in
+exactly one place (`quietHoursForCallingWindow`): the window's end becomes quiet-start and its
+start becomes quiet-end. `inQuietWindow` is half-open, which lands the boundaries where an owner
+expects them — 09:00 dials, 21:00 does not — and the wrapping-midnight branch then handles a
+night-shift window for free.
+
+### §5.2 Evaluation order is a contract, because the preview counts by reason
+
+§5's union above lists the reasons; it does not define the order they are *evaluated* in. It has
+to, because the preview groups records by the reason returned, so the order decides what a
+supervisor reads. The implemented order is:
+
+```
+no_number → consent_unknown → opt_out → dnc_list → max_attempts → quiet_hours → retry_too_soon
+```
+
+Three tiers of **descending permanence**, so the reason a human reads is the one still true
+tomorrow:
+
+1. **May not ring this person at all** — facts about the person, undone only by a human:
+   `no_number`, `consent_unknown`, `opt_out`, `dnc_list`. The individual's own request, which
+   carries provenance, outranks a bulk list.
+2. **May not ring from this campaign again** — `max_attempts`.
+3. **May not ring at this moment** — `quiet_hours` (org-wide), then `retry_too_soon` (per record).
+
+The mistake this avoids: evaluate the clock first and a record whose attempts are exhausted,
+checked at 22:00, reports `quiet_hours` — so a supervisor reads "it dials in the morning" about a
+record that never will. Worse at the top of the list: a DNC number reported as `retry_too_soon`
+tells an agent to try again tomorrow. `DIAL_BLOCK_ORDER` is the order, and a test walks it by
+peeling off one block at a time.
+
+> **Naming wart, left deliberately.** `quiet_hours` means "outside the calling window" and is
+> named after the complement, so the agent-facing label has to read the opposite of the
+> identifier ("Outside calling hours"). The string is kept because it is what `block_reason`
+> stores and what the plan specifies; renaming it later costs a data migration for no behaviour.
+
+### §5.3 Boundary semantics the first draft left undefined
+
+`retry_after_hours` has no CHECK in §7's DDL (unlike `max_attempts BETWEEN 1 AND 10`), so zero
+and negatives are storable. Decided and tested:
+
+| Case | Behaviour | Why |
+|---|---|---|
+| Exactly `retry_after_hours` since the last attempt | **Dialable** — the boundary is exclusive | |
+| `0`, negative or `NaN` | No gap; dialable | A misconfigured gap must not become an unexplainable permanent block |
+| No last attempt recorded | No gap; dialable | Blocking would park a record forever behind a reason that explains nothing |
+| Last attempt in the **future** | **Blocks** | A handset with a wrong clock. Waiting costs a slot; ringing costs the customer's patience |
+
+### §5.4 A `probable` opt-out must be surfaced, not just ignored
+
+Only a `certain` opt-out blocks — `opt-out.ts`'s header explains at length why the ambiguous tier
+must never silence somebody on its own. But "does not block" cannot mean "is not shown". A
+`probable` opt-out is precisely the case the ambiguous tier exists to put in front of a person,
+and a dial is that person arriving.
+
+`hasUnconfirmedOptOut` exists for this. **§11's agent screen must render it** — a banner on the
+record saying this customer may have asked to stop, with the message that triggered it, before
+the agent presses Call. Without that, the platform is quietly ignoring a possible request while
+technically honouring the rule.
 
 ## §6. P0 is done when
 
 - [ ] A tenant with `store_full_number = false` has an empty vault and no new behaviour.
-- [ ] Turning it on and running the backfill populates the vault from inbound calls only.
+- [ ] Turning it on and running the backfill populates the vault from `direction = 'incoming'`
+      calls only, and the migration's `RAISE NOTICE` reports a non-zero count.
+- [ ] §3.1's normalisation script has run and its three counts are recorded, so the size of the
+      un-normalisable remainder is a known number rather than a surprise in P1.
 - [ ] `GET /numbers/:key/reveal` returns a number, writes an `auth_events` row, and 403s without
-      the `dnc:view`-adjacent grant; the `e164` grep spec passes with exactly two files.
-- [ ] Uploading a 40k-row DNC sheet in mixed formats produces 40k keyed entries and a correct
-      `entry_count`.
+      **`contact_number:view`** (not `dnc:view` — see §31); the `e164` grep spec passes with
+      exactly two files.
+- [ ] A `viewer`-role user is refused the reveal route, and a `workspace_member` is allowed it.
+- [ ] Uploading a 40k-row DNC sheet in mixed formats produces 40k keyed entries and an
+      `entry_count` reconciled **in the same transaction as the bulk insert** — nothing in the
+      schema keeps that column true, so the import service owns it.
 - [ ] A WhatsApp "stop calling me" produces a `channel='call'` opt-out, and `opt-out.test.ts`
       asserts CHECK and zod agree.
 - [ ] `dialability()` returns each of its seven reasons under a unit test, and the same input
@@ -508,10 +721,48 @@ that put `NO_AUDIO` calls in 0133 rather than discarding them.
 | `POST /dialer/campaigns/:id/pause` | Tenant + edit | |
 | `GET /dialer/campaigns/:id/live` | Tenant + view | Supervisor rollup. One query. |
 | `POST /dialer/queue/:id/skip` | Tenant + edit | Agent skips with a reason. |
-| `GET /device/dialer/next` | `DeviceAuthGuard` | Claims the next item under a 120s lease. One of only two routes serving `e164` (§2.1). |
-| `POST /device/dialer/attempts` | `DeviceAuthGuard` | Handset reports dialed/ended/result. Idempotent on a client key, same contract as the call upload. |
+| `GET /devices/me/dialer/next` | `DeviceAuthGuard` | Claims the next item under a 120s lease. One of only two routes serving `e164` (§2.1). |
+| `POST /devices/me/dialer/attempts` | `DeviceAuthGuard` | Handset reports dialed/ended/result. Idempotent on a client key, same contract as the call upload. |
 
 Nine tenant-scoped routes and two device routes.
+
+### §8.1 Corrections found while building it
+
+**The device routes are mounted at `devices/me/dialer/*`, not `/device/dialer/*`.** This looks
+cosmetic and is not. `topicForApiPath` in `packages/shared/src/realtime.ts` derives a realtime
+topic from the route that changed, and **`devices/me` is an explicitly SILENT prefix** — its own
+comment says the handset fleet talks to it constantly with update checks, nonces and heartbeats,
+"none of it changes anything a console is displaying". A route under `/device/` is not silent, so
+every attempt report would have derived topic `device` and broadcast a change to every open
+console in the tenant — hundreds an hour on a progressive floor, each one making a console
+re-read its device list.
+
+**Four columns §7 does not have, each of which something else in the plan requires:**
+
+| Column | Why §7 is incomplete without it |
+|---|---|
+| `dial_attempts.client_ref` + partial unique `(org_id, client_ref)` | §8 promises "idempotent on a client key" and §7 gives it nowhere to live. Without it a retried offline report double-counts the dial **and** steps the record past `max_attempts`. |
+| `dial_attempts.link_ambiguous_at` + `link_candidate_count` | §10 requires ambiguity be surfaced rather than guessed, and §7 has nowhere to record it. |
+| `dial_queue_items.last_attempt_at` | `dialability()` needs it for `retry_too_soon`. A correlated `max()` per record over a preview's thousands of rows at Seoul latency turns an honest count into an estimate. |
+| partial unique on `dial_attempts (call_id)` | §10 says "neither row is already matched" and nothing enforced it. |
+
+**§10 only names one direction of ambiguity.** Two calls for one attempt is the case it
+describes; two attempts for one call fails worse, because the unique index on `call_id` makes
+the second write throw and the sweep look broken. Both are detected in one windowed statement
+and a pair links only when both counts are 1.
+
+**§8's permission mapping conflates an agent's Skip with pausing the floor.** Both are
+`dial_campaign:edit`, so 0159 must seed `edit` to `workspace_member` or a telecaller cannot work
+a queue at all — which also lets them pause or rebuild a campaign. That is a real wart, shipped
+knowingly: the fix is a separate `dial_campaign:dial` action, after which `edit` narrows to the
+three admin roles like `dnc:edit`. A test asserts skip and pause currently share an action, so
+the day somebody splits them the grant gets revisited.
+
+**§12's "previous call's AI summary" has no column behind it.** There is no per-call summary
+anywhere in the schema. `leads.summary` — the merged extraction snapshot — is what the handset
+actually gets, which is close but not the same thing: it is the lead's accumulated picture, not
+what was said on the last call. A true per-call summary is a schema change this plan never
+asked for, and §12's claim should be read with that substitution in mind.
 
 > **The route-count trap, with the real numbers.** `common/guard-mounting.spec.ts` reflects over
 > Nest's own `__guards__` metadata and asserts hard counts. **As of 0156 these are 555 routes
@@ -531,7 +782,7 @@ exact shape of work — fetch from server, persist locally, show a full-screen U
 
 | File | Job |
 |---|---|
-| `DialerApi.kt` | `GET /device/dialer/next`, `POST /device/dialer/attempts` |
+| `DialerApi.kt` | `GET /devices/me/dialer/next`, `POST /devices/me/dialer/attempts` |
 | `DialerStore.kt` | Current item + pending attempt reports, SharedPreferences-backed |
 | `DialerQueueActivity.kt` | Agent screen: who, why, last call's AI summary, Call / Skip |
 | `DialerCallWatcher.kt` | `READ_PHONE_STATE` listener → `ended_at`, `duration_sec`, `result` |
@@ -568,7 +819,7 @@ Matching runs in the **worker** on the existing `remote_number_key`:
 An attempt and a call belong together when:
   same org, same device,
   calls.remote_number_key = the queue item's number_key,
-  calls.direction = 'out',
+  calls.direction = 'outgoing',   -- NOT 'out'; see §3's correction
   calls.started_at BETWEEN attempt.dialed_at - 30s AND attempt.dialed_at + 120s,
   and neither row is already matched.
 ```
@@ -600,6 +851,12 @@ is queued, **the previous call's AI summary and extracted facts above the dial b
 disposition picker (reuse `call-dispositions.ts` and 0144's resolution model), Call / Skip /
 Pause. Progressive mode shows a cancellable countdown — an agent who needs ten seconds to read
 the last summary must be able to take them.
+
+It must also render the **unconfirmed opt-out banner** from §5.4 when `hasUnconfirmedOptOut` is
+true: *"This customer may have asked us to stop contacting them"*, with the message that
+triggered it, above the Call button. This is not decoration. A `probable` opt-out deliberately
+does not block, on the grounds that a person should decide — and the agent is that person. If
+the screen does not show it, nobody decides and the request is silently dropped.
 
 **Supervisor live** (`/owner/dialer/[id]`). Per agent: position, attempts, connects, connect
 rate, average handle time, current state. **Peer comparison uses the median, not the mean** —
@@ -749,6 +1006,51 @@ its position in the sequence suggests.
 
 **Distribution:** hosted link, `<iframe>`, a `<script>` embed that injects an iframe and posts
 height messages (no second rendering engine), and a QR PNG.
+
+### §16.1 Corrections found while building it
+
+**The slug must be globally unique, not `UNIQUE (org_id, slug)`.** §15's DDL cannot work:
+`/f/<slug>` carries no tenant and a public page has no session, so there is nothing to resolve
+an org from before the lookup. Same bootstrap problem and same answer as `lead_sources_token`.
+A collision is never surfaced to the tenant — create appends a short random suffix and returns
+the real slug, because `-2` would tell them somebody holds the bare name and how many do.
+
+**The submit endpoint cannot literally live on the marketing app.** `apps/marketing` connects as
+`aura_marketing`, which holds USAGE on the `marketing` schema and nothing else, deliberately and
+with no fallback — and `web_forms` is in `public`. So the page and the submit route are served by
+the marketing container and **proxy to the API**. The proxy adds exactly two things: the
+visitor's `x-forwarded-for` (without it `trust proxy` puts every tenant's forms in one rate
+bucket) and the browser's `Origin` as a body field.
+
+**`X-Frame-Options: DENY` had to be narrowed, and this is the one security-relevant change in
+P3.** The marketing app sent it on `/:path*`, which makes both embed methods a blank box. The
+catch-all is now `/((?!f/).*)` with a second rule giving `/f/:path*` the same other headers plus
+`frame-ancestors *`. Verified: `/`, `/faq`, `/f`, `/start`, `/privacy` and `/fa/x` all still get
+`DENY`; only `/f/<slug>` is framable. The premise that makes this acceptable was checked rather
+than assumed — **the form page carries no session, no cookie and no credential read**, so a
+clickjack of it submits a lead to the tenant who published it. There is no "allow any" value for
+`X-Frame-Options`, so not matching the rule is the only way to omit it.
+
+**On a tenant with `store_full_number = false`, the form builder supplies zero dialable
+numbers.** §16 calls it "the main supply of legitimately dialable numbers" without mentioning
+0011's switch, and the vault correctly writes nothing while it is off. The claim holds only for
+tenants who have turned it on.
+
+**The vault write is a second transaction, deliberately.** `lead_intake_events.id` does not
+exist until `ingestPayload` commits, so the evidence §16 asks for cannot be written inside that
+transaction without storing only the untrusted half. It is wrapped so it can never cost the
+tenant the lead, and the upsert is idempotent and promoting, so a failure self-heals on the next
+submission or the first inbound call.
+
+**Not built: the QR PNG.** `qrcode` is in the monorepo but linked only into `apps/web`, and
+pnpm's isolated `node_modules` means neither the API nor the marketing app can resolve it. The
+API returns `distribution.qrEncodes` — the exact string — and the console already renders QRs
+client-side with `QRCode.toDataURL()` in two places. It is one line in the Distribution panel,
+which is `apps/web` work.
+
+> A note for future briefs: `apps/marketing/app/capture/` is **not** the public funnel. It is a
+> dev-only Playwright stage for the hero GIF that calls `notFound()` in production. The real
+> funnel is `apps/marketing/app/start/` plus `lib/funnel/`.
 
 **P3 is done when:** a form built in the console, published, and submitted from a third-party
 page creates a lead through the intake ledger, routes by the existing rules, writes a vault row
@@ -1478,8 +1780,17 @@ Every phase owes all of these. They are collected here so no phase has to redisc
 
 ## §31. Permissions
 
-New `PermissionObjectType` entries: `dnc`, `dial_campaign`, `web_form`, `partner`,
-`service_ticket`, `resource`, `appointment`, `recurrence`.
+New `PermissionObjectType` entries: `contact_number`, `dnc`, `dial_campaign`, `web_form`,
+`partner`, `service_ticket`, `resource`, `appointment`, `recurrence`.
+
+`contact_number` was added during the P0 build and is a correction to this section's first
+draft, which only listed `dnc`. §2.1 says the reveal route "requires a permission grant (§4.2)",
+but §4.2 defines the *suppression* object — and revealing a customer's phone number is not the
+same trust decision as managing a do-not-call list. A role that may maintain suppression lists
+is not automatically a role that may read customer phone numbers, and collapsing the two would
+have made the stricter of the two permissions unreachable. So: `contact_number` carries `view`
+only (there is no "edit a number" — the vault is written by the intake paths), and `dnc` carries
+`view`/`create`/`edit`.
 
 > **Widening the enum without seeding grants locks every user out of the new object**, because
 > `CrmPermissionsGuard` denies whatever it finds no grant for. 0041 (`task`), 0059/0060
@@ -1584,7 +1895,7 @@ Each of these has already cost this codebase at least a day.
 12. **The isolation suite is opt-in and rots**, runs `dist`, and a case that 403s before the
     handler proves nothing (§17).
 13. **Mumbai API, Seoul database: ~125ms per round trip.** Every list here needs one query, not
-    N. `GET /device/dialer/next` is called constantly: one query, one index.
+    N. `GET /devices/me/dialer/next` is called constantly: one query, one index.
 14. **The repo is public.** Scan every commit's patch before pushing. This plan touches consent
     text, suppression lists, partner codes and vault numbers — none of it belongs in a fixture.
 15. **Local has no Supabase**, so logins are impossible — use the `DEV_ORG_ID` path and ensure a
@@ -1671,7 +1982,7 @@ Rollback: each `rollback/NNNN_down.sql` is written with its migration, not after
 
 ---
 
-# Part M — Decisions made, and the ones still open
+# Part M — Decisions
 
 ## §39. Made, and why
 
@@ -1702,30 +2013,79 @@ Rollback: each `rollback/NNNN_down.sql` is written with its migration, not after
   ticket reporting; `auth_events` (0127) for disclosure audit. Nine new surfaces, deliberately
   few new primitives.
 
-## §40. Open — these need your answer
+## §40. Answered — 2026-10-06
 
-1. **CSAT auto-send** (§21). Manual only, or the owner-flag version? The flag is built and off.
-2. **Journey auto-send** (Part I). Same question, higher stakes. Without it, "marketing
-   automation" is a human-paced queue. I recommend shipping P8 without it and revisiting with a
-   pilot tenant.
-3. **Recall auto-send** (§27.2). The most commercially tempting of the three — "SMS the customer
-   when their service is due" is what a dealership will ask for on day one. My answer is the same
-   owner-thrown switch; confirm that is what you want offered.
-4. **`consent_basis = 'unknown'` dialing** (§3). The flag exists and defaults off. Turning it on
-   is a tenant's legal exposure to accept, but whether we offer the switch at all is ours.
-5. **Vault encryption at rest** (§2). Strict grants + audit as specified, or pgcrypto on `e164`?
-   Encryption means key management on the self-hosted stack and breaks the `number_key` lookup
-   unless the key stays plaintext. I chose grants; say if that is not enough.
-6. **Partner portal hostname** (§19). `/portal` on the main app is less work; a separate hostname
-   is a clearer trust boundary and needs nginx work plus a cookie-scope decision — mind the
-   header-buffer fix from 2026-09-30 if you add a host.
-7. **Dialer rollout.** It needs `CALL_PHONE`, which is a permission prompt on every handset and a
-   fresh reason for a telecaller to refuse. I would pilot on one org with a cooperative team
-   before the fleet.
-8. **Pack wave order** (§29.3). The ranking follows the moat, not the loudest request. If the
-   next three customers are all builders, say so and real estate moves to wave 1 — the primitives
-   do not change, only the seed data does.
-9. **Is `finance` really the compliance anchor?** It is the one industry needing no `resources` at
-   all, so it looks like the odd inclusion. It earns its place because TRAI DND turns P0 from a
-   feature into a licence to operate. If you disagree, that is the argument to beat — not the
-   resource model.
+Every question in this section was put to the owner and answered on 2026-10-06. The answers are
+recorded verbatim in intent, with the consequence each one has on the build. Where an answer
+differs from the recommendation, that is noted — the recommendation is not the decision.
+
+### Verification and sequencing
+
+1. **The thirteen unrun migrations (0154–0166): run locally first.** Docker comes up here, 0154
+   through 0166 are applied to a local Postgres, and the partner-isolation suite and
+   `verify-rls.js` run against real SQL before another phase is built. Nothing in this document
+   past 0153 has executed a single statement; typecheck and unit tests do not run SQL. 0163 walls
+   roughly 130 tables and has never run once. **This blocks the next wave.**
+2. **Commit locally, do not push.** The repo is public; unverified schema does not go up. The push
+   happens after the migrations have actually run.
+3. **Next wave: everything.** Console UI for what P1–P6a already built, P6b (0167/0168), P5
+   (0164), and P7/P8. The console UI is the one that unblocks `features.ts` — until it exists the
+   previous wave is invisible to every tenant.
+
+### Sending — all three switches
+
+4. **CSAT (§21): owner-thrown switch, default off.** A human in the tenant turns it on once,
+   knowing what it means; the survey then goes on ticket close.
+5. **Journeys (Part I): ship without auto-send.** Journeys produce a queue a person approves. The
+   step logic gets proved on a real tenant before anything sends unattended. Revisit with a pilot.
+6. **Recall (§27.2): owner-thrown switch, default off.** The switch is offered; recurrences keep
+   producing work until a tenant throws it.
+
+   The standing rule is unchanged by any of these three: nothing automated reaches a real person
+   without someone having said yes, and the yes is a tenant's, not ours.
+
+### Data and access
+
+7. **`consent_basis = 'unknown'` (§3): offer the switch, default off, log every reveal.** Numbers
+   already in a tenant's own call history are theirs; refusing to dial them makes the vault
+   useless for the backlog that is most of what a new tenant has.
+8. **Vault encryption (§2): strict grants and audit, as built.** No pgcrypto. Key management on
+   the self-hosted stack plus a plaintext key for the `number_key` lookup would spend the cost and
+   keep little of the benefit. Revisitable later without data loss if a tenant demands it.
+9. **Partner portal (§19): hidden for now; its own hostname later.** The code, the API and the
+   0163 wall all stay and stay tested, behind an off-by-default feature key — no nav entry, no
+   reachable page, API 404 without the key. When the portal does go live it goes live on a
+   separate hostname, not on `/portal` of the main app. **Nothing partner-facing ships in this
+   round.**
+
+### Dialing limits
+
+10. **`max_attempts` becomes a per-person daily cap as well as a per-campaign one** — org-level,
+    checked alongside the campaign ceiling, one new column and one more input to `dialability()`.
+    **It defaults to unlimited**, not to 3: no tenant's behaviour changes on upgrade, and the cap
+    only applies once someone sets it.
+
+    This is a deliberate choice to leave the 2× exposure open by default rather than silently
+    throttle a running floor. The obligation it creates is a UI one: the per-person cap must be
+    shown **next to `max_attempts` wherever a campaign ceiling is set**, so a supervisor typing 3
+    sees in the same breath that it is per campaign and that the cross-campaign total is
+    uncapped. Burying it in a settings page would make the default indefensible.
+
+### Rollout and packs
+
+11. **Dialer: test on one handset, then pilot one org.** Not fleet-wide. `CALL_PHONE` is a fresh
+    prompt on every phone and the attempt↔call matcher has never seen a real SIM call.
+12. **One APK with the whole backlog.** 1.3.0 carries attendance (1.2.0), phone alerts and
+    escalations (1.2.1) and missed-call capture, not just the dialer. The fleet is three versions
+    behind; three separate rollouts of a permission prompt is three times the support cost.
+13. **Pack order (§29.3): keep the moat ranking.** Ship where recorded-call extraction decides the
+    sale. Real estate does not move to wave 1.
+14. **Finance stays, and stays in wave 1 (§29).** The DND argument holds: lending and insurance
+    are where outbound calling is regulated hardest, which is what P0's suppression and DNC work
+    was built for. That it needs no `resources` row is the point, not the flaw — it proves the
+    primitives are optional.
+
+### Decided here, not asked
+
+- **`app/(portal)` joins the palette test's `STRICT` scope.** It is clean against both rules
+  today, so adding it costs nothing now and stops the portal drifting while it sits gated off.

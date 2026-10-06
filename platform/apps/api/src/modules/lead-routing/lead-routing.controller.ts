@@ -19,13 +19,16 @@ import { notifyBackfillSummary, routeLead } from "@aura/db";
 import {
   LeadRoutingRuleInput,
   LeadRoutingRulePatch,
+  LeadRoutingStickyFallback,
   LeadRoutingStrategy,
   LeadRoutingTargetInput,
   pickRoutingTarget,
+  resolveStickyConfig,
   shareReality,
   sharesProblem,
   simulateRouting,
   type RoutingCandidate,
+  type StickyContext,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
@@ -138,6 +141,31 @@ interface TargetStateRow {
   last_assigned_at: string | null;
 }
 
+/**
+ * The sticky context the CONSOLE previews against (migration 0160).
+ *
+ * `priorOwners: []` on purpose. There is no lead here and therefore no number
+ * to resolve, so the honest preview of a sticky rule answers the question
+ * somebody actually has in front of the rules page - "who gets the next lead
+ * from a number nobody has called?" - which is its fallback's sequence, and
+ * which is the path the overwhelming majority of leads will take.
+ *
+ * A preview that invented a returning caller would show one name five times
+ * and tell the tenant nothing about how their desk is loaded.
+ */
+function previewSticky(
+  rule: { strategy: string; sticky_window_days: number | null; sticky_fallback: string | null },
+  attendanceTracked: boolean,
+): StickyContext | undefined {
+  if (rule.strategy !== "sticky") return undefined;
+  return {
+    windowDays: rule.sticky_window_days,
+    fallback: LeadRoutingStickyFallback.safeParse(rule.sticky_fallback).data ?? null,
+    priorOwners: [],
+    attendanceTracked,
+  };
+}
+
 function toCandidate(row: TargetStateRow): RoutingCandidate {
   return {
     id: row.id,
@@ -171,13 +199,22 @@ export class LeadRoutingController {
         strategy: string;
         cursor: string;
         assignedCount: string;
+        sticky_window_days: number | null;
+        sticky_fallback: string | null;
       }>(
+        // The two sticky columns come back snake_cased as well as camelCased:
+        // `previewSticky` reads the row the way the engine's own loader does,
+        // and the camelCase pair is what the console renders. One extra
+        // projection on a read that is already one round trip.
         `SELECT id, name, description, strategy, match, status, priority,
                 workspace_id AS "workspaceId", cursor,
                 assigned_count AS "assignedCount",
                 window_started_at AS "windowStartedAt",
                 last_assigned_at  AS "lastAssignedAt",
-                created_at AS "createdAt"
+                created_at AS "createdAt",
+                sticky_window_days, sticky_fallback,
+                sticky_window_days AS "stickyWindowDays",
+                sticky_fallback    AS "stickyFallback"
            FROM lead_routing_rules
           WHERE org_id = $1 AND deleted_at IS NULL
           ORDER BY priority, created_at`,
@@ -229,14 +266,23 @@ export class LeadRoutingController {
       // What "Distribute now" would have to work with. Counted, not listed:
       // the button needs a number, and the leads themselves are already a
       // page away.
+      // `attendance_enabled` (0140) rides along because a sticky rule's
+      // preview has to know whether the shift gate can read anything at all -
+      // it defaults FALSE and most tenants have never turned it on. Folded
+      // into the backlog count rather than fetched on its own: this
+      // deployment pays ~125ms per round trip.
       const {
         rows: [backlog],
-      } = await client.query<{ unassigned: number }>(
-        `SELECT count(*)::int AS unassigned
-           FROM leads
-          WHERE org_id = $1 AND assigned_telecaller_id IS NULL AND status = 'open'`,
+      } = await client.query<{ unassigned: number; attendance_enabled: boolean }>(
+        `SELECT o.attendance_enabled,
+                (SELECT count(*)::int FROM leads l
+                  WHERE l.org_id = o.id
+                    AND l.assigned_telecaller_id IS NULL
+                    AND l.status = 'open') AS unassigned
+           FROM organizations o WHERE o.id = $1`,
         [orgId],
       );
+      const attendanceTracked = backlog?.attendance_enabled ?? false;
 
       const byRule = new Map<string, TargetStateRow[]>();
       for (const row of targetRows) {
@@ -271,10 +317,17 @@ export class LeadRoutingController {
             // The engine's own answer to the only question anybody asks about
             // a rotation. Run forward on a copy - never a second
             // implementation, which would drift and be worse than no preview.
-            upNext: simulateRouting(strategy, candidates, Number(rule.cursor), 5).map((d) => ({
+            upNext: simulateRouting(
+              strategy,
+              candidates,
+              Number(rule.cursor),
+              5,
+              previewSticky(rule, attendanceTracked),
+            ).map((d) => ({
               telecallerId: d.picked?.telecallerId ?? null,
               name: d.picked?.name ?? null,
               reason: d.reason,
+              sticky: d.sticky ?? null,
             })),
           };
         }),
@@ -336,15 +389,29 @@ export class LeadRoutingController {
     const input = parsed.data;
     const createdBy = z.string().uuid().safeParse(req.principal?.userId).data ?? null;
 
+    // 0160's `lead_routing_rules_sticky_configured` CHECK refuses a sticky
+    // rule with a NULL window or a NULL fallback, so the defaults are applied
+    // here rather than left to the caller. A dropdown that posts
+    // `{ strategy: 'sticky' }` and nothing else is the normal case, and a
+    // 23514 on it would be a 500 that reads like a platform fault.
+    //
+    // `resolveStickyConfig` is shared with the PATCH below so the two paths
+    // cannot pick different defaults - the same reason `sharesProblem` lives
+    // in @aura/shared rather than in this file.
+    const sticky = resolveStickyConfig(input.strategy, input);
+
     return this.db.withOrg(orgId, async (client) => {
       await this.assertWorkspace(client, orgId, input.workspaceId ?? null);
       const {
         rows: [rule],
       } = await client.query(
         `INSERT INTO lead_routing_rules
-           (org_id, workspace_id, name, description, strategy, match, status, priority, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
-         RETURNING id, name, strategy, status, priority`,
+           (org_id, workspace_id, name, description, strategy, match, status, priority,
+            sticky_window_days, sticky_fallback, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
+         RETURNING id, name, strategy, status, priority,
+                   sticky_window_days AS "stickyWindowDays",
+                   sticky_fallback    AS "stickyFallback"`,
         [
           orgId,
           input.workspaceId ?? null,
@@ -354,6 +421,8 @@ export class LeadRoutingController {
           JSON.stringify(input.match),
           input.status,
           input.priority,
+          sticky.stickyWindowDays,
+          sticky.stickyFallback,
           createdBy,
         ],
       );
@@ -391,17 +460,39 @@ export class LeadRoutingController {
       // wrong a week later.
       const {
         rows: [current],
-      } = await client.query<{ strategy: string }>(
-        `SELECT strategy FROM lead_routing_rules
+      } = await client.query<{
+        strategy: string;
+        sticky_window_days: number | null;
+        sticky_fallback: string | null;
+      }>(
+        `SELECT strategy, sticky_window_days, sticky_fallback
+           FROM lead_routing_rules
           WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR UPDATE`,
         [id, orgId],
       );
       if (!current) throw new NotFoundException("no such rule");
       const resetsWindow = patch.strategy !== undefined && patch.strategy !== current.strategy;
 
+      // The strategy the row will HAVE after this patch, not the one it has
+      // now: `PATCH { strategy: 'sticky' }` with nothing else is exactly what
+      // a dropdown sends, and the two sticky columns have to be filled in the
+      // same statement or 0160's CHECK rejects the write. Computed from the
+      // locked row, so a concurrent edit cannot slip between the read and the
+      // resolve.
+      const strategyAfter =
+        patch.strategy ?? LeadRoutingStrategy.safeParse(current.strategy).data ?? "round_robin";
+      const sticky = resolveStickyConfig(strategyAfter, patch, {
+        stickyWindowDays: current.sticky_window_days,
+        stickyFallback: LeadRoutingStickyFallback.safeParse(current.sticky_fallback).data ?? null,
+      });
+
       const {
         rows: [rule],
       } = await client.query<{ id: string }>(
+        // The two sticky columns are set unconditionally rather than
+        // COALESCEd: `resolveStickyConfig` has already folded "not sent" into
+        // the stored value, and a COALESCE here could not express "clear this
+        // on a rule that is no longer sticky" at all.
         `UPDATE lead_routing_rules SET
            name        = COALESCE($3, name),
            description = CASE WHEN $4::boolean THEN $5 ELSE description END,
@@ -410,7 +501,9 @@ export class LeadRoutingController {
            status      = COALESCE($8, status),
            priority    = COALESCE($9, priority),
            workspace_id = CASE WHEN $10::boolean THEN $11 ELSE workspace_id END,
-           window_started_at = CASE WHEN $12::boolean THEN now() ELSE window_started_at END
+           window_started_at = CASE WHEN $12::boolean THEN now() ELSE window_started_at END,
+           sticky_window_days = $13,
+           sticky_fallback    = $14
          WHERE id = $1 AND org_id = $2
          RETURNING id`,
         [
@@ -426,6 +519,8 @@ export class LeadRoutingController {
           patch.workspaceId !== undefined,
           patch.workspaceId ?? null,
           resetsWindow,
+          sticky.stickyWindowDays,
+          sticky.stickyFallback,
         ],
       );
       // Unreachable now that the FOR UPDATE above has already proved the row
@@ -487,15 +582,23 @@ export class LeadRoutingController {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [rule],
-      } = await client.query<{ strategy: string }>(
-        `SELECT strategy FROM lead_routing_rules
+      } = await client.query<{ strategy: string; sticky_fallback: string | null }>(
+        `SELECT strategy, sticky_fallback FROM lead_routing_rules
           WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL FOR UPDATE`,
         [id, orgId],
       );
       if (!rule) throw new NotFoundException("no such rule");
 
       const strategy = LeadRoutingStrategy.safeParse(rule.strategy).data ?? "round_robin";
-      const problem = sharesProblem(strategy, targets);
+      // The stored fallback, for the same reason the strategy is read from the
+      // row rather than taken from the caller: a sticky rule whose fallback is
+      // 'percentage' runs that split on every lead with no history behind it -
+      // which is most of them - so those shares have to add up too.
+      const problem = sharesProblem(
+        strategy,
+        targets,
+        LeadRoutingStickyFallback.safeParse(rule.sticky_fallback).data ?? null,
+      );
       if (problem) throw new BadRequestException(problem);
 
       if (targets.length > 0) {
@@ -608,9 +711,18 @@ export class LeadRoutingController {
     return this.db.withOrg(orgId, async (client) => {
       const {
         rows: [rule],
-      } = await client.query<{ strategy: string; cursor: string }>(
-        `SELECT strategy, cursor FROM lead_routing_rules
-          WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      } = await client.query<{
+        strategy: string;
+        cursor: string;
+        sticky_window_days: number | null;
+        sticky_fallback: string | null;
+        attendance_enabled: boolean;
+      }>(
+        `SELECT r.strategy, r.cursor, r.sticky_window_days, r.sticky_fallback,
+                o.attendance_enabled
+           FROM lead_routing_rules r
+           JOIN organizations o ON o.id = r.org_id
+          WHERE r.id = $1 AND r.org_id = $2 AND r.deleted_at IS NULL`,
         [id, orgId],
       );
       if (!rule) throw new NotFoundException("no such rule");
@@ -632,12 +744,14 @@ export class LeadRoutingController {
 
       const strategy = LeadRoutingStrategy.safeParse(rule.strategy).data ?? "round_robin";
       const candidates = rows.map(toCandidate);
+      const sticky = previewSticky(rule, rule.attendance_enabled);
       return {
-        next: pickRoutingTarget(strategy, candidates, Number(rule.cursor)),
-        sequence: simulateRouting(strategy, candidates, Number(rule.cursor), n).map((d) => ({
+        next: pickRoutingTarget(strategy, candidates, Number(rule.cursor), sticky),
+        sequence: simulateRouting(strategy, candidates, Number(rule.cursor), n, sticky).map((d) => ({
           telecallerId: d.picked?.telecallerId ?? null,
           name: d.picked?.name ?? null,
           reason: d.reason,
+          sticky: d.sticky ?? null,
         })),
       };
     });

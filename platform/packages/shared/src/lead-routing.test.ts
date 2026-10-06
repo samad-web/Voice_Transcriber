@@ -1,17 +1,29 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
+import { HandsetState } from "./attendance";
 import {
   firstMatchingRule,
   formatPct,
   LeadRoutingRuleInput,
   LeadRoutingRulePatch,
+  LeadRoutingStickyFallback,
+  LeadRoutingStrategy,
   pickRoutingTarget,
+  resolveStickyConfig,
   ruleMatchesLead,
   shareReality,
   sharesProblem,
   simulateRouting,
-  type LeadRoutingStrategy,
+  STICKY_DEFAULT_FALLBACK,
+  STICKY_DEFAULT_WINDOW_DAYS,
+  STICKY_OFF_SHIFT_STATES,
+  stickyOwnerOnShift,
   type RoutableLead,
   type RoutingCandidate,
+  type StickyContext,
+  type StickyPriorOwner,
 } from "./lead-routing";
 
 function target(
@@ -494,5 +506,644 @@ describe("the rule schemas", () => {
     // answers "no fields to update"; the schema should not pretend it is
     // malformed.
     expect(LeadRoutingRulePatch.parse({})).toEqual({});
+  });
+});
+
+// ── sticky ownership (0160, Build docs/39 §14) ──────────────────────────────
+
+function owner(
+  telecallerId: string,
+  overrides: Partial<StickyPriorOwner> = {},
+): StickyPriorOwner {
+  return { telecallerId, name: telecallerId.replace(/^tc-/, ""), leadCount: 1, ...overrides };
+}
+
+function stickyCtx(overrides: Partial<StickyContext> = {}): StickyContext {
+  return {
+    windowDays: 90,
+    fallback: "round_robin",
+    priorOwners: [],
+    // The common tenant: attendance has never been switched on, so the shift
+    // gate has nothing to read. Each test that is ABOUT attendance says so.
+    attendanceTracked: false,
+    ...overrides,
+  };
+}
+
+describe("sticky: a returning caller reaches their previous owner", () => {
+  const team = [target("A", {}, 0), target("B", {}, 1), target("C", {}, 2)];
+
+  it("gives the lead to the one person who already owns the number", () => {
+    const decision = pickRoutingTarget(
+      "sticky",
+      team,
+      0,
+      stickyCtx({ priorOwners: [owner("tc-B", { leadCount: 3 })] }),
+    );
+    expect(decision.picked?.name).toBe("B");
+    expect(decision.sticky?.resolution).toBe("matched");
+    expect(decision.refusal).toBeNull();
+    expect(decision.reason).toContain("B already owns this number");
+    expect(decision.reason).toContain("3 earlier leads in the last 90 days");
+  });
+
+  it("does not advance the rotation cursor when it matches", () => {
+    // A repeat caller returning to their own person did not consume anybody's
+    // turn. The next genuinely new lead must still go to whoever was next, or
+    // stickiness quietly reorders the rotation for everybody else.
+    const sticky = stickyCtx({ priorOwners: [owner("tc-C")] });
+    expect(pickRoutingTarget("sticky", team, 1, sticky).nextCursor).toBe(1);
+
+    const fellThrough = pickRoutingTarget("sticky", team, 1, stickyCtx());
+    expect(fellThrough.picked?.name).toBe("B");
+    expect(fellThrough.nextCursor).toBe(2);
+  });
+
+  it("falls through to the fallback when nobody here has spoken to the number", () => {
+    const decision = pickRoutingTarget("sticky", team, 0, stickyCtx());
+    expect(decision.sticky?.resolution).toBe("no_history");
+    expect(decision.sticky?.fellBackTo).toBe("round_robin");
+    expect(decision.picked?.name).toBe("A");
+    expect(decision.reason).toContain("nobody here has spoken to this number in 90 days");
+    expect(decision.reason).toContain("next in the rotation");
+  });
+});
+
+/**
+ * THE SINGLE MOST IMPORTANT BEHAVIOUR IN THIS PHASE.
+ *
+ * Two different people owned earlier leads from this number. Recency is a
+ * tempting tie-break and it is wrong: it is right about half the time, and the
+ * wrong half is INVISIBLE - the prospect reaches the wrong person, and the
+ * right person never learns the call happened. 0146 made the same call for
+ * `lead_for_unlinked_call` and its header is the argument.
+ */
+describe("sticky: two owners is ambiguous, never a guess", () => {
+  const team = [target("A", {}, 0), target("B", {}, 1)];
+
+  const collision = stickyCtx({
+    priorOwners: [
+      // Deliberately ordered and counted so that EVERY plausible tie-break
+      // disagrees with the fallback: B is the most recent and has the most
+      // leads, A is the first mention. Round robin from cursor 0 picks A.
+      owner("tc-A", { leadCount: 1, lastLeadAt: "2026-01-01T00:00:00.000Z" }),
+      owner("tc-B", { leadCount: 9, lastLeadAt: "2026-10-05T00:00:00.000Z" }),
+    ],
+  });
+
+  it("does not pick the most recent owner", () => {
+    const decision = pickRoutingTarget("sticky", team, 0, collision);
+    expect(decision.sticky?.resolution).toBe("ambiguous");
+    // A, because round robin said so - not B, who spoke to them last week.
+    expect(decision.picked?.name).toBe("A");
+  });
+
+  it("does not pick the owner with the most history either", () => {
+    // Same collision, cursor moved on: the answer tracks the FALLBACK, not any
+    // property of the two owners. If a tie-break ever creeps in, exactly one
+    // of these two tests still passes, which is why both are here.
+    const decision = pickRoutingTarget("sticky", team, 1, collision);
+    expect(decision.picked?.name).toBe("B");
+    expect(decision.sticky?.resolution).toBe("ambiguous");
+  });
+
+  it("is visible rather than silent - it names both people in the ledger", () => {
+    // §14: "a two-owner collision goes to the fallback and is visible". One
+    // decision row per lead, so the one sentence has to carry both halves.
+    const decision = pickRoutingTarget("sticky", team, 0, collision);
+    expect(decision.reason).toContain("belong to different people");
+    expect(decision.reason).toContain("A and B");
+    expect(decision.reason).toContain("so the fallback ran");
+    // And structured, so the console can badge it without parsing prose.
+    expect(decision.sticky?.priorOwners.map((o) => o.telecallerId)).toEqual(["tc-A", "tc-B"]);
+  });
+
+  it("is still ambiguous when the collision would have been resolvable", () => {
+    // B is off shift and A is free, so "pick the one who can take it" would
+    // land on A. That is a guess wearing a justification: the number belongs
+    // to whichever of them the customer thinks they are calling, and nobody
+    // here knows which.
+    const withShifts = [
+      target("A", {}, 0),
+      target("B", { handsetState: "OFF_SHIFT" }, 1),
+    ];
+    const decision = pickRoutingTarget(
+      "sticky",
+      withShifts,
+      0,
+      stickyCtx({ attendanceTracked: true, priorOwners: collision.priorOwners }),
+    );
+    expect(decision.sticky?.resolution).toBe("ambiguous");
+  });
+
+  it("does not mistake one owner's several leads for two owners", () => {
+    // A caller that returned a row per lead instead of grouping. Counting that
+    // person twice would send every single repeat caller to the fallback, and
+    // the feature would look configured and do nothing.
+    const decision = pickRoutingTarget(
+      "sticky",
+      team,
+      0,
+      stickyCtx({ priorOwners: [owner("tc-B", { leadCount: 1 }), owner("tc-B", { leadCount: 2 })] }),
+    );
+    expect(decision.sticky?.resolution).toBe("matched");
+    expect(decision.picked?.name).toBe("B");
+    expect(decision.reason).toContain("3 earlier leads");
+  });
+});
+
+describe("sticky: an owner who cannot take it", () => {
+  const team = [target("A", {}, 0), target("B", {}, 1)];
+  const sticky = (candidates: RoutingCandidate[], extra: Partial<StickyContext> = {}) =>
+    pickRoutingTarget("sticky", candidates, 0, stickyCtx({ priorOwners: [owner("tc-B")], ...extra }));
+
+  it("falls back when the owner is paused", () => {
+    const decision = sticky([target("A", {}, 0), target("B", { paused: true }, 1)]);
+    expect(decision.sticky?.resolution).toBe("owner_unavailable");
+    expect(decision.sticky?.unavailable).toBe("paused");
+    expect(decision.picked?.name).toBe("A");
+    expect(decision.reason).toContain("B owns this number");
+    expect(decision.reason).toContain("paused");
+  });
+
+  it("falls back when the owner is at their daily cap", () => {
+    const decision = sticky([
+      target("A", {}, 0),
+      target("B", { dailyCap: 5, assignedToday: 5 }, 1),
+    ]);
+    expect(decision.sticky?.unavailable).toBe("capped");
+    expect(decision.picked?.name).toBe("A");
+    expect(decision.reason).toContain("daily cap of 5");
+  });
+
+  it("falls back when the owner is not on this rule at all", () => {
+    // They left, were archived, or work another desk. Routing may only hand a
+    // lead to somebody the rule names - that list is also where the daily cap
+    // lives, so assigning off it would be an assignment with no ceiling.
+    const decision = pickRoutingTarget(
+      "sticky",
+      team,
+      0,
+      stickyCtx({ priorOwners: [owner("tc-Z", { name: "Zoya" })] }),
+    );
+    expect(decision.sticky?.unavailable).toBe("not_on_rule");
+    expect(decision.reason).toContain("Zoya owns this number");
+    expect(decision.reason).toContain("not on this rule");
+    expect(decision.picked?.name).toBe("A");
+  });
+
+  it("names an archived owner it can no longer identify, rather than going quiet", () => {
+    const decision = pickRoutingTarget(
+      "sticky",
+      team,
+      0,
+      stickyCtx({ priorOwners: [owner("tc-Z", { name: null })] }),
+    );
+    expect(decision.reason).toContain("somebody no longer on the roster");
+  });
+});
+
+/**
+ * §14: "Attendance is a real coupling, not a nicety: a sticky owner who is
+ * absent must not accumulate leads all day."
+ *
+ * It is also the coupling most likely to turn the feature off by accident:
+ * `organizations.attendance_enabled` defaults FALSE and most tenants have
+ * never touched it, so a gate that fired on missing presence would send every
+ * sticky lead to the fallback forever, for a reason nobody would connect to a
+ * switch on another page.
+ */
+describe("sticky: the attendance gate", () => {
+  const team = () => [target("A", {}, 0), target("B", {}, 1)];
+  const withState = (state: HandsetState | null) => [
+    target("A", {}, 0),
+    target("B", { handsetState: state }, 1),
+  ];
+  const tracked = (priorOwners: StickyPriorOwner[]) =>
+    stickyCtx({ attendanceTracked: true, priorOwners });
+
+  for (const state of STICKY_OFF_SHIFT_STATES) {
+    it(`sends the lead to the fallback when the owner is ${state}`, () => {
+      const decision = pickRoutingTarget("sticky", withState(state), 0, tracked([owner("tc-B")]));
+      expect(decision.sticky?.unavailable).toBe("off_shift");
+      expect(decision.picked?.name).toBe("A");
+      expect(decision.reason).toContain(state === "AWAY" ? "away" : "off shift");
+    });
+  }
+
+  const AT_WORK = HandsetState.options.filter(
+    (s) => !(STICKY_OFF_SHIFT_STATES as readonly string[]).includes(s),
+  );
+
+  for (const state of AT_WORK) {
+    it(`keeps the lead with the owner when they are ${state}`, () => {
+      const decision = pickRoutingTarget("sticky", withState(state), 0, tracked([owner("tc-B")]));
+      expect(decision.sticky?.resolution).toBe("matched");
+      expect(decision.picked?.name).toBe("B");
+    });
+  }
+
+  /**
+   * The pin. A ninth `HandsetState` must not silently join one side: whichever
+   * side it lands on is a decision about whether somebody in that state keeps
+   * collecting repeat callers all day.
+   */
+  it("classifies every HandsetState, so a new one cannot slip in unclassified", () => {
+    expect([...STICKY_OFF_SHIFT_STATES].sort()).toEqual(["AWAY", "OFF_SHIFT"]);
+    expect([...AT_WORK].sort()).toEqual([
+      "ACTIVE",
+      "BREAK_DUE",
+      "IN_CALL",
+      "ON_BREAK",
+      "PROMPTING",
+      "TECHNICAL",
+    ]);
+    expect(AT_WORK.length + STICKY_OFF_SHIFT_STATES.length).toBe(HandsetState.options.length);
+  });
+
+  it("ignores presence entirely when the workspace does not collect it", () => {
+    // Including a stale state left over from a trial of attendance. If the
+    // switch is off, the data is not evidence of anything.
+    const decision = pickRoutingTarget(
+      "sticky",
+      withState("OFF_SHIFT"),
+      0,
+      stickyCtx({ attendanceTracked: false, priorOwners: [owner("tc-B")] }),
+    );
+    expect(decision.picked?.name).toBe("B");
+    expect(decision.reason).toContain("attendance is off for this workspace");
+  });
+
+  it("treats a telecaller who has never reported presence as available, and says so", () => {
+    // A console-only person with no handset. Silence is not absence, and
+    // reading it as absence would quietly bar exactly those people from ever
+    // owning a repeat caller.
+    for (const absentRow of [null, undefined]) {
+      const decision = pickRoutingTarget(
+        "sticky",
+        absentRow === null ? withState(null) : team(),
+        0,
+        tracked([owner("tc-B")]),
+      );
+      expect(decision.picked?.name).toBe("B");
+      expect(decision.reason).toContain("never reported from a handset");
+    }
+  });
+
+  it("states the on-shift evidence in the ledger rather than just asserting it", () => {
+    const decision = pickRoutingTarget("sticky", withState("IN_CALL"), 0, tracked([owner("tc-B")]));
+    expect(decision.reason).toContain("on shift (IN_CALL)");
+  });
+
+  it("is the same predicate the engine uses, exposed for callers", () => {
+    expect(stickyOwnerOnShift({ handsetState: "ACTIVE" }, true)).toBe(true);
+    expect(stickyOwnerOnShift({ handsetState: "AWAY" }, true)).toBe(false);
+    expect(stickyOwnerOnShift({ handsetState: "AWAY" }, false)).toBe(true);
+    expect(stickyOwnerOnShift({ handsetState: null }, true)).toBe(true);
+    expect(stickyOwnerOnShift({}, true)).toBe(true);
+  });
+
+  it("never gates round robin or percentage on presence", () => {
+    // Stickiness is the one strategy that can bury one person under a whole
+    // day's leads, which is why it is the one that asks. A rotation that
+    // silently skipped whoever had not opened the app would be unpredictable.
+    const asleep = [
+      target("A", { handsetState: "OFF_SHIFT" }, 0),
+      target("B", { handsetState: "OFF_SHIFT", sharePct: 100 }, 1),
+    ];
+    expect(pickRoutingTarget("round_robin", asleep, 0).picked?.name).toBe("A");
+    expect(pickRoutingTarget("percentage", asleep, 0).picked?.name).toBe("B");
+  });
+});
+
+describe("sticky: the fallback is a choice, not a default", () => {
+  const team = [target("A", { sharePct: 20 }, 0), target("B", { sharePct: 80 }, 1)];
+
+  it("leaves the lead on the board when that is what the tenant picked", () => {
+    const decision = pickRoutingTarget(
+      "sticky",
+      team,
+      0,
+      stickyCtx({ fallback: "unassigned" }),
+    );
+    expect(decision.picked).toBeNull();
+    expect(decision.refusal).toBe("sticky_unassigned");
+    expect(decision.sticky?.fellBackTo).toBe("unassigned");
+    expect(decision.reason).toContain("leaves those on the board");
+  });
+
+  it("runs the percentage split when that is the fallback", () => {
+    const decision = pickRoutingTarget("sticky", team, 0, stickyCtx({ fallback: "percentage" }));
+    expect(decision.picked?.name).toBe("B");
+    expect(decision.reason).toContain("80%");
+  });
+
+  it("passes the fallback's own refusal through rather than inventing one", () => {
+    // Everybody capped under a sticky rule is a staffing problem, and it has
+    // to read as one - not as "stickiness failed".
+    const full = [target("A", { dailyCap: 1, assignedToday: 1 }, 0)];
+    const decision = pickRoutingTarget("sticky", full, 0, stickyCtx());
+    expect(decision.refusal).toBe("all_capped");
+    expect(decision.sticky?.resolution).toBe("no_history");
+  });
+});
+
+describe("sticky: a rule that cannot decide refuses loudly", () => {
+  const team = [target("A", {}, 0), target("B", {}, 1)];
+
+  it("refuses rather than silently rotating when no history was loaded", () => {
+    // The three-argument call. A caller that has not been taught to load the
+    // number's history must NOT get a rotation that looks like stickiness
+    // working - that is the failure nobody ever finds.
+    const decision = pickRoutingTarget("sticky", team, 0);
+    expect(decision.picked).toBeNull();
+    expect(decision.refusal).toBe("sticky_unresolved");
+    expect(decision.sticky?.resolution).toBe("unresolvable");
+    expect(decision.nextCursor).toBe(0);
+  });
+
+  it("refuses a half-configured rule, naming the missing half", () => {
+    // 0160's lead_routing_rules_sticky_configured CHECK makes this unreachable
+    // through the API. A hand-edited row is not unreachable.
+    const noWindow = pickRoutingTarget("sticky", team, 0, stickyCtx({ windowDays: null }));
+    expect(noWindow.refusal).toBe("sticky_unconfigured");
+    expect(noWindow.reason).toContain("no window");
+
+    const noFallback = pickRoutingTarget("sticky", team, 0, stickyCtx({ fallback: null }));
+    expect(noFallback.refusal).toBe("sticky_unconfigured");
+    expect(noFallback.reason).toContain("no fallback");
+  });
+
+  it("leaves the other two strategies untouched by the new parameter", () => {
+    // Every existing three-argument call site keeps behaving identically, and
+    // a context handed to the wrong strategy changes nothing.
+    const ctx = stickyCtx({ priorOwners: [owner("tc-B")] });
+    expect(pickRoutingTarget("round_robin", team, 0, ctx).picked?.name).toBe("A");
+    expect(pickRoutingTarget("round_robin", team, 0).picked?.name).toBe("A");
+  });
+});
+
+describe("sticky: the preview", () => {
+  const team = [target("A", {}, 0), target("B", {}, 1), target("C", {}, 2)];
+
+  it("shows the fallback sequence for a number nobody has called", () => {
+    // What the rules page actually asks: most leads have no history, so the
+    // honest preview of a sticky rule is its fallback's rotation.
+    const preview = simulateRouting("sticky", team, 0, 4, stickyCtx()).map((d) => d.picked?.name);
+    expect(preview).toEqual(["A", "B", "C", "A"]);
+  });
+
+  it("shows one returning caller going to the same person until their cap", () => {
+    // Two to B, and then the cap bites: every later lead from that number
+    // takes the fallback, which is round robin stepping over the person who
+    // is full. That is the engine's own answer, run forward on a copy.
+    const withCap = [target("A", {}, 0), target("B", { dailyCap: 2 }, 1)];
+    const preview = simulateRouting(
+      "sticky",
+      withCap,
+      0,
+      4,
+      stickyCtx({ priorOwners: [owner("tc-B")] }),
+    );
+    expect(preview.map((d) => d.picked?.name)).toEqual(["B", "B", "A", "A"]);
+    expect(preview.map((d) => d.sticky?.resolution)).toEqual([
+      "matched",
+      "matched",
+      "owner_unavailable",
+      "owner_unavailable",
+    ]);
+  });
+
+  it("stops early instead of repeating an identical refusal", () => {
+    expect(simulateRouting("sticky", team, 0, 5)).toHaveLength(1);
+  });
+});
+
+describe("resolveStickyConfig", () => {
+  it("fills both columns when a rule becomes sticky with neither sent", () => {
+    // What a strategy dropdown sends: PATCH { strategy: 'sticky' }, nothing
+    // else. Without this the write hits 0160's CHECK and a form gets a 500.
+    expect(resolveStickyConfig("sticky", {}, {})).toEqual({
+      stickyWindowDays: STICKY_DEFAULT_WINDOW_DAYS,
+      stickyFallback: STICKY_DEFAULT_FALLBACK,
+    });
+  });
+
+  it("never defaults to 'unassigned'", () => {
+    // The one fallback that silently kills leads must be chosen on purpose.
+    expect(STICKY_DEFAULT_FALLBACK).not.toBe("unassigned");
+  });
+
+  it("prefers what the caller sent over what is stored", () => {
+    expect(
+      resolveStickyConfig(
+        "sticky",
+        { stickyWindowDays: 30, stickyFallback: "unassigned" },
+        { stickyWindowDays: 90, stickyFallback: "round_robin" },
+      ),
+    ).toEqual({ stickyWindowDays: 30, stickyFallback: "unassigned" });
+  });
+
+  it("treats absent as leave-alone and keeps the stored value", () => {
+    expect(
+      resolveStickyConfig("sticky", {}, { stickyWindowDays: 365, stickyFallback: "percentage" }),
+    ).toEqual({ stickyWindowDays: 365, stickyFallback: "percentage" });
+  });
+
+  it("refuses to clear a sticky rule's columns to null", () => {
+    // `null` means "clear it" everywhere else, and here it would write a row
+    // the CHECK rejects. The default takes over instead of the request failing.
+    expect(
+      resolveStickyConfig("sticky", { stickyWindowDays: null, stickyFallback: null }, {}),
+    ).toEqual({
+      stickyWindowDays: STICKY_DEFAULT_WINDOW_DAYS,
+      stickyFallback: STICKY_DEFAULT_FALLBACK,
+    });
+  });
+
+  it("invents nothing for a rule that is not sticky", () => {
+    expect(resolveStickyConfig("round_robin", {}, {})).toEqual({
+      stickyWindowDays: null,
+      stickyFallback: null,
+    });
+  });
+
+  it("keeps a window somebody typed when they switch the strategy away and back", () => {
+    // The same kindness `share_pct` gets on a round-robin rule: trying another
+    // strategy must not silently discard the configuration you had.
+    const stored = { stickyWindowDays: 45, stickyFallback: "percentage" as const };
+    const away = resolveStickyConfig("round_robin", {}, stored);
+    expect(away).toEqual({ stickyWindowDays: 45, stickyFallback: "percentage" });
+    expect(resolveStickyConfig("sticky", {}, away)).toEqual(stored);
+  });
+});
+
+describe("the sticky rule schema", () => {
+  it("accepts a sticky rule and leaves the columns to the resolver", () => {
+    const parsed = LeadRoutingRuleInput.parse({ name: "Repeat callers", strategy: "sticky" });
+    expect(parsed.strategy).toBe("sticky");
+    // NOT defaulted by the schema: a default here would survive `.partial()`
+    // and write a window onto every round-robin rule's PATCH.
+    expect(parsed.stickyWindowDays).toBeUndefined();
+    expect(LeadRoutingRulePatch.parse({ status: "paused" })).toEqual({ status: "paused" });
+  });
+
+  it("bounds the window rather than letting a typo reach the column", () => {
+    expect(LeadRoutingRulePatch.safeParse({ stickyWindowDays: 0 }).success).toBe(false);
+    expect(LeadRoutingRulePatch.safeParse({ stickyWindowDays: -1 }).success).toBe(false);
+    expect(LeadRoutingRulePatch.safeParse({ stickyWindowDays: 36500 }).success).toBe(false);
+    expect(LeadRoutingRulePatch.safeParse({ stickyWindowDays: 3650 }).success).toBe(true);
+  });
+
+  it("rejects a fallback the column would refuse", () => {
+    expect(LeadRoutingRulePatch.safeParse({ stickyFallback: "sticky" }).success).toBe(false);
+    expect(LeadRoutingRulePatch.safeParse({ stickyFallback: "nobody" }).success).toBe(false);
+  });
+
+  it("checks a sticky rule's shares when, and only when, its fallback is percentage", () => {
+    const short = [{ sharePct: 50 }, { sharePct: 30 }];
+    expect(sharesProblem("sticky", short)).toBeNull();
+    expect(sharesProblem("sticky", short, "round_robin")).toBeNull();
+    // Most leads have no history, so on this rule the split is what actually
+    // runs. A form that saved 50/30 here would hand out a ratio nobody chose.
+    expect(sharesProblem("sticky", short, "percentage")).toContain("80%");
+  });
+
+  it("measures a sticky rule against an even split", () => {
+    // Sticky promises nothing about volume - it promises the customer reaches
+    // their own person. "One owner is taking 80% of this desk" is still the
+    // thing worth seeing, and on a sticky rule it is the warning that somebody
+    // is being buried.
+    const reality = shareReality("sticky", [
+      target("A", { delivered: 8 }, 0),
+      target("B", { delivered: 2 }, 1),
+    ]);
+    expect(reality.map((r) => r.targetPct)).toEqual([50, 50]);
+    expect(reality[0].driftPct).toBe(30);
+  });
+});
+
+/**
+ * THE CHECK/ZOD DRIFT TRAP, PINNED - the same technique opt-out.test.ts uses
+ * for `messaging_opt_outs.channel`, and for the same reason.
+ *
+ * `lead_routing_rules.strategy` has a CHECK in SQL and a zod enum here.
+ * Widening one and not the other throws 23514 on the write and reads like a
+ * bug in the caller. `notifications.kind` drifted in both directions at once
+ * and broke lead routing while every type-check and lint stayed green.
+ *
+ * Pinned twice, because the two pins fail in different directions:
+ *
+ *   - the literals below, transcribed by hand from the migration, which fail
+ *     when the ENUM is widened without the constraint;
+ *   - the constraints' own values, read out of the .sql, which fail when a
+ *     CONSTRAINT is widened without the enum.
+ */
+describe("the strategy enum and the database CHECKs are the same sets", () => {
+  /**
+   * Verbatim from `0160_sticky_lead_routing.sql`:
+   *
+   *     ALTER TABLE lead_routing_rules ADD CONSTRAINT lead_routing_rules_strategy_check
+   *       CHECK (strategy IN ('round_robin', 'percentage', 'sticky'));
+   *
+   *     ALTER TABLE lead_routing_rules ADD CONSTRAINT lead_routing_rules_sticky_fallback_check
+   *       CHECK (sticky_fallback IN ('round_robin', 'percentage', 'unassigned'));
+   *
+   * Change these lists ONLY while changing those statements, and vice versa.
+   * 'sticky' joined the first in 0160, which 0105 had declared inline with
+   * two values.
+   */
+  const STRATEGIES_IN_DB_CHECK = ["round_robin", "percentage", "sticky"];
+  const FALLBACKS_IN_DB_CHECK = ["round_robin", "percentage", "unassigned"];
+
+  /** Same walk-up as opt-out.test.ts - the package compiles as CommonJS. */
+  const MIGRATIONS_DIR = (() => {
+    let dir = resolve(process.cwd());
+    for (let up = 0; up < 6; up++) {
+      const candidate = join(dir, "packages", "db", "migrations");
+      if (existsSync(candidate)) return candidate;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    throw new Error("packages/db/migrations not found above " + process.cwd());
+  })();
+
+  /**
+   * Every migration, comments stripped, whitespace flattened, in APPLY order -
+   * so the LAST named CHECK on a column is the one the live database holds.
+   * 0105 declared the strategy constraint inline and 0160 replaced it with a
+   * named one; taking the last match is what makes the next widening work the
+   * same way.
+   */
+  const FLAT_SQL = (() => {
+    return readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .map((f) => readFileSync(join(MIGRATIONS_DIR, f), "utf8"))
+      .join("\n")
+      .replace(/--[^\n]*/g, "")
+      .replace(/\s+/g, " ");
+  })();
+
+  function lastCheckValues(constraint: string, column: string): string[] | null {
+    const all = [
+      ...FLAT_SQL.matchAll(
+        new RegExp(`ADD CONSTRAINT ${constraint} CHECK \\(${column} IN \\(([^)]*)\\)`, "g"),
+      ),
+    ];
+    if (all.length === 0) return null;
+    return Array.from(all[all.length - 1][1].matchAll(/'([^']*)'/g), (m) => m[1]).sort();
+  }
+
+  it("matches the lead_routing_rules_strategy_check values exactly", () => {
+    const inSql = lastCheckValues("lead_routing_rules_strategy_check", "strategy");
+    // Null would mean the named constraint has vanished from the tree - a
+    // renumbered or reverted 0160 - which must fail rather than quietly skip.
+    // A skipped assertion is how the tenant-isolation suite rotted unseen.
+    expect(inSql, "no ADD CONSTRAINT lead_routing_rules_strategy_check").not.toBeNull();
+    expect(inSql).toEqual([...STRATEGIES_IN_DB_CHECK].sort());
+    expect(inSql).toEqual([...LeadRoutingStrategy.options].sort());
+  });
+
+  it("matches the lead_routing_rules_sticky_fallback_check values exactly", () => {
+    const inSql = lastCheckValues("lead_routing_rules_sticky_fallback_check", "sticky_fallback");
+    expect(inSql, "no ADD CONSTRAINT lead_routing_rules_sticky_fallback_check").not.toBeNull();
+    expect(inSql).toEqual([...FALLBACKS_IN_DB_CHECK].sort());
+    expect(inSql).toEqual([...LeadRoutingStickyFallback.options].sort());
+  });
+
+  it("keeps the fallback set equal to the other strategies plus 'unassigned'", () => {
+    // A fourth strategy would otherwise appear in one list and not the other
+    // with nobody deciding whether it can be a fallback. 'sticky' is excluded
+    // on purpose: a sticky rule falling back to itself is an infinite regress.
+    const expected = [
+      ...LeadRoutingStrategy.options.filter((s) => s !== "sticky"),
+      "unassigned",
+    ].sort();
+    expect([...LeadRoutingStickyFallback.options].sort()).toEqual(expected);
+  });
+
+  it("rejects a strategy the column would refuse", () => {
+    expect(LeadRoutingStrategy.safeParse("random").success).toBe(false);
+    expect(LeadRoutingStrategy.safeParse("unassigned").success).toBe(false);
+    expect(LeadRoutingStrategy.safeParse("").success).toBe(false);
+  });
+
+  it("forbids a half-configured sticky rule in the schema, not only in code", () => {
+    // The state the engine answers with `sticky_unconfigured`. A rule that
+    // looks configured on the page it was configured from and routes nothing
+    // is the worst failure an automation has, so the database refuses it too.
+    expect(FLAT_SQL).toContain("ADD CONSTRAINT lead_routing_rules_sticky_configured");
+    expect(FLAT_SQL).toContain(
+      "strategy <> 'sticky' OR (sticky_window_days IS NOT NULL AND sticky_fallback IS NOT NULL)",
+    );
+  });
+
+  it("leaves lead_routing_assignments.strategy unconstrained, so history keeps 'sticky'", () => {
+    // 0105 stores the strategy denormalised on every decision precisely so
+    // editing or deleting a rule cannot rewrite what it decided. A CHECK on
+    // that column would make this rollback-able migration destroy history.
+    expect(lastCheckValues("lead_routing_assignments_strategy_check", "strategy")).toBeNull();
   });
 });

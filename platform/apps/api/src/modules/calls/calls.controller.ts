@@ -33,6 +33,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { S3Service } from "../../s3/s3.service";
 import { auditActor } from "../../common/audit-actor";
+import { noteIncomingCallNumber } from "../suppression/vault.service";
 import { HAS_RECORDING } from "./recording-sql";
 import { rewindForReprocess } from "./reprocess";
 import {
@@ -330,6 +331,46 @@ export class CallsController {
           number.key,
         ],
       );
+
+      // The dialable-number vault (0157, doc 39 §3), continued at runtime from
+      // the one statement the migration seeds it with. `store_full_number`
+      // gates it exactly as it gates `number.full` above - an org with the
+      // switch off writes nothing and is bit-for-bit unaffected - and only an
+      // INCOMING call does it, because they rang us and an outbound attempt
+      // asserts nothing about consent.
+      //
+      // ── WHY A SAVEPOINT AND NOT JUST A try/catch ───────────────────────────
+      //
+      // This is a CALL UPLOAD. The recording is the product; the vault row is a
+      // convenience for a dialer that does not exist yet. Nothing here may ever
+      // cost a recording.
+      //
+      // `noteIncomingCallNumber` returns a reason instead of throwing for every
+      // case it anticipates - not incoming, no key, not E.164, already a
+      // stronger basis - but it still issues a statement, and a statement can
+      // fail for reasons it does not anticipate. Once any statement fails
+      // inside a Postgres transaction every later statement fails too, so a
+      // bare try/catch would swallow the error and then watch the S3 key insert
+      // and the COMMIT below fail anyway. The SAVEPOINT is what makes
+      // "non-blocking" actually true - same reasoning, and same shape, as
+      // `lead_propagation` in owner/leads.controller.ts.
+      if (ctx.store_full_number === true) {
+        await client.query("SAVEPOINT vault_note");
+        try {
+          await noteIncomingCallNumber(client, {
+            orgId,
+            direction: call.direction,
+            remoteNumber: call.remoteNumber,
+            numberKey: number.key,
+            callId: row.id,
+            startedAt: call.startedAt,
+          });
+          await client.query("RELEASE SAVEPOINT vault_note");
+        } catch (err) {
+          await client.query("ROLLBACK TO SAVEPOINT vault_note");
+          console.error(`call ${row.id}: vault number note failed (non-blocking):`, err);
+        }
+      }
 
       const s3Key = `org/${orgId}/calls/${row.id}.m4a`;
       const upload = await this.s3.createMultipartUpload(s3Key, call.bytes);

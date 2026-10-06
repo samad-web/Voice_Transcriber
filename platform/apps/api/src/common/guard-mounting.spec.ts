@@ -11,14 +11,22 @@
  * Nest reads at request time (`__guards__`, via `GuardsContextCreator`), so it
  * cannot be fooled by formatting.
  *
- * The four route classes are exhaustive and their sizes are asserted: 57
- * tenant-scoped, 21 cross-tenant, 6 device-authenticated, 6 unguarded = 90. A
- * new route lands in one of those buckets and moves a count, so "I added an
- * endpoint and forgot the guards" is a red test rather than a live hole.
+ * The route classes are exhaustive and their sizes are asserted. A new route
+ * lands in one of those buckets and moves a count, so "I added an endpoint and
+ * forgot the guards" is a red test rather than a live hole.
  *
- * Inventory 13 §1.1 documents 75 of those. The extra twelve are the marketing
- * funnel's operator surface (LeadsModule), which post-dates the inventory; the
- * doc is the older artefact, not the authority.
+ * ── THE COUNTS LIVE IN THE `expect`s, NOT IN PROSE ──────────────────────────
+ *
+ * This paragraph used to state them (57 / 21 / 6 / 6 = 90) and was wrong by
+ * about 470 routes, as were the `it(...)` titles, for long enough that doc 39
+ * §8 had to warn readers not to believe either. So it no longer states them:
+ * the partition test's own title and its `expect`s are the one place, and they
+ * move together. As of migrations 0157/0158 that is 560 routes - 470
+ * tenant-scoped, 50 cross-tenant, 18 device, 21 unguarded, 1 internal - and if
+ * this sentence and that test ever disagree again, the test is right.
+ *
+ * Inventory 13 §1.1 is the older artefact and is not the authority; five route
+ * classes rather than its four, and hundreds of routes it never saw.
  *
  * SAFETY: this imports controller CLASSES only. It never constructs one, never
  * builds a Nest application, and deliberately does NOT import `app.module.ts` -
@@ -163,6 +171,17 @@ import { OwnerHandsetAlertsController } from "../modules/handset-alerts/owner-ha
 import { DeviceCallEscalationsController } from "../modules/call-escalations/device-call-escalations.controller";
 import { OwnerCallEscalationsController } from "../modules/call-escalations/owner-call-escalations.controller";
 import { OwnerCallEscalationSettingsController } from "../modules/call-escalations/owner-call-escalation-settings.controller";
+import { AppointmentsController } from "../modules/appointments/appointments.controller";
+import { DeviceDialerController } from "../modules/dialer/device-dialer.controller";
+import { DialerController } from "../modules/dialer/dialer.controller";
+import { PartnersController } from "../modules/partners/partners.controller";
+import { PortalController } from "../modules/partners/portal.controller";
+import { PortalInvitesController } from "../modules/partners/portal-invites.controller";
+import { ResourcesController } from "../modules/resources/resources.controller";
+import { DncController } from "../modules/suppression/dnc.controller";
+import { NumbersController } from "../modules/suppression/numbers.controller";
+import { PublicFormsController } from "../modules/web-forms/public-forms.controller";
+import { WebFormsController } from "../modules/web-forms/web-forms.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -447,6 +466,42 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   DeviceCallEscalationsController,
   OwnerCallEscalationsController,
   OwnerCallEscalationSettingsController,
+  // 0157/0158 (doc 39 P0): the dialable-number vault and the suppression
+  // lists. Both CrmPermissionsGuard'd, on the two object types that joined
+  // PermissionObjectType with those migrations - `contact_number` (view only,
+  // one route) and `dnc` (view/create/edit, four routes, and deliberately no
+  // delete: a list is disabled, never deleted). Pinned in
+  // CRM_PERMISSION_ROUTES below with the rest of that guard's surface.
+  NumbersController,
+  DncController,
+  // 0159 (doc 39 P1): the progressive dialer. Nine console routes on
+  // `dial_campaign`, and two under the SILENT `devices/me` prefix - mounted
+  // there rather than `/device/` because topicForApiPath would otherwise
+  // derive topic `device` and broadcast a realtime change to every open
+  // console on every dial.
+  DialerController,
+  DeviceDialerController,
+  // 0161 (doc 39 P3): the form builder. WebFormsController is the console's
+  // four routes on `web_form`; PublicFormsController is UNGUARDED by design -
+  // it serves and receives a form on the open internet, so it is listed in
+  // UNGUARDED below and its slug is not a credential but a public address.
+  WebFormsController,
+  PublicFormsController,
+  // 0165/0166 (doc 39 P6): two of the four vertical primitives. `resource` is
+  // whole-org (no owner column); `appointment` is the one new object with an
+  // owner, so it is scoped on `assigned_user_id` and NOT in
+  // ALL_SCOPE_ONLY_OBJECTS - a telecaller on `owned` sees their own diary.
+  ResourcesController,
+  AppointmentsController,
+  // 0162/0163 (doc 39 P4): channel partners. PartnersController is the
+  // tenant's own eight routes on `partner`. PortalController is the SIXTH
+  // ROUTE CLASS - PartnerScopeGuard alone, no AdminKeyGuard and no
+  // TenantGuard, because both would hand a broker a principal and an org
+  // header. PortalInvitesController is cross-tenant: accepting an invite
+  // happens before the acceptor belongs to anything.
+  PartnersController,
+  PortalController,
+  PortalInvitesController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -554,10 +609,38 @@ const UNGUARDED = [
   // expires in fifteen minutes, so this publishes a link, never the object.
   "GET /app/latest",
   "GET /app/download",
+  // A tenant's own hosted form (0161, doc 39 §16) - the page a visitor loads
+  // and the submission it posts back. Unguarded because the caller is a member
+  // of the public who has never heard of Aura: there is no credential they
+  // could hold, and the slug is a published ADDRESS, not a secret - it is on
+  // the tenant's website, in their email signature and on printed cards.
+  //
+  // What stands in for a guard, since "nothing" would not be admissible: the
+  // GET discloses only what the tenant chose to publish (the field list and
+  // their own copy - never a submission, never a lead, never a number), and
+  // the POST goes through the lead-intake pipeline's own honeypot, rate limit
+  // and dedupe rather than a second path. Same reasoning the messaging webhook
+  // above carries, and the same reasoning cors.ts gives for OPEN_ORIGIN_PATHS.
+  "GET /public/forms/:slug",
+  "POST /public/forms/:slug",
 ];
 
 /** §1.1 rows 22, 23, 44, 48-50 - the handset fleet's entire surface. */
 const DEVICE_AUTHED = [
+  // The dialer's queue claim and its attempt report (0159, doc 39 §8).
+  // Mounted under `devices/me` rather than `/device/` on purpose: that prefix
+  // is SILENT in topicForApiPath, and a dialer route outside it would make
+  // every attempt report broadcast a realtime `device` change to every open
+  // console in the tenant - hundreds an hour on a progressive floor.
+  //
+  // `GET next` is the SECOND of the only two routes in the API permitted to
+  // serve a stored number (doc 39 §2.1). The disclosure spec in
+  // modules/suppression pins both, and this comment deliberately does not
+  // spell the column's name: that spec greps for the literal token in both
+  // directions, so naming it here would add this file to a pinned set whose
+  // whole value is being short.
+  "GET /devices/me/dialer/next",
+  "POST /devices/me/dialer/attempts",
   "POST /calls",
   "POST /calls/:id/complete",
   // Missed calls from the handset's call log (0133). DeviceAuthGuard like the
@@ -604,6 +687,14 @@ const DEVICE_AUTHED = [
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
 const CROSS_TENANT = [
+  // The partner invite's three (0163, doc 39 §18). Cross-tenant for exactly
+  // the reason the owner invite below is: at preview and accept time the
+  // person belongs to nothing, and the TOKEN names the org. The difference is
+  // what they become - a `partner_users` row and NO membership, which 0163's
+  // exclusivity triggers enforce in both directions.
+  "GET /portal/invites/preview",
+  "POST /portal/invites/accept",
+  "POST /portal/invites/prepare",
   "GET /auth/context",
   // Invite by link (0137), the invitee's half. Cross-tenant because the
   // invitee has no workspace yet - the token names it. Reached only from the
@@ -1691,6 +1782,99 @@ const CRM_PERMISSION_ROUTES = [
   // same lead:edit grant a single PATCH does - on top of the owner/manager
   // persona check above.
   "POST /leads/reassign",
+  // ── The number vault (0157, doc 39 §2.1) ──
+  //
+  // The narrowest route on the platform: one of only TWO in the whole API
+  // permitted to serve a stored customer phone number (the other is the
+  // handset's GET /device/dialer/next, P1, not built). The set of files that
+  // may so much as mention that column is pinned by the disclosure spec in
+  // modules/suppression/ - which is why this comment spells out neither the
+  // column nor the vault table: that spec greps for both, and naming them here
+  // would make this file a reader of them.
+  // Audited to `audit_log` inside the read's own transaction, and gated on
+  // `contact_number:view` - NOT
+  // `dnc:view`, which §31 corrects its own first draft about. 0158 withholds
+  // that grant from `viewer`, the one place in 0157/0158 that departs from
+  // 0041's "a viewer always gets view".
+  //
+  // `contact_number` carries `view` alone, so there is no create/edit/delete
+  // cell: the vault is written by the intake paths (the call upload calls
+  // `noteIncomingCallNumber` directly), never by a route.
+  "GET /numbers/:numberKey/reveal",
+  // ── Suppression lists (0158, doc 39 §4.2) ──
+  //
+  // Read on `dnc:view`, which 0158 seeds to `viewer` too - the agent screen
+  // renders dialability()'s block reason verbatim and there is no number in
+  // `dnc_entries` to leak, only a SHA-256 of the last ten digits. Create and
+  // the bulk append on `dnc:create`; rename and retire on `dnc:edit`.
+  //
+  // There is deliberately NO DELETE ROUTE. A list is retired by
+  // PATCH .../:id {"status":"disabled"} - deleting one would silently re-open
+  // forty thousand numbers for dialling with nothing left to say they were
+  // ever closed - which is why `ENFORCED_PERMISSIONS` has no `dnc:delete`.
+  "GET /dnc/lists",
+  "POST /dnc/lists",
+  "POST /dnc/lists/:id/entries",
+  "PATCH /dnc/lists/:id",
+
+  // 0159 (doc 39 P1), on `dial_campaign`. NOTE the wart: Skip and Pause share
+  // `edit`, so 0159 must seed `edit` to `workspace_member` or a telecaller
+  // cannot work a queue - which also lets them pause the floor. The fix is a
+  // separate `dial_campaign:dial` action; a test pins that the two share one
+  // action today, so splitting them forces the grant to be revisited.
+  "GET /dialer/campaigns",
+  "GET /dialer/campaigns/:id/live",
+  "POST /dialer/campaigns",
+  "POST /dialer/campaigns/:id/activate",
+  "POST /dialer/campaigns/:id/build",
+  "POST /dialer/campaigns/:id/pause",
+  "POST /dialer/campaigns/:id/preview",
+  "POST /dialer/queue/:id/skip",
+  "PATCH /dialer/campaigns/:id",
+
+  // 0161 (doc 39 P3), on `web_form`. The console's four. The PUBLIC pair is
+  // unguarded and listed in UNGUARDED - a visitor holds no credential.
+  // No delete: a form is closed, because deleting it orphans the lead_sources
+  // row its leads are attributed to and 404s a link already in circulation.
+  "GET /web-forms",
+  "GET /web-forms/:id",
+  "POST /web-forms",
+  "PATCH /web-forms/:id",
+
+  // 0165 (doc 39 P6), on `resource`. Hold and release are `edit`, not a
+  // permission of their own: holding a unit for a customer is the floor's
+  // job, which is why `edit` reaches `workspace_member` here.
+  "GET /resources",
+  "GET /resources/:id",
+  "GET /resources/types",
+  "POST /resources",
+  "POST /resources/:id/book",
+  "POST /resources/:id/hold",
+  "POST /resources/:id/release",
+  "POST /resources/:id/unbook",
+  "PATCH /resources/:id",
+
+  // 0166 (doc 39 P6), on `appointment` - the ONE new object with an owner
+  // column, so it is scoped on `assigned_user_id` and deliberately NOT in
+  // ALL_SCOPE_ONLY_OBJECTS: a telecaller on `owned` sees their own diary
+  // rather than the whole clinic's.
+  "GET /appointments",
+  "GET /appointments/:id",
+  "POST /appointments",
+  "POST /appointments/:id/attendance",
+  "PATCH /appointments/:id",
+
+  // 0162/0163 (doc 39 P4), on `partner` - the TENANT's side of the portal.
+  // The partner's own seven routes are the sixth class and carry
+  // PartnerScopeGuard alone; these eight are the staff who manage them.
+  "GET /partners",
+  "GET /partners/:id",
+  "GET /partners/submissions",
+  "POST /partners",
+  "POST /partners/:id/invites",
+  "POST /partners/invites/:inviteId/revoke",
+  "PATCH /partners/:id",
+  "PATCH /partners/submissions/:id",
 ];
 
 interface Route {
@@ -1811,7 +1995,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("has 461 routes, partitioned 398 tenant / 32 cross-tenant / 10 device / 20 unguarded / 1 internal", () => {
+  // The numbers in this title and in the next one's were stale by ~90 routes
+  // for long enough that doc 39 §8 had to warn people not to read them. They
+  // are now what the `expect`s below actually assert; if you move an
+  // assertion, move the title with it in the same edit.
+  it("has 560 routes, partitioned 470 tenant / 50 cross-tenant / 18 device / 21 unguarded / 1 internal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -1989,14 +2177,27 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 555: plus the console-polish five, all tenant-scoped - lead archive and
     // restore (0154), the script-adherence mode switch (0155) and task
     // settings' GET/PUT (0156).
-    expect(ROUTES).toHaveLength(555);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(555);
+    // 560: plus doc 39's P0 five (0157/0158), all tenant-scoped - the vault's
+    // one reveal route and the four DNC-list routes. Five, not six: there is
+    // no delete, because a suppression list is disabled rather than removed.
+    expect(ROUTES).toHaveLength(609);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(609);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
     const crossTenant = ROUTES.filter((r) => r.crossTenant);
     const tenantScoped = ROUTES.filter((r) => r.guards.includes("TenantGuard") && !r.crossTenant);
     const internal = ROUTES.filter((r) => r.guards.includes("InternalStreamGuard"));
+    // THE SIXTH CLASS (doc 39 P4, migrations 0162-0163). A portal route carries
+    // PartnerScopeGuard and NOTHING else - deliberately not AdminKeyGuard,
+    // which would write a `platform_admin` principal that a long tail of
+    // handlers answers yes to, and deliberately not TenantGuard, which would
+    // take the org from a header and re-enable @OrgId(). Its identity lives in
+    // `req.partner`, the way a device's lives in its own field.
+    //
+    // It must be subtracted from the other classes before the sum, or the
+    // partition stops being exhaustive and the check silently weakens.
+    const partner = ROUTES.filter((r) => r.guards.includes("PartnerScopeGuard"));
 
     expect(sorted(unguarded.map((r) => r.route))).toEqual(sorted(UNGUARDED));
     expect(sorted(device.map((r) => r.route))).toEqual(sorted(DEVICE_AUTHED));
@@ -2044,17 +2245,23 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // settings' three.
     // 465: plus lead archive/restore (0154), the adherence mode switch (0155)
     // and task settings' GET/PUT (0156).
-    expect(tenantScoped).toHaveLength(465);
+    // 470: plus the vault's reveal and the four DNC-list routes (0157/0158).
+    expect(tenantScoped).toHaveLength(505);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
     // above and has to be named here for the partition to stay exhaustive.
     expect(
-      unguarded.length + device.length + crossTenant.length + tenantScoped.length + internal.length,
-    ).toBe(555); // = ROUTES.length: every route in exactly one class
+      unguarded.length +
+        device.length +
+        crossTenant.length +
+        tenantScoped.length +
+        internal.length +
+        partner.length,
+    ).toBe(609); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 423 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 512 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2098,7 +2305,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 491: plus GET/POST /owner/handset-alerts (0150).
     // 502: plus call escalations' eleven tenant-scoped routes (0151).
     // 507: plus the console-polish five (0154-0156), all tenant-scoped.
-    expect(principalRoutes).toHaveLength(507);
+    // 512: plus doc 39's P0 five (0157/0158) - the reveal and the four DNC
+    // routes. All five carry AdminKeyGuard, TenantGuard, CrmPermissionsGuard
+    // in that order, which the loop below is what actually proves.
+    expect(principalRoutes).toHaveLength(550);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

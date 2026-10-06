@@ -32,6 +32,7 @@ import {
   Palette,
   Phone,
   PhoneForwarded,
+  PhoneOff,
   Plug,
   Receipt,
   Route,
@@ -695,6 +696,22 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/settings/suppression",
+    label: "Do-not-call lists",
+    icon: PhoneOff,
+    title: "Do-not-call lists",
+    context: "Settings",
+    // Owner and manager, matching the WRITE grants rather than the read one.
+    // Migration 0158 seeds `dnc:view` to every console role including
+    // `viewer`, but that read is for the dialer - an agent is shown "on a
+    // do-not-call list" as the reason a record is greyed out, and withholding
+    // it would make the dialer look broken. `dnc:create` and `dnc:edit` go to
+    // the three admin roles only, and uploading a registry or retiring a list
+    // is all this page does: a telecaller offered the entry would reach a
+    // screen whose every control the API refuses.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/superfone",
     label: "Office line (Superfone)",
     icon: PhoneForwarded,
@@ -925,6 +942,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
       {
         href: "/owner/settings/escalations",
         blurb: "Let telecallers hand a call up to a senior or a manager, and choose who gets each one.",
+      },
+      {
+        href: "/owner/settings/suppression",
+        blurb: "Registries and your own list of numbers nobody here may ring.",
       },
     ],
   },

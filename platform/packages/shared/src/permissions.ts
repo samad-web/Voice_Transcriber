@@ -64,6 +64,31 @@ export type SystemRoleKey = z.infer<typeof SystemRoleKey>;
  * own header ruled the recordings mechanism out of scope for exactly this
  * reason. A fourth axis over one object is how "why can Priya not hear this
  * call" acquires four possible answers and no one of them is authoritative.
+ *
+ * `contact_number` and `dnc` joined in with the P0 foundations of doc 39, and
+ * they belong here for exactly the reason `pipeline` does not. A number in the
+ * vault and a suppression list are per-record DATA a role may or may not be
+ * trusted with, not org configuration: revealing a customer's real phone
+ * number is the most sensitive single read in the product, and a do-not-call
+ * list is the standing record of who asked to be left alone. Neither is a
+ * shape somebody configures once, the way a pipeline's stages or a custom
+ * field's definition are - which is what keeps those on AdminKeyGuard and
+ * these here.
+ *
+ * `contact_number` carries `view` ALONE, because there is exactly one route
+ * that discloses an `e164` to a human (doc 39 §2.1) and nothing else to gate:
+ * the vault is written by intake, not by hand, and the handset's own dialer
+ * fetch authenticates as a device rather than as a role. `dnc` carries
+ * `view`/`create`/`edit` - read the lists, upload one, disable one. No
+ * `delete`: a list is disabled, never deleted, so a delete cell would be a
+ * checkbox with no route behind it.
+ *
+ * Migration 0158 seeds every system role's grants for BOTH objects, in the
+ * same file that widens this enum. That is not tidiness. Widening this enum
+ * without seeding LOCKS EVERY USER OUT of the new object, because
+ * `CrmPermissionsGuard` denies whatever it finds no grant for - the lesson
+ * 0041, 0059/0060 and 0103 each record above, learned once per object because
+ * the enum is the easy half and the seeding is the half that is forgotten.
  */
 export const PermissionObjectType = z.enum([
   "contact",
@@ -76,6 +101,21 @@ export const PermissionObjectType = z.enum([
   "invoice",
   "lead",
   "lead_board",
+  "contact_number",
+  "dnc",
+  // Doc 39 P1-P6. Added ahead of their controllers so five phases can be built
+  // in parallel without each one editing this file - the matching
+  // ENFORCED_PERMISSIONS strings are added as each controller lands, because
+  // permissions-inventory.spec.ts asserts that list equals what controllers
+  // actually declare. Each phase's own migration seeds every system role's
+  // grants, which is the step that must never be skipped: CrmPermissionsGuard
+  // denies whatever it finds no grant for, so widening this enum without
+  // seeding locks every user out of the new object on deploy day.
+  "dial_campaign",
+  "web_form",
+  "partner",
+  "resource",
+  "appointment",
 ]);
 export type PermissionObjectType = z.infer<typeof PermissionObjectType>;
 
@@ -106,10 +146,54 @@ export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, "aura" | "cr
   invoice: "crm",
   lead: "aura",
   lead_board: "aura",
+  // Both `aura`, and for the same reason `lead` is. The number vault and the
+  // suppression lists exist to make a phone ring, which is the recorder
+  // product - a tenant with no CRM still dials, still reveals a number and
+  // still owes the people on a do-not-call list. Filing either under `crm`
+  // would have the guard deny both to every recorder-only tenant.
+  contact_number: "aura",
+  dnc: "aura",
+  // `aura`, with the same test applied: does a tenant with no CRM still do
+  // this? A recorder-only tenant dials, captures leads from a form, and can
+  // have brokers feeding it leads - all of which work on `leads`, which is
+  // itself `aura`. Filing any of these under `crm` would 403 every request
+  // from a tenant whose leads work perfectly.
+  dial_campaign: "aura",
+  web_form: "aura",
+  partner: "aura",
+  // `crm`, and these two genuinely are. A resource hangs off projects, deals
+  // and quotations, and an appointment is a CRM record with an assignee - a
+  // recorder-only tenant has no inventory and no diary to put them in. Doc 39
+  // §26.4 gates all four vertical primitives on `crm` for this reason.
+  resource: "crm",
+  appointment: "crm",
 };
 
 /** Objects whose grants are whole-org powers, where "own records" means nothing. */
-export const ALL_SCOPE_ONLY_OBJECTS: ReadonlySet<PermissionObjectType> = new Set(["lead_board"]);
+export const ALL_SCOPE_ONLY_OBJECTS: ReadonlySet<PermissionObjectType> = new Set([
+  "lead_board",
+  // Both joined with 0157/0158 for the same reason `lead_board` is here: there
+  // is no such thing as "my own" one of these. A suppression list is a
+  // whole-org obligation - the people on it are owed silence by everybody, not
+  // by whoever uploaded the sheet - and a vault row is a property of a phone
+  // number, not of a user. Offering an all/owned picker for either would let an
+  // admin save an `owned` grant that silently matches nothing, which is worse
+  // than not offering the choice: the role would look configured and behave as
+  // though it had no grant at all.
+  "contact_number",
+  "dnc",
+  // Whole-org powers, same as `lead_board`: a campaign, a public form, the
+  // partner roster and a unit of inventory have no owner, so "my own" means
+  // nothing for any of them.
+  "dial_campaign",
+  "web_form",
+  "partner",
+  "resource",
+  // `appointment` is deliberately NOT here. It carries `assigned_user_id`, and
+  // "my own appointments" is the most meaningful scope on it - a telecaller
+  // seeing their own diary rather than the whole clinic's is exactly what an
+  // `owned` grant is for. Its owner column is wired in crm-scope.ts.
+]);
 
 /**
  * `assign_up` joined with migration 0141 - "may this role hand a task to an
@@ -189,9 +273,17 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "account:create",
   "account:edit",
   "account:view",
+  // Doc 39 P6. No `appointment:delete` - a booking is cancelled, never
+  // removed, so the no-show and attendance history survives it.
+  "appointment:create",
+  "appointment:edit",
+  "appointment:view",
   "contact:create",
   "contact:edit",
   "contact:view",
+  // Sorts here, not after "conversation": ":" (0x3A) is below "_" (0x5F), which
+  // is the same reason "lead:*" precedes "lead_board:*" below.
+  "contact_number:view",
   "conversation:edit",
   "conversation:view",
   "deal:create",
@@ -202,6 +294,18 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "deal:edit",
   "deal:export",
   "deal:view",
+  // Doc 39 P1. Sorts between `deal:*` and `dnc:*`. No `dial_campaign:delete`
+  // - a campaign is paused or completed. NOTE: `edit` currently covers both
+  // an agent's Skip and a supervisor pausing the floor, which is why 0159
+  // seeds it to `workspace_member`; splitting out a `dial_campaign:dial`
+  // action is the fix, and a test pins that the two share one action today.
+  "dial_campaign:create",
+  "dial_campaign:edit",
+  "dial_campaign:view",
+  "dnc:create",
+  "dnc:edit",
+  "dnc:view",
+  // No "dnc:delete" - a list is disabled through `dnc:edit`, never removed.
   "invoice:create",
   "invoice:edit",
   "invoice:view",
@@ -211,15 +315,31 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "lead_board:create",
   "lead_board:delete",
   "lead_board:edit",
+  // Doc 39 P4. No `partner:delete` - a partner is suspended or terminated,
+  // and deleting one would orphan every lead they ever submitted.
+  "partner:create",
+  "partner:edit",
+  "partner:view",
   "product:create",
   "product:edit",
   "product:view",
   "quotation:create",
   "quotation:edit",
   "quotation:view",
+  // Doc 39 P6. No `resource:delete` - a unit is retired, never removed, or
+  // every appointment that ever used it loses what it was for.
+  "resource:create",
+  "resource:edit",
+  "resource:view",
   "task:create",
   "task:edit",
   "task:view",
+  // Doc 39 P3. Sorts last. No `web_form:delete` - a form is closed, because
+  // deleting it would orphan the lead_sources row every lead it produced is
+  // attributed to AND 404 a link already in somebody's email signature.
+  "web_form:create",
+  "web_form:edit",
+  "web_form:view",
   // Enforced INSIDE create/update/reassign in tasks.controller.ts, via an
   // inline `hasCrmGrant()` check rather than `@RequireCrmPermission` - it only
   // applies when the chosen assignee is an owner or manager, which a

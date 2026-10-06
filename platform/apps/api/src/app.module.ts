@@ -51,6 +51,12 @@ import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { AttendanceModule } from "./modules/attendance/attendance.module";
 import { HandsetAlertsModule } from "./modules/handset-alerts/handset-alerts.module";
 import { CallEscalationsModule } from "./modules/call-escalations/call-escalations.module";
+import { AppointmentsModule } from "./modules/appointments/appointments.module";
+import { DialerModule } from "./modules/dialer/dialer.module";
+import { PartnersModule } from "./modules/partners/partners.module";
+import { ResourcesModule } from "./modules/resources/resources.module";
+import { SuppressionModule } from "./modules/suppression/suppression.module";
+import { WebFormsModule } from "./modules/web-forms/web-forms.module";
 import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
 
 /**
@@ -114,6 +120,33 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     HandsetAlertsModule,
     // Doc 38 / migration 0151: a telecaller escalates a call to a senior or manager.
     CallEscalationsModule,
+    // Doc 39 P0 / migrations 0157-0158: the dialable-number vault and the
+    // suppression lists. Nothing dials without these, and CallsModule reaches
+    // VaultService through this module's export to seed the vault from an
+    // inbound call.
+    SuppressionModule,
+    // Doc 39 P1 / migration 0159: the progressive dialer. Nine console routes
+    // and two under the SILENT `devices/me` prefix - a handset route mounted
+    // anywhere else would broadcast a realtime `device` change to every open
+    // console on every dial (see realtime.ts's KNOWN_TOPICS comments).
+    DialerModule,
+    // Doc 39 P3 / migration 0161. Its public half is served by the marketing
+    // container and proxies here, because apps/marketing connects as
+    // `aura_marketing` and `web_forms` lives in `public`.
+    WebFormsModule,
+    // Doc 39 P6 / migrations 0165-0166: two of the four vertical primitives.
+    // `resources` is capacity-based so a unique flat and a 40-seat batch are
+    // one table; `appointments` is the tenant-scoped port of the funnel's
+    // booking lifecycle, which stays where it is in the `marketing` schema.
+    ResourcesModule,
+    AppointmentsModule,
+    // Doc 39 P4 / migrations 0162-0163: channel partners and the portal.
+    // The only module in the platform that introduces a SECOND isolation axis
+    // (`app.partner_id`), and 0163's `partner_wall` is what makes it a
+    // boundary rather than a convention - without it a partner transaction,
+    // which must set `app.org_id` to read its own three tables, would have
+    // every other tenant table wide open behind it.
+    PartnersModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

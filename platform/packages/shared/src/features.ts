@@ -79,6 +79,7 @@ export const FeatureKey = z.enum([
   "integrations",
   "connections",
   "transcription",
+  "suppression",
   "handsets",
   "branding",
 ]);
@@ -517,6 +518,22 @@ export const FEATURES: FeatureSpec[] = [
     module: "aura",
     group: "workspace",
     hrefs: ["/owner/transcription"],
+    defaultEnabled: true,
+  },
+  {
+    key: "suppression",
+    label: "Do-not-call lists",
+    blurb: "The uploaded registries and your own list of numbers nobody here may ring.",
+    // `aura`, and unlike `followups` that is the answer the routes give rather
+    // than the one the feature feels like. Suppression gates CALLING, which is
+    // the recorder product: `PERMISSION_OBJECT_MODULE.dnc` is `aura`, so the
+    // lists' routes carry `@RequireCrmPermission("dnc", ...)` over the `aura`
+    // module plus the ordinary tenant guards. Filing the feature under `crm`
+    // would be the `followups` mistake inverted - hiding a page from every
+    // recorder-only tenant whose every request to it would have succeeded.
+    module: "aura",
+    group: "workspace",
+    hrefs: ["/owner/settings/suppression"],
     defaultEnabled: true,
   },
   {

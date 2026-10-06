@@ -1,12 +1,16 @@
 import {
   firstMatchingRule,
+  HandsetState,
   LeadRoutingMatch,
+  LeadRoutingStickyFallback,
   LeadRoutingStrategy,
   pickRoutingTarget,
   type LeadRoutingTrigger,
   type RoutableLead,
   type RoutingCandidate,
   type RoutingDecision,
+  type StickyContext,
+  type StickyPriorOwner,
 } from "@aura/shared";
 
 /**
@@ -147,6 +151,8 @@ interface TargetRow {
   /** True when `counter_day` is today in the org's reporting timezone. */
   counter_is_today: boolean;
   user_id: string | null;
+  /** 0140's `attendance_live_state.state`; null = never reported from a handset. */
+  handset_state: string | null;
 }
 
 /**
@@ -204,9 +210,14 @@ async function route(
     project_id: string | null;
     value_num: string | null;
     assigned_telecaller_id: string | null;
+    contact_number_key: string | null;
   }>(
+    // `contact_number_key` (0146) is what the sticky strategy matches a
+    // returning caller on. Read unconditionally rather than behind a second
+    // query for sticky rules only - it is one column on a row already being
+    // fetched, and the rule's strategy is not known until further down.
     `SELECT workspace_id, source_channel, lead_source_id, project_id, value_num,
-            assigned_telecaller_id
+            assigned_telecaller_id, contact_number_key
        FROM leads WHERE id = $1 AND org_id = $2`,
     [req.leadId, orgId],
   );
@@ -262,13 +273,36 @@ async function route(
   // Leads arrive at human scale; this is never the bottleneck.
   const {
     rows: [locked],
-  } = await client.query<{ cursor: string | number; strategy: string; name: string }>(
+  } = await client.query<{
+    cursor: string | number;
+    strategy: string;
+    name: string;
+    /** 0160. Null for every non-sticky rule, and for a sticky one that
+     *  predates the CHECK that now forbids a half-configured rule. */
+    sticky_window_days: number | null;
+    sticky_fallback: string | null;
+    /** 0140, off for most tenants - see the shift gate. */
+    attendance_enabled: boolean | null;
+  }>(
     // The `deleted_at` guard is what keeps this check meaningful after 0108.
     // A soft delete leaves the row in place, so `SELECT ... FOR UPDATE` on the
     // id alone would happily lock a rule the owner removed between the match
     // above and the lock here, and go on to assign the lead with it.
-    `SELECT cursor, strategy, name FROM lead_routing_rules
-      WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+    // `sticky_window_days`/`sticky_fallback` (0160) ride along on the lock
+    // rather than a second read: the row is already being locked and the
+    // strategy is decided from it one line below.
+    //
+    // `attendance_enabled` comes from the ORG and is read here for the same
+    // reason. It is FALSE for most tenants, and the sticky shift gate is
+    // conditional on it - gating on presence a tenant does not collect would
+    // send every sticky lead to the fallback forever, for a reason nobody
+    // would connect to a switch on another page.
+    `SELECT r.cursor, r.strategy, r.name,
+            r.sticky_window_days, r.sticky_fallback,
+            o.attendance_enabled
+       FROM lead_routing_rules r
+       JOIN organizations o ON o.id = r.org_id
+      WHERE r.id = $1 AND r.deleted_at IS NULL FOR UPDATE OF r`,
     [matched.row.id],
   );
   if (!locked) return NOT_ROUTED("the matching rule was deleted mid-flight");
@@ -285,10 +319,16 @@ async function route(
             (t.counter_day IS NOT NULL
              AND t.counter_day = (now() AT TIME ZONE o.reporting_timezone)::date)
               AS counter_is_today,
-            tc.user_id
+            tc.user_id,
+            -- 0140's live presence, for the sticky shift gate. LEFT JOIN: no
+            -- row is a console-only person who has never reported from a
+            -- handset, which is NOT absence - stickyOwnerOnShift reads null
+            -- as "unknown, do not block" rather than as off shift.
+            als.state AS handset_state
        FROM lead_routing_targets t
        JOIN telecallers   tc ON tc.id = t.telecaller_id
        JOIN organizations o  ON o.id = t.org_id
+       LEFT JOIN attendance_live_state als ON als.telecaller_id = t.telecaller_id
       WHERE t.rule_id = $1
         -- An archived telecaller is off every rotation immediately, without
         -- anybody having to remember to edit the rules they were on. Their
@@ -311,10 +351,73 @@ async function route(
     // how a daily cap silently becomes a lifetime cap - the row is zeroed on
     // write below, but the DECISION has to see the corrected value now.
     assignedToday: row.counter_is_today ? row.assigned_today : 0,
+    // Parsed, not cast: an unrecognised state from a newer handset must read
+    // as "unknown" and leave the person routable, never as off shift.
+    handsetState: HandsetState.safeParse(row.handset_state).data ?? null,
   }));
 
+  // ── 3b. Who has had this caller before (sticky only) ──────────────────────
+  //
+  // One extra read, and only for a sticky rule. 0146's
+  // `leads_workspace_contact_key` index already covers the lookup, and the
+  // rows behind one key number in the single digits - which is why 0160 adds
+  // no index of its own.
+  //
+  // `assigned_telecaller_id IS NOT NULL` is the load-bearing predicate: an
+  // UNASSIGNED earlier lead from this number binds nobody, and counting it as
+  // a prior owner would make every repeat caller ambiguous.
+  let sticky: StickyContext | undefined;
+  if (strategy === "sticky") {
+    const windowDays = locked.sticky_window_days ?? null;
+    const fallback = LeadRoutingStickyFallback.safeParse(locked.sticky_fallback).data ?? null;
+
+    let priorOwners: StickyPriorOwner[] = [];
+    // No key means the lead arrived without a usable number - there is no
+    // history to match on, so this is `no_history`, not ambiguity.
+    if (lead.contact_number_key && windowDays) {
+      const { rows: priors } = await client.query<{
+        telecaller_id: string;
+        name: string | null;
+        lead_count: number;
+        last_lead_at: Date | null;
+      }>(
+        `SELECT l.assigned_telecaller_id AS telecaller_id,
+                tc.display_name          AS name,
+                count(*)::int            AS lead_count,
+                max(l.created_at)        AS last_lead_at
+           FROM leads l
+           LEFT JOIN telecallers tc ON tc.id = l.assigned_telecaller_id
+          WHERE l.workspace_id       = $1
+            AND l.contact_number_key = $2
+            AND l.id                <> $3
+            AND l.assigned_telecaller_id IS NOT NULL
+            AND l.created_at >= now() - make_interval(days => $4)
+          GROUP BY 1, 2`,
+        [lead.workspace_id, lead.contact_number_key, req.leadId, windowDays],
+      );
+      priorOwners = priors.map((p) => ({
+        telecallerId: p.telecaller_id,
+        name: p.name,
+        leadCount: Number(p.lead_count),
+        lastLeadAt: p.last_lead_at ? p.last_lead_at.toISOString() : null,
+      }));
+    }
+
+    sticky = {
+      windowDays,
+      fallback,
+      priorOwners,
+      attendanceTracked: locked.attendance_enabled === true,
+    };
+  }
+
   // ── 4. The pick ───────────────────────────────────────────────────────────
-  const decision: RoutingDecision = pickRoutingTarget(strategy, targets, Number(locked.cursor));
+  const decision: RoutingDecision = pickRoutingTarget(
+    strategy,
+    targets,
+    Number(locked.cursor),
+    sticky,
+  );
 
   if (!decision.picked) {
     await recordDecision(client, orgId, {

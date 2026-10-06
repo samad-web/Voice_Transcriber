@@ -28,6 +28,7 @@ import { startRetrySweeper, startStalledCallSweeper } from "./pipeline/retry";
 import { startLeadScoringSweep } from "./pipeline/lead-scoring";
 import { startTelecallerStatsSweep } from "./pipeline/telecaller-stats";
 import { startCallLeadLinkSweep } from "./pipeline/call-lead-link";
+import { startDialAttemptLinkSweep } from "./pipeline/dial-attempt-link";
 import { startMissedCallLeadSweep } from "./pipeline/missed-call-leads";
 import { startFollowupReminderSweep } from "./pipeline/followup-reminders";
 import { startDocumentDateSweep } from "./pipeline/document-dates";
@@ -45,6 +46,7 @@ import { startAttendanceClassifier } from "./pipeline/attendance-classify";
 import { startAttendanceAlerts } from "./pipeline/attendance-alerts";
 import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
 import { startHandsetAlertSweep } from "./pipeline/handset-alerts";
+import { startResourceHoldSweep } from "./pipeline/resource-hold-sweep";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -196,6 +198,14 @@ async function bootstrap() {
   // Sweep rather than trigger because neither side arrives first: a cold call
   // precedes its lead, a Meta lead precedes its calls. See the module header.
   startCallLeadLinkSweep();
+  // And the dialer's own half of the same problem (doc 39 §10, migration
+  // 0159): which `calls` row did THIS dial produce? Same shape of answer -
+  // neither side arrives first, so it is a sweep - and the same refusal to
+  // guess: exactly one candidate links, two or more are left for a person,
+  // which is the precedent 0146 set. Without it a dialed call is just a call
+  // and the campaign cannot show the transcript it produced, which is the one
+  // thing this dialer has that the others do not.
+  startDialAttemptLinkSweep();
   // Unknown missed callers become leads (migration 0134). Runs after the sweep
   // above in this list - not by a dependency between them (each opens its own
   // org transactions on its own interval, so the ordering here is cosmetic -
@@ -269,6 +279,13 @@ async function bootstrap() {
   // the push carries no content - the phone fetches it. A sweep, so it belongs
   // on the single-replica side when the process is split.
   startHandsetAlertSweep();
+  // Expired resource holds (doc 39 §24, migration 0165). A hold is inventory
+  // taken off the market with nobody paying for it, so it has to lapse while
+  // nobody is looking. It takes `FOR UPDATE` on the resource row in a statement
+  // of its own - outside any CTE - so a hold that became a booking in the same
+  // tick is never released; see the module header. Pure state, writes an
+  // audit_log row, sends nothing.
+  startResourceHoldSweep();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an

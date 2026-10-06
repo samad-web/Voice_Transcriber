@@ -18,8 +18,26 @@ import examples from "libphonenumber-js/mobile/examples";
  * one of them validates through `checkPhone` below: the number must be a real,
  * dialable number under the numbering plan of the country its calling code
  * names - the exact national length, and a prefix that country actually
- * issues. "98765" is refused as too short for India; "+91 12345 67890" is
- * refused because no Indian number starts with 1.
+ * issues. "98765" is refused as too short for India.
+ *
+ * ── WHAT THIS DOES *NOT* CATCH, STATED HONESTLY ──────────────────────────────
+ *
+ * This comment used to claim "+91 12345 67890" is refused "because no Indian
+ * number starts with 1". It is not. `checkPhone("+911234567890", "IN")` returns
+ * ok, because libphonenumber's current metadata calls it a valid Indian
+ * FIXED_LINE - India's landline space is broad enough to contain it. Verified
+ * directly, 2026-10-06.
+ *
+ * So the guarantee here is LENGTH AND PLAN SHAPE, not "a human answers this
+ * number". A ten-digit string that happens to land inside a country's landline
+ * range passes. That is a property of the numbering plan, not a bug to patch -
+ * and specifically NOT something to fix by adding a second, stricter validity
+ * rule beside this one. Two definitions of "valid number" agree until somebody
+ * edits one, and then a form accepts what a backfill rejects.
+ *
+ * It matters wherever a number is promoted to "dialable" without a human
+ * looking at it - see `scripts/normalise-vault-numbers.js` and doc 39 §3.1,
+ * which carry the same caveat rather than inventing a tighter rule.
  *
  * ── WHY A LIBRARY AND NOT A TABLE ────────────────────────────────────────────
  *

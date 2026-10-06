@@ -507,6 +507,66 @@ async function structuralChecks(admin) {
       : "",
   );
 
+  // 4c. The partner wall. Since 0163 there are TWO isolation axes, not one:
+  //     `app.org_id` separates tenants, and `app.partner_id` separates an
+  //     external partner principal from the tenant hosting it. Every check
+  //     above is about the first axis and says nothing at all about the second.
+  //
+  //     This has to live here rather than in a migration, and 0165/0166 are the
+  //     proof. 0163 closes with exactly this assertion, correctly written, and
+  //     it passed - then 0165 and 0166 created five more org-scoped tables and
+  //     0163 was never going to run again. A migration can only ask the catalog
+  //     about the past; this file runs after all of them, so it is the only
+  //     place the question can be asked about the whole schema.
+  //
+  //     `appointment_reschedule_tokens` is why the severity is EXCEPTION-level
+  //     rather than a warning: those rows are bearer tokens, so reading the
+  //     table is the power to move somebody else's appointment.
+  //
+  //     `partner_isolation` counts as satisfying this - it is the narrower
+  //     policy the four partner-owned tables carry instead of a flat wall.
+  const { rows: unwalledRows } = await admin.query(`
+    SELECT c.table_name AS name
+      FROM information_schema.columns c
+      JOIN information_schema.tables t
+        ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+     WHERE c.table_schema = 'public'
+       AND c.column_name  = 'org_id'
+       AND t.table_type   = 'BASE TABLE'
+       AND NOT EXISTS (
+         SELECT 1 FROM pg_policies p
+          WHERE p.schemaname = 'public'
+            AND p.tablename  = c.table_name
+            AND p.policyname IN ('partner_wall', 'partner_isolation'))
+     ORDER BY 1`);
+  assert(
+    "every org_id table carries partner_wall or partner_isolation (the second RLS axis)",
+    unwalledRows.length === 0,
+    unwalledRows.length
+      ? `readable by a partner principal: ${unwalledRows.map((r) => r.name).join(", ")} - ` +
+          "add the partner_wall block from 0163 to the migration that creates the table"
+      : "",
+  );
+
+  // 4d. ...and that both partner policies are RESTRICTIVE. A `partner_wall`
+  //     created PERMISSIVE ORs with `org_isolation`, admits every row it was
+  //     meant to deny, and reads in pg_policies exactly like the thing that was
+  //     supposed to be there. 0163 asserts this too, with the same blind spot.
+  const { rows: permissiveRows } = await admin.query(`
+    SELECT tablename || '.' || policyname AS name
+      FROM pg_policies
+     WHERE schemaname = 'public'
+       AND policyname IN ('partner_wall', 'partner_isolation')
+       AND permissive <> 'RESTRICTIVE'
+     ORDER BY 1`);
+  assert(
+    "every partner_wall / partner_isolation policy is RESTRICTIVE",
+    permissiveRows.length === 0,
+    permissiveRows.length
+      ? `PERMISSIVE and therefore isolating nothing: ${permissiveRows.map((r) => r.name).join(", ")}`
+      : "",
+  );
+
   // 5. Enum drift. packages/shared/src/enums.ts is hand-maintained and is
   //    ALREADY behind these two constraints (CallStatus has no
   //    TRANSCRIPTION_OFF, added by 0014 and written by pipeline.ts; CrmSyncStatus

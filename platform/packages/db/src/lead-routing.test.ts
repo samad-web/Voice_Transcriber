@@ -415,3 +415,184 @@ describe("routeLead - the daily counter", () => {
     expect(result.reason).toContain("daily cap");
   });
 });
+
+/**
+ * The sticky strategy's WIRING (migration 0160).
+ *
+ * The decision itself - who wins, who is ambiguous, who is off shift - is
+ * proved exhaustively in `@aura/shared`'s lead-routing.test.ts. None of that
+ * is retested here. What is tested here is the half that only exists once the
+ * pure function meets a transaction, and it is the half that can be wrong
+ * while every pure test stays green: a perfect predicate handed the wrong
+ * rows still routes the wrong lead.
+ *
+ * Specifically: is the prior-owner query asked at all, is it asked only for a
+ * sticky rule, does it exclude the lead being routed and the unassigned
+ * history, and does the handset state survive the trip from column to
+ * candidate.
+ */
+describe("routeLead - the sticky wiring", () => {
+  /** A sticky rule, one prior owner, attendance on and that owner at work. */
+  function stickyPath(): Script {
+    const script = happyPath();
+    script["FROM leads WHERE id"] = [
+      {
+        workspace_id: "ws-1",
+        source_channel: "call",
+        lead_source_id: null,
+        project_id: null,
+        value_num: null,
+        assigned_telecaller_id: null,
+        contact_number_key: "key-abc",
+      },
+    ];
+    script["FROM lead_routing_rules WHERE org_id"] = [
+      {
+        id: "rule-1",
+        name: "Returning callers",
+        strategy: "sticky",
+        match: {},
+        cursor: 0,
+        workspace_id: null,
+      },
+    ];
+    // Overwrites happyPath's key rather than adding "FOR UPDATE OF r" beside
+    // it. The fake matches script fragments in insertion order, so a new key
+    // appended here would lose to the existing "FOR UPDATE" and hand back a
+    // round-robin rule - which looks like a passing sticky test right up
+    // until something asserts the sticky query was issued at all.
+    script["FOR UPDATE"] = [
+      {
+        cursor: 0,
+        strategy: "sticky",
+        name: "Returning callers",
+        sticky_window_days: 90,
+        sticky_fallback: "round_robin",
+        attendance_enabled: true,
+      },
+    ];
+    script["FROM lead_routing_targets t"] = [
+      {
+        id: "target-1",
+        telecaller_id: "tc-1",
+        name: "Priya",
+        position: 0,
+        share_pct: "0",
+        delivered: "0",
+        paused: false,
+        daily_cap: null,
+        assigned_today: 0,
+        counter_is_today: true,
+        user_id: "user-1",
+        handset_state: "ACTIVE",
+      },
+    ];
+    script["l.assigned_telecaller_id AS telecaller_id"] = [
+      { telecaller_id: "tc-1", name: "Priya", lead_count: 2, last_lead_at: new Date("2026-09-01") },
+    ];
+    return script;
+  }
+
+  it("sends a returning caller back to the person who had them", async () => {
+    const { client } = fakeClient(stickyPath());
+    const result = await routeLead(client, "org-1", { leadId: "lead-1", trigger: "intake" });
+    expect(result.assigned).toBe(true);
+    expect(result.telecallerId).toBe("tc-1");
+  });
+
+  it("asks for prior owners ONLY for a sticky rule", async () => {
+    // A round-robin rule paying for an extra query on every intake would be a
+    // silent tax on the path most leads take.
+    const { client, log } = fakeClient(happyPath());
+    await routeLead(client, "org-1", { leadId: "lead-1", trigger: "intake" });
+    expect(log.filter((q) => q.includes("l.assigned_telecaller_id AS telecaller_id"))).toEqual([]);
+
+    const sticky = fakeClient(stickyPath());
+    await routeLead(sticky.client, "org-1", { leadId: "lead-1", trigger: "intake" });
+    expect(
+      sticky.log.filter((q) => q.includes("l.assigned_telecaller_id AS telecaller_id")),
+    ).toHaveLength(1);
+  });
+
+  it("excludes the lead being routed, and history nobody owns", async () => {
+    // Both predicates are load-bearing. Without the first, a re-route reads
+    // the lead's own current owner as its prior owner. Without the second, an
+    // UNASSIGNED earlier lead from this number counts as an owner, and every
+    // repeat caller becomes ambiguous and falls through.
+    const { client, log } = fakeClient(stickyPath());
+    await routeLead(client, "org-1", { leadId: "lead-1", trigger: "intake" });
+    const priorQuery = log.find((q) => q.includes("l.assigned_telecaller_id AS telecaller_id"))!;
+    expect(priorQuery).toContain("l.id <> $3");
+    expect(priorQuery).toContain("l.assigned_telecaller_id IS NOT NULL");
+    expect(priorQuery).toContain("l.contact_number_key = $2");
+  });
+
+  it("does not ask for history when the lead has no number to match on", async () => {
+    // No key is `no_history`, not ambiguity - and there is nothing to ask.
+    const script = stickyPath();
+    script["FROM leads WHERE id"] = [
+      {
+        workspace_id: "ws-1",
+        source_channel: "manual",
+        lead_source_id: null,
+        project_id: null,
+        value_num: null,
+        assigned_telecaller_id: null,
+        contact_number_key: null,
+      },
+    ];
+    const { client, log } = fakeClient(script);
+    await routeLead(client, "org-1", { leadId: "lead-1", trigger: "intake" });
+    expect(log.filter((q) => q.includes("l.assigned_telecaller_id AS telecaller_id"))).toEqual([]);
+  });
+
+  it("carries the handset state from the column through to the decision", async () => {
+    // The shift gate is only as good as the join feeding it. An owner marked
+    // OFF_SHIFT must reach the pure function as off shift, or a sticky lead
+    // lands on somebody who went home.
+    const script = stickyPath();
+    script["FROM lead_routing_targets t"] = [
+      {
+        id: "target-1",
+        telecaller_id: "tc-1",
+        name: "Priya",
+        position: 0,
+        share_pct: "0",
+        delivered: "0",
+        paused: false,
+        daily_cap: null,
+        assigned_today: 0,
+        counter_is_today: true,
+        user_id: "user-1",
+        handset_state: "OFF_SHIFT",
+      },
+    ];
+    const { client } = fakeClient(script);
+    const result = await routeLead(client, "org-1", { leadId: "lead-1", trigger: "intake" });
+
+    // They STILL get the lead, and that is correct rather than a miss: the
+    // shift gate only governs the sticky path. Stickiness declines, the rule
+    // falls back to round_robin, and round_robin deliberately does not read
+    // `handsetState` at all - it is the one strategy that can bury a single
+    // person under a day's leads, so it is the one that asks. With one
+    // telecaller in the rotation the fallback hands it straight back.
+    //
+    // What this pins is the WIRING: the reason can only name the shift if
+    // `handset_state` survived the join, the candidate mapping and the parse.
+    expect(result.assigned).toBe(true);
+    expect(result.reason).toMatch(/shift|away/iu);
+  });
+
+  it("reads an unknown handset state as unknown, never as absent", async () => {
+    // A newer handset reporting a state this build has never heard of must
+    // leave its owner routable. Failing closed here would silently bench
+    // somebody the day the app ships a new state.
+    const script = stickyPath();
+    const target = (script["FROM lead_routing_targets t"] as Row[])[0];
+    script["FROM lead_routing_targets t"] = [{ ...target, handset_state: "VIBING" }];
+    const { client } = fakeClient(script);
+    const result = await routeLead(client, "org-1", { leadId: "lead-1", trigger: "intake" });
+    expect(result.assigned).toBe(true);
+    expect(result.telecallerId).toBe("tc-1");
+  });
+});

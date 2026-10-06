@@ -8,7 +8,26 @@ import { z } from "zod";
  * call_facts' typed-EAV VALUE storage (see the migration's own comment).
  */
 
-export const CustomFieldObjectType = z.enum(["contact", "account", "deal"]);
+/**
+ * `resource` joined with migration 0165 (doc 39 §24), and it is the cheapest
+ * win in that document for one reason: `custom_field_definitions.object_type`
+ * is an open text column with the enum enforced here in the app, so a vertical
+ * that needs carpet area and facing, or engine number and colour, or batch
+ * timing and faculty, gets text/number/date/boolean/picklist/multiselect,
+ * provenance (0045) and the existing editor component by widening one line.
+ *
+ * ── ONE THING §24 GETS WRONG, AND IT IS NOT FREE ───────────────────────────
+ *
+ * §24 says no migration is needed. The DEFINITION half is indeed free; the
+ * VALUE half is not. 0037 deliberately built three parallel typed-EAV tables
+ * rather than one polymorphic one, and `valueTableForObjectType()` below
+ * resolves to `<object>_custom_field_values` - so widening this enum ALONE
+ * would have the custom-field-values controller build SQL against a table that
+ * does not exist, and the failure is a 42P01 the first time a tenant fills in a
+ * field on a resource. 0165 creates `resource_custom_field_values` for exactly
+ * that reason; the two must stay together.
+ */
+export const CustomFieldObjectType = z.enum(["contact", "account", "deal", "resource"]);
 export type CustomFieldObjectType = z.infer<typeof CustomFieldObjectType>;
 
 export const CustomFieldType = z.enum([
