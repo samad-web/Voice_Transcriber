@@ -185,7 +185,9 @@ export async function sweepStorageUsage(now: Date = new Date()): Promise<{ orgs:
          SELECT m.org_id, m.user_id, 'storage_quota', $2, $3, '/owner/account/plan',
                 'storage_quota:' || $4 || ':' || to_char(now(), 'YYYY-MM-DD')
            FROM memberships m
-          WHERE m.org_id = $1 AND m.owner_role = 'owner' AND m.status = 'active'
+          -- COALESCE: a null persona IS the owner persona (resolveOwnerRole),
+          -- and the operator console's member writer never sets that column.
+          WHERE m.org_id = $1 AND COALESCE(m.owner_role, 'owner') = 'owner' AND m.status = 'active'
          ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
         [
           row.org_id,

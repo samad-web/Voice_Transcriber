@@ -16,7 +16,7 @@ export interface NotificationKindSpec {
   label: string;
   /** What choosing Instant or Digest for this kind actually affects. */
   description: string;
-  icon: "user-plus" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed" | "download" | "upload";
+  icon: "user-plus" | "user-check" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed" | "download" | "upload";
   /**
    * Somebody has to DO something, not merely know something. These are what
    * the bell's "Needs action" tab shows.
@@ -54,6 +54,16 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     label: "Export started",
     description: "Somebody in your workspace started exporting data. Owners are always told.",
     icon: "upload",
+    needsAction: false,
+  },
+  // Fourth in the governance cluster (0152): somebody gaining a login is the
+  // same class of fact as somebody taking data out. Not "needs action" - the
+  // access was granted when the invite was sent, and this is the confirmation
+  // that it was used, not a decision waiting in the console.
+  invite_accepted: {
+    label: "Invite accepted",
+    description: "Somebody you invited signed in for the first time. Owners are always told.",
+    icon: "user-check",
     needsAction: false,
   },
   lead_assigned: {

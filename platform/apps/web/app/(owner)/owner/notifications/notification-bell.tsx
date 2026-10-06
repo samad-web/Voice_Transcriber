@@ -19,6 +19,7 @@ import {
   Plug,
   ShieldAlert,
   Upload,
+  UserCheck,
   UserPlus,
   Zap,
   type LucideIcon,
@@ -61,6 +62,7 @@ const TOAST_EACH_MAX = 2;
 
 const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
   "user-plus": UserPlus,
+  "user-check": UserCheck,
   clock: Clock,
   "arrow-right-left": ArrowRightLeft,
   hourglass: Hourglass,

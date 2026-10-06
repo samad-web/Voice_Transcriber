@@ -10,12 +10,14 @@ import {
   Users,
 } from "lucide-react";
 import { Card, MonoLabel, Sparkline, STATE_TONE, StatCard, StatusChip } from "@aura/ui";
+import { JoinedNotice } from "@/components/joined-notice";
 import { LocalTime } from "@/components/local-time";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { deltaText, percentDelta, pointsDelta, rateText, share } from "@/lib/dashboard-charts";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin, apiGetAs } from "@/lib/server-api";
+import { getSessionUser } from "@/lib/supabase/server";
 import { resolveTenantScope } from "@/lib/tenant-scope";
 
 interface Overview {
@@ -86,12 +88,17 @@ interface Health {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ org?: string }>;
+  searchParams: Promise<{ org?: string; joined?: string }>;
 }) {
   const blocked = await operatorGate();
   if (blocked) return blocked;
 
-  const { org } = await searchParams;
+  const { org, joined } = await searchParams;
+  // A superadmin invite was just accepted (0145). `/auth/callback` sends that
+  // one acceptance here rather than to /owner, because an operator has no
+  // membership anywhere - so this is the only place the acknowledgement can be.
+  const justJoined = joined === "1";
+  const session = justJoined ? await getSessionUser() : null;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 
   const [fleet, data, activeUsers, bookingRate, health] = await Promise.all([
@@ -149,6 +156,13 @@ export default async function DashboardPage({
   return (
     <>
       <PageHeader title="Platform Hub" />
+
+      {justJoined ? (
+        // No workspace to name, and `announced` left false: accepting a
+        // superadmin invite rings nobody, because operators have no `users` row
+        // and therefore no bell. Claiming otherwise would be a lie in a panel.
+        <JoinedNotice email={session?.email || null} activityHref="/account/login-activity" />
+      ) : null}
 
       {fleet ? (
         <section className="space-y-4">

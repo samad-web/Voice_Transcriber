@@ -80,6 +80,7 @@ export { ErrorBanner } from "./error-banner";
 export type { RowHintKind, RowHintProps } from "./row-hint";
 export { FeedbackProvider, useAlert, useToast } from "./feedback";
 export type { AlertOptions, ToastOptions } from "./feedback";
+export { FieldValidation, validationMessage } from "./field-validation";
 export { Tooltip } from "./tooltip";
 export type { TooltipProps } from "./tooltip";
 export { HeaderIconButton, headerIconButtonClass } from "./header-icon-button";

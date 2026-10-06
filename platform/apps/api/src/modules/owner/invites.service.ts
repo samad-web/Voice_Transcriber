@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { OWNER_ROLE_LABELS, resolveOwnerRole, type OwnerRole } from "@aura/shared";
 import { DbService } from "../../db/db.service";
+import { notify } from "../notifications/notify";
 import { platformMailConfig, sendInviteMail } from "./invite-mail";
 import {
   generateInviteToken,
@@ -118,6 +119,8 @@ interface InviteRow {
   phone: string | null;
   whatsapp_number: string | null;
   expires_at: Date;
+  /** Who issued it. Null once that person's `users` row is gone (ON DELETE SET NULL). */
+  invited_by: string | null;
   emailed_at: Date | null;
   prepared_subject: string | null;
   accepted_at: Date | null;
@@ -412,6 +415,7 @@ export class InvitesService {
         ownerRole: invite.owner_role,
         alreadyMember,
       });
+      await this.announce(client, invite, userId, alreadyMember);
 
       return { orgId: invite.org_id, orgName: org?.name ?? "", alreadyMember, telecallerBound };
     });
@@ -651,6 +655,103 @@ export class InvitesService {
     } catch (err) {
       // Not fatal: the user has no password and no binding, so it opens nothing.
       console.error("[invites] prepared auth user cleanup failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /**
+   * "Asha is in" - the bell row acceptance used to skip (migration 0152).
+   *
+   * ── WHO IS TOLD ────────────────────────────────────────────────────────────
+   *
+   * The INVITER, because they are the person who has been waiting for an answer
+   * and had no way to get one: before this, the only sign an invite had been
+   * taken up was a row quietly leaving the Team page's "Pending invites" list.
+   * And every OWNER, because somebody acquiring a login to the workspace is
+   * theirs to know about whether or not they issued it - the same reasoning
+   * `export_created` is separate from `export_ready`.
+   *
+   * Never the invitee: `notify` drops a row whose subject is the actor, so an
+   * owner who invites themselves to a second workspace is not told about
+   * themselves. That is also why the fan-out query does not bother excluding
+   * them - the suppression lives in one place, where it is documented.
+   *
+   * ── NO DEDUPE KEY, DELIBERATELY ────────────────────────────────────────────
+   *
+   * Per @aura/shared's convention a key is for sweeps and absent for events,
+   * and this cannot fire twice: it runs inside the transaction holding
+   * `FOR UPDATE` on the invite, after `accepted_at` is set, and
+   * `assertInvitePending` refuses a spent invite. A second invitation to the
+   * same person is a different `org_invites` row and SHOULD ring again.
+   *
+   * In the transaction, so a notification cannot exist for an acceptance that
+   * rolled back - and a failure here fails the acceptance, which is the right
+   * way round: the invitee can retry a link that is still unspent.
+   */
+  private async announce(
+    client: {
+      query: (text: string, values?: unknown[]) => Promise<{ rows: { user_id: string }[]; rowCount: number | null }>;
+    },
+    invite: InviteRow,
+    acceptedUserId: string,
+    alreadyMember: boolean,
+  ): Promise<void> {
+    const { rows } = await client.query(
+      // `COALESCE(m.owner_role, 'owner')`, NOT `m.owner_role = 'owner'`. A null
+      // persona IS the owner persona - `resolveOwnerRole` resolves it that way,
+      // and memberships written before 0079 have nothing in that column. The
+      // plain comparison looks right, passes typecheck, and silently tells
+      // nobody in exactly the workspaces that have been running longest. It was
+      // written that way here first and caught by executing this against a
+      // seeded database, whose only owner it missed. Same predicate as
+      // `AttendanceService.activeOwners`, for the same reason.
+      //
+      // Both `status` columns: somebody removed from the workspace keeps their
+      // `memberships` row, and a revoked login keeps its `users` row. Neither is
+      // somebody to ring.
+      //
+      // `$2::uuid` is cast explicitly because it is NULL for an invite the
+      // OPERATOR console issued (instance-invites.controller.ts leaves
+      // `invited_by` null and names the operator in the audit row instead).
+      // That case is not an error: there is no inviter in this workspace to
+      // tell, so the owners alone are told - and for the first owner of a brand
+      // new instance there is nobody at all, which is correct.
+      `SELECT DISTINCT m.user_id
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+        WHERE m.org_id = $1 AND m.status = 'active' AND u.status = 'active'
+          AND (COALESCE(m.owner_role, 'owner') = 'owner' OR m.user_id = $2::uuid)`,
+      [invite.org_id, invite.invited_by],
+    );
+    if (rows.length === 0) return;
+
+    // The name is whatever the owner typed into the Team form. Bounded here
+    // rather than trusted, so a long one cannot push the title past the 200
+    // characters @aura/shared allows.
+    const who = (invite.name?.trim() || invite.email).slice(0, 120);
+    const role = OWNER_ROLE_LABELS[resolveOwnerRole(invite.owner_role)];
+    for (const { user_id } of rows) {
+      await notify(
+        client,
+        invite.org_id,
+        {
+          userId: user_id,
+          kind: "invite_accepted",
+          // Both halves of what happened, because accepting an invite IS
+          // signing in - the link is spent by a verified Google session, so
+          // there is no state where somebody has accepted but not yet logged in.
+          title: alreadyMember
+            ? `${who} signed in with their invite`
+            : `${who} accepted their invite and signed in`,
+          body: alreadyMember
+            ? `${invite.email} was already in this workspace, so their access is unchanged.`
+            : `Signed in with Google as ${invite.email}. Console access: ${role}.`,
+          // No `/admin` prefix: the console is served under that basePath in
+          // production and `next/link` adds it, so a stored path saying
+          // `/admin/...` is prefixed twice and 404s. Invisible in local dev.
+          linkPath: "/owner/staff",
+        },
+        acceptedUserId,
+      );
     }
   }
 

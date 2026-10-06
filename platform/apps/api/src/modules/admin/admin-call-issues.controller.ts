@@ -689,8 +689,12 @@ export class AdminCallIssuesController {
       recipients.push(String(report.reported_by_user_id));
     } else {
       const { rows } = await client.query(
+        // COALESCE: a null persona IS the owner persona (resolveOwnerRole), and
+        // the operator console's member writer never sets that column. This is
+        // the fallback for a reporter who has since left, so `owner_role =
+        // 'owner'` meant the answer to their ticket reached nobody at all.
         `SELECT user_id FROM memberships
-          WHERE org_id = $1 AND owner_role = 'owner' AND status = 'active'`,
+          WHERE org_id = $1 AND COALESCE(owner_role, 'owner') = 'owner' AND status = 'active'`,
         [orgId],
       );
       recipients.push(...rows.map((r) => String(r.user_id)));

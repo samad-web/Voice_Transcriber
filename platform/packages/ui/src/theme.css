@@ -629,3 +629,27 @@
     }
   }
 }
+
+/* ── The failing-field ring (field-validation.tsx) ─────────────────────────
+ *
+ * UNLAYERED, on purpose, and it is the only rule in this file that is.
+ *
+ * Tailwind v4 puts its utilities in `@layer utilities`, and the cascade settles
+ * layers BEFORE it ever looks at specificity: anything inside `@layer base`
+ * above loses to `border-border-strong` no matter how many attribute selectors
+ * it stacks. Unlayered CSS outranks every layer, which is what lets this beat
+ * the control's own border - and its `hover:` variant, which would otherwise
+ * repaint the edge grey the moment the pointer crossed it.
+ *
+ * The ring is a box-shadow rather than an outline so it does not fight the
+ * global `:focus-visible` outline - the failing field is the focused field, and
+ * both have to be visible at once.
+ *
+ * `--color-orange` and not a red: red means MISSED in this console
+ * (state.tsx). The ring is never alone either way - there is a message bubble
+ * beside it carrying the same tone, a triangle, and the words.
+ */
+[data-aura-invalid] {
+  border-color: var(--color-orange);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-orange) 22%, transparent);
+}

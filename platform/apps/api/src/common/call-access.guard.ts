@@ -267,8 +267,12 @@ async function notifyAdministrators(
         AND (
           -- A named administrator, when there is one...
           (o.call_access_admin_user_id IS NOT NULL AND m.user_id = o.call_access_admin_user_id)
-          -- ...otherwise everybody holding the owner persona.
-          OR (o.call_access_admin_user_id IS NULL AND m.owner_role = 'owner')
+          -- ...otherwise everybody holding the owner persona. COALESCE, because
+          -- a null persona IS the owner persona (resolveOwnerRole) and the
+          -- operator console's member writer never sets that column. This is
+          -- the one notification kind that cannot be switched off, so it is the
+          -- worst one to have reach nobody without saying so.
+          OR (o.call_access_admin_user_id IS NULL AND COALESCE(m.owner_role, 'owner') = 'owner')
         )`,
     [orgId],
   );

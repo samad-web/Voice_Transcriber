@@ -4,6 +4,7 @@ import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } fro
 import { resolveTimeZone, todayIn, type OwnerRole } from "@aura/shared";
 import { StatCard } from "@aura/ui";
 import { DateRangeNotice } from "@/components/date-range-bar";
+import { JoinedNotice } from "@/components/joined-notice";
 import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { crmShadowReadEnabled } from "@/lib/crm-cutover";
@@ -12,6 +13,7 @@ import { DEFAULT_RANGE_DAYS, dateWindowQuery, parseDateWindow, resolveDateWindow
 import type { TeamRollup as TeamRollupData } from "@/lib/team-rollup";
 import { ownerNavItemsFor } from "@/lib/nav";
 import { getOwner, ownerGet, ownerTry } from "@/lib/owner-context";
+import { getSessionUser } from "@/lib/supabase/server";
 import { DeltaNote } from "./_dashboard/chart-parts";
 import { LeadAging } from "./_dashboard/lead-aging";
 import { MissedHeatmap } from "./_dashboard/missed-heatmap";
@@ -69,9 +71,14 @@ export default async function OwnerDashboardPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const params = await searchParams;
   // The shared date control (lib/date-range.ts): the last N days, resolved by
   // the API in the org's calendar, or any From/To pair.
-  const { window, invalid } = parseDateWindow(await searchParams, { maxDays: 365 });
+  const { window, invalid } = parseDateWindow(params, { maxDays: 365 });
+  // Set by /auth/callback on the ONE redirect that follows accepting an invite
+  // (0137), and read nowhere until 0152. Nothing is granted by it: the session
+  // is what gives access, and this only acknowledges that it exists.
+  const joined = params.joined === "1";
   // A6, Milestone 4: same page, same Overview shape - only which table it's
   // read from forks, behind the shadow-read flag. See lib/crm-cutover.ts.
   const crmPrimary = crmShadowReadEnabled();
@@ -79,6 +86,9 @@ export default async function OwnerDashboardPage({
   // `getPrincipal` is React-cached, so this costs nothing beyond what
   // `ownerGet` already resolves to authenticate the call below.
   const owner = await getOwner();
+  // Only on the one render that follows an acceptance: the claims are already
+  // in the cookie, but there is no reason to read them on every dashboard load.
+  const session = joined ? await getSessionUser() : null;
   const role: OwnerRole = owner?.membership.ownerRole ?? "owner";
   const callIntel = owner?.membership.enabledModules.includes("call_intel") ?? false;
   const windowQuery = dateWindowQuery(window);
@@ -145,6 +155,14 @@ export default async function OwnerDashboardPage({
   return (
     <>
       <PageHeader title={data.org.name || "Dashboard"} context={HEADER_CONTEXT[role]} />
+      {joined ? (
+        <JoinedNotice
+          email={session?.email || null}
+          activityHref="/owner/account/login-activity"
+          workspace={data.org.name || null}
+          announced
+        />
+      ) : null}
       <WindowPicker
         window={window}
         // The API's echo; an API older than the echo gets the same days worked

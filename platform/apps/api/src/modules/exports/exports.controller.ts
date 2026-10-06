@@ -697,9 +697,14 @@ export class ExportsController {
     requesterId: string,
   ): Promise<void> {
     const { rows: owners } = await tx.query<{ user_id: string }>(
+      // COALESCE, not `m.owner_role = 'owner'`: a null persona IS the owner
+      // persona (resolveOwnerRole), and `members.controller.ts` - the operator
+      // console's member writer - deliberately never sets that column, so every
+      // membership it has created since 0018 has it null. The plain comparison
+      // told none of those people, silently.
       `SELECT DISTINCT m.user_id
          FROM memberships m
-        WHERE m.owner_role = 'owner' AND m.user_id <> $1`,
+        WHERE COALESCE(m.owner_role, 'owner') = 'owner' AND m.user_id <> $1`,
       [requesterId],
     );
     if (owners.length === 0) return;

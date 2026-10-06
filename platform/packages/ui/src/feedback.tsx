@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from "react";
 import { Button } from "./button";
 import { Dialog } from "./dialog";
+import { FieldValidation } from "./field-validation";
 
 /**
  * Telling somebody how an action went.
@@ -21,6 +22,12 @@ import { Dialog } from "./dialog";
  *    them to collect an acknowledgement is a tax. It gets a toast that clears
  *    itself. This is not a stylistic preference: the report builder autosaves
  *    on a debounce, and a dialog per save would make the editor unusable.
+ *  - A FORM THAT WAS NOT READY TO SEND is neither. Nothing failed and nothing
+ *    succeeded - a field still needs filling in, and the message belongs beside
+ *    that field. `FieldValidation` draws it, and is mounted here rather than in
+ *    each app's layout for the same reason the other two are: one provider, and
+ *    no route group can forget it. See field-validation.tsx for how it takes the
+ *    job off the browser.
  *
  * ── WHY THE PROVIDER OWNS THE TIMERS ──────────────────────────────────────
  *
@@ -177,6 +184,11 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
             </div>
           ))}
         </div>
+
+        {/* Renders nothing until a form is submitted with a field still to
+            fill in. Last in the tree so its bubble is painted over the toasts
+            if a submit ever collides with one. */}
+        <FieldValidation />
       </ToastContext.Provider>
     </AlertContext.Provider>
   );

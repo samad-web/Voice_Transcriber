@@ -80,8 +80,13 @@ export const SETUP_STATUS_SQL = `SELECT o.branding, o.enabled_modules, o.setup_c
                          WHERE m.status = 'active' AND m.phone IS NOT NULL
                            AND ((o.call_access_admin_user_id IS NOT NULL
                                  AND m.user_id = o.call_access_admin_user_id)
+                             -- COALESCE, matching the OTP route verbatim (0153):
+                             -- NULL is the owner persona (resolveOwnerRole). The
+                             -- two must not drift, or this step ticks green for a
+                             -- workspace the OTP route then refuses - or the
+                             -- reverse, which is what it did before.
                              OR (o.call_access_admin_user_id IS NULL
-                                 AND m.owner_role = 'owner')))              AS has_call_access_phone,
+                                 AND COALESCE(m.owner_role, 'owner') = 'owner'))) AS has_call_access_phone,
                 (SELECT count(DISTINCT user_id) FROM memberships
                   WHERE status = 'active') > 1                              AS has_colleague,
                 (o.asr_language IS NOT NULL

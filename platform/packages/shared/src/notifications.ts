@@ -165,6 +165,23 @@ export const NotificationKind = z.enum([
    * phone alert.
    */
   "call_escalation_update",
+  /**
+   * SOMEBODY YOU INVITED IS IN (migration 0152). Raised once, when a 0137
+   * invite is accepted - which is the invitee's first sign-in, since accepting
+   * one IS signing in with the invited address.
+   *
+   * Goes to whoever sent that invite, and to every member holding the `owner`
+   * persona. The inviter because they are the person waiting for the answer;
+   * the owners because somebody gaining a login to the workspace is theirs to
+   * know about whether or not they issued it - the same reasoning as
+   * `export_created`.
+   *
+   * ONE row per invite, and nothing on the sign-ins that follow. A bell that
+   * rang on every login would be noise of the kind this file's header warns
+   * about, and the person's own sign-in history already exists, privately, on
+   * their Login activity page (`auth_events`, 0127).
+   */
+  "invite_accepted",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

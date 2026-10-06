@@ -194,7 +194,15 @@ export class CallAccessController {
           WHERE m.org_id = $1 AND m.status = 'active' AND m.phone IS NOT NULL
             AND (
               (o.call_access_admin_user_id IS NOT NULL AND m.user_id = o.call_access_admin_user_id)
-              OR (o.call_access_admin_user_id IS NULL AND m.owner_role = 'owner')
+              -- COALESCE: NULL is the owner persona, the resolveOwnerRole rule
+              -- (0153). A workspace whose only owner came through the operator's
+              -- Members screen matched nobody here, so this route answered
+              -- "the administrator has no phone number on file" for somebody who
+              -- had one - and approval by code was impossible for that tenant.
+              -- It does not widen who may approve: the named administrator still
+              -- wins (the ORDER BY below), and a non-owner persona is still
+              -- excluded.
+              OR (o.call_access_admin_user_id IS NULL AND COALESCE(m.owner_role, 'owner') = 'owner')
             )
           ORDER BY (o.call_access_admin_user_id = m.user_id) DESC NULLS LAST
           LIMIT 1`,

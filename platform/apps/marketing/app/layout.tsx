@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { FieldValidation } from "@aura/ui";
 import { SiteHeader, SkipLink } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { MetaPixel } from "@/components/meta-pixel";
@@ -59,6 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={inter.variable}>
       <body className="min-h-dvh bg-bg font-sans text-lg text-text antialiased">
         <SkipLink />
+        {/* The console gets this from FeedbackProvider; this app has no
+            provider of its own, and the booking page's time-slot radios are
+            `required` - without it that form falls back to the browser's own
+            grey popup, in the browser's own words. Renders nothing until a
+            form is submitted with something still to fill in. */}
+        <FieldValidation />
         <SiteHeader />
         <main id="main">{children}</main>
         <SiteFooter />

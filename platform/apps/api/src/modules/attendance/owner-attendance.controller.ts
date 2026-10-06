@@ -489,7 +489,11 @@ export class OwnerAttendanceController {
                      m.owner_role AS "ownerRole",
                      (m.whatsapp_number IS NOT NULL AND btrim(m.whatsapp_number) <> '') AS "hasWhatsapp"
                 FROM memberships m JOIN users u ON u.id = m.user_id
-               WHERE m.status = 'active' AND u.status = 'active' AND m.owner_role IN ('owner', 'manager')
+               -- NULL is the pre-persona owner, the resolveOwnerRole rule (0153).
+               -- Without COALESCE the workspace's own owner never appears in the
+               -- approver picker, so there is nobody to hand a leave request to.
+               WHERE m.status = 'active' AND u.status = 'active'
+                 AND COALESCE(m.owner_role, 'owner') IN ('owner', 'manager')
                ORDER BY m.user_id, (m.scope_type = 'org') DESC, m.id) a) AS approvers`,
       );
       const people = (row?.people ?? []).map((p) => {
@@ -563,7 +567,12 @@ export class OwnerAttendanceController {
         const {
           rows: [m],
         } = await client.query(
-          `SELECT 1 FROM memberships WHERE id = $1 AND status = 'active' AND owner_role IN ('owner', 'manager')`,
+          // Must say exactly what `telecaller_reports_to_guard()` says (0153), or
+          // this check and the trigger disagree and one of them is a surprise:
+          // NULL is the pre-persona owner, the resolveOwnerRole rule.
+          `SELECT 1 FROM memberships
+            WHERE id = $1 AND status = 'active'
+              AND COALESCE(owner_role, 'owner') IN ('owner', 'manager')`,
           [input.reportsToMembershipId],
         );
         if (!m) throw new BadRequestException("a telecaller can only report to an active owner or manager");
@@ -1343,7 +1352,8 @@ export class OwnerAttendanceController {
                         (m.whatsapp_number IS NOT NULL AND btrim(m.whatsapp_number) <> '') AS has_number
                    FROM memberships m JOIN users u ON u.id = m.user_id
                   WHERE m.org_id = o.id AND m.status = 'active' AND u.status = 'active'
-                    AND m.owner_role IN ('owner', 'manager')
+                    -- NULL is the pre-persona owner, the resolveOwnerRole rule (0153).
+                    AND COALESCE(m.owner_role, 'owner') IN ('owner', 'manager')
                   ORDER BY m.user_id, (m.whatsapp_number IS NOT NULL AND btrim(m.whatsapp_number) <> '') DESC,
                            (m.scope_type = 'org') DESC, m.id) a
                 WHERE NOT a.has_number) AS no_whatsapp
