@@ -1,6 +1,12 @@
-import { RequestMethod, type Type } from "@nestjs/common";
+import {
+  InternalServerErrorException,
+  NotFoundException,
+  RequestMethod,
+  type Type,
+} from "@nestjs/common";
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { CROSS_TENANT_KEY } from "../../common/tenant.guard";
+import { withPartnerContext, type PartnerContext } from "./partner-context";
 import { PartnersController } from "./partners.controller";
 import { PortalController } from "./portal.controller";
 import { PortalInvitesController } from "./portal-invites.controller";
@@ -169,5 +175,79 @@ describe("P4 route inventory (doc 39 §17-§19)", () => {
       const both = guards.includes("PartnerScopeGuard") && guards.includes("TenantGuard");
       expect([route, both]).toEqual([route, false]);
     }
+  });
+});
+
+/**
+ * The portal's reachability gate, at the chokepoint (Build docs/40 §A2).
+ *
+ * ── WHY THIS IS NOT A DECORATOR TEST ───────────────────────────────────────
+ *
+ * The obvious shape for this fix was `@RequireFeature("partner_portal")` on
+ * each route, and the obvious test would then count decorators. Both were
+ * rejected for the same reason: a decorator is a thing somebody forgets on
+ * route nineteen, and the failure is silent - an ungated portal route looks
+ * exactly like a gated one that happens to be allowed.
+ *
+ * `withPartnerContext` is the one path every portal read and write already
+ * takes, enforced structurally by the `withOrg` greps in
+ * `partner-scope.guard.spec.ts`. Checking there means a route written next year
+ * is gated by construction, so what this file has to prove is that the
+ * chokepoint refuses - not that twenty call sites remembered to ask.
+ */
+describe("withPartnerContext - the portal gate", () => {
+  const ENABLED: PartnerContext = {
+    orgId: "00000000-0000-4000-8000-000000000001",
+    orgName: "Tenant A",
+    branding: {},
+    defaultCountry: "IN",
+    baseCurrency: "INR",
+    partnerId: "00000000-0000-4000-8000-0000000000b1",
+    partnerName: "Arjun Realty",
+    partnerCode: "ARJ-01",
+    partnerStatus: "active",
+    partnerUserId: "00000000-0000-4000-8000-0000000000b2",
+    partnerRole: "member",
+    userId: "00000000-0000-4000-8000-0000000000b3",
+    email: "arjun@example.test",
+    name: "Arjun",
+    authUserId: "00000000-0000-4000-8000-0000000000c1",
+    portalEnabled: true,
+  };
+
+  it("refuses with a 404 when the workspace has the portal switched off", async () => {
+    const ran = jest.fn();
+    await expect(
+      withPartnerContext({ ...ENABLED, portalEnabled: false }, async (client) => ran(client)),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    // 404 and not 403: a workspace that has not switched the portal on does not
+    // HAVE a portal, and "forbidden" would confirm the surface exists to
+    // somebody who should see no trace of it.
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it("refuses BEFORE it takes a connection", async () => {
+    // The ordering is the point. A gate that connects, opens a transaction and
+    // then throws has spent a pooled connection and a round trip on a request
+    // it was always going to refuse - and on a portal nobody has enabled, every
+    // request is that request.
+    //
+    // Proven by the absence of a database: this spec never initialises a pool,
+    // so a check placed after `getPool().connect()` would fail here with a
+    // connection error rather than the NotFoundException asserted above.
+    await expect(
+      withPartnerContext({ ...ENABLED, portalEnabled: false }, async () => "unreachable"),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("still rejects a malformed id first, whatever the gate says", async () => {
+    // `portalEnabled: true` and a broken org id. The malformed-id branch is an
+    // InternalServerError because it means the GUARD produced something it
+    // should not have, and that must not be reported as "no portal here" - a
+    // 404 would send somebody looking at the feature switch for a bug in the
+    // resolver.
+    await expect(
+      withPartnerContext({ ...ENABLED, orgId: "not-a-uuid" }, async () => "unreachable"),
+    ).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 });

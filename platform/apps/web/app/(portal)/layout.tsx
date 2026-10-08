@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { brandingCssVars, browserTitleFor, parseBranding } from "@aura/shared";
 import { PORTAL_SCREENS } from "@aura/shared/dist/partners";
 import { Logo, MonoLabel } from "@aura/ui";
@@ -78,6 +78,19 @@ export default async function PortalLayout({ children }: { children: React.React
   // whose portal access was suspended. The middleware already sent a
   // signed-OUT visitor to /login before this ran.
   if (!portal) redirect("/");
+
+  // The portal is switched off for this workspace (Build docs/40 §A2).
+  //
+  // A 404 rather than the redirect above, and the difference matters. The
+  // redirect answers "you are in the wrong place" and sends a tenant's own
+  // member somewhere they belong. There is nowhere to send a PARTNER: they hold
+  // no membership, so `/` would bounce them through middleware to a login they
+  // have already completed, and they would read that as the sign-in being
+  // broken. "This page does not exist" is both true and the end of the journey.
+  //
+  // `undefined` counts as off - see `portalEnabled` on PortalContext for why a
+  // web tier ahead of its API has to fail closed here.
+  if (!portal.portalEnabled) notFound();
 
   const branding = parseBranding(portal.workspace.branding);
   const brandVars = brandingCssVars(branding);

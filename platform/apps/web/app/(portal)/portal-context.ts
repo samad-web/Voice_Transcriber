@@ -51,6 +51,15 @@ export interface PortalContext {
     currency: string;
   };
   me: { email: string; name: string | null };
+  /**
+   * Whether this tenant has the `partner_portal` feature on (Build docs/40 §A2).
+   *
+   * Absent from older API builds, so it is optional and the layout treats
+   * `undefined` as off. That direction is deliberate: a web tier newer than the
+   * API it is talking to must fail CLOSED, because the alternative during a
+   * rolling deploy is a portal that renders for a tenant who switched it off.
+   */
+  portalEnabled?: boolean;
 }
 
 const portalHeaders = (authUserId: string) => ({

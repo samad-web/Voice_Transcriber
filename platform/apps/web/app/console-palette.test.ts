@@ -65,8 +65,22 @@ const HAND_ROLLED_CHIP = /\bbg-(danger|success|orange|outgoing)-subtle\b[^"'`]*\
 
 const GRADIENT = /var\(--brand-gradient\)/;
 
-/** Where the rule is absolute. */
-const STRICT = [join("app", "(owner)"), "components", join("packages", "ui", "src")];
+/**
+ * Where the rule is absolute.
+ *
+ * `app/(portal)` was added by Build docs/40 §A5, and its absence until then was
+ * the gap worth naming: migration 0163 landed ~1,000 lines of partner UI outside
+ * every colour check in this file. The portal is the ONE surface a person
+ * outside the business sees, and it is white-labelled - so a client's accent
+ * bleeding into `--color-danger` there would mean red stopped meaning MISSED on
+ * the only screen whose reader cannot ask anybody what it meant.
+ */
+const STRICT = [
+  join("app", "(owner)"),
+  join("app", "(portal)"),
+  "components",
+  join("packages", "ui", "src"),
+];
 
 /**
  * `app/(platform)`, `app/login` and `app/docs` files still on the stock

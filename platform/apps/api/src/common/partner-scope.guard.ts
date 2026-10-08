@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { z } from "zod";
+import { type FeatureOverrides, resolveFeatures } from "@aura/shared";
 import { DbService } from "../db/db.service";
 import type { PartnerContext, PartnerRequest } from "../modules/partners/partner-context";
 import { resolveAdminKey } from "./admin-key.guard";
@@ -164,12 +165,29 @@ export class PartnerScopeGuard implements CanActivate {
       userId: string;
       email: string;
       name: string | null;
+      enabledModules: unknown;
+      featureOverrides: unknown;
     }>(
       `SELECT o.id            AS "orgId",
               o.name          AS "orgName",
               o.branding      AS "branding",
               bp.country      AS "defaultCountry",
               bp.base_currency AS "baseCurrency",
+              o.enabled_modules AS "enabledModules",
+              -- The portal's reachability gate (Build docs/40 section A2),
+              -- aggregated into the query that was already joining
+              -- organizations rather than read by loadOrgFeatures afterwards. A
+              -- second lookup would be ~125ms of Seoul flight time on every
+              -- portal request. It is spelled out here rather than reusing
+              -- loadOrgFeatures because this runs on the ADMIN pool with no RLS
+              -- context, so the org predicate has to be explicit - and that
+              -- helper's whole design is that RLS has already narrowed both
+              -- tables and there is no predicate to get wrong.
+              COALESCE(
+                (SELECT jsonb_object_agg(f.feature_key, f.enabled)
+                   FROM org_feature_settings f
+                  WHERE f.org_id = o.id),
+                '{}'::jsonb) AS "featureOverrides",
               p.id            AS "partnerId",
               p.name          AS "partnerName",
               p.code          AS "partnerCode",
@@ -221,6 +239,16 @@ export class PartnerScopeGuard implements CanActivate {
       email: row.email,
       name: row.name,
       authUserId: subject,
+      // Resolved through the catalogue rather than read as one boolean, because
+      // a feature's state is not a property of its own row - `resolveFeatures`
+      // also applies the module entitlement and the dependency pass, and an org
+      // without the `aura` module must come back `unavailable` rather than "on
+      // because nobody overrode it". Same reasoning as `orgHasFeature`.
+      portalEnabled:
+        resolveFeatures(
+          Array.isArray(row.enabledModules) ? (row.enabledModules as string[]) : [],
+          (row.featureOverrides ?? {}) as FeatureOverrides,
+        ).get("partner_portal")?.state === "on",
     };
   }
 }

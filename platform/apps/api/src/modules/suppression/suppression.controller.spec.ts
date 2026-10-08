@@ -14,6 +14,7 @@ import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { ORG_A, USER_A, adminKeyPrincipal, sessionPrincipal } from "../../common/guard-harness.spec";
 import type { Principal } from "../../common/auth-principal";
 import { CRM_PERMISSION_KEY, type CrmPermissionRequirement } from "../../common/crm-permissions.guard";
+import { ORG_FEATURE_KEY } from "../../common/org-feature.guard";
 import type { DbService } from "../../db/db.service";
 import { DncImportService } from "./dnc-import.service";
 import { DncController } from "./dnc.controller";
@@ -135,11 +136,45 @@ const permissionOn = (handler: unknown): CrmPermissionRequirement | undefined =>
 describe("the P0 guard stacks", () => {
   // guard-mounting.spec.ts pins the same thing over every controller in the
   // API; this is the local copy that fails first and names this module.
-  it.each([
-    ["NumbersController", NumbersController],
-    ["DncController", DncController],
-  ])("%s mounts AdminKeyGuard, then TenantGuard, then CrmPermissionsGuard", (_name, cls) => {
-    expect(guardsOn(cls)).toEqual(["AdminKeyGuard", "TenantGuard", "CrmPermissionsGuard"]);
+  it("NumbersController mounts AdminKeyGuard, then TenantGuard, then CrmPermissionsGuard", () => {
+    expect(guardsOn(NumbersController)).toEqual([
+      "AdminKeyGuard",
+      "TenantGuard",
+      "CrmPermissionsGuard",
+    ]);
+  });
+
+  /**
+   * The DNC stack carries a FOURTH guard, and the two controllers no longer
+   * share an assertion (Build docs/40 §A3).
+   *
+   * `suppression` was one of the features enforced only by the web tier's page
+   * guard: switching Do-not-call lists off hid the console page and left these
+   * routes answering normally. `OrgFeatureGuard` closes that, and it is mounted
+   * here and NOT on `NumbersController` deliberately - the reveal route serves
+   * lead screens as well as the dialer, so gating it on `suppression` would take
+   * out a surface the client never switched off. That is the shared-read trap
+   * `org-feature.guard.ts` warns about, and it is the whole reason these two
+   * controllers now differ.
+   */
+  it("DncController adds OrgFeatureGuard LAST, after the tenant is resolved", () => {
+    expect(guardsOn(DncController)).toEqual([
+      "AdminKeyGuard",
+      "TenantGuard",
+      "CrmPermissionsGuard",
+      // Fourth, never earlier. The guard reads `req.tenantOrgId`, which
+      // TenantGuard writes, and throws a 401 "tenant scope required" if it runs
+      // first - a configuration bug that would read as an auth failure.
+      "OrgFeatureGuard",
+    ]);
+  });
+
+  it("declares which feature the DNC routes belong to", () => {
+    // The guard is a no-op without the key: `canActivate` returns true when the
+    // reflector finds no `@RequireFeature`. So mounting it and forgetting the
+    // decorator would leave the gate looking present and doing nothing - which
+    // is the one failure mode a guard-list assertion cannot see.
+    expect(Reflect.getMetadata(ORG_FEATURE_KEY, DncController)).toBe("suppression");
   });
 
   it("asks for contact_number:view on the reveal, never dnc:view", () => {

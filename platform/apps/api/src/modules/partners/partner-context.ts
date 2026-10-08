@@ -1,4 +1,9 @@
-import { InternalServerErrorException, createParamDecorator, type ExecutionContext } from "@nestjs/common";
+import {
+  InternalServerErrorException,
+  NotFoundException,
+  createParamDecorator,
+  type ExecutionContext,
+} from "@nestjs/common";
 import { ORG_TIME_ZONE_SQL, getPool, type PoolClient } from "@aura/db";
 import type { PrincipalRequest } from "../../common/auth-principal";
 
@@ -94,6 +99,28 @@ export interface PartnerContext {
   name: string | null;
   /** `users.sso_subject` - the Supabase subject the guard matched on. */
   authUserId: string;
+  /**
+   * Whether this tenant's `partner_portal` feature is on (Build docs/40 §A2).
+   *
+   * Resolved by the guard from `organizations.enabled_modules` and
+   * `feature_overrides` - columns the guard's single resolution query already
+   * had to join `organizations` for, so this costs no extra round trip, which
+   * is the same argument `branding` and `defaultCountry` are carried on.
+   *
+   * ── WHY THIS LIVES HERE AND NOT IN A ROUTE GUARD ───────────────────────────
+   *
+   * Migration 0163 shipped the portal with no reachability gate at all: any org
+   * with a `partner_users` row had a live portal, which is the opposite of what
+   * was decided. The fix has to hold for routes nobody has written yet, so it is
+   * enforced in `withPartnerContext` - the single chokepoint every portal read
+   * and write already passes through by construction - rather than as a
+   * decorator somebody can forget on route seven.
+   *
+   * It is NOT a security boundary. 0163's RESTRICTIVE `partner_wall` policies
+   * are, and they are untouched by this. This decides whether the portal is
+   * REACHABLE; the wall decides what a reachable portal may see.
+   */
+  portalEnabled: boolean;
 }
 
 /**
@@ -120,6 +147,19 @@ export async function withPartnerContext<T>(
 ): Promise<T> {
   if (!UUID_RE.test(ctx.orgId) || !UUID_RE.test(ctx.partnerId)) {
     throw new InternalServerErrorException("partner context carries a malformed id");
+  }
+  // THE PORTAL GATE (Build docs/40 §A2). Checked here, before a connection is
+  // taken, because this function is the one path every portal read and write
+  // goes through - partner-scope.guard.spec.ts greps this directory to keep
+  // `withOrg` out of it, which is what makes "every path" true rather than
+  // hopeful.
+  //
+  // 404, not 403. A workspace that has not switched the portal on does not have
+  // a portal, and saying "forbidden" would confirm the surface exists to
+  // somebody who should see no trace of it. The web tier renders Next's
+  // not-found page on the same reasoning.
+  if (!ctx.portalEnabled) {
+    throw new NotFoundException("This workspace does not have a partner portal.");
   }
   const client = await getPool().connect();
   try {

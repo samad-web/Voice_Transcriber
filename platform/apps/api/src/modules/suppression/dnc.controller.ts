@@ -22,6 +22,7 @@ import {
   hasCrmGrant,
   RequireCrmPermission,
 } from "../../common/crm-permissions.guard";
+import { OrgFeatureGuard, RequireFeature } from "../../common/org-feature.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import {
@@ -130,8 +131,28 @@ interface ListRow {
   created_at: Date;
 }
 
+/**
+ * ── WHY THE FEATURE GATE IS HERE (Build docs/40 §A3) ───────────────────────
+ *
+ * `suppression` was one of the 25 features enforced only by the web tier's page
+ * guard: switching Do-not-call lists off hid `/owner/settings/suppression` and
+ * left every route below answering normally to anyone with a direct link or a
+ * stale server action.
+ *
+ * It qualifies for a route gate under `org-feature.guard.ts`'s own rule - gate a
+ * route only when the WHOLE route belongs to the feature - because nothing else
+ * in the product reads `/v1/dnc/*`. The handset's dialability check resolves
+ * suppression in-process, not over HTTP, so gating these routes cannot leave a
+ * phone unable to tell an agent why a record is greyed out.
+ *
+ * `suppression` defaults ON, so this changes nothing for any existing tenant. It
+ * only makes "off" mean off for one who chooses it - and because `dialer`
+ * REQUIRES `suppression`, that choice blocks the dialer rather than leaving it
+ * running with an unmaintainable list.
+ */
 @Controller("dnc")
-@UseGuards(AdminKeyGuard, TenantGuard, CrmPermissionsGuard)
+@UseGuards(AdminKeyGuard, TenantGuard, CrmPermissionsGuard, OrgFeatureGuard)
+@RequireFeature("suppression")
 export class DncController {
   constructor(
     private readonly db: DbService,

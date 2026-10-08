@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { featureEnforcement, type FeatureKey } from "@aura/shared";
 import { Card, MonoLabel, StatusChip, useAlert } from "@aura/ui";
 import { setFeatureAction } from "./actions";
 import type { FeatureRow } from "./page";
@@ -99,6 +100,25 @@ function FeatureItem({ feature, canEdit }: { feature: FeatureRow; canEdit: boole
           <p className="mt-1 text-xs text-text-muted">
             Switch <strong className="font-medium text-text">{feature.blockedBy}</strong> back on
             first — this one has nothing to work with otherwise.
+          </p>
+        ) : null}
+        {/* WHAT "OFF" ACTUALLY DOES, for the 29 switches where it is less than
+            it looks (Build docs/40 §A4).
+
+            Shown only on the page-enforced ones, and only while the feature is
+            on - which is the moment somebody is deciding whether to switch it
+            off, and therefore the only moment the distinction changes what they
+            do. Repeating it under a switch that is already off would be noise
+            about a choice already made.
+
+            Derived here from `featureEnforcement(key)` rather than threaded
+            through `/v1/owner/features`, because it is a property of the
+            CATALOGUE, not of this tenant - every workspace gets the same answer
+            and an API field would just be a slower way to read the same list. */}
+        {feature.state === "on" && featureEnforcement(feature.key as FeatureKey) === "page" ? (
+          <p className="mt-1 text-xs text-text-muted">
+            Switching this off hides the pages. Staff who have a direct link can still reach the
+            data underneath.
           </p>
         ) : null}
       </div>

@@ -94,6 +94,73 @@ describe("PartnerScopeGuard", () => {
     expect(req.tenantOrgId).toBeUndefined();
   });
 
+  /**
+   * THE GATE 0163 SHIPPED WITHOUT (Build docs/40 §A2).
+   *
+   * The portal went live with no reachability check of any kind: any org with a
+   * `partner_users` row had a working portal, which is the opposite of what was
+   * decided. These four cases are the regression tests for that, and the first
+   * one is the finding itself - a tenant who has never asked for a portal must
+   * not have one just because a partner row exists.
+   */
+  describe("portalEnabled", () => {
+    const resolveWith = async (row: Row) => {
+      const local = fakeDb([row]);
+      const ctx = contextFor("/v1/portal/context", headers());
+      await new PartnerScopeGuard(local.service).canActivate(ctx);
+      const req = ctx.switchToHttp().getRequest() as { partner: { portalEnabled: boolean } };
+      return req.partner.portalEnabled;
+    };
+
+    it("is OFF for an entitled tenant who has not switched it on", async () => {
+      // `partner_portal` is `defaultEnabled: false`, so a workspace with the
+      // module and no override resolves `off`. THE finding.
+      await expect(resolveWith({ ...PARTNER_ROW, enabledModules: ["aura"] })).resolves.toBe(false);
+    });
+
+    it("is ON once the tenant switches it on", async () => {
+      await expect(
+        resolveWith({
+          ...PARTNER_ROW,
+          enabledModules: ["aura"],
+          featureOverrides: { partner_portal: true },
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it("stays OFF when the override says on but the module is absent", async () => {
+      // Entitlement is the ceiling: an override cannot buy a module. Resolved
+      // through `resolveFeatures` rather than read as one boolean precisely so
+      // this case cannot come back "on".
+      await expect(
+        resolveWith({
+          ...PARTNER_ROW,
+          enabledModules: [],
+          featureOverrides: { partner_portal: true },
+        }),
+      ).resolves.toBe(false);
+    });
+
+    it("fails CLOSED when the columns come back missing or malformed", async () => {
+      // A row with neither column - an older read, a mocked pool, a migration
+      // mid-flight. A missing answer must never be read as permission.
+      await expect(resolveWith(PARTNER_ROW)).resolves.toBe(false);
+      await expect(
+        resolveWith({ ...PARTNER_ROW, enabledModules: "aura", featureOverrides: null }),
+      ).resolves.toBe(false);
+    });
+
+    it("reads both columns in the SAME query that resolves the partner", async () => {
+      // Not a second lookup. The API is in Mumbai and the database in Seoul, so
+      // a second round trip would be ~125ms on every portal request - and the
+      // test above already pins `db.calls` at one.
+      await guard.canActivate(contextFor("/v1/portal/context", headers()));
+      const sql = db.calls[0]!.sql.replace(/\s+/g, " ");
+      expect(sql).toContain("o.enabled_modules");
+      expect(sql).toContain("org_feature_settings");
+    });
+  });
+
   it("resolves the partner from the database, never from a header", async () => {
     const ctx = contextFor(
       "/v1/portal/context",

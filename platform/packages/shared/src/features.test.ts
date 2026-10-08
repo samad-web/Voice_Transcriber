@@ -62,20 +62,114 @@ describe("the catalogue itself", () => {
 });
 
 describe("resolveFeatures - the deploy-day property", () => {
-  it("turns everything on for a fully entitled org with no overrides", () => {
-    // THE test. The day the switchboard ships, no tenant's console changes.
+  it("gives a fully entitled org with no overrides exactly what its flag says", () => {
+    // THE test, and it is about the DEPLOY rather than about the flags: no
+    // tenant's console changes on the day a catalogue entry ships. For the 38
+    // features that shipped with the switchboard that meant everything on,
+    // because every page already existed. For a feature whose surface was never
+    // reachable, the same property means `off` - so this asserts each entry
+    // against its own flag instead of asserting one answer for all of them.
     const resolved = resolveFeatures(ALL_MODULES, {});
     for (const spec of FEATURES) {
-      expect(resolved.get(spec.key)?.state).toBe("on");
+      expect([spec.key, resolved.get(spec.key)?.state]).toEqual([
+        spec.key,
+        spec.defaultEnabled ? "on" : "off",
+      ]);
     }
+  });
+
+  it("accounts for every feature that governs no page", () => {
+    // An empty `hrefs` means "this switch governs no console destination", and
+    // there are exactly two honest reasons for it. Pinned by name because the
+    // dishonest third reason - a page that exists but was never wired to its
+    // switch - looks identical from here, and `feature-gating.test.ts` can only
+    // catch the inverse (an href with no page).
+    //
+    //  PANELS: `sheets_sync` and `connections` live inside somebody else's page.
+    //  NOT BUILT YET: the four doc 39 surfaces whose consoles are Phase B of
+    //    Build docs/40. Each one's href goes in beside its page and its nav
+    //    entry, in the same change, so the three cannot disagree.
+    //  A DIFFERENT PERSONA: `partner_portal` governs `app/(portal)`, which is
+    //    not on the owner rail at all.
+    const governNothing = FEATURES.filter((f) => f.hrefs.length === 0).map((f) => f.key);
+    expect([...governNothing].sort()).toEqual([
+      "appointments",
+      "connections",
+      "dialer",
+      "partner_portal",
+      "resources",
+      "sheets_sync",
+      "web_forms",
+    ]);
+  });
+
+  it("leaves no default-off feature governing a page that is already reachable", () => {
+    // The pairing that would be a live defect: a switch that is OFF while its
+    // page still renders. Every default-off entry is a surface whose console
+    // does not exist yet, so each must also govern no href - and when Phase B
+    // gives one a page, flipping its href on without deciding the default is
+    // exactly the mistake this catches.
+    for (const spec of FEATURES.filter((f) => !f.defaultEnabled)) {
+      expect([spec.key, spec.hrefs]).toEqual([spec.key, []]);
+    }
+  });
+
+  it("defaults a feature off only when no console ever reached it", () => {
+    // Named, not derived. `defaultEnabled: false` is how a tenant is spared a
+    // surface they never asked for; it is NOT a way to ship a page switched off
+    // because somebody was unsure about it. Every key here is a doc 39 surface
+    // that existed as tables and an API with no UI at all (Build docs/40 §A1),
+    // and adding to this list should require the same argument.
+    const off = FEATURES.filter((f) => !f.defaultEnabled).map((f) => f.key);
+    expect([...off].sort()).toEqual([
+      "appointments",
+      "dialer",
+      "partner_portal",
+      "resources",
+      "web_forms",
+    ]);
   });
 
   it("reproduces today's module gates exactly for an aura-only org", () => {
     const on = enabledFeatures(["aura"], {});
-    // Everything filed under aura, and nothing else.
+    // Everything filed under aura that defaults on, and nothing else. A feature
+    // that is off by default is absent here for a reason the module gate has
+    // nothing to do with, so it must not be read as an entitlement failure.
     for (const spec of FEATURES) {
-      expect(on.has(spec.key)).toBe(spec.module === "aura");
+      expect([spec.key, on.has(spec.key)]).toEqual([
+        spec.key,
+        spec.module === "aura" && spec.defaultEnabled,
+      ]);
     }
+  });
+
+  it("keeps a default-off feature off rather than blocked when its requirement is also off", () => {
+    // `resources` requires `appointments` and both default off. The dependency
+    // pass only reconsiders features that resolved `on`, so the honest reading
+    // of an untouched workspace is "you have not switched this on" - not "this
+    // is blocked by something else you have not switched on", which would send
+    // an owner hunting for a blocker that is only a second switch.
+    const resolved = resolveFeatures(ALL_MODULES, {});
+    expect(resolved.get("resources")).toEqual({ key: "resources", state: "off" });
+    // ...but asking for it alone DOES name the blocker.
+    const alone = resolveFeatures(ALL_MODULES, { resources: true });
+    expect(alone.get("resources")).toEqual({
+      key: "resources",
+      state: "blocked",
+      blockedBy: "appointments",
+    });
+  });
+
+  it("blocks the dialer when do-not-call lists are switched off", () => {
+    // The one dependency in the catalogue that exists for a safety reason
+    // rather than a usefulness one: a dialer whose suppression list cannot be
+    // maintained is the hazard doc 39's P0 was written to prevent.
+    const resolved = resolveFeatures(ALL_MODULES, { dialer: true, suppression: false });
+    expect(resolved.get("dialer")).toEqual({
+      key: "dialer",
+      state: "blocked",
+      blockedBy: "suppression",
+    });
   });
 });
 

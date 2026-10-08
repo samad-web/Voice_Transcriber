@@ -86,6 +86,21 @@ export class PortalController {
         currency: ctx.baseCurrency,
       },
       me: { email: ctx.email, name: ctx.name },
+      // ONE bit about the tenant's configuration, and the exception to the rule
+      // stated just above (Build docs/40 §A2).
+      //
+      // It is the exception because it is not a fact about how the business is
+      // configured - it is whether the surface the caller is standing on exists
+      // at all, asked by a partner this tenant themselves created. Withholding
+      // it buys nothing and costs the only thing that matters here: without it
+      // the web tier cannot tell "your portal is switched off" from "you are not
+      // a partner", and would have to bounce an authenticated partner to a login
+      // page they have already passed.
+      //
+      // This route is deliberately NOT gated - every route that returns portal
+      // DATA is, inside `withPartnerContext`. "Who am I and does this exist" has
+      // to stay answerable for the 404 to be renderable.
+      portalEnabled: ctx.portalEnabled,
     };
   }
 

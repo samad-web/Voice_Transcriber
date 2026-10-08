@@ -16,15 +16,25 @@ import type { OrgModule } from "./org-modules";
  * page is hide their own console from themselves, and even that is bounded by
  * the locked features below.
  *
- * ── EVERYTHING DEFAULTS ON, DELIBERATELY ────────────────────────────────────
+ * ── A DEFAULT PRESERVES THE STATUS QUO, WHICHEVER WAY IT POINTS ─────────────
  *
- * Every entry here is `defaultEnabled: true`, so `resolveFeatures(modules, {})`
- * reproduces the console EXACTLY as it renders today. The day this ships,
- * nobody's sidebar changes. A catalogue whose defaults were an opinion would
- * make the deploy itself a product change, and the first bug report would be
- * "half our pages vanished" from a tenant who never asked for a switchboard.
+ * The rule is not "everything defaults on". It is that `resolveFeatures(modules,
+ * {})` reproduces the console EXACTLY as it renders today, so the deploy itself
+ * is never a product change. The first bug report from a catalogue whose
+ * defaults were an opinion would be "half our pages vanished" from a tenant who
+ * never asked for a switchboard.
  *
- * `features.test.ts` pins that property rather than trusting the flags.
+ * For the 38 features that shipped with the switchboard, every page already
+ * existed, so preserving the status quo meant `defaultEnabled: true`.
+ *
+ * For a feature whose surface has NEVER been reachable, the same rule points the
+ * other way: `defaultEnabled: false`. Doc 39 built five of these - the dialer,
+ * web forms, appointments, resources and the partner portal - and defaulting
+ * them on would hand every existing tenant five consoles they never asked for,
+ * which is the exact failure this section exists to prevent. Build docs/40 §A1.
+ *
+ * `features.test.ts` pins the property per flag rather than trusting that they
+ * all point the same way.
  *
  * ── WHY THE CATALOGUE IS HERE AND NOT IN THE DATABASE ───────────────────────
  *
@@ -42,6 +52,8 @@ export const FeatureKey = z.enum([
   "followups",
   "outreach",
   "projects",
+  "appointments",
+  "resources",
   // ── Customers (CRM objects) ──
   "deals",
   "contacts",
@@ -56,6 +68,7 @@ export const FeatureKey = z.enum([
   "agent_studio",
   "productivity",
   "attendance",
+  "dialer",
   "inbox",
   "whatsapp_leads",
   // ── Sales ──
@@ -67,6 +80,7 @@ export const FeatureKey = z.enum([
   "report_builder",
   "sla_reports",
   // ── Lead connectors ──
+  "web_forms",
   "lead_sources",
   "lead_routing",
   "sheets_sync",
@@ -82,6 +96,7 @@ export const FeatureKey = z.enum([
   "suppression",
   "handsets",
   "branding",
+  "partner_portal",
 ]);
 export type FeatureKey = z.infer<typeof FeatureKey>;
 
@@ -170,6 +185,39 @@ export const FEATURES: FeatureSpec[] = [
     group: "pipeline",
     hrefs: ["/owner/projects"],
     defaultEnabled: true,
+  },
+  {
+    key: "appointments",
+    label: "Appointments",
+    blurb: "The diary: slots booked against a resource, rescheduled, and marked attended.",
+    module: "aura",
+    group: "pipeline",
+    // EMPTY UNTIL THE PAGE EXISTS, and this is load-bearing rather than a
+    // placeholder. `feature-gating.test.ts` and `owner-features.guard.test.ts`
+    // both assert that every href here has a real page file AND a nav entry,
+    // which is what stops a switch governing a 404. Phase B of Build docs/40
+    // builds `/owner/appointments`; the href goes in THAT change, beside the
+    // page and the nav item, so the three can never disagree.
+    hrefs: [],
+    // OFF. Migration 0166 built the table, the RLS, the booking API, calendar
+    // sync and the reschedule tokens; no console ever reached them, so "off"
+    // IS the status quo and defaulting on would hand every tenant a diary they
+    // did not ask for. Build docs/40 §A1.
+    defaultEnabled: false,
+  },
+  {
+    key: "resources",
+    label: "Bookable resources",
+    blurb: "The chairs, rooms, bays or people an appointment is booked against.",
+    module: "aura",
+    group: "pipeline",
+    // Empty until Phase B builds `/owner/resources` - see `appointments` above.
+    hrefs: [],
+    // A resource exists to be booked. Without the diary it is a list of chairs
+    // nobody can reserve, so this is `blocked` rather than merely useless when
+    // somebody switches it on alone - and the switchboard names the blocker.
+    requires: ["appointments"],
+    defaultEnabled: false,
   },
 
   // ── Customers ─────────────────────────────────────────────────────────────
@@ -313,6 +361,28 @@ export const FEATURES: FeatureSpec[] = [
     defaultEnabled: true,
   },
   {
+    key: "dialer",
+    label: "Dialer",
+    blurb: "Call campaigns a handset works through, with the reason any record cannot be rung.",
+    // `aura`, for the same reason `suppression` is: this gates CALLING, which
+    // is the recorder product. The console assigns and reports; the HANDSET
+    // dials. There is no softphone, no bridging and no carrier here, by
+    // standing decision.
+    module: "aura",
+    group: "conversations",
+    // Empty until Phase B builds `/owner/dialer` - see `appointments` above.
+    hrefs: [],
+    // THE LOAD-BEARING DEPENDENCY. A tenant who switched do-not-call lists off
+    // would otherwise keep a working dialer and no way to maintain the list
+    // that stops it ringing a registered number - the precise hazard doc 39's
+    // P0 exists to prevent. Being `blocked` with the blocker named is the right
+    // answer; being silently dialable is not.
+    requires: ["suppression"],
+    // OFF. 0159-0162 built the queue, the lease/claim protocol and the eight
+    // block reasons; no console ever reached them.
+    defaultEnabled: false,
+  },
+  {
     key: "inbox",
     label: "Inbox",
     blurb: "WhatsApp, Instagram, Messenger and email threads with named customers.",
@@ -408,6 +478,22 @@ export const FEATURES: FeatureSpec[] = [
   },
 
   // ── Lead connectors ───────────────────────────────────────────────────────
+  {
+    key: "web_forms",
+    label: "Web forms",
+    blurb: "Hosted forms on your own slug, whose submissions land on a board as leads.",
+    module: "aura",
+    group: "connectors",
+    // Empty until Phase B builds `/owner/forms` - see `appointments` above.
+    hrefs: [],
+    // NOT the same thing as `lead_sources`, whose blurb also says "web forms".
+    // That feature is the CATALOGUE of places leads arrive from - a form, an
+    // inbox, a CSV, telephony. This one is migration 0161's BUILDER: it creates
+    // a hosted page at a platform-wide-unique slug. A tenant can have lead
+    // sources with no builder (their own site posts to the API) and the two
+    // switch independently, so neither requires the other.
+    defaultEnabled: false,
+  },
   {
     key: "lead_sources",
     label: "Lead sources",
@@ -570,7 +656,90 @@ export const FEATURES: FeatureSpec[] = [
     hrefs: ["/owner/branding"],
     defaultEnabled: true,
   },
+  {
+    key: "partner_portal",
+    label: "Partner portal",
+    blurb: "A sign-in for brokers and referrers to submit leads and see their commissions.",
+    module: "aura",
+    group: "workspace",
+    // NO hrefs, and that is not an oversight. Every other entry governs a page
+    // on the OWNER rail; this one governs `app/(portal)`, a separate route group
+    // for a different persona who never sees the console. `sheets_sync` carries
+    // the same empty list for the adjacent reason - it is a panel, not a
+    // destination. An href here would put a partner-only page on the owner's
+    // sidebar, where it would 404 for the only people who can see it.
+    hrefs: [],
+    // OFF, and this one is a fix rather than a precaution: 0163 shipped the
+    // portal with no gate at all, so until now ANY org with a partner row had a
+    // live portal. The decision was to hide it and bring it back later on its
+    // own hostname. The 0163 RESTRICTIVE partner wall is untouched and stays the
+    // security boundary; this key is reachability. Build docs/40 §A2.
+    defaultEnabled: false,
+  },
 ];
+
+/**
+ * Where each switch is actually enforced (Build docs/40 §A4).
+ *
+ * ── THE OVERCLAIM THIS EXISTS TO RETIRE ─────────────────────────────────────
+ *
+ * The switchboard renders 42 switches that look alike. 13 of them refuse at the
+ * API; the other 29 are enforced only by the web tier's page guard, so "off"
+ * hides the page and leaves the routes answering to anyone with a direct link or
+ * a server action the page already shipped.
+ *
+ * That is a deliberate trade-off, not an oversight - `org-feature.guard.ts` sets
+ * out why a gate on a SHARED read is worse than no gate: `GET /v1/leads` is read
+ * by the board, the dashboard and three reports, so gating it on one feature
+ * would take out surfaces the client never switched off. The rule is "gate a
+ * route only when the whole route belongs to the feature", and for 29 features
+ * that condition is genuinely not met.
+ *
+ * What was wrong was not the trade-off but the silence about it. A switch that
+ * hides a page and a switch that refuses a request are different promises, and
+ * an owner turning one off deserves to know which they got. So this is stated,
+ * rendered on the page, and pinned in a test rather than left to be rediscovered
+ * by whoever next audits the product.
+ *
+ * ── WHY A LIST AND NOT A FIELD ON FeatureSpec ───────────────────────────────
+ *
+ * 42 hand-written `enforcement:` values are 42 chances to be wrong, and nothing
+ * in this package can check one: the decorators live in the API. One list can be
+ * compared against the API's actual decorators in a single assertion, which
+ * `org-feature-enforcement.spec.ts` does - so this cannot drift from the code it
+ * describes without a red test.
+ */
+const API_ENFORCED: ReadonlySet<FeatureKey> = new Set([
+  // Each of these carries `@RequireFeature(...)` on a controller whose whole
+  // surface belongs to the feature.
+  "agent_studio",
+  "attendance",
+  "call_insights",
+  "call_quality",
+  "call_sops",
+  "call_triage",
+  "integrations",
+  "lead_sources",
+  "meta_ads",
+  "productivity",
+  "reports",
+  "suppression",
+  // The exception: enforced in `withPartnerContext` rather than by a decorator,
+  // because the portal's chokepoint covers routes nobody has written yet. Build
+  // docs/40 §A2 gives the full argument.
+  "partner_portal",
+]);
+
+/**
+ * `"api"` - the routes refuse when this is off.
+ * `"page"` - the console hides the page; the routes still answer.
+ */
+export function featureEnforcement(key: FeatureKey): "api" | "page" {
+  return API_ENFORCED.has(key) ? "api" : "page";
+}
+
+/** The api-enforced keys, for the spec that compares them to the decorators. */
+export const API_ENFORCED_FEATURES: readonly FeatureKey[] = [...API_ENFORCED].sort();
 
 const FEATURE_BY_KEY = new Map<FeatureKey, FeatureSpec>(FEATURES.map((f) => [f.key, f]));
 
