@@ -267,4 +267,50 @@ Verified: shared 73 files · db 111 tests · llm 77 tests · web 63 files / 1157
 touched (the API's 176 `no-cond-assign` errors are all in the untracked `dist-recovery/`
 build artifacts and predate this work).
 
-### Phases B, C, D — not started.
+### Phase B1 — the dialer console. DONE 2026-10-08. Fixes F3 and F7.
+
+| Item | State |
+|---|---|
+| `GET`/`PATCH /v1/dialer/settings` + `DialSettingsView` / `UpdateDialSettingsInput` | done |
+| `/owner/dialer` — policy card, campaign editor, campaign list, preview | done |
+| Per-person cap **beside** `maxAttempts` | done |
+| Nav entry, section map, feature href | done |
+| 13 API tests + nav/feature guards updated | done |
+
+**F7 was worse than the audit said.** The audit recorded "the per-person cap has no UI". In
+fact it had no *writer anywhere* — no route, no action, no screen. `dialer_max_calls_per_person_per_day`
+has been NULL for every tenant that has ever existed, so the ceiling was unreachable rather
+than defaulted-off. A ceiling nobody can raise is an absent feature with a column. Both
+routes are new; the plan's "no new endpoints invented" meant don't reinvent what exists, and
+this did not exist.
+
+**Four decisions worth keeping:**
+
+1. **The write is gated on `dial_campaign:create`, not `edit`.** 0159 seeds `edit` to
+   `workspace_member` so an agent can skip the record in front of them, so a settings write
+   on `edit` would let any telecaller widen the calling window to midnight and lift the
+   per-person ceiling. The read stays on `view` — an agent shown "outside calling hours" as a
+   block reason has to be able to read what the hours are.
+2. **The UPDATE binds a sixth parameter for "was the cap in the body at all".** A plain
+   `COALESCE($5, …)` reads an explicit null as "leave it alone", so a tenant who set a
+   ceiling of 3 could lower it, raise it and never remove it — the field would be a one-way
+   door with an operator's SQL prompt as the only escape. There is a test named after it.
+3. **The window is validated over the MERGED row, not the body.** The zod refine only fires
+   when both hours are sent; `startHour: 22` alone against a stored `endHour: 21` passes it.
+   `dialWindowOrdered` is called from both places so they cannot disagree.
+4. **Campaign status uses `StatusChip`, not `StateChip`.** `StateChip`'s states are call
+   states and its tone is deliberately not overridable, because red means MISSED in this
+   console and orange means an error. "Paused" is a choice, not a fault.
+
+**Two stale premises this surfaced**, both the same shape as the catalogue's own: a nav test
+asserted "an empty override map changes nothing" and a features test asserted "default-off
+implies no page". Both were true only while every feature defaulted on and no gated page
+existed. Restated rather than relaxed.
+
+Verified: web 63 files / 1159 tests · api 84 suites / 1386 tests. Lint clean on every file
+touched.
+
+### Phases B2–B4, C, D — not started.
+
+B2 (appointments), B3 (resources) and B4 (forms) keep `hrefs: []` until their pages land, by
+the rule §A1 records.

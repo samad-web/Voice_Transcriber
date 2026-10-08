@@ -18,18 +18,32 @@ import {
   DialSourceFilter,
   SkipDialQueueItemInput,
   UpdateDialCampaignInput,
+  UpdateDialSettingsInput,
+  dialWindowOrdered,
   type DialCampaignLive,
   type DialCampaignStatus,
   type DialCampaignView,
   type DialPreviewCounts,
+  type DialSettingsView,
 } from "@aura/shared/dist/dialer";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
-import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
+import {
+  CrmPermissionsGuard,
+  hasCrmGrant,
+  RequireCrmPermission,
+} from "../../common/crm-permissions.guard";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
-import { countVerdicts, DialerService, type Queryable, type Verdict } from "./dialer.service";
+import {
+  countVerdicts,
+  DialerService,
+  orgDialSettings,
+  type OrgDialSettings,
+  type Queryable,
+  type Verdict,
+} from "./dialer.service";
 
 /**
  * The dialer's console side (Build docs/39 §8, migration 0159).
@@ -100,6 +114,20 @@ export const CAMPAIGN_ONE_SQL = `SELECT ${CAMPAIGN_COLUMNS},
 export const DIALER_AUDIT_SQL = `INSERT INTO audit_log
        (org_id, actor_type, actor_id, action, target_type, target_id, meta)
      VALUES ($1, $2, $3, $4, 'dial_campaign', $5, $6::jsonb)`;
+
+/**
+ * The same row for a settings change, whose target is the WORKSPACE.
+ *
+ * A separate constant rather than a parameter on the one above, because the
+ * target type is not a variable here: every other dialer action is about a
+ * campaign, and making `target_type` a bind parameter would invite a caller to
+ * file a campaign action against an organization. `target_id` is the org, which
+ * is also `org_id` - redundant, and correct: the audit reader filters on
+ * target_type and expects an id beside it.
+ */
+export const DIAL_SETTINGS_AUDIT_SQL = `INSERT INTO audit_log
+       (org_id, actor_type, actor_id, action, target_type, target_id, meta)
+     VALUES ($1, $2, $3, $4, 'organization', $1, $5::jsonb)`;
 
 /**
  * The supervisor's live board, in ONE statement (§8: "Supervisor rollup. One
@@ -194,6 +222,36 @@ interface CampaignRow extends Record<string, unknown> {
   queued_count: number | null;
 }
 
+/** What the settings UPDATE returns - the four columns it may have changed. */
+interface OrgSettingsPatchRow extends Record<string, unknown> {
+  dialer_allows_unknown_consent: boolean | null;
+  calling_window_start_hour: number | null;
+  calling_window_end_hour: number | null;
+  dialer_max_calls_per_person_per_day: number | null;
+}
+
+/**
+ * `OrgDialSettings` as the console reads it.
+ *
+ * The timezone is flattened out of `callingWindow` and marked read-only in the
+ * view, because it is NOT a dial setting: it is `organizations.reporting_timezone`,
+ * set under Time & location and shared with every report in the product. A
+ * second place to change it would mean a tenant could make the dialer's idea of
+ * 9pm differ from the dashboard's, which doc 39 §494 names as the trap (a clinic
+ * in Kerala and a desk selling into Dubai held by the same clock). Shown here so
+ * nobody reads "21:00" as their own wall clock when it is not.
+ */
+function settingsView(settings: OrgDialSettings, canEdit: boolean): DialSettingsView {
+  return {
+    allowsUnknownConsent: settings.allowsUnknownConsent,
+    startHour: settings.callingWindow.startHour,
+    endHour: settings.callingWindow.endHour,
+    timeZone: settings.callingWindow.timeZone,
+    personDailyCap: settings.personDailyCap,
+    canEdit,
+  };
+}
+
 function campaignView(row: CampaignRow): DialCampaignView {
   const filter = DialSourceFilter.safeParse(row.source_filter);
   return {
@@ -229,6 +287,161 @@ export class DialerController {
     private readonly db: DbService,
     private readonly dialer: DialerService,
   ) {}
+
+  /**
+   * The three org-wide dial settings (Build docs/40 §B1).
+   *
+   * ── THE GAP THESE TWO ROUTES CLOSE ─────────────────────────────────────────
+   *
+   * 0157 added the columns, `dialability()` enforces them and the handset obeys
+   * them, but nothing in the product could ever SET them. No route, no screen -
+   * so `dialer_max_calls_per_person_per_day` has been NULL for every tenant that
+   * has ever existed, and the per-person ceiling was unreachable rather than
+   * merely defaulted-off. The calling window was likewise fixed at 09:00-21:00
+   * for everybody. A ceiling nobody can raise is an absent feature with a
+   * column, not a default.
+   *
+   * ── WHY `create` AND NOT `edit` GUARDS THE WRITE ───────────────────────────
+   *
+   * `dial_campaign:edit` is seeded to `workspace_member`, because §8 maps the
+   * agent's own `POST /dialer/queue/:id/skip` onto it - a telecaller who cannot
+   * skip cannot work a queue. So `edit` is the floor's grant, and gating these
+   * on it would let any telecaller widen the calling window to midnight and
+   * remove the ceiling on how many times one person may be rung in a day.
+   *
+   * `create` is seeded to the three admin roles only, on the reasoning that
+   * choosing whom the business rings commits a day of the floor's time. Choosing
+   * WHEN it rings and HOW OFTEN it may ring the same human is the same kind of
+   * decision, made once for the whole workspace. The grant is picked for its
+   * width rather than its name, exactly as the DNC page picks owner+manager to
+   * match the write grants rather than the wider `dnc:view`.
+   *
+   * The read stays on `view`, which every console role including `viewer` has:
+   * an agent who can see WHY a record is blocked by the window or the ceiling
+   * needs to be able to read what the window and the ceiling are, and
+   * withholding that would make the dialer look broken.
+   */
+  @Get("settings")
+  @RequireCrmPermission("dial_campaign", "view")
+  async settings(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+  ): Promise<{ settings: DialSettingsView }> {
+    // `hasCrmGrant` reads the grid for a console USER. An operator acting
+    // through the admin key has no row in it, and they already passed
+    // CrmPermissionsGuard to reach this handler - so they are able, and
+    // answering `false` would render them a read-only page they can in fact
+    // write. Same reasoning as the DNC list route.
+    const actor = auditActor(req);
+    const userId = actor.type === "user" ? actor.id : null;
+    return this.db.withOrg(orgId, async (client) => {
+      const settings = await orgDialSettings(client, orgId);
+      const canEdit = userId
+        ? await hasCrmGrant(client, orgId, userId, "dial_campaign", "create")
+        : true;
+      return { settings: settingsView(settings, canEdit) };
+    });
+  }
+
+  @Patch("settings")
+  @RequireCrmPermission("dial_campaign", "create")
+  async updateSettings(
+    @Req() req: PrincipalRequest,
+    @OrgId() orgId: string,
+    @Body() body: unknown,
+  ): Promise<{ settings: DialSettingsView }> {
+    const parsed = UpdateDialSettingsInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const patch = parsed.data;
+    const actor = auditActor(req);
+
+    return this.db.withOrg(orgId, async (client) => {
+      const before = await orgDialSettings(client, orgId);
+
+      // Resolved against the stored row BEFORE validating, the same way
+      // `update` resolves sourceKind/sourceRef above. The zod refine can only
+      // see a body carrying both hours; a PATCH sending `startHour: 22` alone
+      // against a stored `endHour` of 21 reaches here having passed it.
+      const startHour = patch.startHour ?? before.callingWindow.startHour;
+      const endHour = patch.endHour ?? before.callingWindow.endHour;
+      if (!dialWindowOrdered(startHour, endHour)) {
+        throw new BadRequestException("The calling window must start before it ends.");
+      }
+
+      const {
+        rows: [row],
+      } = await client.query<OrgSettingsPatchRow>(
+        `UPDATE organizations
+            SET dialer_allows_unknown_consent =
+                  COALESCE($2::boolean, dialer_allows_unknown_consent),
+                calling_window_start_hour = $3,
+                calling_window_end_hour   = $4,
+                -- $6 distinguishes "not in the body" from "set it to null".
+                -- Without it there is no way to go back to uncapped, since a
+                -- COALESCE would read the intended NULL as "leave it alone" -
+                -- the field would be a one-way door.
+                dialer_max_calls_per_person_per_day =
+                  CASE WHEN $6::boolean THEN $5::int
+                       ELSE dialer_max_calls_per_person_per_day END
+          WHERE id = $1
+        RETURNING dialer_allows_unknown_consent,
+                  calling_window_start_hour,
+                  calling_window_end_hour,
+                  dialer_max_calls_per_person_per_day`,
+        [
+          orgId,
+          patch.allowsUnknownConsent ?? null,
+          startHour,
+          endHour,
+          patch.personDailyCap ?? null,
+          Object.prototype.hasOwnProperty.call(patch, "personDailyCap"),
+        ],
+      );
+      if (!row) throw new NotFoundException("workspace not found");
+
+      await client.query(DIAL_SETTINGS_AUDIT_SQL, [
+        orgId,
+        actor.type,
+        actor.id,
+        "dialer.settings.updated",
+        // BEFORE and AFTER in full, not just the changed keys - which is the
+        // opposite of what `dial_campaign.updated` records, deliberately. A
+        // campaign change can be reconstructed from the campaign row; this one
+        // overwrites org columns in place, so a snapshot is the only thing that
+        // can ever answer "what was the calling window in March". And "who
+        // widened it to 23:00" is the first question after a complaint.
+        JSON.stringify({
+          before: {
+            allowsUnknownConsent: before.allowsUnknownConsent,
+            startHour: before.callingWindow.startHour,
+            endHour: before.callingWindow.endHour,
+            personDailyCap: before.personDailyCap,
+          },
+          after: {
+            allowsUnknownConsent: row.dialer_allows_unknown_consent === true,
+            startHour: row.calling_window_start_hour,
+            endHour: row.calling_window_end_hour,
+            personDailyCap: row.dialer_max_calls_per_person_per_day,
+          },
+        }),
+      ]);
+
+      return {
+        settings: settingsView(
+          {
+            allowsUnknownConsent: row.dialer_allows_unknown_consent === true,
+            callingWindow: {
+              startHour: row.calling_window_start_hour ?? startHour,
+              endHour: row.calling_window_end_hour ?? endHour,
+              timeZone: before.callingWindow.timeZone,
+            },
+            personDailyCap: row.dialer_max_calls_per_person_per_day ?? null,
+          },
+          true,
+        ),
+      };
+    });
+  }
 
   @Get("campaigns")
   @RequireCrmPermission("dial_campaign", "view")

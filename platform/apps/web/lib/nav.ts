@@ -196,6 +196,21 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/dialer",
+    label: "Dialer",
+    icon: PhoneForwarded,
+    title: "Dialer",
+    context: "Conversations",
+    // Owner and manager, which is NARROWER than the grants on purpose.
+    // `dial_campaign:view` reaches every console role including `viewer`, and
+    // `dial_campaign:edit` reaches `workspace_member` so an agent can skip the
+    // record in front of them (0159). But an agent works a queue on a HANDSET;
+    // this page is where the queue is chosen, built and started, and where the
+    // org-wide dial policy is set. A telecaller offered the entry would reach a
+    // screen whose Create and Start the API refuses.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/projects",
     label: "Projects",
     icon: Layers,
@@ -1020,6 +1035,11 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   // The third call queue (0151): calls a telecaller handed up. Last, because
   // for a telecaller the section's first page must be one they always have.
   "/owner/escalations": "conversations",
+  // The dialer (Build docs/40 §B1). In "conversations" beside the call log,
+  // because that is what it produces: every campaign on it ends as rows in
+  // /owner/calls. Owner/manager only, so it never becomes a telecaller's first
+  // page in this section - they work the queue on a handset, not here.
+  "/owner/dialer": "conversations",
 
   // Sales overview first for the personas that have it; a telecaller's first
   // visible page here is My performance, which is their own scorecard - the

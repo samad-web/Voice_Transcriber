@@ -311,6 +311,79 @@ export const UpdateDialCampaignInput = z
   .refine((b) => Object.keys(b).length > 0, "nothing to update");
 export type UpdateDialCampaignInput = z.infer<typeof UpdateDialCampaignInput>;
 
+/**
+ * The three org-wide dial settings, as the console reads and writes them
+ * (Build docs/40 §B1).
+ *
+ * ── WHY THESE EXISTED WITH NO WRITER AT ALL ─────────────────────────────────
+ *
+ * 0157 added the columns, `dialability()` enforces them and the handset obeys
+ * them - but nothing in the product could SET them. There was no console route
+ * and no screen, so `dialer_max_calls_per_person_per_day` was NULL for every
+ * tenant that has ever existed and the per-person ceiling was unreachable
+ * rather than merely defaulted-off. A ceiling nobody can raise is not a default;
+ * it is an absent feature with a column.
+ *
+ * The calling window is the same story in a milder form: 09:00-21:00 in the
+ * org's reporting timezone was the only window any tenant could ever have.
+ */
+export interface DialSettingsView {
+  allowsUnknownConsent: boolean;
+  startHour: number;
+  endHour: number;
+  /** Read-only here: it follows `reporting_timezone`, set under Time & location. */
+  timeZone: string;
+  /** null is UNCAPPED, and that remains the shipped default. */
+  personDailyCap: number | null;
+  /** Whether this caller may change the above, so the page can say so. */
+  canEdit: boolean;
+}
+
+export const UpdateDialSettingsInput = z
+  .object({
+    allowsUnknownConsent: z.boolean().optional(),
+    // 0..23, and the window is validated as a PAIR below rather than per field:
+    // a start of 21 and an end of 9 are each individually legal hours.
+    startHour: z.number().int().min(0).max(23).optional(),
+    endHour: z.number().int().min(0).max(23).optional(),
+    // Matches 0157's CHECK exactly - BETWEEN 1 AND 50, or null for uncapped.
+    // Drift here would surface as a 23514 reading like a bug in the console, the
+    // same failure `notifications.kind` produced twice.
+    personDailyCap: z.number().int().min(1).max(50).nullable().optional(),
+  })
+  // Hand-built, NOT `.partial()` of a create schema: `.partial()` keeps
+  // `.default()`, so a PATCH that touched only the cap would quietly rewrite the
+  // calling window to whatever the defaults said. One live instance of that bug
+  // already exists in outreach cadences.
+  .refine((b) => Object.keys(b).length > 0, "nothing to update")
+  .refine(
+    // A window must be a window. `startHour === endHour` is the dangerous one:
+    // read as "ring for zero hours" it stops the floor dead, and read as "ring
+    // for 24" it rings at 3am. Refusing it means neither reading can happen.
+    //
+    // THIS IS NOT THE WHOLE CHECK, and treating it as such is the trap. It can
+    // only see a body carrying BOTH hours; a PATCH sending `startHour: 22`
+    // against a stored `endHour` of 21 passes here and still inverts the
+    // window. The complete check needs the stored row, so it lives in the
+    // controller, over the MERGED values - `dialWindowOrdered` below, called
+    // from both places so the two cannot disagree.
+    (b) => dialWindowOrdered(b.startHour, b.endHour),
+    { message: "The calling window must start before it ends.", path: ["endHour"] },
+  );
+export type UpdateDialSettingsInput = z.infer<typeof UpdateDialSettingsInput>;
+
+/**
+ * Is this a window somebody can ring inside?
+ *
+ * `undefined` on either side means "not being changed", which only the zod
+ * refine above passes - the controller resolves both against the stored row
+ * first, so by the time it asks, both are numbers.
+ */
+export function dialWindowOrdered(startHour?: number, endHour?: number): boolean {
+  if (startHour === undefined || endHour === undefined) return true;
+  return startHour < endHour;
+}
+
 export const BuildDialQueueInput = z.object({
   /**
    * Whom to hand the records to, round-robin in the order given. Empty leaves

@@ -210,10 +210,24 @@ describe("ownerNavItemsFor - the client's feature switches", () => {
       features: overrides,
     }).map((i) => i.href);
 
-  it("changes nothing when the client has expressed no preference", () => {
-    // The deploy-day property, checked where it is actually observable: an
-    // empty override map renders the rail this console rendered yesterday.
-    expect(withOverrides("owner", {})).toEqual(hrefs("owner", false, true, true));
+  it("changes nothing the client has not switched, and hides what ships off", () => {
+    // The deploy-day property, checked where it is actually observable - but
+    // "an empty override map is a no-op" stopped being the right statement of
+    // it once a feature shipped `defaultEnabled: false`.
+    //
+    // `dialer` is the first (Build docs/40 §A1): its page exists and is gated,
+    // and it is OFF until a workspace asks for it, so an empty override map
+    // correctly drops it. The property that still holds - and the one the
+    // catalogue actually promises - is that the rail changes ONLY by the
+    // default-off features, and in no other respect.
+    const withNoPreference = withOverrides("owner", {});
+    const unfiltered = hrefs("owner", false, true, true);
+    expect(withNoPreference).toEqual(unfiltered.filter((href) => href !== "/owner/dialer"));
+    // Stated separately so the reason is visible rather than inferred from a
+    // filter: it is absent because the feature is off, and switching it on
+    // brings it back in the same position.
+    expect(withNoPreference).not.toContain("/owner/dialer");
+    expect(withOverrides("owner", { dialer: true })).toEqual(unfiltered);
   });
 
   it("removes a page the workspace switched off, and the ones hanging off it", () => {

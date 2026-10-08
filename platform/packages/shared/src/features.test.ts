@@ -6,6 +6,7 @@ import {
   enabledFeatures,
   featureForHref,
   featureForPath,
+  featureSpec,
   resolveFeatures,
   sparseOverrides,
 } from "./features";
@@ -95,7 +96,6 @@ describe("resolveFeatures - the deploy-day property", () => {
     expect([...governNothing].sort()).toEqual([
       "appointments",
       "connections",
-      "dialer",
       "partner_portal",
       "resources",
       "sheets_sync",
@@ -103,15 +103,31 @@ describe("resolveFeatures - the deploy-day property", () => {
     ]);
   });
 
-  it("leaves no default-off feature governing a page that is already reachable", () => {
-    // The pairing that would be a live defect: a switch that is OFF while its
-    // page still renders. Every default-off entry is a surface whose console
-    // does not exist yet, so each must also govern no href - and when Phase B
-    // gives one a page, flipping its href on without deciding the default is
-    // exactly the mistake this catches.
-    for (const spec of FEATURES.filter((f) => !f.defaultEnabled)) {
-      expect([spec.key, spec.hrefs]).toEqual([spec.key, []]);
-    }
+  it("gives the dialer its page, now that Phase B built one", () => {
+    // `dialer` left the list above in Build docs/40 §B1, in the same change as
+    // `/owner/dialer` and its nav entry - which is the rule the remaining empty
+    // lists exist to enforce. Named here so the three cannot drift apart again:
+    // `feature-gating.test.ts` would catch an href with no page, and this
+    // catches the reverse reading, a page nobody gated.
+    expect(featureSpec("dialer").hrefs).toEqual(["/owner/dialer"]);
+    expect(featureSpec("dialer").defaultEnabled).toBe(false);
+  });
+
+  it("accounts for every default-off feature that DOES have a page", () => {
+    // A switch that is off while its page renders would be a live defect, but
+    // "default-off implies no page" stopped being the right invariant the
+    // moment Phase B built one: `/owner/dialer` exists, is gated, and ships
+    // off. What actually protects the page is `requireFeature` on it, which
+    // `feature-gating.test.ts` asserts for EVERY href in this catalogue.
+    //
+    // So the claim here is narrower and still worth pinning: which default-off
+    // features have reached that stage. Adding one means its page, its nav
+    // entry and its href landed together, and somebody chose the default on
+    // purpose rather than inheriting it.
+    const offWithPages = FEATURES.filter((f) => !f.defaultEnabled && f.hrefs.length > 0).map(
+      (f) => f.key,
+    );
+    expect([...offWithPages].sort()).toEqual(["dialer"]);
   });
 
   it("defaults a feature off only when no console ever reached it", () => {

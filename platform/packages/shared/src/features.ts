@@ -370,8 +370,9 @@ export const FEATURES: FeatureSpec[] = [
     // standing decision.
     module: "aura",
     group: "conversations",
-    // Empty until Phase B builds `/owner/dialer` - see `appointments` above.
-    hrefs: [],
+    // Landed in the same change as the page and the nav item (Build docs/40
+    // §B1), which is the rule the empty lists on the other three record.
+    hrefs: ["/owner/dialer"],
     // THE LOAD-BEARING DEPENDENCY. A tenant who switched do-not-call lists off
     // would otherwise keep a working dialer and no way to maintain the list
     // that stops it ringing a registered number - the precise hazard doc 39's

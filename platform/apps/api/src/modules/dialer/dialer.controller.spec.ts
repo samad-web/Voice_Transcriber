@@ -37,6 +37,10 @@ interface FakeOpts {
   skipRows?: number;
   itemExists?: boolean;
   workspaceFound?: boolean;
+  /** Whether the caller holds `dial_campaign:create` - the settings write grant. */
+  canEdit?: boolean;
+  /** Overrides for the `organizations` dial-settings read. */
+  orgSettings?: Record<string, unknown>;
 }
 
 const baseCampaign = (over: Record<string, unknown> = {}) => ({
@@ -75,6 +79,35 @@ function fakeDb(opts: FakeOpts = {}) {
               calling_window_start_hour: 0,
               calling_window_end_hour: 24,
               reporting_timezone: "Asia/Kolkata",
+              ...opts.orgSettings,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      // `hasCrmGrant`, matched on `role_permissions` and placed BEFORE the
+      // memberships branch below. Its SQL also says `FROM memberships m`, so
+      // without this it would fall through and answer the grant question with
+      // the campaign-assignment fixture - which happens to be truthy whenever
+      // `members` is set, making a permission test pass for the wrong reason.
+      if (/role_permissions/.test(text)) {
+        return opts.canEdit === false ? { rows: [], rowCount: 0 } : { rows: [{ "?column?": 1 }], rowCount: 1 };
+      }
+      if (/UPDATE organizations/.test(text)) {
+        // Echoes back what the statement bound, which is what lets the tests
+        // below assert the one-way-door fix: $6 decides whether the cap in $5
+        // is applied at all.
+        const capProvided = values[5] === true;
+        return {
+          rows: [
+            {
+              dialer_allows_unknown_consent:
+                values[1] === null ? false : Boolean(values[1]),
+              calling_window_start_hour: values[2] as number,
+              calling_window_end_hour: values[3] as number,
+              dialer_max_calls_per_person_per_day: capProvided
+                ? (values[4] as number | null)
+                : ((opts.orgSettings?.dialer_max_calls_per_person_per_day as number | null) ?? null),
             },
           ],
           rowCount: 1,
@@ -216,9 +249,22 @@ describe("the P1 guard stacks", () => {
     ["activate", "edit"],
     ["pause", "edit"],
     ["skip", "edit"],
+    ["settings", "view"],
+    ["updateSettings", "create"],
   ])("declares dial_campaign:%s on %s", (handler, action) => {
     const proto = DialerController.prototype as unknown as Record<string, unknown>;
     expect(permissionOn(proto[handler])).toEqual({ objectType: "dial_campaign", action });
+  });
+
+  it("gates the settings WRITE above the floor's own grant", () => {
+    // THE reason `updateSettings` is on `create` and not `edit`, asserted
+    // rather than left in a comment. `edit` has to reach `workspace_member` so
+    // an agent can skip a record (see the test below), so a settings write on
+    // `edit` would let any telecaller widen the calling window to midnight and
+    // lift the ceiling on how often one person may be rung.
+    const proto = DialerController.prototype as unknown as Record<string, unknown>;
+    expect(permissionOn(proto.updateSettings)).not.toEqual(permissionOn(proto.skip));
+    expect(permissionOn(proto.updateSettings)).toEqual(permissionOn(proto.create));
   });
 
   it("puts an agent's Skip on the same action as pausing the floor", () => {
@@ -229,6 +275,142 @@ describe("the P1 guard stacks", () => {
     // fails and the migration's grant is revisited in the same breath.
     const proto = DialerController.prototype as unknown as Record<string, unknown>;
     expect(permissionOn(proto.skip)).toEqual(permissionOn(proto.pause));
+  });
+});
+
+/**
+ * The org dial settings (Build docs/40 §B1).
+ *
+ * 0157 added three columns, `dialability()` enforced them and the handset obeyed
+ * them - and nothing in the product could set them. `dialer_max_calls_per_person_per_day`
+ * was NULL for every tenant that has ever existed, so the per-person ceiling was
+ * unreachable rather than defaulted-off. These are the tests for the routes that
+ * close that, and the one that matters most is "can go back to uncapped".
+ */
+describe("GET /dialer/settings", () => {
+  it("reports uncapped when no ceiling has ever been set", () => {
+    // Not 0, and not a number. `null` means uncapped, and a UI that read a
+    // falsy 0 here would render "0 calls per person per day" - a floor that
+    // cannot dial anybody.
+    const { ctl } = controller();
+    return expect(
+      ctl.settings(req(sessionPrincipal({ userId: USER_A })), ORG_A),
+    ).resolves.toMatchObject({ settings: { personDailyCap: null } });
+  });
+
+  it("carries the timezone the window is read in, as a fact rather than a field", () => {
+    // The hours mean nothing without it: 21:00 in `reporting_timezone` is not
+    // 21:00 where the reader is sitting. It is NOT editable here - it belongs to
+    // Time & location and is shared with every report - and doc 39 names the
+    // trap it would create (a clinic in Kerala and a desk selling into Dubai
+    // held by the same clock).
+    const { ctl } = controller({ orgSettings: { reporting_timezone: "Asia/Dubai" } });
+    return expect(
+      ctl.settings(req(sessionPrincipal({ userId: USER_A })), ORG_A),
+    ).resolves.toMatchObject({ settings: { timeZone: "Asia/Dubai" } });
+  });
+
+  it("tells a viewer the page is read-only instead of letting them find out on save", async () => {
+    const { ctl } = controller({ canEdit: false });
+    const out = await ctl.settings(req(sessionPrincipal({ userId: USER_A })), ORG_A);
+    expect(out.settings.canEdit).toBe(false);
+  });
+
+  it("treats the bare admin key as able, because it has no row in the grid", async () => {
+    // An operator acting for a tenant already passed CrmPermissionsGuard to get
+    // here. `hasCrmGrant` looks them up in `role_permissions` and finds nothing,
+    // so answering from the grid alone would render them a read-only page they
+    // can in fact write. Same decision as the DNC list route.
+    const { ctl } = controller({ canEdit: false });
+    const out = await ctl.settings(req(adminKeyPrincipal()), ORG_A);
+    expect(out.settings.canEdit).toBe(true);
+  });
+});
+
+describe("PATCH /dialer/settings", () => {
+  const actor = () => req(sessionPrincipal({ userId: USER_A }));
+
+  it("sets the per-person ceiling", async () => {
+    const { ctl } = controller();
+    const out = await ctl.updateSettings(actor(), ORG_A, { personDailyCap: 3 });
+    expect(out.settings.personDailyCap).toBe(3);
+  });
+
+  it("CAN GO BACK TO UNCAPPED - the one-way door that nearly shipped", async () => {
+    // The whole reason the statement binds a sixth parameter. With a plain
+    // `COALESCE($5, dialer_max_calls_per_person_per_day)` an explicit null
+    // reads as "leave it alone", so a tenant who set a ceiling of 3 could
+    // lower it, raise it, and never remove it - the field would be a one-way
+    // door, and the only escape an operator with a SQL prompt.
+    const { ctl, issued } = controller({ orgSettings: { dialer_max_calls_per_person_per_day: 3 } });
+    const out = await ctl.updateSettings(actor(), ORG_A, { personDailyCap: null });
+    expect(out.settings.personDailyCap).toBeNull();
+    // And the flag is what carried the intent, not the value.
+    const update = issued.find((i) => /UPDATE organizations/.test(i.text))!;
+    expect(update.values[5]).toBe(true);
+  });
+
+  it("leaves the ceiling alone when the body does not mention it", async () => {
+    // The other half of the same mechanism, and the half a naive fix breaks: a
+    // PATCH that only moves the window must not silently remove a ceiling
+    // somebody set deliberately.
+    const { ctl, issued } = controller({ orgSettings: { dialer_max_calls_per_person_per_day: 3 } });
+    const out = await ctl.updateSettings(actor(), ORG_A, { startHour: 10 });
+    expect(out.settings.personDailyCap).toBe(3);
+    const update = issued.find((i) => /UPDATE organizations/.test(i.text))!;
+    expect(update.values[5]).toBe(false);
+  });
+
+  it("refuses an inverted window built from ONE hour and the stored other", async () => {
+    // The gap zod cannot see. The schema's refine only fires when the body
+    // carries both hours; this body carries one, and 22 against the stored
+    // end of 24 is fine while 22 against a stored end of 21 is not. The
+    // controller resolves both against the row before asking.
+    const { ctl } = controller({ orgSettings: { calling_window_end_hour: 21 } });
+    await expect(ctl.updateSettings(actor(), ORG_A, { startHour: 22 })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it("refuses a window that starts and ends in the same hour", async () => {
+    // Ambiguous in the worst way: read as zero hours it stops the floor dead,
+    // read as 24 it rings at 3am.
+    const { ctl } = controller();
+    await expect(
+      ctl.updateSettings(actor(), ORG_A, { startHour: 9, endHour: 9 }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("refuses a ceiling 0157's CHECK would, rather than letting it 23514", async () => {
+    // The zod bounds are a hand transcription of `BETWEEN 1 AND 50`. Drift here
+    // surfaces as a 23514 that reads like a bug in the console - the failure
+    // `notifications.kind` produced twice.
+    const { ctl } = controller();
+    for (const bad of [0, 51, -1]) {
+      await expect(
+        ctl.updateSettings(actor(), ORG_A, { personDailyCap: bad }),
+      ).rejects.toThrow(BadRequestException);
+    }
+  });
+
+  it("refuses an empty body rather than issuing a no-op UPDATE", async () => {
+    const { ctl } = controller();
+    await expect(ctl.updateSettings(actor(), ORG_A, {})).rejects.toThrow(BadRequestException);
+  });
+
+  it("audits the whole policy before and after, not just the changed keys", async () => {
+    // Deliberately the opposite of `dial_campaign.updated`, which records only
+    // the keys sent. A campaign change can be reconstructed from the campaign
+    // row; this one overwrites org columns in place, so a snapshot is the only
+    // thing that can ever answer "what was the calling window in March" - and
+    // "who widened it to 23:00" is the first question after a complaint.
+    const { ctl, issued } = controller({ orgSettings: { calling_window_end_hour: 21 } });
+    await ctl.updateSettings(actor(), ORG_A, { endHour: 20 });
+    const audit = issued.find((i) => /INSERT INTO audit_log/.test(i.text))!;
+    expect(audit.text).toContain("'organization'");
+    const meta = JSON.parse(String(audit.values[4]));
+    expect(meta.before.endHour).toBe(21);
+    expect(meta.after.endHour).toBe(20);
   });
 });
 
