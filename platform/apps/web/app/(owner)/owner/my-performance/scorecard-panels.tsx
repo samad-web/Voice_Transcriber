@@ -219,7 +219,13 @@ export function QualityBreakdown({ card }: { card: AgentScorecard }) {
 // ── How the customer sounded ─────────────────────────────────────────────────
 
 /**
- * The sentiment split behind the CSAT tile.
+ * The sentiment split behind the Call sentiment tile.
+ *
+ * The tile was labelled "Customer satisfaction" until Build docs/40 §E: the
+ * derivation was always honest and this panel always said "not asked of the
+ * customer", but the name claimed a survey that does not exist anywhere in the
+ * product. `csatIndex` keeps its symbol name - renaming an export across the
+ * scorecard buys nothing - and no user-facing string says CSAT.
  *
  * ── WHY THE COUNTS TRAVEL WITH THE INDEX ────────────────────────────────────
  *
@@ -288,8 +294,7 @@ export function SentimentSplit({ card }: { card: AgentScorecard }) {
 
       <p className="border-t border-border pt-3 text-xs text-text-subtle">
         Read from what was said on the call, not asked of the customer. Positive counts 100 and
-        neutral 50, giving a satisfaction index of{" "}
-        {csatIndex(s) == null ? "—" : csatIndex(s)}.
+        neutral 50, giving a sentiment score of {csatIndex(s) == null ? "—" : csatIndex(s)}.
       </p>
     </Card>
   );

@@ -310,7 +310,27 @@ existed. Restated rather than relaxed.
 Verified: web 63 files / 1159 tests · api 84 suites / 1386 tests. Lint clean on every file
 touched.
 
-### Phases B2–B4, C, D — not started.
+### Phase D — metric honesty. DONE 2026-10-08. Fixes F10 and F11.
+
+- **F11 — the tile is "Call sentiment", not "Customer satisfaction".** The derivation was
+  always sound and the panel under it always said "not asked of the customer"; the *name*
+  claimed a survey that exists nowhere in the product. A rep comparing their "customer
+  satisfaction" against the floor median was comparing how the AI read the mood of their
+  calls — a fair thing to measure and a different thing to claim. The tile's second line now
+  says "nobody was surveyed" outright, and the panel calls the result a sentiment score.
+  `csatIndex` keeps its symbol name; no user-facing string says CSAT.
+- **F10 — "FCR is not set up" now says where.** 0144 ships `counts_towards_fcr` false on
+  every disposition deliberately, because seeding it would invent a definition of resolution
+  and show a rep "FCR 0%" as a verdict. But an inert metric with no route to turning it on
+  reads as a broken one, so the tile links to the dispositions editor.
+  **The link renders for owner and manager only** — `/owner/call-quality` is gated to that
+  pair, and offering a telecaller a link they cannot follow is worse than the bare sentence:
+  it says the fix is one click away and then refuses them.
+
+Verified: web 63 files / 1159 tests green.
+
+### Phases B2–B4 and C — not started.
 
 B2 (appointments), B3 (resources) and B4 (forms) keep `hrefs: []` until their pages land, by
-the rule §A1 records.
+the rule §A1 records. C depends on B2 and B3 existing: a stage pack that provisions a clinic
+diary is meaningless while no diary can be opened.

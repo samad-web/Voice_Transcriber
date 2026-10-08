@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   Banknote,
@@ -165,6 +166,12 @@ export default async function MyPerformancePage({
   // overrules it for a telecaller, who reads their own card whatever the URL
   // says, so this page never has to decide who may look at whom.
   const who = String(Array.isArray(sp.telecaller) ? sp.telecaller[0] : (sp.telecaller ?? ""));
+
+  // Who may act on "FCR is not set up". The dispositions editor lives on
+  // /owner/call-quality, which is owner/manager only, so only that pair is
+  // offered the link - see the tile below.
+  const canSetUpFcr =
+    owner.membership.ownerRole === "owner" || owner.membership.ownerRole === "manager";
 
   const zone = owner.membership.reportingTimezone ?? DEFAULT_TIME_ZONE;
   const requested = resolveDateWindow(window, todayIn(zone));
@@ -370,15 +377,24 @@ export default async function MyPerformancePage({
             card.peer.qaScore == null ? "—" : `${Math.round(card.peer.qaScore)}`,
           )}
         />
+        {/* "Call sentiment", not "Customer satisfaction" (Build docs/40 §E, F11).
+            The number is sound - `csatIndex` scores positive 100, neutral 50,
+            negative 0 over the calls whose transcript carried a sentiment read,
+            and nulls below a minimum sample. What was wrong was the name: CSAT
+            is a thing you get by ASKING somebody, and nobody is asked anything
+            anywhere in this product. A rep comparing their "customer
+            satisfaction" against the floor median was comparing how the AI read
+            the mood of their calls, which is a fair thing to measure and a
+            different thing to claim. */}
         <StatCard
           tone="plain"
-          label="Customer satisfaction"
+          label="Call sentiment"
           value={csat == null ? "—" : `${csat}/100`}
           icon={<Smile aria-hidden="true" className="h-4 w-4" />}
           context={
             csat == null
               ? "not enough analysed calls yet"
-              : `read from ${card.sentimentReadCalls} analysed calls`
+              : `how ${card.sentimentReadCalls} analysed calls read — nobody was surveyed`
           }
           footer={versus(
             standing(csat, card.peer.csat),
@@ -392,10 +408,32 @@ export default async function MyPerformancePage({
           icon={<CheckCheck aria-hidden="true" className="h-4 w-4" />}
           // The two blank states read differently on purpose. "Not set up" is a
           // settings page nobody opened; the other is this rep's own thin base.
+          //
+          // And "not set up" now says WHERE (Build docs/40 §E, F10). 0144 ships
+          // `counts_towards_fcr` false on every disposition deliberately -
+          // seeding it would invent a definition of resolution and show a rep
+          // "FCR 0%" as a verdict - but an inert metric with no route to
+          // turning it on reads as a broken one.
+          //
+          // The link renders for owner and manager ONLY, because
+          // /owner/call-quality is gated to that pair. Offering a telecaller a
+          // link they cannot follow is worse than the bare sentence: it tells
+          // them the fix is one click away and then refuses them.
           context={
-            !card.fcrConfigured
-              ? "not set up for this workspace"
-              : `${card.fcrResolvedCalls} of ${card.fcrEligibleCalls} first contacts settled`
+            !card.fcrConfigured ? (
+              canSetUpFcr ? (
+                <>
+                  not set up —{" "}
+                  <Link href="/owner/call-quality" className="text-accent underline">
+                    choose which outcomes count as resolved
+                  </Link>
+                </>
+              ) : (
+                "not set up for this workspace"
+              )
+            ) : (
+              `${card.fcrResolvedCalls} of ${card.fcrEligibleCalls} first contacts settled`
+            )
           }
           footer={versus(standing(fcr, card.peer.fcrRate), percent(card.peer.fcrRate))}
         />
