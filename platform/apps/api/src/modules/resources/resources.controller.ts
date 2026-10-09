@@ -31,6 +31,10 @@ import {
   remainingCapacity,
   tenantResourceTypes,
 } from "@aura/shared/dist/resources";
+// A DEEP import for the same reason the one above is: `stage-packs` pulls in
+// the lead-stage schema, and the barrel would drag the whole of @aura/shared
+// into a module that needs one function from it.
+import { packSlotMinutes } from "@aura/shared/dist/stage-packs";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
@@ -312,15 +316,21 @@ export class ResourcesController {
    * wants `villa` at the top rather than hunting for it under five
    * suggestions they never took.
    *
-   * ── THE PACK ARRIVES AS A QUERY PARAMETER, AND THAT IS A GAP ──────────────
+   * ── THE PACK IS NOW PERSISTED (migration 0170) ────────────────────────────
    *
-   * §22 says "Aura already knows what business each tenant is in". It does
-   * not. `suggestPack()` is computed from free text on a GET
-   * (`/pipelines/stage-packs/catalogue`), applying a pack only ever rewrites a
-   * pipeline's stage list, and NOTHING PERSISTS THE CHOICE - there is no
-   * column anywhere that says a tenant is a clinic. So the console passes
-   * what it knows and the general pack is the fallback. Persisting the pack is
-   * a one-column migration somebody should do; it is not this wave's.
+   * §22 says "Aura already knows what business each tenant is in". For two
+   * waves it did not: `suggestPack()` was computed from free text on a GET,
+   * applying a pack only rewrote a pipeline's stage list, and no column
+   * anywhere said a tenant was a clinic. This route therefore asked its CALLER
+   * which business the tenant was - a question no caller could answer, so every
+   * request fell through to the general pack and a dental practice was offered
+   * `item / slot / date`. That was the gap doc 40 called F8.
+   *
+   * `organizations.stage_pack` closes it, written by
+   * `POST /pipelines/:id/apply-stage-pack` in the same transaction as the
+   * stages. `?pack=` still wins when sent, for an onboarding screen previewing
+   * a pack before anybody applies it; absent, it no longer means "assume
+   * general".
    *
    * Declared above `@Get(":id")` - Nest matches in declaration order, and
    * after it "types" would be parsed as a resource id and 400 on the uuid pipe.
@@ -336,10 +346,35 @@ export class ResourcesController {
           GROUP BY resource_type
           ORDER BY count(*) DESC, resource_type`,
       );
+      // THE WORKSPACE'S OWN PACK, read here rather than asked of the caller
+      // (migration 0170, Build docs/40 §D).
+      //
+      // The paragraph above this route used to explain that nothing persisted
+      // the choice and the console therefore "passes what it knows", which in
+      // practice was nothing: no caller could answer "is this tenant a clinic",
+      // so every request fell through to the general pack and a dental practice
+      // was offered `item / slot / date`. 0170 records it, so the route can
+      // simply look.
+      //
+      // `?pack=` still wins when it is sent, for the onboarding screen that
+      // needs to preview a pack's vocabulary BEFORE anybody applies it. An
+      // explicit question beats a stored answer; an absent one no longer means
+      // "assume general".
+      const {
+        rows: [org],
+      } = await client.query<{ stage_pack: string | null }>(
+        `SELECT stage_pack FROM organizations WHERE id = $1`,
+        [orgId],
+      );
+      const effectivePack = pack ?? org?.stage_pack ?? null;
       const inUse = rows.map((row) => row.resource_type);
       return {
-        types: tenantResourceTypes(inUse, pack ?? null),
+        types: tenantResourceTypes(inUse, effectivePack),
         inUse: rows.map((row) => ({ type: row.resource_type, count: Number(row.count) })),
+        /** Which pack these suggestions came from - null when never chosen. */
+        pack: effectivePack,
+        /** The diary's default length for this pack, so the console need not map it. */
+        slotMinutes: packSlotMinutes(effectivePack),
       };
     });
   }

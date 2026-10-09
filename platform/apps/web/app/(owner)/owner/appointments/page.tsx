@@ -46,7 +46,7 @@ export default async function AppointmentsPage() {
   const zone = owner?.membership.reportingTimezone ?? DEFAULT_TIME_ZONE;
   const today = todayInZone(zone);
 
-  const [list, resources] = await Promise.all([
+  const [list, resources, packInfo] = await Promise.all([
     // The whole diary from today forward, not a single day: the first question
     // somebody opens this page with is "what is coming", and a day view that
     // starts empty on a quiet Tuesday reads as a broken page. The console
@@ -57,6 +57,13 @@ export default async function AppointmentsPage() {
     // For the room/chair picker. A diary is usable without it - an appointment
     // need not consume a resource - so a failure here is not worth the page.
     ownerTry<{ resources: ResourceView[] }>("/v1/resources?availableOnly=1&limit=200"),
+    // The workspace's industry pack, for the booking form's DEFAULT LENGTH
+    // (migration 0170). 30 minutes for a clinic room, 2 hours for a property
+    // site visit, 45 for a salon station - doc 39 §1387 names the range, and a
+    // single product-wide default has to be wrong for somebody: half an hour
+    // makes a site visit look like a phone call, and two hours blocks a dental
+    // chair for the afternoon.
+    ownerTry<{ slotMinutes: number }>("/v1/resources/types"),
   ]);
 
   if (!list.ok) {
@@ -76,6 +83,9 @@ export default async function AppointmentsPage() {
         timeZone={zone}
         types={[...APPOINTMENT_TYPE_SUGGESTIONS]}
         resources={resources.ok ? resources.data.resources : []}
+        // 30 minutes if the pack read failed - the general pack's own default,
+        // so a failure degrades to what an unconfigured workspace would get.
+        defaultSlotMinutes={packInfo.ok ? packInfo.data.slotMinutes : 30}
       />
     </>
   );

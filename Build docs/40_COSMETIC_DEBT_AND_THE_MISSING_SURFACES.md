@@ -329,8 +329,108 @@ touched.
 
 Verified: web 63 files / 1159 tests green.
 
-### Phases B2–B4 and C — not started.
+### Phases B2–B4 — DONE 2026-10-09. Fixes F4, F5, F6.
 
-B2 (appointments), B3 (resources) and B4 (forms) keep `hrefs: []` until their pages land, by
-the rule §A1 records. C depends on B2 and B3 existing: a stage pack that provisions a clinic
-diary is meaningless while no diary can be opened.
+| Page | What it is |
+|---|---|
+| `/owner/resources` | The stock a booking draws on. Type filter, capacity as a fraction, hold/release, retire/restore. |
+| `/owner/appointments` | The diary, grouped by day. Book, confirm, reschedule, cancel, attendance. |
+| `/owner/forms` | The builder: fields, slug, consent sentence, publish/close. |
+
+Each landed with its nav entry, its section-map row, its feature href and a loading skeleton
+in the same change — the rule §A1 records.
+
+**Two catalogue corrections found while wiring them.** `resources` and `appointments` were
+filed under the `aura` module; both are `crm`. `PERMISSION_OBJECT_MODULE` is the authority
+because it is what the routes actually enforce, and filing them under `aura` would have
+offered the pages to recorder-only tenants whose every request to them the grid refuses —
+the `followups` mistake. Both are now on `CRM_GATED_HREFS` for the same reason the report
+builder is.
+
+**Three judgement calls worth recording:**
+
+1. **The diary is a day-grouped list, not a month grid.** A grid has to decide what a
+   09:00–09:15 and a 09:05–09:35 look like in one cell — a layout problem, not a product one —
+   and it hides what somebody opens the page for: what is next, with whom, and did the last
+   one happen.
+2. **Every time is in `reporting_timezone`, including the booking form's.** Converting in the
+   browser would put a Dubai clinic on an IST laptop 90 minutes out, and an appointment is the
+   one record where that means somebody standing outside a locked door.
+3. **No "turn reminders on" toggle**, even though `appointment_reminders_enabled` has no
+   writer anywhere. 0166 queues reminder rows in the booking transaction; the drain does not
+   exist. A switch that arms a sender which does not exist is precisely the defect class this
+   plan was written to find — and the day the drain shipped it would start messaging customers
+   on the strength of a click made months earlier. The diary says reminders are not being sent
+   instead.
+
+A field's `key` in the form builder is derived from its label once and then read-only:
+renaming it orphans every answer already stored, since old rows keep the old key.
+
+### Phase C — DONE 2026-10-09. Fixes F8.
+
+**The packs were cosmetic because nothing remembered the choice.** `resources.controller.ts`
+had already written the gap down: *"NOTHING PERSISTS THE CHOICE — there is no column anywhere
+that says a tenant is a clinic. Persisting the pack is a one-column migration somebody should
+do; it is not this wave's."*
+
+**Migration 0170** adds `organizations.stage_pack`. Numbered 0170 rather than 0167 because doc
+39 reserves 0167–0169 (payment schedules, recurrences, cards) and 0164 (service desk) — the
+same reasoning 0165 used for skipping 0164. No enumerating CHECK, only a slug shape: the
+catalogue is TypeScript read by both tiers, and a third copy of it that fails at write time in
+production is the `notifications.kind` drift again. NULL means never chosen, which is *not* the
+same fact as the general pack.
+
+With the choice recorded, three things that already existed start working:
+
+- **`POST /pipelines/:id/apply-stage-pack` writes it** in the same transaction as the stages,
+  and returns the pack's resource suggestions and slot length so a console can *offer* to set
+  them up. On `organizations`, not per pipeline: a workspace is one business, and the last pack
+  applied wins.
+- **`GET /resources/types` reads it** instead of asking its caller which business the tenant is
+  in — a question no caller could answer, which is why every request fell through to the
+  general pack and a dental practice was offered `item / slot / date`. `?pack=` still wins when
+  sent, for an onboarding preview.
+- **`packSlotMinutes()`** gives the diary a real default: 30 minutes for a clinic, 120 for a
+  property site visit, 45 for education and finance. Doc 39 §1387 names the range. A single
+  product-wide default has to be wrong for somebody — half an hour makes a site visit look like
+  a phone call, two hours blocks a dental chair for the afternoon.
+
+The resources empty state now names the trade (*"A clinic, salon or diagnostic centre usually
+books chair, room, scanner"*), and the booking form opens on the pack's length. Nothing is
+created on anybody's behalf: §D's "offers, not does" holds.
+
+`no vertical ever becomes a branch` — the grep spec in `resources.controller.spec.ts` that
+refuses a pack id in that controller's code — still passes. The pack reaches it as data.
+
+#### ⚠ 0170 HAS NOT BEEN RUN AGAINST A DATABASE
+
+Docker Desktop's engine is returning HTTP 500 on every endpoint on this machine today,
+`/version` included — a broken install, not a container problem, and not fixable from a shell.
+So the ephemeral 55432 recipe could not be used and **0170 is unrun**. That is the one thing in
+this plan that is not verified the way the rest is, and it is recorded here rather than
+discovered later.
+
+What *was* checked without a database:
+
+- It uses only the idempotent forms already used across this ledger (`ADD COLUMN IF NOT
+  EXISTS`, `DROP CONSTRAINT IF EXISTS` then `ADD CONSTRAINT`), copied from
+  `0155_script_adherence_mode.sql`.
+- The CHECK's pattern accepts all seven pack ids and refuses `Clinic`, `1clinic`, the empty
+  string and anything over 48 characters.
+- `migrate.js` orders it last, after 0166.
+- The Supabase mirror is synced (`scripts/sync-supabase-migrations.js`, 1 file).
+
+**Before this is deployed, run it:**
+
+```bash
+cd platform && docker compose -f docker-compose.test.yml up -d --wait postgres
+cd packages/db
+DATABASE_URL="postgresql://aura:aura_dev_password@localhost:55432/callintel" node migrate.js
+DATABASE_URL="postgresql://aura:aura_dev_password@localhost:55432/callintel" \
+APP_DATABASE_URL="postgresql://aura_app:aura_app_password@localhost:55432/callintel" node verify-rls.js
+docker compose -f docker-compose.test.yml down -v
+```
+
+The API's unit tests cover the *behaviour* that hangs off the column (the fake answers the
+`stage_pack` read four ways), so what is unproven is specifically that the SQL applies to an
+empty database — which is exactly what the recipe above establishes and nothing else can.

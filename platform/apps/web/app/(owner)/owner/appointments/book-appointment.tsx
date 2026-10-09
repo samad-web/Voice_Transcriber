@@ -56,8 +56,16 @@ function toInstant(date: string, time: string, zone: string): string | null {
   return new Date(asUtc.getTime() - offset).toISOString();
 }
 
-/** 15, 30, 45, 60, 90 minutes - the lengths a diary actually uses. */
-const LENGTHS = [15, 30, 45, 60, 90, 120];
+/**
+ * The lengths a diary actually uses, plus whatever the pack asks for.
+ *
+ * Union-ed rather than fixed, for the reason the resource types are: a pack
+ * could suggest a length this list does not carry, and a picker that silently
+ * dropped it would open on a value it cannot show.
+ */
+function lengthOptions(packDefault: number): number[] {
+  return [...new Set([15, 30, 45, 60, 90, 120, packDefault])].sort((a, b) => a - b);
+}
 
 /**
  * Book something (Build docs/40 §B2).
@@ -74,11 +82,21 @@ export function BookAppointment({
   types,
   resources,
   timeZone,
+  defaultSlotMinutes,
   onBooked,
 }: {
   types: string[];
   resources: ResourceView[];
   timeZone: string;
+  /**
+   * The workspace's industry pack's usual length (migration 0170).
+   *
+   * This is the visible half of making the stage packs real: picking "clinic"
+   * now means a booking form that opens on 30 minutes, and "property" one that
+   * opens on two hours. Before 0170 nothing in the schema said which business a
+   * tenant was, so every form everywhere opened on the same number.
+   */
+  defaultSlotMinutes: number;
   onBooked: (appointment: AppointmentView) => void;
 }) {
   const toast = useToast();
@@ -93,7 +111,7 @@ export function BookAppointment({
   const [appointmentType, setAppointmentType] = useState(types[0] ?? "consultation");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("10:00");
-  const [minutes, setMinutes] = useState(30);
+  const [minutes, setMinutes] = useState(defaultSlotMinutes);
   const [resourceId, setResourceId] = useState("");
   const [location, setLocation] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -276,7 +294,7 @@ export function BookAppointment({
             disabled={pending}
             onChange={(e) => setMinutes(Number(e.target.value))}
           >
-            {LENGTHS.map((m) => (
+            {lengthOptions(defaultSlotMinutes).map((m) => (
               <option key={m} value={m}>
                 {m} minutes
               </option>

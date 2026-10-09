@@ -94,16 +94,29 @@ function until(iso: string | null): string | null {
  * a batch of forty is 40. So the table shows capacity and what is left of it
  * side by side, because "3 of 40 booked" is the fact and "booked" alone is not.
  */
+/** How each pack describes itself in one word, for the empty state. */
+const PACK_TRADE: Record<string, string> = {
+  clinic: "A clinic, salon or diagnostic centre",
+  property: "A property business",
+  services: "A services or interiors business",
+  education: "A coaching centre or college",
+  retail: "A shop, dealership or travel desk",
+  finance: "An insurance or finance desk",
+  general: "A business like yours",
+};
+
 export function ResourcesConsole({
   initial,
   total,
   types,
   inUse,
+  pack,
 }: {
   initial: ResourceView[];
   total: number;
   types: string[];
   inUse: Array<{ type: string; count: number }>;
+  pack: string | null;
 }) {
   const [rows, setRows] = useServerState(initial);
   const [typeFilter, setTypeFilter] = useState<string>("");
@@ -150,9 +163,21 @@ export function ResourcesConsole({
       ) : null}
 
       {visible.length === 0 ? (
+        /* The empty state NAMES the trade when the workspace has told us one
+           (migration 0170). This is the point of persisting the pack: before
+           it, every tenant read the same generic sentence, because nothing in
+           the schema said a dental practice was a dental practice. It is still
+           only an offer - the types are suggestions in a picker, and nothing is
+           created on anybody's behalf. */
         <EmptyState
           title="Nothing bookable yet"
-          description="A resource is whatever this business books time or stock against — a chair, a room, a bay, a crew, a flat, a batch of seats. Capacity is how many bookings fit: one for a unique item, forty for a batch of forty."
+          description={
+            pack && types.length > 0
+              ? `${PACK_TRADE[pack] ?? PACK_TRADE.general} usually books ${types
+                  .slice(0, 3)
+                  .join(", ")}. Capacity is how many bookings fit at once: one for a single room, forty for a batch of forty seats.`
+              : "A resource is whatever this business books time or stock against — a chair, a room, a bay, a crew, a flat, a batch of seats. Capacity is how many bookings fit: one for a unique item, forty for a batch of forty."
+          }
         />
       ) : (
         <Card>

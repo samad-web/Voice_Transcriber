@@ -267,3 +267,48 @@ export function validatePack(stages: unknown): { ok: true; stages: LeadStagesTyp
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true, stages: parsed.data };
 }
+
+/**
+ * How long one booking usually runs, per pack, in minutes (Build docs/40 §D).
+ *
+ * ── WHY A PACK CAN ANSWER THIS AND A GLOBAL DEFAULT CANNOT ─────────────────
+ *
+ * Doc 39 §1387 puts the range at "2-7 days for a property unit, closer to 2
+ * hours for a salon station", and the diary needs a number before anybody has
+ * configured anything. A single product-wide default has to be wrong for
+ * somebody: 30 minutes makes a site visit look like a phone call, and 2 hours
+ * makes a dental check-up block a room for the afternoon.
+ *
+ * These are the DIARY's lengths, not the hold windows. `DEFAULT_HOLD_HOURS` in
+ * `resources.ts` is a different question with a different unit - how long a rep
+ * may reserve a flat while the customer decides - and the two must not be
+ * collapsed because one is measured in minutes and the other in days.
+ *
+ * A SUGGESTION, like the resource types. The booking form offers it and a
+ * person changes it; nothing enforces it, and `appointments` has no column for
+ * it at all.
+ */
+export const PACK_SLOT_MINUTES: Readonly<Record<string, number>> = {
+  // A consultation or a check-up. The salon/fitness neighbours run longer, and
+  // 30 is the shorter of the two readings - easier to extend on the form than
+  // to notice you have over-booked a chair.
+  clinic: 30,
+  // A site visit: getting there, walking it, and the conversation afterwards.
+  property: 120,
+  // A survey or an install slot. Half a day is the real shape of some of these,
+  // but the diary's job is the appointment and not the crew's whole route.
+  services: 90,
+  // A counselling session about a course and its fees.
+  education: 45,
+  // A test drive, a fitting, a demo.
+  retail: 60,
+  // A desk going through documents with somebody.
+  finance: 45,
+  general: 30,
+};
+
+/** The pack's slot length, or the general pack's for an id nobody recognises. */
+export function packSlotMinutes(packId: string | null | undefined): number {
+  if (!packId) return PACK_SLOT_MINUTES.general!;
+  return PACK_SLOT_MINUTES[packId] ?? PACK_SLOT_MINUTES.general!;
+}

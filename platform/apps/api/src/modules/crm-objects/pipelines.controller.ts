@@ -20,6 +20,8 @@ import {
   STAGE_PACKS,
   entryStage,
   packById,
+  packSlotMinutes,
+  resourceTypeSuggestions,
   statusForStage,
   suggestPack,
   validatePack,
@@ -341,8 +343,41 @@ export class PipelinesController {
         [id, pack.pipelineName, JSON.stringify(valid.stages)],
       );
 
+      // REMEMBER WHICH BUSINESS THIS IS (migration 0170, Build docs/40 §D).
+      //
+      // Until this line a pack renamed six columns and left no trace, which is
+      // why an audit called the whole vertical story cosmetic: nothing in the
+      // schema said a tenant was a clinic, so the resource picker could only
+      // ever offer the general pack's vocabulary and the diary could only ever
+      // guess a slot length. `resources.controller.ts` had already written the
+      // gap down - "persisting the pack is a one-column migration somebody
+      // should do".
+      //
+      // In the same transaction as the stages, deliberately. A pack applied
+      // whose id was not recorded is the state this fixes; doing it afterwards
+      // would just make that state rarer instead of impossible.
+      //
+      // NOT scoped to the pipeline. A workspace is one business, and a second
+      // pipeline on the clinic pack does not make the tenant two clinics - so
+      // the column is on `organizations` and the LAST pack applied wins. That
+      // is the honest reading of a single-valued fact, and the audit row below
+      // keeps the history that the column cannot.
+      await client.query(`UPDATE organizations SET stage_pack = $1 WHERE id = $2`, [
+        pack.id,
+        orgId,
+      ]);
+
       await this.audit(client, orgId, `pipeline.stages_replaced:${pack.id}`, id, req);
-      return { pipeline, movedDeals: moved.length };
+      return {
+        pipeline,
+        movedDeals: moved.length,
+        // What this pack usually books, so the console can OFFER to set it up.
+        // An offer and not an action: a tenant already running leads should not
+        // find chairs invented in their workspace because they renamed some
+        // columns. `/owner/resources` makes the same offer from the other side.
+        resourceSuggestions: resourceTypeSuggestions(pack.id),
+        slotMinutes: packSlotMinutes(pack.id),
+      };
     });
   }
 

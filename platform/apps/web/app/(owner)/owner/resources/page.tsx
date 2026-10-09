@@ -36,13 +36,19 @@ export default async function ResourcesPage() {
   const [list, types] = await Promise.all([
     ownerTry<{ resources: ResourceView[]; total: number }>("/v1/resources?limit=200"),
     // The picker's options: what this tenant already uses, plus what their
-    // stage pack suggests. No `?pack=` yet - nothing persists which vertical a
-    // tenant is, which is exactly what Phase C fixes. Until then the route
-    // falls back to the general pack's suggestions and the in-use types, which
-    // is the honest answer to a question nobody has recorded.
-    ownerTry<{ types: string[]; inUse: Array<{ type: string; count: number }> }>(
-      "/v1/resources/types",
-    ),
+    // stage pack suggests.
+    //
+    // No `?pack=`, and that is now the RIGHT call rather than a gap. Migration
+    // 0170 records which industry pack a workspace applied, so the route reads
+    // it from `organizations.stage_pack` itself - a clinic is offered
+    // chair / room / scanner instead of the general pack's item / slot / date,
+    // without this page having to know which business its tenant is in.
+    ownerTry<{
+      types: string[];
+      inUse: Array<{ type: string; count: number }>;
+      pack: string | null;
+      slotMinutes: number;
+    }>("/v1/resources/types"),
   ]);
 
   if (!list.ok) {
@@ -65,6 +71,11 @@ export default async function ResourcesPage() {
         // over a CHECK.
         types={types.ok ? types.data.types : []}
         inUse={types.ok ? types.data.inUse : []}
+        // Which industry pack these suggestions came from, so the empty state
+        // can name it: "a clinic usually books chairs, rooms and scanners".
+        // Null when nobody has applied one - which is a different fact from
+        // the general pack, and the console words it differently.
+        pack={types.ok ? types.data.pack : null}
       />
     </>
   );

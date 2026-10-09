@@ -105,11 +105,14 @@ export function AppointmentsConsole({
   timeZone,
   types,
   resources,
+  defaultSlotMinutes,
 }: {
   initial: AppointmentView[];
   timeZone: string;
   types: string[];
   resources: ResourceView[];
+  /** From the workspace's industry pack (migration 0170), not a global guess. */
+  defaultSlotMinutes: number;
 }) {
   const [rows, setRows] = useServerState(initial);
   const [showCancelled, setShowCancelled] = useState(false);
@@ -139,6 +142,7 @@ export function AppointmentsConsole({
         types={types}
         resources={resources}
         timeZone={timeZone}
+        defaultSlotMinutes={defaultSlotMinutes}
         onBooked={(appointment) => setRows((list) => [...list, appointment])}
       />
 

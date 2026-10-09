@@ -37,7 +37,9 @@ interface Locked {
 }
 
 /** `locked` is what the FOR UPDATE read returns; null means the row is gone. */
-function fakeDb(opts: { locked?: Locked | null; updated?: boolean } = {}) {
+function fakeDb(
+  opts: { locked?: Locked | null; updated?: boolean; stagePack?: string | null } = {},
+) {
   const issued: Issued[] = [];
   const row = (over: Record<string, unknown> = {}) => ({
     id: ID,
@@ -90,6 +92,12 @@ function fakeDb(opts: { locked?: Locked | null; updated?: boolean } = {}) {
       if (/^INSERT INTO resources/.test(text)) return { rows: [row()], rowCount: 1 };
       if (/GROUP BY resource_type/.test(text)) {
         return { rows: [{ resource_type: "villa", count: "3" }], rowCount: 1 };
+      }
+      // Migration 0170: the workspace's own industry pack. `undefined` in the
+      // options means the column is NULL, which is every workspace that
+      // existed before 0170 - so the default here is the honest one.
+      if (/SELECT stage_pack FROM organizations/.test(text)) {
+        return { rows: [{ stage_pack: opts.stagePack ?? null }], rowCount: 1 };
       }
       if (/^SELECT id FROM resources WHERE id/.test(text)) return { rows: [{ id: values[0] }] };
       if (/WITH RECURSIVE up/.test(text)) return { rows: [] };
@@ -434,16 +442,64 @@ describe("every write leaves a trail", () => {
   });
 });
 
+interface TypesAnswer {
+  types: string[];
+  inUse: { type: string; count: number }[];
+  pack: string | null;
+  slotMinutes: number;
+}
+
 describe("the tenant's own type list", () => {
+  const types = (fake: ReturnType<typeof fakeDb>, pack?: string) =>
+    new ResourcesController(fake.db).types(ORG_A, pack) as Promise<TypesAnswer>;
+
   it("puts what they already use ahead of their pack's suggestions", async () => {
-    const fake = fakeDb();
-    const out = (await new ResourcesController(fake.db).types(ORG_A, "property")) as {
-      types: string[];
-      inUse: { type: string; count: number }[];
-    };
+    const out = await types(fakeDb(), "property");
     expect(out.types[0]).toBe("villa");
     expect(out.types).toContain("unit");
     expect(out.inUse).toEqual([{ type: "villa", count: 3 }]);
+  });
+
+  /**
+   * Migration 0170, and the whole of Build docs/40 F8 in three tests.
+   *
+   * Before the column existed this route asked its CALLER which business the
+   * tenant was in - a question no caller could answer - so every request fell
+   * through to the general pack and a dental practice was offered
+   * `item / slot / date`. That is why an audit called the seven industry packs
+   * cosmetic: applying one renamed six pipeline columns and left no trace.
+   */
+  it("reads the workspace's own pack when the caller does not name one", async () => {
+    const out = await types(fakeDb({ stagePack: "clinic" }));
+    expect(out.pack).toBe("clinic");
+    // A clinic's vocabulary, not the general pack's.
+    expect(out.types).toContain("chair");
+    expect(out.types).toContain("room");
+    expect(out.types).not.toContain("date");
+    // And the diary's default length travels with it, so the console does not
+    // have to map pack ids to minutes a second time.
+    expect(out.slotMinutes).toBe(30);
+  });
+
+  it("lets an explicit ?pack= override the stored one", async () => {
+    // For an onboarding screen previewing a pack BEFORE anybody applies it. An
+    // explicit question beats a stored answer; what changed in 0170 is that an
+    // ABSENT one no longer means "assume general".
+    const out = await types(fakeDb({ stagePack: "clinic" }), "property");
+    expect(out.pack).toBe("property");
+    expect(out.types).toContain("unit");
+    expect(out.slotMinutes).toBe(120);
+  });
+
+  it("falls back to the general pack for a workspace that has never chosen", async () => {
+    // NULL is every workspace that existed before 0170. It must read the same
+    // as the general pack rather than throwing or returning nothing - but the
+    // `pack` field still reports null, because "never asked" and "picked the
+    // plain one" are different facts and only this can tell them apart.
+    const out = await types(fakeDb({ stagePack: null }));
+    expect(out.pack).toBeNull();
+    expect(out.types).toContain("item");
+    expect(out.slotMinutes).toBe(30);
   });
 });
 

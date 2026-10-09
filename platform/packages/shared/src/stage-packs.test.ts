@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { entryStage, statusForStage } from "./leads";
 import {
   DEFAULT_PACK,
+  PACK_SLOT_MINUTES,
   STAGE_PACKS,
   packById,
+  packSlotMinutes,
   suggestPack,
   validatePack,
 } from "./stage-packs";
@@ -158,5 +160,65 @@ describe("validatePack", () => {
   it("hands back the parsed stages when everything is in order", () => {
     const result = validatePack(GOOD);
     expect(result.ok && result.stages).toEqual(GOOD);
+  });
+});
+
+/**
+ * The slot lengths that make a pack more than six renamed columns.
+ *
+ * Build docs/40 F8: applying a pack used to rewrite a pipeline's stage list and
+ * stop, which is why an audit called the whole vertical story cosmetic. These -
+ * with migration 0170's `organizations.stage_pack` to remember the choice and
+ * `resourceTypeSuggestions` to pick the vocabulary - are what a pack now
+ * actually changes.
+ */
+describe("packSlotMinutes", () => {
+  it("gives every pack a length", () => {
+    // Derived from STAGE_PACKS rather than listed, because a pack added without
+    // one would silently fall back to the general 30 - and a property business
+    // whose site visits are booked as half-hour slots is the exact failure
+    // these exist to prevent.
+    for (const pack of STAGE_PACKS) {
+      expect([pack.id, PACK_SLOT_MINUTES[pack.id]]).toEqual([
+        pack.id,
+        expect.any(Number) as unknown as number,
+      ]);
+    }
+  });
+
+  it("does not give them all the SAME length", () => {
+    // The whole point. A table where every pack said 30 would pass the test
+    // above and change nothing about the product.
+    const lengths = new Set(STAGE_PACKS.map((p) => packSlotMinutes(p.id)));
+    expect(lengths.size).toBeGreaterThan(1);
+  });
+
+  it("books a site visit for longer than a check-up", () => {
+    // Named rather than derived, because this is the judgement doc 39 §1387
+    // actually records: "2-7 days for a property unit, closer to 2 hours for a
+    // salon station". Reversing these two would be a plausible-looking edit
+    // that makes the diary wrong for both trades.
+    expect(packSlotMinutes("property")).toBeGreaterThan(packSlotMinutes("clinic"));
+  });
+
+  it("falls back to the general pack for null and for an id nobody knows", () => {
+    // `stage_pack` is NULL for every workspace that existed before 0170, and it
+    // deliberately carries no enumerating CHECK - so an id from a renamed pack
+    // can outlive the pack. Both have to answer with a number rather than
+    // throwing, or a diary refuses to open over a stale string.
+    expect(packSlotMinutes(null)).toBe(PACK_SLOT_MINUTES.general);
+    expect(packSlotMinutes(undefined)).toBe(PACK_SLOT_MINUTES.general);
+    expect(packSlotMinutes("a_pack_that_was_renamed")).toBe(PACK_SLOT_MINUTES.general);
+  });
+
+  it("is a diary length in MINUTES, never a hold window in hours", () => {
+    // `DEFAULT_HOLD_HOURS` in resources.ts answers a different question in a
+    // different unit - how long a rep may reserve a flat while the customer
+    // decides - and collapsing the two would book a property viewing for two
+    // days or hold a flat for two hours. A ceiling of one day asserts the unit.
+    for (const pack of STAGE_PACKS) {
+      expect(packSlotMinutes(pack.id)).toBeLessThanOrEqual(24 * 60);
+      expect(packSlotMinutes(pack.id)).toBeGreaterThanOrEqual(5);
+    }
   });
 });
