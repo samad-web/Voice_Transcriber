@@ -190,15 +190,25 @@ export const FEATURES: FeatureSpec[] = [
     key: "appointments",
     label: "Appointments",
     blurb: "The diary: slots booked against a resource, rescheduled, and marked attended.",
-    module: "aura",
-    group: "pipeline",
-    // EMPTY UNTIL THE PAGE EXISTS, and this is load-bearing rather than a
-    // placeholder. `feature-gating.test.ts` and `owner-features.guard.test.ts`
-    // both assert that every href here has a real page file AND a nav entry,
-    // which is what stops a switch governing a 404. Phase B of Build docs/40
-    // builds `/owner/appointments`; the href goes in THAT change, beside the
-    // page and the nav item, so the three can never disagree.
-    hrefs: [],
+    // `crm`, following `PERMISSION_OBJECT_MODULE.appointment` rather than the
+    // feature's own feel. That map is the authority because it is what the
+    // routes actually enforce: an appointment is a CRM record with an assignee,
+    // and a recorder-only tenant has no diary to put one in. Filing this under
+    // `aura` would offer the page to a tenant whose every request to it the
+    // grid refuses - the `followups` mistake, which `suppression` avoids by the
+    // same rule in the opposite direction.
+    module: "crm",
+    // "customers", matching the rail section it is filed under - these groups
+    // are deliberately the sidebar's, so the switchboard reads in the order
+    // somebody already knows. An appointment is time booked with a PERSON, so
+    // it sits beside Contacts and Accounts rather than under Pipeline, where a
+    // reader would expect something that moves a deal along.
+    group: "customers",
+    // Landed with the page and the nav item (Build docs/40 §B2), which is the
+    // rule the remaining empty lists record: `feature-gating.test.ts` and
+    // `owner-features.guard.test.ts` both assert that every href here has a
+    // real page file AND a nav entry, so a switch can never govern a 404.
+    hrefs: ["/owner/appointments"],
     // OFF. Migration 0166 built the table, the RLS, the booking API, calendar
     // sync and the reschedule tokens; no console ever reached them, so "off"
     // IS the status quo and defaulting on would hand every tenant a diary they
@@ -209,10 +219,16 @@ export const FEATURES: FeatureSpec[] = [
     key: "resources",
     label: "Bookable resources",
     blurb: "The chairs, rooms, bays or people an appointment is booked against.",
-    module: "aura",
-    group: "pipeline",
-    // Empty until Phase B builds `/owner/resources` - see `appointments` above.
-    hrefs: [],
+    // `crm`, for the reason `appointments` gives above:
+    // `PERMISSION_OBJECT_MODULE.resource` is `crm`, because a resource hangs
+    // off projects, deals and quotations.
+    module: "crm",
+    // "sales", beside Products. A resource is reference data about what the
+    // business offers - the stock an appointment draws on - which is exactly
+    // what the price list is to a quotation.
+    group: "sales",
+    // Landed with the page and the nav item (Build docs/40 §B3).
+    hrefs: ["/owner/resources"],
     // A resource exists to be booked. Without the diary it is a list of chairs
     // nobody can reserve, so this is `blocked` rather than merely useless when
     // somebody switches it on alone - and the switchboard names the blocker.
@@ -485,8 +501,8 @@ export const FEATURES: FeatureSpec[] = [
     blurb: "Hosted forms on your own slug, whose submissions land on a board as leads.",
     module: "aura",
     group: "connectors",
-    // Empty until Phase B builds `/owner/forms` - see `appointments` above.
-    hrefs: [],
+    // Landed with the page and the nav item (Build docs/40 §B4).
+    hrefs: ["/owner/forms"],
     // NOT the same thing as `lead_sources`, whose blurb also says "web forms".
     // That feature is the CATALOGUE of places leads arrive from - a form, an
     // inbox, a CSV, telephony. This one is migration 0161's BUILDER: it creates

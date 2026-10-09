@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Armchair,
   ArrowBigUpDash,
   BarChart3,
   ChartColumn,
@@ -309,6 +310,20 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Customers",
   },
   {
+    href: "/owner/appointments",
+    label: "Appointments",
+    icon: CalendarDays,
+    title: "Appointments",
+    context: "Customers",
+    // WIDER than the other two Phase B pages, and deliberately: a diary is the
+    // day's work. The rep who booked the site visit is the one who needs to
+    // see it, move it and say whether anybody turned up, so 0166 seeds
+    // `appointment:view` and `appointment:edit` to `workspace_member` and
+    // `OwnerScopeGuard` narrows a telecaller's list to their own rows
+    // server-side. The nav does not have to decide who sees whose.
+    ownerRoles: ["owner", "manager", "telecaller", "sales"],
+  },
+  {
     href: "/owner/products",
     label: "Price list",
     icon: Package,
@@ -316,6 +331,23 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     context: "Sales",
     // Sales quotes from the catalogue, so it has to be able to read it.
     ownerRoles: ["owner", "manager", "sales"],
+  },
+  {
+    href: "/owner/resources",
+    label: "Bookable",
+    icon: Armchair,
+    title: "Bookable resources",
+    context: "Sales",
+    // Beside the price list, because it is the same kind of thing: reference
+    // data about what the business offers. The chair, room, bay, crew, flat or
+    // batch of seats an appointment is booked against (0165).
+    //
+    // Owner and manager, which is narrower than `resource:edit` - 0165 seeds
+    // that to `workspace_member` too, because HOLDING a unit is an edit and
+    // holding is a telecaller's whole job. That belongs on the lead they are
+    // talking to, not on a stock list filtered by type, so the rep's hold is a
+    // later piece and this page stays with the people who define the stock.
+    ownerRoles: ["owner", "manager"],
   },
   {
     href: "/owner/quotations",
@@ -515,6 +547,20 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // and decides who new business is assigned to. Marketing joins because
     // connecting the channels demand arrives on IS the marketing job - it is
     // the single most load-bearing page for that persona.
+    ownerRoles: ["owner", "manager", "marketing"],
+  },
+  {
+    href: "/owner/forms",
+    label: "Web forms",
+    icon: ClipboardCheck,
+    title: "Web forms",
+    context: "Settings",
+    // Beside Lead sources, which is the catalogue of places enquiries arrive
+    // from; this is the BUILDER for one of them (0161). Same personas, for the
+    // same reason: a form is a public page in the business's name collecting
+    // strangers' phone numbers under a consent sentence, and 0161 calls
+    // publishing one "not floor work". Marketing joins because building the
+    // page demand arrives on is the marketing job.
     ownerRoles: ["owner", "manager", "marketing"],
   },
   {
@@ -835,6 +881,16 @@ const CRM_GATED_HREFS = [
   "/owner/reports/builder",
   "/owner/duplicates",
   "/owner/import",
+  // Build docs/40 §B3. `PERMISSION_OBJECT_MODULE.resource` is `crm` - a
+  // resource hangs off projects, deals and quotations, and a recorder-only
+  // tenant has no inventory to keep - so without the module every request this
+  // page makes is refused by the grid. On the list for exactly the reason the
+  // report builder is: a page of 403s is worse than no page.
+  "/owner/resources",
+  // Build docs/40 §B2, same reasoning: `PERMISSION_OBJECT_MODULE.appointment`
+  // is `crm`, because an appointment is a CRM record with an assignee and a
+  // recorder-only tenant has no diary to put one in.
+  "/owner/appointments",
 ];
 
 /**
@@ -938,6 +994,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
     label: "Getting leads in",
     pages: [
       { href: "/owner/lead-sources", blurb: "Web forms, email and other places new enquiries arrive from." },
+      {
+        href: "/owner/forms",
+        blurb: "Build a form for your own site, and choose what permission it asks for.",
+      },
       { href: "/owner/meta-ads", blurb: "Bring in leads from your Facebook and Instagram ad forms." },
       { href: "/owner/messaging-setup", blurb: "Connect the WhatsApp Business number customers message you on." },
       { href: "/owner/lead-routing", blurb: "Rules that decide which person each new lead goes to." },
@@ -1017,6 +1077,9 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
 
   "/owner/contacts": "customers",
   "/owner/accounts": "customers",
+  // Time booked WITH a person, so it sits beside them rather than under
+  // Pipeline (Build docs/40 §B2).
+  "/owner/appointments": "customers",
 
   // In the order a sale happens: deal, quote, invoice - then the price list
   // they all draw on, which is reference rather than work.
@@ -1024,6 +1087,9 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/quotations": "sales",
   "/owner/invoices": "sales",
   "/owner/products": "sales",
+  // Reference data beside the price list (Build docs/40 §B3): what the
+  // business books, as opposed to what it charges for.
+  "/owner/resources": "sales",
 
   "/owner/inbox": "conversations",
   "/owner/outreach": "conversations",

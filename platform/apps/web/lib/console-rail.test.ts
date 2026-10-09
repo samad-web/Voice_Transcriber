@@ -149,7 +149,16 @@ describe("ownerTabsFor", () => {
     const tabs = ownerTabsFor("/owner/quotations", rail);
     expect(tabs?.label).toBe("Sales");
     expect(tabs?.activeHref).toBe("/owner/quotations");
-    expect(tabs?.tabs.map((t) => t.label)).toEqual(["Deals", "Quotes", "Invoices", "Price list"]);
+    // "Bookable" joins the Sales strip in Build docs/40 §B3: a resource is
+    // reference data about what the business offers, which is what the price
+    // list is to a quotation.
+    expect(tabs?.tabs.map((t) => t.label)).toEqual([
+      "Deals",
+      "Quotes",
+      "Invoices",
+      "Price list",
+      "Bookable",
+    ]);
   });
 
   it("draws nothing on Home, on the Settings page, or below a tab's own page", () => {
@@ -181,8 +190,11 @@ describe("ownerTabsFor", () => {
     const tabs = ownerTabsFor("/owner/meta-ads", rail);
     expect(tabs?.label).toBe("Getting leads in");
     expect(tabs?.back).toEqual({ href: OWNER_SETTINGS_HREF, label: "All settings" });
+    // "/owner/forms" joins the strip in Build docs/40 §B4, second - right
+    // after the source catalogue it populates.
     expect(hrefs("/owner/meta-ads")).toEqual([
       "/owner/lead-sources",
+      "/owner/forms",
       "/owner/meta-ads",
       "/owner/messaging-setup",
       "/owner/lead-routing",

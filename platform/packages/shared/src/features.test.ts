@@ -93,24 +93,25 @@ describe("resolveFeatures - the deploy-day property", () => {
     //  A DIFFERENT PERSONA: `partner_portal` governs `app/(portal)`, which is
     //    not on the owner rail at all.
     const governNothing = FEATURES.filter((f) => f.hrefs.length === 0).map((f) => f.key);
-    expect([...governNothing].sort()).toEqual([
-      "appointments",
-      "connections",
-      "partner_portal",
-      "resources",
-      "sheets_sync",
-      "web_forms",
-    ]);
+    // Down to the honest three: two panels and one other persona's surface.
+    // Every doc 39 feature that was built-but-unreachable now has a page
+    // (Build docs/40 Phase B).
+    expect([...governNothing].sort()).toEqual(["connections", "partner_portal", "sheets_sync"]);
   });
 
-  it("gives the dialer its page, now that Phase B built one", () => {
-    // `dialer` left the list above in Build docs/40 §B1, in the same change as
-    // `/owner/dialer` and its nav entry - which is the rule the remaining empty
-    // lists exist to enforce. Named here so the three cannot drift apart again:
-    // `feature-gating.test.ts` would catch an href with no page, and this
-    // catches the reverse reading, a page nobody gated.
-    expect(featureSpec("dialer").hrefs).toEqual(["/owner/dialer"]);
-    expect(featureSpec("dialer").defaultEnabled).toBe(false);
+  it.each([
+    ["dialer", "/owner/dialer"],
+    ["resources", "/owner/resources"],
+    ["appointments", "/owner/appointments"],
+    ["web_forms", "/owner/forms"],
+  ])("gives %s its page, now that Phase B built one", (key, href) => {
+    // Each of these left the list above in the same change as its page and its
+    // nav entry - the rule the remaining empty lists exist to enforce. Named
+    // here so the three cannot drift apart again: `feature-gating.test.ts`
+    // catches an href with no page, and this catches the reverse reading, a
+    // page nobody gated.
+    expect(featureSpec(key as FeatureKey).hrefs).toEqual([href]);
+    expect(featureSpec(key as FeatureKey).defaultEnabled).toBe(false);
   });
 
   it("accounts for every default-off feature that DOES have a page", () => {
@@ -127,7 +128,7 @@ describe("resolveFeatures - the deploy-day property", () => {
     const offWithPages = FEATURES.filter((f) => !f.defaultEnabled && f.hrefs.length > 0).map(
       (f) => f.key,
     );
-    expect([...offWithPages].sort()).toEqual(["dialer"]);
+    expect([...offWithPages].sort()).toEqual(["appointments", "dialer", "resources", "web_forms"]);
   });
 
   it("defaults a feature off only when no console ever reached it", () => {

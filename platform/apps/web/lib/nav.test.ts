@@ -220,14 +220,22 @@ describe("ownerNavItemsFor - the client's feature switches", () => {
     // correctly drops it. The property that still holds - and the one the
     // catalogue actually promises - is that the rail changes ONLY by the
     // default-off features, and in no other respect.
+    // The default-off features that have a page. Listed rather than derived,
+    // so adding one is a deliberate edit here and not a silent change in what
+    // this test claims.
+    const shipOff = ["/owner/dialer", "/owner/resources", "/owner/appointments", "/owner/forms"];
     const withNoPreference = withOverrides("owner", {});
     const unfiltered = hrefs("owner", false, true, true);
-    expect(withNoPreference).toEqual(unfiltered.filter((href) => href !== "/owner/dialer"));
+    expect(withNoPreference).toEqual(unfiltered.filter((href) => !shipOff.includes(href)));
     // Stated separately so the reason is visible rather than inferred from a
-    // filter: it is absent because the feature is off, and switching it on
-    // brings it back in the same position.
-    expect(withNoPreference).not.toContain("/owner/dialer");
-    expect(withOverrides("owner", { dialer: true })).toEqual(unfiltered);
+    // filter: each is absent because its feature is off, and switching them on
+    // brings them back in the same positions.
+    for (const href of shipOff) expect(withNoPreference).not.toContain(href);
+    expect(
+      withOverrides("owner", { dialer: true, resources: true, appointments: true, web_forms: true }),
+    ).toEqual(
+      unfiltered,
+    );
   });
 
   it("removes a page the workspace switched off, and the ones hanging off it", () => {
@@ -386,13 +394,18 @@ describe("ownerNavSectionsFor", () => {
   });
 
   it("keeps the lead connectors together inside Settings", () => {
-    // An ad platform, a messaging provider, the source catalogue and the
-    // routing rules all answer "how do leads get in, and to whom" - one
-    // settings group, so they are one set of tabs.
+    // An ad platform, a messaging provider, the source catalogue, the form
+    // builder and the routing rules all answer "how do leads get in, and to
+    // whom" - one settings group, so they are one set of tabs.
+    //
+    // The builder sits second, directly after the catalogue it populates
+    // (Build docs/40 §B4): Lead sources lists the places enquiries arrive
+    // from, and `/owner/forms` is where one of those places is made.
     const intake = OWNER_SETTINGS_GROUPS.find((g) => g.key === "intake");
     expect(intake?.label).toBe("Getting leads in");
     expect(intake?.pages.map((p) => p.href)).toEqual([
       "/owner/lead-sources",
+      "/owner/forms",
       "/owner/meta-ads",
       "/owner/messaging-setup",
       "/owner/lead-routing",
