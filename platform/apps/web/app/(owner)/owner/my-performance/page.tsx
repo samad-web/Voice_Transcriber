@@ -21,6 +21,7 @@ import {
   avgCallSeconds,
   connectRate,
   csatIndex,
+  dispositionCoverage,
   fcrRate,
   focusAreas,
   headline,
@@ -198,6 +199,22 @@ export default async function MyPerformancePage({
   const qa = qaScore(card);
   const csat = csatIndex(card.sentiment);
   const fcr = fcrRate(card);
+  /**
+   * How much of the dialling has an outcome on it (Build docs/41 E3).
+   *
+   * Printed INSIDE the first-call-resolution tile, in both of its branches,
+   * rather than as a tile of its own. FCR is the number it qualifies: its
+   * denominator is first contacts somebody classified, so 70% over a fifth of
+   * the calls and 70% over all of them are different claims and the tile has
+   * to say which. It appears in the unconfigured branch too - that is the
+   * state where nobody is watching the outcomes at all, which is exactly when
+   * the gap is worth naming.
+   */
+  const coverage = dispositionCoverage(card);
+  const coverageText =
+    coverage == null
+      ? null
+      : `outcomes logged on ${Math.round(coverage * 100)}% of your ${card.dispositionBase} connected calls`;
   const areas = focusAreas(card);
   const conversion = leadConversionRate(card.pipeline);
   const compliance = taskCompliance(card.tasks);
@@ -419,21 +436,28 @@ export default async function MyPerformancePage({
           // /owner/call-quality is gated to that pair. Offering a telecaller a
           // link they cannot follow is worse than the bare sentence: it tells
           // them the fix is one click away and then refuses them.
+          // The coverage sentence sits UNDER the resolution line, in the same
+          // `context`, rather than in a tile of its own: it is a qualifier on
+          // this number, and a fifth tile in a four-column grid would read as
+          // a fifth metric (Build docs/41 E3).
           context={
-            !card.fcrConfigured ? (
-              canSetUpFcr ? (
-                <>
-                  not set up —{" "}
-                  <Link href="/owner/call-quality" className="text-accent underline">
-                    choose which outcomes count as resolved
-                  </Link>
-                </>
+            <>
+              {!card.fcrConfigured ? (
+                canSetUpFcr ? (
+                  <>
+                    not set up —{" "}
+                    <Link href="/owner/call-quality" className="text-accent underline">
+                      choose which outcomes count as resolved
+                    </Link>
+                  </>
+                ) : (
+                  "not set up for this workspace"
+                )
               ) : (
-                "not set up for this workspace"
-              )
-            ) : (
-              `${card.fcrResolvedCalls} of ${card.fcrEligibleCalls} first contacts settled`
-            )
+                `${card.fcrResolvedCalls} of ${card.fcrEligibleCalls} first contacts settled`
+              )}
+              {coverageText ? <span className="block">{coverageText}</span> : null}
+            </>
           }
           footer={versus(standing(fcr, card.peer.fcrRate), percent(card.peer.fcrRate))}
         />

@@ -103,6 +103,24 @@ const FOLLOW_UP = [
 ] as const;
 
 /**
+ * Whether an outcome has been filed (Build docs/41 E2).
+ *
+ * "Outcome needed" is the one this exists for: dispositions are entered here,
+ * in the console, by whoever gets round to it, and until this filter there was
+ * no way to see what had been missed - so first-call resolution was computed
+ * over whichever calls happened to get classified, and nobody could tell how
+ * many that was. It is the end-of-shift queue, and the same population the
+ * coverage figure on a rep's scorecard is a percentage of.
+ *
+ * Ring-outs are in neither list: there is nothing to file about a call nobody
+ * answered.
+ */
+const OUTCOME = [
+  { key: "needed", label: "Outcome needed" },
+  { key: "logged", label: "Outcome logged" },
+] as const;
+
+/**
  * How this call is numbered in the run with this person - "3rd call".
  *
  * Ordinals rather than "x3": the row is a single call, and the question it
@@ -211,6 +229,7 @@ export function CallsExplorer({
   const sentiment = params.get("sentiment");
   const deviceId = params.get("deviceId");
   const followUp = params.get("followUp");
+  const outcome = params.get("outcome");
   const period = params.get("period");
   const from = params.get("from");
   const to = params.get("to");
@@ -257,6 +276,12 @@ export function CallsExplorer({
       key: "followUp",
       label: `Contact: ${FOLLOW_UP.find((f) => f.key === followUp)?.label ?? followUp}`,
       onRemove: () => setParam("followUp", null),
+    });
+  if (outcome)
+    tags.push({
+      key: "outcome",
+      label: OUTCOME.find((o) => o.key === outcome)?.label ?? outcome,
+      onRemove: () => setParam("outcome", null),
     });
 
   return (
@@ -327,6 +352,7 @@ export function CallsExplorer({
                     missed: null,
                     deviceId: null,
                     followUp: null,
+                    outcome: null,
                   })
                 }
                 className="px-1.5 text-xs font-medium text-text-muted underline underline-offset-2 hover:text-text"
@@ -391,6 +417,21 @@ export function CallsExplorer({
             {FOLLOW_UP.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.label}
+              </option>
+            ))}
+          </Select>
+
+          <Select
+            size="sm"
+            aria-label="Whether an outcome has been filed"
+            value={outcome ?? ""}
+            onChange={(e) => setParam("outcome", e.target.value || null)}
+            className="h-8 w-44"
+          >
+            <option value="">Any outcome</option>
+            {OUTCOME.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
               </option>
             ))}
           </Select>

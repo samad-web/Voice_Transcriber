@@ -3,12 +3,14 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -31,6 +33,25 @@ const SourceInput = z.object({
 const SourcePatch = SourceInput.partial()
   .extend({ active: z.boolean().optional() })
   .refine((v) => Object.keys(v).length > 0, { message: "nothing to update" });
+
+/**
+ * One month's spend on one campaign (migration 0171).
+ *
+ * `month` is accepted as `YYYY-MM` rather than as a date, because a date would
+ * let a caller send the 14th and then have to be told that 0171's CHECK only
+ * accepts the first. The API's job here is to make the month grain obvious at
+ * the boundary rather than to relay a constraint violation.
+ *
+ * `amount` is a string for the reason `spendAmount` next door is: a decimal
+ * that has round-tripped through a JavaScript float is money that no longer
+ * reconciles. Zero is permitted and means "it ran and cost nothing", which is
+ * a different statement from no row at all.
+ */
+const SpendInput = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u, "month must be YYYY-MM"),
+  amount: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/u, "amount must be a positive number"),
+  currency: z.string().length(3).nullish(),
+});
 
 /**
  * Marketing sources - the campaign beneath the channel (migration 0057).
@@ -163,6 +184,105 @@ export class MarketingSourcesController {
         if (isUniqueViolation(err)) throw new ConflictException("a campaign with that name exists");
         throw err;
       }
+    });
+  }
+
+  /**
+   * ── Spend by month (migration 0171, Build docs/41 E4) ─────────────────────
+   *
+   * `marketing_sources.spend_amount` is a lifetime total, and every return and
+   * cost-per-lead on the command centre divided a window's leads by it. These
+   * three routes are how a workspace replaces that with the spend that
+   * actually happened in the window being read.
+   *
+   * Marketing may write them, matching create/update above (doc 31 §2 X8):
+   * entering what a campaign cost is the same job as defining the campaign.
+   */
+  @Get(":id/spend")
+  async spend(@OrgId() orgId: string, @Param("id", ParseUUIDPipe) id: string) {
+    return this.db.withOrg(orgId, async (client) => {
+      const { rowCount } = await client.query(`SELECT 1 FROM marketing_sources WHERE id = $1`, [
+        id,
+      ]);
+      if (rowCount === 0) throw new NotFoundException("campaign not found");
+
+      const { rows } = await client.query(
+        `SELECT to_char(month, 'YYYY-MM') AS month,
+                amount::text              AS amount,
+                currency,
+                updated_at
+           FROM marketing_source_spend
+          WHERE source_id = $1
+          ORDER BY month DESC`,
+        [id],
+      );
+      return { months: rows };
+    });
+  }
+
+  /**
+   * Upsert, not insert. A tenant correcting last month's figure is the normal
+   * case rather than the exception, and a 409 on the second attempt would make
+   * them delete a row to change a number.
+   */
+  @Put(":id/spend")
+  @RequireOwnerRole("owner", "manager", "marketing")
+  async setSpend(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = SpendInput.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const { month, amount, currency } = parsed.data;
+
+    return this.db.withOrg(orgId, async (client) => {
+      const { rowCount } = await client.query(`SELECT 1 FROM marketing_sources WHERE id = $1`, [
+        id,
+      ]);
+      if (rowCount === 0) throw new NotFoundException("campaign not found");
+
+      const {
+        rows: [row],
+      } = await client.query(
+        // `$2 || '-01'` is where YYYY-MM becomes the first of the month, which
+        // is the one value 0171's CHECK accepts.
+        `INSERT INTO marketing_source_spend (org_id, source_id, month, amount, currency)
+         VALUES ($1, $2, ($3 || '-01')::date, $4::numeric, $5)
+         ON CONFLICT (org_id, source_id, month)
+           DO UPDATE SET amount = EXCLUDED.amount, currency = EXCLUDED.currency
+         RETURNING to_char(month, 'YYYY-MM') AS month, amount::text AS amount, currency`,
+        [orgId, id, month, amount, currency ?? null],
+      );
+      return { month: row };
+    });
+  }
+
+  /**
+   * Removing a month is NOT the same as setting it to zero, and the UI says so:
+   * zero means the campaign cost nothing that month, and no row means nobody
+   * has said what it cost. Deleting every month returns the campaign to the
+   * lifetime basis.
+   */
+  @Delete(":id/spend/:month")
+  @RequireOwnerRole("owner", "manager", "marketing")
+  async clearSpend(
+    @OrgId() orgId: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("month") month: string,
+  ) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(month)) {
+      throw new BadRequestException("month must be YYYY-MM");
+    }
+
+    return this.db.withOrg(orgId, async (client) => {
+      const { rowCount } = await client.query(
+        `DELETE FROM marketing_source_spend
+          WHERE source_id = $1 AND month = ($2 || '-01')::date`,
+        [id, month],
+      );
+      if (rowCount === 0) throw new NotFoundException("no spend recorded for that month");
+      return { deleted: month };
     });
   }
 }

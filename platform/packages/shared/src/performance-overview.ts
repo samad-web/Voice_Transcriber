@@ -50,6 +50,23 @@ export const MIN_CONVERSION_BASE = 10;
 
 // ── What the API returns ─────────────────────────────────────────────────────
 
+/**
+ * Which spend a cost-per-lead or a return was computed against (0171).
+ *
+ *   period    this window's own spend, pro-rated by day out of the calendar
+ *             months it touches. The figure the reader assumes they are
+ *             getting.
+ *   lifetime  the campaign's recorded total, because no monthly spend has
+ *             been entered for it. Window leads against all-time spend, which
+ *             understates the return of anything long-running.
+ *   none      no spend of either kind. Every derived figure is null.
+ *
+ * It travels with the number rather than being decided once for the page,
+ * because a workspace mid-migration has campaigns of both kinds in one table
+ * and a single header sentence would be wrong about half the rows.
+ */
+export type SpendBasis = "period" | "lifetime" | "none";
+
 /** One campaign's cost and what came back from it. */
 export interface CampaignPerformance {
   id: string;
@@ -60,6 +77,8 @@ export interface CampaignPerformance {
   wonValue: number;
   /** What it cost. `null` when nobody has recorded a spend for it. */
   spend: number | null;
+  /** What `spend` above actually is - see `SpendBasis`. */
+  spendBasis: SpendBasis;
 }
 
 /** One acquisition channel, rolled up across its campaigns. */
@@ -69,6 +88,13 @@ export interface ChannelPerformance {
   won: number;
   wonValue: number;
   spend: number | null;
+  /**
+   * `period` only when EVERY campaign with spend in this channel reported on
+   * a period basis. One lifetime figure in the roll-up makes the channel's
+   * total a mixture, and the honest label for a mixture is the weaker of the
+   * two - a reader who is told "period" must be able to rely on it.
+   */
+  spendBasis: SpendBasis;
 }
 
 /** How fast work moves through the pipeline. */
@@ -120,6 +146,15 @@ export interface PerformanceOverview {
      * a broken join.
      */
     spendRecorded: boolean;
+    /**
+     * How many campaigns with spend are still on the lifetime figure (0171).
+     *
+     * Not a boolean, because the page's sentence differs by degree: one
+     * campaign out of nine is a note beside that row, and nine out of nine is
+     * the state every workspace starts in and should be told about once, with
+     * somewhere to go and fix it.
+     */
+    campaignsOnLifetimeSpend: number;
   };
 
   team: TeamMemberLine[];

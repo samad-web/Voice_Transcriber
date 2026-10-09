@@ -67,7 +67,16 @@ export default async function CallsPage({
   };
 
   const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
-  for (const key of ["state", "direction", "missed", "sentiment", "deviceId", "q", "followUp"]) {
+  for (const key of [
+    "state",
+    "direction",
+    "missed",
+    "sentiment",
+    "deviceId",
+    "q",
+    "followUp",
+    "outcome",
+  ]) {
     const value = one(key);
     if (value) query.set(key, value);
   }

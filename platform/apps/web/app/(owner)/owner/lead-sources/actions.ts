@@ -202,3 +202,81 @@ export async function listSheetAccountsAction(): Promise<{
     return { accounts: [] };
   }
 }
+
+// ── Campaign spend by month (migration 0171, Build docs/41 E4) ──────────────
+//
+// A campaign's spend used to be one lifetime figure, which the command centre
+// then divided into whatever window somebody was reading - so a campaign that
+// has run since March reported its return against March-to-now spend on a
+// seven-day page. These actions are how the monthly figure gets entered.
+//
+// They live on Lead sources rather than on the Performance page because this
+// is where campaigns belong and because marketing may open it; the Performance
+// page is owner/manager only, and the person who knows what an ad set cost is
+// usually neither.
+
+export interface CampaignRow {
+  id: string;
+  name: string;
+  channel: string | null;
+  /** The lifetime total from 0057. Text, never a float - see the API. */
+  spend_amount: string | null;
+  spend_currency: string | null;
+  active: boolean;
+}
+
+export interface CampaignSpendMonth {
+  /** `YYYY-MM`. */
+  month: string;
+  /** Text for the same reason the lifetime figure is. */
+  amount: string;
+  currency: string | null;
+}
+
+export async function listCampaignSpendAction(sourceId: string) {
+  return call<{ months: CampaignSpendMonth[] }>(`/v1/marketing-sources/${sourceId}/spend`, {
+    method: "GET",
+  });
+}
+
+/**
+ * Upsert one month. The API is a PUT for the same reason: correcting last
+ * month's figure is the normal case, not an error.
+ *
+ * Revalidates the Performance page as well as this one - the whole point of
+ * the entry is a number on that table, and leaving it cached would have
+ * somebody enter a figure and watch nothing change.
+ */
+export async function setCampaignSpendAction(
+  sourceId: string,
+  month: string,
+  amount: string,
+  currency?: string | null,
+) {
+  const result = await call<{ month: CampaignSpendMonth }>(
+    `/v1/marketing-sources/${sourceId}/spend`,
+    { method: "PUT", body: { month, amount, currency: currency ?? null } },
+  );
+  if (result.data) {
+    revalidatePath("/owner/lead-sources");
+    revalidatePath("/owner/performance");
+  }
+  return result;
+}
+
+/**
+ * Remove a month, which is NOT the same as entering zero: zero says the
+ * campaign cost nothing that month, and no row says nobody has said. Clearing
+ * every month returns the campaign to its lifetime figure.
+ */
+export async function clearCampaignSpendAction(sourceId: string, month: string) {
+  const result = await call<{ deleted: string }>(
+    `/v1/marketing-sources/${sourceId}/spend/${month}`,
+    { method: "DELETE" },
+  );
+  if (result.data) {
+    revalidatePath("/owner/lead-sources");
+    revalidatePath("/owner/performance");
+  }
+  return result;
+}

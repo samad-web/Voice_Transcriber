@@ -24,6 +24,7 @@ function campaign(over: Partial<CampaignPerformance> = {}): CampaignPerformance 
     won: 10,
     wonValue: 500_000,
     spend: 100_000,
+    spendBasis: "period",
     ...over,
   };
 }
@@ -63,7 +64,13 @@ function overview(over: Partial<PerformanceOverview> = {}): PerformanceOverview 
         openCount: 90,
       },
     },
-    marketing: { campaigns: [], channels: [], totalSpend: null, spendRecorded: false },
+    marketing: {
+      campaigns: [],
+      channels: [],
+      totalSpend: null,
+      spendRecorded: false,
+      campaignsOnLifetimeSpend: 0,
+    },
     team: [],
     funnel: [],
     daily: [],

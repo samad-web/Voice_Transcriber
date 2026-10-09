@@ -143,13 +143,18 @@ export function GoalsPanel({ goals }: { goals: Attainment[] }) {
  *
  * ── THE SPEND CAVEAT IS ON THE PAGE, NOT IN A COMMENT ───────────────────────
  *
- * `marketing_sources.spend_amount` is the campaign's recorded TOTAL, not its
- * spend inside the window this page is showing. Every return and cost-per-lead
- * here is therefore window leads against lifetime spend, and for a campaign
- * that has been running longer than the window that understates the return.
- * There is no per-period spend in the schema to divide it by, so the honest
- * move is to say so where the number is read rather than to quietly present it
- * as something it is not.
+ * Until 0171 there was no per-period spend in the schema, so every return and
+ * cost-per-lead here was a window's leads against `marketing_sources`'
+ * LIFETIME total - which understates the return of anything that has been
+ * running longer than the window. That was stated under the table rather than
+ * hidden, because the honest move while there is nothing to divide by is to
+ * say so where the number is read.
+ *
+ * There is now something to divide by, and a workspace migrates one campaign
+ * at a time. So the caveat is no longer a fixed sentence: `spendBasis` travels
+ * with each row, the rows still on the old basis are marked, and the sentence
+ * below says how many - which is the number that tells somebody whether the
+ * table can be trusted yet.
  */
 export function CampaignsPanel({ marketing }: { marketing: PerformanceOverview["marketing"] }) {
   const ranked = rankedCampaigns(marketing.campaigns);
@@ -201,7 +206,17 @@ export function CampaignsPanel({ marketing }: { marketing: PerformanceOverview["
                   <td className={TD_NUM}>{c.leads}</td>
                   <td className={TD_NUM}>{c.won}</td>
                   <td className={TD_NUM}>{pct(campaignWinRate(c))}</td>
-                  <td className={TD_NUM}>{c.spend == null ? "—" : money(c.spend)}</td>
+                  <td className={TD_NUM}>
+                    {c.spend == null ? "—" : money(c.spend)}
+                    {c.spendBasis === "lifetime" ? (
+                      <span
+                        className="ml-1 text-text-subtle"
+                        title="All-time spend. No monthly spend has been entered for this campaign, so its return is this range's leads against every rupee it has ever cost."
+                      >
+                        *
+                      </span>
+                    ) : null}
+                  </td>
                   <td className={TD_NUM}>{money(costPerLead(c))}</td>
                   <td className={TD_NUM}>{ros == null ? "—" : `${ros.toFixed(1)}x`}</td>
                 </tr>
@@ -213,8 +228,19 @@ export function CampaignsPanel({ marketing }: { marketing: PerformanceOverview["
 
       <p className="border-t border-border pt-3 text-xs text-text-subtle">
         Return is won revenue per unit spent, not profit - this platform stores what a deal was
-        worth, not what it cost to deliver. Spend is each campaign&rsquo;s recorded total rather
-        than its spend inside this range, so a long-running campaign&rsquo;s return reads low here.
+        worth, not what it cost to deliver. Spend is this range&rsquo;s own spend, taken from the
+        months it covers and apportioned by day.{" "}
+        {marketing.campaignsOnLifetimeSpend > 0 ? (
+          <>
+            {marketing.campaignsOnLifetimeSpend === 1
+              ? "One campaign is marked * "
+              : `${marketing.campaignsOnLifetimeSpend} campaigns are marked * `}
+            because no monthly spend has been entered for{" "}
+            {marketing.campaignsOnLifetimeSpend === 1 ? "it" : "them"} - those rows divide this
+            range&rsquo;s leads by an all-time total, which reads low for anything long-running.
+            Enter it under Lead sources.{" "}
+          </>
+        ) : null}
         A dash under Cost / lead means fewer than ten leads, or no spend entered.
       </p>
     </Card>

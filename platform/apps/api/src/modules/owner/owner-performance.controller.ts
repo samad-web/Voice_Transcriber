@@ -6,6 +6,7 @@ import type {
   FunnelStep,
   OverviewDay,
   PerformanceOverview,
+  SpendBasis,
   TeamMemberLine,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
@@ -217,29 +218,89 @@ velocity AS (
 -- INNER JOIN, not LEFT: a lead with no campaign is not an anonymous campaign,
 -- it is a lead that did not come from one. The same reasoning
 -- owner.controller.ts gives for the dashboard's campaign table.
+-- ── What the window's spend actually was (migration 0171) ───────────────────
+--
+-- marketing_sources.spend_amount is a LIFETIME total, so dividing it into a
+-- week's leads understates the return of anything long-running. 0171 records
+-- spend per calendar month, and this CTE turns those months into the part of
+-- them that falls inside the reporting window.
+--
+-- PRO-RATED BY OVERLAPPING DAYS: a window covering 8 of October's 31 days takes
+-- 8/31 of October. The assumption (spend is even across a month) is stated in
+-- 0171's header and is a far smaller one than the lifetime figure it replaces.
+--
+-- The arithmetic is deliberately explicit rather than a date-range intersection
+-- helper: GREATEST(month_start, from) to LEAST(month_end, to) inclusive, +1
+-- so a single-day overlap counts as one day and not as zero.
+window_spend AS (
+  SELECT sp.source_id,
+         sum(
+           sp.amount
+           * (
+               (LEAST((sp.month + interval '1 month' - interval '1 day')::date, $2::date)
+                - GREATEST(sp.month, $1::date) + 1)::numeric
+               / EXTRACT(DAY FROM (sp.month + interval '1 month' - interval '1 day'))::numeric
+             )
+         )::float AS spend
+    FROM marketing_source_spend sp
+   WHERE sp.month <= $2::date
+     AND (sp.month + interval '1 month' - interval '1 day')::date >= $1::date
+   GROUP BY sp.source_id
+),
+-- Which campaigns have ANY monthly spend at all, which is a different question
+-- from how much of it lands in this window. A campaign whose months are all
+-- outside the range has period-basis spend of zero - a real answer - and must
+-- NOT silently fall back to its lifetime total, or the fallback would reappear
+-- exactly when somebody narrows the date range.
+has_period_spend AS (
+  SELECT DISTINCT source_id FROM marketing_source_spend
+),
+-- INNER JOIN, not LEFT: a lead with no campaign is not an anonymous campaign,
+-- it is a lead that did not come from one. The same reasoning
+-- owner.controller.ts gives for the dashboard's campaign table.
 campaigns AS (
   SELECT ms.id,
          ms.name,
          ms.channel,
-         ms.spend_amount::float                                  AS spend,
+         CASE
+           WHEN hps.source_id IS NOT NULL THEN COALESCE(ws.spend, 0)
+           ELSE ms.spend_amount::float
+         END AS spend,
+         CASE
+           WHEN hps.source_id IS NOT NULL   THEN 'period'
+           WHEN ms.spend_amount IS NOT NULL THEN 'lifetime'
+           ELSE 'none'
+         END AS spend_basis,
          count(*)::int                                           AS leads,
          count(*) FILTER (WHERE l.status = 'won')::int            AS won,
          COALESCE(sum(l.value_num) FILTER (WHERE l.status = 'won'), 0)::float AS won_value
     FROM leads l
     JOIN marketing_sources ms ON ms.id = l.marketing_source_id
+    LEFT JOIN window_spend ws     ON ws.source_id  = ms.id
+    LEFT JOIN has_period_spend hps ON hps.source_id = ms.id
    CROSS JOIN w
    WHERE l.created_at >= w.from_at AND l.created_at < w.to_at
-   GROUP BY ms.id, ms.name, ms.channel, ms.spend_amount
+   GROUP BY ms.id, ms.name, ms.channel, ms.spend_amount, ws.spend, hps.source_id
 ),
 -- Rolled up from the campaigns rather than from leads.source_channel: spend
 -- lives on the campaign, so grouping any other way would put a channel's leads
 -- next to a spend that does not belong to them.
+--
+-- The channel's basis is the WEAKEST of its campaigns': one lifetime figure in
+-- the sum makes the total a mixture, and a reader told "period" has to be able
+-- to rely on that. Campaigns with no spend at all do not weaken it - they
+-- contribute nothing to the sum, so they cannot make it wrong.
 channels AS (
   SELECT COALESCE(c.channel, 'unattributed') AS channel,
          sum(c.leads)::int                   AS leads,
          sum(c.won)::int                     AS won,
          sum(c.won_value)::float             AS won_value,
-         sum(c.spend)::float                 AS spend
+         sum(c.spend)::float                 AS spend,
+         CASE
+           WHEN count(*) FILTER (WHERE c.spend_basis = 'lifetime') > 0 THEN 'lifetime'
+           WHEN count(*) FILTER (WHERE c.spend_basis = 'period')   > 0 THEN 'period'
+           ELSE 'none'
+         END AS spend_basis
     FROM campaigns c
    GROUP BY 1
 ),
@@ -352,6 +413,7 @@ interface RawRow {
     name: string;
     channel: string | null;
     spend: number | null;
+    spend_basis: SpendBasis;
     leads: number;
     won: number;
     won_value: number;
@@ -362,6 +424,7 @@ interface RawRow {
     won: number;
     won_value: number;
     spend: number | null;
+    spend_basis: SpendBasis;
   }> | null;
   team: Array<{
     telecaller_id: string;
@@ -405,6 +468,7 @@ export class OwnerPerformanceController {
         won: c.won,
         wonValue: c.won_value,
         spend: c.spend,
+        spendBasis: c.spend_basis,
       }));
 
       const channels: ChannelPerformance[] = (row?.channels ?? []).map((c) => ({
@@ -413,6 +477,7 @@ export class OwnerPerformanceController {
         won: c.won,
         wonValue: c.won_value,
         spend: c.spend,
+        spendBasis: c.spend_basis,
       }));
 
       const team: TeamMemberLine[] = (row?.team ?? []).map((t) => ({
@@ -488,6 +553,11 @@ export class OwnerPerformanceController {
           channels,
           totalSpend: spends.length > 0 ? spends.reduce((a, b) => a + b, 0) : null,
           spendRecorded: spends.length > 0,
+          // Counted over campaigns that HAVE a spend: one with none is not on
+          // the old basis, it is simply unrecorded, and folding the two
+          // together would tell a workspace that has entered nothing that
+          // everything needs migrating.
+          campaignsOnLifetimeSpend: campaigns.filter((c) => c.spendBasis === "lifetime").length,
         },
         team,
         funnel,

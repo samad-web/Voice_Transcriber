@@ -4,6 +4,8 @@ import { LoadFailure } from "@/components/load-failure";
 import { PageHeader } from "@/components/page-header";
 import { ownerGet, ownerTry, requireFeature } from "@/lib/owner-context";
 import { publicApiOrigin } from "@/lib/public-origin";
+import type { CampaignRow } from "./actions";
+import { CampaignSpendPanel } from "./campaign-spend-panel";
 import { LeadSourcesClient } from "./lead-sources-client";
 import { SheetsPanel } from "./sheets-panel";
 
@@ -67,10 +69,14 @@ export interface LinkedInStatus {
 export default async function LeadSourcesPage() {
   // Off means off, not merely hidden - see requireFeature.
   await requireFeature("/owner/lead-sources");
-  const [sourcesResult, catalogueResult, linkedin] = await Promise.all([
+  const [sourcesResult, catalogueResult, linkedin, campaigns] = await Promise.all([
     ownerTry<{ sources: LeadSourceRow[] }>("/v1/lead-sources"),
     ownerTry<{ channels: CatalogueChannel[] }>("/v1/lead-sources/catalogue"),
     ownerGet<LinkedInStatus>("/v1/linkedin/status"),
+    // ownerGet, not ownerTry: campaign spend is an aside on this page, and a
+    // page that refuses to render its channels because an attribution read
+    // failed would be trading the important half for the incidental one.
+    ownerGet<{ sources: CampaignRow[] }>("/v1/marketing-sources"),
   ]);
 
   // Two guards rather than one `||`: each result carries its own reason, and a
@@ -108,6 +114,10 @@ export default async function LeadSourcesPage() {
           sheet has to be opened and read before it can be mapped, which is a
           different interaction and does not fit that dialog. */}
       <SheetsPanel sources={sources.sources} />
+
+      {/* Hidden entirely when the workspace has no campaigns - see the panel's
+          header for why an empty one would be a dead end. */}
+      <CampaignSpendPanel campaigns={campaigns?.sources ?? []} />
 
       <LeadSourcesClient
         sources={sources.sources}

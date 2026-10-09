@@ -7,6 +7,7 @@ import {
   avgCallSeconds,
   connectRate,
   csatIndex,
+  dispositionCoverage,
   fcrRate,
   focusAreas,
   headline,
@@ -51,6 +52,8 @@ function card(over: Partial<AgentScorecard> = {}): AgentScorecard {
     fcrEligibleCalls: 40,
     fcrResolvedCalls: 20,
     fcrConfigured: true,
+    dispositionBase: 120,
+    dispositionLogged: 96,
     pipeline: { leadsWorked: 50, won: 10, lost: 15, open: 25, wonValue: 500_000 },
     // Nothing overdue and nothing due today: the fixture is the HEALTHY card, and
     // `workQueue` is asserted to be empty on it. The compliance tests pass their
@@ -148,6 +151,33 @@ describe("fcrRate", () => {
 
   it("is zero when configured and genuinely nothing resolved", () => {
     expect(fcrRate(card({ fcrResolvedCalls: 0 }))).toBe(0);
+  });
+});
+
+describe("dispositionCoverage", () => {
+  it("is outcomes logged over connected calls", () => {
+    expect(dispositionCoverage(card())).toBeCloseTo(0.8);
+  });
+
+  /**
+   * The deliberate difference from every other rate in this file. A coverage
+   * figure is a statement about the DATA, not about the person, so a thin base
+   * does not make it unreliable - and the quiet day is exactly when a reader
+   * most needs to know that FCR rests on three classified calls.
+   */
+  it("answers on a base far below MIN_RATE_SAMPLE, unlike every rate beside it", () => {
+    const thin = card({ dispositionBase: 3, dispositionLogged: 2 });
+    expect(dispositionCoverage(thin)).toBeCloseTo(2 / 3);
+    expect(rate(2, 3)).toBeNull();
+  });
+
+  it("is zero, not null, when nobody filed an outcome on calls that happened", () => {
+    expect(dispositionCoverage(card({ dispositionLogged: 0 }))).toBe(0);
+  });
+
+  it("is null when there were no connected calls to classify", () => {
+    // An absence of calls, which is not an absence of coverage.
+    expect(dispositionCoverage(card({ dispositionBase: 0, dispositionLogged: 0 }))).toBeNull();
   });
 });
 

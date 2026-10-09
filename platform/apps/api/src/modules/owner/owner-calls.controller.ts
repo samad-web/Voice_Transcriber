@@ -54,6 +54,19 @@ const ListQuery = z.object({
    * support - the same reason the missed filter's "waiting" leaves those out.
    */
   followUp: z.enum(["true", "false"]).optional(),
+  /**
+   * Whether an outcome has been filed on the call (Build docs/41 E2).
+   *
+   *   needed  connected calls with no disposition - the end-of-shift queue.
+   *   logged  the ones somebody has classified.
+   *
+   * "Connected" is `duration_s > 0`, the same population the scorecard's
+   * coverage figure uses, so the count in this filter and the percentage on a
+   * rep's card are answers about the same calls. A ring-out is excluded from
+   * both: there is nothing a person could file about it, and demanding one
+   * would make a bad connect rate look like negligence.
+   */
+  outcome: z.enum(["needed", "logged"]).optional(),
   /** The handset, not the person - `devices.id`, as the dashboard ranks them. */
   deviceId: z.string().uuid().optional(),
   /**
@@ -243,7 +256,7 @@ export class OwnerCallsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const dates = CallLogDateQuery.safeParse(query);
     if (!dates.success) throw new BadRequestException(dates.error.issues);
-    const { state, direction, missed, sentiment, deviceId, q, followUp, limit, offset } =
+    const { state, direction, missed, sentiment, deviceId, q, followUp, outcome, limit, offset } =
       parsed.data;
     const { period, from, to, sort } = dates.data;
     // A whitelisted keyword, never caller text - the only thing interpolated.
@@ -279,6 +292,11 @@ export class OwnerCallsController {
             -- into "first time" by default - see the ListQuery comment.
             AND ($10::bool IS NULL OR
                  (h.sequence IS NOT NULL AND (h.sequence > 1) = $10::bool))
+            AND ($11::text IS NULL OR
+                 CASE $11::text
+                   WHEN 'needed' THEN c.disposition_key IS NULL AND c.duration_s > 0
+                   WHEN 'logged' THEN c.disposition_key IS NOT NULL
+                 END)
             AND c.started_at >= w.from_at AND c.started_at < w.to_at`;
       const filters = [
         state ?? null,
@@ -291,6 +309,7 @@ export class OwnerCallsController {
         period ?? null,
         missed ?? null,
         followUp === undefined ? null : followUp === "true",
+        outcome ?? null,
       ];
 
       const { rows } = await client.query(
@@ -319,7 +338,7 @@ export class OwnerCallsController {
           -- that started in the same second - jumping to page 7 and back must
           -- show the same rows.
           ORDER BY c.started_at ${order}, c.id ${order}
-          LIMIT $11 OFFSET $12`,
+          LIMIT $12 OFFSET $13`,
         [...filters, limit, offset],
       );
 

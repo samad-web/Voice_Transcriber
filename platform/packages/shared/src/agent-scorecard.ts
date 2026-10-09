@@ -268,6 +268,25 @@ export interface AgentScorecard {
    */
   fcrConfigured: boolean;
 
+  /**
+   * ── How much of the dialling has an outcome on it (Build docs/41 E3) ──────
+   *
+   * `dispositionBase` is this person's CONNECTED calls in the range;
+   * `dispositionLogged` is how many of them carry a disposition.
+   *
+   * This is here because FCR above cannot be read without it. Outcomes are
+   * entered in the console by whoever gets round to it - there is no prompt
+   * at the end of a call yet - so FCR's denominator is first contacts somebody
+   * CLASSIFIED, not first contacts. 70% resolution over a fifth of the calls
+   * and 70% over all of them are different claims, and the page prints the
+   * coverage beside the rate so a reader can tell which they are holding.
+   *
+   * It is also the one quality figure on this card that a rep can move today
+   * by doing something other than being better at the job.
+   */
+  dispositionBase: number;
+  dispositionLogged: number;
+
   // ── Pipeline, follow-ups and time ─────────────────────────────────────────
   pipeline: PipelineOwnership;
   tasks: TaskLoad;
@@ -356,6 +375,28 @@ export function fcrRate(
 ): number | null {
   if (!card.fcrConfigured) return null;
   return rate(card.fcrResolvedCalls, card.fcrEligibleCalls);
+}
+
+/**
+ * Share of connected calls that carry an outcome (Build docs/41 E3).
+ *
+ * ── THE ONE RATE HERE WITH NO SAMPLE FLOOR ──────────────────────────────────
+ *
+ * Every other rate in this file refuses to answer below `MIN_RATE_SAMPLE`,
+ * because a thin base makes a PERFORMANCE claim unreliable. This is not a
+ * performance claim, it is a statement about the data itself: "2 of 3 calls
+ * have an outcome" is completely true and exactly as actionable as "200 of
+ * 300". Suppressing it would hide the gap on precisely the quiet days a
+ * reader is most likely to be misled by FCR.
+ *
+ * Null only when there were no connected calls at all, which is an absence of
+ * calls rather than an absence of coverage.
+ */
+export function dispositionCoverage(
+  card: Pick<AgentScorecard, "dispositionBase" | "dispositionLogged">,
+): number | null {
+  if (card.dispositionBase <= 0) return null;
+  return card.dispositionLogged / card.dispositionBase;
 }
 
 /** QA is suppressed below its own, larger, sample floor. */

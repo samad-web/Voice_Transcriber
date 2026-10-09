@@ -1425,6 +1425,12 @@ const OWNER_ROLE_ROUTES = [
   "GET /marketing-sources",
   "POST /marketing-sources",
   "PATCH /marketing-sources/:id",
+  // Spend by calendar month (migration 0171). The read declares no persona -
+  // it is the same campaign list every persona on this page already sees -
+  // and the two writes carry marketing's own grant, matching create/update.
+  "GET /marketing-sources/:id/spend",
+  "PUT /marketing-sources/:id/spend",
+  "DELETE /marketing-sources/:id/spend/:month",
   // A commission plan decides what people are paid: marketing may read the
   // plans beside the commission report, only owner/manager write them.
   "GET /commission-plans",
@@ -2011,7 +2017,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 611 routes, partitioned 507 tenant / 52 cross-tenant / 18 device / 21 unguarded / 1 internal / 7 portal", () => {
+  it("has 614 routes, partitioned 510 tenant / 52 cross-tenant / 18 device / 21 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2198,8 +2204,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // NULL for every tenant that has ever existed. The write is gated on
     // `dial_campaign:create`, not `edit`, because `edit` reaches
     // `workspace_member` so that an agent can skip a record.
-    expect(ROUTES).toHaveLength(611);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(611);
+    // 614: plus campaign spend by month (0171) - the read, the upsert and the
+    // delete. All tenant-scoped; spend is org configuration, and there is no
+    // operator surface that enters it.
+    expect(ROUTES).toHaveLength(614);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(614);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2265,7 +2274,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // and task settings' GET/PUT (0156).
     // 470: plus the vault's reveal and the four DNC-list routes (0157/0158).
     // 507: plus the two /dialer/settings routes (Build docs/40 §B1).
-    expect(tenantScoped).toHaveLength(507);
+    // 510: plus campaign spend by month's three (0171).
+    expect(tenantScoped).toHaveLength(510);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
@@ -2277,10 +2287,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(611); // = ROUTES.length: every route in exactly one class
+    ).toBe(614); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 512 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 555 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2328,7 +2338,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // routes. All five carry AdminKeyGuard, TenantGuard, CrmPermissionsGuard
     // in that order, which the loop below is what actually proves.
     // 552: plus the two /dialer/settings routes (Build docs/40 §B1).
-    expect(principalRoutes).toHaveLength(552);
+    // 555: plus campaign spend by month's three (0171).
+    expect(principalRoutes).toHaveLength(555);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

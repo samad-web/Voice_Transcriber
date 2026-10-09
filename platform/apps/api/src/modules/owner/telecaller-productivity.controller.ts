@@ -281,6 +281,43 @@ SELECT count(*)::int                                          AS eligible,
 )`;
 
 /**
+ * How many of this person's conversations carry an outcome at all
+ * (Build docs/41 E3).
+ *
+ * ── WHY THIS IS A METRIC AND NOT A CAVEAT ───────────────────────────────────
+ *
+ * Dispositions are entered in the console, by whoever gets round to it - there
+ * is no prompt at the end of a call yet (41 E1). So FCR's denominator is not
+ * "first contacts", it is "first contacts somebody classified", and 70% FCR
+ * means something very different at 90% coverage than at 20%. Printing the
+ * rate without the coverage leaves the reader no way to know which they have.
+ *
+ * ── THE DENOMINATOR IS CONNECTED CALLS ──────────────────────────────────────
+ *
+ * Calls that actually reached somebody, which is where an outcome is knowable.
+ * A ring-out has nothing a person could file about it, and counting those would
+ * make the coverage of a floor with a poor connect rate look like negligence.
+ *
+ * ── AND THE NUMERATOR DOES NOT JOIN TO call_dispositions ────────────────────
+ *
+ * Deliberately different from the FCR CTE above, which joins on the key so a
+ * DELETED outcome drops out of the fraction. This measures whether the human
+ * did the work, and they did it even if the vocabulary has since changed
+ * underneath them. A key that no longer resolves still counts here.
+ */
+const SCORECARD_COVERAGE_CTE = `
+disposition_coverage AS (
+  SELECT count(*)::int                                                 AS base,
+         count(*) FILTER (WHERE c.disposition_key IS NOT NULL)::int    AS logged
+    FROM calls c
+    CROSS JOIN w
+   WHERE c.telecaller_id = $3
+     AND c.started_at >= w.from_at
+     AND c.started_at <  w.to_at
+     AND c.duration_s > 0
+)`;
+
+/**
  * Whether ANY outcome in this tenant's vocabulary asserts resolution (0144).
  *
  * Read separately from the rate itself because the two answer different
@@ -655,6 +692,7 @@ interface ScorecardRow {
   } | null;
   fcr: { eligible: number; resolved: number } | null;
   fcr_configured: boolean | null;
+  disposition_coverage: { base: number; logged: number } | null;
   days: ScorecardDay[] | null;
   today: { day: string; calls: number; connected: number } | null;
   pipeline: {
@@ -738,6 +776,8 @@ function emptyScorecard(from: string, to: string, today = ""): AgentScorecard {
     fcrEligibleCalls: 0,
     fcrResolvedCalls: 0,
     fcrConfigured: false,
+    dispositionBase: 0,
+    dispositionLogged: 0,
     // Real zeroes for the counts and `linked: false` for the bridge, which is the
     // honest reading: somebody with no telecaller identity holds no leads and
     // their tasks cannot be found from here. `linked: false` and 0 completed are
@@ -805,6 +845,7 @@ sop AS (
 ${SCORECARD_QUALITY_CTE.trim()},
 ${SCORECARD_FCR_CTE.trim()},
 ${SCORECARD_FCR_CONFIGURED_CTE.trim()},
+${SCORECARD_COVERAGE_CTE.trim()},
 ${SCORECARD_DAYS_CTE.trim()},
 ${SCORECARD_TODAY_CTE.trim()},
 ${SCORECARD_PIPELINE_CTE(LEAD_HELD_BY_CALLER).trim()},
@@ -817,6 +858,7 @@ SELECT (SELECT m.display_name FROM me m) AS display_name,
        row_to_json(quality)      AS quality,
        row_to_json(fcr)          AS fcr,
        fcr_configured.configured AS fcr_configured,
+       row_to_json(disposition_coverage) AS disposition_coverage,
        days.series               AS days,
        row_to_json(today_row)    AS today,
        row_to_json(pipeline)     AS pipeline,
@@ -834,6 +876,7 @@ SELECT (SELECT m.display_name FROM me m) AS display_name,
   CROSS JOIN quality
   CROSS JOIN fcr
   CROSS JOIN fcr_configured
+  CROSS JOIN disposition_coverage
   CROSS JOIN days
   CROSS JOIN today_row
   CROSS JOIN pipeline
@@ -1079,6 +1122,9 @@ export class TelecallerProductivityController {
           fcrEligibleCalls: row.fcr?.eligible ?? 0,
           fcrResolvedCalls: row.fcr?.resolved ?? 0,
           fcrConfigured: row.fcr_configured ?? false,
+
+          dispositionBase: row.disposition_coverage?.base ?? 0,
+          dispositionLogged: row.disposition_coverage?.logged ?? 0,
 
           pipeline: {
             leadsWorked: row.pipeline?.leads_worked ?? 0,
