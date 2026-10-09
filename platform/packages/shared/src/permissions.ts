@@ -1,4 +1,8 @@
 import { z } from "zod";
+// `PERMISSION_OBJECT_MODULE` is typed as a full `OrgModule` record since the
+// finance module landed, so a module added to the catalogue without deciding
+// which objects it gates is a type error rather than a runtime 403.
+import type { OrgModule } from "./org-modules";
 
 /**
  * The role -> object -> action(+scope/field) permission model
@@ -116,6 +120,79 @@ export const PermissionObjectType = z.enum([
   "partner",
   "resource",
   "appointment",
+  /**
+   * The finance module (Build docs/finance-section-build-plan §3, migration
+   * 0172). TWO objects, and the split is the one §3's role table actually
+   * needs:
+   *
+   * `finance` is the back office - the canonical payment record, the ledger,
+   * the matching queue, expenses, deal templates and payment schedules,
+   * periods. Whole-org data with no per-record owner, so it is in
+   * `ALL_SCOPE_ONLY_OBJECTS`. "Finance handler" is not a persona here (adding
+   * one would be fail-open during a rolling deploy - see roles.ts); it is
+   * whoever holds `finance:edit`, which is what DECISIONS.md §3.3 records.
+   *
+   * `incentive` is somebody's PAY, and it is the reason these are two objects
+   * rather than one. §3 is explicit: "a telecaller must never be able to read
+   * another telecaller's pay or incentive, even by guessing an ID." That is a
+   * row filter, not a yes/no - so `incentive` carries a real owner column
+   * (`incentive_payouts.user_id`, wired in crm-scope.ts) and a telecaller gets
+   * `view` at `owned` scope. Folding it into `finance` would have made the
+   * only available answer "all the floor's pay or none of it".
+   *
+   * Connector CREDENTIALS are deliberately not modelled here. §3 says the
+   * finance handler gets everything except connector secrets, and a grid cell
+   * that can be ticked is the wrong shape for "nobody but the owner, ever" -
+   * those routes carry `OwnerRoleGuard` instead.
+   *
+   * Migration 0172 seeds every system role's grants for both objects in the
+   * same file that widens this enum. That step is not tidiness: the guard
+   * denies whatever it finds no grant for, so widening without seeding locks
+   * EVERY user out of the new object on deploy day - the lesson 0041,
+   * 0059/0060, 0103 and 0158 each record above.
+   */
+  "finance",
+  "incentive",
+  /**
+   * The organization chart (Build docs/org-chart-build-plan.md, migrations
+   * 0177/0178). TWO objects, and the split is the one §7's role table forces.
+   *
+   * `position` is the chart itself - seats, reporting lines, who holds what,
+   * responsibilities and the decision-authority table. §7 gives a telecaller
+   * all of it ("see the chart, names, titles, departments, responsibilities
+   * and authority"), because the module's reason to exist is a new joiner
+   * finding out who to ask. It is in `ALL_SCOPE_ONLY_OBJECTS`: a seat is not
+   * owned by whoever sits in it, and "my own position" would have to mean "the
+   * one node I hold", which is not a chart.
+   *
+   * `employment_contract` is somebody's PAY, their notice period and their
+   * signed paperwork, and it is a second object because §7 is explicit that
+   * staff cannot see any of it while they must KEEP the chart. M7's acceptance
+   * criterion is a negative API test, and one object covering both would make
+   * that unsatisfiable: a telecaller needs `position:view` to use the console
+   * at all.
+   *
+   * `employment_contract` is deliberately NOT in `ALL_SCOPE_ONLY_OBJECTS`, and
+   * it is the most meaningful `owned` scope in this enum - its owner column is
+   * `employment_contracts.user_id`, so an org that wants people to read their
+   * OWN contract grants `view` at `owned` and gets exactly that, as a WHERE
+   * clause. 0178 does not seed it that way; §7's default is that staff see
+   * nothing here. The column exists so the choice is a row filter rather than
+   * a checkbox that silently matches everything.
+   *
+   * §7's "HR / finance handler" is not a persona, for the reason `finance`
+   * above is not either: a fourth `owner_role` is fail-open during a rolling
+   * deploy (see roles.ts). The handler is whoever holds
+   * `employment_contract:edit`.
+   *
+   * Migrations 0177 and 0178 seed every system role's grants in the same files
+   * that widen this enum - 0177 five roles for `position:view`, 0178 three
+   * roles and no more. Widening without seeding locks EVERY user out of the
+   * new object on deploy day, which is the lesson 0041, 0059/0060, 0103, 0158
+   * and 0165 each record above.
+   */
+  "position",
+  "employment_contract",
 ]);
 export type PermissionObjectType = z.infer<typeof PermissionObjectType>;
 
@@ -135,7 +212,7 @@ export type PermissionObjectType = z.infer<typeof PermissionObjectType>;
  * on it - the single most damaging regression this change could have shipped.
  * So the requirement now comes from the object.
  */
-export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, "aura" | "crm"> = {
+export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, OrgModule> = {
   contact: "crm",
   account: "crm",
   deal: "crm",
@@ -167,6 +244,33 @@ export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, "aura" | "cr
   // §26.4 gates all four vertical primitives on `crm` for this reason.
   resource: "crm",
   appointment: "crm",
+  // The widening that made this a full `OrgModule` record rather than
+  // `"aura" | "crm"`. Both are `finance`, which is the point: a tenant who has
+  // not bought the back office is denied the ledger and the payout screens
+  // exactly as if the grant were missing, and a tenant who had it and gave it
+  // up stops being granted them by the `role_permissions` rows they keep.
+  //
+  // NOT `crm`, even though a deal is a CRM record: filing them there would
+  // hand every existing CRM tenant a finance module they never bought the day
+  // this deploys, which is the mirror image of the mistake `lead` avoided.
+  finance: "finance",
+  incentive: "finance",
+  /**
+   * Both `aura`, and the `lead` test is what decides it: does a tenant with no
+   * CRM still do this? A recorder-only tenant has staff, a manager, a reporting
+   * line and employment contracts - every business does, whether or not it
+   * bought a pipeline. Filing either under `crm` would 403 every request from a
+   * tenant whose team is perfectly real, and filing them under a new
+   * `org_chart` module would hand the same tenants a chart they cannot open.
+   *
+   * Whether a client WANTS the page is a separate question, answered on the
+   * other provisioning axis: `org_chart` is a FeatureKey (0093's
+   * `org_feature_settings`), which is visibility rather than security. A module
+   * is for something separately sold; a feature is for something a business
+   * switches off. This is the second.
+   */
+  position: "aura",
+  employment_contract: "aura",
 };
 
 /** Objects whose grants are whole-org powers, where "own records" means nothing. */
@@ -189,6 +293,28 @@ export const ALL_SCOPE_ONLY_OBJECTS: ReadonlySet<PermissionObjectType> = new Set
   "web_form",
   "partner",
   "resource",
+  // A ledger entry, a payment and an expense have no owner - "my own payment"
+  // means nothing, and the finance back office is a whole-org function by
+  // definition. An `owned` grant here would match nothing while looking
+  // configured, which is worse than not offering the choice.
+  //
+  // `incentive` is deliberately NOT here, for the same reason `appointment` is
+  // not: `owned` is the MOST meaningful scope on it. See the note below.
+  "finance",
+  /**
+   * A SEAT has no owner. "My own position" could only mean "the one node I
+   * hold", and a chart narrowed to one node is not a chart - an `owned` grant
+   * here would look configured and show somebody nothing.
+   *
+   * §7's "Manager: view their branch in detail" is a SUBTREE, which all/owned
+   * cannot express at all. It is enforced in the controller against the
+   * reporting tree instead; ORG_CHART_DECISIONS.md §4 records why that is not
+   * folded in here as a third scope value.
+   *
+   * `employment_contract` is deliberately NOT here - see the enum above. It is
+   * the clearest `owned` case in the whole grid.
+   */
+  "position",
   // `appointment` is deliberately NOT here. It carries `assigned_user_id`, and
   // "my own appointments" is the most meaningful scope on it - a telecaller
   // seeing their own diary rather than the whole clinic's is exactly what an
@@ -306,6 +432,31 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "dnc:edit",
   "dnc:view",
   // No "dnc:delete" - a list is disabled through `dnc:edit`, never removed.
+  // The org chart's restricted half (0178). No `delete`: §6.5's timeline and
+  // any dispute about what was signed both need the row to survive, so a
+  // contract is `ended`, which is an `edit`. No `export` either - nothing
+  // emits contracts in bulk, and the directory export (§6.6) is names and
+  // titles built in the browser from rows already on screen.
+  "employment_contract:create",
+  "employment_contract:edit",
+  "employment_contract:view",
+  // The finance module. No `finance:delete` and there never will be: §6.3 is a
+  // MUST - "never edit or delete a posted payment or ledger row" - so a delete
+  // cell would be a checkbox with no route behind it, and worse, one somebody
+  // might believe. A correction is a reversal, which is a `finance:create`.
+  //
+  // `finance:export` is live because the reports and the ledger CSV are the
+  // one place a client's whole money history leaves the system.
+  "finance:create",
+  "finance:edit",
+  "finance:export",
+  "finance:view",
+  // `incentive:edit` is the approval and the payout marking - §10's
+  // `calculated -> approved -> paid`. No `create`: a payout row is produced by
+  // the calculation run, never typed, and no `delete` for the same reason a
+  // ledger row has none.
+  "incentive:edit",
+  "incentive:view",
   "invoice:create",
   "invoice:edit",
   "invoice:view",
@@ -320,6 +471,16 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "partner:create",
   "partner:edit",
   "partner:view",
+  // The org chart (0177). `delete` IS live here, unusually for this list, and
+  // §4.3 is why: a seat that was created by mistake has to be removable, and
+  // the route refuses one that still has reports until they are reassigned (or
+  // the owner chooses "promote reports to parent"). It is not a soft-delete
+  // shaped like a status, because an abolished seat that mattered gets
+  // `effective_to` instead - two different things, both needed.
+  "position:create",
+  "position:delete",
+  "position:edit",
+  "position:view",
   "product:create",
   "product:edit",
   "product:view",

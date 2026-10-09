@@ -57,6 +57,8 @@ import { PartnersModule } from "./modules/partners/partners.module";
 import { ResourcesModule } from "./modules/resources/resources.module";
 import { SuppressionModule } from "./modules/suppression/suppression.module";
 import { WebFormsModule } from "./modules/web-forms/web-forms.module";
+import { FinanceModule } from "./modules/finance/finance.module";
+import { OrgChartModule } from "./modules/org-chart/org-chart.module";
 import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
 
 /**
@@ -147,6 +149,36 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     // which must set `app.org_id` to read its own three tables, would have
     // every other tenant table wide open behind it.
     PartnersModule,
+    // Build docs/finance-section-build-plan / migrations 0172-0176: the
+    // finance back office. Deal payment schedules, one canonical payment
+    // record for money from any source, an append-only ledger, expenses,
+    // incentives paid on COLLECTED money, and the logic-driven Advisor.
+    //
+    // Gated by a new `finance` OrgModule, OFF for every existing tenant -
+    // `CrmPermissionsGuard`'s module join denies it exactly like a missing
+    // grant, so nobody wakes up to a back office they did not buy. Invoicing
+    // correctness stays in `crm`.
+    //
+    // It does not replace InvoicesModule. 0060's `payments` becomes a SOURCE
+    // that normalizes into `finance_payments`, which is what gives "collected"
+    // one definition without changing any existing surface.
+    FinanceModule,
+    // Build docs/org-chart-build-plan / migrations 0177-0178: who is who in
+    // the business, as a tree of SEATS rather than of people - so the chart
+    // survives a promotion, an exit and a vacancy.
+    //
+    // Two permission objects, not one: `position` goes to every system role
+    // (§7 gives a telecaller the chart, the titles, the responsibilities and
+    // the authority table - that is the module's reason to exist), while
+    // `employment_contract` goes to the three admin roles and nobody else.
+    // Keeping them apart is what makes "a telecaller cannot retrieve any
+    // contract data" a 403 before the handler rather than a redaction inside
+    // it.
+    //
+    // Filed under the `aura` module, like `lead`: every business has a team
+    // and a reporting line whether or not it bought a pipeline. Whether a
+    // client WANTS the page is the other axis - the `org_chart` feature.
+    OrgChartModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

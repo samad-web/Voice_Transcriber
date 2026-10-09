@@ -72,6 +72,67 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     icon: "inbox",
     needsAction: true,
   },
+  // ── The finance module (migrations 0172-0176) ──
+  //
+  // `needsAction: true` for the alert and FALSE for the payout, and the split
+  // is the same one the governance cluster above draws: the Advisor has found
+  // money that somebody has to chase, which is a decision waiting in the
+  // console; an incentive statement is a fact about pay that has already been
+  // decided, and putting it in "Needs action" would ask a rep to do something
+  // about their own payslip.
+  finance_alert: {
+    label: "Money needs chasing",
+    description:
+      "The Finance Advisor found something leaking - a slipped promise, money nobody has linked to a deal, a settlement that does not match. It tells your own people; it never messages a customer.",
+    icon: "alarm",
+    needsAction: true,
+  },
+  finance_payout: {
+    label: "Incentive statement",
+    description: "Your own incentive for a period has been calculated, approved or paid.",
+    icon: "file-text",
+    needsAction: false,
+  },
+  // ── The organization chart (migrations 0177-0178, §10) ──
+  //
+  // Three of the four need action and one does not, and the line is drawn the
+  // same way the finance pair above draws it: is there a DECISION waiting, or
+  // has one already been made?
+  //
+  // An empty seat with people reporting to it, a contract running out and a
+  // probation ending are all deadlines somebody must act on - the last of
+  // them especially, because a business that misses it has confirmed somebody
+  // by default. A reporting-line change has already happened; being told is
+  // the whole point, and putting it in "Needs action" would ask a person to do
+  // something about a decision that was not theirs.
+  position_vacant: {
+    label: "Position empty too long",
+    description:
+      "A position with people reporting to it has been vacant past the limit set for this workspace. Until it is filled, escalations routed to it reach nobody.",
+    icon: "shield-alert",
+    needsAction: true,
+  },
+  reporting_change: {
+    label: "Reporting line changed",
+    description:
+      "Your own position, or somebody who reports to you, moved in the organization chart - or you were assigned to a position.",
+    icon: "arrow-right-left",
+    needsAction: false,
+  },
+  contract_expiring: {
+    label: "Contract expiring",
+    description:
+      "An employment contract ends soon - at 60, 30 and 7 days. Only people who may see contracts are told.",
+    icon: "hourglass",
+    needsAction: true,
+  },
+  probation_ending: {
+    label: "Probation ending",
+    description:
+      "A probation period ends soon - at 14 and 3 days - and needs a decision recorded. Only people who may see contracts are told.",
+    icon: "clipboard-check",
+    needsAction: true,
+  },
   // Call escalations (0151, Build docs/38). Raised or passed on to you waits
   // on you - a telecaller may still have the customer on the line, or be about
   // to ring them back. The answer coming back is something to read, not to do.

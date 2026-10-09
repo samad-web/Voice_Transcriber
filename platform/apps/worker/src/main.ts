@@ -32,6 +32,8 @@ import { startDialAttemptLinkSweep } from "./pipeline/dial-attempt-link";
 import { startMissedCallLeadSweep } from "./pipeline/missed-call-leads";
 import { startFollowupReminderSweep } from "./pipeline/followup-reminders";
 import { startDocumentDateSweep } from "./pipeline/document-dates";
+import { startFinanceAdvisor } from "./pipeline/finance-advisor";
+import { startFinanceRollups } from "./pipeline/finance-rollups";
 import { startSheetsSync } from "./pipeline/sheets-sync";
 import { startWhatsAppQualificationSweep } from "./pipeline/whatsapp-qualify";
 import { startMetaMcpSweep } from "./pipeline/meta-mcp-sync";
@@ -47,6 +49,7 @@ import { startAttendanceAlerts } from "./pipeline/attendance-alerts";
 import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
 import { startHandsetAlertSweep } from "./pipeline/handset-alerts";
 import { startResourceHoldSweep } from "./pipeline/resource-hold-sweep";
+import { startOrgChartAlertSweep } from "./pipeline/org-chart-alerts";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -227,6 +230,21 @@ async function bootstrap() {
   // only a human could type. Two UPDATEs in the org's own day; it notifies
   // nobody and sends nothing.
   startDocumentDateSweep();
+  // The finance module's housekeeping (Build docs/finance-section-build-plan
+  // §7.2, §11): normalize stored connector events into canonical payments,
+  // reconcile against the gateway's own list for webhooks that never arrived,
+  // and pre-compute the dashboards' daily figures. The drain is the one sweep
+  // in this file that claims its work with FOR UPDATE SKIP LOCKED, so it is
+  // safe on a second replica; the other two are whole-tenant aggregates and
+  // belong on the single-replica side.
+  startFinanceRollups();
+  // And the Advisor (§12). Hourly for dues, unmatched money, failed payments
+  // and connector health; nightly for aging, settlements and the four
+  // statistical rules. It raises in-app notices and TASKS for staff - it
+  // messages no customer and moves no money, and it calls no language model:
+  // every decision is a pure function in @aura/shared/finance-detectors, which
+  // is where its thirty-four fixture tests live.
+  startFinanceAdvisor();
   // WhatsApp qualification (migration 0080). Reads unclaimed inbound WhatsApp
   // threads and writes a scored PROPOSAL a person then approves - it creates no
   // contact, lead or deal, which is what keeps safety rule 2 intact. Runs only
@@ -286,6 +304,16 @@ async function bootstrap() {
   // tick is never released; see the module header. Pure state, writes an
   // audit_log row, sends nothing.
   startResourceHoldSweep();
+  // §10 of the org-chart plan (migrations 0177/0178): a contract ending, a
+  // probation period ending, and a position that has stood empty too long
+  // while people still report to it.
+  //
+  // The two contract alerts are routed through the `employment_contract:view`
+  // GRANT rather than through the `owner` persona - a bell that named somebody
+  // their colleague's notice period would be a leak around §7's permission
+  // split, which is the whole reason contracts are a second grid object.
+  // Raises notifications only; sends nothing.
+  startOrgChartAlertSweep();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an

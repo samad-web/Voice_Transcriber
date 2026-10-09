@@ -149,6 +149,30 @@ const E164_FILES: Record<string, string> = {
   "modules/leads/leads.controller.ts": "marketing.funnel_submissions.phone_e164 - Aura's own funnel, not the vault",
   "modules/leads/slots.controller.ts": "the same funnel column, for a booked slot's enquirer",
 
+  // ── NOT a reader: the finance matcher's identity rule (0172-0176, §8) ─────
+  //
+  // §8's rule 2 matches a payment to a customer by "phone or email plus exact
+  // amount". The gateway hands us the PAYER's phone; the matcher compares it
+  // against the numbers we hold, inside an `EXISTS (SELECT 1 FROM
+  // contact_numbers cn WHERE cn.contact_id = d.contact_id AND cn.e164 = $n)`.
+  //
+  // It is the `dialer.service.ts` shape, not the reveal route's: the column is
+  // on the right-hand side of a comparison and never in a select list, so
+  // nothing about it reaches a response. The number flowing INTO the
+  // comparison came from the gateway with the payment, not from the vault.
+  //
+  // It is also the reason it has to be `contact_numbers` rather than
+  // `contacts.phone`: a customer paying from their second number would never
+  // match, and the vault is the only place every number a contact has lives.
+  //
+  // What a future reviewer must re-check if this line survives a change to
+  // that file: `MATCH_CONFIDENCE.identity_amount` must stay a comparison. The
+  // moment the matcher SELECTS `e164` - to show a person which number paid, say
+  // - that is a third disclosure and §2.1's count of two has to be reopened.
+  // The unmatched queue deliberately shows the deal and the customer NAME.
+  "modules/finance/matcher.ts":
+    "§8 rule 2 compares a gateway-supplied payer number against the vault inside an EXISTS - never selects it",
+
   // ── NOT a stored number: the shared phone helpers ─────────────────────────
   //
   // `E164Phone` is a branded string type and these two PRODUCE one from input
@@ -187,6 +211,16 @@ const VAULT_FILES: Record<string, string> = {
     "the claim statement reads one row's number for the handset about to dial it",
   "modules/dialer/device-dialer.controller.spec.ts":
     "pins that statement, including that it reads the vault inside the claim rather than after it",
+
+  // ── The finance matcher (0172-0176, §8) ───────────────────────────────────
+  //
+  // In this list for the same reason `dialer.service.ts` is, and it is worth
+  // the two lists staying apart to say so: it JOINS the vault to answer "is
+  // this payer one of ours" and selects nothing from it. A legitimate vault
+  // read, emphatically not a disclosure - collapsing the lists would either
+  // forbid it or license the matcher to serve numbers.
+  "modules/finance/matcher.ts":
+    "joins the vault inside an EXISTS to identify a payer - compares one number, selects none",
 };
 
 /** Every `.ts` file under apps/api/src, as a posix path relative to src. */

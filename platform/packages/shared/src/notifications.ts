@@ -182,6 +182,95 @@ export const NotificationKind = z.enum([
    * their Login activity page (`auth_events`, 0127).
    */
   "invite_accepted",
+  /**
+   * §10's four, from the organization chart (migrations 0177/0178).
+   *
+   * All four are listed in 0177's single rewrite of `notifications_kind_check`,
+   * including the two 0178's tables raise - because this enum and that CHECK
+   * drift silently and then throw 23514 at runtime (0100's header records it
+   * happening in production), and `notification-kinds.test.ts` pins them
+   * against the LAST CHECK in apply order. One rewrite, one place to get it
+   * wrong.
+   */
+
+  /**
+   * A SEAT HAS BEEN EMPTY TOO LONG AND PEOPLE REPORT TO IT (§10, default 14
+   * days, `org_chart_settings.vacancy_alert_days`).
+   *
+   * The "and people report to it" half is the whole alert. An empty seat with
+   * no reports is a hiring decision somebody is already aware of; an empty
+   * seat WITH reports is a team whose escalation path currently ends nowhere,
+   * which is §9's "reroute needed" in its most consequential form.
+   *
+   * A `frozen` seat never raises it. That is what the stored status is for -
+   * headcount deliberately parked is not a vacancy, and alerting on it weekly
+   * is how a business learns to ignore this bell.
+   */
+  "position_vacant",
+  /**
+   * YOUR OWN SEAT OR REPORTING LINE CHANGED (§10).
+   *
+   * Goes to the person affected AND their new manager - §10 says "notify the
+   * person and their manager", and the manager half is the one that is easy to
+   * skip and worst to miss: somebody acquiring a report without being told is
+   * how a new joiner's first week has nobody in it.
+   *
+   * Raised by a move, an assignment and an unassignment. NOT by a title or
+   * responsibility edit, which would make this fire on every typo fix.
+   */
+  "reporting_change",
+  /**
+   * A CONTRACT IS RUNNING OUT (§10/§14: 60 / 30 / 7 days).
+   *
+   * `dedupeKey` carries the offset that was crossed, not the date, so the
+   * sweep produces exactly three notifications over a contract's last two
+   * months instead of one a day - `reminderOffsetFor` returns the TIGHTEST
+   * window for this reason.
+   */
+  "contract_expiring",
+  /**
+   * A PROBATION PERIOD IS ENDING (§10/§14: 14 / 3 days).
+   *
+   * Separate from `contract_expiring` because the action is the opposite one.
+   * An expiring contract needs renewing or letting go; a probation ending
+   * needs a DECISION recorded, and a business that misses it has confirmed
+   * somebody by default.
+   */
+  "probation_ending",
+  /**
+   * ── The finance module's two (migrations 0172-0176, re-stated by 0179) ──
+   *
+   * `notification-kinds.test.ts` pins this enum against the LAST literal
+   * `notifications_kind_check` in apply order, and that is now **0179**, not
+   * 0177: 0177 rewrote the constraint with an explicit list that could not
+   * contain these two, so 0179 restates the whole list with them in it. Both
+   * halves of that pair have to move together or the test goes red - which is
+   * the mechanism working, and the reason 0179 is a literal restatement rather
+   * than the dynamic append it started as.
+   */
+
+  /**
+   * THE ADVISOR HAS FOUND MONEY GOING MISSING (§12.4).
+   *
+   * Raised to the person closest to it - for a slipped promise that is the
+   * deal's own telecaller, for an unmatched payment the finance handler - and
+   * escalated up the ladder if nobody acknowledges it (§12.5).
+   *
+   * It is suppressed inside QUIET HOURS, but the alert itself is not: the
+   * detector still runs and the inbox still shows it, so an owner opening the
+   * console at 23:00 sees what is wrong while nobody's phone goes off at 02:00
+   * about an instalment. Suppressing detection instead would mean a problem
+   * found at 21:05 is never found.
+   */
+  "finance_alert",
+  /**
+   * AN INCENTIVE STATEMENT IS READY FOR THE PERSON IT BELONGS TO (§10).
+   *
+   * Goes to the earner, never about them to somebody else: §3 is explicit that
+   * "a telecaller must never be able to read another telecaller's pay", and a
+   * notification is as capable of leaking that as an API is.
+   */
+  "finance_payout",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

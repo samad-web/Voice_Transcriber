@@ -152,10 +152,22 @@ describe("ownerTabsFor", () => {
     // "Bookable" joins the Sales strip in Build docs/40 §B3: a resource is
     // reference data about what the business offers, which is what the price
     // list is to a quotation.
+    // The finance back office joins the strip (0172-0176) rather than taking a
+    // rail section of its own: `OWNER_RAIL_MAX_TOP_LEVEL` is 7 and the rail is
+    // already at it, and money sits with Sales anyway - a quote becomes an
+    // invoice becomes a collection.
+    //
+    // TWO entries, not six. The module has six pages; Dues, Payments,
+    // Expenses and the Forecast are reached FROM the Finance page, the same
+    // way the matching queue and the ledger are, so the strip stays readable
+    // and the catalogue's all-or-none href rule is satisfied by prefix (see
+    // `finance_collections` in features.ts).
     expect(tabs?.tabs.map((t) => t.label)).toEqual([
       "Deals",
       "Quotes",
       "Invoices",
+      "Finance",
+      "Money leaks",
       "Price list",
       "Bookable",
     ]);
@@ -216,7 +228,23 @@ describe("ownerSettingsGroupsFor", () => {
   it("lists only the groups and pages the reader may open", () => {
     const groups = ownerSettingsGroupsFor(ownerNavItemsFor("telecaller", false, true, true));
     expect(groups.map((g) => [g.key, g.pages.map((p) => p.item.href)])).toEqual([
-      ["team", ["/owner/devices"]],
+      /**
+       * The organization chart is the ONE page in Settings a telecaller may
+       * open that is not an admin board, and that is deliberate rather than a
+       * missing `ownerRoles`.
+       *
+       * §7 of the org-chart plan is explicit that staff "see the chart, names,
+       * titles, departments, responsibilities and authority" - the module
+       * exists so a new joiner can work out who to ask - and migration 0177
+       * seeds `position:view` to all five system roles to match. Restricting
+       * it here would leave the chart visible to the four people who already
+       * know the answer.
+       *
+       * The restricted half is a tab inside the profile drawer, gated by a
+       * different grid object (`employment_contract`), which the API refuses
+       * before its handler runs. It is not kept out by this list.
+       */
+      ["team", ["/owner/org-chart", "/owner/devices"]],
       ["tools", ["/owner/integrations"]],
     ]);
   });

@@ -19,6 +19,7 @@ import {
   Handshake,
   House,
   Inbox,
+  Landmark,
   Languages,
   Layers,
   LayoutGrid,
@@ -29,6 +30,7 @@ import {
   MessageCircle,
   MessagesSquare,
   Milestone,
+  Network,
   Package,
   Palette,
   Phone,
@@ -369,6 +371,37 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // the quotation it raised: billing a customer is a financial commitment by
     // the business, and the person who negotiated the price should not also be
     // the one who invoices it.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/finance",
+    label: "Finance",
+    icon: Landmark,
+    title: "Finance",
+    context: "Sales",
+    // ── OWNER AND MANAGER, AND NOT THE SALES PERSONA ──────────────────────
+    //
+    // The same stop the invoice entry above draws, for a sharper reason: this
+    // page publishes the floor's collections, every cost, the cash balance and
+    // the burn. A sales persona reads their own deals and quotations; the
+    // business's margin is not theirs to see, and `finance:view` is seeded to
+    // the three admin roles only (0172) so the API would refuse them anyway.
+    //
+    // A telecaller's own version of this - "my sales, my collections, my
+    // incentive" (§11) - is `/owner/my-performance`, which every persona
+    // already has.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/finance/advisor",
+    label: "Money leaks",
+    icon: AlertTriangle,
+    title: "Money-leak inbox",
+    context: "Sales",
+    // The Advisor's own entry rather than a tab on Finance: it is the page
+    // somebody opens BECAUSE a notification sent them, and a destination
+    // reached only through another page's header is one the bell cannot link
+    // to sensibly.
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -720,6 +753,43 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // either of them came here to find.
   },
   {
+    href: "/owner/org-chart",
+    label: "Organization chart",
+    icon: Network,
+    title: "Organization chart",
+    context: "Settings",
+    /*
+     * ── WHY THIS IS IN SETTINGS AND NOT A SECTION OF ITS OWN ────────────────
+     *
+     * The rail holds seven sections and `OWNER_RAIL_MAX_TOP_LEVEL` is 7, so an
+     * eighth - "People", which is what this would want - does not fit without
+     * demoting something somebody uses every day. Settings already holds the
+     * Team group, whose first page is described as "who works here, what each
+     * person can see and do": the org chart is that sentence's structural
+     * half, and it sits directly beneath it as a tab.
+     *
+     * Recorded as a deviation in ORG_CHART_DECISIONS.md §5, because the spec
+     * describes a daily-reference surface rather than a configuration one and
+     * this placement undersells it. The chart is reachable in one more click
+     * than it deserves; the alternative was a rail that no longer fits.
+     *
+     * ── EVERY PERSONA, DELIBERATELY ─────────────────────────────────────────
+     *
+     * No `ownerRoles`, so a telecaller and a viewer see it too - which is the
+     * one entry in the Settings section that is not an admin board. §7 is
+     * explicit that staff "see the chart, names, titles, departments,
+     * responsibilities and authority", and 0177 seeds `position:view` to all
+     * five system roles to match. A new joiner working out who to ask is the
+     * module's reason to exist, and hiding it from them would leave it visible
+     * to the four people who already know.
+     *
+     * The restricted half is not hidden by the nav - it is a tab inside the
+     * profile drawer that the API redacts for anybody without an
+     * `employment_contract` grant. Hiding a nav row is not a permission; see
+     * `requireFeature`'s own note on why a bookmark still resolves.
+     */
+  },
+  {
     href: "/owner/settings/attendance",
     label: "Attendance",
     icon: CalendarClock,
@@ -870,6 +940,27 @@ const CRM_GATED_HREFS = [
   "/owner/products",
   "/owner/quotations",
   "/owner/invoices",
+  // ── The finance back office (0172-0176), and why it is on THIS list ─────
+  //
+  // Finance has its own entitlement - a `finance` OrgModule, off for every
+  // existing tenant - so it would be reasonable to expect it to be gated on
+  // that alone. It is on both, because its SPINE is `deals`: a payment
+  // schedule hangs off a deal, the incentive calculation credits the deal's
+  // owner, and every collections figure is "what this deal owes". A tenant
+  // with finance and no CRM has no deals, so these pages would be a dashboard
+  // of zeros with nothing that could create a non-zero.
+  //
+  // It also restores a property this file relies on. `sales` is a
+  // CRM_PRIMARY_SECTION, so `crmPrimary` promotes it - and the promotion is a
+  // no-op today only because the section is EMPTY once the CRM is off. Adding
+  // a non-CRM-gated page to `sales` quietly broke that, which nav.test.ts
+  // caught on the first run: the two orderings stopped agreeing.
+  "/owner/finance",
+  "/owner/finance/dues",
+  "/owner/finance/payments",
+  "/owner/finance/expenses",
+  "/owner/finance/forecast",
+  "/owner/finance/advisor",
   "/owner/reports",
   // Response & Follow-ups (migration 0090) reads `leads` and `tasks` behind the
   // same `deal:view` gate, so it belongs on this list for the same reason the
@@ -922,6 +1013,7 @@ export const OWNER_NAV_SECTIONS = [
   { key: "leads", label: "Leads" },
   { key: "customers", label: "Customers" },
   { key: "sales", label: "Sales" },
+
   { key: "conversations", label: "Conversations" },
   { key: "reports", label: "Reports" },
   { key: "settings", label: "Settings" },
@@ -978,6 +1070,10 @@ export const OWNER_SETTINGS_GROUPS: readonly {
     label: "Team",
     pages: [
       { href: "/owner/staff", blurb: "Who works here, what each person can see and do, and how they are doing." },
+      {
+        href: "/owner/org-chart",
+        blurb: "Who reports to whom, what each role is responsible for and what it may approve.",
+      },
       { href: "/owner/devices", blurb: "The phones that record calls, and whether each one has checked in." },
       {
         href: "/owner/settings/attendance",
@@ -1086,6 +1182,29 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/deals": "sales",
   "/owner/quotations": "sales",
   "/owner/invoices": "sales",
+  // The finance back office (0172-0176). Under `sales` rather than a rail
+  // section of its own: the 7-entry rail cap stands, and money genuinely sits
+  // with Sales - a quote becomes an invoice becomes a collection, and splitting
+  // the last step into its own section would put two halves of one job in two
+  // places.
+  // ── The finance back office (0172-0176) ──
+  //
+  // Under `sales`, not a section of its own: `OWNER_RAIL_MAX_TOP_LEVEL` is 7
+  // and the rail is already at it, so an eighth section would demote something
+  // people use daily - the same refusal the Organization chart entry records.
+  // Money sits with Sales anyway: a quote becomes an invoice becomes a
+  // collection.
+  //
+  // Only TWO of these six are rail entries (Finance and Money leaks). The
+  // other four are filed here so their breadcrumb and Back button know where
+  // they live, and are reached from the Finance page's own links - which is
+  // how the matching queue and the ledger work too.
+  "/owner/finance": "sales",
+  "/owner/finance/dues": "sales",
+  "/owner/finance/payments": "sales",
+  "/owner/finance/expenses": "sales",
+  "/owner/finance/forecast": "sales",
+  "/owner/finance/advisor": "sales",
   "/owner/products": "sales",
   // Reference data beside the price list (Build docs/40 §B3): what the
   // business books, as opposed to what it charges for.

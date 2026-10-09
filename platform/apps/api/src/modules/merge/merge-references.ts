@@ -80,6 +80,13 @@ export const MERGE_REFERENCES: Record<MergeObjectType, MergeReference[]> = {
     // reached it would see a blank record and skip it.
     { table: "appointments", column: "contact_id", kind: "simple" },
     { table: "dial_queue_items", column: "contact_id", kind: "simple" },
+    // The finance module (0173). `simple`, and this one is not a judgement
+    // call: money received from a person is money received from that person.
+    // Left on the tombstone, the surviving contact would read as never having
+    // paid - so the dues list would chase them for an instalment that is
+    // settled, and "collected" would be attributed to a record nothing links
+    // to any more.
+    { table: "finance_payments", column: "contact_id", kind: "simple" },
   ],
   account: [
     { table: "contacts", column: "account_id", kind: "simple" },
@@ -89,6 +96,9 @@ export const MERGE_REFERENCES: Record<MergeObjectType, MergeReference[]> = {
     { table: "invoices", column: "account_id", kind: "simple" },
     { table: "interactions", column: "account_id", kind: "simple" },
     { table: "account_custom_field_values", column: "account_id", kind: "pair", key: "field_id" },
+    // Same reasoning as the contact side, and the same consequence if it is
+    // skipped: a company's receipts have to follow the company.
+    { table: "finance_payments", column: "account_id", kind: "simple" },
   ],
 };
 

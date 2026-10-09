@@ -97,3 +97,28 @@ export * from "./web-forms";
 export * from "./resources";
 export * from "./appointments";
 export * from "./partners";
+
+// The finance module (Build docs/finance-section-build-plan). Five files, in
+// dependency order: `money` depends on nothing and everything else depends on
+// it, which is the whole point of it existing separately - see its header for
+// why money arithmetic may not happen in doubles.
+//
+// `money` also now owns `ratio`, which `call-insights.ts` used to define and
+// re-exports from here. One definition, because §11 requires every finance
+// rate to have exactly one, and a second copy in the barrel would be a name
+// collision rather than a silent divergence - which is the only good kind.
+export * from "./money";
+export * from "./finance";
+export * from "./finance-stats";
+export * from "./finance-advisor";
+export * from "./finance-detectors";
+export * from "./finance-metrics";
+
+// The organization chart (Build docs/org-chart-build-plan.md, migrations
+// 0177/0178). Two files, in dependency order: `org-chart` owns the vocabulary
+// and the schemas, `org-chart-tree` the cycle check and the layout. Both are
+// in the barrel because three consumers need them - the API for the integrity
+// rules, the console for the canvas, and the PDF exporter for a layout that
+// has to match the one on screen exactly.
+export * from "./org-chart";
+export * from "./org-chart-tree";

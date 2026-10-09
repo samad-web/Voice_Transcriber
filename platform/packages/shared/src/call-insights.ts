@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { formatWait } from "./missed-calls";
+// Used throughout this file AND re-exported from it - see the note at the
+// `export { ratio }` below for why it no longer lives here.
+import { ratio } from "./money";
 
 /**
  * Call insights - the floor-wide read of every recorded call in a date range,
@@ -334,10 +337,18 @@ export interface CallInsightsReport {
 
 // ── Derived figures ─────────────────────────────────────────────────────────
 
-/** n / d, or null when there is nothing to divide by. Never NaN, never Infinity. */
-export function ratio(n: number, d: number): number | null {
-  return d > 0 && Number.isFinite(n) ? n / d : null;
-}
+/**
+ * n / d, or null when there is nothing to divide by. Never NaN, never Infinity.
+ *
+ * RE-EXPORTED, not defined here any more. The finance module needs the same
+ * helper for every rate metric it publishes (§11: each metric has one
+ * definition and one code path), and two functions with this name in the
+ * barrel is a name collision - so it moved to `money.ts`, where the rest of
+ * the "a rate with no denominator is null, not zero" reasoning now lives.
+ * Semantics are byte-for-byte what they were; every existing caller here and
+ * in the insights PDF keeps working.
+ */
+export { ratio };
 
 export interface CallInsightsKpis {
   /** Connected / all calls. */

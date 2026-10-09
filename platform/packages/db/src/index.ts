@@ -16,6 +16,14 @@ export * from "./crm-projection";
 export * from "./lead-stage-history";
 export * from "./lead-boards";
 export * from "./call-lead-link";
+// The finance module's one aggregation. Here rather than in the API because
+// three processes need the same definition of "collected" - see its header.
+export * from "./finance-rollup";
+// The connector framework (§7). Here rather than in the API because the
+// webhook stores a delivery and the WORKER normalizes it - two processes, one
+// mapper, see finance-connectors.ts' header.
+export * from "./finance-connectors";
+export * from "./finance-connector-drain";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 

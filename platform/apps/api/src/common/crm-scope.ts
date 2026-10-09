@@ -110,6 +110,44 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   lead: null,
   // A board is org configuration (0136), not a record anybody owns.
   lead_board: null,
+  // The finance back office. In ALL_SCOPE_ONLY_OBJECTS - a ledger entry, a
+  // payment and an expense have no owner, and "my own payment" means nothing.
+  finance: null,
+  // ── THE ONE THAT MATTERS MOST IN THIS TABLE ─────────────────────────────
+  //
+  // §3 of the finance build plan is explicit: "a telecaller must never be able
+  // to read another telecaller's pay or incentive, even by guessing an ID."
+  // This column is what makes that true by QUERY rather than by convention -
+  // 0172 seeds `workspace_member` an `incentive:view` grant at `owned` scope,
+  // and the guard's persona intersection narrows a telecaller or sales persona
+  // to `owned` even if an admin later widens the grant to `all`.
+  //
+  // `incentive_payouts.user_id` is NOT NULL for exactly this reason: a payout
+  // with no owner would be invisible to every scoped role, which sounds safe
+  // and is actually a payout nobody can find.
+  incentive: "user_id",
+  // A seat has no owner. In ALL_SCOPE_ONLY_OBJECTS, so the console never
+  // offers an `owned` scope for it - "my own position" could only mean the one
+  // node somebody holds, and a chart of one node is not a chart. §7's
+  // manager-sees-their-branch is a SUBTREE, enforced in the org-chart
+  // controller against the reporting tree; do not "fix" this null by pointing
+  // it at an assignment, because the fallthrough in `ownerPredicate` returns
+  // null (no narrowing) and a role granted `owned` would read the whole chart
+  // while looking restricted.
+  position: null,
+  // ── THE CLEAREST `owned` CASE IN THIS TABLE ──────────────────────────────
+  //
+  // Every other configuration-shaped object here is null. This one is not:
+  // "my own contract" is exactly what an `owned` grant should mean, and
+  // `employment_contracts.user_id` is NOT NULL so no contract is invisible to
+  // every scoped role.
+  //
+  // 0178 seeds NOTHING for `workspace_member` or `viewer` - §7's default is
+  // that staff see no contract data at all, and M7's acceptance is a negative
+  // API test. This column is what makes the opposite choice available to an
+  // org that wants it: granting `employment_contract:view` at `owned` scope
+  // then means "your own", by WHERE clause rather than by UI.
+  employment_contract: "user_id",
 };
 
 /**

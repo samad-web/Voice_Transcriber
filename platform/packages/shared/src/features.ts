@@ -75,6 +75,10 @@ export const FeatureKey = z.enum([
   "products",
   "quotations",
   "invoices",
+  // The finance back office. TWO keys, both on the `finance` module - see
+  // their specs below for why it is two and not one or three.
+  "finance_collections",
+  "finance_advisor",
   // ── Insights ──
   "reports",
   "report_builder",
@@ -97,6 +101,7 @@ export const FeatureKey = z.enum([
   "handsets",
   "branding",
   "partner_portal",
+  "org_chart",
 ]);
 export type FeatureKey = z.infer<typeof FeatureKey>;
 
@@ -453,6 +458,60 @@ export const FEATURES: FeatureSpec[] = [
     requires: ["quotations"],
     defaultEnabled: true,
   },
+  /**
+   * The finance back office (Build docs/finance-section-build-plan, migrations
+   * 0172-0176). TWO keys, and the count is the catalogue's own rule talking.
+   *
+   * ── WHY NOT ONE ──────────────────────────────────────────────────────────
+   *
+   * The Advisor is the half that NOTIFIES people. A floor that wants the
+   * numbers without the nagging should be able to have them, and a client who
+   * switches off "Finance" to stop the alerts would lose their collections
+   * list with it.
+   *
+   * ── AND WHY NOT THREE ────────────────────────────────────────────────────
+   *
+   * It was three - collections, costs, Advisor - and `feature-gating.test.ts`
+   * refused it, correctly. The catalogue requires a feature's hrefs to be ALL
+   * navigable or none, and `finance_costs` governed one page
+   * (`/owner/finance/expenses`) that has no rail entry of its own: the finance
+   * module has six pages, the rail's seven top-level entries are already full
+   * (`OWNER_RAIL_MAX_TOP_LEVEL`), and six more tabs would make the Sales strip
+   * eleven long.
+   *
+   * So the two keys name the two pages that ARE in the rail, and the other
+   * four are governed by prefix - `featureForPath` resolves
+   * `/owner/finance/expenses` to `/owner/finance` and therefore to
+   * `finance_collections`. Switching collections off takes the whole back
+   * office with it, which is the honest reading of that switch anyway.
+   */
+  {
+    key: "finance_collections",
+    label: "Finance & collections",
+    blurb:
+      "Instalment plans, every payment in one place whatever it arrived by, the dues list, " +
+      "expenses and the margin left after them.",
+    module: "finance",
+    group: "sales",
+    // The rail entry. Dues, payments, expenses and the forecast all sit under
+    // this path and are governed by it through `featureForPath`'s prefix
+    // match, so they are reached from the Finance page rather than from four
+    // more tabs.
+    hrefs: ["/owner/finance"],
+    defaultEnabled: true,
+  },
+  {
+    key: "finance_advisor",
+    label: "Finance Advisor",
+    blurb:
+      "The money-leak inbox and the cash forecast. It tells your own people what needs " +
+      "chasing; it never messages a customer.",
+    module: "finance",
+    group: "sales",
+    hrefs: ["/owner/finance/advisor"],
+    requires: ["finance_collections"],
+    defaultEnabled: true,
+  },
 
   // ── Insights ──────────────────────────────────────────────────────────────
   {
@@ -692,6 +751,35 @@ export const FEATURES: FeatureSpec[] = [
     // own hostname. The 0163 RESTRICTIVE partner wall is untouched and stays the
     // security boundary; this key is reachability. Build docs/40 §A2.
     defaultEnabled: false,
+  },
+  {
+    key: "org_chart",
+    label: "Organization chart",
+    blurb:
+      "Who reports to whom, what each role is responsible for and what it may approve - plus employment contracts.",
+    // `aura`, following `PERMISSION_OBJECT_MODULE.position` rather than the
+    // feature's own feel, because that map is what the routes actually enforce.
+    // Every business has a team and a reporting line, CRM or not - filing this
+    // under `crm` would offer the page to a recorder-only tenant whose every
+    // request to it the grid refuses, which is the `followups` mistake.
+    module: "aura",
+    group: "workspace",
+    hrefs: ["/owner/org-chart"],
+    // ── ON BY DEFAULT, WHICH IS A DECISION WORTH DEFENDING ──────────────────
+    //
+    // It means every existing tenant gains a Settings entry on deploy day,
+    // opening onto an empty chart. That is deliberate, and §5.3 is why: the
+    // first-run state is a guided "create your first position (the owner)"
+    // action, not a blank canvas. A feature that arrives switched off is a
+    // feature nobody discovers, and this one has nothing to configure before
+    // it is useful.
+    //
+    // The restricted half is NOT gated by this switch and must not be: a
+    // telecaller is kept out of contracts by having no `employment_contract`
+    // grant (0178), which is security. This key is reachability - doc 40's
+    // distinction, and the reason a feature is the right axis here and a
+    // module is not.
+    defaultEnabled: true,
   },
 ];
 

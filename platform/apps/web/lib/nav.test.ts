@@ -224,17 +224,42 @@ describe("ownerNavItemsFor - the client's feature switches", () => {
     // so adding one is a deliberate edit here and not a silent change in what
     // this test claims.
     const shipOff = ["/owner/dialer", "/owner/resources", "/owner/appointments", "/owner/forms"];
+    // ── A SECOND MECHANISM, AND NOT THE SAME ONE ──────────────────────────
+    //
+    // These are hidden because `withOverrides` grants aura/crm/call_intel/wasi
+    // and NOT `finance` - a page whose feature's MODULE the tenant does not
+    // have reads as `unavailable`, which is a different thing from a feature
+    // that ships off. The distinction matters: a default-off feature is a
+    // switch this client could throw, and these are not - an operator has to
+    // provision the module first.
+    //
+    // Listed rather than derived, for the reason `shipOff` is: adding one is a
+    // deliberate edit here and not a silent change in what this test claims.
+    const noModule = ["/owner/finance", "/owner/finance/advisor"];
     const withNoPreference = withOverrides("owner", {});
     const unfiltered = hrefs("owner", false, true, true);
-    expect(withNoPreference).toEqual(unfiltered.filter((href) => !shipOff.includes(href)));
+    expect(withNoPreference).toEqual(
+      unfiltered.filter((href) => !shipOff.includes(href) && !noModule.includes(href)),
+    );
+    // Switching the features on changes nothing while the module is absent -
+    // which is the half of the module gate worth asserting, because a feature
+    // override that could resurrect an unprovisioned page would be a client
+    // granting themselves something they have not bought.
+    expect(
+      withOverrides("owner", { finance_collections: true, finance_advisor: true }),
+    ).toEqual(withNoPreference);
     // Stated separately so the reason is visible rather than inferred from a
     // filter: each is absent because its feature is off, and switching them on
     // brings them back in the same positions.
     for (const href of shipOff) expect(withNoPreference).not.toContain(href);
+    for (const href of noModule) expect(withNoPreference).not.toContain(href);
     expect(
       withOverrides("owner", { dialer: true, resources: true, appointments: true, web_forms: true }),
     ).toEqual(
-      unfiltered,
+      // Still minus the finance pages: this fixture grants no `finance`
+      // module, and switching the four default-off FEATURES on cannot
+      // provision a module.
+      unfiltered.filter((href) => !noModule.includes(href)),
     );
   });
 

@@ -182,6 +182,17 @@ import { DncController } from "../modules/suppression/dnc.controller";
 import { NumbersController } from "../modules/suppression/numbers.controller";
 import { PublicFormsController } from "../modules/web-forms/public-forms.controller";
 import { WebFormsController } from "../modules/web-forms/web-forms.controller";
+import { AdvisorController } from "../modules/finance/advisor.controller";
+import { ConnectorsController } from "../modules/finance/connectors.controller";
+import { DealTemplatesController } from "../modules/finance/deal-templates.controller";
+import { ExpensesController } from "../modules/finance/expenses.controller";
+import { FinanceDashboardController } from "../modules/finance/finance-dashboard.controller";
+import { FinancePaymentsController } from "../modules/finance/finance-payments.controller";
+import { FinanceWebhookController } from "../modules/finance/finance-webhook.controller";
+import { IncentivesController } from "../modules/finance/incentives.controller";
+import { OrgChartContractsController } from "../modules/org-chart/org-chart-contracts.controller";
+import { OrgChartController } from "../modules/org-chart/org-chart.controller";
+import { OrgChartPositionsController } from "../modules/org-chart/org-chart-positions.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -502,6 +513,36 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   PartnersController,
   PortalController,
   PortalInvitesController,
+  // 0172-0176 (Build docs/finance-section-build-plan): the finance back
+  // office. Seven controllers, every one of them tenant-scoped on the new
+  // `finance`/`incentive` grid objects - EXCEPT FinanceWebhookController,
+  // which carries no guards at all and is listed in UNGUARDED below. Its
+  // authentication is an HMAC over the raw body, verified against the
+  // connector account named in its own path before the body is parsed; a
+  // gateway cannot present an admin key. Same arrangement, same reason, as
+  // RazorpayWebhookController and the messaging webhook above it.
+  //
+  // Two of ConnectorsController's routes additionally carry OwnerRoleGuard,
+  // because they are the ones a gateway SECRET arrives on and §3 gives the
+  // finance handler everything except connector secrets - a grid cell is the
+  // wrong shape for "nobody but the owner, ever".
+  DealTemplatesController,
+  FinancePaymentsController,
+  ConnectorsController,
+  FinanceWebhookController,
+  ExpensesController,
+  IncentivesController,
+  FinanceDashboardController,
+  AdvisorController,
+  // 0177-0178 (Build docs/org-chart-build-plan): the organization chart. All
+  // three carry AdminKeyGuard + TenantGuard + CrmPermissionsGuard, over TWO
+  // grid objects - `position` on the first two, `employment_contract` on the
+  // contracts controller. That split is the whole of §7's "a telecaller sees
+  // the chart and no contract data", so a decorator copied from the wrong
+  // neighbour here would be the module's one serious failure mode.
+  OrgChartController,
+  OrgChartPositionsController,
+  OrgChartContractsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -575,6 +616,20 @@ const UNGUARDED = [
   // org is known. Always 200, so an ignored delivery is not retried for three
   // days.
   "POST /webhooks/stripe",
+  // The finance module's connector webhook (0174). A THIRD gateway endpoint on
+  // the same terms as the two above, with one improvement worth stating: the
+  // connector account is named in the PATH, so the org is known from the URL
+  // before the body is touched - 0060's route has to resolve it FROM the
+  // payload, which is why `payment_webhook_events` had to be exempt from RLS
+  // and this one does not.
+  //
+  // It verifies, STORES the raw delivery and acks (§7.2.1-2); the normalizer
+  // runs in the worker from the stored row, which is what makes §7.2.5's
+  // replay-after-a-bug-fix possible. An unknown account, a missing secret and
+  // a bad signature all return the same 202, so the caller learns nothing -
+  // and a rejected delivery is still stored, with `signature_ok = false`,
+  // because it is the evidence somebody wants when a secret has been rotated.
+  "POST /finance/webhooks/:connectorAccountId",
   // Meta's own OAuth redirect lands here with no Aura credentials - verifies
   // itself via the signed `state` param instead (meta-client.ts). Since doc 28
   // it answers only with a 302 into the console, to a URL built from
@@ -1335,6 +1390,28 @@ const OWNER_ROLE_ROUTES = [
   //
   // Automation rules, custom-field definitions and analytics: operator-console
   // surfaces today; a person must be owner or manager.
+  // ── The two finance routes a gateway SECRET arrives on (0174) ──
+  //
+  // ABOVE the `GET /automations` boundary, and that placement is the whole
+  // point: OPERATOR_MAY_CALL_ROUTES below is a TAIL SLICE of this array from
+  // that entry onward, so anything appended after it is asserted to carry
+  // `@OperatorMayCall()`. These two must not - a platform operator holding the
+  // bare admin key should not be able to write a client's gateway credentials,
+  // and appending them at the end of the list (which is where they naturally
+  // went first) silently claimed exactly that.
+  //
+  // §3 of the finance build plan gives the finance handler everything "(no
+  // connector secrets)". A permission-grid cell is the wrong shape for that -
+  // it can be ticked - so these two carry OwnerRoleGuard with
+  // `@RequireOwnerRole("owner")` on top of `finance:create`, and they are the
+  // only routes in the module that do.
+  //
+  // `disconnect` is here as well as `connect` because it CLEARS the stored
+  // credentials. It does not delete the account: that would cascade the raw
+  // event store §7.2.5's replay depends on, and SET NULL every payment's
+  // connector, making the gateway a year of money came through unknowable.
+  "POST /finance/connectors",
+  "POST /finance/connectors/:id/disconnect",
   "GET /automations",
   "GET /automations/runs",
   "POST /automations/dry-run",
@@ -1889,6 +1966,171 @@ const CRM_PERMISSION_ROUTES = [
   "POST /partners/invites/:inviteId/revoke",
   "PATCH /partners/:id",
   "PATCH /partners/submissions/:id",
+  // ── The finance back office (0172-0176) ──
+  //
+  // Two new objects, both filed under the new `finance` module in
+  // PERMISSION_OBJECT_MODULE - so a tenant that has not bought the back office
+  // is denied all 54 of these exactly as if the grant were missing.
+  //
+  // `finance` is whole-org: it is in ALL_SCOPE_ONLY_OBJECTS, no route below
+  // reads @RecordScope for it, and none should ever be added - a ledger entry
+  // has no owner and an `owned` grant would match nothing while looking
+  // configured.
+  //
+  // `incentive` is the opposite, and it is the reason the two were split.
+  // §3 of the build plan: "a telecaller must never be able to read another
+  // telecaller's pay or incentive, even by guessing an ID." The three payout
+  // routes apply `scopeClause("incentive", …)` against
+  // `incentive_payouts.user_id`, and the single-payout read applies it too -
+  // which is the half that answers the guessing. It returns 404 rather than
+  // 403, because a 403 on a specific id confirms the id exists.
+  //
+  // NOTHING here is a delete of money. §6.3 is a MUST - never edit or delete a
+  // posted payment or ledger row - so the writes are reversals, supersessions
+  // and status moves, and `ENFORCED_PERMISSIONS` has no `finance:delete`.
+  // `DELETE /finance/periods/:month` is the one DELETE verb and it re-opens a
+  // closed month; it takes `finance:create` rather than `edit` for the same
+  // reason closing one does - it is a decision about the books.
+  "DELETE /finance/periods/:month",
+  "GET /finance/advisor/alerts",
+  "GET /finance/advisor/alerts/:id",
+  "GET /finance/advisor/forecast",
+  "GET /finance/advisor/leaks",
+  "GET /finance/advisor/rules",
+  "GET /finance/advisor/suggestions",
+  "GET /finance/advisor/totals",
+  "GET /finance/breakdown",
+  "GET /finance/connectors",
+  "GET /finance/connectors/:id/events",
+  "GET /finance/connectors/available",
+  "GET /finance/cost-drivers",
+  "GET /finance/deal-templates",
+  "GET /finance/deal-templates/:id",
+  "GET /finance/dues",
+  "GET /finance/expenses",
+  "GET /finance/expenses/summary",
+  "GET /finance/incentive-plans",
+  "GET /finance/ledger",
+  // The ONE `finance:export` route in the module: a client's whole money
+  // history leaving the system is a different act from reading it on a
+  // screen, and `viewer` holds `view` without `export` for exactly that
+  // reason. Bounded to a page - a year goes through the export engine (0148),
+  // which does it off the request thread.
+  "GET /finance/ledger/export",
+  "GET /finance/matching/queue",
+  // Deliberately NOT `scope=user` on the overview: that route publishes
+  // org-wide costs, the cash balance and the burn, none of which a telecaller
+  // should see. A narrower route with a narrower response is the only version
+  // where the restriction is structural.
+  "GET /finance/my-money",
+  "GET /finance/overview",
+  "GET /finance/payments",
+  "GET /finance/payouts",
+  "GET /finance/payouts/:id",
+  "GET /finance/periods",
+  "PATCH /finance/advisor/alerts/:id",
+  "PATCH /finance/advisor/rules/:code",
+  // §12.5: "the owner approves; thresholds are never changed silently." This
+  // is the ONLY path from a suggestion to a stored threshold - nothing in the
+  // worker may apply one, which is why the suggestion is a row with a status.
+  "PATCH /finance/advisor/suggestions/:id",
+  // An edit to a template INSERTS a new version (§5) rather than changing the
+  // one existing deals point at. Only `active` is a true update.
+  "PATCH /finance/deal-templates/:id",
+  "PATCH /finance/dues/:id/promise",
+  "PATCH /finance/expenses/:id",
+  // Mounted on `finance:edit` so a manager can approve, then checks the
+  // AMOUNT and refuses above the org's limit unless the caller also holds
+  // `finance:create`. Two routes - one per grant - would make the console
+  // guess which to call, and a wrong guess is a 403 on a legitimate approval.
+  "PATCH /finance/expenses/:id/approve",
+  "PATCH /finance/incentive-plans/:id",
+  // §6.2's cheque clearing and cash verification. The second-person rule is
+  // enforced INSIDE the handler, not by this decorator: what has to be true is
+  // that the ACTOR of this request is not the one who recorded the payment,
+  // and only the request knows who that is.
+  "PATCH /finance/payments/:id/verify",
+  // Same shape: `incentive:edit` gates the route, and the handler refuses
+  // when the approver is the payee. A grant cannot express "not your own".
+  "PATCH /finance/payouts/:id/status",
+  "POST /finance/connectors",
+  "POST /finance/connectors/:id/disconnect",
+  "POST /finance/connectors/:id/reconcile",
+  "POST /finance/connectors/:id/replay",
+  "POST /finance/connectors/:id/test",
+  "POST /finance/cost-drivers",
+  "POST /finance/deal-templates",
+  "POST /finance/deal-templates/:id/preview",
+  "POST /finance/deals/:dealId/schedule",
+  "POST /finance/expenses",
+  "POST /finance/expenses/:id/reverse",
+  "POST /finance/incentive-plans",
+  "POST /finance/payments",
+  "POST /finance/payments/:id/match",
+  "POST /finance/payments/:id/refund",
+  "POST /finance/payments/:id/reverse",
+  "POST /finance/payouts/calculate",
+  "POST /finance/periods/:month",
+  // ── The organization chart (0177/0178) ──
+  //
+  // THIRTY-SIX routes over TWO grid objects, and the division is the module's
+  // whole security story. Everything under `/org-chart/contracts` is
+  // `employment_contract:*`, seeded to the three admin roles and nobody else;
+  // everything else is `position:*`, whose `view` reaches every system role
+  // including `viewer` because §7 makes the chart floor information.
+  //
+  // `position` and `employment_contract` are both filed under the `aura`
+  // module rather than `crm` - like `lead`, and for the same reason: every
+  // business has a team and a reporting line whether or not it bought a
+  // pipeline, so a recorder-only tenant must keep both.
+  //
+  // `GET /org-chart/export.pdf` is on the list, which is worth stating: an
+  // export route that skipped the guard would hand the whole structure to
+  // anybody with the URL, and it is the one route here whose response is a
+  // file rather than JSON.
+  "DELETE /org-chart/departments/:id",
+  "DELETE /org-chart/positions/:id",
+  "DELETE /org-chart/positions/:id/dotted-lines/:managerId",
+  "DELETE /org-chart/teams/:id",
+  "GET /org-chart",
+  "GET /org-chart/analytics",
+  "GET /org-chart/changes",
+  "GET /org-chart/contracts",
+  "GET /org-chart/contracts/:id",
+  "GET /org-chart/contracts/:id/access-log",
+  "GET /org-chart/contracts/documents/:documentId/url",
+  "GET /org-chart/contracts/reminders/upcoming",
+  "GET /org-chart/departments",
+  "GET /org-chart/directory",
+  "GET /org-chart/export.pdf",
+  "GET /org-chart/positions/:id",
+  "GET /org-chart/settings",
+  "PATCH /org-chart/contracts/:id",
+  "PATCH /org-chart/departments/:id",
+  "PATCH /org-chart/positions/:id",
+  "PATCH /org-chart/teams/:id",
+  "POST /org-chart/contracts",
+  "POST /org-chart/contracts/:id/documents",
+  "POST /org-chart/departments",
+  "POST /org-chart/positions",
+  "POST /org-chart/positions/:id/assign",
+  "POST /org-chart/positions/:id/dotted-lines",
+  "POST /org-chart/positions/:id/move",
+  "POST /org-chart/positions/:id/unassign",
+  "POST /org-chart/teams",
+  "PUT /org-chart/positions/:id/authority",
+  "PUT /org-chart/positions/:id/kpi-defaults",
+  "PUT /org-chart/positions/:id/responsibilities",
+  // §14's manager-edit setting. Guarded on `position:VIEW`, not `edit`, and
+  // that is deliberate rather than a slip: the authorization is the
+  // relationship check inside the handler ("is this seat one of my own direct
+  // reports, and has the org turned this on"), which a route-level guard
+  // cannot express. Dropping the admin route's `edit` guard to accommodate it
+  // would have been the alternative, and that is how a route that looks
+  // guarded stops being.
+  "PUT /org-chart/positions/:id/responsibilities/as-manager",
+  "PUT /org-chart/positions/:id/skills",
+  "PUT /org-chart/settings",
 ];
 
 interface Route {
@@ -2017,7 +2259,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 614 routes, partitioned 510 tenant / 52 cross-tenant / 18 device / 21 unguarded / 1 internal / 7 portal", () => {
+  it("has 707 routes, partitioned 602 tenant / 52 cross-tenant / 18 device / 22 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2207,8 +2449,18 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 614: plus campaign spend by month (0171) - the read, the upsert and the
     // delete. All tenant-scoped; spend is org configuration, and there is no
     // operator surface that enters it.
-    expect(ROUTES).toHaveLength(614);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(614);
+    // 671: plus the finance back office's 57 (0172-0176). 56 tenant-scoped on
+    // the new `finance`/`incentive` grid objects, and ONE unguarded - the
+    // connector webhook, whose credential is an HMAC over the raw body rather
+    // than an admin key. Two of the 56 additionally carry OwnerRoleGuard,
+    // because they are the routes a gateway secret arrives on.
+    // 707: plus the org chart's 36 (0177/0178). ALL tenant-scoped and all on
+    // the grid - 14 on the chart controller, 14 on positions, 8 on contracts.
+    // The module has no unguarded route and no operator surface: a tenant's
+    // management structure and its staff contracts are read through the
+    // tenant's own console or not at all.
+    expect(ROUTES).toHaveLength(707);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(707);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2275,7 +2527,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 470: plus the vault's reveal and the four DNC-list routes (0157/0158).
     // 507: plus the two /dialer/settings routes (Build docs/40 §B1).
     // 510: plus campaign spend by month's three (0171).
-    expect(tenantScoped).toHaveLength(510);
+    // 566: plus the finance module's 56. Every route in the module except its
+    // webhook, which has no guards at all.
+    // 602: plus the org chart's 36 (0177/0178) - every route in the module.
+    expect(tenantScoped).toHaveLength(602);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
@@ -2287,10 +2542,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(614); // = ROUTES.length: every route in exactly one class
+    ).toBe(707); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 555 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 611 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2339,7 +2594,9 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // in that order, which the loop below is what actually proves.
     // 552: plus the two /dialer/settings routes (Build docs/40 §B1).
     // 555: plus campaign spend by month's three (0171).
-    expect(principalRoutes).toHaveLength(555);
+    // 647: plus the org chart's 36, all three controllers carrying
+    // AdminKeyGuard, TenantGuard, CrmPermissionsGuard in that order.
+    expect(principalRoutes).toHaveLength(647);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

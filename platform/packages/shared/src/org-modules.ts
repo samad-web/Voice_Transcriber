@@ -30,8 +30,21 @@ import { z } from "zod";
  * word-for-word account of a customer's phone call is a decision per client
  * contract, not a product default. Off for every tenant until an operator
  * turns it on, including tenants that already have CRM.
+ *
+ * "finance" is the third live toggle (Build docs/finance-section-build-plan,
+ * migration 0172). It gates the back office - deal payment schedules, the
+ * canonical payment record, the ledger, expenses, incentives, the matching
+ * queue and the Finance Advisor. A module rather than a feature because it is
+ * a separately-sold back office, and because a tenant that had it and lost it
+ * keeps its `role_permissions` rows: without the module join in
+ * `CrmPermissionsGuard`, those rows would go on granting access to the ledger
+ * of a product the client no longer pays for.
+ *
+ * OFF for every existing tenant, including those with CRM. Invoicing
+ * correctness stays in "crm" - `invoice:*` keeps its module - so turning
+ * finance off never takes somebody's invoices away.
  */
-export const OrgModule = z.enum(["aura", "crm", "wasi", "call_intel"]);
+export const OrgModule = z.enum(["aura", "crm", "wasi", "call_intel", "finance"]);
 export type OrgModule = z.infer<typeof OrgModule>;
 
 export interface OrgModuleSpec {
@@ -55,6 +68,12 @@ export const ORG_MODULES: OrgModuleSpec[] = [
     id: "call_intel",
     label: "Call Intelligence",
     blurb: "Transcripts and the AI read - intent, sentiment, outcome - inside the client's console.",
+  },
+  {
+    id: "finance",
+    label: "Finance",
+    blurb:
+      "Payment schedules, every payment in one place, expenses, incentives and the Finance Advisor.",
   },
   {
     id: "wasi",
