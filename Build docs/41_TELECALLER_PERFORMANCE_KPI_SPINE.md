@@ -414,7 +414,7 @@ Not optional, and each one has cost a round here before:
 
 Written 2026-10-09 against `crm-phases-on-origin` at 061bfe2e.
 
-### Phase 1 — partially built 2026-10-09. E2, E3 and E4 done; E1 not started.
+### Phase 1 — DEPLOYED to production 2026-10-09 (`53409705`). E2, E3 and E4 done; E1 not started.
 
 **E4, per-period marketing spend (G8). Built.**
 
@@ -508,5 +508,31 @@ torn down with `down -v` afterwards).
   every touched file.
 - Not run: the tenant-isolation suite, which is opt-in and was already failing 29 tests on
   fixture drift before this work.
+
+### Production, 2026-10-09
+
+Deployed with sixteen migrations in one go, because prod's ledger was at **0151** while the
+deployed branch was nine commits behind local - so this shipped 0152-0163, 0165, 0166 and 0170
+alongside 0171, i.e. doc 39's whole P0-P6 build, doc 40's gating and the console polish. Most of
+those surfaces are feature-gated off by default, which is what made the batch defensible.
+
+- `pg_dump` taken first: `/opt/aura/backups/pre-0152-0171-20261009-1559.sql.gz` (6 MB). There is
+  still no offsite backup.
+- Ledger now 168 rows, latest `0171_marketing_source_spend.sql`. On prod,
+  `marketing_source_spend` carries `org_isolation` (permissive) and `partner_wall` (restrictive)
+  with RLS enabled AND forced.
+- api, web, worker and marketing each deployed scoped, never bare. `/v1/health` 200, `/admin` 307,
+  marketing 200.
+- The new route proves the new code is actually serving: `GET /v1/marketing-sources/:id/spend`
+  answers **401** where a nonexistent sibling answers 404. A healthy container that never took the
+  new code is the failure this check exists for.
+
+Two live conditions found while verifying, neither caused by this deploy and neither fixed here:
+
+- **`sirahagents.com` and `www` fail TLS with an expired certificate.** They no longer resolve to
+  this VPS at all (`3.146.153.124`, not `187.127.185.220`), so the cert is on another host. The
+  runbook's step-6 target list is stale on this point.
+- **The worker is failing every ASR attempt with Sarvam 402 `insufficient_quota_error`**, retrying
+  5 times per call. Known and pre-existing; calls are not being transcribed on prod right now.
 - One trap re-paid for the record: **backticks inside a SQL template literal terminate it.** Two
   prose backticks in the new CTE's comment produced five TS1005s in a 500-line file.
