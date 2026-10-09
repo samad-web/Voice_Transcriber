@@ -78,10 +78,16 @@ interface OrgRow {
  * exactly as the API's routes are - running detectors for a tenant who cannot
  * see the inbox would fill a table nobody reads and cost every sweep.
  */
+// `status = 'active'`, NOT `deleted_at IS NULL`: `organizations` has no
+// such column. Every other sweep in this directory selects orgs the same
+// way (attendance-alerts.ts, attendance-classify.ts), and the first
+// version of this query threw 42703 on the worker's very first tick -
+// which nothing caught, because a sweep's SQL has no typecheck and the
+// pure detector tests never reach a database.
 async function financeOrgs(): Promise<OrgRow[]> {
   const { rows } = await getAdminPool().query<OrgRow>(
     `SELECT id, reporting_timezone FROM organizations
-      WHERE 'finance' = ANY(enabled_modules) AND deleted_at IS NULL`,
+      WHERE 'finance' = ANY(enabled_modules) AND status = 'active'`,
   );
   return rows;
 }
@@ -410,10 +416,21 @@ async function escalate(client: PoolClient, orgId: string): Promise<number> {
     first_seen_at: Date;
     escalated_to: string | null;
   }>(
+    // `orgId` IS bound. The first version wrote `$1` and passed no parameter
+    // array at all, so every hourly sweep died on "there is no parameter $1" -
+    // AFTER the detectors had run, which aborted their transaction and left
+    // the inbox permanently empty. Nothing caught it: the detectors are tested
+    // as pure functions and a sweep's SQL has no typecheck.
+    //
+    // The predicate is redundant under RLS (`withOrgContext` has already set
+    // `app.org_id`) and is kept because every other query in this file states
+    // its scope, and a reader should not have to know which ones rely on the
+    // policy alone.
     `SELECT id, rule_code, first_seen_at, escalated_to
        FROM advisor_alerts
       WHERE org_id = $1 AND status = 'open'
       ORDER BY first_seen_at`,
+    [orgId],
   );
 
   let escalated = 0;
@@ -1091,15 +1108,18 @@ async function runNightly(client: PoolClient, orgId: string): Promise<void> {
       // agency invoice and `marketing_source_spend` (0171) for the ad spend
       // the console already collects. Reading only one would under-report
       // every source a tenant runs ads on.
-      `WITH window AS (SELECT org_reporting_today() - 56 AS from_date),
+      // `since`, not `window`: WINDOW is a reserved word (the WINDOW clause),
+      // and naming a CTE with it is a syntax error that killed the whole
+      // nightly sweep - every nightly rule, not just this one.
+      `WITH since AS (SELECT org_reporting_today() - 56 AS from_date),
        spend AS (
          SELECT ms.id, ms.name,
-                COALESCE((SELECT sum(e.amount - e.tax) FROM expenses e, window w
+                COALESCE((SELECT sum(e.amount - e.tax) FROM expenses e, since w
                            WHERE e.marketing_source_id = ms.id
                              AND e.approved_at IS NOT NULL
                              AND e.reverses_id IS NULL
                              AND e.incurred_on >= w.from_date), 0)
-              + COALESCE((SELECT sum(mss.amount) FROM marketing_source_spend mss, window w
+              + COALESCE((SELECT sum(mss.amount) FROM marketing_source_spend mss, since w
                            WHERE mss.marketing_source_id = ms.id
                              AND mss.month >= date_trunc('month', w.from_date)), 0) AS cost
            FROM marketing_sources ms
@@ -1107,7 +1127,7 @@ async function runNightly(client: PoolClient, orgId: string): Promise<void> {
        SELECT s.id AS source_id, s.name AS source_name, s.cost::text,
               COALESCE((SELECT sum(fp.amount)
                           FROM finance_payments fp
-                          JOIN deals d ON d.id = fp.deal_id, window w
+                          JOIN deals d ON d.id = fp.deal_id, since w
                          WHERE d.marketing_source_id = s.id
                            AND fp.status IN ('received', 'cheque_cleared', 'partially_refunded')
                            AND fp.received_at >= w.from_date), 0)::text AS revenue,

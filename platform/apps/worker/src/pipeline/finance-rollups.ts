@@ -35,10 +35,16 @@ const RECONCILE_MS = Number(process.env.FINANCE_RECONCILE_INTERVAL_MS ?? 6 * 60 
 /** §7.2.6: how many days back the daily reconciliation compares. */
 const RECONCILE_DAYS = Number(process.env.FINANCE_RECONCILE_DAYS ?? 3);
 
+// `status = 'active'`, NOT `deleted_at IS NULL`: `organizations` has no
+// such column. Every other sweep in this directory selects orgs the same
+// way (attendance-alerts.ts, attendance-classify.ts), and the first
+// version of this query threw 42703 on the worker's very first tick -
+// which nothing caught, because a sweep's SQL has no typecheck and the
+// pure detector tests never reach a database.
 async function financeOrgs(): Promise<string[]> {
   const { rows } = await getAdminPool().query<{ id: string }>(
     `SELECT id FROM organizations
-      WHERE 'finance' = ANY(enabled_modules) AND deleted_at IS NULL`,
+      WHERE 'finance' = ANY(enabled_modules) AND status = 'active'`,
   );
   return rows.map((r) => r.id);
 }
