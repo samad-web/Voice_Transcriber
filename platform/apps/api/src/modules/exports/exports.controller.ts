@@ -32,10 +32,21 @@ import {
   datasetsInSection,
   exportDataset,
   ownerAlertIsInstant,
+  personScopableDatasets,
+  personScopeRefusal,
   redactedColumns,
   visibleColumns,
 } from "@aura/shared";
 import { publishExport } from "@aura/queue";
+// Whose records this caller may export (0188). Imported from @aura/db rather
+// than reimplemented here because the WORKER asks the same question again at
+// render time - see people-visibility.ts's header for why that matters.
+import {
+  exportablePeople,
+  loadPerson,
+  resolvePeopleVisibility,
+  visibilityAllowsTelecaller,
+} from "@aura/db";
 
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { auditActor } from "../../common/audit-actor";
@@ -89,18 +100,61 @@ const CreateBody = z
     section: ExportSection.optional(),
     filters: z.record(z.string(), z.unknown()).optional(),
     columns: z.array(z.string()).max(200).optional(),
+    /**
+     * WHOSE records to export, for `scope: "person"` (0188).
+     *
+     * A telecaller identity, never a user id: that is the column calls, leads,
+     * deals and the rollup all scope on, and `telecallers.user_id` is nullable
+     * - most of a floor has never signed in. Naming a user here would make the
+     * majority of a telecalling team unexportable.
+     */
+    subjectTelecallerId: z.string().uuid().optional(),
   })
   // `dataset`/`filters` on a section or bulk body are REJECTED, not ignored. A
   // caller who sends filters with a section export believes they will be
   // applied, and silently dropping them returns a file that is correct by the
   // schema and wrong by the request.
   .superRefine((body, ctx) => {
+    // The subject belongs to exactly one scope, in both directions. A subject
+    // on a bulk body is a caller who believes a filter is being applied that
+    // is not - the same reason `filters` is rejected rather than ignored below.
+    if (body.scope !== "person" && body.subjectTelecallerId) {
+      ctx.addIssue({
+        code: "custom",
+        message: `a ${body.scope} export cannot name a person - use scope "person"`,
+      });
+    }
     if (body.scope === "view") {
       if (!body.dataset) {
         ctx.addIssue({ code: "custom", message: "a view export names one dataset" });
       }
       if (body.section) {
         ctx.addIssue({ code: "custom", message: "a view export has no section" });
+      }
+      return;
+    }
+    // ── A PERSON EXPORT IS A VIEW EXPORT WITH A SUBJECT ─────────────────
+    //
+    // One dataset, filters allowed, plus whose data it is. Shaped like `view`
+    // rather than like `bulk` for two reasons, and the second is the real one:
+    //
+    //   · it is what the engine can actually render. The worker streams ONE
+    //     dataset to ONE file; multi-dataset archives are doc 35's E3 and are
+    //     not built, so a scope that implied them would be accepted here and
+    //     refused at render - a job that fails minutes later for a reason the
+    //     caller cannot see.
+    //   · filters are the point. "Priya's calls" is rarely the question;
+    //     "Priya's calls last month" is, because the reason somebody wants one
+    //     person's file is almost always a review period.
+    if (body.scope === "person") {
+      if (!body.subjectTelecallerId) {
+        ctx.addIssue({ code: "custom", message: "a person export names whose data it is" });
+      }
+      if (!body.dataset) {
+        ctx.addIssue({ code: "custom", message: "a person export names one dataset" });
+      }
+      if (body.section) {
+        ctx.addIssue({ code: "custom", message: "a person export has no section" });
       }
       return;
     }
@@ -186,6 +240,53 @@ export class ExportsController {
     });
   }
 
+  /**
+   * WHOSE data this caller may export, and which datasets a person export can
+   * produce (0188) - what the person picker reads.
+   *
+   * Driven by the same `resolvePeopleVisibility` the POST enforces, so a name
+   * offered here and refused there is a bug report rather than a policy.
+   *
+   * There is no "all people" mode and no search parameter: the list is bounded
+   * by the caller's own branch, which is at most a floor, and paging it would
+   * mean a caller could learn the SIZE of a branch they cannot see into.
+   */
+  @Get("people")
+  @Header("Cache-Control", "no-store")
+  async people(@OrgId() orgId: string, @Req() req: PrincipalRequest) {
+    const principal = req.principal ?? throwUnauthenticated();
+    return this.db.withOrg(orgId, async (client) => {
+      const actor = {
+        userId: principal.userId,
+        ownerRole: principal.ownerRole,
+        viaAdminKey: principal.viaAdminKey,
+      };
+      const visibility = await resolvePeopleVisibility(client, actor);
+      const people = await exportablePeople(client, actor, visibility);
+      const scopable = personScopableDatasets();
+      // Intersected with what this caller may export at all, so the picker
+      // does not offer a person whose file would come back empty.
+      const { granted } = await this.allowedDatasets(client, req, scopable);
+      return {
+        visibility: visibility.kind,
+        people: people.map((p) => ({
+          telecallerId: p.telecallerId,
+          displayName: p.displayName,
+          ownerRole: p.ownerRole,
+          isSelf: p.isSelf,
+        })),
+        datasets: granted.map((d) => ({ key: d.key, label: d.label, section: d.section })),
+        // Named so the drawer can explain the gap rather than leaving somebody
+        // to wonder where Contacts went.
+        notPerPerson: EXPORT_DATASETS.filter((d) => personScopeRefusal(d) !== null).map((d) => ({
+          key: d.key,
+          label: d.label,
+          reason: personScopeRefusal(d) as string,
+        })),
+      };
+    });
+  }
+
   @Post()
   @HttpCode(202)
   async create(@OrgId() orgId: string, @Req() req: PrincipalRequest, @Body() rawBody: unknown) {
@@ -211,16 +312,30 @@ export class ExportsController {
     }
 
     const requested =
-      body.scope === "view"
+      body.scope === "view" || body.scope === "person"
         ? [exportDataset(body.dataset as ExportDatasetKey)]
         : body.scope === "section"
           ? datasetsInSection(body.section as ExportSection)
           : EXPORT_DATASETS;
 
+    // ── THE DATASET MUST BE SOMETHING A PERSON CAN HOLD ───────────────────
+    //
+    // Refused BEFORE any gate or rate limit, because this is a property of the
+    // dataset rather than of the caller: nobody, at any permission level, can
+    // export "this person's products". A dataset with no per-person column
+    // produces `null` from `ownerScopeFilter`, the engine correctly adds no
+    // predicate, and the file is the whole tenant under one person's name -
+    // doc 35 §4.2's named failure. `personScopeRefusal` is the single place
+    // that judgement lives.
+    if (body.scope === "person") {
+      const refusal = personScopeRefusal(requested[0]);
+      if (refusal) throw new BadRequestException(refusal);
+    }
+
     return this.db.withOrg(orgId, async (client) => {
       const { granted, omitted } = await this.allowedDatasets(client, req, requested);
 
-      if (body.scope === "view" && granted.length === 0) {
+      if ((body.scope === "view" || body.scope === "person") && granted.length === 0) {
         throw new ForbiddenException(
           `you may not export ${body.dataset}: ${omitted[0]?.reason ?? "not permitted"}`,
         );
@@ -236,9 +351,33 @@ export class ExportsController {
       }
 
       if (body.scope === "bulk") await this.assertBulkAllowed(client, req);
-      await this.assertRateLimit(client, body.scope, body.section ?? null, principal.userId);
 
-      const snapshot = await this.scopeSnapshot(client, req, granted);
+      // ── WHOSE DATA, AND MAY THIS CALLER HAVE IT (0188) ──────────────────
+      //
+      // The one authorization question the other three scopes never ask,
+      // because they never name anybody. Asked here at enqueue AND again in
+      // the worker at render: a reporting line that changes between the two
+      // must stop the file, and only the second check can see that.
+      //
+      // Note what is NOT consulted: the `export` grant and the module gates
+      // have already been applied by `allowedDatasets` above. This decides
+      // only WHOSE rows, never WHICH datasets - keeping the two questions
+      // separate is what stops "why can Priya not export Ashok" having two
+      // answers.
+      const subject =
+        body.scope === "person"
+          ? await this.resolveSubject(client, req, body.subjectTelecallerId as string)
+          : null;
+
+      await this.assertRateLimit(
+        client,
+        body.scope,
+        body.section ?? null,
+        principal.userId,
+        subject?.telecallerId ?? null,
+      );
+
+      const snapshot = await this.scopeSnapshot(client, req, granted, subject);
 
       // ── ONE TRANSACTION, AND IT IS THIS ONE ─────────────────────────────
       //
@@ -256,8 +395,10 @@ export class ExportsController {
       } = await client.query<{ id: string }>(
         `INSERT INTO export_jobs
            (org_id, scope, section, format, datasets, filters, columns,
-            requested_by_user_id, requested_by_auth_id, scope_snapshot)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb)
+            requested_by_user_id, requested_by_auth_id, scope_snapshot,
+            subject_telecaller_id, subject_user_id, subject_label)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
+                 $11, $12, $13)
          RETURNING id`,
         [
           orgId,
@@ -265,11 +406,20 @@ export class ExportsController {
           body.scope === "section" ? body.section : null,
           body.format,
           granted.map((d) => d.key),
-          JSON.stringify(body.scope === "view" ? (body.filters ?? {}) : {}),
+          // `person` carries filters for the same reason `view` does: the
+          // request is almost always "their work in this period".
+          JSON.stringify(
+            body.scope === "view" || body.scope === "person" ? (body.filters ?? {}) : {},
+          ),
           JSON.stringify(body.columns ? { [granted[0].key]: body.columns } : {}),
           principal.userId,
           principal.authUserId ?? null,
           JSON.stringify(snapshot),
+          subject?.telecallerId ?? null,
+          subject?.userId ?? null,
+          // Frozen at enqueue, so a rename six weeks later does not rewrite
+          // the record of who looked at whom. 0188's column comment says so.
+          subject?.displayName ?? null,
         ],
       );
       const jobId = job.id;
@@ -286,6 +436,11 @@ export class ExportsController {
         datasets: granted.map((d) => d.key),
         omitted,
         rowScope: snapshot.ownerScopeKind,
+        // The subject goes in the audit row as well as the job row. The job is
+        // deleted when its artifact expires; the audit trail is what remains
+        // to answer "who exported my data" afterwards.
+        subjectTelecallerId: subject?.telecallerId ?? null,
+        subjectLabel: subject?.displayName ?? null,
       });
 
       // AFTER the commit would be better still, but the publish is best-effort
@@ -318,7 +473,14 @@ export class ExportsController {
                 j.rows_total, j.rows_written, j.bytes_written, j.current_dataset,
                 j.file_name, j.expires_at, j.downloaded_count, j.error,
                 j.created_at, j.finished_at,
-                j.requested_by_user_id, u.name AS requested_by_name
+                j.requested_by_user_id, u.name AS requested_by_name,
+                -- 0188: whose work a person export was about. The frozen label
+                -- rather than a join to the telecallers table, so a rename does
+                -- not rewrite the record of who looked at whom - and so the row
+                -- still reads correctly after the identity is deleted.
+                -- (No backticks in here: inside a template literal they end
+                -- the string, and tsc only says "',' expected".)
+                j.subject_telecaller_id, j.subject_label
            FROM export_jobs j
            LEFT JOIN users u ON u.id = j.requested_by_user_id
           WHERE ($1::boolean OR j.requested_by_user_id = $2)
@@ -620,11 +782,36 @@ export class ExportsController {
    */
   private async assertRateLimit(
     client: QueryClient,
-    scope: "view" | "section" | "bulk",
+    scope: ExportScope,
     section: string | null,
     userId: string,
+    subjectTelecallerId: string | null,
   ): Promise<void> {
     if (scope === "view") return;
+
+    // A person export is rate-limited PER SUBJECT, not per requester.
+    //
+    // Keying it on the requester would let one manager pull the same person
+    // repeatedly while a second manager of the same person is refused, which
+    // is backwards: the thing worth limiting is how often one employee's file
+    // is produced, because that is the thing that ends up in somebody's
+    // inbox. Per-subject also makes the audit trail readable - one row per
+    // hour per person, rather than a burst that has to be reconstructed.
+    if (scope === "person") {
+      const { rows } = await client.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM export_jobs
+          WHERE scope = 'person' AND subject_telecaller_id = $1
+            AND created_at > now() - interval '1 hour' AND status <> 'cancelled'`,
+        [subjectTelecallerId],
+      );
+      if (Number(rows[0]?.n ?? 0) >= EXPORT_LIMITS.personJobsPerHourPerSubject) {
+        throw new BadRequestException(
+          "this person's data has already been exported in the last hour",
+        );
+      }
+      return;
+    }
+
     const { rows } = await client.query<{ n: string }>(
       scope === "bulk"
         ? `SELECT count(*)::text AS n FROM export_jobs
@@ -646,6 +833,56 @@ export class ExportsController {
   }
 
   /**
+   * The subject of a person export, authorized (0188).
+   *
+   * Three failures, three different answers, because they are three different
+   * problems for whoever is holding the screen:
+   *
+   *   · the identity does not exist       → 404, they picked a stale row
+   *   · it exists, they may not see it    → 403, naming the rule
+   *   · they have no identity of their own → 403 with the specific reason,
+   *     because "export my own data" failing for a telecaller who was never
+   *     linked to a handset is a provisioning gap, not a permission decision,
+   *     and saying "not permitted" sends them to the wrong person.
+   *
+   * The 404-before-403 ordering leaks only that an id is unused, which a
+   * caller who can enumerate `/exports/people` already knows for everyone they
+   * may see; the alternative - 403 for a non-existent id - makes a stale
+   * picker indistinguishable from a permission problem.
+   */
+  private async resolveSubject(
+    client: QueryClient,
+    req: PrincipalRequest,
+    subjectTelecallerId: string,
+  ): Promise<{ telecallerId: string; userId: string | null; displayName: string }> {
+    const principal = req.principal ?? throwUnauthenticated();
+    const person = await loadPerson(client, subjectTelecallerId);
+    if (!person) {
+      throw new NotFoundException("that person is not an active member of this workspace");
+    }
+
+    const visibility = await resolvePeopleVisibility(client, {
+      userId: principal.userId,
+      ownerRole: principal.ownerRole,
+      viaAdminKey: principal.viaAdminKey,
+    });
+
+    if (!visibilityAllowsTelecaller(visibility, subjectTelecallerId)) {
+      if (visibility.kind === "own" && visibility.telecallerId === null) {
+        throw new ForbiddenException(
+          "you are not linked to a telecaller identity, so there is no work to export - ask an owner to link you on the Team page",
+        );
+      }
+      throw new ForbiddenException(
+        visibility.kind === "own"
+          ? "you may export only your own work"
+          : "that person is not in your branch of the organization chart",
+      );
+    }
+    return person;
+  }
+
+  /**
    * The grants frozen into the job (SS4.2).
    *
    * The worker re-reads all of this and runs under the INTERSECTION, so this is
@@ -656,6 +893,7 @@ export class ExportsController {
     client: QueryClient,
     req: PrincipalRequest,
     granted: ExportDataset[],
+    subject: { telecallerId: string; userId: string | null; displayName: string } | null,
   ): Promise<Record<string, unknown>> {
     const principal = req.principal ?? throwUnauthenticated();
     const scope = (req as PrincipalRequest & { ownerScope?: OwnerRecordScope }).ownerScope;
@@ -672,6 +910,13 @@ export class ExportsController {
       userId: principal.userId,
       grid,
       canExportRecordings: principalHasPermission(principal, "recordings:export"),
+      // The subject as authorized at enqueue (0188). The worker re-resolves
+      // visibility rather than trusting this, so it is a CEILING like
+      // everything else here: the worker takes the narrower of the two and a
+      // subject that has since left the caller's branch stops the job.
+      subject: subject
+        ? { telecallerId: subject.telecallerId, userId: subject.userId }
+        : null,
     };
   }
 

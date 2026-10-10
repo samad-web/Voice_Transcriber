@@ -8,7 +8,10 @@ import {
   datasetModule,
   datasetsInSection,
   exportDataset,
+  RENDERABLE_EXPORT_DATASETS,
   ownerAlertIsInstant,
+  personScopableDatasets,
+  personScopeRefusal,
   redactedColumns,
   visibleColumns,
 } from "./export-datasets";
@@ -197,5 +200,121 @@ describe("EXPORT_LIMITS", () => {
 describe("exportDataset", () => {
   it("throws on a key that is not in the catalogue", () => {
     expect(() => exportDataset("not_a_dataset" as never)).toThrow(/unknown export dataset/);
+  });
+});
+
+describe("the person scope (0188)", () => {
+  /**
+   * THE ONE THAT MATTERS.
+   *
+   * A person-scoped export is the `scope: "own"` predicate pointed at somebody
+   * else. A dataset with no `ownerScope` produces NO predicate, so including
+   * one in a person export yields the whole tenant in a file bearing one
+   * person's name - doc 35 §4.2's named failure.
+   *
+   * Asserted as an exact partition rather than "some are refused", so a new
+   * dataset lands on one side deliberately: add one with `ownerScope: null`
+   * and this fails until somebody decides it is not per-person.
+   */
+  it("refuses exactly the datasets no one person can hold", () => {
+    const refused = EXPORT_DATASETS.filter((d) => personScopeRefusal(d) !== null).map((d) => d.key);
+    // The registry question, asked on its own: the whole catalogue, not the
+    // subset the worker can currently build. Conflating the two would make
+    // this test go green for the wrong reason the day a query builder lands.
+    const allowed = personScopableDatasets(EXPORT_DATASETS).map((d) => d.key);
+
+    expect(refused.sort()).toEqual(
+      [
+        "accounts",
+        "audit_log",
+        "contacts",
+        "conversations",
+        "invoices",
+        "members",
+        "products",
+        "quotations",
+      ].sort(),
+    );
+    expect(allowed.sort()).toEqual(
+      [
+        "attendance",
+        "calls",
+        "call_transcripts",
+        "deals",
+        "lead_stage_transitions",
+        "leads",
+        "tasks",
+      ].sort(),
+    );
+    // The partition is total: every dataset is on exactly one side.
+    expect(refused.length + allowed.length).toBe(EXPORT_DATASETS.length);
+  });
+
+  it("allows a dataset exactly when it names an ownerScope", () => {
+    // The rule restated as the invariant rather than as a list, so the two
+    // cannot drift: `ownerScope` IS the thing that makes a row somebody's.
+    for (const dataset of EXPORT_DATASETS) {
+      expect({ key: dataset.key, refused: personScopeRefusal(dataset) !== null }).toEqual({
+        key: dataset.key,
+        refused: dataset.ownerScope === null,
+      });
+    }
+  });
+
+  it("gives a reason a person can act on, not a code", () => {
+    const contacts = exportDataset("contacts");
+    const reason = personScopeRefusal(contacts);
+    expect(reason).toContain("Contacts");
+    expect(reason).toMatch(/not held by any one person/);
+    // And nothing for one that is fine, so a caller can branch on null.
+    expect(personScopeRefusal(exportDataset("calls"))).toBeNull();
+  });
+
+  it("always alerts the owners, like every scope except a plain view", () => {
+    // A person export is the one an employee is most likely to want to know
+    // about, so it must never fall into the digest-only path.
+    expect(ownerAlertIsInstant("person", [exportDataset("leads")])).toBe(true);
+  });
+
+  it("rate-limits per subject, and the limit is small", () => {
+    // Per subject rather than per requester: the thing worth limiting is how
+    // often one employee's file is produced. Documented on the constant.
+    expect(EXPORT_LIMITS.personJobsPerHourPerSubject).toBeGreaterThan(0);
+    expect(EXPORT_LIMITS.personJobsPerHourPerSubject).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("RENDERABLE_EXPORT_DATASETS (0188)", () => {
+  /**
+   * The gap between "the product exports this" and "the worker can build it"
+   * has to be visible, because a job the API accepts and the worker refuses
+   * fails minutes later with nobody watching.
+   */
+  it("is a subset of the catalogue, and every key is real", () => {
+    for (const key of RENDERABLE_EXPORT_DATASETS) {
+      expect(() => exportDataset(key)).not.toThrow();
+    }
+    expect(RENDERABLE_EXPORT_DATASETS.length).toBeLessThanOrEqual(EXPORT_DATASETS.length);
+  });
+
+  it("offers a person only what is BOTH per-person and renderable", () => {
+    // The default is the intersection, so the picker cannot offer a file the
+    // engine would decline to build. `contacts` is renderable but belongs to
+    // nobody; `deals` and `tasks` belong to somebody but have no query builder
+    // yet - so neither appears, for two different reasons.
+    const offered = personScopableDatasets().map((d) => d.key).sort();
+    expect(offered).toEqual(["calls", "leads"]);
+    expect(offered).not.toContain("contacts");
+    expect(offered).not.toContain("deals");
+  });
+
+  it("grows automatically as query builders land", () => {
+    // Nothing in the person scope needs editing when `deals` becomes
+    // renderable: it is already per-person, so adding it to this list is the
+    // whole change. Asserted so the coupling stays deliberate.
+    const withDeals = EXPORT_DATASETS.filter((d) =>
+      [...RENDERABLE_EXPORT_DATASETS, "deals"].includes(d.key),
+    );
+    expect(personScopableDatasets(withDeals).map((d) => d.key)).toContain("deals");
   });
 });

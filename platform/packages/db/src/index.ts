@@ -31,6 +31,11 @@ export * from "./finance-connector-drain";
 // it in a browser. See its header.
 export * from "./feature-gates";
 
+// Whose records a person may see, for the same reason the gate is here: the
+// export API answers it at enqueue and the export WORKER answers it again at
+// render, and doc 35 §4.2 only holds if both get the answer from one function.
+export * from "./people-visibility";
+
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 
 /**

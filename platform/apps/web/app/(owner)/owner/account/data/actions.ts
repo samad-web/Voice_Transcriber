@@ -37,6 +37,9 @@ export interface ExportJobRow {
   finished_at: string | null;
   requested_by_user_id: string;
   requested_by_name: string | null;
+  /** 0188: whose work a `person` export was about, frozen at enqueue. */
+  subject_telecaller_id: string | null;
+  subject_label: string | null;
   canDownload: boolean;
 }
 
@@ -100,14 +103,39 @@ export async function fetchExportCatalogueAction(): Promise<{
   return call<ExportCatalogue>("/v1/exports/datasets", {}, false);
 }
 
+/** One person this caller may export, and what a person export can produce (0188). */
+export interface ExportPerson {
+  telecallerId: string;
+  displayName: string;
+  ownerRole: string | null;
+  isSelf: boolean;
+}
+
+export interface ExportPeople {
+  /** `all`, `branch` or `own` - what the drawer uses to word the option. */
+  visibility: "all" | "branch" | "own";
+  people: ExportPerson[];
+  datasets: Array<{ key: string; label: string; section: string }>;
+  notPerPerson: Array<{ key: string; label: string; reason: string }>;
+}
+
+export async function fetchExportPeopleAction(): Promise<{
+  data?: ExportPeople;
+  error?: string;
+}> {
+  return call<ExportPeople>("/v1/exports/people", {}, false);
+}
+
 export interface StartExportInput {
   scope: ExportScope;
   format: ExportFormat;
   dataset?: string;
   section?: string;
-  /** Only meaningful on a `view` export; the API rejects it on the others. */
+  /** Only meaningful on a `view` or `person` export; the API rejects it on the others. */
   filters?: Record<string, unknown>;
   columns?: string[];
+  /** Whose work to export, required by and only valid on `scope: "person"` (0188). */
+  subjectTelecallerId?: string;
 }
 
 export async function startExportAction(input: StartExportInput): Promise<{

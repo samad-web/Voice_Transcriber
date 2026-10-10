@@ -33,7 +33,16 @@ import { PERMISSION_OBJECT_MODULE, type PermissionObjectType } from "./permissio
 export const ExportFormat = z.enum(["csv", "xlsx", "json", "ndjson"]);
 export type ExportFormat = z.infer<typeof ExportFormat>;
 
-export const ExportScope = z.enum(["view", "section", "bulk"]);
+/**
+ * `person` (0188) is the odd one out and worth saying why.
+ *
+ * The other three all answer "what can I see", narrowed three ways. `person`
+ * answers "what is THIS PERSON's work", which is a different question with a
+ * different authorization rule: it is the only scope where the caller names
+ * somebody else, so it is the only one that can be refused for naming the
+ * wrong somebody. See `personScopeRefusal` below.
+ */
+export const ExportScope = z.enum(["view", "section", "bulk", "person"]);
 export type ExportScope = z.infer<typeof ExportScope>;
 
 /**
@@ -613,6 +622,80 @@ export function ownerAlertIsInstant(scope: ExportScope, datasets: ExportDataset[
   return datasets.some((d) => d.sensitivity !== "normal");
 }
 
+/**
+ * WHY A DATASET CANNOT BE EXPORTED PER PERSON, or null when it can (0188).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ *  THIS IS THE SAFETY RULE OF THE WHOLE PERSON SCOPE
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * A person-scoped export is the `scope: "own"` predicate pointed at somebody
+ * else - that is the entire mechanism, and it is why this feature needed no
+ * new per-dataset SQL. `ownerScopeFilter` already knows that a lead is held
+ * via `assigned_telecaller_id OR telecaller_id`, that a deal is
+ * `assigned_telecaller_id`, that a task is `assignee_user_id OR created_by`,
+ * and that calls and the rollup are `telecaller_id`.
+ *
+ * The corollary is the dangerous part: a dataset with `ownerScope: null` has
+ * NO column that says which person a row belongs to. `ownerScopeFilter`
+ * returns null for it, which the engine correctly reads as "add no predicate"
+ * - and "add no predicate" on a person export means the whole tenant's
+ * contacts, products and invoices in a file labelled with one person's name.
+ * That is doc 35 §4.2's named failure wearing a different hat.
+ *
+ * So such a dataset is REFUSED and reported in `omitted`, never quietly
+ * included. The refusal is a sentence an owner can act on rather than a code,
+ * because the honest answer is "this data is not anybody's".
+ *
+ * `audit_log` is the one worth a note: "everything this person did" would be a
+ * genuinely useful person export, and it is omitted only because the audit
+ * trail scopes on an actor column the persona axis does not model. Adding it
+ * means giving `OwnerScopedObject` a new member and a branch in
+ * `ownerScopeFilter` - a deliberate change with a test, not something to
+ * special-case here.
+ */
+export function personScopeRefusal(dataset: ExportDataset): string | null {
+  if (dataset.ownerScope !== null) return null;
+  return `${dataset.label} is not held by any one person, so it cannot be exported per person.`;
+}
+
+/**
+ * The datasets the ENGINE can currently stream to a file.
+ *
+ * The registry describes every dataset the product intends to export; this is
+ * the subset the worker has a query builder for. The two are deliberately
+ * different lists - the registry is the contract with the reader, this is the
+ * state of the implementation - but the gap has to be VISIBLE, because a job
+ * the API accepts and the worker refuses fails minutes later with nobody
+ * watching.
+ *
+ * It lives here rather than in the worker so the API can filter what it offers
+ * by it. The worker re-exports it under its old name.
+ */
+export const RENDERABLE_EXPORT_DATASETS: readonly ExportDatasetKey[] = [
+  "leads",
+  "calls",
+  "contacts",
+];
+
+/**
+ * The datasets a person-scoped export can actually produce.
+ *
+ * Intersected with `RENDERABLE_EXPORT_DATASETS` by default, so the person
+ * picker never offers somebody a file the worker would then decline to build.
+ * Pass `datasets` explicitly to ask the registry question on its own - which is
+ * what `export-datasets.test.ts` does, because the PARTITION (what can be held
+ * by a person) and the BACKLOG (what has a query builder) are two different
+ * facts and a test that conflated them would go green for the wrong reason.
+ */
+export function personScopableDatasets(
+  datasets: ExportDataset[] = EXPORT_DATASETS.filter((d) =>
+    RENDERABLE_EXPORT_DATASETS.includes(d.key),
+  ),
+): ExportDataset[] {
+  return datasets.filter((d) => personScopeRefusal(d) === null);
+}
+
 /** Retention for a finished artifact. A platform constant, not an org setting. */
 export const EXPORT_RETENTION_DAYS = 7;
 
@@ -627,6 +710,15 @@ export const EXPORT_LIMITS = {
   concurrentPerOrg: 2,
   sectionJobsPerHour: 1,
   bulkJobsPerDay: 1,
+  /**
+   * Per SUBJECT per hour, not per requester (0188).
+   *
+   * The thing worth limiting is how often one employee's file is produced,
+   * because that is the thing that ends up in somebody's inbox. Keyed on the
+   * requester instead, two managers of the same person would get different
+   * answers to the same request.
+   */
+  personJobsPerHourPerSubject: 2,
   wallClockMinutes: 60,
   /** Keyset page size. Small enough that the worker's memory stays flat. */
   pageRows: 1000,

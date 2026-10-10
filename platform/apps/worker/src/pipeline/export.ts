@@ -31,12 +31,14 @@ import {
   type Cursor,
 } from "./export-queries";
 import {
+  assertSubjectStillVisible,
   narrowerGridGrant,
   narrowerOwnerScope,
   readGridGrant,
   readOwnerScope,
   readRecordingsExport,
   resolvedScopeFor,
+  SubjectNoLongerVisibleError,
   type ScopeSnapshot,
 } from "./export-scope";
 import { announce } from "./realtime";
@@ -92,13 +94,17 @@ const PROGRESS_EVERY_MS = 2_000;
 interface JobRow {
   id: string;
   org_id: string;
-  scope: "view" | "section" | "bulk";
+  scope: "view" | "section" | "bulk" | "person";
   format: string;
   datasets: string[];
   filters: Record<string, unknown>;
   columns: Record<string, string[]>;
   requested_by_user_id: string;
   scope_snapshot: ScopeSnapshot;
+  /** 0188: whose work a `person` export is about. Null on every other scope. */
+  subject_telecaller_id: string | null;
+  subject_user_id: string | null;
+  subject_label: string | null;
 }
 
 /** A failure the sweep should not retry - the second attempt reaches the same answer. */
@@ -122,7 +128,8 @@ export async function runExportJob(message: ExportMessage): Promise<void> {
               WHERE o.org_id = export_jobs.org_id
                 AND o.status IN ('running', 'packaging')) < $2
       RETURNING id, org_id, scope, format, datasets, filters, columns,
-                requested_by_user_id, scope_snapshot`,
+                requested_by_user_id, scope_snapshot,
+                subject_telecaller_id, subject_user_id, subject_label`,
     [message.jobId, EXPORT_LIMITS.concurrentPerOrg],
   );
   if (claimed.length === 0) return;
@@ -162,9 +169,13 @@ export async function runExportJob(message: ExportMessage): Promise<void> {
 }
 
 async function streamJob(client: PoolClient, job: JobRow, tempDir: string): Promise<void> {
-  if (job.scope !== "view" || job.datasets.length !== 1) {
+  // `person` (0188) renders through this same path: it is a single-dataset
+  // export with one extra predicate, which is exactly why it was shaped like
+  // `view` rather than like `bulk`. Multi-dataset archives are still doc 35's
+  // E3 and still unbuilt, so `section` and `bulk` are still refused here.
+  if ((job.scope !== "view" && job.scope !== "person") || job.datasets.length !== 1) {
     throw new PermanentExportError(
-      `E1 runs single-dataset 'view' exports only; got '${job.scope}' with ${job.datasets.length}`,
+      `this build runs single-dataset 'view' and 'person' exports only; got '${job.scope}' with ${job.datasets.length}`,
     );
   }
   const key = job.datasets[0] as ExportDatasetKey;
@@ -208,7 +219,35 @@ async function streamJob(client: PoolClient, job: JobRow, tempDir: string): Prom
     snapshot.canExportRecordings &&
     (await readRecordingsExport(client, job.requested_by_user_id, job.org_id));
 
-  const scope = resolvedScopeFor(owner, grid);
+  // ── RE-AUTHORIZE THE SUBJECT (0188) ──────────────────────────────────────
+  //
+  // After the persona and the grid, before a single row is read. The subject
+  // comes from the JOB ROW rather than the snapshot - the column carries the
+  // foreign key and the CHECK that guarantees a person job has one, so it is
+  // the authoritative copy and the snapshot's is a convenience.
+  let subject: { telecallerId: string; userId: string | null } | null = null;
+  if (job.scope === "person") {
+    if (!job.subject_telecaller_id) {
+      // 0188's CHECK makes this unreachable. Guarded anyway, because the
+      // failure mode is a person export rendering with no subject predicate -
+      // the whole tenant in a file bearing one person's name.
+      throw new PermanentExportError("a person export with no subject cannot be rendered");
+    }
+    try {
+      await assertSubjectStillVisible(client, freshOwner, job.subject_telecaller_id);
+    } catch (error) {
+      if (error instanceof SubjectNoLongerVisibleError) {
+        throw new PermanentExportError(error.message);
+      }
+      throw error;
+    }
+    subject = {
+      telecallerId: job.subject_telecaller_id,
+      userId: job.subject_user_id,
+    };
+  }
+
+  const scope = resolvedScopeFor(owner, grid, subject);
   const columns = visibleColumns(dataset, canExportRecordings);
   const csvColumns: Array<CsvColumn<Record<string, unknown>>> = columns.map((c) => ({
     header: c.name,

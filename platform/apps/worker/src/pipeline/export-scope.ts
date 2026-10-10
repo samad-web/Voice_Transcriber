@@ -7,6 +7,10 @@ import {
   scopeForRole,
 } from "@aura/shared";
 import type { PoolClient } from "@aura/db";
+// The SAME visibility resolver the export API uses at enqueue. Imported rather
+// than reimplemented: doc 35 §4.2 only holds if both processes get the answer
+// from one function - see people-visibility.ts's header.
+import { resolvePeopleVisibility, visibilityAllowsTelecaller } from "@aura/db";
 
 import type { ResolvedScope } from "./export-queries";
 
@@ -50,6 +54,15 @@ export interface ScopeSnapshot {
   /** Grid grant per object at enqueue: 'all', 'owned', or absent = no grant. */
   grid: Record<string, "all" | "owned">;
   canExportRecordings: boolean;
+  /**
+   * The person a `scope: 'person'` export is about, as authorized at enqueue
+   * (0188). Absent on every other scope.
+   *
+   * A ceiling like the rest of this snapshot, not an authorization: the worker
+   * re-asks whether the requester may still see this person and refuses if the
+   * answer changed. See `assertSubjectStillVisible`.
+   */
+  subject?: { telecallerId: string; userId: string | null } | null;
 }
 
 /**
@@ -174,13 +187,73 @@ export function narrowerGridGrant(
 export function resolvedScopeFor(
   owner: OwnerRecordScope,
   grid: "all" | "owned" | null,
+  subject: { telecallerId: string; userId: string | null } | null = null,
 ): ResolvedScope {
   return {
     owner,
     // The grid narrows on the acting USER's id, and only when the grant is
     // `owned`. `all` means the grid adds no predicate at all.
+    //
+    // Deliberately still the REQUESTER's id on a person export: the grid said
+    // what this requester may see, and re-pointing it at the subject would let
+    // an `owned` grant reach rows it was never given. The subject is a
+    // separate ANDed axis - see `ResolvedScope.subject`.
     crmUserId: grid === "owned" ? owner.userId : null,
+    subject,
   };
 }
+
+/**
+ * RE-AUTHORIZE THE SUBJECT AT RENDER TIME (0188, doc 35 §4.2).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ *  WHY THIS CANNOT BE SKIPPED BECAUSE THE API ALREADY CHECKED
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Minutes or hours separate the enqueue from the render - longer if the queue
+ * backs up or the job is re-published by the sweep. In that window a person
+ * can be moved out of a manager's branch, have their seat ended, or the
+ * manager can be demoted. An export that renders on the enqueue-time answer
+ * produces a file the requester is no longer entitled to, and produces it
+ * *after* somebody decided they should not have it.
+ *
+ * Refusing is the only safe reading, and it is PERMANENT rather than retried:
+ * the second attempt reaches the same answer, so retrying would just be a
+ * failing job occupying a slot.
+ *
+ * The identity having been DELETED is the same refusal and not a special case.
+ * A subject that no longer exists cannot be re-authorized, and the alternative
+ * - rendering with no subject predicate - is the whole tenant in a file
+ * bearing one person's name.
+ */
+export async function assertSubjectStillVisible(
+  client: PoolClient,
+  freshOwner: OwnerRecordScope,
+  subjectTelecallerId: string,
+): Promise<void> {
+  // Takes the ALREADY-RESOLVED fresh persona rather than re-reading the
+  // membership. `readOwnerScope`'s own query carries a load-bearing
+  // `ORDER BY (m.scope_type = 'org') DESC` - a person can hold an org-scope
+  // membership and workspace-scope rows at once - and a second query here with
+  // a different tie-break would answer this question under a different persona
+  // than the one the rest of the job runs under.
+  const visibility = await resolvePeopleVisibility(client, {
+    userId: freshOwner.userId,
+    ownerRole: freshOwner.role,
+    // Always false: a job row records a real `users` id - the API refuses to
+    // create an export that belongs to nobody - so there is no admin-key
+    // identity to re-assert here.
+    viaAdminKey: false,
+  });
+
+  if (!visibilityAllowsTelecaller(visibility, subjectTelecallerId)) {
+    throw new SubjectNoLongerVisibleError(
+      "the person who requested this export may no longer see that person's work",
+    );
+  }
+}
+
+/** Raised when the subject check fails. The caller turns it into a permanent failure. */
+export class SubjectNoLongerVisibleError extends Error {}
 
 export { OWNER_UNSCOPED };

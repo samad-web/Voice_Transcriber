@@ -3,9 +3,21 @@ import {
   type ExportDataset,
   type ExportDatasetKey,
   type OwnerRecordScope,
+  RENDERABLE_EXPORT_DATASETS,
   ownerScopeClause,
+  ownerScopeFilter,
   visibleColumns,
 } from "@aura/shared";
+
+/**
+ * The id that matches no row, for a scope whose identity could not be resolved.
+ *
+ * Borrowed from `owner-scope.ts`, which carries the argument: a real parameter
+ * keeps the predicate shape - and therefore the query plan and the bind count -
+ * identical whether or not the identity exists, instead of branching into a
+ * `WHERE false`. An empty list beats everyone's list.
+ */
+const NO_ROWS = "00000000-0000-0000-0000-000000000000";
 
 /**
  * The SQL behind each exportable dataset (doc 35 SS3.3, migration 0148).
@@ -87,6 +99,23 @@ export interface ResolvedScope {
   owner: OwnerRecordScope;
   /** The grid's `owned` user id, or null when the grid did not narrow. */
   crmUserId: string | null;
+  /**
+   * WHOSE WORK this export is about (0188), or null for the other scopes.
+   *
+   * ── WHY THIS IS A THIRD AXIS AND NOT A SUBSTITUTION ──────────────────────
+   *
+   * The obvious implementation is to point `owner` at the subject - a person
+   * export is the "own" predicate aimed at somebody else, after all. It is
+   * also wrong, and wrong in the direction that grants access:
+   * `crmUserId` is derived from `owner.userId`, so swapping in the subject's
+   * id would make a requester holding only an `owned` grid grant see rows
+   * owned by the SUBJECT, which the grid never gave them.
+   *
+   * So the subject is ANDed on top. A person export runs under the requester's
+   * own scope AND the subject's, which is the only composition that cannot
+   * widen either one.
+   */
+  subject: { telecallerId: string; userId: string | null } | null;
 }
 
 /**
@@ -290,7 +319,43 @@ export function buildDatasetQuery(
       where.push(clause);
       // Every placeholder in a returned predicate binds the SAME value, so one
       // parameter covers a two-placeholder predicate like the lead union.
-      params.push(scope.owner.telecallerId ?? "00000000-0000-0000-0000-000000000000");
+      //
+      // The value comes from `ownerScopeFilter` rather than being assumed to
+      // be the telecaller id: a TASK scopes on the acting user instead
+      // (owner-scope.ts), so hard-coding `telecallerId` here binds the wrong
+      // column's value the moment tasks become renderable.
+      params.push(ownerScopeFilter(dataset.ownerScope, scope.owner, alias)?.value ?? NO_ROWS);
+    }
+  }
+
+  // ── THE SUBJECT (0188), ANDed ON TOP ───────────────────────────────────────
+  //
+  // Reuses the same predicate builder with a scope that describes the SUBJECT,
+  // so "rows belonging to this person" is defined in exactly one place for
+  // every dataset - including the lead union over
+  // `assigned_telecaller_id`/`telecaller_id` that a hand-written column here
+  // would have silently lost.
+  //
+  // `dataset.ownerScope` being null is impossible for a person export - the API
+  // refuses it in `personScopeRefusal` - but it is guarded rather than asserted
+  // because the consequence of being wrong is a file containing the whole
+  // tenant under one person's name.
+  if (scope.subject) {
+    if (!dataset.ownerScope) {
+      throw new Error(
+        `refusing to export ${dataset.key} for one person: it has no per-person column`,
+      );
+    }
+    const subjectScope: OwnerRecordScope = {
+      role: scope.owner.role,
+      scope: "own",
+      userId: scope.subject.userId,
+      telecallerId: scope.subject.telecallerId,
+    };
+    const clause = ownerScopeClause(dataset.ownerScope, subjectScope, params.length + 1, alias);
+    if (clause) {
+      where.push(clause);
+      params.push(ownerScopeFilter(dataset.ownerScope, subjectScope, alias)?.value ?? NO_ROWS);
     }
   }
 
@@ -338,4 +403,13 @@ export function buildCountQuery(dataset: ExportDataset, scope: ResolvedScope): D
 }
 
 /** The datasets E1 can actually run. The API refuses the rest until E3. */
-export const IMPLEMENTED_DATASETS: ExportDatasetKey[] = ["leads", "calls", "contacts"];
+/**
+ * Re-exported from `@aura/shared` rather than declared here (0188).
+ *
+ * The export API has to be able to filter what it OFFERS by what this module
+ * can BUILD - the person picker in particular, which would otherwise hand
+ * somebody a job that fails at render with "dataset not available yet" and
+ * nobody watching. One list, two readers; the name is kept so every existing
+ * call site is unchanged.
+ */
+export const IMPLEMENTED_DATASETS: ExportDatasetKey[] = [...RENDERABLE_EXPORT_DATASETS];

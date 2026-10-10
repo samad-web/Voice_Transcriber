@@ -103,9 +103,19 @@ export function ExportsCentre({ initialJobs }: { initialJobs: ExportJobRow[] }) 
       const res = await startExportAction(
         job.scope === "view"
           ? { scope: "view", format: "csv", dataset: job.datasets[0] }
-          : job.scope === "section"
-            ? { scope: "section", format: "csv", section: job.section ?? undefined }
-            : { scope: "bulk", format: "csv" },
+          : job.scope === "person"
+            ? {
+                scope: "person",
+                format: "csv",
+                dataset: job.datasets[0],
+                // Re-run re-authorizes from scratch: if this person has since
+                // left the caller's branch, the API refuses here rather than
+                // the worker refusing it minutes later.
+                subjectTelecallerId: job.subject_telecaller_id ?? undefined,
+              }
+            : job.scope === "section"
+              ? { scope: "section", format: "csv", section: job.section ?? undefined }
+              : { scope: "bulk", format: "csv" },
       );
       if (res.error) setError(res.error);
       else {
@@ -282,8 +292,15 @@ function StatusCell({ job }: { job: ExportJobRow }) {
   return <StatusChip tone="muted">{job.status}</StatusChip>;
 }
 
-/** "This view - Leads", "Everything in Sales", "Whole workspace". */
+/** "This view - Leads", "Everything in Sales", "Priya - Calls", "Whole workspace". */
 function whatLabel(job: ExportJobRow): string {
+  // 0188 first: on a person export, WHOSE data it was is the most important
+  // thing on the line, so it leads rather than trailing the dataset name.
+  // `subject_label` is the name frozen at enqueue, so this row still reads
+  // correctly after a rename - or after the identity is deleted entirely.
+  if (job.scope === "person") {
+    return `${job.subject_label ?? "A person"} - ${capitalise(job.datasets[0] ?? "data")}`;
+  }
   if (job.scope === "bulk") return "Whole workspace";
   if (job.scope === "section") return `Everything in ${capitalise(job.section ?? "a section")}`;
   return `This view - ${capitalise(job.datasets[0] ?? "data")}`;

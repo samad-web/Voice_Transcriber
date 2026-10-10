@@ -14,6 +14,9 @@ import {
   buildDatasetQuery,
   type ResolvedScope,
 } from "./export-queries";
+// 0188: `resolvedScopeFor` is where the grid's user id is chosen, so it is
+// where the subject-substitution escalation would occur.
+import { resolvedScopeFor } from "./export-scope";
 
 /**
  * The SQL an export runs (doc 35 SS3.3, migration 0148).
@@ -43,8 +46,8 @@ const TELECALLER: OwnerRecordScope = {
   telecallerId: "33333333-3333-3333-3333-333333333333",
 };
 
-const wide: ResolvedScope = { owner: UNSCOPED, crmUserId: null };
-const narrow: ResolvedScope = { owner: TELECALLER, crmUserId: null };
+const wide: ResolvedScope = { owner: UNSCOPED, crmUserId: null, subject: null };
+const narrow: ResolvedScope = { owner: TELECALLER, crmUserId: null, subject: null };
 
 /** The aliases a SELECT list actually produces, in order. */
 function aliasesOf(sql: string): string[] {
@@ -141,7 +144,7 @@ describe("buildDatasetQuery", () => {
 
       const gridNarrowed = buildDatasetQuery(
         exportDataset("contacts"),
-        { owner: TELECALLER, crmUserId: TELECALLER.userId },
+        { owner: TELECALLER, crmUserId: TELECALLER.userId, subject: null },
         true,
         null,
       );
@@ -158,6 +161,7 @@ describe("buildDatasetQuery", () => {
       const orphan: ResolvedScope = {
         owner: { ...TELECALLER, telecallerId: null },
         crmUserId: null,
+        subject: null,
       };
       const query = buildDatasetQuery(exportDataset("calls"), orphan, true, null);
       expect(query.sql).toContain("c.telecaller_id = $1");
@@ -169,7 +173,7 @@ describe("buildDatasetQuery", () => {
       // the predicate builder is shared, so the composition is testable now.
       const query = buildDatasetQuery(
         exportDataset("leads"),
-        { owner: TELECALLER, crmUserId: TELECALLER.userId },
+        { owner: TELECALLER, crmUserId: TELECALLER.userId, subject: null },
         true,
         null,
       );
@@ -242,5 +246,113 @@ describe("IMPLEMENTED_DATASETS", () => {
     expect(() => buildDatasetQuery(exportDataset("invoices"), wide, true, null)).toThrow(
       /not implemented in E1/,
     );
+  });
+});
+
+describe("the person scope (0188)", () => {
+  const SUBJECT_TC = "44444444-4444-4444-4444-444444444444";
+  const SUBJECT_USER = "55555555-5555-5555-5555-555555555555";
+  const subject = { telecallerId: SUBJECT_TC, userId: SUBJECT_USER };
+
+  it("ANDs the subject's predicate on top of the requester's", () => {
+    // A manager (scope 'all', so no persona predicate of their own) exporting
+    // one person: exactly one telecaller predicate, bound to the SUBJECT.
+    const query = buildDatasetQuery(
+      exportDataset("calls"),
+      { owner: UNSCOPED, crmUserId: null, subject },
+      true,
+      null,
+    );
+    expect(query.sql).toContain("c.telecaller_id = $1");
+    expect(query.params[0]).toBe(SUBJECT_TC);
+  });
+
+  it("keeps BOTH predicates when the requester is also narrowed", () => {
+    // A telecaller exporting themselves. The requester's own predicate and the
+    // subject's both appear - the composition is an intersection, so even the
+    // degenerate "both are me" case keeps two clauses rather than collapsing
+    // one away and losing the guarantee.
+    const query = buildDatasetQuery(
+      exportDataset("calls"),
+      { owner: TELECALLER, crmUserId: null, subject },
+      true,
+      null,
+    );
+    const clauses = query.sql.match(/c\.telecaller_id = \$\d+/g) ?? [];
+    expect(clauses).toHaveLength(2);
+    expect(query.sql).toContain(" AND ");
+    expect(query.params[0]).toBe(TELECALLER.telecallerId);
+    expect(query.params[1]).toBe(SUBJECT_TC);
+  });
+
+  /**
+   * THE ESCALATION THIS DESIGN EXISTS TO PREVENT.
+   *
+   * The obvious implementation of a person export is to point the requester's
+   * scope at the subject. `crmUserId` is derived from `owner.userId`, so doing
+   * that would make a requester holding only an `owned` grid grant see rows
+   * owned by the SUBJECT - rows the grid never granted them. The subject is a
+   * separate axis precisely so this cannot happen.
+   */
+  it("never re-points the grid axis at the subject", () => {
+    // Asserted at `resolvedScopeFor`, which is WHERE the escalation would
+    // happen: `crmUserId` is derived from `owner.userId`, so a design that
+    // swapped the subject into `owner` would silently change which user the
+    // grid narrows on. `deals` is the only dataset carrying both axes and it
+    // has no FROM clause yet, so the decision point is the only place this is
+    // expressible - and it is the better place anyway, being the cause rather
+    // than the symptom.
+    const resolved = resolvedScopeFor(TELECALLER, "owned", subject);
+    expect(resolved.crmUserId).toBe(TELECALLER.userId);
+    expect(resolved.crmUserId).not.toBe(SUBJECT_USER);
+    // The subject rides alongside rather than replacing anything.
+    expect(resolved.subject).toEqual(subject);
+    expect(resolved.owner.telecallerId).toBe(TELECALLER.telecallerId);
+  });
+
+  it("adds no grid predicate at all when the grant is `all`", () => {
+    // Guards the other direction: a person export must not acquire a grid
+    // predicate it did not have, which would narrow the subject's rows to
+    // those the REQUESTER happens to own.
+    expect(resolvedScopeFor(UNSCOPED, "all", subject).crmUserId).toBeNull();
+  });
+
+  /**
+   * `contacts` has `ownerScope: null`, so there is no column saying whose row
+   * it is. Exporting it "for one person" would silently return the whole
+   * tenant under that person's name. The API refuses this first; the engine
+   * refuses it again, because the cost of being wrong is a leak and not a 500.
+   */
+  it("throws rather than export a dataset no one person can hold", () => {
+    expect(() =>
+      buildDatasetQuery(
+        exportDataset("contacts"),
+        { owner: UNSCOPED, crmUserId: null, subject },
+        true,
+        null,
+      ),
+    ).toThrow(/no per-person column/);
+  });
+
+  it("adds nothing at all when there is no subject", () => {
+    // The other three scopes must be byte-identical to before 0188.
+    const withSubject = buildDatasetQuery(exportDataset("calls"), wide, true, null);
+    expect(withSubject.sql).not.toContain("telecaller_id = $");
+  });
+
+  it("binds the matches-nothing id for a subject whose identity is empty", () => {
+    // Cannot arise through the API - 0188's CHECK requires a subject - but the
+    // predicate must still deny rather than match everything if it ever does.
+    const query = buildDatasetQuery(
+      exportDataset("calls"),
+      {
+        owner: UNSCOPED,
+        crmUserId: null,
+        subject: { telecallerId: "00000000-0000-0000-0000-000000000000", userId: null },
+      },
+      true,
+      null,
+    );
+    expect(query.params[0]).toBe("00000000-0000-0000-0000-000000000000");
   });
 });

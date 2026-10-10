@@ -2426,7 +2426,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 777 routes, partitioned 672 tenant / 52 cross-tenant / 18 device / 22 unguarded / 1 internal / 7 portal", () => {
+  it("has 778 routes, partitioned 673 tenant / 52 cross-tenant / 18 device / 22 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2638,8 +2638,14 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // review inbox and configuration. All tenant-scoped, none unguarded: the
     // most sensitive read in the module is a window onto a customer's own
     // words, and nothing outside the workspace's console reads it.
-    expect(ROUTES).toHaveLength(777);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(777);
+    // 778: plus GET /exports/people (0188) - the person picker's read: whose
+    // data this caller may export, and which datasets a person export can
+    // produce. Tenant-scoped, on the same AdminKeyGuard + TenantGuard +
+    // OwnerScopeGuard chain as the engine's other six, and no new grid object:
+    // it answers from the same `resolvePeopleVisibility` the POST enforces, so
+    // a name offered here and refused there would be a bug rather than policy.
+    expect(ROUTES).toHaveLength(778);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(778);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2715,7 +2721,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // and configuration. None cross-tenant: the whole module is about one
     // workspace's own calls, and an operator reaches it by forwarding that
     // workspace's owner rather than by stepping outside the tenant.
-    expect(tenantScoped).toHaveLength(672);
+    // 673: plus GET /exports/people (0188) - the person picker's read.
+    // Tenant-scoped like the export engine's other six, and with no
+    // cross-tenant twin for the same reason they have none: there is no export
+    // of anybody else's workspace.
+    expect(tenantScoped).toHaveLength(673);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
@@ -2727,10 +2737,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(777); // = ROUTES.length: every route in exactly one class
+    ).toBe(778); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 717 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 718 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2787,7 +2797,11 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // the loop below is what proves the first two are still first and second:
     // FeatureGateGuard reads both `req.principal` and `req.tenantOrgId`, so a
     // reordered chain would 401 every request instead of gating anything.
-    expect(principalRoutes).toHaveLength(717);
+    // 718: plus GET /exports/people (0188). AdminKeyGuard, TenantGuard,
+    // OwnerScopeGuard in that order, the export engine's own chain - and the
+    // order is the whole of what the route does: it reads `req.principal` to
+    // decide whose data the caller may export at all.
+    expect(principalRoutes).toHaveLength(718);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
