@@ -19,7 +19,17 @@ describe("handset alert styles", () => {
     const popups = HandsetAlertKind.options.filter((k) => HANDSET_ALERT_STYLE[k] === "popup");
     // 0151 adds the two escalation kinds: the answer to an escalation IS a
     // manager's message, and a new one may have a customer waiting on it.
+    //
+    // 0187 adds the two callback kinds, and they are the clearest case in the
+    // list rather than an exception to it: a callback at 17:00 is the one alert
+    // in this product where five minutes late is a broken promise, and an
+    // escalated one means somebody senior is now waiting about a customer who
+    // has already been let down once. `followup_due` staying `notify` is the
+    // contrast that keeps the rule meaningful - a follow-up has a day, a
+    // callback has a minute.
     expect(popups.sort()).toEqual([
+      "callback_due",
+      "callback_escalated",
       "escalation_received",
       "escalation_update",
       "lead_assigned",

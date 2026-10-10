@@ -34,12 +34,12 @@ import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrmPermissionsGuard, RequireCrmPermission } from "../../common/crm-permissions.guard";
-import { isCheckViolation, isUniqueViolation } from "../../common/pg-errors";
 import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { loadFinanceSettings, orgToday } from "./finance-settings";
 import * as ledger from "./ledger";
 import { applyReceipt, match } from "./matcher";
+import { recordFinancePayment, reverseFinancePayment, settlePayment } from "./record-payment";
 
 /**
  * §6 the canonical payment, §6.2 manual and offline money, §6.3 corrections,
@@ -486,120 +486,40 @@ export class FinancePaymentsController {
     }
 
     return this.db.withOrg(orgId, async (client) => {
-      const settings = await loadFinanceSettings(client, orgId);
-      const amountMinor = toMinor(input.amount, input.currency);
-      const receivedOn = input.receivedOn ?? (await orgToday(client));
-
-      // §6.2's three statuses. An offline payment NEVER lands as received: the
-      // only record that the money exists is somebody saying so, and above the
-      // threshold a second person has to agree.
-      const status: PaymentStatus = offline ? "pending_verification" : "received";
-      const needsSecondPerson = offline && amountMinor > settings.manualApprovalThresholdMinor;
-
-      let dealId = input.dealId ?? null;
-      let scheduleItemId = input.scheduleItemId ?? null;
-
-      // An explicit schedule item implies its deal, so a caller does not have
-      // to send both and cannot send a mismatched pair.
-      if (scheduleItemId) {
-        const { rows } = await client.query<{ deal_id: string }>(
-          `SELECT deal_id FROM payment_schedules WHERE id = $1`,
-          [scheduleItemId],
-        );
-        if (!rows[0]) throw new NotFoundException("schedule item not found");
-        dealId = rows[0].deal_id;
-      }
-
-      const verdict = await match(client, {
+      // ── THE INSERT ITSELF LIVES IN `record-payment.ts` ───────────────────
+      //
+      // It moved there when the import centre arrived
+      // (Build docs/indian-business-finance-documents-cycles-import §3), whose
+      // key design point is a constraint on this file: "imported payments go
+      // through the same normalizer and matching engine as connector
+      // payments, so reconciliation and the Advisor behave identically."
+      //
+      // Three callers now need "money becomes a finance_payments row": this
+      // route, the connector drain, and a staged import row. The second copy
+      // of this logic is how `schedule_item_id` ended up null on every
+      // deal-referenced payment - one field forgotten in one of two places,
+      // which made a §11 metric return null forever and failed no test. A
+      // third copy was not going to end differently.
+      //
+      // What stays here is what belongs to the HTTP surface: validating the
+      // body, the §6.2 proof rule above, and shaping the response.
+      const result = await recordFinancePayment(
+        client,
         orgId,
-        amountMinor,
-        receivedAt: new Date(`${receivedOn}T00:00:00Z`),
-        reference: { dealId, scheduleItemId },
-        threshold: settings.autoMatchConfidence,
-      });
-
-      // ── EACH FIELD FILLED INDEPENDENTLY, AND THAT IS THE FIX ──────────────
-      //
-      // This was `if (!dealId && verdict.chosen)`, which skipped the whole
-      // block whenever the caller named a deal - the common case. The money
-      // was applied correctly (`applyReceipt` ran either way), but the payment
-      // row never recorded WHICH instalment it paid, so
-      // `schedule_item_id` was null on every deal-referenced payment.
-      //
-      // The visible consequence was §11's days-to-collect: the metric measures
-      // from the schedule item's due date through a LEFT JOIN on that column,
-      // so median and p90 came back null forever. Found by opening the
-      // dashboard against real data, not by any test - the unit tests cover
-      // `applyToSchedule`, which was doing its job.
-      //
-      // A caller's explicit value still wins; this only fills what was absent.
-      // For a receipt spanning several instalments `chosen` is the FIRST one
-      // it pays, which is the honest single answer to "which instalment is
-      // this against" and matches §15's oldest-open-first rule.
-      if (verdict.chosen) {
-        dealId = dealId ?? verdict.chosen.dealId;
-        scheduleItemId = scheduleItemId ?? (verdict.chosen.scheduleItemId || null);
-      }
-
-      let paymentId: string;
-      try {
-        const { rows } = await client.query<{ id: string }>(
-          `INSERT INTO finance_payments
-             (org_id, deal_id, schedule_item_id, account_id, contact_id,
-              amount, currency, method, method_detail, status, source,
-              received_at, net, match_status, match_confidence, match_rule,
-              proof_url, recorded_by, memo)
-           VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9::jsonb, $10, 'manual',
-                   $11::date, $6::numeric, $12, $13, $14, $15, $16, $17)
-           RETURNING id`,
-          [
-            orgId,
-            dealId,
-            scheduleItemId,
-            verdict.chosen?.accountId ?? null,
-            verdict.chosen?.contactId ?? null,
-            toNumericString(amountMinor, input.currency),
-            input.currency,
-            input.method,
-            JSON.stringify(input.methodDetail),
-            status,
-            receivedOn,
-            dealId ? verdict.status : "unmatched",
-            verdict.confidence,
-            verdict.rule,
-            input.proofUrl ?? null,
-            actor.type === "user" ? actor.id : null,
-            input.memo ?? null,
-          ],
-        );
-        paymentId = rows[0].id;
-      } catch (err) {
-        if (isCheckViolation(err)) {
-          throw new ConflictException(
-            `${receivedOn.slice(0, 7)} is a closed period - date this in the current open month`,
-          );
-        }
-        throw err;
-      }
-
-      // ── The money only moves once it is CONFIRMED ──────────────────────
-      //
-      // An offline payment posts NOTHING to the ledger and applies nothing to
-      // the schedule until it is verified. That is §6.2's substance: until a
-      // second pair of eyes has seen the cash, a claim that it arrived must
-      // not change what the business believes it collected - otherwise the
-      // threshold is a formality and the dashboard is already wrong.
-      if (status === "received") {
-        await this.settleInto(client, {
-          orgId,
-          paymentId,
-          dealId,
-          amountMinor,
+        {
+          amount: input.amount,
           currency: input.currency,
-          receivedOn,
-          actor,
-        });
-      }
+          method: input.method,
+          methodDetail: input.methodDetail,
+          receivedOn: input.receivedOn ?? null,
+          dealId: input.dealId ?? null,
+          scheduleItemId: input.scheduleItemId ?? null,
+          proofUrl: input.proofUrl ?? null,
+          memo: input.memo ?? null,
+          source: "manual",
+        },
+        actor,
+      );
 
       await client.query(AUDIT_SQL, [
         orgId,
@@ -607,30 +527,30 @@ export class FinancePaymentsController {
         actor.id,
         "finance.payment.recorded",
         "finance_payment",
-        paymentId,
+        result.id,
         JSON.stringify({
-          amount: toNumericString(amountMinor, input.currency),
+          amount: toNumericString(toMinor(input.amount, input.currency), input.currency),
           method: input.method,
-          status,
-          needsSecondPerson,
-          matchRule: verdict.rule,
+          status: result.status,
+          needsSecondPerson: result.needsSecondPerson,
+          matchRule: result.verdict.rule,
         }),
       ]);
 
       return {
-        id: paymentId,
-        status,
+        id: result.id,
+        status: result.status,
         /** §6.2's threshold, surfaced so the console can say what happens next. */
-        needsSecondPerson,
+        needsSecondPerson: result.needsSecondPerson,
         approvalThreshold: Number(
-          toNumericString(settings.manualApprovalThresholdMinor, input.currency),
+          toNumericString(result.approvalThresholdMinor, input.currency),
         ),
         match: {
-          status: dealId ? verdict.status : "unmatched",
-          confidence: verdict.confidence,
-          rule: verdict.rule,
-          reason: verdict.reason,
-          candidates: verdict.candidates,
+          status: result.dealId ? result.verdict.status : "unmatched",
+          confidence: result.verdict.confidence,
+          rule: result.verdict.rule,
+          reason: result.verdict.reason,
+          candidates: result.verdict.candidates,
         },
       };
     });
@@ -780,44 +700,18 @@ export class FinancePaymentsController {
         );
       }
 
-      const { rows: postings } = await client.query<{ posting_id: string }>(
-        `SELECT DISTINCT posting_id FROM ledger_entries
-          WHERE org_id = $1 AND ref_type = 'payment' AND ref_id = $2
-            AND reverses_id IS NULL`,
-        [orgId, id],
-      );
-
-      for (const posting of postings) {
-        try {
-          await ledger.reverse(client, {
-            orgId,
-            postingId: posting.posting_id,
-            reason: parsed.data.reason,
-            actor,
-          });
-        } catch (err) {
-          if (isUniqueViolation(err)) {
-            // The unique index on `reverses_id` - this posting has already
-            // been reversed. Reported rather than swallowed: a second
-            // reversal would double the correction.
-            throw new ConflictException("this payment has already been reversed");
-          }
-          throw err;
-        }
+      // All three halves - the reversing ledger posting, the re-derived
+      // schedule and the status - live in `reverseFinancePayment`, because the
+      // import's rollback (§3 step 11) is a second caller that needs exactly
+      // the same thing. Its first version did only the status and left the
+      // ledger holding an entry for money that had been un-received.
+      const reversal = await reverseFinancePayment(client, orgId, id, parsed.data.reason, actor);
+      if (!reversal) {
+        throw new ConflictException(
+          `a ${payment.status} payment has nothing to reverse - it was never counted`,
+        );
       }
-
-      // Put the schedule back. Re-derived from what remains applied rather
-      // than subtracted, so a sequence of reversals cannot drift the balance.
-      if (payment.deal_id) {
-        await this.recomputeSchedulePaid(client, orgId, payment.deal_id);
-      }
-
-      await client.query(
-        `UPDATE finance_payments
-            SET status = 'reversed', reversal_reason = $1
-          WHERE id = $2`,
-        [parsed.data.reason, id],
-      );
+      const postings = { length: reversal.reversedPostings };
 
       await client.query(AUDIT_SQL, [
         orgId,
@@ -1164,6 +1058,15 @@ export class FinancePaymentsController {
    * correcting afterwards would mean a moment where the ledger says the
    * receivable fell by more than it did.
    */
+  /**
+   * Apply a received payment and post it to the ledger.
+   *
+   * A delegate now. The body moved to `record-payment.ts` so the IMPORT could
+   * settle a staged row through exactly the same code - §3's "imported
+   * payments go through the same normalizer and matching engine as connector
+   * payments". Kept as a method because `verify` reads better calling it than
+   * threading the import's module through this class.
+   */
   private async settleInto(
     client: Parameters<typeof applyReceipt>[0],
     options: {
@@ -1176,40 +1079,7 @@ export class FinancePaymentsController {
       actor: ReturnType<typeof auditActor>;
     },
   ): Promise<void> {
-    let creditMinor = options.amountMinor;
-    if (options.dealId) {
-      const applied = await applyReceipt(client, {
-        orgId: options.orgId,
-        dealId: options.dealId,
-        amountMinor: options.amountMinor,
-        currency: options.currency,
-      });
-      creditMinor = applied.creditMinor;
-    }
-
-    try {
-      await ledger.post(client, {
-        orgId: options.orgId,
-        refType: "payment",
-        refId: options.paymentId,
-        lines: ledger.paymentReceivedLines({
-          grossMinor: options.amountMinor,
-          feeMinor: 0,
-          taxOnFeeMinor: 0,
-          creditMinor,
-        }),
-        postedAt: `${options.receivedOn}T00:00:00Z`,
-        currency: options.currency,
-        actor: options.actor,
-      });
-    } catch (err) {
-      if (isCheckViolation(err)) {
-        throw new ConflictException(
-          `${options.receivedOn.slice(0, 7)} is a closed period - date this in the current open month`,
-        );
-      }
-      throw err;
-    }
+    return settlePayment(client as never, options);
   }
 
   /**

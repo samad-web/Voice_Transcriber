@@ -37,3 +37,17 @@ export function auditActor(req: PrincipalRequest): AuditActor {
   if (principal?.operatorEmail) return { type: "operator", id: principal.operatorEmail };
   return { type: "system", id: principal?.userId || "admin-key" };
 }
+
+/**
+ * The actor's `users.id`, or null when the actor is not a person.
+ *
+ * Every `*_by uuid REFERENCES users(id)` column needs this, and about thirty
+ * call sites currently write `actor.type === "user" ? actor.id : null` inline.
+ * Writing it as a function is not a style preference: an operator's id is an
+ * EMAIL, so the inline form without the type check passes a non-UUID into a
+ * uuid column and fails with a 22P02 that names neither the column nor the
+ * reason. Named once, it cannot be got wrong in the thirty-first place.
+ */
+export function actorUserId(actor: AuditActor): string | null {
+  return actor.type === "user" ? actor.id : null;
+}

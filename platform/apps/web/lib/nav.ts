@@ -6,6 +6,7 @@ import {
   BarChart3,
   ChartColumn,
   Bell,
+  Bot,
   Building2,
   CalendarCheck,
   CalendarClock,
@@ -34,6 +35,7 @@ import {
   Package,
   Palette,
   Phone,
+  PhoneCall,
   PhoneForwarded,
   PhoneOff,
   Plug,
@@ -430,6 +432,24 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // calls are counted should not be the ones setting the rule. The API
     // enforces it on every route of owner-agents.controller.ts.
     ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/callbacks",
+    label: "Call-backs",
+    icon: PhoneCall,
+    title: "Call-backs",
+    /**
+     * EVERY persona, including the telecaller - and that is the point of the
+     * page (Build docs/transcript-agent-build-plan §10A.3). The to-call list is
+     * a telecaller's own work; a manager sees their branch and an owner sees
+     * all, which is a row filter the API applies rather than a persona
+     * refusal.
+     *
+     * Gated on `call_intel` below, because a call-back exists only because the
+     * assistant read a transcript - the same argument
+     * `PERMISSION_OBJECT_MODULE.callback` makes.
+     */
+    context: "Conversations",
   },
   {
     href: "/owner/my-performance",
@@ -861,6 +881,42 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     ownerRoles: ["owner", "manager"],
   },
   {
+    href: "/owner/settings/transcript-agent",
+    label: "Call assistant",
+    icon: Bot,
+    title: "Call assistant",
+    context: "Settings",
+    /**
+     * OWNER ONLY, unlike the AI assistants page next door which admits a
+     * manager.
+     *
+     * §18: "who can change toggles: owner and admin only." The difference from
+     * `/owner/agents` is what the switches DO: an extractor decides which calls
+     * become leads, while these decide what happens to a customer without a
+     * person - including, once the owner throws the messaging switch, what gets
+     * said to them. The API enforces it on every route
+     * (`feature-gates.controller.ts`).
+     */
+    ownerRoles: ["owner"],
+  },
+  {
+    href: "/owner/settings/transcript-agent/callbacks",
+    label: "Call-back rules",
+    icon: PhoneCall,
+    title: "Call-back rules",
+    context: "Settings",
+    /**
+     * OWNER AND MANAGER, unlike the page above it.
+     *
+     * §10A.6's wizard is where the ladder, the grace period and the calling
+     * hours are set, and §18 keeps the SAVE to an owner - which the page
+     * enforces and the API's `callback:edit` permission enforces again. A
+     * manager may read it, because they are the person a missed call-back
+     * escalates to and "why did this reach me at 7pm" is answered here.
+     */
+    ownerRoles: ["owner", "manager"],
+  },
+  {
     href: "/owner/transcription",
     label: "Transcripts",
     icon: Languages,
@@ -925,7 +981,19 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
  */
 // The triage queue reads the same calls the log does, so it goes with it: a
 // recorder-only tenant offered "unmatched calls" would open an empty page.
-const CALL_INTEL_GATED_HREFS = ["/owner/calls", "/owner/calls/triage", "/owner/insights"];
+const CALL_INTEL_GATED_HREFS = [
+  "/owner/calls",
+  "/owner/calls/triage",
+  "/owner/insights",
+  // The transcript assistant's two pages. Same module as the call log, and for
+  // the stronger version of the same reason: a call-back and a suggestion are
+  // both produced by reading what a customer said, so a tenant who has not
+  // bought that disclosure has neither - and the pages would be permanently
+  // empty rather than merely restricted.
+  "/owner/callbacks",
+  "/owner/settings/transcript-agent",
+  "/owner/settings/transcript-agent/callbacks",
+];
 
 const CRM_GATED_HREFS = [
   "/owner/deals",
@@ -961,6 +1029,15 @@ const CRM_GATED_HREFS = [
   "/owner/finance/expenses",
   "/owner/finance/forecast",
   "/owner/finance/advisor",
+  // 0180-0181. On this list for the same reason as the five above it, which is
+  // NOT that they need the CRM - the vault and the calendar read neither deals
+  // nor contacts. It is that `sales` is a CRM_PRIMARY_SECTION, so `crmPrimary`
+  // promotes it, and that promotion is a no-op only while the section is EMPTY
+  // once the CRM is off. A non-CRM-gated page here quietly breaks it, which is
+  // exactly what nav.test.ts caught when the finance pages landed.
+  "/owner/finance/documents",
+  "/owner/finance/compliance",
+  "/owner/finance/close",
   "/owner/reports",
   // Response & Follow-ups (migration 0090) reads `leads` and `tasks` behind the
   // same `deal:view` gate, so it belongs on this list for the same reason the
@@ -972,6 +1049,7 @@ const CRM_GATED_HREFS = [
   "/owner/reports/builder",
   "/owner/duplicates",
   "/owner/import",
+  "/owner/import/history",
   // Build docs/40 §B3. `PERMISSION_OBJECT_MODULE.resource` is `crm` - a
   // resource hangs off projects, deals and quotations, and a recorder-only
   // tenant has no inventory to keep - so without the module every request this
@@ -1108,6 +1186,16 @@ export const OWNER_SETTINGS_GROUPS: readonly {
         blurb: "Score calls with AI, or against the steps you write yourself.",
       },
       { href: "/owner/agents", blurb: "AI helpers that read calls and chats and pick out leads and details." },
+      {
+        href: "/owner/settings/transcript-agent",
+        blurb:
+          "Whether the assistant turns what was said on a call into call-backs, follow-ups and bookings - and for whom.",
+      },
+      {
+        href: "/owner/settings/transcript-agent/callbacks",
+        blurb:
+          "When a customer asks to be rung back: the hours you ring in, the reminders, and who hears about it if it is missed.",
+      },
       { href: "/owner/transcription", blurb: "The language your calls are in, and how transcripts are written." },
       { href: "/owner/call-access", blurb: "Whether our support team may open your call recordings." },
       {
@@ -1170,6 +1258,10 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/whatsapp-leads": "leads",
   "/owner/duplicates": "leads",
   "/owner/import": "leads",
+  // §3's "import history page: files, status, counts, mapping used, and
+  // one-click rollback". No rail entry - it is reached from the importer - but
+  // it needs a section so its breadcrumb and Back button work.
+  "/owner/import/history": "leads",
 
   "/owner/contacts": "customers",
   "/owner/accounts": "customers",
@@ -1205,6 +1297,16 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/finance/expenses": "sales",
   "/owner/finance/forecast": "sales",
   "/owner/finance/advisor": "sales",
+  // The three pages from
+  // Build docs/indian-business-finance-documents-cycles-import §1-§2. Filed
+  // here so their breadcrumb and Back button know where they live; reached
+  // from the Finance page's own links, like dues/payments/expenses/forecast.
+  // No rail entry and no new feature key: `OWNER_RAIL_MAX_TOP_LEVEL` is 7 and
+  // the rail is at it, and `featureForPath`'s longest-prefix match already
+  // puts all three under `finance_collections`.
+  "/owner/finance/documents": "sales",
+  "/owner/finance/compliance": "sales",
+  "/owner/finance/close": "sales",
   "/owner/products": "sales",
   // Reference data beside the price list (Build docs/40 §B3): what the
   // business books, as opposed to what it charges for.
@@ -1225,6 +1327,11 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   // /owner/calls. Owner/manager only, so it never becomes a telecaller's first
   // page in this section - they work the queue on a handset, not here.
   "/owner/dialer": "conversations",
+  // The managed to-call list (Build docs/transcript-agent-build-plan §10A.3).
+  // "conversations", beside the call log and the dialer: a call-back is a call
+  // that has not happened yet, and the person who works this list works those
+  // pages in the same hour.
+  "/owner/callbacks": "conversations",
 
   // Sales overview first for the personas that have it; a telecaller's first
   // visible page here is My performance, which is their own scorecard - the

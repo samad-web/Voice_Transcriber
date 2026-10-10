@@ -1,0 +1,92 @@
+{
+  "id": "complaint-needs-a-person",
+  "tags": [
+    "complaint",
+    "english",
+    "escalation"
+  ],
+  "language": "en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Good afternoon sir, following up on your order.\nCustomer: This is the third time I'm calling about this. The unit still isn't installed and nobody calls back. I want to speak to your manager.\nAgent: I'm very sorry sir, let me get a senior person on this.\nCustomer: And I want this in writing. If it isn't sorted this week I'm going to the consumer forum.",
+  "expected": {
+    "intents": [
+      {
+        "type": "complaint",
+        "dueAt": null
+      },
+      {
+        "type": "escalation_request",
+        "dueAt": null
+      }
+    ],
+    "disposition": "complaint",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "escalate_to_human",
+        "state": "planned"
+      },
+      {
+        "tool": "register_complaint",
+        "state": "pending_review"
+      }
+    ],
+    "needsHuman": true
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "en",
+    "summary": "Third call about an uninstalled unit. Customer asked for a manager, wants it in writing, and mentioned the consumer forum.",
+    "disposition": "complaint",
+    "sentiment": "negative",
+    "intents": [
+      {
+        "type": "complaint",
+        "confidence": 0.96,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "The unit still isn't installed and nobody calls back",
+            "t": "00:09"
+          }
+        ],
+        "slots": {
+          "reason_text": "unit not installed, no callbacks"
+        }
+      },
+      {
+        "type": "escalation_request",
+        "confidence": 0.95,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "I want to speak to your manager",
+            "t": "00:15"
+          }
+        ],
+        "slots": {
+          "reason_text": "asked for a manager"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": true,
+      "legal_threat": true,
+      "abusive": false
+    },
+    "needs_human": true,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

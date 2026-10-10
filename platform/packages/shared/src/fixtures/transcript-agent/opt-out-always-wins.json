@@ -1,0 +1,91 @@
+{
+  "id": "opt-out-always-wins",
+  "tags": [
+    "opt-out",
+    "hinglish",
+    "multi-intent"
+  ],
+  "language": "hi-en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Sir ek minute, naya offer aaya hai.\nCustomer: dekho mujhe interest nahi hai. aur please mujhe dobara call na karein. list se naam hata do.\nAgent: ji sir, main hata deta hoon.\nCustomer: haan, aur WhatsApp pe bhi kuch na bhejo.",
+  "expected": {
+    "intents": [
+      {
+        "type": "do_not_contact",
+        "dueAt": null
+      },
+      {
+        "type": "disposition_update",
+        "dueAt": null
+      }
+    ],
+    "disposition": "not_interested",
+    "actions": [
+      {
+        "tool": "mark_do_not_contact",
+        "state": "planned"
+      },
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "hi-en",
+    "summary": "Customer is not interested and asked not to be called or messaged again, and to be removed from the list.",
+    "disposition": "not_interested",
+    "sentiment": "negative",
+    "intents": [
+      {
+        "type": "do_not_contact",
+        "confidence": 0.97,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "please mujhe dobara call na karein. list se naam hata do",
+            "t": "00:08"
+          },
+          {
+            "speaker": "customer",
+            "quote": "WhatsApp pe bhi kuch na bhejo",
+            "t": "00:22"
+          }
+        ],
+        "slots": {}
+      },
+      {
+        "type": "disposition_update",
+        "confidence": 0.94,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "mujhe interest nahi hai",
+            "t": "00:05"
+          }
+        ],
+        "slots": {
+          "disposition_text": "not_interested"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": true,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

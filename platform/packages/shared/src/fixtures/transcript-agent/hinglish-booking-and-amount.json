@@ -1,0 +1,99 @@
+{
+  "id": "hinglish-booking-and-amount",
+  "tags": [
+    "hinglish",
+    "multi-intent",
+    "payment-promise",
+    "booking"
+  ],
+  "language": "hi-en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Sir, demo ke liye ek appointment fix kar lein?\nCustomer: haan, parso subah 10 baje office aa jao.\nAgent: ji, aur advance payment?\nCustomer: das hazaar transfer kar dunga 15 taarikh ko.\nAgent: theek hai sir, main note kar leta hoon.",
+  "expected": {
+    "intents": [
+      {
+        "type": "book_appointment",
+        "dueAt": "2026-10-08T04:30:00.000Z",
+        "resolution": "exact"
+      },
+      {
+        "type": "payment_promise",
+        "dueAt": "2026-10-15T03:30:00.000Z",
+        "amountMinor": 1000000,
+        "resolution": "window"
+      }
+    ],
+    "disposition": "interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "log_payment_promise",
+        "state": "planned"
+      },
+      {
+        "tool": "book_slot",
+        "state": "pending_review"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "hi-en",
+    "summary": "Customer agreed to a demo appointment the day after tomorrow morning and promised a ten thousand rupee advance on the 15th.",
+    "disposition": "interested",
+    "sentiment": "positive",
+    "intents": [
+      {
+        "type": "book_appointment",
+        "confidence": 0.91,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "parso subah 10 baje office aa jao",
+            "t": "00:09"
+          }
+        ],
+        "slots": {
+          "when_text": "parso subah 10 baje",
+          "channel": "in_person",
+          "duration_min": 30
+        }
+      },
+      {
+        "type": "payment_promise",
+        "confidence": 0.89,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "das hazaar transfer kar dunga 15 taarikh ko",
+            "t": "00:21"
+          }
+        ],
+        "slots": {
+          "amount_text": "das hazaar",
+          "by_text": "15 taarikh ko"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

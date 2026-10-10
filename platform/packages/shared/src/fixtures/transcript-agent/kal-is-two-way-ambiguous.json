@@ -1,0 +1,65 @@
+{
+  "id": "kal-is-two-way-ambiguous",
+  "tags": [
+    "ambiguous-time",
+    "hindi",
+    "disposition-only"
+  ],
+  "language": "hi",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Sir aapne form bhara tha?\nCustomer: haan kal bhara tha, kal hi kisi ne call kiya tha.\nAgent: ji sir, wahi follow-up hai.\nCustomer: achha theek hai.",
+  "expected": {
+    "intents": [
+      {
+        "type": "disposition_update",
+        "dueAt": null
+      }
+    ],
+    "disposition": "already_contacted",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "hi",
+    "summary": "Customer said they filled the form yesterday and were already called. No new commitment.",
+    "disposition": "already_contacted",
+    "sentiment": "neutral",
+    "intents": [
+      {
+        "type": "disposition_update",
+        "confidence": 0.86,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "kal bhara tha, kal hi kisi ne call kiya tha",
+            "t": "00:06"
+          }
+        ],
+        "slots": {
+          "disposition_text": "already_contacted"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "past"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "id": "speaker-mixup-agent-said-it",
+  "tags": [
+    "speaker-mixup",
+    "english",
+    "no-action"
+  ],
+  "language": "en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: I could call you back tomorrow at 11 if that helps?\nCustomer: No need, I've already decided against it.\nAgent: Understood. May I ask why?\nCustomer: We went with someone else last month.",
+  "expected": {
+    "intents": [
+      {
+        "type": "disposition_update",
+        "dueAt": null
+      },
+      {
+        "type": "competitor_mention",
+        "dueAt": null
+      }
+    ],
+    "disposition": "lost_to_competitor",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "record_quality_signals",
+        "state": "planned"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "en",
+    "summary": "The agent offered a callback; the customer declined and said they had already chosen another supplier last month.",
+    "disposition": "lost_to_competitor",
+    "sentiment": "neutral",
+    "intents": [
+      {
+        "type": "disposition_update",
+        "confidence": 0.92,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "I've already decided against it",
+            "t": "00:08"
+          }
+        ],
+        "slots": {
+          "disposition_text": "lost_to_competitor"
+        }
+      },
+      {
+        "type": "competitor_mention",
+        "confidence": 0.88,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "We went with someone else last month",
+            "t": "00:18"
+          }
+        ],
+        "slots": {}
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "past"
+  }
+}

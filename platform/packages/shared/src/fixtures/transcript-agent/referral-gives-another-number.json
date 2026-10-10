@@ -1,0 +1,94 @@
+{
+  "id": "referral-gives-another-number",
+  "tags": [
+    "hinglish",
+    "referral",
+    "contact-update"
+  ],
+  "language": "hi-en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Sir, aap khud interested nahi hain?\nCustomer: mujhe nahi chahiye, par mere bhai ko chahiye. uska number 9876543210 hai, naam Rakesh.\nAgent: Rakesh ji ko call kar lete hain.\nCustomer: haan, aur mera naya email bhi likh lo, rakesh.r@example.com nahi, mera mera hai suresh.k@example.com.",
+  "expected": {
+    "intents": [
+      {
+        "type": "referral",
+        "dueAt": null
+      },
+      {
+        "type": "contact_update",
+        "dueAt": null
+      }
+    ],
+    "disposition": "not_interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "create_referral_lead",
+        "state": "planned"
+      },
+      {
+        "tool": "update_contact",
+        "state": "pending_review"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "hi-en",
+    "summary": "Customer is not interested himself but referred his brother Rakesh, and corrected his own email address.",
+    "disposition": "not_interested",
+    "sentiment": "neutral",
+    "intents": [
+      {
+        "type": "referral",
+        "confidence": 0.91,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "mere bhai ko chahiye. uska number 9876543210 hai, naam Rakesh",
+            "t": "00:08"
+          }
+        ],
+        "slots": {
+          "contact_text": "Rakesh",
+          "value_text": "9876543210"
+        }
+      },
+      {
+        "type": "contact_update",
+        "confidence": 0.84,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "mera naya email bhi likh lo",
+            "t": "00:24"
+          }
+        ],
+        "slots": {
+          "field": "email",
+          "value_text": "suresh.k@example.com"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

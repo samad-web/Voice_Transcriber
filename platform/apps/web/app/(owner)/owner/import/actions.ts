@@ -3,7 +3,16 @@
 import { API_URL } from "@/lib/server-api";
 import { ownerHeaders } from "../actions";
 
-export type ImportEntity = "contact" | "account" | "deal";
+// Mirrors `ImportEntity` in @aura/shared, which is itself pinned against
+// `import_jobs.entity`'s CHECK by import.test.ts. Three finance members were
+// added for Build docs/indian-business-finance-documents-cycles-import §3.
+export type ImportEntity =
+  | "contact"
+  | "account"
+  | "deal"
+  | "payment"
+  | "expense"
+  | "bank_txn";
 export type DedupeStrategy = "skip" | "update" | "create";
 
 /** The API's guessed column mapping for one entity's target fields. */
@@ -113,5 +122,153 @@ export async function fetchImportErrorsCsvAction(
     return { csv: data.csv };
   } catch {
     return { error: "API unreachable" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The staged flow
+// (Build docs/indian-business-finance-documents-cycles-import §3)
+//
+// Four actions for four steps - stage, read the preview, commit, undo - rather
+// than one that does everything. §3's whole premise is that a person approves
+// the import once, between staging and committing, and an action that staged
+// and committed in one call would have no gap for them to approve in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface StageInput {
+  entity: ImportEntity;
+  mapping: Record<string, string | null>;
+  mode: "create" | "update" | "upsert";
+  dateOrder: "iso" | "dmy" | "mdy";
+  rows: Record<string, unknown>[];
+  sourceRowNumbers?: number[];
+  fileName?: string;
+  sheetName?: string;
+  headerRow?: number;
+  source?: string;
+}
+
+export async function stageImportAction(input: StageInput): Promise<{
+  jobId?: string;
+  summary?: {
+    newRows: number;
+    updateRows: number;
+    skippedRows: number;
+    errorRows: number;
+    duplicateRows: number;
+    totalRows: number;
+  };
+  dedupeWarning?: string | null;
+  error?: string;
+}> {
+  const authHeaders = await ownerHeaders();
+  if (!authHeaders) return { error: "Not signed in as an instance owner" };
+
+  const res = await fetch(`${API_URL}/v1/import/stage`, {
+    method: "POST",
+    headers: { ...authHeaders, "content-type": "application/json" },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  if (!res.ok) return { error: await readError(res, "Could not stage that import.") };
+  const data = (await res.json()) as {
+    jobId: string;
+    summary: StageInput extends never ? never : Record<string, number>;
+    dedupeWarning: string | null;
+  };
+  return {
+    jobId: data.jobId,
+    summary: data.summary as never,
+    dedupeWarning: data.dedupeWarning,
+  };
+}
+
+export async function stagedRowsAction(
+  jobId: string,
+  status?: string,
+): Promise<{
+  rows?: Array<{
+    sourceRowNumber: number;
+    status: string;
+    error: string | null;
+    raw: Record<string, unknown>;
+  }>;
+  error?: string;
+}> {
+  const authHeaders = await ownerHeaders();
+  if (!authHeaders) return { error: "Not signed in as an instance owner" };
+
+  const query = status ? `?status=${encodeURIComponent(status)}&limit=50` : "?limit=50";
+  const res = await fetch(`${API_URL}/v1/import/jobs/${jobId}/staged${query}`, {
+    headers: authHeaders,
+    cache: "no-store",
+  });
+  if (!res.ok) return { error: await readError(res, "Could not read the staged rows.") };
+  const data = (await res.json()) as { rows: never[] };
+  return { rows: data.rows };
+}
+
+export async function commitImportAction(jobId: string): Promise<{
+  job?: ImportJob;
+  reconciled?: number | null;
+  awaitingApproval?: number | null;
+  error?: string;
+}> {
+  const authHeaders = await ownerHeaders();
+  if (!authHeaders) return { error: "Not signed in as an instance owner" };
+
+  const res = await fetch(`${API_URL}/v1/import/jobs/${jobId}/commit`, {
+    method: "POST",
+    headers: authHeaders,
+    cache: "no-store",
+  });
+  if (!res.ok) return { error: await readError(res, "Could not apply that import.") };
+  return (await res.json()) as { job: ImportJob; reconciled: number | null; awaitingApproval: number | null };
+}
+
+export async function discardStagedImportAction(jobId: string): Promise<{ error?: string }> {
+  const authHeaders = await ownerHeaders();
+  if (!authHeaders) return { error: "Not signed in as an instance owner" };
+
+  const res = await fetch(`${API_URL}/v1/import/jobs/${jobId}`, {
+    method: "DELETE",
+    headers: authHeaders,
+    cache: "no-store",
+  });
+  if (!res.ok) return { error: await readError(res, "Could not discard that import.") };
+  return {};
+}
+
+export async function rollbackImportAction(
+  jobId: string,
+  reason: string,
+): Promise<{ undone?: number; kept?: number; problems?: string[]; error?: string }> {
+  const authHeaders = await ownerHeaders();
+  if (!authHeaders) return { error: "Not signed in as an instance owner" };
+
+  const res = await fetch(`${API_URL}/v1/import/jobs/${jobId}/rollback`, {
+    method: "POST",
+    headers: { ...authHeaders, "content-type": "application/json" },
+    body: JSON.stringify({ reason }),
+    cache: "no-store",
+  });
+  if (!res.ok) return { error: await readError(res, "Could not undo that import.") };
+  return (await res.json()) as { undone: number; kept: number; problems: string[] };
+}
+
+/**
+ * The API's own message where it sent one.
+ *
+ * A 403 from a finance import is the case that matters: "Importing payments
+ * needs permission to create finance records" is actionable, and "Request
+ * failed" sends somebody to the wrong person.
+ */
+async function readError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string | string[] };
+    const message = Array.isArray(body.message) ? body.message.join(", ") : body.message;
+    return message || fallback;
+  } catch {
+    return fallback;
   }
 }

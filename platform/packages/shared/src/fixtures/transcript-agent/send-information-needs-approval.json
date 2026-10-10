@@ -1,0 +1,70 @@
+{
+  "id": "send-information-needs-approval",
+  "tags": [
+    "english",
+    "messaging",
+    "customer-visible"
+  ],
+  "language": "en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Shall I walk you through the plans?\nCustomer: Just WhatsApp me the brochure and the price list, I'll read it tonight.\nAgent: Will do, sir.\nCustomer: Thanks.",
+  "expected": {
+    "intents": [
+      {
+        "type": "send_information",
+        "dueAt": null
+      }
+    ],
+    "disposition": "interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "send_information",
+        "state": "pending_review"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "en",
+    "summary": "Customer asked for the brochure and price list on WhatsApp.",
+    "disposition": "interested",
+    "sentiment": "positive",
+    "intents": [
+      {
+        "type": "send_information",
+        "confidence": 0.93,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "Just WhatsApp me the brochure and the price list",
+            "t": "00:06"
+          }
+        ],
+        "slots": {
+          "channel": "whatsapp",
+          "subject_text": "brochure and price list"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

@@ -1558,3 +1558,37 @@ export {
   type ReplyDraftResult,
   type ReplySource,
 } from "./reply";
+
+// The transcript agent's understanding step (Build docs/transcript-agent-
+// build-plan §6, §9). Two files: the versioned prompt, and the call that uses
+// it with §9's routing, chunking and fallbacks.
+//
+// Kept out of this file, which is already the analyze pipeline's home and long
+// enough - the same reasoning `qualify.ts` and `reply.ts` are kept out for. The
+// one thing they share with it is the model and thinking configuration,
+// imported rather than re-declared.
+export {
+  UNDERSTANDING_PROMPT_VERSION,
+  TRANSCRIPT_FENCE,
+  TRANSCRIPT_FENCE_END,
+  assembleUnderstandingRequest,
+  buildUnderstandingPrompt,
+  type PromptContext,
+} from "./understand-prompt";
+export {
+  CHUNK_CHARS,
+  CHUNK_OVERLAP_LINES,
+  ESCALATE_ABOVE_CHARS,
+  ESCALATE_BELOW_CONFIDENCE,
+  UNDERSTANDING_RESPONSE_SCHEMA,
+  chunkTranscript,
+  escalatedThinking,
+  reconcileChunks,
+  shouldEscalate,
+  understandFastModel,
+  understandStrongModel,
+  understandTranscript,
+  type EscalationCheck,
+  type UnderstandInput,
+  type UnderstandResult,
+} from "./understand";

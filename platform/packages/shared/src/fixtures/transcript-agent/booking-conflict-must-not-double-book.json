@@ -1,0 +1,80 @@
+{
+  "id": "booking-conflict-must-not-double-book",
+  "tags": [
+    "booking-conflict",
+    "english",
+    "booking"
+  ],
+  "language": "en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "context": {
+    "busy": [
+      {
+        "start": "2026-10-07T05:00:00.000Z",
+        "end": "2026-10-07T06:30:00.000Z"
+      }
+    ]
+  },
+  "transcript": "Agent: When would suit you for the site visit?\nCustomer: Tomorrow at 11 works for me.\nAgent: Let me check and confirm.\nCustomer: Please do, I'll keep that slot free.",
+  "expected": {
+    "intents": [
+      {
+        "type": "book_appointment",
+        "dueAt": "2026-10-07T05:30:00.000Z",
+        "resolution": "exact"
+      }
+    ],
+    "disposition": "interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "book_slot",
+        "state": "blocked"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "en",
+    "summary": "Customer asked for a site visit tomorrow at 11 and will hold the slot.",
+    "disposition": "interested",
+    "sentiment": "positive",
+    "intents": [
+      {
+        "type": "book_appointment",
+        "confidence": 0.93,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "Tomorrow at 11 works for me",
+            "t": "00:07"
+          }
+        ],
+        "slots": {
+          "when_text": "tomorrow at 11",
+          "duration_min": 60,
+          "channel": "in_person"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

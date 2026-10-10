@@ -1,7 +1,10 @@
 import { Module } from "@nestjs/common";
+import { S3Module } from "../../s3/s3.module";
 import { AdvisorController } from "./advisor.controller";
+import { ComplianceController } from "./compliance.controller";
 import { ConnectorsController } from "./connectors.controller";
 import { DealTemplatesController } from "./deal-templates.controller";
+import { DocumentsController } from "./documents.controller";
 import { ExpensesController } from "./expenses.controller";
 import { FinanceDashboardController } from "./finance-dashboard.controller";
 import { FinancePaymentsController } from "./finance-payments.controller";
@@ -57,7 +60,25 @@ import { IncentivesController } from "./incentives.controller";
  * as a SOURCE that normalizes into `finance_payments` (DECISIONS.md §3.2), so
  * "collected" has one definition without any existing surface changing.
  */
+/**
+ * ── TEN CONTROLLERS NOW, AND ONE IMPORT ─────────────────────────────────────
+ *
+ * The last two come from
+ * Build docs/indian-business-finance-documents-cycles-import, which §4 of that
+ * document files under this spec: "Finance spec: add 'document vault and
+ * compliance calendar' and 'import center' as new sections and milestones."
+ *
+ * Two of its three parts are here. The third - the import centre - is NOT,
+ * deliberately: it extends `ImportModule` instead, because the same document
+ * asks for ONE import centre that employee lists and call logs also come
+ * through. A finance-only importer under this module would be the second one.
+ *
+ * `S3Module` is imported for the document vault's presigned PUT/GET, the same
+ * way the org chart's contract documents reach storage. The bytes never pass
+ * through this API.
+ */
 @Module({
+  imports: [S3Module],
   controllers: [
     // M1: §5's templates, the generated schedules, §9's period lock.
     DealTemplatesController,
@@ -76,6 +97,15 @@ import { IncentivesController } from "./incentives.controller";
     FinanceDashboardController,
     // M8 + M9: the alert inbox, the rules, the forecast, the leak report.
     AdvisorController,
+    // §1's document vault: statutory documents with an expiry, an owner and a
+    // reminder. Per-PERSON documents stay on the org chart (0178) - see
+    // documents.controller.ts for why that boundary is about access, not tidiness.
+    DocumentsController,
+    // §2's compliance calendar and month-end close. The calendar is DATA in
+    // `compliance_items`, seeded once from the shared catalogue and owned by
+    // the tenant after that, because §2 requires a CA to be able to correct a
+    // date without a deploy.
+    ComplianceController,
   ],
 })
 export class FinanceModule {}

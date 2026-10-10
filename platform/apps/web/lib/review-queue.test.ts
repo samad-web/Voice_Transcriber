@@ -4,6 +4,7 @@ import {
   orderReviewItems,
   parseReviewFilter,
   reviewHref,
+  reviewSourceSpec,
   reviewSourcesFor,
   waitingFor,
   type ReviewItem,
@@ -83,5 +84,63 @@ describe("waitingFor", () => {
     expect(waitingFor("2026-09-16T09:00:00Z", now)).toBe("3 h");
     expect(waitingFor("2026-09-13T12:00:00Z", now)).toBe("3 d");
     expect(waitingFor("2026-09-16T12:05:00Z", now)).toBe("0 min");
+  });
+});
+
+describe("the call assistant as a review source", () => {
+  const ALL = only("whatsapp_leads", "duplicates", "inbox");
+
+  it("is offered only to a tenant whose plan includes the module", () => {
+    // §3A.1 step 2: the plan is the ceiling, and the TAB is the disclosure
+    // that the feature exists at all - so a tenant without `call_intel` must
+    // not see it even though nothing about their role forbids it.
+    expect(reviewSourcesFor("owner", ["crm"], ALL)).not.toContain("agent_actions");
+    expect(reviewSourcesFor("owner", ["crm", "call_intel"], ALL)).toContain("agent_actions");
+  });
+
+  it("comes first, because it is the only source with a deadline", () => {
+    // §12's SLA timer escalates a suggestion left too long. Three queues that
+    // never expire must not sit in front of it.
+    expect(reviewSourcesFor("owner", ["crm", "call_intel"], ALL)[0]).toBe("agent_actions");
+  });
+
+  it("reaches a telecaller, who is the person the suggestions belong to", () => {
+    expect(reviewSourcesFor("telecaller", ["crm", "call_intel"], ALL)).toEqual([
+      "agent_actions",
+      "whatsapp",
+    ]);
+  });
+
+  it("is not offered to marketing, whose API refuses it", () => {
+    expect(reviewSourcesFor("marketing", ["crm", "call_intel"], ALL)).toEqual(["duplicates"]);
+  });
+
+  it("is the only source that hides itself when its API refuses", () => {
+    // The rest show an honest zero; this one disappears (§3A.4's "hidden, not
+    // greyed out"). Pinned so the asymmetry is deliberate rather than noticed
+    // later and "fixed".
+    expect(reviewSourceSpec("agent_actions").hideWhenDenied).toBe(true);
+    for (const key of ["whatsapp", "opt_outs", "duplicates"] as const) {
+      expect(reviewSourceSpec(key).hideWhenDenied ?? false).toBe(false);
+    }
+  });
+
+  it("interleaves with the other sources by how long each has waited", () => {
+    const items: ReviewItem[] = [
+      {
+        source: "agent_actions",
+        id: "ag",
+        waitingSince: "2026-10-10T01:00:00.000Z",
+        agentAction: { id: "ag" } as never,
+      },
+      {
+        source: "opt_outs",
+        id: "oo",
+        waitingSince: "2026-10-10T00:00:00.000Z",
+        optOut: { id: "oo" } as never,
+      },
+    ];
+    expect(orderReviewItems(items, "all").map((i) => i.id)).toEqual(["oo", "ag"]);
+    expect(orderReviewItems(items, "agent_actions").map((i) => i.id)).toEqual(["ag"]);
   });
 });

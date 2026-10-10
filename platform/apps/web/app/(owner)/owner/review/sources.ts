@@ -2,10 +2,12 @@ import "server-only";
 import type { ApiResult } from "@/lib/api-result";
 import type { getOwner } from "@/lib/owner-context";
 import {
+  reviewSourceSpec,
   reviewSourcesFor,
   type ReviewDuplicate,
   type ReviewItem,
   type ReviewOptOut,
+  type ReviewAgentAction,
   type ReviewQualification,
   type ReviewSourceKey,
 } from "@/lib/review-queue";
@@ -33,6 +35,12 @@ export interface ReviewSourceLoad {
   /** Waiting in total, which can exceed `items` when the source pages. */
   total: number;
   unavailable: boolean;
+  /**
+   * The API REFUSED this person, rather than failing. Kept apart from
+   * `unavailable` because the two mean opposite things to a reader: one is
+   * "this is not yours", the other is "this is broken".
+   */
+  denied: boolean;
 }
 
 export interface ReviewLoadOptions {
@@ -58,9 +66,9 @@ function settle<T>(
   result: ApiResult<T>,
   pick: (data: T) => { items: ReviewItem[]; total: number },
 ): ReviewSourceLoad {
-  if (result.ok) return { ...pick(result.data), unavailable: false };
+  if (result.ok) return { ...pick(result.data), unavailable: false, denied: false };
   const denied = result.kind === "forbidden" || result.kind === "notfound";
-  return { items: [], total: 0, unavailable: !denied };
+  return { items: [], total: 0, unavailable: !denied, denied };
 }
 
 export const auraWhatsAppReviewSource: ReviewSourceAdapter = {
@@ -117,7 +125,41 @@ export const auraDuplicateReviewSource: ReviewSourceAdapter = {
 };
 
 /** This deployment's adapters. A tenant-specific backend swaps entries here. */
+/**
+ * §12's review inbox, as a source of this queue rather than a page of its own.
+ *
+ * ── WHY IT IS NOT ITS OWN SCREEN ──────────────────────────────────────────
+ *
+ * "Needs review" already exists and already means one thing: something a
+ * machine proposed that a person must decide. A second screen with the same
+ * job would split a telecaller's attention between two inboxes, and the one
+ * with the SLA timer is the one they would miss.
+ *
+ * `pending_review` only. The other states (`done`, `rejected`, `frozen`) are
+ * history and belong in the call's own timeline; a queue that shows them is a
+ * queue nobody can empty.
+ */
+export const auraAgentActionReviewSource: ReviewSourceAdapter = {
+  key: "agent_actions",
+  async load(owner) {
+    const result = await get<{ items: ReviewAgentAction[] }>(
+      owner,
+      `/v1/transcript-agent/review?state=pending_review&limit=${LIMIT}`,
+    );
+    return settle(result, (data) => ({
+      items: data.items.map((action) => ({
+        source: "agent_actions" as const,
+        id: action.id,
+        waitingSince: action.requested_at,
+        agentAction: action,
+      })),
+      total: data.items.length,
+    }));
+  },
+};
+
 export const REVIEW_ADAPTERS: Record<ReviewSourceKey, ReviewSourceAdapter> = {
+  agent_actions: auraAgentActionReviewSource,
   whatsapp: auraWhatsAppReviewSource,
   opt_outs: auraOptOutReviewSource,
   duplicates: auraDuplicateReviewSource,
@@ -138,14 +180,25 @@ export interface ReviewQueueData {
  */
 export async function loadReviewQueue(owner: Owner, options: ReviewLoadOptions): Promise<ReviewQueueData> {
   const { ownerRole, enabledModules, featureOverrides } = owner.membership;
-  const available = reviewSourcesFor(ownerRole, enabledModules, featureOverrides);
-  const loads = await Promise.all(available.map((key) => REVIEW_ADAPTERS[key].load(owner, options)));
+  const offered = reviewSourcesFor(ownerRole, enabledModules, featureOverrides);
+  const loads = await Promise.all(offered.map((key) => REVIEW_ADAPTERS[key].load(owner, options)));
+
+  // §3A.4: "agent sections are HIDDEN, not greyed out". A source that says so
+  // on its spec loses its TAB when its API refuses this person, rather than
+  // showing a zero they cannot do anything about. Every other source keeps the
+  // tab - see `hideWhenDenied`'s own note for why the default is the opposite.
+  const available = offered.filter(
+    (key, index) => !(loads[index].denied && reviewSourceSpec(key).hideWhenDenied),
+  );
 
   const totals: Partial<Record<ReviewSourceKey, number>> = {};
   const unavailable: ReviewSourceKey[] = [];
-  available.forEach((key, index) => {
+  const items: ReviewItem[] = [];
+  offered.forEach((key, index) => {
+    if (!available.includes(key)) return;
     totals[key] = loads[index].total;
     if (loads[index].unavailable) unavailable.push(key);
+    items.push(...loads[index].items);
   });
-  return { available, items: loads.flatMap((l) => l.items), totals, unavailable };
+  return { available, items, totals, unavailable };
 }

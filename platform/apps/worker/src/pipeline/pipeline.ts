@@ -736,6 +736,116 @@ export async function runPostAsrStages(
   } catch (err) {
     console.error(`call ${callId}: enrich publish failed (sweep will retry):`, err);
   }
+
+  /*
+   * Offer the call to the TRANSCRIPT AGENT (Build docs/transcript-agent-build-
+   * plan §4). Last, non-blocking, and swallowed on failure - the same contract
+   * `publishEnrich` above has, for the same three reasons.
+   *
+   * ── THE GATE IS INSIDE `handOffToAgent`, NOT HERE ─────────────────────────
+   *
+   * §4's MUST is that the gate is resolved BEFORE ANY PROCESSING, and §19 turns
+   * that into "for a disabled user, assert zero model calls and zero metered
+   * usage". A check here would be a second place that reads the gate, which
+   * §3A.4 forbids outright ("no code reads flags directly"). So the ingest step
+   * owns it: for a telecaller whose owner has not switched the assistant on,
+   * `ingestTranscript` writes one row marked `skipped_feature_off` and returns.
+   *
+   * ── WHY THE AGENT DOES NOT BLOCK `COMPLETE` ───────────────────────────────
+   *
+   * The call is COMPLETE as of the advance above: the transcript, the facts and
+   * the lead all exist and are correct. A failure in the agent costs a
+   * suggestion, not a lead - and `sweepAgentRuns` finds any transcript whose
+   * run never started. Letting it fail the call would put a second retry
+   * machine over work that already has one, which is the mistake FAILED_CRM's
+   * comment above exists to prevent.
+   */
+  try {
+    await handOffToAgent(orgId, callId);
+  } catch (err) {
+    console.error(`call ${callId}: transcript agent hand-off failed (sweep will retry):`, err);
+  }
+}
+
+/**
+ * Ingest this call's transcript for the agent, and run it if the gate allows.
+ *
+ * Imported LAZILY, inside the function. Two reasons, and the second is the one
+ * that matters: the agent's module graph pulls in `@aura/llm`'s understanding
+ * step and the whole policy layer, and a top-level import would load all of it
+ * into every worker process at boot - including one that only drains exports.
+ * The first is that it keeps this file's import list about the ASR pipeline.
+ */
+async function handOffToAgent(orgId: string, callId: string): Promise<void> {
+  const [{ ingestTranscript }, { runAgent }] = await Promise.all([
+    import("./agent/ingest"),
+    import("./agent/runner"),
+  ]);
+
+  const transcript = await withOrgContext(orgId, async (client) => {
+    const {
+      rows: [row],
+    } = await client.query<{
+      text: string | null;
+      language: string | null;
+      engine: string | null;
+      confidence: number | null;
+      diarized: boolean | null;
+      direction: string | null;
+      started_at: Date | null;
+      ended_at: Date | null;
+      duration_s: number | null;
+      lead_id: string | null;
+    }>(
+      `SELECT t.text, t.language, t.engine, t.confidence, t.diarized,
+              c.direction, c.started_at, c.ended_at, c.duration_s,
+              (SELECT l.id FROM leads l
+                WHERE l.last_call_id = c.id OR l.first_call_id = c.id
+                ORDER BY (l.last_call_id = c.id) DESC
+                LIMIT 1) AS lead_id
+         FROM calls c
+         LEFT JOIN transcripts t ON t.call_id = c.id
+        WHERE c.id = $1`,
+      [callId],
+    );
+    return row;
+  });
+
+  if (!transcript) return;
+
+  const ingested = await ingestTranscript({
+    orgId,
+    callId,
+    // 'handset', because that is where this pipeline's calls come from. A
+    // telephony webhook would pass its own provider name and its own
+    // `externalCallId`, which is what §4's idempotency key is keyed on.
+    source: "handset",
+    externalCallId: callId,
+    text: transcript.text,
+    diarized: Boolean(transcript.diarized),
+    language: transcript.language,
+    sttProvider: transcript.engine,
+    sttConfidence: transcript.confidence,
+    leadId: transcript.lead_id,
+    direction: transcript.direction,
+    startedAt: transcript.started_at,
+    endedAt: transcript.ended_at,
+    durationSec: transcript.duration_s,
+  });
+
+  // Only a `ready` outcome has a run to make. `skipped_feature_off`,
+  // `no_conversation` and `duplicate` are all terminal and all cost nothing -
+  // which is §19's no-cost proof, held by this branch.
+  if (ingested.kind !== "ready") {
+    console.log(`call ${callId}: agent ${ingested.kind}`);
+    return;
+  }
+
+  const outcome = await runAgent({ orgId, transcriptId: ingested.transcriptId });
+  console.log(
+    `call ${callId}: agent run ${outcome.status} - ` +
+      `${outcome.executed} done, ${outcome.pendingReview} for review, ${outcome.blocked} blocked`,
+  );
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { requireFeature } from "@/lib/owner-context";
 import { ImportWizard } from "./import-client";
@@ -16,7 +17,18 @@ export default async function ImportPage() {
   await requireFeature("/owner/import");
   return (
     <>
-      <PageHeader title="Import" context="Leads" />
+      <PageHeader
+        title="Import"
+        context="Leads"
+        actions={
+          <Link
+            href="/owner/import/history"
+            className="text-xs text-text-muted underline hover:text-text"
+          >
+            Import history
+          </Link>
+        }
+      />
       <ImportWizard />
     </>
   );

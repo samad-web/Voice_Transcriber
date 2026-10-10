@@ -19,7 +19,7 @@ import { enabledFeatures, type FeatureKey, type FeatureOverrides, type OwnerRole
  * only touch records.
  */
 
-export type ReviewSourceKey = "whatsapp" | "opt_outs" | "duplicates";
+export type ReviewSourceKey = "agent_actions" | "whatsapp" | "opt_outs" | "duplicates";
 export type ReviewFilter = ReviewSourceKey | "all";
 
 export interface ReviewSourceSpec {
@@ -30,19 +30,53 @@ export interface ReviewSourceSpec {
   /** The org feature (0101) the source's own page is gated on, if any. */
   feature: FeatureKey | null;
   /**
+   * The PLAN module (`organizations.enabled_modules`) the source needs, if
+   * any. Separate from `feature`: 0101's switchboard is what a tenant turns on
+   * inside a plan they already hold, and the transcript agent's ceiling is the
+   * plan itself (§3A.1 step 2). A tenant without the module must not see the
+   * tab at all, because the tab IS the disclosure that the feature exists.
+   */
+  module: string | null;
+  /**
    * The personas the source's own page and API admit. Mirrors lib/nav.ts for
    * the two pages that exist, and the API's owner+manager gate for opt-outs -
    * offering a tab whose every action 403s is a dead end with extra steps.
    */
   ownerRoles: readonly OwnerRole[];
+  /**
+   * A 403 from this source's API removes its TAB rather than showing it empty.
+   *
+   * The default is the opposite, and deliberately so: a telecaller who holds
+   * `conversation:view` but not the duplicates grant still gets a duplicates
+   * tab reading zero, which is honest - the queue exists and they cannot act
+   * on it. §3A.4 requires the other behaviour for the agent: "agent sections
+   * are HIDDEN, not greyed out", because a person whose owner has not switched
+   * the assistant on for them should not be told how many suggestions they are
+   * not allowed to see.
+   */
+  hideWhenDenied?: boolean;
 }
 
 export const REVIEW_SOURCES: readonly ReviewSourceSpec[] = [
+  {
+    // First, and it is the only source here with a DEADLINE: §12's SLA timer
+    // escalates a suggestion that sits too long, so burying it under three
+    // queues that never expire would be the wrong default order.
+    key: "agent_actions",
+    label: "Call suggestions",
+    blurb:
+      "What the assistant read out of a call and proposes doing about it. Nothing here has happened yet; approving is what makes it happen.",
+    feature: null,
+    module: "call_intel",
+    ownerRoles: ["owner", "manager", "telecaller", "sales"],
+    hideWhenDenied: true,
+  },
   {
     key: "whatsapp",
     label: "WhatsApp leads",
     blurb: "Threads from unknown numbers the qualifier scored as prospects. Nothing becomes a lead until you approve it.",
     feature: "whatsapp_leads",
+    module: null,
     ownerRoles: ["owner", "manager", "telecaller", "sales"],
   },
   {
@@ -50,6 +84,7 @@ export const REVIEW_SOURCES: readonly ReviewSourceSpec[] = [
     label: "Possible opt-outs",
     blurb: "Messages that might be a request to stop. Confirming blocks sending to that number; dismissing changes nothing.",
     feature: null,
+    module: null,
     ownerRoles: ["owner", "manager"],
   },
   {
@@ -57,6 +92,7 @@ export const REVIEW_SOURCES: readonly ReviewSourceSpec[] = [
     label: "Duplicates",
     blurb: "Records that look like the same person or company. Keep one and the other merges into it.",
     feature: "duplicates",
+    module: null,
     ownerRoles: ["owner", "manager", "marketing"],
   },
 ];
@@ -75,7 +111,10 @@ export function reviewSourcesFor(
   // its dependencies, and there is no reason to redo that for each row.
   const on = enabledFeatures(modules, features);
   return REVIEW_SOURCES.filter(
-    (s) => s.ownerRoles.includes(role) && (s.feature === null || on.has(s.feature)),
+    (s) =>
+      s.ownerRoles.includes(role) &&
+      (s.feature === null || on.has(s.feature)) &&
+      (s.module === null || modules.includes(s.module)),
   ).map((s) => s.key);
 }
 
@@ -155,7 +194,69 @@ export interface ReviewDuplicate {
   created_at: string;
 }
 
+
+/**
+ * One suggestion the call assistant is waiting on a person for (§12).
+ *
+ * ── WHY SO MANY VERSION FIELDS ────────────────────────────────────────────
+ *
+ * §20: "every decision records prompt, model, schema and resolver versions and
+ * is reproducible from stored inputs." They are on the card because the
+ * question a reviewer asks about a run of bad suggestions is "what changed",
+ * and the answer is one of these four numbers.
+ *
+ * ── `evidence` IS THE CUSTOMER'S OWN WORDS, NOT A PARAPHRASE ──────────────
+ *
+ * A reviewer approving an action a model proposed needs the sentence it read
+ * it out of. The API serves a window around each quote rather than the whole
+ * transcript, because the transcript itself is behind the call-access rules.
+ */
+export interface ReviewAgentAction {
+  id: string;
+  tool: string;
+  tier: string;
+  capability: string;
+  /** What the tool would be called with. Edited in place by a reviewer. */
+  params: Record<string, unknown> | null;
+  state: string;
+  policy_code: string | null;
+  reason: string | null;
+  final_score: number | null;
+  band: string | null;
+  requested_at: string;
+  /** §12's SLA timer. Past this, the item escalates through the Advisor. */
+  review_due_at: string | null;
+  review_escalated_at: string | null;
+  intent_id: string | null;
+  intent_type: string | null;
+  intent_status: string | null;
+  confidence: number | null;
+  slots: Record<string, unknown> | null;
+  /** What the deterministic resolvers made of the slots - times and amounts. */
+  resolved: Record<string, unknown> | null;
+  evidence: Array<{ quote?: string; speaker?: string; at_ms?: number }> | null;
+  /** §12's "confidence breakdown" - the factors, not one number. */
+  confidenceBreakdown: Record<string, unknown> | null;
+  thresholds: { auto: number; review: number } | null;
+  run_id: string;
+  effective_mode: string | null;
+  model: string | null;
+  prompt_version: string | null;
+  schema_version: string | null;
+  resolver_version: string | null;
+  summary: string | null;
+  call_id: string | null;
+  language: string | null;
+  telecaller_id: string | null;
+  telecaller_name: string | null;
+  roles_inferred: boolean | null;
+  stt_confidence: number | null;
+  started_at: string | null;
+  lead_id: string | null;
+  lead_name: string | null;
+}
 export type ReviewItem =
+  | { source: "agent_actions"; id: string; waitingSince: string; agentAction: ReviewAgentAction }
   | { source: "whatsapp"; id: string; waitingSince: string; qualification: ReviewQualification }
   | { source: "opt_outs"; id: string; waitingSince: string; optOut: ReviewOptOut }
   | { source: "duplicates"; id: string; waitingSince: string; duplicate: ReviewDuplicate };

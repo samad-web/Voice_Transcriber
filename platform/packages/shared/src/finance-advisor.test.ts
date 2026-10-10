@@ -18,12 +18,68 @@ import {
 
 describe("the catalogue", () => {
   it("holds all seventeen of §12.4's rules, once each", () => {
-    expect(ADVISOR_RULES).toHaveLength(17);
+    // Named individually rather than counted, so the five compliance rules
+    // added later (Build docs/indian-business-finance-documents-cycles-import
+    // §2) cannot be mistaken for §12.4's set, and so removing one of §12.4's
+    // still fails even though the total is no longer 17.
     const codes = ADVISOR_RULES.map((r) => r.code);
-    expect(new Set(codes).size).toBe(17);
+    expect([...codes].sort()).toEqual(
+      [
+        "aging_breach",
+        "call_cost_no_results",
+        "cash_runway_low",
+        "closed_unpaid",
+        "connector_unhealthy",
+        "discount_abuse",
+        "duplicate_expense",
+        "expense_outlier",
+        "failed_not_retried",
+        "fee_drift",
+        "idle_spend",
+        "incentive_not_clawed_back",
+        "negative_roi_source",
+        "refund_spike",
+        "settlement_mismatch",
+        "slipped_promise",
+        "unmatched_money",
+        // The compliance calendar and document vault.
+        "books_not_closed",
+        "compliance_due",
+        "compliance_overdue",
+        "document_expired",
+        "document_expiring",
+      ].sort(),
+    );
+    expect(new Set(codes).size).toBe(codes.length);
     // And the enum and the catalogue cannot drift apart - a rule added to one
     // and not the other is the shape of bug that makes a rule unseedable.
     expect([...codes].sort()).toEqual([...AdvisorRuleCode.options].sort());
+  });
+
+  it("routes the compliance reminders at the desk that does the work", () => {
+    // A filing is a finance handler's job; renewing a licence is a decision,
+    // so it goes to the owner.
+    expect(advisorRule("compliance_due").routeTo).toBe("finance_handler");
+    expect(advisorRule("compliance_overdue").routeTo).toBe("finance_handler");
+    expect(advisorRule("document_expiring").routeTo).toBe("owner");
+    expect(advisorRule("document_expired").routeTo).toBe("owner");
+    expect(advisorRule("books_not_closed").routeTo).toBe("finance_handler");
+  });
+
+  it("carries no amount on a reminder, and no statistics", () => {
+    for (const code of [
+      "compliance_due",
+      "compliance_overdue",
+      "document_expiring",
+      "document_expired",
+      "books_not_closed",
+    ] as const) {
+      expect(advisorRule(code).carriesAmount).toBe(false);
+      expect(advisorRule(code).statistical).toBe(false);
+      // Nightly: `remindsToday` matches an exact DATE, so an hourly sweep
+      // would raise the same reminder twenty-four times.
+      expect(advisorRule(code).schedule).toBe("nightly");
+    }
   });
 
   it("routes each rule to the person closest to the money", () => {

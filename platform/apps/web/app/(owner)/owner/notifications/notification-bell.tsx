@@ -8,6 +8,7 @@ import {
   ArrowRightLeft,
   Ban,
   Bell,
+  Bot,
   ClipboardCheck,
   Clock,
   Download,
@@ -15,6 +16,7 @@ import {
   HardDrive,
   Hourglass,
   Inbox,
+  PhoneCall,
   PhoneMissed,
   Plug,
   ShieldAlert,
@@ -83,6 +85,12 @@ const ICONS: Record<NotificationKindSpec["icon"], LucideIcon> = {
   // blank square in the bell.
   upload: Upload,
   download: Download,
+  // The transcript assistant's two (0184-0187). `phone-missed` is reused for
+  // a missed call-back rather than getting a glyph of its own: it is the same
+  // idea as 0134's missed call to a reader scanning the bell, and a second
+  // phone icon beside the first teaches nobody anything.
+  "phone-call": PhoneCall,
+  bot: Bot,
 };
 
 type Tab = "all" | "action";

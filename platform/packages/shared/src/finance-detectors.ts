@@ -8,6 +8,11 @@ import {
 import { MIN_SAMPLE_DEFAULT, driftTest, outlierTest, zScore } from "./finance-stats";
 import { daysBetween } from "./finance";
 import { formatMoney, percentage } from "./money";
+// The compliance and vault deciders below delegate every date judgement to
+// these, rather than re-deriving it. A second implementation here is how the
+// inbox and the page end up disagreeing about what is overdue.
+import { closeReadiness, complianceStatus, daysUntilDue, remindsToday } from "./compliance";
+import { daysUntilExpiry, documentExpiryStatus, documentRemindsToday } from "./documents";
 
 /**
  * §12.4's seventeen rules, as PURE decision functions.
@@ -987,6 +992,269 @@ function round2(value: number): number {
  * catalogue - and so a rule added to §12.4 without a decider is a red test
  * rather than a row in `advisor_rules` that can never fire.
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// The compliance calendar and the document vault
+// (Build docs/indian-business-finance-documents-cycles-import §2)
+//
+// ── WHY THESE FIVE DECIDERS ARE SO SMALL ────────────────────────────────────
+//
+// Because the real decisions already live in `compliance.ts` and
+// `documents.ts`, as `remindsToday`, `complianceStatus` and
+// `documentRemindsToday` - tested there against their own fixtures. These
+// functions exist to put a verdict in the SHAPE the Advisor consumes
+// (`DetectorVerdict`, with a rendered message and an explain payload), not to
+// re-decide anything.
+//
+// Writing the date arithmetic a second time here is the one thing that must
+// not happen: the console colours a filing from `complianceStatus` and the
+// inbox would then disagree with the page about whether something is overdue.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ComplianceFilingCandidate {
+  filingId: string;
+  itemCode: string;
+  /** The item's name as the tenant has it - never the catalogue's. */
+  name: string;
+  /** "September 2026", "Q2 FY 2026-27". */
+  periodLabel: string;
+  dueOn: string;
+  filedOn: string | null;
+  waivedAt: string | null;
+  /** The item's own offsets. Empty falls back to the rule's `fallbackDays`. */
+  reminderOffsets: readonly number[];
+  /**
+   * The date the filing row was GENERATED, as `YYYY-MM-DD`.
+   *
+   * Read by `decideComplianceOverdue` to tell a missed deadline from a
+   * back-filled one. Optional so a caller that does not have it still works;
+   * absent, the rule behaves as it did before the distinction existed.
+   */
+  generatedOn?: string | null;
+}
+
+/** `compliance_due`: today is one of a filing's reminder days. */
+export function decideComplianceDue(
+  candidate: ComplianceFilingCandidate,
+  today: string,
+  params: Record<string, number>,
+): DetectorVerdict {
+  const spec = advisorRule("compliance_due");
+  const fallbackDays = params.fallbackDays ?? spec.params.fallbackDays;
+
+  if (candidate.filedOn) return silent(spec, "It has already been filed.");
+  if (candidate.waivedAt) return silent(spec, "It is marked not applicable.");
+  if (candidate.dueOn < today) {
+    // Not this rule's business - `compliance_overdue` owns it. Without this
+    // the two rules would both fire on the same filing for weeks.
+    return silent(spec, "It is already overdue, which the overdue rule reports instead.");
+  }
+
+  const offsets = candidate.reminderOffsets.length > 0 ? candidate.reminderOffsets : [fallbackDays];
+  if (!remindsToday(candidate, offsets, today)) {
+    return silent(spec, "Today is not one of its reminder days.", {
+      dueOn: candidate.dueOn,
+      offsets: offsets.join(", "),
+    });
+  }
+
+  const days = daysUntilDue(candidate, today) ?? 0;
+  return fire(spec, {
+    amountAtRiskMinor: null,
+    values: { name: candidate.name, period: candidate.periodLabel, date: candidate.dueOn, days },
+    formula: "A reminder day for this filing",
+    inputs: { dueOn: candidate.dueOn, today, offsets: offsets.join(", ") },
+    records: [{ type: "compliance_filing", id: candidate.filingId, label: candidate.name }],
+  });
+}
+
+/** `compliance_overdue`: past due, not filed, not waived. */
+export function decideComplianceOverdue(
+  candidate: ComplianceFilingCandidate,
+  today: string,
+  params: Record<string, number>,
+): DetectorVerdict {
+  const spec = advisorRule("compliance_overdue");
+  const repeatEveryDays = Math.max(1, params.repeatEveryDays ?? spec.params.repeatEveryDays);
+
+  if (complianceStatus(candidate, today) !== "overdue") {
+    return silent(spec, "It is not overdue.", { dueOn: candidate.dueOn, today });
+  }
+
+  // ── A BACK-FILLED FILING IS NOT A MISSED DEADLINE ───────────────────────
+  //
+  // Seeding the calendar mid-year generates the whole financial year, so a
+  // tenant who sets it up in October gets filings for April through September
+  // that are already past their due date. Thirty-one of them, measured on a
+  // real seed - and every one would have raised a CRITICAL alert on day one
+  // about a return the business very likely filed on time, through their CA,
+  // months before this system knew the deadline existed.
+  //
+  // An inbox that opens with thirty-one false criticals is an inbox nobody
+  // believes again, so the rule stays silent where the row was generated AFTER
+  // it was already due. The filing is still visibly overdue on the calendar -
+  // where an owner can mark it filed or waive it - because the record is real.
+  // What is not real is the claim that they missed it.
+  if (candidate.generatedOn && candidate.generatedOn > candidate.dueOn) {
+    return silent(
+      spec,
+      "This period was already past its due date when the calendar was set up, so whether it was filed is not something this system can know. Mark it filed or not applicable on the calendar.",
+      { dueOn: candidate.dueOn, generatedOn: candidate.generatedOn },
+    );
+  }
+
+  const lateBy = -(daysUntilDue(candidate, today) ?? 0);
+  // Re-raised on a cadence rather than every night: a return genuinely waiting
+  // on a CA would otherwise produce thirty identical alerts in a month, and an
+  // inbox like that gets ignored wholesale. Day 1 always fires, then weekly.
+  if (lateBy > 1 && lateBy % repeatEveryDays !== 0) {
+    return silent(spec, `Already reported; it is re-raised every ${repeatEveryDays} days.`, {
+      lateBy,
+      repeatEveryDays,
+    });
+  }
+
+  return fire(spec, {
+    amountAtRiskMinor: null,
+    values: { name: candidate.name, period: candidate.periodLabel, date: candidate.dueOn, days: lateBy },
+    formula: "Due date passed with nothing filed",
+    inputs: { dueOn: candidate.dueOn, today, lateBy },
+    records: [{ type: "compliance_filing", id: candidate.filingId, label: candidate.name }],
+  });
+}
+
+export interface VaultDocumentCandidate {
+  documentId: string;
+  title: string;
+  categoryCode: string;
+  expiresOn: string | null;
+  reminderOffsets: readonly number[];
+  /** True when a newer version of the same document has been uploaded. */
+  superseded: boolean;
+}
+
+/** `document_expiring`: today is one of a document's reminder days. */
+export function decideDocumentExpiring(
+  candidate: VaultDocumentCandidate,
+  today: string,
+  params: Record<string, number>,
+): DetectorVerdict {
+  const spec = advisorRule("document_expiring");
+  const fallbackDays = params.fallbackDays ?? spec.params.fallbackDays;
+
+  if (candidate.superseded) return silent(spec, "A newer version has been uploaded.");
+  if (!candidate.expiresOn) return silent(spec, "It has no expiry date.");
+
+  const offsets = candidate.reminderOffsets.length > 0 ? candidate.reminderOffsets : [fallbackDays];
+  if (!documentRemindsToday(candidate, offsets, today)) {
+    return silent(spec, "Today is not one of its reminder days.", {
+      expiresOn: candidate.expiresOn,
+      offsets: offsets.join(", "),
+    });
+  }
+
+  const days = daysUntilExpiry(candidate, today) ?? 0;
+  return fire(spec, {
+    amountAtRiskMinor: null,
+    values: { name: candidate.title, date: candidate.expiresOn, days },
+    formula: "A reminder day before this document expires",
+    inputs: { expiresOn: candidate.expiresOn, today, offsets: offsets.join(", ") },
+    records: [{ type: "business_document", id: candidate.documentId, label: candidate.title }],
+  });
+}
+
+/** `document_expired`: past its expiry with no newer version. */
+export function decideDocumentExpired(
+  candidate: VaultDocumentCandidate,
+  today: string,
+  params: Record<string, number>,
+): DetectorVerdict {
+  const spec = advisorRule("document_expired");
+  const repeatEveryDays = Math.max(1, params.repeatEveryDays ?? spec.params.repeatEveryDays);
+
+  if (candidate.superseded) return silent(spec, "A newer version has been uploaded.");
+  if (documentExpiryStatus(candidate, today) !== "expired") {
+    return silent(spec, "It has not expired.", { expiresOn: candidate.expiresOn ?? "none" });
+  }
+
+  const lateBy = -(daysUntilExpiry(candidate, today) ?? 0);
+  if (lateBy > 1 && lateBy % repeatEveryDays !== 0) {
+    return silent(spec, `Already reported; it is re-raised every ${repeatEveryDays} days.`, {
+      lateBy,
+      repeatEveryDays,
+    });
+  }
+
+  return fire(spec, {
+    amountAtRiskMinor: null,
+    values: { name: candidate.title, date: candidate.expiresOn ?? "", days: lateBy },
+    formula: "Expiry date passed with no newer version",
+    inputs: { expiresOn: candidate.expiresOn ?? "none", today, lateBy },
+    records: [{ type: "business_document", id: candidate.documentId, label: candidate.title }],
+  });
+}
+
+export interface MonthCloseCandidate {
+  /** First of the month, `YYYY-MM-01`. */
+  month: string;
+  periodLabel: string;
+  /** Last day of that month. */
+  monthEnd: string;
+  doneStepKeys: readonly string[];
+  lockedAt: string | null;
+}
+
+/** `books_not_closed`: a month ended, the grace ran out, and it is still open. */
+export function decideBooksNotClosed(
+  candidate: MonthCloseCandidate,
+  today: string,
+  params: Record<string, number>,
+): DetectorVerdict {
+  const spec = advisorRule("books_not_closed");
+  const graceDays = params.graceDays ?? spec.params.graceDays;
+  const repeatEveryDays = Math.max(1, params.repeatEveryDays ?? spec.params.repeatEveryDays);
+
+  if (candidate.lockedAt) return silent(spec, "The period is locked.");
+
+  const daysSinceEnd = daysBetween(candidate.monthEnd, today);
+  if (daysSinceEnd < graceDays) {
+    // §2 puts the GST and TDS deadlines inside the month-end rhythm and the
+    // earliest of them is the 7th, so nagging on the 1st would be nagging
+    // about work that is not yet due.
+    return silent(spec, `Still inside the ${graceDays}-day grace period.`, { daysSinceEnd, graceDays });
+  }
+
+  const readiness = closeReadiness(candidate.doneStepKeys);
+  if (readiness.complete) {
+    return silent(spec, "Every checklist step is done; only the lock is left.", {
+      done: readiness.done,
+      total: readiness.total,
+    });
+  }
+
+  const sinceDue = daysSinceEnd - graceDays;
+  if (sinceDue > 1 && sinceDue % repeatEveryDays !== 0) {
+    return silent(spec, `Already reported; it is re-raised every ${repeatEveryDays} days.`, { sinceDue });
+  }
+
+  return fire(spec, {
+    amountAtRiskMinor: null,
+    values: {
+      period: candidate.periodLabel,
+      done: readiness.done,
+      total: readiness.total,
+    },
+    formula: "Month ended, grace period passed, checklist incomplete",
+    inputs: {
+      monthEnd: candidate.monthEnd,
+      today,
+      daysSinceEnd,
+      outstanding: readiness.outstanding.join(", "),
+      blocking: readiness.blocking.join(", ") || "none",
+    },
+    records: [{ type: "finance_period", id: candidate.month, label: candidate.periodLabel }],
+  });
+}
+
 export const IMPLEMENTED_DETECTORS: readonly AdvisorRuleCode[] = [
   "closed_unpaid",
   "slipped_promise",
@@ -1005,4 +1273,9 @@ export const IMPLEMENTED_DETECTORS: readonly AdvisorRuleCode[] = [
   "idle_spend",
   "cash_runway_low",
   "connector_unhealthy",
+  "compliance_due",
+  "compliance_overdue",
+  "document_expiring",
+  "document_expired",
+  "books_not_closed",
 ];

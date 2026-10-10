@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { EmptyState, useAlert, useToast } from "@aura/ui";
 import type { ReviewItem } from "@/lib/review-queue";
+import { AgentActionReviewCard } from "./agent-action-review-card";
 import { DuplicateReviewCard } from "./duplicate-review-card";
 import { OptOutReviewCard } from "./opt-out-review-card";
 import { WhatsAppReviewCard } from "./whatsapp-review-card";
@@ -50,7 +51,9 @@ export function ReviewList({
         const common = { waiting: waiting[item.id] ?? "", onResolved, onFailed };
         return (
           <li key={`${item.source}:${item.id}`}>
-            {item.source === "whatsapp" ? (
+            {item.source === "agent_actions" ? (
+              <AgentActionReviewCard item={item.agentAction} {...common} />
+            ) : item.source === "whatsapp" ? (
               <WhatsAppReviewCard item={item.qualification} {...common} />
             ) : item.source === "opt_outs" ? (
               <OptOutReviewCard item={item.optOut} {...common} />

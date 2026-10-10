@@ -8,8 +8,13 @@ import {
   FINANCE_DEFAULTS,
   advisorRule,
   decideAgingBreach,
+  decideBooksNotClosed,
   decideClosedUnpaid,
+  decideComplianceDue,
+  decideComplianceOverdue,
   decideConnectorUnhealthy,
+  decideDocumentExpired,
+  decideDocumentExpiring,
   decideDuplicateExpense,
   decideExpenseOutlier,
   decideFailedNotRetried,
@@ -23,6 +28,7 @@ import {
   decideUnmatchedMoney,
   dueRemindersOwing,
   escalationTarget,
+  fiscalPeriod,
   inQuietHours,
   shouldReopen,
   suggestThreshold,
@@ -1120,7 +1126,10 @@ async function runNightly(client: PoolClient, orgId: string): Promise<void> {
                              AND e.reverses_id IS NULL
                              AND e.incurred_on >= w.from_date), 0)
               + COALESCE((SELECT sum(mss.amount) FROM marketing_source_spend mss, since w
-                           WHERE mss.marketing_source_id = ms.id
+                           -- 0171 names this column source_id, not marketing_source_id the
+                           -- way expenses does. Backticks are deliberately absent:
+                           -- this is inside a template literal.
+                           WHERE mss.source_id = ms.id
                              AND mss.month >= date_trunc('month', w.from_date)), 0) AS cost
            FROM marketing_sources ms
        )
@@ -1248,8 +1257,224 @@ async function runNightly(client: PoolClient, orgId: string): Promise<void> {
     }
   }
 
+  await runComplianceReminders(client, orgId, byCode, today);
+
   await closeStaleAlerts(client, orgId, "nightly");
   await proposeThresholds(client, orgId);
+}
+
+/**
+ * §2's last bullet, from
+ * Build docs/indian-business-finance-documents-cycles-import: "Reminders
+ * through the Advisor, using the same routing and escalation as the leak
+ * alerts."
+ *
+ * ── WHY THESE FIVE FINDERS LIVE IN THIS FILE ────────────────────────────────
+ *
+ * Because that sentence is a design instruction, not a feature request. A
+ * reminder raised anywhere else would need its own dedupe window, its own
+ * snooze, its own escalation ladder and its own notification path - four
+ * mechanisms that already exist here and that an owner has already tuned. So a
+ * GST return coming due is an `advisor_alerts` row with a `rule_code`, exactly
+ * like a dues breach, and it inherits `raiseAlert`'s upsert (so a reminder
+ * re-raised tomorrow updates rather than duplicates), `assignAndNotify`'s
+ * routing, `escalate`'s ladder and `closeStaleAlerts`' clean-up for free.
+ *
+ * `advisor_alerts.rule_code` and `subject_type` are free TEXT, which is what
+ * made this possible with no migration at all.
+ *
+ * ── AND WHY THEY ARE NIGHTLY ────────────────────────────────────────────────
+ *
+ * `remindsToday` matches an exact DATE. An hourly sweep would evaluate the
+ * same reminder twenty-four times; the upsert would collapse it to one alert,
+ * but the detector would run 24x for nothing and `last_seen_at` would churn.
+ */
+async function runComplianceReminders(
+  client: PoolClient,
+  orgId: string,
+  byCode: Map<AdvisorRuleCode, EffectiveRule>,
+  today: string,
+): Promise<void> {
+  // ── compliance_due and compliance_overdue ───────────────────────────────
+  //
+  // One query feeds both rules, because they read the same rows and differ
+  // only in which side of the due date they care about. Two queries would be
+  // two scans of the same index for one answer.
+  const due = byCode.get("compliance_due");
+  const overdue = byCode.get("compliance_overdue");
+  if (due?.enabled || overdue?.enabled) {
+    const { rows } = await client.query<{
+      id: string;
+      item_code: string;
+      name: string;
+      period_label: string;
+      due_on: string;
+      filed_on: string | null;
+      waived_at: string | null;
+      reminder_offsets: number[];
+      generated_on: string;
+    }>(
+      // A window either side of today, not the whole calendar: the furthest
+      // offset any item ships with is 30 days, and an overdue filing is
+      // re-raised weekly for as long as it is open - so 400 days back covers
+      // last year's unfiled return without scanning a tenant's whole history
+      // every night.
+      `SELECT f.id, f.item_code, i.name, f.period_label,
+              to_char(f.due_on, 'YYYY-MM-DD') AS due_on,
+              to_char(f.filed_on, 'YYYY-MM-DD') AS filed_on,
+              f.waived_at::text AS waived_at,
+              i.reminder_offsets,
+              -- When the ROW was generated, which is how the overdue rule
+              -- tells a missed deadline from a back-filled period.
+              to_char(f.created_at, 'YYYY-MM-DD') AS generated_on
+         FROM compliance_filings f
+         JOIN compliance_items i ON i.id = f.item_id
+        WHERE f.filed_on IS NULL
+          AND f.waived_at IS NULL
+          AND i.enabled
+          AND f.due_on >= org_reporting_today() - 400
+          AND f.due_on <= org_reporting_today() + 400`,
+    );
+
+    for (const row of rows) {
+      const candidate = {
+        filingId: row.id,
+        itemCode: row.item_code,
+        name: row.name,
+        periodLabel: row.period_label,
+        dueOn: row.due_on,
+        filedOn: row.filed_on,
+        waivedAt: row.waived_at,
+        reminderOffsets: row.reminder_offsets ?? [],
+        generatedOn: row.generated_on,
+      };
+      const subject = { type: "compliance_filing", ref: row.id };
+
+      if (due?.enabled) {
+        await raiseAlert(client, orgId, due, subject, decideComplianceDue(candidate, today, due.params));
+      }
+      if (overdue?.enabled) {
+        await raiseAlert(
+          client,
+          orgId,
+          overdue,
+          subject,
+          decideComplianceOverdue(candidate, today, overdue.params),
+        );
+      }
+    }
+  }
+
+  // ── document_expiring and document_expired ──────────────────────────────
+  const expiring = byCode.get("document_expiring");
+  const expired = byCode.get("document_expired");
+  if (expiring?.enabled || expired?.enabled) {
+    const { rows } = await client.query<{
+      id: string;
+      title: string;
+      category_code: string;
+      expires_on: string;
+      reminder_offsets: number[] | null;
+      category_offsets: number[];
+      superseded: boolean;
+    }>(
+      // superseded_at IS NULL is in the predicate AND carried on the row. In
+      // the predicate it keeps the scan small; on the row it is what the
+      // detector reads, so the two can never disagree about whether a renewal
+      // has landed.
+      `SELECT d.id, d.title, c.code AS category_code,
+              to_char(d.expires_on, 'YYYY-MM-DD') AS expires_on,
+              d.reminder_offsets, c.reminder_offsets AS category_offsets,
+              (d.superseded_at IS NOT NULL) AS superseded
+         FROM business_documents d
+         JOIN document_categories c ON c.id = d.category_id
+        WHERE d.deleted_at IS NULL
+          AND d.superseded_at IS NULL
+          AND c.archived_at IS NULL
+          AND d.expires_on IS NOT NULL
+          AND d.expires_on >= org_reporting_today() - 400
+          AND d.expires_on <= org_reporting_today() + 400`,
+    );
+
+    for (const row of rows) {
+      const candidate = {
+        documentId: row.id,
+        title: row.title,
+        categoryCode: row.category_code,
+        expiresOn: row.expires_on,
+        // The document's own offsets win; absent, the category's apply. NULL
+        // means "use the category's", which is why that column is nullable
+        // rather than defaulting to an empty array - an empty array means
+        // "never remind".
+        reminderOffsets: row.reminder_offsets ?? row.category_offsets ?? [],
+        superseded: row.superseded,
+      };
+      const subject = { type: "business_document", ref: row.id };
+
+      if (expiring?.enabled) {
+        await raiseAlert(
+          client,
+          orgId,
+          expiring,
+          subject,
+          decideDocumentExpiring(candidate, today, expiring.params),
+        );
+      }
+      if (expired?.enabled) {
+        await raiseAlert(
+          client,
+          orgId,
+          expired,
+          subject,
+          decideDocumentExpired(candidate, today, expired.params),
+        );
+      }
+    }
+  }
+
+  // ── books_not_closed ────────────────────────────────────────────────────
+  //
+  // Only the three most recent closable months. A tenant who has never used
+  // the checklist would otherwise get an alert for every month since they
+  // signed up, which is the shape of inbox people turn off.
+  const notClosed = byCode.get("books_not_closed");
+  if (notClosed?.enabled) {
+    const { rows } = await client.query<{
+      month: string;
+      month_end: string;
+      locked_at: string | null;
+      done_keys: string[] | null;
+    }>(
+      `WITH months AS (
+         SELECT (date_trunc('month', org_reporting_today()) - (n || ' months')::interval)::date AS month
+           FROM generate_series(1, 3) AS n
+       )
+       SELECT to_char(m.month, 'YYYY-MM-DD') AS month,
+              to_char((m.month + interval '1 month' - interval '1 day')::date, 'YYYY-MM-DD') AS month_end,
+              p.locked_at::text AS locked_at,
+              array_remove(array_agg(s.step_key), NULL) AS done_keys
+         FROM months m
+         LEFT JOIN finance_periods p ON p.month = m.month
+         LEFT JOIN month_end_close_steps s ON s.month = m.month
+        GROUP BY m.month, p.locked_at
+        ORDER BY m.month DESC`,
+    );
+
+    for (const row of rows) {
+      const verdict = decideBooksNotClosed(
+        {
+          month: row.month,
+          periodLabel: fiscalPeriod("month", row.month).label,
+          monthEnd: row.month_end,
+          doneStepKeys: row.done_keys ?? [],
+          lockedAt: row.locked_at,
+        },
+        today,
+        notClosed.params,
+      );
+      await raiseAlert(client, orgId, notClosed, { type: "finance_period", ref: row.month }, verdict);
+    }
+  }
 }
 
 /**

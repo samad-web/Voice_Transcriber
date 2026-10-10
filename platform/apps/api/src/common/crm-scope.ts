@@ -85,6 +85,14 @@ const OWNER_COLUMN: Record<PermissionObjectType, string | null> = {
   web_form: null,
   partner: null,
   resource: null,
+  // §10A.9: "telecallers see only their own list." `owned` is the most
+  // meaningful scope this object has - the whole product is a telecaller's own
+  // to-call list - and the column is the one the list is ordered by.
+  //
+  // An UNASSIGNED callback cannot exist (0186 has a CHECK), so unlike
+  // `appointment` there is no "belongs to whoever can see all of them" case
+  // here.
+  callback: "assigned_user_id",
   // The exception, and the reason `appointment` is kept out of
   // ALL_SCOPE_ONLY_OBJECTS: a telecaller scoped to `owned` should see their
   // own diary and not the whole clinic's. Same column and same reasoning as

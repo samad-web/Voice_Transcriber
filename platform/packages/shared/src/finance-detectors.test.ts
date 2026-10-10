@@ -32,6 +32,14 @@ import { toMinor } from "./money";
  * fires on a clearly-broken fixture and stays quiet on a clearly-fine one
  * tells you almost nothing about the threshold, which is the only part of a
  * rule anybody ever tunes.
+ *
+ * The five compliance and vault rules added for
+ * Build docs/indian-business-finance-documents-cycles-import §2 hold
+ * themselves to the same standard, in `finance-detectors-compliance.test.ts` -
+ * a separate file because they are a separate document's rules, and because
+ * each needs an extra kind of test the seventeen do not: that it STAYS QUIET
+ * on the state another of the five owns. `compliance_due` and
+ * `compliance_overdue` read the same filing on consecutive days.
  */
 
 const TODAY = "2026-03-15";

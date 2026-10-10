@@ -271,6 +271,60 @@ export const NotificationKind = z.enum([
    * notification is as capable of leaking that as an API is.
    */
   "finance_payout",
+  /**
+   * ── The transcript agent's three (migrations 0184-0187) ──
+   *
+   * Three and not ten, deliberately. This file's header is the reason: a bell
+   * that rings about everything is a bell nobody reads. So the agent reuses
+   * `review_pending` for a suggestion waiting on a person (0109's kind already
+   * means exactly that), `task_assigned`/`task_due` for a follow-up it created,
+   * and `sla_breach` for a review item sitting too long. These three have no
+   * existing equivalent.
+   *
+   * Pinned against 0187's restatement of `notifications_kind_check` by
+   * `notification-kinds.test.ts`, which compares this enum to the LAST literal
+   * list in apply order. Both halves move together or the test goes red - which
+   * is the mechanism working.
+   */
+
+  /**
+   * A CALLBACK YOU OWE SOMEBODY IS DUE (§10A.4).
+   *
+   * The in-app half of the reminder, for a telecaller who has a console login.
+   * The phone gets a `handset_alerts` popup instead, because most telecallers
+   * never sign in - a bell item addressed to them is addressed to nobody.
+   *
+   * The dedupe key carries the callback id AND the reminder kind, so the
+   * pre-reminder, the due popup and the nudge are three rows rather than one
+   * collapsed one.
+   */
+  "callback_due",
+  /**
+   * A COMMITTED CALLBACK WAS MISSED (§10A.5).
+   *
+   * ONE kind for the whole escalation ladder, not one per level - the same
+   * argument `call_issue_update` makes. The dedupe key carries the level, so a
+   * manager at +15 and an owner at +60 are two rows while a sweep running twice
+   * is one.
+   *
+   * Only ever raised for a COMMITTED callback by default: §10A.5 escalates the
+   * ones where the customer gave a time, because waking a manager about "call
+   * me sometime" is how a floor learns to ignore this.
+   */
+  "callback_missed",
+  /**
+   * THE ASSISTANT ITSELF NEEDS ATTENTION (§16).
+   *
+   * Failed actions, a review backlog, a calendar token that expired, accuracy
+   * below the autonomy gate, an intent demoted automatically, a usage cap hit.
+   * One kind for all of it: every one is the same message to the same person -
+   * "the assistant is not working properly, open its page" - and seven kinds
+   * would put seven switches in the notification preferences for one concern.
+   *
+   * Owners only. A telecaller cannot act on "accuracy below gate", and should
+   * not learn that their work is being measured from a bell.
+   */
+  "agent_alert",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

@@ -82,3 +82,7 @@ apps/api/dist-recovery/
 # Google OAuth client downloads (client_secret_<id>.apps.googleusercontent.com.json).
 # They hold the client secret, and this repository is public.
 client_secret_*.json
+
+# Scratch output from an import-centre verification run (a job id and row
+# counts), written by the staged-import checks. Not source.
+.verify/

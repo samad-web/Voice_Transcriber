@@ -74,6 +74,24 @@ export const AdvisorRuleCode = z.enum([
   "idle_spend",
   "cash_runway_low",
   "connector_unhealthy",
+  // ── The compliance calendar and document vault
+  // (Build docs/indian-business-finance-documents-cycles-import §2)
+  //
+  // §2's last bullet: "Reminders through the Advisor, using the same routing
+  // and escalation as the leak alerts." These five are therefore rules in this
+  // catalogue rather than a second reminder mechanism - they get the same
+  // dedupe window, the same snooze, the same escalation ladder and the same
+  // explain panel, and `advisor_alerts.rule_code` is free text so they needed
+  // no migration to exist.
+  //
+  // They are the only rules here that are not about money already lost. A
+  // missed GST return costs interest and a penalty, which is money about to be
+  // lost - the same inbox is the right place for both.
+  "compliance_due",
+  "compliance_overdue",
+  "document_expiring",
+  "document_expired",
+  "books_not_closed",
 ]);
 export type AdvisorRuleCode = z.infer<typeof AdvisorRuleCode>;
 
@@ -356,6 +374,92 @@ export const ADVISOR_RULES: readonly AdvisorRuleSpec[] = [
     statistical: false,
     messageTemplate: "{connector} last delivered an event {date} and has {failures} failures.",
     recommendedAction: "Re-authenticate it, then replay the failed events.",
+    carriesAmount: false,
+  },
+
+  // ── Compliance and documents ──────────────────────────────────────────────
+  {
+    code: "compliance_due",
+    label: "A filing is coming due",
+    blurb: "A return or payment on the compliance calendar has reached one of its reminder days.",
+    severity: "medium",
+    // Nightly, not hourly. A reminder is a day-grained thing - `remindsToday`
+    // matches an exact date - and an hourly sweep would raise the same
+    // reminder twenty-four times or have to carry its own hour-level dedupe.
+    schedule: "nightly",
+    routeTo: "finance_handler",
+    escalationPath: ["finance_handler", "owner"],
+    // Not a threshold: each item carries its own `reminder_offsets`, which a
+    // CA can edit. This is only the fallback for an item whose offsets were
+    // cleared, so a filing with no offsets still gets one warning.
+    params: { fallbackDays: 7 },
+    statistical: false,
+    messageTemplate: "{name} for {period} is due on {date} ({days} days away).",
+    recommendedAction: "File it, then attach the challan or acknowledgement to the filing.",
+    carriesAmount: false,
+  },
+  {
+    code: "compliance_overdue",
+    label: "A filing is overdue",
+    blurb: "A return or payment is past its due date and has not been marked filed.",
+    severity: "critical",
+    schedule: "nightly",
+    routeTo: "finance_handler",
+    escalationPath: ["finance_handler", "manager", "owner"],
+    // Re-raised weekly rather than nightly, so a return that is genuinely
+    // waiting on a CA does not produce thirty identical alerts in a month.
+    params: { repeatEveryDays: 7 },
+    statistical: false,
+    messageTemplate: "{name} for {period} was due on {date} and is {days} days overdue.",
+    recommendedAction: "File it now, or mark it not applicable if it does not apply to this business.",
+    carriesAmount: false,
+  },
+  {
+    code: "document_expiring",
+    label: "A document is about to expire",
+    blurb: "A licence, policy or agreement in the vault has reached one of its reminder days.",
+    severity: "medium",
+    schedule: "nightly",
+    // The owner, not the finance handler: renewing a trade licence or an
+    // insurance policy is a decision somebody has to make, not a filing
+    // somebody has to submit.
+    routeTo: "owner",
+    escalationPath: ["owner"],
+    params: { fallbackDays: 30 },
+    statistical: false,
+    messageTemplate: "{name} expires on {date} ({days} days away).",
+    recommendedAction: "Renew it and upload the new copy as a new version.",
+    carriesAmount: false,
+  },
+  {
+    code: "document_expired",
+    label: "A document has expired",
+    blurb: "Something in the vault is past its expiry date and no newer version has been uploaded.",
+    severity: "high",
+    schedule: "nightly",
+    routeTo: "owner",
+    escalationPath: ["owner"],
+    params: { repeatEveryDays: 14 },
+    statistical: false,
+    messageTemplate: "{name} expired on {date}, {days} days ago.",
+    recommendedAction: "Upload the renewed document, or clear the expiry date if it no longer applies.",
+    carriesAmount: false,
+  },
+  {
+    code: "books_not_closed",
+    label: "Last month's books are still open",
+    blurb: "A month ended and the close checklist has not been finished or the period locked.",
+    severity: "medium",
+    schedule: "nightly",
+    routeTo: "finance_handler",
+    escalationPath: ["finance_handler", "owner"],
+    // Ten days, not one: §2 puts bank reconciliation and GST payment inside
+    // the month-end rhythm, and the earliest of those deadlines is the 7th.
+    // Nagging on the 1st would be nagging about work that is not yet due.
+    params: { graceDays: 10, repeatEveryDays: 7 },
+    statistical: false,
+    messageTemplate: "{period} is not closed: {done} of {total} checklist steps done.",
+    recommendedAction: "Finish the close checklist, then lock the period.",
     carriesAmount: false,
   },
 ];

@@ -230,3 +230,98 @@ worker may.
 true until the org's own collection history outweighs the conservative priors. A
 forecast an owner acts on is worse than no forecast when its confidence is
 fictional.
+
+---
+
+## The document vault (0180)
+
+`Build docs/indian-business-finance-documents-cycles-import §1`. Statutory,
+whole-business documents with an expiry, an owner and a reminder.
+
+| Route | Needs | Notes |
+| --- | --- | --- |
+| `GET /finance/documents` | `finance:view` | Filter `?status=expired\|expiring\|valid\|no_expiry`. Every read is logged. |
+| `GET /finance/documents/gaps` | `finance:view` | Singleton categories this business should hold and has not |
+| `GET /finance/documents/categories` | `finance:view` | `?includeArchived=1` |
+| `POST /finance/documents/categories/seed` | `finance:edit` | Idempotent on `(org, code)` |
+| `POST /finance/documents/categories` | `finance:edit` | Refuses `expires` with no reminder offsets |
+| `PATCH /finance/documents/categories/:id` | `finance:edit` | `archived: true/false` |
+| `POST /finance/documents` | `finance:edit` | Returns a 15-minute presigned PUT. Pass `supersedesId` for a renewal |
+| `GET /finance/documents/:id/url` | `finance:view` | 300-second signed GET, logged |
+| `PATCH /finance/documents/:id` | `finance:edit` | |
+| `DELETE /finance/documents/:id` | `finance:edit` | **Soft**. Refuses while a filing is attached |
+| `GET /finance/documents/:id/access-log` | `finance:view` | Who read it, from 0178's shared table |
+
+**The bytes never pass through this API.** The browser PUTs straight to object
+storage; this records the row and mints the URL. Same shape as contract
+documents, branding assets and the recording pipeline.
+
+**Per-person documents are not here.** Offer letters, contracts and NDAs live in
+`contract_documents` (0178) behind the org chart's own permission. DECISIONS.md
+§5.4 has the reasoning, and `documents.test.ts` enforces it.
+
+**A renewal is a new row.** `POST` with `supersedesId` stamps `superseded_at` on
+the old one and resolves its expiry alerts. The old object stays downloadable,
+because the one time anybody needs the superseded version is a dispute about
+what was in force.
+
+## The compliance calendar and month-end close (0181)
+
+`§2`. The calendar is **data in `compliance_items`**, seeded once from
+`COMPLIANCE_CATALOGUE` and owned by the tenant after that. Nothing in this
+module resolves a due date from the shared catalogue — §2 requires a CA to be
+able to correct a date without a deploy.
+
+| Route | Needs | Notes |
+| --- | --- | --- |
+| `GET /finance/compliance/profile` | `finance:view` | Entity type, registrations, the FY window |
+| `PATCH /finance/compliance/profile` | `finance:edit` | Decides what gets seeded |
+| `GET /finance/compliance/items` | `finance:view` | `?includeDisabled=1` |
+| `POST /finance/compliance/items/seed` | `finance:edit` | Idempotent; `applicableOnly` defaults true |
+| `POST /finance/compliance/items` | `finance:edit` | |
+| `PATCH /finance/compliance/items/:id` | `finance:edit` | |
+| `POST /finance/compliance/filings/generate` | `finance:edit` | A financial year at a time, idempotent |
+| `GET /finance/compliance/filings` | `finance:view` | Defaults to this FY. `?status=`, `?itemCode=`, `?from=&to=` |
+| `PATCH /finance/compliance/filings/:id/file` | `finance:edit` | Attach the challan; resolves the alerts |
+| `PATCH /finance/compliance/filings/:id/waive` | `finance:edit` | Reason required |
+| `PATCH /finance/compliance/filings/:id/due-date` | `finance:edit` | For an extension |
+| `GET /finance/compliance/close` | `finance:view` | Defaults to LAST month; lock state + two real counts |
+| `POST /finance/compliance/close/:month/step` | `finance:edit` | Tick or untick one checklist step |
+
+**There is no `status` column.** 0181 asserts it. `complianceStatus(filing,
+today)` derives upcoming / due_soon / overdue / filed / waived on every read,
+against the **org's** today.
+
+**`due_on` is stored and never recomputed.** DECISIONS.md §5.3.
+
+**The close checklist warns, it does not block.** The three `blocksLock` steps
+are surfaced and the lock still works. DECISIONS.md §5.7.
+
+## `record-payment.ts` — the one path money takes
+
+Extracted so the import could use it (§3's "imported payments go through the
+same normalizer and matching engine as connector payments"). Three callers:
+`POST /finance/payments`, the connector drain, and a staged import row.
+
+| Function | Does |
+| --- | --- |
+| `recordFinancePayment` | insert + §8 match + §6.2 offline handling + settle |
+| `settlePayment` | apply to the schedule, post to the ledger |
+| `reverseFinancePayment` | reversing posting + re-derived schedule + status |
+| `recomputeSchedulePaid` | re-derive a deal's `paid_amount` from surviving payments |
+
+**Do not add a fourth copy of any of these.** The module already carries the
+scar: `schedule_item_id` was left null on every deal-referenced payment because
+one field was forgotten in one of two places, and §11's days-to-collect returned
+null forever without failing a test.
+
+## The five reminder rules
+
+`compliance_due`, `compliance_overdue`, `document_expiring`,
+`document_expired`, `books_not_closed`. They are rows in `ADVISOR_RULES` with
+pure deciders in `finance-detectors.ts` and a finder in the worker's nightly
+sweep — not a second reminder mechanism. §2's "reminders through the Advisor,
+using the same routing and escalation as the leak alerts", taken literally.
+
+No migration was needed: `advisor_alerts.rule_code` and `subject_type` are free
+text.

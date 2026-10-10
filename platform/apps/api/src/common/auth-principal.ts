@@ -102,6 +102,37 @@ export interface PrincipalRequest extends Request {
    * no existing guard or handler can mistake a headless credential for a user.
    */
   apiKey?: { id: string; orgId: string; scopes: string[] };
+  /**
+   * The gated-feature decision for this request, written by `FeatureGateGuard`
+   * (Build docs/transcript-agent-build-plan §3A.4).
+   *
+   * Handed to the handler so it does not resolve the gate a SECOND time. §3A.4
+   * requires every `agent_run` to store "the effective gate decision (scopes
+   * consulted, mode, capabilities) so any past action is explainable", and a
+   * second resolution a few hundred milliseconds later could differ from the
+   * one that actually authorised the request - which would make the stored
+   * explanation of an action a different decision from the one that permitted
+   * it.
+   *
+   * Typed loosely here for the same reason `crmScope` and `ownerScope` are: to
+   * keep `common/` free of an import cycle between the principal shape and the
+   * guard that fills it in.
+   */
+  gateDecision?: {
+    feature: string;
+    enabled: boolean;
+    mode: string;
+    capabilities: readonly string[];
+    lockedByPlan: boolean;
+    reason: string;
+    scopes: readonly { scopeType: string; scopeId: string | null; state: string; mode: string | null }[];
+    subject: {
+      userId: string | null;
+      telecallerId: string | null;
+      teamId: string | null;
+      ownerRole: string | null;
+    };
+  };
 }
 
 export const PERMISSIONS = ["recordings:listen", "recordings:export"] as const;

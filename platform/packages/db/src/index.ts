@@ -24,6 +24,12 @@ export * from "./finance-rollup";
 // mapper, see finance-connectors.ts' header.
 export * from "./finance-connectors";
 export * from "./finance-connector-drain";
+// The generic feature gate's LOADER (Build docs/transcript-agent-build-plan
+// §3A.4). Here rather than in the API because §3A.4's whole point is that one
+// loader answers the question for every layer, and the API and the WORKER are
+// separate processes - the drift would be the worker's, because nobody opens
+// it in a browser. See its header.
+export * from "./feature-gates";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 

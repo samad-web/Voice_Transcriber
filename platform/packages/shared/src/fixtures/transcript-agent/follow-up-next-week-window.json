@@ -1,0 +1,71 @@
+{
+  "id": "follow-up-next-week-window",
+  "tags": [
+    "english",
+    "follow-up",
+    "window"
+  ],
+  "language": "en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: When should I check back with you?\nCustomer: Next week Monday, after the board signs off.\nAgent: Monday it is.\nCustomer: Yes.",
+  "expected": {
+    "intents": [
+      {
+        "type": "follow_up",
+        "dueAt": "2026-10-12T03:30:00.000Z",
+        "resolution": "window"
+      }
+    ],
+    "disposition": "interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "create_followup",
+        "state": "planned"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "en",
+    "summary": "Customer asked to be followed up next week Monday, after the board signs off.",
+    "disposition": "interested",
+    "sentiment": "positive",
+    "intents": [
+      {
+        "type": "follow_up",
+        "confidence": 0.9,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "Next week Monday, after the board signs off",
+            "t": "00:07"
+          }
+        ],
+        "slots": {
+          "when_text": "next week Monday",
+          "condition_text": "after the board signs off"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

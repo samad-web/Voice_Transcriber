@@ -47,6 +47,19 @@ export const HandsetAlertKind = z.enum([
   "escalation_received",
   /** An escalation this telecaller raised was answered. */
   "escalation_update",
+  /**
+   * A CALLBACK THEY PROMISED IS DUE NOW (§10A.4, migrations 0186/0187).
+   *
+   * NOT `missed_callback` above, which is 0134's "their lead rang a DIFFERENT
+   * phone and nobody answered". This one is "you told this customer you would
+   * ring them at five, and it is five".
+   */
+  "callback_due",
+  /**
+   * A callback they missed has been escalated, and somebody senior now knows.
+   * Reaches the telecaller, so the first they hear of it is not their manager.
+   */
+  "callback_escalated",
 ]);
 export type HandsetAlertKind = z.infer<typeof HandsetAlertKind>;
 
@@ -73,6 +86,18 @@ export const HANDSET_ALERT_STYLE: Record<HandsetAlertKind, HandsetAlertStyle> = 
   // answer to one is a manager's instruction - the manager_message case.
   escalation_received: "popup",
   escalation_update: "popup",
+  // Both POPUP, and both a deliberate departure from the rule above that only
+  // what cannot wait takes over the screen:
+  //
+  //   · a callback at 17:00 IS the thing that cannot wait. It is the one alert
+  //     in this product where five minutes late is a broken promise.
+  //   · an escalation means somebody senior is now waiting on this person
+  //     about a customer who has already been let down once.
+  //
+  // `followup_due` stays `notify`, which is the right contrast: a follow-up has
+  // a day, a callback has a minute.
+  callback_due: "popup",
+  callback_escalated: "popup",
 };
 
 /**
@@ -88,6 +113,14 @@ export const HANDSET_ALERT_TTL_MINUTES: Record<HandsetAlertKind, number> = {
   missed_callback: 12 * 60,
   escalation_received: 12 * 60,
   escalation_update: 24 * 60,
+  // SHORTER than `followup_due`'s two hours, and that is the point. A popup
+  // saying "ring this customer now" that arrives three hours late is actively
+  // misleading - the telecaller rings at 20:00 about a 17:00 promise with no
+  // idea they are late. Past the window the alert is dropped and the callback
+  // is handled by the escalation ladder instead, which is the path designed for
+  // "this did not happen".
+  callback_due: 90,
+  callback_escalated: 12 * 60,
 };
 
 /**

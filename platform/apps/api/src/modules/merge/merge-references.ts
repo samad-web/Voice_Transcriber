@@ -87,6 +87,16 @@ export const MERGE_REFERENCES: Record<MergeObjectType, MergeReference[]> = {
     // settled, and "collected" would be attributed to a record nothing links
     // to any more.
     { table: "finance_payments", column: "contact_id", kind: "simple" },
+    // The transcript agent's call-backs (0186). `simple`: a call-back is a
+    // promise to ring a PERSON, so it follows the person. Left on the
+    // tombstone it would still be due - the sweep would ring its reminder, the
+    // escalation ladder would chase a telecaller for missing it - while the
+    // surviving contact's page showed nothing owed, so nobody could close it
+    // from the record they can actually open.
+    //
+    // It cannot collide: `callbacks_one_active_per_contact` is unique on
+    // (org_id, lead_id, contact_phone_hash), none of which this moves.
+    { table: "callbacks", column: "contact_id", kind: "simple" },
   ],
   account: [
     { table: "contacts", column: "account_id", kind: "simple" },

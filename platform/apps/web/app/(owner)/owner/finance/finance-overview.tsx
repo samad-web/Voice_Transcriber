@@ -409,11 +409,16 @@ export function FinanceOverview({ data }: { data: FinanceOverviewData }) {
       {/* ── WHERE TO GO NEXT ─────────────────────────────────────────────── */}
       <nav aria-label="Finance sections" className="flex flex-wrap gap-2 text-xs">
         {/* ── ONLY PAGES THAT EXIST ────────────────────────────────────────
-            This strip is how the four finance pages without a rail entry are
+            This strip is how the seven finance pages without a rail entry are
             reached, so a link here to a route that does not exist is a 404 a
             person finds rather than a test does - and nothing in typecheck or
             lint catches a `Link` to a missing route (doc 37 recorded the same
             trap for `/owner/deals/[id]`).
+
+            The last three come from
+            Build docs/indian-business-finance-documents-cycles-import §1-§2.
+            They have no rail entry for the same reason the first four do not:
+            `OWNER_RAIL_MAX_TOP_LEVEL` is 7 and the rail is at it.
 
             The matching queue, the incentive payouts, the connector health
             page and the ledger are API surfaces with no console page yet.
@@ -425,6 +430,9 @@ export function FinanceOverview({ data }: { data: FinanceOverviewData }) {
           ["/owner/finance/expenses", "Expenses"],
           ["/owner/finance/forecast", "Cash forecast"],
           ["/owner/finance/advisor", "Money leaks"],
+          ["/owner/finance/compliance", "Compliance calendar"],
+          ["/owner/finance/documents", "Documents"],
+          ["/owner/finance/close", "Month-end close"],
         ].map(([href, label]) => (
           <Link
             key={href}

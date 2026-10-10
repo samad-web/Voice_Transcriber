@@ -1,0 +1,71 @@
+{
+  "id": "english-callback-weekday",
+  "tags": [
+    "english",
+    "callback",
+    "committed"
+  ],
+  "language": "en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Good evening, am I speaking with Mr Rao?\nCustomer: Yes, but I'm driving right now. Can you call me Saturday 11 am?\nAgent: Of course, Saturday at eleven. Anything in particular you want me to prepare?\nCustomer: Just the pricing, thanks.",
+  "expected": {
+    "intents": [
+      {
+        "type": "callback_request",
+        "dueAt": "2026-10-10T05:30:00.000Z",
+        "resolution": "exact"
+      }
+    ],
+    "disposition": "interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "schedule_callback",
+        "state": "planned"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "en",
+    "summary": "Customer was driving and asked for a call on Saturday at 11 am, with pricing ready.",
+    "disposition": "interested",
+    "sentiment": "neutral",
+    "intents": [
+      {
+        "type": "callback_request",
+        "confidence": 0.95,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "Can you call me Saturday 11 am",
+            "t": "00:11"
+          }
+        ],
+        "slots": {
+          "when_text": "Saturday 11 am",
+          "subject_text": "pricing"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

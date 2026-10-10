@@ -1,0 +1,71 @@
+{
+  "id": "duplicate-delivery-same-transcript",
+  "tags": [
+    "duplicate-delivery",
+    "hinglish",
+    "callback",
+    "idempotency"
+  ],
+  "language": "hi-en",
+  "reference": "2026-10-06T13:00:00.000Z",
+  "timeZone": "Asia/Kolkata",
+  "transcript": "Agent: Sir, main kal confirm kar leta hoon.\nCustomer: haan kal subah 11 baje call kar lena.\nAgent: ji sir.",
+  "expected": {
+    "intents": [
+      {
+        "type": "callback_request",
+        "dueAt": "2026-10-07T05:30:00.000Z",
+        "resolution": "exact"
+      }
+    ],
+    "disposition": "interested",
+    "actions": [
+      {
+        "tool": "write_call_summary",
+        "state": "planned"
+      },
+      {
+        "tool": "set_disposition",
+        "state": "planned"
+      },
+      {
+        "tool": "schedule_callback",
+        "state": "planned"
+      }
+    ],
+    "needsHuman": false
+  },
+  "understanding": {
+    "schema_version": "1.0",
+    "language": "hi-en",
+    "summary": "Customer asked for a call tomorrow at 11 am.",
+    "disposition": "interested",
+    "sentiment": "neutral",
+    "intents": [
+      {
+        "type": "callback_request",
+        "confidence": 0.93,
+        "status": "confirmed",
+        "evidence": [
+          {
+            "speaker": "customer",
+            "quote": "kal subah 11 baje call kar lena",
+            "t": "00:06"
+          }
+        ],
+        "slots": {
+          "when_text": "kal subah 11 baje"
+        }
+      }
+    ],
+    "flags": {
+      "do_not_call": false,
+      "complaint": false,
+      "legal_threat": false,
+      "abusive": false
+    },
+    "needs_human": false,
+    "missing_info": [],
+    "tense": "future"
+  }
+}

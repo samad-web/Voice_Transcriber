@@ -59,6 +59,15 @@ import { SuppressionModule } from "./modules/suppression/suppression.module";
 import { WebFormsModule } from "./modules/web-forms/web-forms.module";
 import { FinanceModule } from "./modules/finance/finance.module";
 import { OrgChartModule } from "./modules/org-chart/org-chart.module";
+// The transcript agent (Build docs/transcript-agent-build-plan, migrations
+// 0184-0187). Three modules in dependency order: the GENERIC gate first,
+// because the other two import it for the one `FeatureGateService` instance
+// whose cache the switchboard invalidates - a second instance would go on
+// serving a stale decision after an owner flipped a switch, and §3A.4's
+// five-second propagation is only true if there is one.
+import { FeatureGatesModule } from "./modules/feature-gates/feature-gates.module";
+import { CallbacksModule } from "./modules/callbacks/callbacks.module";
+import { TranscriptAgentModule } from "./modules/transcript-agent/transcript-agent.module";
 import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
 
 /**
@@ -179,6 +188,9 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     // and a reporting line whether or not it bought a pipeline. Whether a
     // client WANTS the page is the other axis - the `org_chart` feature.
     OrgChartModule,
+    FeatureGatesModule,
+    CallbacksModule,
+    TranscriptAgentModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

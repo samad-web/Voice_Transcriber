@@ -205,3 +205,178 @@ GET /v1/finance/connectors
 A 200 with `freshness.label` reading *"not computed yet"* is correct on a fresh
 deploy — the first snapshot sweep runs within the hour, and the figures are
 computed live until it does.
+
+---
+
+## Setting up a tenant's compliance calendar and document vault
+
+Migrations 0180–0182. Three steps, in this order, because each one narrows the
+next.
+
+### 1. Tell the system what shape of business it is
+
+```
+PATCH /v1/finance/compliance/profile
+{ "entityType": "private_limited",
+  "registrations": ["gst", "tds", "income_tax", "payroll", "roc"] }
+```
+
+`entityType` is one of `proprietorship`, `partnership`, `llp`,
+`private_limited`, `public_limited`, `trust`. `registrations` is what they
+actually hold.
+
+**This is not cosmetic.** It decides which filings and which document categories
+are seeded. A one-person proprietorship seeded with the company set gets ROC
+filings and board minutes it must ignore, and a calendar people ignore is worse
+than no calendar.
+
+The financial year start is **not** set here — it lives on
+`org_business_profile.fy_start_month` (migration 0126, default 4 for April) and
+is edited at `/owner/account/time`. Change it there before generating filings,
+because a filing's period label is written at generation time.
+
+### 2. Seed the calendar and the vault
+
+```
+POST /v1/finance/compliance/items/seed      { "applicableOnly": true }
+POST /v1/finance/documents/categories/seed  { "applicableOnly": true }
+```
+
+Both are idempotent on `(org_id, code)`: safe to re-run after a deploy that adds
+a new catalogue entry, and a row the tenant has edited is left exactly as it is.
+
+Pass `applicableOnly: false` only if somebody wants the whole catalogue
+regardless of the profile.
+
+### 3. Generate a year of filings
+
+```
+POST /v1/finance/compliance/filings/generate   { }                       # this FY
+POST /v1/finance/compliance/filings/generate   { "fyStartYear": 2027 }   # next FY
+```
+
+Idempotent on `(org_id, item_id, period_start, period_end)`, so it can be run
+nightly and insert nothing. It never updates an existing filing's `due_on` —
+see DECISIONS.md §5.3 for why rewriting a generated due date would make a
+return filed on time look late.
+
+Run it again in March for the coming year, or whenever an item is added.
+
+---
+
+## When a date is wrong
+
+It will be. §2's own callout says so: "Dates, thresholds and forms change by
+budget, notification and extension."
+
+**One filing moved by a notification** (the common case):
+
+```
+PATCH /v1/finance/compliance/filings/:id/due-date
+{ "dueOn": "2026-11-15", "notes": "Extended by notification" }
+```
+
+Sets `due_on_overridden`, so a regeneration can tell its own output from a
+human's correction.
+
+**The rule itself is wrong** (so every future period is wrong):
+
+```
+PATCH /v1/finance/compliance/items/:id
+{ "dueRule": { "kind": "day_of_month_after", "day": 22, "monthsAfter": 1 } }
+```
+
+Then regenerate — existing filings keep the date they were generated with, which
+is correct, and new periods get the new rule.
+
+**The item does not apply to this business at all:**
+
+```
+PATCH /v1/finance/compliance/items/:id   { "enabled": false }
+```
+
+Existing open filings stay. Waive each one with a reason, which clears the red
+without erasing the record that it was considered:
+
+```
+PATCH /v1/finance/compliance/filings/:id/waive   { "reason": "Turnover below the threshold" }
+```
+
+A reason is required — 0181's `compliance_filings_waiver` CHECK enforces it, for
+the reason §12.5 requires one to dismiss an alert: "not applicable" with no note
+is indistinguishable from somebody clearing a row they did not understand.
+
+---
+
+## Importing a bank statement or a payment file
+
+The whole flow is the console's: `/owner/import`. What an operator needs to know
+when it goes wrong.
+
+**"Importing payments needs permission to create finance records."** The caller
+holds the import role (owner / manager / marketing) but not `finance:create`.
+Grant it in the permission grid; do not widen the import role.
+
+**The wizard asks how the dates should be read.** That means no date in the
+mapped column has a day past the 12th, so the file genuinely cannot be read
+either way. Ask the person who exported it. Never guess — DECISIONS.md §5.12.
+
+**"This file cannot be imported as it is - two rows disagree about the
+format."** The file mixes dd/mm and mm/dd. There is no safe import; it has to be
+fixed at source.
+
+**A staged job sitting in the history as "Not applied."** Somebody abandoned the
+wizard between staging and committing. Nothing was written. Discard it:
+
+```
+DELETE /v1/import/jobs/:jobId
+```
+
+**Undoing a committed import:**
+
+```
+POST /v1/import/jobs/:jobId/rollback   { "reason": "Wrong file" }
+```
+
+Returns `{ undone, kept, problems }`, and `kept > 0` is normal rather than a
+failure. What it will not touch:
+
+| Row | Behaviour |
+| --- | --- |
+| Bank statement line | deleted, unless it has been reconciled to a payment |
+| Expense, unapproved | deleted |
+| Expense, approved | **left alone** — it is in the margin; reverse it instead |
+| Payment | **reversed**, never deleted (§6.3): a reversing ledger posting, the schedule re-derived, status `reversed` |
+| Anything in a locked month | the whole rollback fails on 0172's period trigger |
+
+The last row is deliberate. A locked period means the books are closed on that
+month, and an undo would silently change a figure somebody may have filed a
+return against. Reopen the period first if the correction is genuinely needed.
+
+---
+
+## The five reminder rules
+
+They are Advisor rules, so everything in the Advisor section above applies —
+same inbox, same routing, same snooze, same escalation. They run in the
+**nightly** sweep.
+
+| Code | Fires | Goes to |
+| --- | --- | --- |
+| `compliance_due` | on each of a filing's reminder offsets | finance handler |
+| `compliance_overdue` | day 1 past due, then weekly | finance handler → manager → owner |
+| `document_expiring` | on each of a document's reminder offsets | owner |
+| `document_expired` | day 1 past expiry, then fortnightly | owner |
+| `books_not_closed` | 10 days after a month ends, then weekly | finance handler → owner |
+
+**A quiet inbox is not a broken one.** Each has a `silentBecause` that the
+explain panel shows: already filed, not a reminder day, inside the grace period,
+a newer version uploaded. If somebody insists a reminder is missing, check that
+the item is `enabled`, that the filing exists for the period (generate if not),
+and that `reminder_offsets` is not empty — an item with no offsets reminds only
+on the rule's own `fallbackDays`.
+
+**Filing a return resolves its alerts immediately** rather than waiting for the
+next sweep, and uploading a renewal with `supersedesId` resolves the document's.
+If an alert for a filed return is still open, the filing was marked filed by
+something other than `PATCH /filings/:id/file`.

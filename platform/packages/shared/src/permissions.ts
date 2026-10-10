@@ -121,6 +121,27 @@ export const PermissionObjectType = z.enum([
   "resource",
   "appointment",
   /**
+   * `callback` - the managed to-call list (Build docs/transcript-agent-build-
+   * plan §10A, migration 0186).
+   *
+   * NOT folded into `task`, although a callback and a follow-up look alike.
+   * §10A.9 requires "telecallers see only their own list", and the two objects
+   * need DIFFERENT answers to "who may reassign": a telecaller may complete
+   * and snooze their own callbacks and may not hand one to somebody else,
+   * whereas task assignment has its own `task:assign_up` mechanism (0141).
+   * One object with one grant cannot express both.
+   *
+   * Deliberately NOT in `ALL_SCOPE_ONLY_OBJECTS`: `owned` is the MOST
+   * meaningful scope here - the entire product is "a telecaller's own list" -
+   * so it carries a real owner column (`callbacks.assigned_user_id`, wired in
+   * crm-scope.ts), exactly as `appointment` does.
+   *
+   * No `delete`. A callback is CANCELLED, never deleted: it is the record of a
+   * promise the business made to a person, and a delete cell would be a way to
+   * make that record disappear. Same reasoning 0158 gives for `dnc`.
+   */
+  "callback",
+  /**
    * The finance module (Build docs/finance-section-build-plan §3, migration
    * 0172). TWO objects, and the split is the one §3's role table actually
    * needs:
@@ -244,6 +265,23 @@ export const PERMISSION_OBJECT_MODULE: Record<PermissionObjectType, OrgModule> =
   // §26.4 gates all four vertical primitives on `crm` for this reason.
   resource: "crm",
   appointment: "crm",
+  /**
+   * `call_intel`, and NOT `aura` or `crm`.
+   *
+   * The same test the entries above apply - does a tenant without the module
+   * still do this? - and the answer is genuinely no. A callback exists because
+   * the assistant read a transcript, and `call_intel` is what decides whether a
+   * tenant may have their calls read at all (`org-modules.ts`: "who may read a
+   * word-for-word account of a customer's phone call is a decision per client
+   * contract"). A recorder-only tenant without `call_intel` has no transcripts
+   * being understood, so it has no callbacks - and filing this under `aura`
+   * would offer the page to every such tenant with nothing ever in it.
+   *
+   * A callback created BY HAND from the console is the edge this excludes, and
+   * it is excluded knowingly: that is what `tasks` is for, and 0134's
+   * missed-call path already creates one.
+   */
+  callback: "call_intel",
   // The widening that made this a full `OrgModule` record rather than
   // `"aura" | "crm"`. Both are `finance`, which is the point: a tenant who has
   // not bought the back office is denied the ledger and the payout screens
@@ -404,6 +442,14 @@ export const ENFORCED_PERMISSIONS: ReadonlyArray<`${PermissionObjectType}:${Perm
   "appointment:create",
   "appointment:edit",
   "appointment:view",
+  // §10A.9. No `callback:delete` - a callback is cancelled, never deleted, so
+  // the record of a promise the business made survives it. Reassignment is
+  // gated on the manager's `all` scope inside the controller rather than on a
+  // fourth action, because handing work to another person is a decision about
+  // somebody else's day and not a different verb on this record.
+  "callback:create",
+  "callback:edit",
+  "callback:view",
   "contact:create",
   "contact:edit",
   "contact:view",

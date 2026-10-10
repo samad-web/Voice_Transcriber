@@ -10,8 +10,60 @@ import { CSV_BOM, toCsvGrid } from "./csv";
  * without either one re-guessing independently.
  */
 
-export const ImportEntity = z.enum(["contact", "account", "deal"]);
+/**
+ * What can be imported.
+ *
+ * ── THE THREE FINANCE ENTITIES CAME LATER ───────────────────────────────────
+ *
+ * `payment`, `expense` and `bank_txn` were added for
+ * Build docs/indian-business-finance-documents-cycles-import §3, whose §4 asks
+ * for ONE import centre rather than a second one under Finance: "Org chart
+ * spec: employee and contract imports plug into the same import center. KPI
+ * section: call logs and lead lists come in through the same import flow."
+ *
+ * Adding them here rather than in a parallel module is what makes that true -
+ * `FIELD_ALIASES`, `REQUIRED_FIELDS`, the downloadable template and
+ * `suggestMapping` are all derived from `IMPORT_FIELDS`, so a finance entity
+ * gets the whole existing wizard for free and cannot drift from it.
+ *
+ * `import_jobs.entity` has a CHECK carrying exactly this list (migration 0062,
+ * widened literally by 0182). The two are pinned equal by `import.test.ts`.
+ */
+export const ImportEntity = z.enum(["contact", "account", "deal", "payment", "expense", "bank_txn"]);
 export type ImportEntity = z.infer<typeof ImportEntity>;
+
+/** What a person picks from, in the order the wizard offers it. */
+export const IMPORT_ENTITY_LABELS: Record<ImportEntity, string> = {
+  contact: "Contacts",
+  account: "Companies",
+  deal: "Deals",
+  payment: "Payments",
+  expense: "Expenses",
+  bank_txn: "Bank statement",
+};
+
+export const IMPORT_ENTITY_BLURBS: Record<ImportEntity, string> = {
+  contact: "People, with their phone numbers and email addresses.",
+  account: "Companies, with their GSTIN and industry.",
+  deal: "Opportunities, linked to the contact or company that owns them.",
+  payment: "Money received, matched to a deal where the file names one.",
+  expense: "Money spent, by category and vendor.",
+  bank_txn: "A bank statement, to reconcile against payments already recorded.",
+};
+
+/**
+ * The entities whose rows are MONEY, and which therefore need `finance:create`
+ * on top of the import role.
+ *
+ * §3: "Sensitive imports (payroll, contracts) need elevated roles." A
+ * marketing persona may legitimately import a lead list and must not be able
+ * to post payments into the ledger by uploading a spreadsheet.
+ */
+export const FINANCE_IMPORT_ENTITIES: readonly ImportEntity[] = ["payment", "expense", "bank_txn"];
+
+export function isFinanceImportEntity(entity: ImportEntity): boolean {
+  return FINANCE_IMPORT_ENTITIES.includes(entity);
+}
 
 export const DedupeStrategy = z.enum(["skip", "update", "create"]);
 export type DedupeStrategy = z.infer<typeof DedupeStrategy>;
@@ -170,6 +222,217 @@ export const IMPORT_FIELDS: Record<ImportEntity, ImportField[]> = {
       aliases: ["account", "company", "company name"],
     },
   ],
+
+  // ── The finance entities ──────────────────────────────────────────────────
+  //
+  // Every amount column's hint says the formats that are accepted, because
+  // `parseAmountCell` accepts a great many and a person who does not know that
+  // will reformat a column by hand before uploading it.
+  //
+  // Every date column's hint says what happens when the order is ambiguous,
+  // because that is the one validation failure whose cause is not obvious from
+  // the row it lands on.
+  payment: [
+    {
+      field: "paidAt",
+      header: "Payment date",
+      label: "Payment date",
+      required: true,
+      example: "17/09/2026",
+      hint:
+        "The day the money arrived. Day-first, month-first, 17 Sep 2026 and 2026-09-17 are all read - " +
+        "but a column where no day is past the 12th is ambiguous and you will be asked which it is.",
+      aliases: ["date", "paid on", "payment date", "value date", "txn date", "transaction date", "received on"],
+    },
+    {
+      field: "amount",
+      header: "Amount",
+      label: "Amount",
+      required: true,
+      example: "102500.50",
+      hint: "₹1,02,500.50, 102,500.50, (1,234) for a negative and 1,234 Dr are all read.",
+      aliases: ["amt", "total", "paid amount", "credit", "amount received", "invoice value"],
+    },
+    {
+      field: "mode",
+      header: "Mode",
+      label: "Mode",
+      required: false,
+      example: "upi",
+      hint: "cash, cheque, upi, bank_transfer, card or gateway. Anything else is recorded as other.",
+      aliases: ["method", "payment mode", "payment method", "type", "instrument"],
+    },
+    {
+      field: "reference",
+      header: "Reference",
+      label: "Reference",
+      required: false,
+      example: "AXIS0098122",
+      hint:
+        "A UTR, cheque number or transaction id. Strongly recommended - it is what stops the same " +
+        "payment being imported twice.",
+      aliases: ["utr", "rrn", "txn id", "transaction id", "transaction ref", "cheque no", "ref no", "payment id"],
+    },
+    {
+      field: "customer",
+      header: "Customer",
+      label: "Customer",
+      required: false,
+      example: "Vetri Constructions",
+      hint: "Matched against your contacts and companies by name. An unknown name leaves the payment unmatched.",
+      aliases: ["customer name", "party", "payer", "received from", "account name", "client"],
+    },
+    {
+      field: "dealName",
+      header: "Deal",
+      label: "Deal",
+      required: false,
+      example: "20000 interlock bricks - Cheyyur",
+      hint: "Links the payment to a deal by exact name. Leave blank and the matching queue will suggest one.",
+      aliases: ["deal name", "project", "order", "invoice", "invoice no", "invoice number"],
+    },
+    {
+      field: "notes",
+      header: "Notes",
+      label: "Notes",
+      required: false,
+      example: "Part payment against first instalment",
+      aliases: ["remarks", "narration", "description", "particulars", "comment"],
+    },
+  ],
+
+  expense: [
+    {
+      field: "spentOn",
+      header: "Expense date",
+      label: "Expense date",
+      required: true,
+      example: "17/09/2026",
+      hint: "The day the cost was incurred. Same date formats as everywhere else in the importer.",
+      aliases: ["date", "spent on", "bill date", "voucher date", "expense date", "invoice date"],
+    },
+    {
+      field: "amount",
+      header: "Amount",
+      label: "Amount",
+      required: true,
+      example: "23600",
+      hint: "The amount paid, including tax. Put the tax in its own column if you track it separately.",
+      aliases: ["amt", "total", "value", "debit", "paid", "gross"],
+    },
+    {
+      field: "category",
+      header: "Category",
+      label: "Category",
+      required: true,
+      example: "Telecom",
+      // `expenses.category` is a closed CHECK enum (migration 0175), so this
+      // hint must not promise that a new name creates a category - it does
+      // not. Common wordings are mapped; anything else lands under "other"
+      // with the original word kept in the memo, so no row fails for it.
+      hint:
+        "Mapped onto your expense heads - advertising, telephony, salary, rent, travel and the rest. " +
+        "Anything unrecognised is filed under Other and the word you used is kept in the notes.",
+      aliases: ["head", "account head", "expense head", "type", "ledger", "group"],
+    },
+    {
+      field: "vendor",
+      header: "Vendor",
+      label: "Vendor",
+      required: false,
+      example: "Airtel",
+      aliases: ["supplier", "payee", "paid to", "party", "vendor name"],
+    },
+    {
+      field: "billNumber",
+      header: "Bill number",
+      label: "Bill number",
+      required: false,
+      example: "AIR/2026/44821",
+      hint: "With the vendor name, this is what stops the same bill being imported twice.",
+      aliases: ["bill no", "invoice no", "invoice number", "voucher no", "reference", "ref no"],
+    },
+    {
+      field: "taxAmount",
+      header: "Tax amount",
+      label: "Tax amount",
+      required: false,
+      example: "3600",
+      hint: "The GST inside the amount above, where you track it. Left blank it is simply not recorded.",
+      aliases: ["gst", "gst amount", "tax", "cgst", "igst", "vat"],
+    },
+    {
+      field: "notes",
+      header: "Notes",
+      label: "Notes",
+      required: false,
+      example: "September broadband",
+      aliases: ["remarks", "description", "particulars", "narration", "comment"],
+    },
+  ],
+
+  // A bank statement is not a payment. It is the bank's own record, imported to
+  // be RECONCILED against payments already recorded - which is why it has its
+  // own entity and its own natural key rather than being mapped onto `payment`.
+  // §3: "imported payments go through the same normalizer and matching engine
+  // as connector payments", and the reconciliation is what decides which lines
+  // of a statement are payments at all.
+  bank_txn: [
+    {
+      field: "valueDate",
+      header: "Date",
+      label: "Date",
+      required: true,
+      example: "17/09/2026",
+      hint: "The value date, if your statement has both that and a posting date.",
+      aliases: ["txn date", "transaction date", "value date", "posting date", "date"],
+    },
+    {
+      field: "narration",
+      header: "Narration",
+      label: "Narration",
+      required: true,
+      example: "NEFT-VETRI CONSTRUCTIONS-AXIS0098122",
+      hint: "The bank's own description. This is what the matcher reads to find a payer.",
+      aliases: ["particulars", "description", "remarks", "details", "transaction remarks"],
+    },
+    {
+      field: "credit",
+      header: "Deposit",
+      label: "Deposit (money in)",
+      required: false,
+      example: "102500.50",
+      hint: "Leave blank on a withdrawal row. Statements with one signed column can map it here instead.",
+      aliases: ["deposit amt", "credit", "credit amount", "cr", "amount credited", "money in"],
+    },
+    {
+      field: "debit",
+      header: "Withdrawal",
+      label: "Withdrawal (money out)",
+      required: false,
+      example: "23600",
+      hint: "Leave blank on a deposit row.",
+      aliases: ["withdrawal amt", "debit", "debit amount", "dr", "amount debited", "money out"],
+    },
+    {
+      field: "reference",
+      header: "Reference",
+      label: "Reference",
+      required: false,
+      example: "AXIS0098122",
+      hint: "The cheque or reference number. With the date, this is the statement line's identity.",
+      aliases: ["chq no", "chq./ref.no.", "ref no", "cheque no", "utr", "transaction id"],
+    },
+    {
+      field: "balance",
+      header: "Balance",
+      label: "Balance",
+      required: false,
+      example: "845200.00",
+      hint: "The running balance. Kept as a check figure - it is not used to compute anything.",
+      aliases: ["closing balance", "running balance", "balance amt", "available balance"],
+    },
+  ],
 };
 
 /**
@@ -320,6 +583,46 @@ const SAMPLE_OVERRIDES: Record<ImportEntity, Array<Record<string, string>>> = {
       accountName: "Sunrise Builders",
     },
   ],
+  // The second sample row of each finance template is deliberately a DIFFERENT
+  // shape from the first: a cheque rather than a UPI payment, a vendor bill
+  // with no tax column filled, a withdrawal rather than a deposit. A template
+  // whose two rows look identical teaches nothing about which columns are
+  // optional.
+  payment: [
+    {},
+    {
+      paidAt: "02/10/2026",
+      amount: "45000",
+      mode: "cheque",
+      reference: "004512",
+      customer: "Sunrise Builders",
+      dealName: "Boundary wall - Salem",
+      notes: "Second instalment",
+    },
+  ],
+  expense: [
+    {},
+    {
+      spentOn: "01/10/2026",
+      amount: "8500",
+      category: "Fuel",
+      vendor: "Indian Oil",
+      billNumber: "",
+      taxAmount: "",
+      notes: "Site visits - October",
+    },
+  ],
+  bank_txn: [
+    {},
+    {
+      valueDate: "02/10/2026",
+      narration: "ACH DEBIT-AIRTEL BROADBAND",
+      credit: "",
+      debit: "2360",
+      reference: "",
+      balance: "842840.00",
+    },
+  ],
 };
 
 /** The header row a template prints, in column order. */
@@ -347,7 +650,16 @@ export function importTemplateCsv(entity: ImportEntity): string {
 
 /** `aura-contacts-template.csv` - what the browser saves it as. */
 export function importTemplateFilename(entity: ImportEntity): string {
-  const plural: Record<ImportEntity, string> = { contact: "contacts", account: "accounts", deal: "deals" };
+  const plural: Record<ImportEntity, string> = {
+    contact: "contacts",
+    account: "accounts",
+    deal: "deals",
+    payment: "payments",
+    expense: "expenses",
+    // Not "bank-txns": this is the file name a person sees in their Downloads
+    // folder six weeks later, and it has to still mean something then.
+    bank_txn: "bank-statement",
+  };
   return `aura-${plural[entity]}-template.csv`;
 }
 

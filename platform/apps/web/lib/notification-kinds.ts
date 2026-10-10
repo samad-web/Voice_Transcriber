@@ -16,7 +16,7 @@ export interface NotificationKindSpec {
   label: string;
   /** What choosing Instant or Digest for this kind actually affects. */
   description: string;
-  icon: "user-plus" | "user-check" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed" | "download" | "upload";
+  icon: "user-plus" | "user-check" | "clock" | "arrow-right-left" | "hourglass" | "zap" | "file-text" | "inbox" | "ban" | "plug" | "alarm" | "clipboard-check" | "shield-alert" | "hard-drive" | "phone-missed" | "download" | "upload" | "phone-call" | "bot";
   /**
    * Somebody has to DO something, not merely know something. These are what
    * the bell's "Needs action" tab shows.
@@ -279,6 +279,34 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     label: "Storage limit",
     description: "Your stored call recordings reached 80 % or 100 % of your plan's storage.",
     icon: "hard-drive",
+    needsAction: false,
+  },
+
+  // ── The transcript assistant's three (migrations 0184-0187) ──
+
+  callback_due: {
+    label: "Call-back due",
+    description: "A customer you promised to ring back is due now.",
+    icon: "phone-call",
+    // The most action-needing thing the bell can carry: a person is waiting
+    // for a call at a time they were given.
+    needsAction: true,
+  },
+  callback_missed: {
+    label: "Call-back missed",
+    description:
+      "A promised call was not made in time - yours, or somebody's whose work you oversee.",
+    icon: "phone-missed",
+    needsAction: true,
+  },
+  agent_alert: {
+    label: "Assistant needs attention",
+    description:
+      "The call assistant stopped doing something by itself, hit a limit, or started being corrected more often.",
+    icon: "bot",
+    // It is about the TOOL rather than about a customer. An owner should look,
+    // and nobody is waiting on the other end of a phone - which is the line
+    // "Needs action" draws.
     needsAction: false,
   },
 };

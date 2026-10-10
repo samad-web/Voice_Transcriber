@@ -114,6 +114,21 @@ export * from "./finance-advisor";
 export * from "./finance-detectors";
 export * from "./finance-metrics";
 
+// Build docs/indian-business-finance-documents-cycles-import, in dependency
+// order. `fiscal` underpins both of the next two: the compliance calendar
+// generates a year of filings from the financial year, and the console's
+// period picker resolves "this quarter" against it.
+//
+// `xlsx-read` is NOT in the barrel, for the reason the Doc 39 note above gives
+// about `sheets` and `import-phone`: it is reached only by the import wizard,
+// which deep-imports it so that nothing else pays for it. It has no cost worth
+// avoiding today, but it is the one module here whose only consumer is a
+// single lazy-loaded screen, and keeping it out keeps that true.
+export * from "./fiscal";
+export * from "./compliance";
+export * from "./documents";
+export * from "./import-detect";
+
 // The organization chart (Build docs/org-chart-build-plan.md, migrations
 // 0177/0178). Two files, in dependency order: `org-chart` owns the vocabulary
 // and the schemas, `org-chart-tree` the cycle check and the layout. Both are
@@ -122,3 +137,22 @@ export * from "./finance-metrics";
 // has to match the one on screen exactly.
 export * from "./org-chart";
 export * from "./org-chart-tree";
+
+// The transcript agent (Build docs/transcript-agent-build-plan.md, migrations
+// 0184-0187). Eight files, in dependency order - `feature-gates` is first
+// because the agent's own modules import its modes and capabilities, and it is
+// deliberately generic so KPI, Finance and the org chart can adopt the same
+// toggles, admin screen and audit trail (§3A, §20).
+//
+// `time-phrases` and `amount-phrases` are the §7 resolvers, and they are in the
+// barrel rather than deep-imported because three consumers need them: the
+// worker to resolve a phrase, the API to simulate a policy, and the console to
+// show an owner what a rule would do.
+export * from "./feature-gates";
+export * from "./transcript-redaction";
+export * from "./time-phrases";
+export * from "./amount-phrases";
+export * from "./transcript-agent";
+export * from "./agent-policy";
+export * from "./callbacks";
+export * from "./agent-eval";

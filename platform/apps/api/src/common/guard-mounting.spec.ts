@@ -115,6 +115,7 @@ import { InvoicesController } from "../modules/invoices/invoices.controller";
 import { PaymentsController } from "../modules/invoices/payments.controller";
 import { RazorpayWebhookController } from "../modules/invoices/razorpay-webhook.controller";
 import { StripeWebhookController } from "../modules/invoices/stripe-webhook.controller";
+import { ImportBatchController } from "../modules/import/import-batch.controller";
 import { ImportController } from "../modules/import/import.controller";
 import { ExportsController } from "../modules/exports/exports.controller";
 import { MetaOAuthController } from "../modules/meta-ads/meta-oauth.controller";
@@ -183,6 +184,8 @@ import { NumbersController } from "../modules/suppression/numbers.controller";
 import { PublicFormsController } from "../modules/web-forms/public-forms.controller";
 import { WebFormsController } from "../modules/web-forms/web-forms.controller";
 import { AdvisorController } from "../modules/finance/advisor.controller";
+import { ComplianceController } from "../modules/finance/compliance.controller";
+import { DocumentsController } from "../modules/finance/documents.controller";
 import { ConnectorsController } from "../modules/finance/connectors.controller";
 import { DealTemplatesController } from "../modules/finance/deal-templates.controller";
 import { ExpensesController } from "../modules/finance/expenses.controller";
@@ -192,6 +195,12 @@ import { FinanceWebhookController } from "../modules/finance/finance-webhook.con
 import { IncentivesController } from "../modules/finance/incentives.controller";
 import { OrgChartContractsController } from "../modules/org-chart/org-chart-contracts.controller";
 import { OrgChartController } from "../modules/org-chart/org-chart.controller";
+// The transcript agent (Build docs/transcript-agent-build-plan, migrations
+// 0184-0187). Three controllers: the generic gate's switchboard, the managed
+// to-call list, and the review inbox plus configuration.
+import { FeatureGatesController } from "../modules/feature-gates/feature-gates.controller";
+import { CallbacksController } from "../modules/callbacks/callbacks.controller";
+import { TranscriptAgentController } from "../modules/transcript-agent/transcript-agent.controller";
 import { OrgChartPositionsController } from "../modules/org-chart/org-chart-positions.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
@@ -372,6 +381,14 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // the same administrative tier scripts/backfill-crm-objects.js already
   // operates at, not a per-record CrmPermissionsGuard surface.
   ImportController,
+  // 0182: the staged half of the import centre
+  // (Build docs/indian-business-finance-documents-cycles-import §3). Same
+  // guard trio and same persona list as ImportController above it - owner,
+  // manager, marketing - because the console shows them one "Import" entry.
+  // A FINANCE entity additionally needs `finance:create`, checked inside the
+  // handler rather than by a decorator: this one controller serves both lead
+  // data and money, and only the second needs the higher bar.
+  ImportBatchController,
   ExportsController,
   // Kailash gap Milestone 4: Meta Lead Ads capture (migration 0063).
   // MetaOAuthController mixes both regimes in one class, like TagsController
@@ -534,6 +551,13 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   IncentivesController,
   FinanceDashboardController,
   AdvisorController,
+  // 0180-0181 (Build docs/indian-business-finance-documents-cycles-import):
+  // the document vault and the compliance calendar. Both on the existing
+  // `finance` grid object rather than new ones - a statutory document and a
+  // GST filing are the finance handler's work, and a third object would have
+  // been a grid column nobody could explain the difference of.
+  DocumentsController,
+  ComplianceController,
   // 0177-0178 (Build docs/org-chart-build-plan): the organization chart. All
   // three carry AdminKeyGuard + TenantGuard + CrmPermissionsGuard, over TWO
   // grid objects - `position` on the first two, `employment_contract` on the
@@ -541,6 +565,9 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // the chart and no contract data", so a decorator copied from the wrong
   // neighbour here would be the module's one serious failure mode.
   OrgChartController,
+  FeatureGatesController,
+  CallbacksController,
+  TranscriptAgentController,
   OrgChartPositionsController,
   OrgChartContractsController,
 ];
@@ -1412,6 +1439,58 @@ const OWNER_ROLE_ROUTES = [
   // connector, making the gateway a year of money came through unknowable.
   "POST /finance/connectors",
   "POST /finance/connectors/:id/disconnect",
+  // ── The gated-feature switchboard (§3A.6/§3A.8, migration 0184) ──
+  //
+  // ALL of them, at class level. §18: "who can change toggles: owner and admin
+  // only." Enforced with the persona rather than a `role_permissions` cell for
+  // the same reason the two finance connector routes above are: a grid cell
+  // can be ticked, and "nobody but the owner, ever" is not a shape a cell can
+  // express. A manager who could enable the feature for their own team could
+  // enable `messaging` for it, and messaging reaches customers.
+  //
+  // They sit BEFORE `GET /automations` on purpose: OPERATOR_MAY_CALL_ROUTES is
+  // this list sliced from that marker, so everything above it is closed to a
+  // BARE admin key. An operator supporting a tenant still reaches these by
+  // forwarding the owner's identity (`x-caller-user-id`), which is the path
+  // that leaves an attributable audit row - and a vendor silently switching a
+  // customer's call-reading assistant on is precisely what §3A.5's consent
+  // acknowledgement exists to prevent.
+  "GET /features/gated/catalogue",
+  "GET /features/gated/effective",
+  "GET /features/gated/users",
+  "GET /features/gated/audit",
+  "PUT /features/gated/org",
+  "PUT /features/gated/users/:userId",
+  "POST /features/gated/users/bulk",
+  "PUT /features/gated/defaults",
+  "POST /features/gated/consent",
+  "POST /features/gated/backfill",
+  // ── The transcript agent's review inbox and configuration (§8.2, §12, §13;
+  //    migration 0185) ──
+  //
+  // OwnerRoleGuard at class level, and the review routes carry NO
+  // `@RequireOwnerRole` - so the guard is mounted and permissive on them,
+  // exactly the shape `GET /owner/overview` has. That is deliberate rather
+  // than an oversight: §3A.3 gives a telecaller their OWN results, which is a
+  // row filter and not a persona refusal, and it is applied inline against the
+  // org chart's reporting line (`visibility()` in the controller). A persona
+  // check here would deny the telecaller the queue entirely.
+  //
+  // The configuration routes narrow it to owner, because tiers, thresholds and
+  // the autonomy switches are the ones that decide what happens without a
+  // person.
+  "GET /transcript-agent/review",
+  "GET /transcript-agent/review/:id",
+  "POST /transcript-agent/review/:id/approve",
+  "POST /transcript-agent/review/:id/reject",
+  "POST /transcript-agent/review/:id/edit",
+  "POST /transcript-agent/review/bulk-approve",
+  "GET /transcript-agent/config",
+  "PUT /transcript-agent/settings",
+  "PUT /transcript-agent/config/intents/:type",
+  "POST /transcript-agent/config/custom-intents",
+  "GET /transcript-agent/accuracy",
+  "GET /transcript-agent/runs/:callId",
   "GET /automations",
   "GET /automations/runs",
   "POST /automations/dry-run",
@@ -1434,6 +1513,25 @@ const OWNER_ROLE_ROUTES = [
   "GET /import/:jobId",
   "GET /import/:jobId/errors",
   "GET /import/:jobId/errors.csv",
+  // 0182's staged flow
+  // (Build docs/indian-business-finance-documents-cycles-import §3). Same
+  // persona list as the five above, because the console shows one "Import"
+  // entry and §3 asks for one import centre. The three that touch MONEY
+  // (`stage`, `commit`, `rollback` of a finance entity) additionally require
+  // `finance:create`, checked inside the handler - a decorator cannot express
+  // "only when the body names a payment", and a marketing persona who may
+  // load a bought lead list must not be able to post into the ledger.
+  "POST /import/stage",
+  "GET /import/jobs",
+  "GET /import/jobs/:jobId/staged",
+  "POST /import/jobs/:jobId/commit",
+  "POST /import/jobs/:jobId/rollback",
+  "DELETE /import/jobs/:jobId",
+  "GET /import/jobs/:jobId/failed.csv",
+  "GET /import/templates",
+  "POST /import/templates",
+  "POST /import/templates/:id/used",
+  "DELETE /import/templates/:id",
   "POST /merge/scan",
   "GET /merge/duplicates",
   "POST /merge/duplicates/:id/dismiss",
@@ -2017,6 +2115,43 @@ const CRM_PERMISSION_ROUTES = [
   // reason. Bounded to a page - a year goes through the export engine (0148),
   // which does it off the request thread.
   "GET /finance/ledger/export",
+  // ── The document vault and the compliance calendar (0180-0181) ──────────
+  //
+  // Build docs/indian-business-finance-documents-cycles-import §1 and §2, both
+  // on the EXISTING `finance` object rather than new ones. A statutory
+  // document and a GST filing are the finance handler's work, and a third grid
+  // object would have been a column nobody could explain the difference of.
+  //
+  // `view` on every read, `edit` on every write - there is no `finance:delete`
+  // and the vault's delete route is a SOFT delete on `finance:edit`, which
+  // 0180 backs with a REVOKE so the row genuinely cannot be removed.
+  "DELETE /finance/documents/:id",
+  "GET /finance/compliance/close",
+  "GET /finance/compliance/filings",
+  "GET /finance/compliance/items",
+  "GET /finance/compliance/profile",
+  "GET /finance/documents",
+  "GET /finance/documents/:id/access-log",
+  // Mints a 300-second signed URL and logs that it did, to 0178's
+  // `document_access_log` - the same table the org chart's contract documents
+  // write to, so "who read what" stays one query across both stores.
+  "GET /finance/documents/:id/url",
+  "GET /finance/documents/categories",
+  "GET /finance/documents/gaps",
+  "PATCH /finance/compliance/filings/:id/due-date",
+  "PATCH /finance/compliance/filings/:id/file",
+  "PATCH /finance/compliance/filings/:id/waive",
+  "PATCH /finance/compliance/items/:id",
+  "PATCH /finance/compliance/profile",
+  "PATCH /finance/documents/:id",
+  "PATCH /finance/documents/categories/:id",
+  "POST /finance/compliance/close/:month/step",
+  "POST /finance/compliance/filings/generate",
+  "POST /finance/compliance/items",
+  "POST /finance/compliance/items/seed",
+  "POST /finance/documents",
+  "POST /finance/documents/categories",
+  "POST /finance/documents/categories/seed",
   "GET /finance/matching/queue",
   // Deliberately NOT `scope=user` on the overview: that route publishes
   // org-wide costs, the cash balance and the burn, none of which a telecaller
@@ -2131,6 +2266,38 @@ const CRM_PERMISSION_ROUTES = [
   "PUT /org-chart/positions/:id/responsibilities/as-manager",
   "PUT /org-chart/positions/:id/skills",
   "PUT /org-chart/settings",
+  // ── The managed to-call list (§10A.9, migration 0186) ──
+  //
+  // Every route in the module, at class level, on the new `callback` object.
+  // §10A.9: "all endpoints enforce the feature gate AND role permissions;
+  // telecallers see only their own list" - and those are two different
+  // questions. The gate is "has this business bought and switched on the
+  // call-back list"; the grid is "may THIS person see somebody else's". Four
+  // guards, in order: AdminKeyGuard, TenantGuard, FeatureGateGuard,
+  // CrmPermissionsGuard.
+  //
+  // `callback` is deliberately NOT in `ALL_SCOPE_ONLY_OBJECTS`: `owned` is the
+  // most meaningful scope it has, since the entire product is a telecaller's
+  // own list, so it carries a real owner column and every statement that can
+  // return somebody else's row goes through `scopeFilter`/`scopeClause`.
+  "GET /callbacks/my-list",
+  "GET /callbacks/team",
+  "GET /callbacks/:id",
+  "POST /callbacks",
+  "POST /callbacks/:id/snooze",
+  "POST /callbacks/:id/reschedule",
+  "POST /callbacks/:id/complete",
+  "POST /callbacks/:id/attempt",
+  // Reassignment is `callback:edit` plus an INLINE `all`-scope check, because
+  // handing work to another person is a decision about somebody else's day and
+  // not a different verb on this record. Grepping for a decorator will not
+  // find that check - the controller says so, and
+  // `callbacks.controller.spec.ts` asserts it.
+  "POST /callbacks/:id/reassign",
+  "GET /callbacks/policy/current",
+  "PUT /callbacks/policy",
+  "POST /callbacks/simulate",
+  "GET /callbacks/metrics/summary",
 ];
 
 interface Route {
@@ -2259,7 +2426,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 707 routes, partitioned 602 tenant / 52 cross-tenant / 18 device / 22 unguarded / 1 internal / 7 portal", () => {
+  it("has 777 routes, partitioned 672 tenant / 52 cross-tenant / 18 device / 22 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2459,8 +2626,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // The module has no unguarded route and no operator surface: a tenant's
     // management structure and its staff contracts are read through the
     // tenant's own console or not at all.
-    expect(ROUTES).toHaveLength(707);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(707);
+    // 742: plus 35 for the document vault, the compliance calendar and the
+    // staged import (0180-0182,
+    // Build docs/indian-business-finance-documents-cycles-import). 24 of them
+    // are on the existing `finance` grid object and 11 carry OwnerRoleGuard
+    // with the same persona list the one "Import" nav entry implies. Again no
+    // unguarded route: the vault holds a tenant's GST certificate and their
+    // lease, and nothing outside their own console reads it.
+    // 777: plus 35 for the transcript agent (0184-0187) - ten for the generic
+    // gate's switchboard, thirteen for the managed to-call list, twelve for the
+    // review inbox and configuration. All tenant-scoped, none unguarded: the
+    // most sensitive read in the module is a window onto a customer's own
+    // words, and nothing outside the workspace's console reads it.
+    expect(ROUTES).toHaveLength(777);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(777);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2530,7 +2709,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 566: plus the finance module's 56. Every route in the module except its
     // webhook, which has no guards at all.
     // 602: plus the org chart's 36 (0177/0178) - every route in the module.
-    expect(tenantScoped).toHaveLength(602);
+    // 672: plus the transcript agent's 35 (0184-0187) - every route in its
+    // three controllers, all tenant-scoped. Ten for the generic gate's
+    // switchboard, thirteen for the to-call list, twelve for the review inbox
+    // and configuration. None cross-tenant: the whole module is about one
+    // workspace's own calls, and an operator reaches it by forwarding that
+    // workspace's owner rather than by stepping outside the tenant.
+    expect(tenantScoped).toHaveLength(672);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
@@ -2542,10 +2727,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(707); // = ROUTES.length: every route in exactly one class
+    ).toBe(777); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 611 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 717 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2596,7 +2781,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // 555: plus campaign spend by month's three (0171).
     // 647: plus the org chart's 36, all three controllers carrying
     // AdminKeyGuard, TenantGuard, CrmPermissionsGuard in that order.
-    expect(principalRoutes).toHaveLength(647);
+    // 717: plus the transcript agent's 35 (0184-0187). The callbacks
+    // controller is the interesting one - it mounts FOUR guards
+    // (AdminKeyGuard, TenantGuard, FeatureGateGuard, CrmPermissionsGuard), and
+    // the loop below is what proves the first two are still first and second:
+    // FeatureGateGuard reads both `req.principal` and `req.tenantOrgId`, so a
+    // reordered chain would 401 every request instead of gating anything.
+    expect(principalRoutes).toHaveLength(717);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

@@ -179,7 +179,24 @@ describe("ownerNavItemsFor - callIntelEnabled", () => {
     // gate has to be a deliberate edit in two places instead of a filter that
     // silently absorbs it. Call insights joined them: it is an aggregate of
     // the same AI read.
-    const callIntel = ["/owner/calls", "/owner/calls/triage", "/owner/insights"];
+    //
+    // And the transcript assistant's three (Build docs/transcript-agent-build-
+    // plan, migrations 0184-0187). Same module, and the mechanism above worked
+    // exactly as its comment promised: adding them to `CALL_INTEL_GATED_HREFS`
+    // turned this assertion red until somebody said so here too.
+    //
+    // A call-back, the switchboard that governs it and §10A.6's rules wizard
+    // all exist only because the assistant read a transcript, so a tenant
+    // without `call_intel` would have three permanently empty pages rather
+    // than three restricted ones.
+    const callIntel = [
+      "/owner/calls",
+      "/owner/calls/triage",
+      "/owner/insights",
+      "/owner/callbacks",
+      "/owner/settings/transcript-agent",
+      "/owner/settings/transcript-agent/callbacks",
+    ];
     const withIt = hrefs("owner", false, true, true).filter((h) => !callIntel.includes(h));
     expect(withIt).toEqual(hrefs("owner", false, true, false));
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { RefObject } from "react";
 import Papa from "papaparse";
 import {
@@ -20,40 +20,105 @@ import {
   useAlert,
 } from "@aura/ui";
 import {
+  IMPORT_ENTITY_BLURBS,
+  IMPORT_ENTITY_LABELS,
   IMPORT_FIELDS,
   IMPORT_MAX_ROWS,
   IMPORT_RUN_MAX_BYTES,
   type ImportField,
+  detectDateOrder,
+  detectKind,
+  detectSource,
   importTemplateCsv,
   importTemplateFilename,
+  isFinanceImportEntity,
   looksLikeTemplateSample,
   mapRow,
   pickMappedColumns,
+  splitGrid,
   suggestMapping,
 } from "@aura/shared";
 // By path, not from the index: these carry libphonenumber's metadata, which
 // only pages with a phone to check should load (see phone.ts).
 import { importPhone } from "@aura/shared/dist/import-phone";
 import { countryName, toPhoneCountry } from "@aura/shared/dist/phone";
+import { ImportEntity } from "@aura/shared";
 import { useOrgRegion } from "@/components/org-region";
 import { FormFieldsSkeleton, LoadingRegion, TableBlockSkeleton } from "@/components/skeletons";
 import {
+  commitImportAction,
+  discardStagedImportAction,
   fetchImportErrorsAction,
   fetchImportErrorsCsvAction,
   previewImportAction,
+  stageImportAction,
+  stagedRowsAction,
   type DedupeStrategy,
-  type ImportEntity,
+  type ImportEntity as ImportEntityType,
   type ImportJob,
   type ImportRowError,
 } from "./actions";
+// The zod enum, for `ImportEntity.options` - the server-action module exports
+// only the TYPE, and deriving the picker's options from the shared enum is
+// what keeps this screen from drifting from `IMPORT_FIELDS`.
+import { DateOrderStep, PreviewStep, type StagedResult } from "./staged-steps";
+import { DetectionSummary, type Detection } from "./detection-summary";
 
-type Step = "entity" | "upload" | "mapping" | "strategy" | "running" | "results";
+type ImportEntityValue = ImportEntityType;
 
-const ENTITY_OPTIONS: Array<{ value: ImportEntity; label: string; hint: string }> = [
-  { value: "contact", label: "Contacts", hint: "People - name, email, phone, title." },
-  { value: "account", label: "Accounts", hint: "Companies - name and domain." },
-  { value: "deal", label: "Deals", hint: "Opportunities - name, amount, stage." },
-];
+/**
+ * ── THE FINANCE ENTITIES TAKE A DIFFERENT LAST MILE ─────────────────────────
+ *
+ * `strategy` -> `running` -> `results` is 0062's flow: pick a dedupe strategy
+ * and write. A finance import inserts `dates` and `preview` instead, which is
+ * §3 steps 6-9: confirm how the dates read, stage the rows, look at the dry
+ * run, then commit.
+ *
+ * Two shapes rather than one with conditionals, because the questions are
+ * genuinely different. "Skip or update duplicates" is the right question for a
+ * contact list and the wrong one for a bank statement, where a duplicate is a
+ * re-uploaded date range and the answer is always "skip".
+ */
+type Step =
+  | "entity"
+  | "upload"
+  | "mapping"
+  | "strategy"
+  | "dates"
+  | "preview"
+  | "running"
+  | "results";
+
+/**
+ * What a person can pick, derived from the shared catalogue rather than
+ * written out here.
+ *
+ * It used to be three hard-coded rows, which is how the console's list and
+ * `IMPORT_FIELDS` drift: an entity added to the API would simply not appear on
+ * this screen, with nothing failing. The three finance entities from
+ * Build docs/indian-business-finance-documents-cycles-import §3 arrived through
+ * this derivation and needed no change here at all.
+ */
+const ENTITY_OPTIONS: Array<{ value: ImportEntity; label: string; hint: string }> =
+  ImportEntity.options.map((value) => ({
+    value,
+    label: IMPORT_ENTITY_LABELS[value],
+    hint: IMPORT_ENTITY_BLURBS[value],
+  }));
+
+/**
+ * What the file picker accepts.
+ *
+ * §3: ".xlsx, .xls, .csv, .tsv; reject macro files like .xlsm". `.xls` is in
+ * the attribute so the picker does not hide a file a person has, and
+ * `readSpreadsheet` then refuses it BY NAME with the one-click fix ("Save As
+ * .xlsx") - which is far better than a greyed-out file they cannot explain.
+ * `.xlsm` is absent from both: a macro-enabled workbook is refused outright.
+ */
+const ACCEPTED_FILE_TYPES = ".csv,.tsv,.txt,.xlsx,.xls";
+
+/** Hard cap on the file itself, before any parsing. */
+const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
 const DEDUPE_OPTIONS: Array<{ value: DedupeStrategy; label: string; description: string }> = [
   {
@@ -142,12 +207,34 @@ function findPhoneIssues(
   return issues;
 }
 
+/**
+ * The breadcrumb's order.
+ *
+ * `dates` and `preview` sit where `strategy` does, because they are the same
+ * position in two different flows - a finance import confirms the date format
+ * and reads a dry run where a contact import picks a duplicate strategy. The
+ * indicator shows whichever of the three the current step is, so the
+ * breadcrumb never claims a step that this flow will not reach.
+ */
 const STEP_ORDER: Step[] = ["entity", "upload", "mapping", "strategy", "running", "results"];
+const FINANCE_STEP_ORDER: Step[] = [
+  "entity",
+  "upload",
+  "mapping",
+  "dates",
+  "preview",
+  "running",
+  "results",
+];
 const STEP_LABELS: Record<Step, string> = {
   entity: "Choose data",
-  upload: "Upload CSV",
+  // Not "Upload CSV" any more: §3 added .xlsx, and a label that names one
+  // format is a label people believe.
+  upload: "Upload file",
   mapping: "Map columns",
   strategy: "Duplicates",
+  dates: "Dates",
+  preview: "Check",
   running: "Import",
   results: "Results",
 };
@@ -194,6 +281,18 @@ export function ImportWizard() {
   const [pasteText, setPasteText] = useState("");
   /** How many parsed rows still look like the template's own sample rows. */
   const [sampleRowCount, setSampleRowCount] = useState(0);
+  /**
+   * What §3's "detect" step worked out: the header row, what kind of data this
+   * is, which known export it looks like, and what was dropped on the way in.
+   *
+   * Kept as state and SHOWN rather than acted on silently, which is §3's
+   * framing: "detect, suggest and confirm, not silent import."
+   */
+  const [detection, setDetection] = useState<Detection | null>(null);
+  /** The resolved date order for a finance import, once a person has settled it. */
+  const [dateOrder, setDateOrder] = useState<"iso" | "dmy" | "mdy" | null>(null);
+  /** The dry run §3 step 8 asks for, once the rows are staged. */
+  const [staged, setStaged] = useState<StagedResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── column mapping (step: mapping) ──────────────────────────────────
@@ -208,6 +307,10 @@ export function ImportWizard() {
   const [job, setJob] = useState<ImportJob | null>(null);
   const [rowErrors, setRowErrors] = useState<ImportRowError[] | null>(null);
   const [, startRun] = useTransition();
+  // The staged flow's own pending flag, separate from `startRun`'s: the
+  // preview step's Commit button has to be disabled while the commit is in
+  // flight, because committing twice would apply the same rows twice.
+  const [stagePending, startStage] = useTransition();
 
   // The workspace's country (Time & location) - what the API reads a phone
   // without a "+" against. Only computed on the Duplicates step: that is the
@@ -272,18 +375,140 @@ export function ImportWizard() {
     }
   }
 
-  function handleFile(file: File) {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => applyParsed(results.data, results.meta.fields ?? []),
+  /**
+   * One grid, however it arrived.
+   *
+   * ── WHY THE PARSE IS HEADERLESS NOW ─────────────────────────────────────
+   *
+   * This used to be `Papa.parse(file, { header: true })`, which takes row 0 as
+   * the column names. §3 asks for the opposite: "find the real header row
+   * (skipping title rows and merged cells), and drop blank rows and total or
+   * subtotal rows" - because a bank statement opens with a title, an account
+   * number and a date range before the column names, and reading row 0 gives a
+   * mapping step whose columns are ["HDFC BANK LTD", "", "", ""].
+   *
+   * So everything is parsed as a raw grid and `splitGrid` decides where the
+   * header is. For a file whose header IS row 0 the result is identical to the
+   * old behaviour, which is what makes this safe for the contact imports that
+   * already worked.
+   */
+  function applyGrid(
+    grid: string[][],
+    source: { fileName?: string; sheetName?: string; sheetCount?: number },
+  ) {
+    const split = splitGrid(grid);
+    if (split.headers.length === 0 || split.rows.length === 0) {
+      resetParsed();
+      void alert({
+        title: "Couldn't read that file",
+        body:
+          split.header.index === null
+            ? "No row in that file looks like a row of column names. Check that the sheet has a header row."
+            : "That file has column names but no data rows under them.",
+        tone: "danger",
+      });
+      return;
+    }
+
+    // Back to the objects the rest of the wizard works in. Zipped against the
+    // DE-DUPLICATED headers, so a sheet with two "Amount" columns keeps both
+    // rather than letting the second shadow the first.
+    const data = split.rows.map((cells) => {
+      const row: Record<string, string> = {};
+      split.headers.forEach((header, i) => {
+        row[header] = cells[i] ?? "";
+      });
+      return row;
+    });
+
+    setDetection({
+      headerRow: split.header.index,
+      headerReason: split.header.reason,
+      headerConfidence: split.header.confidence,
+      skippedBlank: split.skippedBlank,
+      skippedTotals: split.skippedTotals,
+      sourceRowNumbers: split.sourceRowNumbers,
+      kind: detectKind(split.headers, split.rows.slice(0, 50)),
+      fileSource: detectSource(split.headers, source.fileName ?? ""),
+      fileName: source.fileName ?? null,
+      sheetName: source.sheetName ?? null,
+      sheetCount: source.sheetCount ?? 1,
+    });
+    applyParsed(data, split.headers);
+  }
+
+  function resetParsed() {
+    setFields([]);
+    setRows([]);
+    setSampleRowCount(0);
+    setDetection(null);
+  }
+
+  async function handleFile(file: File) {
+    const name = file.name.toLowerCase();
+
+    if (name.endsWith(".xlsm") || name.endsWith(".xlsb")) {
+      // §3: "reject macro files like .xlsm". Refused by name with the reason,
+      // so somebody can act on it rather than wonder why nothing happened.
+      void alert({
+        title: "Macro-enabled workbooks are not accepted",
+        body:
+          "Open the file, use Save As and choose Excel Workbook (.xlsx), then upload that. " +
+          "Macro files are refused because nothing here needs to run the macros and a lot could go wrong if it did.",
+        tone: "danger",
+      });
+      return;
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      void alert({
+        title: "That file is too large",
+        body: `Files up to ${Math.floor(MAX_FILE_BYTES / (1024 * 1024))} MB. Split it and import in batches.`,
+        tone: "danger",
+      });
+      return;
+    }
+
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      try {
+        const buffer = await file.arrayBuffer();
+        // Loaded on demand: the reader is only needed by this screen, so it
+        // stays out of the console's shared bundle (see @aura/shared's barrel,
+        // which deliberately does not export it).
+        const { readXlsx, sheetToGrid } = await import("@aura/shared/dist/xlsx-read");
+        const workbook = await readXlsx(buffer, { maxRows: MAX_ROWS + 50 });
+        // The first sheet with data in it, not blindly sheet 1: a workbook
+        // often opens on an instructions tab.
+        const sheet = workbook.sheets.find((s) => s.rows.length > 1) ?? workbook.sheets[0];
+        const sheetCount = workbook.sheets.length;
+        applyGrid(sheetToGrid(sheet), {
+          fileName: file.name,
+          sheetName: sheet.name,
+          sheetCount,
+        });
+      } catch (err) {
+        resetParsed();
+        void alert({
+          title: "Couldn't read that workbook",
+          body: err instanceof Error ? err.message : "Could not read that file.",
+          tone: "danger",
+        });
+      }
+      return;
+    }
+
+    Papa.parse<string[]>(file, {
+      header: false,
+      skipEmptyLines: false,
+      complete: (results) => {
+        applyGrid(results.data.map((r) => r.map((c) => (c ?? "").toString())), {
+          fileName: file.name,
+        });
+      },
       // Clear whatever a previous upload left behind before complaining: the
       // Continue button is gated on there being rows, so a file that failed to
       // parse must not leave the last file's rows sitting there looking ready.
       error: (err) => {
-        setFields([]);
-        setRows([]);
-        setSampleRowCount(0);
+        resetParsed();
         void alert({
           title: "Couldn't read that file",
           body: err.message || "Could not parse that file.",
@@ -295,11 +520,11 @@ export function ImportWizard() {
 
   function handlePaste() {
     if (!pasteText.trim()) return;
-    const results = Papa.parse<Record<string, string>>(pasteText, {
-      header: true,
-      skipEmptyLines: true,
-    });
-    applyParsed(results.data, results.meta.fields ?? []);
+    const results = Papa.parse<string[]>(pasteText, { header: false, skipEmptyLines: false });
+    applyGrid(
+      results.data.map((r) => r.map((c) => (c ?? "").toString())),
+      { fileName: "pasted" },
+    );
   }
 
   function goToMapping() {
@@ -332,7 +557,124 @@ export function ImportWizard() {
       });
       return;
     }
-    setStep("strategy");
+    // A finance import takes §3's route instead: settle the date format,
+    // stage, show the dry run, then commit. "Skip or update duplicates" is the
+    // right question for a contact list and the wrong one for a bank
+    // statement, where a duplicate is a re-uploaded date range.
+    setStep(isFinanceImportEntity(entity) ? "dates" : "strategy");
+  }
+
+  /**
+   * The date-order verdict for whichever column the mapping points the date
+   * field at.
+   *
+   * Computed from the MAPPED column rather than from every date-looking column
+   * in the file: a bank statement has a value date and a posting date, and the
+   * two can disagree about format while only one of them is being imported.
+   */
+  const dateColumnDetection = useMemo(() => {
+    if (!entity || !isFinanceImportEntity(entity)) return null;
+    const field = entity === "payment" ? "paidAt" : entity === "expense" ? "spentOn" : "valueDate";
+    const header = mapping[field];
+    if (!header) return null;
+    return {
+      header,
+      verdict: detectDateOrder(rows.map((row) => row[header] ?? null)),
+    };
+  }, [entity, mapping, rows]);
+
+  // Settle the order automatically where the file settles it. A person is only
+  // asked when the file genuinely cannot be read either way - which is §3's
+  // "detect, suggest and confirm" rather than "ask about everything".
+  useEffect(() => {
+    const order = dateColumnDetection?.verdict.order;
+    if (order === "iso" || order === "dmy" || order === "mdy") setDateOrder(order);
+    else setDateOrder(null);
+  }, [dateColumnDetection]);
+
+  async function stageRows() {
+    if (!entity || !dateOrder) return;
+    startStage(async () => {
+      const res = await stageImportAction({
+        entity,
+        mapping,
+        mode: "create",
+        dateOrder,
+        rows: rows.map((row) => pickMappedColumns(mapping, row)),
+        sourceRowNumbers: detection?.sourceRowNumbers,
+        fileName: detection?.fileName ?? undefined,
+        sheetName: detection?.sheetName ?? undefined,
+        headerRow: detection?.headerRow ?? undefined,
+        source: detection?.fileSource,
+      });
+      if (res.error || !res.jobId || !res.summary) {
+        await alert({
+          title: "Couldn't prepare that import",
+          body: res.error ?? "Could not stage those rows.",
+          tone: "danger",
+        });
+        return;
+      }
+      // The first few problems, so the dry run shows WHAT is wrong rather than
+      // only how many. A count with no examples sends somebody back to a
+      // 400-row spreadsheet with no idea where to look.
+      const problems = await stagedRowsAction(res.jobId, "error");
+      setStaged({
+        jobId: res.jobId,
+        summary: res.summary,
+        dedupeWarning: res.dedupeWarning ?? null,
+        sampleErrors: (problems.rows ?? []).slice(0, 8).map((r) => ({
+          sourceRowNumber: r.sourceRowNumber,
+          status: r.status,
+          error: r.error,
+        })),
+      });
+      setStep("preview");
+    });
+  }
+
+  async function commitStaged() {
+    if (!staged) return;
+    startStage(async () => {
+      setStep("running");
+      const res = await commitImportAction(staged.jobId);
+      if (res.error || !res.job) {
+        setStep("preview");
+        await alert({
+          title: "Couldn't apply that import",
+          body: res.error ?? "Could not apply those rows.",
+          tone: "danger",
+        });
+        return;
+      }
+      setJob(res.job);
+      setStep("results");
+    });
+  }
+
+  /**
+   * Going back from the preview DISCARDS the staged rows.
+   *
+   * Not merely "navigate back": a staged job left behind would sit in the
+   * history as a half-finished import, and the next stage of the same file
+   * would hit 0182's `(job_id, row_key)` index inside a NEW job and look
+   * clean - so the abandoned one would never be noticed. Cheap to discard,
+   * because nothing outside `import_staging_rows` has been written yet.
+   */
+  async function discardStaged() {
+    if (!staged) {
+      setStep("mapping");
+      return;
+    }
+    const jobId = staged.jobId;
+    setStaged(null);
+    setStep("mapping");
+    const res = await discardStagedImportAction(jobId);
+    if (res.error) {
+      // Non-fatal: the person is already back on the mapping step and the
+      // orphan is visible in the import history, where it can be discarded.
+      console.warn("could not discard staged import", res.error);
+    }
   }
 
   function runImport() {
@@ -395,7 +737,7 @@ export function ImportWizard() {
 
   return (
     <Card>
-      <StepIndicator step={step} />
+      <StepIndicator step={step} order={entity && isFinanceImportEntity(entity) ? FINANCE_STEP_ORDER : STEP_ORDER} />
 
       {step === "entity" ? (
         <EntityStep
@@ -410,13 +752,14 @@ export function ImportWizard() {
       {step === "upload" && entity ? (
         <UploadStep
           entity={entity}
+          detection={detection}
           fields={fields}
           rows={rows}
           previewRows={previewRows}
           pasteText={pasteText}
           onPasteTextChange={setPasteText}
           onParsePaste={handlePaste}
-          onFile={handleFile}
+          onFile={(file) => void handleFile(file)}
           fileInputRef={fileInputRef}
           sampleRowCount={sampleRowCount}
           onDownloadTemplate={() => downloadCsv(importTemplateFilename(entity), importTemplateCsv(entity))}
@@ -449,6 +792,27 @@ export function ImportWizard() {
         />
       ) : null}
 
+      {step === "dates" && entity ? (
+        <DateOrderStep
+          detection={dateColumnDetection}
+          value={dateOrder}
+          onChange={setDateOrder}
+          onBack={() => setStep("mapping")}
+          onNext={() => void stageRows()}
+          busy={stagePending}
+        />
+      ) : null}
+
+      {step === "preview" && staged ? (
+        <PreviewStep
+          staged={staged}
+          isExpense={entity === "expense"}
+          onBack={() => void discardStaged()}
+          onCommit={() => void commitStaged()}
+          busy={stagePending}
+        />
+      ) : null}
+
       {step === "running" ? <RunningStep rowCount={rows.length} /> : null}
 
       {step === "results" && job ? (
@@ -467,11 +831,11 @@ export function ImportWizard() {
  *  The numbered/checked badges are aria-hidden: the text label beside each
  *  one already names the step, so a screen reader would otherwise announce
  *  every step twice. */
-function StepIndicator({ step }: { step: Step }) {
-  const currentIndex = STEP_ORDER.indexOf(step);
+function StepIndicator({ step, order }: { step: Step; order: Step[] }) {
+  const currentIndex = order.indexOf(step);
   return (
     <ol className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-3 border-b border-border pb-4">
-      {STEP_ORDER.map((s, i) => {
+      {order.map((s, i) => {
         const isCurrent = i === currentIndex;
         const isDone = i < currentIndex;
         return (
@@ -515,8 +879,10 @@ function EntityStep({
   return (
     <div>
       <h3 className="text-lg font-semibold text-text">What are you importing?</h3>
+      {/* Not "one CSV type": .xlsx has been accepted since §3, and a label
+          that names one format is a label people believe. */}
       <p className="mt-1 text-sm text-text-muted">
-        Pick one CSV type per import - run the wizard again for the others.
+        One kind of data per import - run the wizard again for the others.
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {ENTITY_OPTIONS.map((opt) => (
@@ -543,6 +909,7 @@ function EntityStep({
 
 function UploadStep({
   entity,
+  detection,
   fields,
   rows,
   previewRows,
@@ -556,7 +923,8 @@ function UploadStep({
   onBack,
   onNext,
 }: {
-  entity: ImportEntity;
+  entity: ImportEntityValue;
+  detection: Detection | null;
   fields: string[];
   rows: Record<string, string>[];
   previewRows: Record<string, string>[];
@@ -576,11 +944,17 @@ function UploadStep({
 
   return (
     <div>
-      <h3 className="text-lg font-semibold text-text">Upload a CSV of {entityLabel}</h3>
+      <h3 className="text-lg font-semibold text-text">Upload your {entityLabel.toLowerCase()}</h3>
       <p className="mt-1 text-sm text-text-muted">
-        The first row must be column headers. Up to {MAX_ROWS.toLocaleString()} rows per import - split a
-        larger file and run this wizard again for the rest.
+        An Excel file (.xlsx) or a CSV. A title block above the column names is fine - it will be
+        skipped, along with blank rows and total rows. Up to {MAX_ROWS.toLocaleString()} rows per
+        import; split a larger file and run this wizard again for the rest.
       </p>
+
+      {/* §3's "detect, suggest and confirm": what was worked out, shown
+          plainly, BEFORE the mapping step rather than applied in silence.
+          Absent until a file has been read. */}
+      {detection ? <DetectionSummary detection={detection} rowCount={rows.length} /> : null}
 
       <TemplatePanel entityLabel={entityLabel} columns={columns} onDownload={onDownloadTemplate} />
 
@@ -590,7 +964,7 @@ function UploadStep({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv"
+            accept={ACCEPTED_FILE_TYPES}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) onFile(file);

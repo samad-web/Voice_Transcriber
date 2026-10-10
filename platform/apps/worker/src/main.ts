@@ -50,6 +50,17 @@ import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
 import { startHandsetAlertSweep } from "./pipeline/handset-alerts";
 import { startResourceHoldSweep } from "./pipeline/resource-hold-sweep";
 import { startOrgChartAlertSweep } from "./pipeline/org-chart-alerts";
+// The transcript agent (Build docs/transcript-agent-build-plan, migrations
+// 0184-0187). Five sweeps, and every one of them re-checks the feature gate
+// per telecaller rather than per org - §3A.4's "scheduled jobs and sync skip
+// users without the feature".
+import { startAgentSweep, startFrozenActionSweep } from "./pipeline/agent/runner";
+import { startCallbackReminderSweep } from "./pipeline/agent/callback-scheduler";
+import {
+  startCallbackConversionSweep,
+  startCallbackEscalationSweep,
+} from "./pipeline/agent/callback-escalation";
+import { startAgentAccuracySweep } from "./pipeline/agent/eval";
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerModule);
@@ -314,6 +325,41 @@ async function bootstrap() {
   // split, which is the whole reason contracts are a second grid object.
   // Raises notifications only; sends nothing.
   startOrgChartAlertSweep();
+
+  // ── The transcript agent's five sweeps ────────────────────────────────────
+  //
+  // The queue is only a wake-up signal (design doc §6.2), so each of these is
+  // the DURABLE half of something a message triggers. Without them a lost
+  // message is a commitment nobody keeps.
+
+  // Transcripts whose run never started, whose worker died mid-read, or whose
+  // retry is now due - and runs held as `blocked_by_gate` whose owner has since
+  // switched the assistant back on. The same shape `startEnrichmentSweep` has,
+  // for the same reason.
+  startAgentSweep();
+  // §10A.4's reminders, and §10A.2's auto-complete. EVERY MINUTE, because
+  // §10A.4's schedule has a minute's granularity (T-10, due, +5) and a slower
+  // tick makes the popup late by its own interval - which is the whole thing
+  // this module exists to prevent. Delivered as rows that survive a restart,
+  // never as client timers.
+  startCallbackReminderSweep();
+  // §10A.5's missed detection, escalation ladder, retries and reassignment.
+  // Anchored on each callback's own `due_at`, so this tick only bounds how LATE
+  // a level fires rather than where it lands.
+  startCallbackEscalationSweep();
+  // §10A.7, and §20's closing promise: an open callback whose person no longer
+  // has the feature becomes an ordinary follow-up task and the owner is told.
+  // Hourly, and checked against the LIVE gate per assignee - because a
+  // switch-off can arrive from any of five scopes and can be dated in the
+  // future, so there is no single write to hang it off.
+  startCallbackConversionSweep();
+  // §13.3's autonomy gate and §13.4's drift monitor. It only ever DEMOTES: a
+  // promotion needs the owner to ask, which is the asymmetry `autonomyDecision`
+  // exists to hold.
+  startAgentAccuracySweep();
+  // §3A.5's frozen review items: resumed if the feature comes back inside the
+  // window, expired after it.
+  startFrozenActionSweep();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an

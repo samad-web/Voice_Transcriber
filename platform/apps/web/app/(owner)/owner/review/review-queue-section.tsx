@@ -10,6 +10,7 @@ import {
   type ReviewFilter,
 } from "@/lib/review-queue";
 import { FilterLink } from "../filter-link";
+import { AgentBulkApprove } from "./agent-bulk-approve";
 import { ReviewList } from "./review-list";
 import { loadReviewQueue } from "./sources";
 
@@ -96,6 +97,16 @@ export async function ReviewQueueSection({
         </p>
       ) : null}
 
+      {/* §12's bulk approve, only on the agent tab. Deliberately not on "All":
+          a batch gesture belongs next to the one kind of item it applies to,
+          and on the combined view it would sit above three other sources it
+          cannot touch. */}
+      {filter === "agent_actions" ? (
+        <AgentBulkApprove
+          items={items.flatMap((item) => (item.source === "agent_actions" ? [item.agentAction] : []))}
+        />
+      ) : null}
+
       <ReviewList
         // Remount when the view changes, so cards decided in one view do not
         // stay hidden after the filter brings the same ids back from the API.
@@ -104,9 +115,11 @@ export async function ReviewQueueSection({
         waiting={waiting}
         emptyTitle="Nothing waiting for review"
         emptyDescription={
-          filter === "whatsapp"
-            ? "New WhatsApp threads from unknown numbers are scored within about fifteen minutes of their last message."
-            : "When the system proposes a lead, flags a possible opt-out or finds a duplicate, it appears here."
+          filter === "agent_actions"
+            ? "After a call, anything the assistant reads out of it that needs a decision lands here. An empty list means it found nothing it was unsure about."
+            : filter === "whatsapp"
+              ? "New WhatsApp threads from unknown numbers are scored within about fifteen minutes of their last message."
+              : "When the system proposes a lead, flags a possible opt-out or finds a duplicate, it appears here."
         }
       />
     </div>

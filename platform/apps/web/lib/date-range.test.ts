@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountingPresets,
+  ACCOUNTING_PRESETS,
+  CALENDAR_LABEL,
+  CALENDAR_PRESETS,
+  CALENDAR_UNITS,
+  comparisonWindows,
   dateWindowHref,
   dateWindowQuery,
   parseDateWindow,
@@ -236,5 +242,157 @@ describe("calendar periods", () => {
     expect(pills.find((p) => p.key === "month")?.href).toBe(
       "/owner/productivity?period=month&sort=calls",
     );
+  });
+});
+
+/**
+ * The three accounting periods, added for
+ * Build docs/indian-business-finance-documents-cycles-import §2's period
+ * selector: "day, week, month, quarter, half-year, financial year, custom
+ * range, with comparison to the previous period and the same period last
+ * year."
+ */
+describe("the accounting periods", () => {
+  // 17 September 2026 - inside Q2 (Jul-Sep) and H1 (Apr-Sep) of FY 2026-27.
+  const TODAY = "2026-09-17";
+
+  it("parses each of them out of the URL", () => {
+    for (const unit of ACCOUNTING_PRESETS) {
+      expect(parseDateWindow({ period: unit })).toEqual({
+        window: { kind: "calendar", unit },
+        invalid: false,
+      });
+    }
+  });
+
+  it("resolves a quarter against an April financial year, period-to-date", () => {
+    expect(resolveDateWindow({ kind: "calendar", unit: "quarter" }, TODAY, 4)).toEqual({
+      from: "2026-07-01",
+      to: TODAY,
+    });
+  });
+
+  it("resolves a half-year and a financial year", () => {
+    expect(resolveDateWindow({ kind: "calendar", unit: "half" }, TODAY, 4).from).toBe("2026-04-01");
+    expect(resolveDateWindow({ kind: "calendar", unit: "year" }, TODAY, 4).from).toBe("2026-04-01");
+  });
+
+  it("follows a January financial year instead of hard-coding April", () => {
+    // The whole reason `fyStartMonth` is threaded through: a calendar-year
+    // tenant's Q3 opens in July, not the Indian Q2.
+    expect(resolveDateWindow({ kind: "calendar", unit: "quarter" }, TODAY, 1).from).toBe("2026-07-01");
+    expect(resolveDateWindow({ kind: "calendar", unit: "year" }, TODAY, 1).from).toBe("2026-01-01");
+  });
+
+  it("defaults to April when no start month is passed, so existing callers are unchanged", () => {
+    expect(resolveDateWindow({ kind: "calendar", unit: "year" }, TODAY).from).toBe("2026-04-01");
+  });
+
+  it("agrees with the compliance calendar about where a January quarter belongs", () => {
+    // January is Q4 of the financial year that opened the previous April, so
+    // the window starts on 1 January and NOT on the 1st of the new FY.
+    expect(resolveDateWindow({ kind: "calendar", unit: "quarter" }, "2027-01-20", 4).from).toBe(
+      "2027-01-01",
+    );
+    expect(resolveDateWindow({ kind: "calendar", unit: "year" }, "2027-01-20", 4).from).toBe(
+      "2026-04-01",
+    );
+  });
+
+  it("names the financial year rather than calling it This year", () => {
+    // For eleven months of an Indian FY the two mean different things.
+    expect(CALENDAR_LABEL.year).toBe("Financial year");
+    expect(CALENDAR_LABEL.quarter).toBe("This quarter");
+    expect(CALENDAR_LABEL.half).toBe("This half-year");
+  });
+
+  it("still round-trips through the query string symbolically", () => {
+    // Not resolved to dates in the URL, so a link copied today still means
+    // "this quarter" when it is opened in December.
+    expect(dateWindowQuery({ kind: "calendar", unit: "quarter" })).toBe("period=quarter");
+  });
+});
+
+describe("accountingPresets", () => {
+  it("offers exactly the four periods, in order", () => {
+    const pills = accountingPresets("/owner/finance", { kind: "calendar", unit: "quarter" });
+    expect(pills.map((p) => p.key)).toEqual(["month", "quarter", "half", "year"]);
+    expect(pills.find((p) => p.active)?.key).toBe("quarter");
+  });
+
+  it("gives the default unit the bare path, keeping it the canonical address", () => {
+    const pills = accountingPresets("/owner/finance", { kind: "relative", days: 30 });
+    expect(pills.find((p) => p.key === "month")?.href).toBe("/owner/finance");
+    expect(pills.find((p) => p.key === "quarter")?.href).toBe("/owner/finance?period=quarter");
+  });
+
+  it("lights the default unit when the window is the page default", () => {
+    const pills = accountingPresets("/owner/finance", { kind: "relative", days: 30 });
+    expect(pills.find((p) => p.active)?.key).toBe("month");
+  });
+
+  it("keeps a page's other parameters", () => {
+    const pills = accountingPresets("/owner/finance/compliance", { kind: "calendar", unit: "year" }, {
+      keep: { status: "overdue" },
+    });
+    expect(pills.find((p) => p.key === "half")?.href).toBe(
+      "/owner/finance/compliance?period=half&status=overdue",
+    );
+  });
+});
+
+describe("comparisonWindows", () => {
+  const TODAY = "2026-09-17";
+
+  it("gives the previous quarter and the same quarter last year", () => {
+    const compare = comparisonWindows({ kind: "calendar", unit: "quarter" }, TODAY, 4);
+    expect(compare?.previous).toEqual({ from: "2026-04-01", to: "2026-06-30", label: "Q1 FY 2026-27" });
+    expect(compare?.lastYear).toEqual({ from: "2025-07-01", to: "2025-09-30", label: "Q2 FY 2025-26" });
+  });
+
+  it("steps a quarter by months, not by days", () => {
+    // Q1 Apr-Jun is 91 days and Q4 Jan-Mar is 90. Day arithmetic lands wrong,
+    // which is the reason this helper exists at all.
+    const compare = comparisonWindows({ kind: "calendar", unit: "quarter" }, "2026-05-10", 4);
+    expect(compare?.previous.from).toBe("2026-01-01");
+    expect(compare?.previous.to).toBe("2026-03-31");
+  });
+
+  it("keeps February whole when last year was a leap year", () => {
+    const compare = comparisonWindows({ kind: "calendar", unit: "month" }, "2025-02-10", 4);
+    expect(compare?.lastYear).toEqual({ from: "2024-02-01", to: "2024-02-29", label: "February 2024" });
+  });
+
+  it("returns null for a rolling or custom window, where last year has no meaning", () => {
+    expect(comparisonWindows({ kind: "relative", days: 30 }, TODAY)).toBeNull();
+    expect(comparisonWindows({ kind: "fixed", from: "2026-01-01", to: "2026-01-31" }, TODAY)).toBeNull();
+  });
+
+  it("compares a financial year with the one before it", () => {
+    const compare = comparisonWindows({ kind: "calendar", unit: "year" }, TODAY, 4);
+    expect(compare?.previous.label).toBe("FY 2025-26");
+    expect(compare?.lastYear.label).toBe("FY 2025-26");
+  });
+});
+
+describe("the period parameter's own vocabulary", () => {
+  it("accepts every unit the pills can produce", () => {
+    // The guard against the bug the accounting periods first shipped with:
+    // pills that rendered ?period=quarter, a parser that rejected it, and a
+    // page that silently showed the last 30 days instead.
+    for (const unit of CALENDAR_UNITS) {
+      expect(parseDateWindow({ period: unit }).invalid).toBe(false);
+    }
+  });
+
+  it("still refuses a unit nothing offers", () => {
+    expect(parseDateWindow({ period: "fortnight" }).invalid).toBe(true);
+    expect(parseDateWindow({ period: "decade" }).invalid).toBe(true);
+  });
+
+  it("covers every pill in both lists", () => {
+    for (const unit of [...CALENDAR_PRESETS, ...ACCOUNTING_PRESETS]) {
+      expect(CALENDAR_UNITS).toContain(unit);
+    }
   });
 });
