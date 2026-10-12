@@ -331,6 +331,20 @@ function topLevelElements(html: string): number {
  */
 const COLD_IMPORT_TIMEOUT_MS = 30_000;
 
+/**
+ * A loader's own JSX - following `export { default } from "../x/loading"`, which
+ * two routes use so a redirect stub shows the loader of the page it lands on.
+ * Reading such a file for a `return (<>` finds nothing, and the shape it renders
+ * is the re-exported file's.
+ */
+function sourceOf(abs: string, hops = 2): string {
+  const src = readFileSync(abs, "utf8");
+  const reexport = /export\s*\{\s*default\s*\}\s*from\s*"([^"]+)"/.exec(src);
+  if (!reexport || hops === 0) return src;
+  const target = join(abs, "..", `${reexport[1]}.tsx`);
+  return existsSync(target) ? sourceOf(target, hops - 1) : src;
+}
+
 describe("every loader renders a skeleton, unwrapped and unannounced", () => {
   for (const loader of loaders) {
     it(loader.rel, { timeout: COLD_IMPORT_TIMEOUT_MS }, async () => {
@@ -343,11 +357,22 @@ describe("every loader renders a skeleton, unwrapped and unannounced", () => {
 
       expect(html, "no skeleton blocks drawn").toContain("animate-pulse");
       // A fragment of siblings, not one wrapper: the layout's `space-y-*` acts on direct children.
+      //
+      // Two siblings in the OUTPUT used to be the whole check, which worked only
+      // while every loader drew a `<PageHeader>` above its body - that header was
+      // the guaranteed second element. Now that the header block renders nothing
+      // (see components/page-header.tsx), ~20 loaders legitimately draw a single
+      // card, and counting elements would fail them for a wrapper they do not
+      // have. So the SOURCE's root is what is checked when the output is one
+      // element: a fragment root is correct however many blocks sit under it
+      // today, and a single wrapping element is the real defect.
       if (RHYTHM_GROUPS.some((g) => loader.rel.startsWith(`${g}/`))) {
-        expect(
-          topLevelElements(html),
-          "loader is wrapped in a single element - return a fragment so <main>'s space-y-* still spaces the blocks",
-        ).toBeGreaterThanOrEqual(2);
+        if (topLevelElements(html) < 2) {
+          expect(
+            /\breturn\s*\(?\s*<>/.test(sourceOf(loader.abs)),
+            "loader is wrapped in a single element - return a fragment so <main>'s space-y-* still spaces the blocks",
+          ).toBe(true);
+        }
       }
       // Next's route announcer already speaks the navigation. LoadingRegion is for inline regions.
       expect(html, "route loaders must not render a live region").not.toContain('role="status"');

@@ -1,37 +1,44 @@
 import type { ReactNode } from "react";
 
 /**
- * The heading block at the top of every console page.
+ * The slot at the top of every console page.
  *
- * v2 drops three things from the brutalist version: the uppercase display face
- * (doc 16 §1.2 - uppercasing hurts scanning and does nothing at all for Tamil,
- * Hindi or Telugu, which have no case), the 5xl size (a page title competing
- * with its own content), and the pinging dot beside the eyebrow, which animated
- * forever while carrying no information.
+ * ── WHY THIS DRAWS NO TITLE ─────────────────────────────────────────────────
  *
- * Brand-register pass: the console adopted the landing page's identity (mark,
- * gradient, pill CTAs - see sidebar.tsx, button.tsx), and this is where that
- * register touches every page, once. `title`/`context` are unchanged, so all
- * 23 routes that already render this component picked up the new look for
- * free. The gradient stays a *wash*, not a fill - this sits above dense
- * tables and forms all day, not a hero section seen once.
+ * It used to be a bordered card with a brand-gradient wash, a 12px uppercase
+ * eyebrow and a 3xl/4xl title - roughly 96px of vertical space on all 236
+ * pages that render it, repeating a name the rail, the section tabs and the
+ * breadcrumb were already showing. That is chrome restating navigation, and on
+ * a laptop it pushed the first row of every table and form below the fold.
+ * Doc-free decision, 2026-10-12: the block comes out everywhere, and the page's
+ * identity is carried by the rail + tabs + breadcrumb, which are always on
+ * screen anyway.
  *
- * `description` is one sentence of what the page is FOR, under the title - for a
- * page whose purpose is not obvious from its name (Call access: "Nobody outside
- * your team can open your call logs..."). It exists because the alternative was
- * stuffing that sentence into `context`, which is the 12px UPPERCASE eyebrow and
- * turns a sentence into a wall of capitals. Optional and rare: most titles need
- * no explaining, and a loader must pass the same text or the header grows by a
- * line on arrival (console-loading.test.ts checks it).
+ * `title` and `context` are still accepted and still ignored. That is
+ * deliberate, not leftover: every call site keeps passing them, several guard
+ * tests read those literals out of the source (`console-loading.test.ts` checks
+ * a loader's header against its page's, and a nav entry's label against the
+ * page it points at), and the phone's top bar titles itself from the matching
+ * nav entry. Dropping the props would delete the only machine-checkable record
+ * of what each page is called, to save nothing at runtime.
  *
- * `actions` fills the slot the `justify-between` row already reserved on the
- * right - a page-specific control (the dashboard's fullscreen toggle) that
- * does not belong on every one of the other pages sharing this component, so
- * it stays a prop rather than a fixed addition here.
+ * ── WHAT STILL RENDERS ──────────────────────────────────────────────────────
+ *
+ * Only the two props that carry something the rest of the chrome does not:
+ *
+ *  - `actions`: real controls (the dashboard's fullscreen toggle, Finance's
+ *    period picker, the import screens' buttons). ~17 pages pass them and they
+ *    have nowhere else to go, so they stay, right-aligned on one slim row.
+ *  - `description`: one sentence of what a page is FOR, on the ~50 pages whose
+ *    purpose is not obvious from the name ("Nobody outside your team can open
+ *    your call logs..."). Content, not decoration - it keeps its line.
+ *
+ * With neither, this renders NOTHING AT ALL - not an empty wrapper. The
+ * layout's `<main>` spaces its direct children with `space-y-*`, and a zero
+ * height div would still take a gap, which is the space this change set out to
+ * reclaim.
  */
 export function PageHeader({
-  title,
-  context,
   description,
   actions,
 }: {
@@ -40,34 +47,18 @@ export function PageHeader({
   description?: string;
   actions?: ReactNode;
 }) {
+  if (!description && !actions) return null;
+
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-bg-subtle px-5 py-5 sm:px-7 sm:py-6">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{ backgroundImage: "var(--brand-gradient)" }}
-      />
-      <div className="relative flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <div className="min-w-0">
-          {/* Solid token, not a gradient fill: at text-xs (12px) WCAG 1.4.3 needs
-              4.5:1, and two of the three brand-gradient stops fall short of that
-              against this card's bg-bg-subtle/bg-surface backgrounds (--brand-from
-              ~2.3:1, --brand-mid ~4.45:1 - only --brand-to clears it). --color-text-muted
-              is theme.css's checked label/eyebrow tier (documented >=4.74:1 on every
-              light-mode surface it sits on), so it reads reliably at this size instead
-              of only on the gradient's last few degrees. */}
-          <p className="text-xs font-semibold tracking-wider text-text-muted uppercase">
-            {context ?? "Workspace"}
-          </p>
-          <h2 className="mt-1 truncate text-3xl font-extrabold tracking-tight text-text sm:text-4xl">
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-2 max-w-2xl text-sm text-text-muted">{description}</p>
-          ) : null}
-        </div>
-        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
-      </div>
+    <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+      {description ? (
+        <p className="min-w-0 max-w-2xl text-sm text-text-muted">{description}</p>
+      ) : (
+        // Holds the right-hand slot against the right edge on a row with no
+        // sentence in it, without `justify-end` having to be conditional.
+        <span className="hidden sm:block" />
+      )}
+      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

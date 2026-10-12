@@ -1,31 +1,18 @@
 import { Card, Skeleton } from "@aura/ui";
 
 /**
- * Same markup as `PageHeader`, for the handful of routes whose title is only
- * known after the fetch (an account/contact's name, a dashboard's org name) -
- * a real `<PageHeader>` can't be used since there's no text to give it yet.
- * Keeping the wash/eyebrow classes identical means the swap-in is a text
- * change, not a layout jump.
+ * The loading stand-in for `PageHeader` - and, since that component stopped
+ * drawing a title card (see `page-header.tsx`), it draws nothing either.
+ *
+ * Kept rather than deleted, and still taking `context`: ~30 loaders call it,
+ * and `console-loading.test.ts` reads that argument to check a loader is
+ * standing in for the page it sits beside. A null here is the honest shape -
+ * the arriving page puts no card where this was, so a skeleton card would be a
+ * block that flashes up and then collapses, which is the layout jump this
+ * component exists to prevent.
  */
-export function PageHeaderSkeleton({ context }: { context: string }) {
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-bg-subtle px-5 py-5 sm:px-7 sm:py-6">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{ backgroundImage: "var(--brand-gradient)" }}
-      />
-      <div className="relative min-w-0">
-        <p
-          className="bg-clip-text text-xs font-semibold tracking-wider text-transparent uppercase"
-          style={{ backgroundImage: "var(--brand-gradient)" }}
-        >
-          {context}
-        </p>
-        <Skeleton className="mt-2 h-8 w-48 sm:h-9" />
-      </div>
-    </div>
-  );
+export function PageHeaderSkeleton(_: { context: string }) {
+  return null;
 }
 
 /**
