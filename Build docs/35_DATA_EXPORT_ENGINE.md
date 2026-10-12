@@ -93,6 +93,9 @@ D8 (SS1.1, SS3.4) Three scopes - `view`, `section`, `bulk` - are one engine over
 not three code paths. A section is a preset list; bulk is every list.
 D9 (SS4.5) Every export notifies the org's owners. Instant for `section` and `bulk` and for anything
 carrying call content or financial data; digested for a routine `view` extract.
+D10 (SS14, added 2026-10-10) A fourth scope, `person`, exports one named person's work. It is the
+existing `own` predicate pointed at somebody else, ANDed on top of the requester's own scope rather
+than substituted into it, and the subject is re-authorized at render as well as at enqueue.
 
 ---
 
@@ -1292,3 +1295,177 @@ tenant can reach it is how the throughput and memory characteristics get measure
    so rather than leaving them to find out.
 5. The repo is public. Scan the commit patch before pushing: this change touches S3 configuration and
    migration files, which is exactly the neighbourhood a credential gets committed from.
+
+---
+
+## 14. The person scope (0188)
+
+Written 2026-10-10, after E1/E2 shipped. **Built**, migration `0188`. A fourth scope on the engine as
+it stands: no new per-dataset SQL, no new permission object, no new grant, no second query builder.
+
+`view`, `section` and `bulk` all answer "what can I see", filtered three ways. `person` answers a
+different question - "what is THIS PERSON's work" - and it is the question a manager actually asks:
+before a review, before a payroll argument, before letting somebody go, and when a person exercises
+their own right of access over their own records.
+
+Extending SS1.1's table:
+
+| Scope | Datasets | Filters | Started from | Output |
+|---|---|---|---|---|
+| `person` | 1, plus whose work it is | the ones on screen | a list page's Export action, third radio | one file |
+
+### 14.1 It is the `own` predicate pointed at somebody else
+
+That is the whole mechanism, and it is why this needed no new SQL. `ownerScopeFilter` (moved into
+`@aura/shared` by E1, SS4.2) already knows that a lead is held via `assigned_telecaller_id OR
+telecaller_id`, a deal via `assigned_telecaller_id`, a task via `assignee_user_id OR created_by`, and
+that calls and the productivity rollup scope on `telecaller_id`. A person export reuses the same
+builder with a scope describing the subject, so "rows belonging to this person" is defined once per
+dataset rather than twice.
+
+The alternative - a hand-written subject column per dataset - would have cost a second definition of
+whose row a row is, and the first thing it would have lost silently is the lead union: one column
+instead of two, a shorter file, and no error.
+
+**The corollary is the dangerous half.** A dataset with `ownerScope: null` has no column saying whose
+row it is. `ownerScopeFilter` returns null for it, the engine correctly adds no predicate, and the
+result is the whole tenant's contacts, products or invoices in a file bearing one person's name -
+SS4.2's named failure wearing a different hat. So such a dataset is **refused**, at enqueue, before
+any gate or rate limit, because this is a property of the dataset and not of the caller: nobody, at
+any permission level, can export "this person's products". `personScopeRefusal` is the single place
+that judgement lives, and the refusal is a sentence rather than a code because the honest answer is
+"this data is not anybody's". `GET /v1/exports/people` returns the refused datasets with their
+reasons, so the drawer can explain where Contacts went instead of leaving somebody to wonder.
+
+`audit_log` is the omission worth naming: "everything this person did" would be a genuinely useful
+person export, and it is out only because the audit trail scopes on an actor column the persona axis
+does not model. Adding it means a new `OwnerScopedObject` member and a branch in `ownerScopeFilter`,
+with a test - a deliberate change, not a special case in the refusal function.
+
+### 14.2 The subject is a third ANDed axis, never a substitution
+
+The obvious implementation is to point the requester's resolved `owner` scope at the subject, since a
+person export *is* the "own" predicate aimed at somebody else. It is also wrong, and wrong in the
+direction that grants access: `ResolvedScope.crmUserId` is derived from `owner.userId`, so swapping
+in the subject's id would make a requester holding only an `owned` grid grant see rows owned by the
+**subject** - rows the grid never gave them. That escalation is the reason this design exists.
+
+So `ResolvedScope.subject` is ANDed on top. A person export runs under the requester's own scope AND
+the subject's, which is the only composition that cannot widen either one, and `resolvedScopeFor`
+keeps `crmUserId` on the requester deliberately and says so in a comment.
+
+The same separation holds one level up. The subject check decides only WHOSE rows; the module,
+feature, grid and sensitivity gates of SS4.1 have already decided WHICH datasets, before the subject
+is looked at. Keeping the two questions apart is what stops "why can Priya not export Ashok" having
+two answers and no authoritative one - the mistake `personaMayExport` records against adding a fourth
+gate to calls.
+
+### 14.3 Whose work a person may export is the org chart, resolved in one function
+
+`resolvePeopleVisibility` in `packages/db/src/people-visibility.ts` returns `all`, `own` or `branch`:
+
+- **`all`** - the owner persona (a NULL persona included, matching `resolveOwnerRole`'s fail-open
+  reading everywhere else in the console), an operator, or a bare admin key.
+- **`branch`** - a manager's subtree, walked recursively through `reporting_lines` (0177) with
+  `end_date IS NULL` / `effective_to IS NULL` on both joins, so a manager does not inherit the branch
+  of a seat they have left. A branch, not a team: a `team_id =` shortcut would silently exclude a
+  sub-team, and silently is the problem - the manager sees a shorter list with no way to tell it is
+  short. A manager who holds no seat at all gets their **own** records rather than the floor, because
+  the org chart is optional and reading "no seats" as "no restriction" would hand every unmapped
+  manager the whole tenant.
+- **`own`** - everyone else, which is the right-of-access case and the reason the third radio is not
+  manager-only.
+
+It lives in `packages/db` and not in either app because **two processes ask it**: the API at enqueue
+and the worker at render. Copying the recursive walk into the worker would pass every test and drift
+the first time the walk changes.
+
+### 14.4 The subject is re-authorized at render, not only at enqueue
+
+SS4.2 already requires the requester's grants to be re-resolved in the worker and intersected with
+the snapshot. The subject needs the same treatment, for a reason the snapshot cannot see: minutes or
+hours separate enqueue from render, longer if the queue backs up or the sweep re-publishes the job,
+and in that window a person can be moved out of a manager's branch, have their seat ended, or the
+manager can be demoted. A job that renders on the enqueue-time answer produces a file the requester
+is no longer entitled to, and produces it *after* somebody decided they should not have it.
+
+So `assertSubjectStillVisible` runs after the persona and the grid and before the first row is read,
+against the same `resolvePeopleVisibility`. Three details that are decisions rather than mechanics:
+
+- The subject comes from the **job row**, not the snapshot. The column carries the foreign key and
+  the CHECK that guarantees a person job has one; the snapshot's copy is a ceiling like the rest of
+  it.
+- The refusal is **permanent, not retried**. The second attempt reaches the same answer, so a retry
+  would be a failing job occupying a slot.
+- A **deleted** identity is the same refusal and not a special case. A subject that no longer exists
+  cannot be re-authorized, and the alternative - rendering with no subject predicate - is the whole
+  tenant under one person's name again.
+
+### 14.5 `person` is shaped like `view`, not like `bulk`
+
+One dataset, filters allowed, no section. Two reasons, and the second is the one that was argued:
+
+1. **It is what the engine can render.** The worker streams one dataset to one file; multi-dataset
+   archives are still E3 and still unbuilt. A scope implying them would be accepted at enqueue and
+   refused minutes later at render, for a reason the caller cannot see.
+2. **Filters are the point.** "Priya's calls" is rarely the question; "Priya's calls last month" is,
+   because the reason somebody wants one person's file is almost always a review period. The drawer
+   therefore carries the current filters into a person export rather than clearing them the way the
+   section option does.
+
+Said plainly: **there is no "everything about this person" archive.** A review that wants calls and
+leads is two exports, and will stay two until E3 lands.
+
+### 14.6 The subject is a column, not a key in `filters`
+
+`export_jobs.filters` is jsonb and a subject id could have lived there for free. It must not, because
+this is a record of somebody looking at somebody else:
+
+- It has to be **auditable by query**. "Who exported Priya's calls, and when" is a question an owner
+  will eventually have to answer - to an employee, or under DPDP - and a jsonb key cannot be indexed,
+  joined or given a foreign key. `export_jobs_subject` is ordered `(org_id, subject_telecaller_id,
+  created_at DESC)`, the way that answer is read rather than the way the engine polls.
+- It has to be a **real reference**. A telecaller id in jsonb survives the identity being deleted and
+  leaves a job pointing at nobody; `ON DELETE CASCADE` does not.
+- A **CHECK** can then tie it to the scope in both directions, so `person` with no subject and a
+  subject on a `bulk` job are impossible rather than merely unexpected.
+
+Keyed on the telecaller identity and not on `users.id`, because that is the column calls, leads,
+deals and the rollup all scope on and `telecallers.user_id` is nullable (0017) - most of a floor
+carries a paired handset and has never signed in, so keying on a user would make the majority of a
+telecalling team unexportable. `subject_user_id` is carried in addition, because a task scopes on a
+`users` row and a person export that could not express the user side would return an empty tasks file
+for somebody who has tasks - the worst kind of wrong, because the file looks complete.
+`subject_label` freezes the name at enqueue, so a rename six weeks later does not rewrite the record
+of who looked at whom.
+
+### 14.7 Limits, the alert, and what is not done
+
+**The rate limit is per SUBJECT, not per requester**: `EXPORT_LIMITS.personJobsPerHourPerSubject`,
+two per hour, counting every requester's jobs. The thing worth limiting is how often one employee's
+file is produced, because that is the thing that ends up in somebody's inbox; keyed on the requester,
+two managers of the same person would get different answers to the same request. It also makes the
+audit trail readable - one row an hour per person rather than a burst to reconstruct. The cost is
+stated out loud in the module README: a manager can be refused because a different manager of the
+same person just ran one.
+
+**The owner alert is instant.** `ownerAlertIsInstant` rings for anything that is not a `view`
+(SS4.5), and a person export is not a `view`. That is the intended reading - a file with one
+employee's name on it is exactly the event SS4.5 exists for.
+
+**One rough edge, unfixed.** `alertOwners` words the notification body from the scope and falls
+through to "The whole workspace" for a `person` job. The job row, the audit row (`export.created`,
+with `subjectTelecallerId` and `subjectLabel` in `meta`) and the exports centre line all name the
+subject correctly; only the notification text is wrong, and an owner reading only the notification
+would over-read what left. It is a wording fix in one conditional, and it is not in 0188.
+
+Also not done, so nobody looks for it:
+
+- **No multi-dataset person archive** (E3, as above).
+- **`audit_log` is not person-scopable** (14.1).
+- **The people picker is unpaged and unsearchable, deliberately.** The list is bounded by the
+  caller's own branch, which is at most a floor, and paging or searching it would let a caller learn
+  the SIZE of a branch they cannot see into.
+- **No new grant.** Who may export whose records is the persona and the org chart; whether somebody
+  may export at all is the existing `export` grid action. A fifth axis here would give "why can Priya
+  not export Ashok" two answers and no authoritative one.
