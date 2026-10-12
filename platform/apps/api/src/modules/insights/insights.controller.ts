@@ -343,13 +343,18 @@ export class InsightsController {
         ],
       );
 
+        // `target_id` gets its OWN parameter rather than reusing $1: `org_id` is
+        // uuid and `target_id` is text, and one placeholder across both types
+        // fails Postgres's type inference with 42P08, which is a 500 on every
+        // call to this endpoint.
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-              VALUES ($1, $2, $3, 'kpi.config_saved', 'organization', $1, $4::jsonb)`,
+              VALUES ($1, $2, $3, 'kpi.config_saved', 'organization', $4, $5::jsonb)`,
         [
           orgId,
           actor.type,
           actorUserId(actor) ?? orgId,
+          orgId,
           JSON.stringify({ effectiveFrom, kpis, acknowledgeMissingData }),
         ],
       );

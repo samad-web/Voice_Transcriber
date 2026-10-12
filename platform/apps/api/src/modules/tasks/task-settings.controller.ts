@@ -99,9 +99,11 @@ export class TaskSettingsController {
       // Audited like every other workspace switch: "why can I suddenly assign
       // myself tasks again" has to be answerable, and the answer is a person.
       await client.query(
+        // `target_id` gets its own parameter: org_id is uuid and target_id is
+        // text, and reusing $1 across both fails type inference with 42P08.
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-         VALUES ($1, $2, $3, 'org.task_settings', 'organization', $1, $4::jsonb)`,
-        [orgId, actor.type, actor.id, JSON.stringify({ ownerSelfTasks })],
+         VALUES ($1, $2, $3, 'org.task_settings', 'organization', $4, $5::jsonb)`,
+        [orgId, actor.type, actor.id, orgId, JSON.stringify({ ownerSelfTasks })],
       );
       // Switching OFF deliberately leaves existing tasks where they are. An
       // owner mid-way through something they assigned themselves keeps it, can

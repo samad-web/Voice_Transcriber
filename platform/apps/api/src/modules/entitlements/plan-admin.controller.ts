@@ -190,10 +190,21 @@ export class PlanAdminController {
       // org, so the org's own id stands in for the actor with
       // `actor_type = 'system'` - the same pair `admin.controller.ts` writes
       // for a tenant it created. The identifying detail is in `meta`.
+      //
+      // THREE SEPARATE PARAMETERS FOR THE SAME VALUE, deliberately. `org_id`
+      // is uuid while `actor_id` and `target_id` are text, and one placeholder
+      // reused across both types fails Postgres's parameter-type inference
+      // with 42P08 ("inconsistent types deduced for parameter $1: uuid versus
+      // text") - which is a 500 on every call, so this endpoint had never
+      // successfully applied a plan. `admin.controller.ts` carries the same
+      // note over the same mistake; casting each use instead would work too,
+      // but distinct parameters are what that one settled on.
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-              VALUES ($1, 'system', $1, 'plan.applied', 'organization', $1, $2::jsonb)`,
+              VALUES ($1, 'system', $2, 'plan.applied', 'organization', $3, $4::jsonb)`,
         [
+          orgId,
+          orgId,
           orgId,
           JSON.stringify({
             planKey,

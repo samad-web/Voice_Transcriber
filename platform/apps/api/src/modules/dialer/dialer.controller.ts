@@ -125,9 +125,12 @@ export const DIALER_AUDIT_SQL = `INSERT INTO audit_log
  * is also `org_id` - redundant, and correct: the audit reader filters on
  * target_type and expects an id beside it.
  */
+// $6 repeats the org id rather than reusing $1: org_id is uuid and target_id
+// is text, and one placeholder across both fails Postgres's type inference
+// with 42P08 ("inconsistent types deduced for parameter $1").
 export const DIAL_SETTINGS_AUDIT_SQL = `INSERT INTO audit_log
        (org_id, actor_type, actor_id, action, target_type, target_id, meta)
-     VALUES ($1, $2, $3, $4, 'organization', $1, $5::jsonb)`;
+     VALUES ($1, $2, $3, $4, 'organization', $6, $5::jsonb)`;
 
 /**
  * The supervisor's live board, in ONE statement (§8: "Supervisor rollup. One
@@ -424,6 +427,8 @@ export class DialerController {
             personDailyCap: row.dialer_max_calls_per_person_per_day,
           },
         }),
+        // $6: target_id. See DIAL_SETTINGS_AUDIT_SQL - it cannot reuse $1.
+        orgId,
       ]);
 
       return {
