@@ -2,7 +2,7 @@ import { Skeleton } from "@aura/ui";
 import { PageHeader } from "@/components/page-header";
 
 /** Cards per group, as an owner sees them (OWNER_SETTINGS_GROUPS). */
-const GROUP_SIZES = [2, 4, 4, 2, 3] as const;
+const GROUP_SIZES = [2, 4, 4, 2, 3, 4] as const;
 /** Complete class strings, picked by index, so the cards are not copies of one another. */
 const NAME_W = ["w-32", "w-20", "w-24", "w-40", "w-28", "w-36"] as const;
 const HEAD_W = ["w-12", "w-32", "w-20", "w-28", "w-24"] as const;

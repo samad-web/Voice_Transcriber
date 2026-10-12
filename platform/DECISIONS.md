@@ -588,3 +588,25 @@ Stated plainly so nobody looks for it:
   accounts and deals still use 0062's one-shot `run`. Both paths share the same
   row importers, so there is no second definition of how a contact row becomes a
   contact — but a contact import does not get a dry run yet.
+
+## The API-only tier ("Insights") — migrations 0192-0195
+
+`Build docs/no-crm-api-dashboard-build-plan.md`, built 2026-10-10. Its decisions
+live in **`INSIGHTS_TIER_DECISIONS.md`** rather than here, because there are
+enough of them to need their own headings and because several are departures
+from the spec that have to be argued rather than listed.
+
+The three worth knowing from this file:
+
+* **The tier is a MODULE, not a feature flag.** `api_insights` joins
+  `OrgModule` (0072). `enabled_modules` is enforced in the API, which is what
+  §5 requires of this tier's exclusions — a CRM route 403s for one of these
+  tenants with no new code, because they simply do not hold `crm`.
+* **The KPI spine is shared with the CRM tier, not built twice.** It is
+  `Build docs/41_TELECALLER_PERFORMANCE_KPI_SPINE.md` Parts F and G, designed
+  2026-10-09 and never implemented. The catalogue is CODE (`kpi-catalog.ts`),
+  the owner's choices are tables, and `kpi_snapshots` stores a numerator and a
+  denominator — never a rate.
+* **Billing is a placeholder and says so.** No payment provider exists, so no
+  price is stored in code, every plan renders "Talk to us", and an upgrade is a
+  `plan_change_requests` row an operator applies in `/admin`.

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Banknote, ListChecks, Megaphone, PhoneCall, Target, Trophy, Users } from "lucide-react";
 import { resolveTimeZone, todayIn, type OwnerRole } from "@aura/shared";
@@ -86,11 +87,46 @@ export default async function OwnerDashboardPage({
   // `getPrincipal` is React-cached, so this costs nothing beyond what
   // `ownerGet` already resolves to authenticate the call below.
   const owner = await getOwner();
+  // ── A TENANT WITH NO LEAD SOURCE DOES NOT LAND HERE ──────────────────────
+  //
+  // Everything below counts leads, pipeline value, deals won and recorded
+  // calls. On the API-only tier (migration 0192) none of those tables is ever
+  // written: its facts arrive over /v1/ingest and live in `insights_calls`.
+  // So this page greeted a tenant with 2,182 calls and 94 conversions with
+  // "Open leads 0 · Pipeline value 0 · Won in 30d: nothing closed · Calls 0" -
+  // the first screen after signing in, telling them their business did
+  // nothing.
+  //
+  // The honest landing page for that tenant is the one computed from what
+  // they actually send. Redirect rather than compose a third variant here:
+  // /owner/kpi IS their dashboard, and two dashboards that have to agree is
+  // the thing worth not building. Same condition as the rail's
+  // LEAD_SURFACE_HREFS gate, so the rail and the landing page cannot disagree.
+  //
+  // Conditioned on `api_insights` as well, and that part is not belt-and-
+  // braces: /owner/kpi is gated on that module, so redirecting a tenant that
+  // lacks it would send them from an unhelpful page to a forbidden one. A
+  // bare `aura` tenant keeps the dashboard it has always had.
+  //
+  // It sits directly under getOwner() and above every other await on
+  // purpose. Redirecting further down - after the session read and the
+  // window parsing - threw "Rendered more hooks than during the previous
+  // render" on the client transition into it: the router had already begun
+  // reconciling this page's tree when the redirect replaced it. Deciding
+  // before any of that work starts means there is no half-built tree to
+  // throw away, and it saves the fetches too.
+  const modules = owner?.membership.enabledModules;
+  const makesLeads =
+    (modules?.includes("crm") ?? true) || (modules?.includes("call_intel") ?? false);
+  const hasInsights = modules?.includes("api_insights") ?? false;
+  if (owner && !makesLeads && hasInsights) redirect("/owner/kpi");
+
   // Only on the one render that follows an acceptance: the claims are already
   // in the cookie, but there is no reason to read them on every dashboard load.
   const session = joined ? await getSessionUser() : null;
   const role: OwnerRole = owner?.membership.ownerRole ?? "owner";
   const callIntel = owner?.membership.enabledModules.includes("call_intel") ?? false;
+
   const windowQuery = dateWindowQuery(window);
   // The team roll-up's API resolves `days` against a UTC today, so it is sent
   // the workspace's own dates instead - the same days the overview counts.

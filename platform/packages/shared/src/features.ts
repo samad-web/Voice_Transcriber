@@ -102,6 +102,14 @@ export const FeatureKey = z.enum([
   "branding",
   "partner_portal",
   "org_chart",
+  // ── The API-only tier ──
+  "insights_overview",
+  "insights_leaderboard",
+  "insights_teams",
+  "insights_kpi_setup",
+  "api_platform",
+  "api_events",
+  "insights_plan",
 ]);
 export type FeatureKey = z.infer<typeof FeatureKey>;
 
@@ -779,6 +787,98 @@ export const FEATURES: FeatureSpec[] = [
     // grant (0178), which is security. This key is reachability - doc 40's
     // distinction, and the reason a feature is the right axis here and a
     // module is not.
+    defaultEnabled: true,
+  },
+
+  // ── The API-only tier (module `api_insights`) ─────────────────────────────
+  //
+  // Seven keys, all on `api_insights`, all `defaultEnabled: true`.
+  //
+  // That default looks like it contradicts doc 39's five off-by-default keys,
+  // whose surfaces had never been reachable either. It does not, because the
+  // rule in this file's header is "preserve the status quo", not "default on" -
+  // and here the MODULE is the new thing. An existing tenant does not hold
+  // `api_insights`, so every one of these resolves `unavailable` and nothing in
+  // their console changes on deploy day. The day an operator grants the module
+  // is the day the tenant bought this product, and arriving with its seven
+  // pages switched off would be the `resources` mistake in reverse: a tenant
+  // paying for a dashboard and finding an empty rail.
+  {
+    key: "insights_overview",
+    label: "Performance overview",
+    blurb: "Your chosen KPIs against target, the org score, the funnel and how fresh the data is.",
+    module: "api_insights",
+    group: "insights",
+    hrefs: ["/owner/kpi"],
+    defaultEnabled: true,
+  },
+  {
+    key: "insights_leaderboard",
+    label: "Leaderboard",
+    blurb: "Everyone ranked by score, with the drill-down into one person's numbers.",
+    module: "api_insights",
+    group: "insights",
+    hrefs: ["/owner/kpi/leaderboard"],
+    requires: ["insights_overview"],
+    defaultEnabled: true,
+  },
+  {
+    key: "insights_teams",
+    label: "Team roll-up",
+    blurb: "Each team's attainment against its own targets.",
+    module: "api_insights",
+    group: "insights",
+    hrefs: ["/owner/kpi/teams"],
+    requires: ["insights_overview"],
+    defaultEnabled: true,
+  },
+  {
+    key: "insights_kpi_setup",
+    label: "KPI setup",
+    blurb: "Which KPIs you are measured on, their targets, weights and rating bands.",
+    module: "api_insights",
+    group: "insights",
+    hrefs: ["/owner/settings/performance"],
+    defaultEnabled: true,
+  },
+  {
+    key: "api_platform",
+    label: "API platform",
+    blurb: "API keys, the quickstart, what data has arrived and which KPIs it can answer.",
+    module: "api_insights",
+    group: "workspace",
+    hrefs: ["/owner/api-platform"],
+    // ── locked, and this is the one that matters ────────────────────────────
+    //
+    // Same argument as `staff` and the switchboard itself: a tenant whose only
+    // way of getting data in is an API key must not be able to switch off the
+    // page that issues API keys. Doing so would leave a workspace one click
+    // from needing an operator with a SQL prompt to recover, which is the
+    // class of refusal `guardLastOwner` exists for.
+    locked: true,
+    defaultEnabled: true,
+  },
+  {
+    key: "api_events",
+    label: "Event inspector",
+    blurb: "Every event you sent, whether it was accepted, and which KPI it moved.",
+    module: "api_insights",
+    group: "workspace",
+    hrefs: ["/owner/api-platform/events"],
+    requires: ["api_platform"],
+    defaultEnabled: true,
+  },
+  {
+    key: "insights_plan",
+    label: "Plan & usage",
+    blurb: "Your plan, what it includes, and how much of it you have used this month.",
+    module: "api_insights",
+    group: "workspace",
+    hrefs: ["/owner/plan"],
+    // NOT locked, but note that the §9.7 guardrail - only Owner and Admin ever
+    // see billing - is enforced by the page's own persona check and not by
+    // this switch. A switch a client can throw is not an access control, and
+    // conflating the two is how a telecaller ends up looking at an invoice.
     defaultEnabled: true,
   },
 ];

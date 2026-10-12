@@ -216,7 +216,7 @@ END $$;
 -- preserve and over-granting would be a decision rather than a restoration.
 --
 -- The TypeScript half - PermissionObjectType, ENFORCED_PERMISSIONS and
--- `seedCrmDefaults` in admin.controller.ts, which is what gives a NEW org its
+-- `seedRoleDefaults` in admin.controller.ts, which is what gives a NEW org its
 -- grid - moves in the same commit. This block is for the orgs that exist today.
 
 -- `contact_number:view` - revealing a number in the console (and the grant the

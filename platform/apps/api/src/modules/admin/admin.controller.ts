@@ -37,30 +37,34 @@ const SYSTEM_ROLES = [
 ] as const;
 
 /**
- * Give an org the same CRM defaults migrations 0034/0039/0041/0055/0059/0060
- * one-time-backfilled for orgs that already existed when each of them ran:
- * the 5 system roles with a full permission grid across every
- * `PermissionObjectType`, and a default deal pipeline. Called only when the
- * 'crm' module is being turned on for an org (createTenant's `enableCrm`
- * flag, or `PATCH tenants/:orgId/modules`) - never unconditionally. Without
- * it, an org with 'crm' enabled but never seeded would get:
- *  - zero CRM projection from calls (apps/worker/src/pipeline/pipeline.ts's
- *    "no default pipeline for org" - deals.controller.ts's resolvePipeline()
- *    throws the same way on an explicit create), and
- *  - a 403 on every contact/account/deal/... route for every real user,
- *    because CrmPermissionsGuard's `roles` join has nothing to match (a bare
- *    admin key with no asserted user is the only caller that still gets
- *    through - see crm-permissions.guard.ts).
+ * Give an org the 5 system roles with a full permission grid across every
+ * `PermissionObjectType` - what migrations 0039/0041/0055/0059/0060
+ * one-time-backfilled for orgs that already existed when each of them ran.
+ *
+ * Runs on EVERY provisioning path, not only CRM ones, and that is the whole
+ * point of it being its own function. The grid is what `PermissionsGuard` and
+ * `CrmPermissionsGuard` join against, and it governs far more than CRM
+ * objects - leads, tasks, lead boards, resources, appointments. An org with no
+ * `roles` rows therefore gets a 403 on every permission-gated route for every
+ * real user (a bare admin key with no asserted user is the only caller that
+ * still gets through - see crm-permissions.guard.ts), and the owner cannot
+ * repair it from the console, because managing roles needs the grid that is
+ * missing.
+ *
+ * This used to live inside `seedCrmDefaults` and so ran only when 'crm' was
+ * being turned on. That was invisible while every tenant had the CRM. The
+ * API-only tier (`aura, api_insights`, migration 0192) is the first shape of
+ * tenant that has none, and it provisioned with zero roles and zero grants.
  *
  * Object types are read from the shared `PermissionObjectType` enum rather
  * than hardcoded, so a future object type that widens that enum is seeded
  * here automatically instead of needing another one-time migration backfill.
  *
  * Idempotent by convention, not by construction: callers only invoke this
- * when `roles` has zero rows for the org (checked by the caller), so
- * flipping 'crm' off then on again never double-inserts.
+ * when `roles` has zero rows for the org, so provisioning a module twice
+ * never double-inserts.
  */
-async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void> {
+async function seedRoleDefaults(client: PoolClient, orgId: string): Promise<void> {
   await client.query(
     `INSERT INTO roles (org_id, key, name, is_system)
      SELECT $1, v.key, v.name, true
@@ -87,7 +91,22 @@ async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void>
         )`,
     [orgId, PermissionObjectType.options],
   );
+}
 
+/**
+ * The CRM half of provisioning: the default deal pipeline that migrations
+ * 0034/0075 backfilled. Called only when the 'crm' module is being turned on
+ * (createTenant's `enableCrm` flag, or `PATCH tenants/:orgId/modules`).
+ *
+ * Without it, an org with 'crm' enabled but never seeded gets zero CRM
+ * projection from calls (apps/worker/src/pipeline/pipeline.ts's "no default
+ * pipeline for org" - deals.controller.ts's resolvePipeline() throws the same
+ * way on an explicit create).
+ *
+ * The roles and the grid are NOT here - see `seedRoleDefaults`, which every
+ * tenant gets whether or not it has the CRM.
+ */
+async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void> {
   // FIND-or-create, not a bare INSERT.
   //
   // seedBoardDefaults (below) runs on every provisioning path and already
@@ -226,9 +245,11 @@ export class AdminController {
 
   /**
    * Provision a customer: organization (the RLS boundary) + default workspace
-   * + first instance + its one-time enrollment key, all atomically. CRM
-   * (system roles/grants + a default deal pipeline, via seedCrmDefaults) is
-   * seeded only when `enableCrm` is explicitly set - never automatic; see
+   * + first instance + its one-time enrollment key, all atomically. The
+   * system roles and permission grid (seedRoleDefaults) are seeded for EVERY
+   * tenant - they gate far more than CRM objects, and an org without them
+   * 403s everywhere. Only the default deal pipeline (seedCrmDefaults) waits
+   * on `enableCrm` being explicitly set - never automatic; see
    * org-modules.ts. Runs on the admin pool because the org does not exist
    * yet, so withOrg has nothing to scope to. The raw key is returned EXACTLY
    * ONCE - only its hash is stored.
@@ -283,6 +304,10 @@ export class AdminController {
       // Board first: it find-or-creates the org's one default pipeline, which
       // seedCrmDefaults then reuses rather than competing with.
       await seedBoardDefaults(client, org.id);
+      // Unconditional: the permission grid is not a CRM thing. See
+      // seedRoleDefaults - an org without it 403s on every gated route and
+      // cannot be repaired from its own console.
+      await seedRoleDefaults(client, org.id);
       if (modules.includes("crm")) await seedCrmDefaults(client, org.id);
 
       const {
@@ -357,9 +382,10 @@ export class AdminController {
    *
    * ── WHAT IT STILL WILL NOT DELETE ─────────────────────────────────────
    *
-   * Nothing. If 'crm' is newly present and the org has never been seeded,
-   * seedCrmDefaults runs inline; if 'crm' is being removed, roles and
-   * pipelines are left exactly where they are. CrmPermissionsGuard's
+   * Nothing. An org with no roles gets its grid repaired inline whatever its
+   * modules are (seedRoleDefaults), and a newly-present 'crm' gets its board
+   * and pipeline; if 'crm' is being removed, roles and pipelines are left
+   * exactly where they are. CrmPermissionsGuard's
    * `enabled_modules` check is what revokes access, not deleting data, so
    * re-enabling later needs no reseed and loses no history. A feature turned
    * off is the same promise one level down: the Invoices page disappears, the
@@ -415,6 +441,16 @@ export class AdminController {
         [orgId, modules, whatsappProvider, moduleAdded],
       );
 
+      // Outside the 'crm' branch on purpose: a tenant that never had the CRM
+      // still needs its grid, and this is the repair path for the ones that
+      // were provisioned before seedRoleDefaults was split out of
+      // seedCrmDefaults. Guarded on the row count, so it never double-inserts.
+      const { rows: existingRoles } = await client.query(
+        `SELECT 1 FROM roles WHERE org_id = $1 LIMIT 1`,
+        [orgId],
+      );
+      if (existingRoles.length === 0) await seedRoleDefaults(client, orgId);
+
       if (modules.includes("crm")) {
         // Unconditional and safe: seed_default_board returns the existing
         // board untouched. It is here as well as in createTenant so a tenant
@@ -422,12 +458,7 @@ export class AdminController {
         // - is repaired the moment someone touches its modules, rather than
         // staying the one org in the fleet with no board.
         await seedBoardDefaults(client, orgId);
-
-        const { rows: existingRoles } = await client.query(
-          `SELECT 1 FROM roles WHERE org_id = $1 LIMIT 1`,
-          [orgId],
-        );
-        if (existingRoles.length === 0) await seedCrmDefaults(client, orgId);
+        await seedCrmDefaults(client, orgId);
       }
 
       await client.query(

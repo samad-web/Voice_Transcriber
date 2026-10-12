@@ -125,6 +125,31 @@ const NON_TENANT_TABLES = new Set([
   //                     named org_id. RLS FORCED with no policy; `aura_app` and
   //                     the Supabase API roles revoked; admin pool only.
   "auth_events",
+  // plans, plan_entitlements
+  //                     0192. The PLAN CATALOGUE, not a tenant's copy of it:
+  //                     one row for "Growth", shared by every tenant on
+  //                     Growth. An org_id here would have nothing to put in
+  //                     it - the same answer app_releases gives for the one
+  //                     APK the whole fleet installs. This is not tenant data
+  //                     that lost its scoping, it is platform data that never
+  //                     had any.
+  //
+  //                     The four tables that DO belong to a tenant -
+  //                     org_subscriptions, usage_meters,
+  //                     plan_change_requests, upsell_impressions - carry
+  //                     org_isolation and partner_wall and are checked by
+  //                     every assertion below.
+  //
+  //                     `aura_app` is REVOKED on both. Entitlement resolution
+  //                     runs on the admin pool narrowed by an explicit
+  //                     `org_id = $1`, the same bootstrap exception ApiKeyGuard
+  //                     documents for resolving an org from a key hash: "what
+  //                     may this tenant do" has to be answerable before a
+  //                     tenant context exists to ask it in. Nothing a request
+  //                     can reach writes either table; the operator console
+  //                     does, through the admin pool.
+  "plans",
+  "plan_entitlements",
 ]);
 
 /**

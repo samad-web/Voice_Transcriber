@@ -16,7 +16,14 @@ export function ProgressBar({
   className = "",
 }: {
   percent: number;
-  tone?: "solid" | "danger";
+  /**
+   * `on-fill` is for a bar sitting INSIDE a filled StatCard. The default
+   * `bg-accent` fill is a blue meant for a white card, and on the KPI surface
+   * it reads as a second, unrelated colour while the track (`bg-border`)
+   * all but disappears. This tone borrows the surface's own foreground, the
+   * way every other element on that fill does.
+   */
+  tone?: "solid" | "danger" | "on-fill";
   className?: string;
 }) {
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
@@ -30,12 +37,16 @@ export function ProgressBar({
       aria-valuenow={clamped}
       aria-valuemin={0}
       aria-valuemax={100}
-      className={cx("h-2 w-full overflow-hidden rounded-full bg-border", className)}
+      className={cx(
+        "h-2 w-full overflow-hidden rounded-full",
+        tone === "on-fill" ? "bg-kpi-hairline/40" : "bg-border",
+        className,
+      )}
     >
       <div
         className={cx(
           "h-full rounded-full transition-[width] duration-200 ease-out",
-          tone === "danger" ? "bg-danger" : "bg-accent",
+          tone === "danger" ? "bg-danger" : tone === "on-fill" ? "bg-kpi-fg" : "bg-accent",
         )}
         style={{ width: `${clamped}%` }}
       />

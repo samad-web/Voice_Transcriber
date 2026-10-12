@@ -44,7 +44,42 @@ import { z } from "zod";
  * correctness stays in "crm" - `invoice:*` keeps its module - so turning
  * finance off never takes somebody's invoices away.
  */
-export const OrgModule = z.enum(["aura", "crm", "wasi", "call_intel", "finance"]);
+/**
+ * "api_insights" is the fourth live toggle, and the one that sells a DIFFERENT
+ * PRODUCT rather than more of this one (Build docs/no-crm-api-dashboard-build-
+ * plan.md; INSIGHTS_TIER_DECISIONS.md §2).
+ *
+ * A business that already runs a CRM or a dialer does not want to migrate. It
+ * wants to push its own data at us over an API and see how its telecallers
+ * perform against KPIs it chose. That tenant gets the ingestion surface, the
+ * KPI spine and the performance dashboards, and gets NO leads, no pipelines,
+ * no transcripts and no AI.
+ *
+ * A module and not an off-by-default feature, for three reasons and the third
+ * is binding: it is a separately-sold commercial entitlement, which is what
+ * this axis is for; `enabled_modules` IS enforced in the API, which the spec's
+ * §5 requires of these exclusions ("hidden or locked features must be absent
+ * from the API too"); and `features.test.ts` pins every FEATURES entry's
+ * default, so an opt-in entitlement has to be a new module - see features.ts's
+ * own header.
+ *
+ * It COMPOSES rather than excludes. A tenant may hold `api_insights` and
+ * `crm`: the KPI spine is not a no-CRM feature, it is a feature the no-CRM
+ * tier is built out of, and `Build docs/41_TELECALLER_PERFORMANCE_KPI_SPINE.md`
+ * wants it on the CRM screens too. What makes the no-CRM tier no-CRM is the
+ * ABSENCE of `crm` from its plan, not anything this module does.
+ *
+ * OFF for every existing tenant. Nothing about this deploy changes a console
+ * until an operator grants it.
+ */
+export const OrgModule = z.enum([
+  "aura",
+  "crm",
+  "wasi",
+  "call_intel",
+  "finance",
+  "api_insights",
+]);
 export type OrgModule = z.infer<typeof OrgModule>;
 
 export interface OrgModuleSpec {
@@ -74,6 +109,12 @@ export const ORG_MODULES: OrgModuleSpec[] = [
     label: "Finance",
     blurb:
       "Payment schedules, every payment in one place, expenses, incentives and the Finance Advisor.",
+  },
+  {
+    id: "api_insights",
+    label: "API Insights",
+    blurb:
+      "Push your own call, conversion and payment data over our API and see KPI and telecaller performance. No CRM.",
   },
   {
     id: "wasi",

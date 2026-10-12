@@ -68,6 +68,11 @@ import { OrgChartModule } from "./modules/org-chart/org-chart.module";
 import { FeatureGatesModule } from "./modules/feature-gates/feature-gates.module";
 import { CallbacksModule } from "./modules/callbacks/callbacks.module";
 import { TranscriptAgentModule } from "./modules/transcript-agent/transcript-agent.module";
+// The API-only tier (Build docs/no-crm-api-dashboard-build-plan.md,
+// INSIGHTS_TIER_DECISIONS.md, migrations 0192-0195).
+import { EntitlementsModule } from "./modules/entitlements/entitlements.module";
+import { IngestModule } from "./modules/ingest/ingest.module";
+import { InsightsModule } from "./modules/insights/insights.module";
 import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
 
 /**
@@ -191,6 +196,13 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     FeatureGatesModule,
     CallbacksModule,
     TranscriptAgentModule,
+    // EntitlementsModule is @Global and must be listed before the modules whose
+    // routes carry `@RequireEntitlement` - Nest resolves a guard's providers
+    // from the module that declares the controller, and a global provider has
+    // to be registered by the time that happens.
+    EntitlementsModule,
+    IngestModule,
+    InsightsModule,
   ],
   providers: [
     // Global, so a new controller is rate-limited by default rather than by

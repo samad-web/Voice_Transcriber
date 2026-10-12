@@ -57,6 +57,47 @@ export const API_SCOPES = [
    * rather than something implied by already having `leads:write`.
    */
   "mcp",
+
+  // ── The API-only tier's ingestion surface (migration 0193) ────────────────
+  //
+  // `Build docs/no-crm-api-dashboard-build-plan.md` §6.2. One scope per
+  // resource, following the `:write` implies `:read` rule above, and still no
+  // `:delete` on anything - a tenant correcting data does it by upsert, and
+  // erasure is a person's decision in the console (§6.5), not a scope.
+  //
+  // These are a SEPARATE set from the CRM scopes above rather than a widening
+  // of them, which matters: a key issued to a dialer integration holds
+  // `calls:write` and nothing else, and there is no path from that to a lead,
+  // a contact or a deal. The two surfaces are two controllers, and a scope
+  // names one of them.
+  "telecallers:read",
+  "telecallers:write",
+  "teams:read",
+  "teams:write",
+  // `calls:read` reads the ingested CALL FACTS - a duration, a direction, a
+  // disposition. It is not, and must never become, a scope that reaches
+  // `calls`, a recording or a transcript: ApiKeyGuard writes a principal with
+  // both recording permissions false precisely so that no scope can.
+  "calls:read",
+  "calls:write",
+  "conversions:read",
+  "conversions:write",
+  "payments:read",
+  "payments:write",
+  "attendance:read",
+  "attendance:write",
+  "quality:read",
+  "quality:write",
+  "targets:read",
+  "targets:write",
+
+  // Read-only surfaces with no `:write` counterpart, so no implication can
+  // reach them. A key that may push calls cannot read the leaderboard unless
+  // somebody deliberately ticked that box - which is the difference between
+  // "our dialer reports to Aura" and "our dialer can see everyone's ranking".
+  "kpi:read",
+  "usage:read",
+  "events:read",
 ] as const;
 
 export const ApiScope = z.enum(API_SCOPES);

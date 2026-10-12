@@ -25,6 +25,9 @@ interface KeyRow {
   org_id: string;
   scopes: string[];
   org_status: string | null;
+  /** 0193. 'live' for every key minted before the sandbox existed. */
+  env: "test" | "live";
+  ip_allowlist: string[] | null;
 }
 
 /**
@@ -87,7 +90,7 @@ export class ApiKeyGuard implements CanActivate {
     const {
       rows: [key],
     } = await this.db.adminPool().query<KeyRow>(
-      `SELECT k.id, k.org_id, k.scopes, o.status AS org_status
+      `SELECT k.id, k.org_id, k.scopes, k.env, k.ip_allowlist, o.status AS org_status
          FROM api_keys k
          JOIN organizations o ON o.id = k.org_id
         WHERE k.key_hash = $1
@@ -118,7 +121,22 @@ export class ApiKeyGuard implements CanActivate {
       throw new ForbiddenException(`this API key lacks the '${required}' scope`);
     }
 
-    req.apiKey = { id: key.id, orgId: key.org_id, scopes: key.scopes };
+    // §4's Scale entitlement, enforced here rather than at the route: an IP
+    // allowlist that only some routes honour is not an allowlist. Checked
+    // AFTER the scope so the refusal an attacker sees is the same either way,
+    // and only when the tenant actually set one - an empty array is "no
+    // restriction", not "nothing allowed", which is the direction a null-vs-
+    // empty mix-up would break in.
+    const allowlist = key.ip_allowlist ?? [];
+    if (allowlist.length > 0) {
+      const from = callerIp(req);
+      if (!from || !allowlist.includes(from)) {
+        await this.record(key, req, "forbidden_ip", { from: from ?? null });
+        throw new ForbiddenException("this API key is not allowed from this address");
+      }
+    }
+
+    req.apiKey = { id: key.id, orgId: key.org_id, scopes: key.scopes, env: key.env ?? "live" };
     req.principal = {
       userId: `api-key:${key.id}`,
       orgId: key.org_id,
@@ -188,6 +206,23 @@ export class ApiKeyGuard implements CanActivate {
  * here would be sha256'd, match nothing, and return "invalid API key" - a
  * confusing 401 for what is actually a valid credential on the wrong door.
  */
+/**
+ * The address the request came from, for the IP allowlist.
+ *
+ * `x-forwarded-for`'s FIRST entry, because nginx appends and the client's own
+ * address is leftmost. Trusting the last entry would mean allowlisting our own
+ * proxy, which would admit everybody - and trusting a client-supplied
+ * `x-real-ip` would let the caller choose their own address, which would admit
+ * everybody too. Express's `req.ip` is the fallback and is correct when there
+ * is no proxy in front.
+ */
+function callerIp(req: PrincipalRequest): string | null {
+  const header = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(header) ? header[0] : header;
+  const first = raw?.split(",")[0]?.trim();
+  return first || req.ip || null;
+}
+
 function extractKey(req: PrincipalRequest): string | null {
   const header = req.headers.authorization;
   if (header?.startsWith("Bearer ")) {

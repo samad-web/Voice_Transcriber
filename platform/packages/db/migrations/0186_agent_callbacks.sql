@@ -471,7 +471,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON callback_preferences TO aura_app;
 -- migration's call. Nobody has ever held `callback`, so there is nothing to
 -- preserve.
 --
--- NEW orgs are already covered: `seedCrmDefaults` cross-joins
+-- NEW orgs are already covered: `seedRoleDefaults` cross-joins
 -- `PermissionObjectType.options`, so an org provisioned after this deploy gets
 -- the grid without another backfill. These statements are for the orgs that
 -- exist today.

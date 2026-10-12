@@ -49,6 +49,12 @@ import { startAttendanceAlerts } from "./pipeline/attendance-alerts";
 import { startAttendanceWhatsappDrain } from "./pipeline/attendance-whatsapp";
 import { startHandsetAlertSweep } from "./pipeline/handset-alerts";
 import { startResourceHoldSweep } from "./pipeline/resource-hold-sweep";
+// The API-only tier (Build docs/no-crm-api-dashboard-build-plan.md,
+// migrations 0192-0195).
+import { startHandsetFactsSweep } from "./pipeline/handset-facts";
+import { startIngestDrainSweep } from "./pipeline/ingest-drain";
+import { startKpiSnapshotSweep } from "./pipeline/kpi-snapshots";
+import { startPlanSweep } from "./pipeline/plan-sweeps";
 import { startOrgChartAlertSweep } from "./pipeline/org-chart-alerts";
 // The transcript agent (Build docs/transcript-agent-build-plan, migrations
 // 0184-0187). Five sweeps, and every one of them re-checks the feature gate
@@ -360,6 +366,36 @@ async function bootstrap() {
   // §3A.5's frozen review items: resumed if the feature comes back inside the
   // window, expired after it.
   startFrozenActionSweep();
+
+  // ── The API-only tier's four sweeps ───────────────────────────────────────
+  //
+  // Build docs/no-crm-api-dashboard-build-plan.md, migrations 0192-0195. In
+  // dependency order, which is also the order data flows: events become facts,
+  // handset calls become the same facts, facts become snapshots, and plans
+  // catch up with themselves.
+
+  // The ingestion drain (§7, M3). Every 15 seconds, because the §11 promise is
+  // that ingestion ACKNOWLEDGES in 500ms and processes asynchronously - and
+  // because an integrator watching the event inspector during their first
+  // afternoon should see their test event land while they are still looking at
+  // it. Writes facts only; sends nothing and calls no provider.
+  startIngestDrainSweep();
+  // Handset calls projected into the same fact tables (the project owner's
+  // addition, 2026-10-10). Carries a duration, a direction and a disposition
+  // and NOTHING privacy-bearing - no transcript, no recording, not even a
+  // hashed number - which is what makes it safe for a tenant whose contract
+  // excludes call content. See the file header.
+  startHandsetFactsSweep();
+  // The KPI engine (doc 41 G3). Quarter-hourly, matching telecaller-stats, so
+  // the two performance surfaces are never a different age. Recomputes whole
+  // days rather than accumulating, which is what makes a late call, a late
+  // disposition and a changed target all self-correct.
+  startKpiSnapshotSweep();
+  // Trials that ran out and downgrades that were scheduled (§9.5, §9.6).
+  // Hourly, and housekeeping only: an expired trial already stops granting
+  // anything at read time, so this sweep's latency decides only how quickly
+  // `enabled_modules` catches up. Deletes nothing, ever.
+  startPlanSweep();
   const metaMcp = startMetaMcpSweep();
   // LinkedIn Lead Gen Forms (migration 0078). The one inbound channel with no
   // webhook to receive, so it is polled. Does not start at all unless an

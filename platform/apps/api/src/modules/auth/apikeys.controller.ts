@@ -33,12 +33,24 @@ const CreateApiKeyBody = z.object({
   scopes: z.array(ApiScope).min(1),
   /** Days until the key stops working. Omit for a key that never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),
+  /**
+   * The sandbox (0193). A `test` key authenticates identically and writes to
+   * the same endpoints, and every row it creates carries `env = 'test'` - which
+   * the KPI engine filters out, so a sandbox can never affect a live figure.
+   *
+   * Defaults to `live`, so every caller that predates the column keeps minting
+   * exactly what it minted before. Stated in the body rather than inferred from
+   * a scope set, because "is this real" is a decision the person issuing the
+   * key makes, not a property of what the key may do.
+   */
+  env: z.enum(["test", "live"]).default("live"),
 });
 
 /**
- * Programmatic API keys. The raw `cik_live_...` key is returned EXACTLY ONCE at
- * creation - only its sha256 hash is stored, alongside a 12-char display prefix
- * so the UI can identify keys without ever holding the secret again.
+ * Programmatic API keys. The raw `cik_live_...` (or `cik_test_...`) key is
+ * returned EXACTLY ONCE at creation - only its sha256 hash is stored, alongside
+ * a 12-char display prefix so the UI can identify keys without ever holding the
+ * secret again.
  */
 @Controller("apikeys")
 @UseGuards(AdminKeyGuard, TenantGuard)
@@ -51,9 +63,14 @@ export class ApiKeysController {
   async create(@OrgId() orgId: string, @Body() body: unknown, @Req() req: PrincipalRequest) {
     const parsed = CreateApiKeyBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { name, description, scopes, expiresInDays } = parsed.data;
+    const { name, description, scopes, expiresInDays, env } = parsed.data;
 
-    const key = `cik_live_${randomBytes(32).toString("base64url")}`;
+    // The prefix carries the environment, so somebody reading a config file or
+    // a log line can tell a sandbox credential from a live one without looking
+    // it up. `prefix` below is the first 12 characters, which is exactly
+    // `cik_live_` / `cik_test_` plus three - enough that the console's key list
+    // shows the environment even though the secret is never retrievable.
+    const key = `cik_${env}_${randomBytes(32).toString("base64url")}`;
     const keyHash = createHash("sha256").update(key).digest("hex");
     const prefix = key.slice(0, 12);
 
@@ -62,12 +79,13 @@ export class ApiKeysController {
         rows: [row],
       } = await client.query(
         `INSERT INTO api_keys (org_id, name, description, key_hash, prefix, scopes, created_by,
-                               expires_at)
+                               expires_at, env)
          VALUES ($1, $2, $3, $4, $5, $6,
                  $7,
                  CASE WHEN $8::int IS NULL THEN NULL
-                      ELSE now() + make_interval(days => $8::int) END)
-         RETURNING id, prefix, name, scopes, expires_at`,
+                      ELSE now() + make_interval(days => $8::int) END,
+                 $9)
+         RETURNING id, prefix, name, scopes, expires_at, env`,
         [
           orgId,
           name,
@@ -80,6 +98,7 @@ export class ApiKeysController {
           // failing the insert.
           z.string().uuid().safeParse(req.principal?.userId).success ? req.principal?.userId : null,
           expiresInDays ?? null,
+          env,
         ],
       );
       await client.query(
@@ -94,6 +113,7 @@ export class ApiKeysController {
         name: row.name,
         scopes: row.scopes,
         expiresAt: row.expires_at,
+        env: row.env,
         key,
       };
     });
@@ -103,7 +123,7 @@ export class ApiKeysController {
   async list(@OrgId() orgId: string) {
     return this.db.withOrg(orgId, async (client) => {
       const { rows } = await client.query(
-        `SELECT id, name, description, prefix, scopes, last_used_at, expires_at, revoked_at,
+        `SELECT id, name, description, prefix, scopes, env, last_used_at, expires_at, revoked_at,
                 created_at,
                 (revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())) AS active
            FROM api_keys ORDER BY created_at DESC`,

@@ -96,15 +96,21 @@ describe("ownerRailFor", () => {
     ]);
   });
 
-  it("collapses for a tenant without the CRM module", () => {
-    // Tasks, Customers and Sales are all CRM objects; leads, the call queues
-    // and the activity report are core Aura.
+  it("collapses for a tenant with neither CRM nor call intelligence", () => {
+    // Tasks, Customers and Sales are all CRM objects. Leads goes too in THIS
+    // case: with no CRM and no recorder there is nothing that writes a lead,
+    // so the section's every page is permanently empty. That is the API-only
+    // tier (migration 0192); the case below is the recorder-only tenant, which
+    // keeps it.
     expect(keys(ownerRailFor("owner", false, false, false))).toEqual([
       "home",
-      "leads",
       "conversations",
       "reports",
     ]);
+  });
+
+  it("keeps Leads for a recorder-only tenant - calls still become leads", () => {
+    expect(keys(ownerRailFor("owner", false, false, true))).toContain("leads");
   });
 
   it("keeps Notifications off the rail", () => {
@@ -251,7 +257,19 @@ describe("ownerSettingsGroupsFor", () => {
 
   it("gives an owner every group", () => {
     const groups = ownerSettingsGroupsFor(ownerNavItemsFor("owner", false, true, true));
-    expect(groups.map((g) => g.key)).toEqual(["team", "intake", "calls", "business", "tools"]);
+    // `insights` is the API-only tier's set-up (KPIs, keys, the event
+    // inspector, the plan). It appears here because this call grants every
+    // module; a tenant without `api_insights` sees no such group, which
+    // "drops empty groups rather than rendering a heading over nothing"
+    // already covers.
+    expect(groups.map((g) => g.key)).toEqual([
+      "team",
+      "intake",
+      "calls",
+      "business",
+      "tools",
+      "insights",
+    ]);
   });
 });
 

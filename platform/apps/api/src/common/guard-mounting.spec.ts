@@ -202,6 +202,15 @@ import { FeatureGatesController } from "../modules/feature-gates/feature-gates.c
 import { CallbacksController } from "../modules/callbacks/callbacks.controller";
 import { TranscriptAgentController } from "../modules/transcript-agent/transcript-agent.controller";
 import { OrgChartPositionsController } from "../modules/org-chart/org-chart-positions.controller";
+// The API-only tier (Build docs/no-crm-api-dashboard-build-plan.md, migrations
+// 0192-0195). Five controllers: plans and usage for the owner, the operator's
+// half of plan management, the ingestion API, the dashboards, and the
+// Integration Center.
+import { EntitlementsController } from "../modules/entitlements/entitlements.controller";
+import { PlanAdminController } from "../modules/entitlements/plan-admin.controller";
+import { IngestController } from "../modules/ingest/ingest.controller";
+import { InsightsController } from "../modules/insights/insights.controller";
+import { InsightsOpsController } from "../modules/insights/insights-ops.controller";
 import { OPERATOR_MAY_CALL_KEY } from "./owner-role.guard";
 import { CROSS_TENANT_KEY } from "./tenant.guard";
 
@@ -570,6 +579,26 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   TranscriptAgentController,
   OrgChartPositionsController,
   OrgChartContractsController,
+  // ── The API-only tier (0192-0195) ──
+  //
+  // `EntitlementsController` and `InsightsController` are the owner console's:
+  // AdminKeyGuard + TenantGuard + OwnerRoleGuard, with the persona declared
+  // per handler. `InsightsOpsController` is AdminKeyGuard + TenantGuard and
+  // gates per handler on the TENANT TIER (`OrgRoleGuard`) rather than a
+  // persona, because §6.5 limits raw payloads to Owner, Admin and Developer.
+  //
+  // `IngestController` is the only one in this list mounted on ApiKeyGuard
+  // rather than AdminKeyGuard - a headless credential, not a person - and
+  // `PlanAdminController` the only one on OperatorOnlyGuard. Both of those are
+  // the interesting rows: an ApiKeyGuard controller that forgot a
+  // `@RequireScope` fails closed by that guard's own design, and an operator
+  // route that drifted onto AdminKeyGuard alone would let an owner grant
+  // themselves a plan.
+  EntitlementsController,
+  PlanAdminController,
+  IngestController,
+  InsightsController,
+  InsightsOpsController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -769,6 +798,14 @@ const DEVICE_AUTHED = [
 
 /** §1.1 rows 3, 4, 9, 10, 18 - the operator surface, all on the RLS-bypassing pool. */
 const CROSS_TENANT = [
+  // Plan management (0192). Cross-tenant like the instance routes: an operator
+  // naming a tenant in the path is the whole point, and §9.6's "the operator
+  // applies it" is the only way a plan changes while there is no payment
+  // provider.
+  "GET /admin/plans/requests",
+  "GET /admin/plans/catalogue",
+  "POST /admin/plans/orgs/:orgId",
+  "POST /admin/plans/requests/:id/decline",
   // The partner invite's three (0163, doc 39 §18). Cross-tenant for exactly
   // the reason the owner invite below is: at preview and accept time the
   // person belongs to nothing, and the TOKEN names the org. The difference is
@@ -900,6 +937,15 @@ const CROSS_TENANT = [
  *   * the two reprocess routes (0147) - they spend at the ASR provider.
  */
 const OPERATOR_ONLY_ROUTES = [
+  // Plan management (0192). Operator-only for the same reason the instance
+  // routes are, and with more force while there is no payment provider: an
+  // owner who could apply a plan to their own org would be granting themselves
+  // modules. `OperatorOnlyGuard` denies any request carrying a real user
+  // identity, which is both shapes a person arrives in.
+  "GET /admin/plans/requests",
+  "GET /admin/plans/catalogue",
+  "POST /admin/plans/orgs/:orgId",
+  "POST /admin/plans/requests/:id/decline",
   "POST /instances",
   "GET /instances",
   "GET /instances/:id",
@@ -998,6 +1044,39 @@ const CALL_CONTENT_ROUTES = [
 
 /** §2.4 - two controllers. */
 const OWNER_ROLE_ROUTES = [
+  // ── The API-only tier's console (0192-0195) ──
+  //
+  // Seventeen routes, and the persona split is the product:
+  //
+  //  · the plan and upsell routes are `owner` ALONE - §9.7's "telecallers and
+  //    viewers never see any upsell or billing", enforced here rather than by
+  //    hiding a nav entry;
+  //  · the KPI setup is owner+manager for the read and owner for the write,
+  //    because a manager whose team is measured on these should see what they
+  //    are;
+  //  · the dashboards are owner+manager, and `leaderboard` and
+  //    `telecallers/:id` additionally admit a telecaller - their own row and
+  //    their own rank only, decided in the handler from
+  //    `insights_settings.leaderboard_visibility`. That is the one setting a
+  //    persona list cannot express, which is why those two routes name every
+  //    persona and refuse inside.
+  "GET /insights/plan",
+  "POST /insights/plan/request",
+  "POST /insights/plan/trial",
+  "GET /insights/settings",
+  "PATCH /insights/settings",
+  "GET /insights/upsell/eligible",
+  "POST /insights/upsell/impression",
+  "GET /insights/kpi/catalog",
+  "GET /insights/kpi/config",
+  "PUT /insights/kpi/config",
+  "PUT /insights/kpi/bands",
+  "GET /insights/overview",
+  "GET /insights/leaderboard",
+  "GET /insights/telecallers/:id",
+  "GET /insights/teams",
+  "GET /insights/unmapped",
+  "POST /insights/unmapped/:id/resolve",
   // Undoing an opt-out a customer asked for (migration 0100). Owner/manager
   // rather than `conversation:edit`, because the justification for reversing
   // it always happens outside the system - the customer said so on a call -
@@ -1658,6 +1737,20 @@ const OPERATOR_MAY_CALL_ROUTES = OWNER_ROLE_ROUTES.slice(
  * CONFIGURATION, a different tier from org ADMINISTRATION.
  */
 const ORG_ROLE_ROUTES = [
+  // The event inspector (0193). On the TENANT TIER rather than a persona,
+  // because a raw payload is the least redacted thing the API-only tier
+  // stores - §6.5 limits it to Owner, Admin and Developer, and `org_admin` is
+  // already the tier that governs API keys. Adding a fourth console persona
+  // for one page would make "why can't Priya see this" a question with four
+  // answers, which is the refusal `permissions.ts` records about `call`.
+  //
+  // The two REPLAY routes are here too: re-queueing somebody else's rejected
+  // events is an integration decision, and the person who holds the keys is
+  // the person who fixes the integration.
+  "GET /insights/events",
+  "GET /insights/events/errors",
+  "POST /insights/events/:id/replay",
+  "POST /insights/events/replay-failed",
   "POST /members",
   "PATCH /members/:userId",
   "DELETE /members/:userId",
@@ -2644,8 +2737,16 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // OwnerScopeGuard chain as the engine's other six, and no new grid object:
     // it answers from the same `resolvePeopleVisibility` the POST enforces, so
     // a name offered here and refused there would be a bug rather than policy.
-    expect(ROUTES).toHaveLength(778);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(778);
+    // 815: plus the API-only tier's 37 (0192-0195). Twelve of them are the
+    // INGESTION surface on ApiKeyGuard - the first routes in this codebase a
+    // headless credential may WRITE facts through - and four are the
+    // operator's plan management, cross-tenant like the instance routes. The
+    // remaining twenty-one are the owner console's: the dashboards, the KPI
+    // wizard, the plan page and the Integration Center. None unguarded: an
+    // ingestion endpoint reachable without a credential would let anybody
+    // write into any tenant's performance figures.
+    expect(ROUTES).toHaveLength(815);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(815);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2725,7 +2826,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // Tenant-scoped like the export engine's other six, and with no
     // cross-tenant twin for the same reason they have none: there is no export
     // of anybody else's workspace.
-    expect(tenantScoped).toHaveLength(673);
+    // 706: plus 33 of the API-only tier's 37 - every route except the four
+    // cross-tenant plan-management ones. The twelve ingestion routes are
+    // tenant-scoped like any other: ApiKeyGuard takes the org from the key row
+    // and never from a header, so an integration credential is MORE tightly
+    // bound to one tenant than a person's session is.
+    expect(tenantScoped).toHaveLength(706);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
@@ -2737,10 +2843,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(778); // = ROUTES.length: every route in exactly one class
+    ).toBe(815); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 718 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 743 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2801,7 +2907,12 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // OwnerScopeGuard in that order, the export engine's own chain - and the
     // order is the whole of what the route does: it reads `req.principal` to
     // decide whose data the caller may export at all.
-    expect(principalRoutes).toHaveLength(718);
+    // 743: plus 25 of the API-only tier's 37 (0192-0195) - the twenty-one
+    // owner-console routes and the four operator plan routes. The twelve
+    // ingestion routes are NOT principal routes: they are the only writes in
+    // this API authenticated by a key rather than by a person, which is the
+    // whole point of keeping them in one small file.
+    expect(principalRoutes).toHaveLength(743);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
@@ -2837,7 +2948,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     }
   });
 
-  it("pins the eight API-key routes as an explicit allowlist, each declaring a scope", () => {
+  it("pins the twenty API-key routes as an explicit allowlist, each declaring a scope", () => {
     // The blast-radius test for the external surface.
     //
     // `api_keys` is a credential a TENANT mints and may hand to a third party.
@@ -2864,6 +2975,32 @@ describe("guard mounting (inventory 13 §1.1)", () => {
       "GET /public/projects",
       "POST /mcp",
       "GET /mcp",
+      // ── The ingestion surface (0192-0195) ──
+      //
+      // The first routes a tenant's own key may WRITE through, and the reason
+      // they are a separate controller rather than scopes added to the six
+      // above: the API-only tier has contracted NOT to have a CRM, so a
+      // controller that could write a call fact and a lead would be one
+      // copy-pasted decorator away from writing a lead for a tenant whose
+      // plan excludes them. `api-scopes.test.ts` asserts the two scope sets
+      // stay disjoint in both directions.
+      //
+      // Still nothing here can send a message, read a recording or a
+      // transcript, delete, merge or move a card. `test-data/reset` is the
+      // only destructive route and its WHERE clause carries the literal
+      // `env = 'test'` - there is no parameter that could widen it.
+      "PUT /ingest/telecallers/:externalId",
+      "PUT /ingest/teams/:externalId",
+      "POST /ingest/calls",
+      "POST /ingest/dispositions",
+      "POST /ingest/conversions",
+      "POST /ingest/payments",
+      "POST /ingest/attendance",
+      "POST /ingest/quality-scores",
+      "POST /ingest/targets",
+      "GET /ingest/events/:id",
+      "GET /ingest/usage",
+      "POST /ingest/test-data/reset",
     ];
     const apiKeyed = ROUTES.filter((r) => r.guards.includes("ApiKeyGuard"));
     expect(sorted(apiKeyed.map((r) => r.route))).toEqual(sorted(API_KEYED));
@@ -2871,8 +3008,18 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // Every API-keyed route is ApiKeyGuard THEN TenantGuard, and nothing else:
     // no AdminKeyGuard (which would grant platform_admin), no CrmPermissionsGuard
     // (whose grid resolves a person, and there is no person here).
+    // `EntitlementGuard` is the one permitted third link, and only after the
+    // first two. It is what renders §9.4's `entitlement_required` body so an
+    // integrator can branch on a plan refusal programmatically - the spec
+    // requires that on the API and not only in the console. It resolves a PLAN
+    // from the org the key is bound to, so unlike CrmPermissionsGuard it needs
+    // no person to exist.
     for (const { route, guards } of apiKeyed) {
-      expect([route, guards]).toEqual([route, ["ApiKeyGuard", "TenantGuard"]]);
+      expect([route, guards.slice(0, 2)]).toEqual([route, ["ApiKeyGuard", "TenantGuard"]]);
+      expect([route, guards.slice(2)]).toEqual([
+        route,
+        guards.length > 2 ? ["EntitlementGuard"] : [],
+      ]);
     }
   });
 

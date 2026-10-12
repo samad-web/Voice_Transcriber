@@ -156,3 +156,22 @@ export * from "./transcript-agent";
 export * from "./agent-policy";
 export * from "./callbacks";
 export * from "./agent-eval";
+
+// The API-only tier (Build docs/no-crm-api-dashboard-build-plan.md,
+// INSIGHTS_TIER_DECISIONS.md, migrations 0192-0195). Five files, in dependency
+// order - `entitlements` first because it is the plan vocabulary everything
+// else is gated by, then the KPI catalogue, then the arithmetic over it, then
+// the ingestion payload schemas.
+//
+// All five are in the barrel because the same three consumers need each one:
+// the API to enforce a plan and validate a payload, the worker to compute a
+// snapshot, and the console to draw a dashboard and a Compare-plans table.
+// The KPI spine in particular is shared with the CRM tier -
+// `Build docs/41_TELECALLER_PERFORMANCE_KPI_SPINE.md` wants it on the existing
+// performance screens too - so it is deliberately not filed under anything
+// that reads as no-CRM-only.
+export * from "./entitlements";
+export * from "./kpi-catalog";
+export * from "./kpi-scoring";
+export * from "./insights-settings";
+export * from "./ingest-schemas";

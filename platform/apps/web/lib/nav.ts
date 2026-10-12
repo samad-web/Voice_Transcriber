@@ -17,6 +17,7 @@ import {
   FileText,
   Funnel,
   Gauge,
+  KeyRound,
   Handshake,
   House,
   Inbox,
@@ -40,6 +41,8 @@ import {
   PhoneOff,
   Plug,
   Receipt,
+  Target,
+  Trophy,
   Route,
   Settings,
   ShieldCheck,
@@ -959,6 +962,97 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
     // THIS reader can open, and every persona has at least their own phone and
     // their own connected apps.
   },
+
+  // ── The API-only tier (Build docs/no-crm-api-dashboard-build-plan.md) ─────
+  //
+  // Six rail entries, all gated by features on the `api_insights` module, so a
+  // tenant without it sees none of them and nothing about this deploy changes
+  // their console.
+  {
+    href: "/owner/kpi",
+    label: "Performance",
+    icon: Gauge,
+    title: "Performance",
+    context: "Reports",
+    // The ORG's overview, so owner and manager. A rep's own scorecard is
+    // `/owner/my-performance`, which they already have.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/kpi/leaderboard",
+    label: "Leaderboard",
+    icon: Trophy,
+    title: "Leaderboard",
+    context: "Reports",
+    // ── WHY A TELECALLER IS NOT OFFERED THIS IN THE RAIL ───────────────────
+    //
+    // The spec's §3 gives a telecaller "their own KPIs, score and rank (IF
+    // ENABLED)", and whether it is enabled is `insights_settings
+    // .leaderboard_visibility` - a per-tenant database value. `ownerNavItemsFor`
+    // is a pure function over the catalogue and cannot read it, so offering
+    // the page in the rail would mean offering it to reps in the workspaces
+    // that switched it off, who would then get a 403 from a link we drew.
+    //
+    // So the rail is owner/manager, and the PAGE still admits a telecaller by
+    // URL - the API returns their own row or refuses, which is where the
+    // setting can actually be evaluated. Doc 41's Part K asks whether a rep
+    // should see a leaderboard at all; this leaves that question open rather
+    // than answering it by nav placement.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/kpi/teams",
+    label: "Teams",
+    icon: Users,
+    title: "Team performance",
+    context: "Reports",
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/settings/performance",
+    label: "KPI setup",
+    icon: Target,
+    title: "KPI setup",
+    context: "Settings",
+    // Manager included for the read: a manager whose team is measured on these
+    // should be able to see what they are, and the API refuses their write.
+    ownerRoles: ["owner", "manager"],
+  },
+  {
+    href: "/owner/api-platform",
+    label: "API platform",
+    icon: KeyRound,
+    title: "API platform",
+    context: "Settings",
+    // Owner persona only in the rail. The event inspector inside it is gated
+    // again on the `org_admin` TENANT TIER, which is the spec's "Developer"
+    // role as this codebase already expresses it - see
+    // insights-ops.controller.ts for why that is not a fourth persona.
+    ownerRoles: ["owner"],
+  },
+  {
+    href: "/owner/api-platform/events",
+    label: "Event inspector",
+    icon: ListFilter,
+    title: "Event inspector",
+    context: "API platform",
+    // It needs a nav entry because its feature declares the href and
+    // `feature-gating.test.ts` requires every catalogue href to have one - a
+    // page a switch governs but the nav cannot name is a page that disappears
+    // with no way back. It is reached from the API platform page in practice.
+    ownerRoles: ["owner"],
+  },
+  {
+    href: "/owner/plan",
+    label: "Plan & usage",
+    icon: Receipt,
+    title: "Plan & usage",
+    context: "Settings",
+    // §9.7: billing and upsell are Owner and Admin only, and telecallers and
+    // viewers never see either. Enforced at the API too - a nav restriction is
+    // a courtesy, not a control.
+    ownerRoles: ["owner"],
+  },
 ];
 
 /**
@@ -993,6 +1087,41 @@ const CALL_INTEL_GATED_HREFS = [
   "/owner/callbacks",
   "/owner/settings/transcript-agent",
   "/owner/settings/transcript-agent/callbacks",
+];
+
+/**
+ * The lead-era surfaces: hidden when a tenant has NOTHING that makes a lead.
+ *
+ * These are the pages `CRM_GATED_HREFS` deliberately leaves alone, on the
+ * grounds that leads are "core Aura, independent of the CRM toggle". That was
+ * right while every tenant either ran the CRM or recorded calls - a
+ * recorder-only tenant (`aura, call_intel`) has no deals and no contacts but
+ * its pipeline DOES write leads, so taking its lead board away would remove
+ * the only place its work lands.
+ *
+ * The API-only tier (migration 0192) is the first tenant shape for which
+ * neither is true. `org-modules.ts` states what it gets in as many words:
+ * "the ingestion surface, the KPI spine and the performance dashboards, and
+ * NO leads, no pipelines, no transcripts and no AI". Nothing it sends creates
+ * a lead - its facts live in `insights_calls`, not `leads` - so every page
+ * here is permanently empty for it, and the console was offering a Lead board,
+ * All leads, Follow-up sequences and a Team activity report that could only
+ * ever say "nothing has moved".
+ *
+ * So the condition is NEITHER module, not "no CRM": a recorder-only tenant
+ * keeps all of these exactly as before, and only a tenant with no lead source
+ * at all loses them.
+ */
+const LEAD_SURFACE_HREFS = [
+  "/owner/board",
+  "/owner/leads",
+  // A follow-up sequence's steps hang off a lead; with no leads it is a page
+  // that can only say "nothing is due", for ever.
+  "/owner/outreach",
+  // "What moved" - leads moved, deals closed, follow-ups completed. All three
+  // are things this tenant has none of. Its equivalent report is /owner/kpi,
+  // which is computed from the facts it does send.
+  "/owner/productivity",
 ];
 
 const CRM_GATED_HREFS = [
@@ -1225,6 +1354,42 @@ export const OWNER_SETTINGS_GROUPS: readonly {
       { href: "/owner/recycle-bin", blurb: "Things deleted recently, and a way to bring them back." },
     ],
   },
+  // ── The API-only tier's set-up (migrations 0192-0195) ──
+  //
+  // Its own group rather than three entries scattered through the five above,
+  // because for a tenant on this tier these ARE the set-up: the KPIs they are
+  // measured on, the key their system pushes data with, and what their plan
+  // covers. A tenant without the module sees no group at all - every page here
+  // is gated by a feature on `api_insights`.
+  //
+  // The event inspector is in here too, which looks like one page too many for
+  // a Settings group. It has to be: `nav.test.ts` requires every page filed
+  // under the `settings` section to sit in exactly one group - a page in none
+  // has no card and no tabs - and the inspector needs a section for its
+  // breadcrumb. A card is the honest outcome, and it is a page an integrator
+  // opens often enough to deserve one.
+  {
+    key: "insights",
+    label: "API & performance",
+    pages: [
+      {
+        href: "/owner/settings/performance",
+        blurb: "The KPIs your team is measured on, their targets, weights and rating bands.",
+      },
+      {
+        href: "/owner/api-platform",
+        blurb: "API keys, how to send your first event, and what has arrived so far.",
+      },
+      {
+        href: "/owner/api-platform/events",
+        blurb: "Every event you sent, whether it was counted, and why not.",
+      },
+      {
+        href: "/owner/plan",
+        blurb: "Your plan, what it includes, and how much of it you have used this month.",
+      },
+    ],
+  },
 ];
 
 /**
@@ -1345,10 +1510,37 @@ const OWNER_SECTION_OF: Record<string, NavSection> = {
   "/owner/reports/sla": "reports",
   "/owner/reports/builder": "reports",
 
+  // ── The API-only tier's dashboards (migrations 0192-0195) ──
+  //
+  // Under `reports` rather than a section of their own, for the reason the
+  // finance entries above record: `OWNER_RAIL_MAX_TOP_LEVEL` is 7 and the rail
+  // is at it, so an eighth section would demote something people use daily.
+  //
+  // It also happens to be the right place. These screens answer "how is the
+  // floor doing", which is the question every other page in this section
+  // answers - the only difference is where the data came from, and a reader
+  // does not care about that. For a tenant with no CRM, Reports becomes their
+  // first section, because feature filtering empties the four above it.
+  "/owner/kpi": "reports",
+  "/owner/kpi/leaderboard": "reports",
+  "/owner/kpi/teams": "reports",
+  // No rail entry - reached from the leaderboard and the overview - but filed
+  // here so its breadcrumb and Back button know where it lives.
+  "/owner/kpi/telecaller": "reports",
+
   [OWNER_SETTINGS_HREF]: "settings",
   ...Object.fromEntries(
     OWNER_SETTINGS_GROUPS.flatMap((g) => g.pages.map((p) => [p.href, "settings" as const])),
   ),
+  // Reached from the API platform page rather than from the rail, so it needs
+  // a section for its breadcrumb and Back button.
+  //
+  // AFTER the settings spread, and that is load-bearing: key order in this map
+  // is TAB order, and a section's rail link is its FIRST visible page. Filed
+  // above `OWNER_SETTINGS_HREF` it became the Settings rail entry, so the gear
+  // in the sidebar opened the event inspector - which `console-rail.test.ts`
+  // caught on its first run.
+  "/owner/api-platform/events": "settings",
 
   "/owner/notifications": "account",
 };
@@ -1519,10 +1711,16 @@ export function ownerNavSectionsFor(
   callIntelEnabled = false,
   entitlement?: Entitlement,
 ): NavGroup[] {
+  // Nothing this tenant has can produce a lead. See LEAD_SURFACE_HREFS.
+  // `crmEnabled` defaults TRUE, so a caller that passes neither flag keeps
+  // every lead page, exactly as it did before this gate existed.
+  const makesLeads = crmEnabled || callIntelEnabled;
+
   const visible = OWNER_NAV_ITEMS.filter(
     (item) => !item.ownerRoles || item.ownerRoles.includes(role),
   )
     .filter((item) => crmEnabled || !CRM_GATED_HREFS.includes(item.href))
+    .filter((item) => makesLeads || !LEAD_SURFACE_HREFS.includes(item.href))
     // Defaults OFF, unlike crmEnabled: call intelligence is an opt-in
     // disclosure of what was said on a customer's phone call, so a caller that
     // forgets to pass it must hide the page, not reveal it.

@@ -344,7 +344,7 @@ END $$;
 -- migration's call. Nobody has ever held `dial_campaign`, so there is nothing
 -- to preserve and over-granting would be a decision rather than a restoration.
 --
--- NEW orgs are already covered: `seedCrmDefaults` in admin.controller.ts
+-- NEW orgs are already covered: `seedRoleDefaults` in admin.controller.ts
 -- cross-joins `PermissionObjectType.options`, so an org provisioned after this
 -- deploy gets the grid without another backfill. This block is for the orgs
 -- that exist today.

@@ -45,6 +45,13 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      // Compiled output under another name. `apps/api/dist-recovery` is a
+      // rescued build left behind by the staged-vs-worktree deploy incident,
+      // and `**/dist/**` does not match it - so 192 lint errors in generated
+      // JavaScript were failing `pnpm lint` for the whole workspace while
+      // every hand-written file in it was clean. A red gate that is always red
+      // is a gate nobody reads.
+      "**/dist-*/**",
       "**/.next/**",
       "**/out/**",
       "**/build/**",

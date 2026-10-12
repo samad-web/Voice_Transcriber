@@ -101,7 +101,13 @@ export interface PrincipalRequest extends Request {
    * rather than from the CRM permission grid. Keeping it in its own field means
    * no existing guard or handler can mistake a headless credential for a user.
    */
-  apiKey?: { id: string; orgId: string; scopes: string[] };
+  /**
+   * `env` (0193) is the test/live sandbox, and it is a property of the
+   * CREDENTIAL rather than of the request. There is deliberately no header and
+   * no body field that can choose it, for the same reason there is none that
+   * can choose a tenant: a sandbox a caller can opt out of is not a sandbox.
+   */
+  apiKey?: { id: string; orgId: string; scopes: string[]; env: "test" | "live" };
   /**
    * The gated-feature decision for this request, written by `FeatureGateGuard`
    * (Build docs/transcript-agent-build-plan §3A.4).

@@ -101,16 +101,25 @@ describe("ownerNavItemsFor - crmEnabled", () => {
     ]) {
       expect(items).not.toContain(gated);
     }
+    // The lead surfaces go too in THIS case, and only because call intelligence
+    // is also off: with neither module there is nothing that writes a lead, so
+    // the board, the list, the follow-up sequences and the "what moved" report
+    // can only ever be empty. That is the API-only tier (migration 0192). The
+    // case below pins the recorder-only tenant, where they must all survive.
+    for (const gated of [
+      "/owner/board",
+      "/owner/leads",
+      "/owner/outreach",
+      "/owner/productivity",
+    ]) {
+      expect([gated, items.includes(gated)]).toEqual([gated, false]);
+    }
     // What SURVIVES, asserted as membership rather than as a frozen list: the
-    // pages that read `leads` (core Aura, no CRM needed), the connectors that
-    // feed them, and the workspace settings. A pinned array here would fail on
+    // connectors and the workspace settings. A pinned array here would fail on
     // the next page anyone adds, having proved nothing about the gate.
     for (const kept of [
       "/owner",
-      "/owner/board",
-      "/owner/leads",
       "/owner/projects",
-      "/owner/outreach",
       "/owner/integrations",
       "/owner/messaging-setup",
       "/owner/meta-ads",
@@ -119,6 +128,23 @@ describe("ownerNavItemsFor - crmEnabled", () => {
     ]) {
       expect([kept, items.includes(kept)]).toEqual([kept, true]);
     }
+  });
+
+  it("a recorder-only tenant keeps every lead page - its pipeline writes leads", () => {
+    // crm off, call_intel ON. This is the case LEAD_SURFACE_HREFS exists to
+    // leave alone: no deals and no contacts, but calls still become leads, so
+    // taking the board away would remove the only place its work lands.
+    const items = hrefs("owner", false, false, true);
+    for (const kept of [
+      "/owner/board",
+      "/owner/leads",
+      "/owner/outreach",
+      "/owner/productivity",
+    ]) {
+      expect([kept, items.includes(kept)]).toEqual([kept, true]);
+    }
+    // ...while the CRM-object pages stay gated, which is the other module.
+    expect(items).not.toContain("/owner/deals");
   });
 
   it("still reorders within what's left when crmPrimary is also true", () => {
@@ -252,7 +278,21 @@ describe("ownerNavItemsFor - the client's feature switches", () => {
     //
     // Listed rather than derived, for the reason `shipOff` is: adding one is a
     // deliberate edit here and not a silent change in what this test claims.
-    const noModule = ["/owner/finance", "/owner/finance/advisor"];
+    const noModule = [
+      "/owner/finance",
+      "/owner/finance/advisor",
+      // The API-only tier, on the `api_insights` module, which `withOverrides`
+      // does not grant either. Same mechanism as finance above: an operator
+      // provisions the module, and until they do these read `unavailable`
+      // rather than "switched off".
+      "/owner/kpi",
+      "/owner/kpi/leaderboard",
+      "/owner/kpi/teams",
+      "/owner/settings/performance",
+      "/owner/api-platform",
+      "/owner/api-platform/events",
+      "/owner/plan",
+    ];
     const withNoPreference = withOverrides("owner", {});
     const unfiltered = hrefs("owner", false, true, true);
     expect(withNoPreference).toEqual(

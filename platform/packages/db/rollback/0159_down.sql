@@ -50,13 +50,13 @@ DROP TABLE IF EXISTS dial_campaigns;
 
 -- 2. The permission grants. Custom roles are included even though 0159 never
 --    seeded them: a row for this object type can only have come from 0159, from
---    `seedCrmDefaults` provisioning a new org, or from somebody editing the
+--    `seedRoleDefaults` provisioning a new org, or from somebody editing the
 --    grid - and leaving orphan grants for an object the API no longer knows is
 --    worse than losing the hand edit the header told you to check for.
 DELETE FROM role_permissions WHERE object_type = 'dial_campaign';
 
 -- Note what is deliberately NOT reversed: `PermissionObjectType` in
--- @aura/shared still lists `dial_campaign`, so `seedCrmDefaults` will seed it
+-- @aura/shared still lists `dial_campaign`, so `seedRoleDefaults` will seed it
 -- again for the next org provisioned. That is harmless (a grant on an object
 -- with no routes enforces nothing, which is what ENFORCED_PERMISSIONS exists
 -- to say) and removing it belongs with the code, not with this file.

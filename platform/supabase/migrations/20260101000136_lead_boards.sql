@@ -136,7 +136,7 @@ END $$;
 -- owner can grant it on the Team & permissions screen. Always scope `all`;
 -- "own boards" means nothing.
 --
--- New orgs get the same split from seedCrmDefaults (admin.controller.ts),
+-- New orgs get the same split from seedRoleDefaults (admin.controller.ts),
 -- so this backfill is for the orgs that exist today.
 INSERT INTO role_permissions (org_id, role_id, object_type, action, scope)
 SELECT rp.org_id, rp.role_id, 'lead', 'create', rp.scope
