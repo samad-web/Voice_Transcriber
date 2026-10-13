@@ -6,10 +6,12 @@ import {
   CAPTURE_PLANS,
   CAPTURE_PLAN_ORDER,
   LIMIT_BEHAVIOURS,
+  MANDATE_AFA_CAP_MINOR,
   MONTHLY_UPLIFT_BP,
   PLAN_FAMILY,
   TAX_REGIMES,
   hoursToMinutes,
+  mandateCapHeadroom,
   monthlyFromAnnual,
   perHandsetMinor,
   planFamily,
@@ -47,11 +49,11 @@ describe("the published price list", () => {
     // count is visible as a wrong rupee price rather than hidden in a zero.
     expect(major(CAPTURE_PLANS.record.prices.IN.annualMonthlyMinor)).toBe(999);
     expect(major(CAPTURE_PLANS.capture_starter.prices.IN.annualMonthlyMinor)).toBe(5_999);
-    // ₹19,999 for 200 hours - the project owner's decision, 2026-10-12. The
-    // alternative was ₹14,999 for 150. Both gave 46% margin at the cap; the
-    // price was raised and the hours kept.
-    expect(major(CAPTURE_PLANS.capture_growth.prices.IN.annualMonthlyMinor)).toBe(19_999);
-    expect(CAPTURE_PLANS.capture_growth.transcriptionHours).toBe(200);
+    // ₹12,699 for 185 hours - re-cut 2026-10-13 so the tier can renew without
+    // the customer's bank interrupting it. ₹12,711 is the ceiling (₹15,000
+    // less 18% GST); the hours then follow from the ~20% margin accepted.
+    expect(major(CAPTURE_PLANS.capture_growth.prices.IN.annualMonthlyMinor)).toBe(12_699);
+    expect(CAPTURE_PLANS.capture_growth.transcriptionHours).toBe(185);
     expect(major(CAPTURE_PLANS.capture_enterprise.prices.IN.annualMonthlyMinor)).toBe(39_999);
   });
 
@@ -102,7 +104,7 @@ describe("the published price list", () => {
   it("keeps the shared catalogue and the price list in step", () => {
     // Two files describe the same four tiers - `pricing.ts` for money and
     // `entitlements.ts` for limits - and they are read by different code. A
-    // Growth that sells 200 hours on the page and meters 150 is the one drift
+    // Growth that sells 185 hours on the page and meters 200 is the one drift
     // that would reach a customer as a refusal they paid not to have.
     for (const key of CAPTURE_PLAN_ORDER) {
       const plan = CAPTURE_PLANS[key];
@@ -146,9 +148,9 @@ describe("the published price list", () => {
     // The price list carries a "per handset" row because it is how a buyer
     // compares us to a per-user product, but nothing bills per handset. It is
     // DERIVED so that raising Growth's headline price cannot leave a stale
-    // ₹3,750 sitting under a ₹19,999 plan - which is exactly what a stored
+    // ₹3,750 sitting under a ₹12,699 plan - which is exactly what a stored
     // column did when the price moved.
-    expect(major(perHandsetMinor(CAPTURE_PLANS.capture_growth, "IN"))).toBeCloseTo(4_999.75, 2);
+    expect(major(perHandsetMinor(CAPTURE_PLANS.capture_growth, "IN"))).toBeCloseTo(3_174.75, 2);
     expect(major(perHandsetMinor(CAPTURE_PLANS.capture_starter, "IN"))).toBeCloseTo(2_999.5, 1);
     expect(major(perHandsetMinor(CAPTURE_PLANS.record, "IN"))).toBeCloseTo(499.5, 1);
   });
@@ -161,7 +163,7 @@ describe("monthly billing", () => {
     // ₹999 x 1.2 is ₹1,198.80, and nobody puts that on a price list.
     expect(major(monthlyFromAnnual(99_900))).toBe(1_199);
     expect(major(monthlyFromAnnual(599_900))).toBe(7_199);
-    expect(major(monthlyFromAnnual(1_999_900))).toBe(23_999);
+    expect(major(monthlyFromAnnual(1_269_900))).toBe(15_239);
     expect(major(monthlyFromAnnual(9_900))).toBe(119);
     expect(major(monthlyFromAnnual(89_900))).toBe(1_079);
   });
@@ -179,7 +181,7 @@ describe("monthly billing", () => {
     // Every number on the price list IS the annual-billing figure, so the
     // annual quote must be the stored one and not a round-trip through the
     // uplift.
-    expect(planPriceMinor(CAPTURE_PLANS.capture_growth, "IN", "annual")).toBe(1_999_900);
+    expect(planPriceMinor(CAPTURE_PLANS.capture_growth, "IN", "annual")).toBe(1_269_900);
   });
 });
 
@@ -223,9 +225,10 @@ describe("quoteSubscription", () => {
   it("prices Growth in India with GST on top", () => {
     const quote = quoteSubscription({ planKey: "capture_growth", region: "IN", period: "annual" });
     expect(quote.currency).toBe("INR");
-    expect(major(quote.subtotalMinor)).toBe(19_999);
-    expect(major(quote.taxMinor)).toBeCloseTo(3_599.82, 2);
-    expect(major(quote.totalMinor)).toBeCloseTo(23_598.82, 2);
+    expect(major(quote.subtotalMinor)).toBe(12_699);
+    expect(major(quote.taxMinor)).toBeCloseTo(2_285.82, 2);
+    // Under ₹15,000 - this total IS the mandate constraint, not a derived fact.
+    expect(major(quote.totalMinor)).toBeCloseTo(14_984.82, 2);
     expect(quote.chargeable).toBe(true);
     expect(quote.blockedReason).toBeNull();
   });
@@ -421,8 +424,8 @@ describe("effectiveLimits", () => {
   it("reads a plan's four meters", () => {
     const limits = effectiveLimits(row());
     expect(limits.handsets).toBe(4);
-    expect(limits.transcriptionHours).toBe(200);
-    expect(limits.transcriptionMinutes).toBe(12_000);
+    expect(limits.transcriptionHours).toBe(185);
+    expect(limits.transcriptionMinutes).toBe(11_100);
     expect(limits.audioRetentionDays).toBe(90);
     expect(limits.storageCapBytes).toBe(15 * BYTES_PER_GIB);
     expect(limits.speakerSeparation).toBe(true);
@@ -474,8 +477,8 @@ describe("effectiveLimits", () => {
       row({ grant_amounts: { topup_hours_25: 25, topup_hours_100: 100 } }),
     );
     expect(limits.toppedUpHours).toBe(125);
-    expect(limits.transcriptionHours).toBe(325);
-    expect(limits.transcriptionMinutes).toBe(19_500);
+    expect(limits.transcriptionHours).toBe(310);
+    expect(limits.transcriptionMinutes).toBe(18_600);
   });
 
   it("lets an operator's own ceiling win over the plan's", () => {
@@ -485,7 +488,7 @@ describe("effectiveLimits", () => {
     const limits = effectiveLimits(row({ asr_monthly_minutes_budget: 600 }));
     expect(limits.transcriptionMinutes).toBe(600);
     // The plan's own figure is still reported, for the page that shows both.
-    expect(limits.transcriptionHours).toBe(200);
+    expect(limits.transcriptionHours).toBe(185);
   });
 
   it("lets Record record but never transcribe", () => {
@@ -544,7 +547,7 @@ describe("effectiveLimits", () => {
     );
     expect(limits.planKey).toBe("record");
     expect(limits.handsets).toBe(4);
-    expect(limits.transcriptionHours).toBe(200);
+    expect(limits.transcriptionHours).toBe(185);
   });
 });
 
@@ -563,5 +566,56 @@ describe("periodKeyUtc", () => {
     // known divergence the price list accepts: a floor in Dubai sees its
     // allowance reset partway through their evening.
     expect(periodKeyUtc(new Date("2026-10-31T22:00:00Z"))).toBe("2026-10");
+  });
+});
+
+/**
+ * THE MANDATE CAP, ENFORCED.
+ *
+ * Every plan+cadence offered to a stranger must debit under ₹15,000 including
+ * GST, or the customer's bank interrupts the renewal and a self-serve sale
+ * silently becomes a support ticket. A price edit is exactly how that breaks,
+ * and the breakage is invisible: the checkout still works, the first payment
+ * still succeeds, and only the SECOND month fails - by which time whoever
+ * changed the number has moved on.
+ *
+ * Record on the annual cadence is the tight one. It is nowhere near the cap
+ * today, but Growth sits ₹15 under it, so this is not a theoretical guard.
+ */
+describe("the RBI mandate cap", () => {
+  it("every self-serve plan and cadence debits under the AFA ceiling", () => {
+    const over: string[] = [];
+    for (const plan of Object.values(CAPTURE_PLANS)) {
+      for (const period of plan.selfServePeriods ?? []) {
+        for (const region of ["IN", "AE"] as const) {
+          if (!plan.prices[region].sellable) continue;
+          const headroom = mandateCapHeadroom(plan, region, period);
+          if (headroom < 0) over.push(`${plan.key}/${region}/${period} over by ${-headroom}`);
+        }
+      }
+    }
+    expect(over).toEqual([]);
+  });
+
+  it("a negotiated plan is never offered self-serve", () => {
+    for (const plan of Object.values(CAPTURE_PLANS)) {
+      if (plan.negotiated) expect(plan.selfServePeriods ?? []).toEqual([]);
+    }
+  });
+
+  it("Growth is annual-only, because the monthly uplift breaks the cap", () => {
+    const growth = CAPTURE_PLANS.capture_growth;
+    expect(growth.selfServePeriods).toEqual(["annual"]);
+    expect(mandateCapHeadroom(growth, "IN", "annual")).toBeGreaterThanOrEqual(0);
+    // The reason it is annual-only, asserted rather than described.
+    expect(mandateCapHeadroom(growth, "IN", "monthly")).toBeLessThan(0);
+  });
+
+  it("Growth keeps the margin the owner accepted (~20%) at its included cap", () => {
+    const growth = CAPTURE_PLANS.capture_growth;
+    const priceMinor = growth.prices.IN.annualMonthlyMinor;
+    const asrCostMinor = (growth.transcriptionHours ?? 0) * 54 * 100;
+    const margin = (priceMinor - asrCostMinor) / priceMinor;
+    expect(margin).toBeGreaterThan(0.2);
   });
 });

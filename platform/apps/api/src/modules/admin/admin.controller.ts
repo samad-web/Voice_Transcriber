@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import {
   BadRequestException,
   Body,
@@ -12,148 +11,21 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import type { PoolClient } from "pg";
 import { z } from "zod";
 import { PIPELINE_QUEUE, queueDepth } from "@aura/queue";
+import { OrgModule, WhatsAppProvider } from "@aura/shared";
 import {
-  DEFAULT_PIPELINE_STAGES,
-  OrgModule,
-  PermissionObjectType,
-  WhatsAppProvider,
-} from "@aura/shared";
+  provisionTenant,
+  seedBoardDefaults,
+  seedCrmDefaults,
+  seedRoleDefaults,
+} from "./provisioning";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
 import { auditActor } from "../../common/audit-actor";
 
-/** The 5 system roles seeded for every org - mirrors migration 0039's own seed. */
-const SYSTEM_ROLES = [
-  { key: "platform_admin", name: "Platform Admin" },
-  { key: "org_admin", name: "Org Admin" },
-  { key: "workspace_admin", name: "Workspace Admin" },
-  { key: "workspace_member", name: "Workspace Member" },
-  { key: "viewer", name: "Viewer" },
-] as const;
-
-/**
- * Give an org the 5 system roles with a full permission grid across every
- * `PermissionObjectType` - what migrations 0039/0041/0055/0059/0060
- * one-time-backfilled for orgs that already existed when each of them ran.
- *
- * Runs on EVERY provisioning path, not only CRM ones, and that is the whole
- * point of it being its own function. The grid is what `PermissionsGuard` and
- * `CrmPermissionsGuard` join against, and it governs far more than CRM
- * objects - leads, tasks, lead boards, resources, appointments. An org with no
- * `roles` rows therefore gets a 403 on every permission-gated route for every
- * real user (a bare admin key with no asserted user is the only caller that
- * still gets through - see crm-permissions.guard.ts), and the owner cannot
- * repair it from the console, because managing roles needs the grid that is
- * missing.
- *
- * This used to live inside `seedCrmDefaults` and so ran only when 'crm' was
- * being turned on. That was invisible while every tenant had the CRM. The
- * API-only tier (`aura, api_insights`, migration 0192) is the first shape of
- * tenant that has none, and it provisioned with zero roles and zero grants.
- *
- * Object types are read from the shared `PermissionObjectType` enum rather
- * than hardcoded, so a future object type that widens that enum is seeded
- * here automatically instead of needing another one-time migration backfill.
- *
- * Idempotent by convention, not by construction: callers only invoke this
- * when `roles` has zero rows for the org, so provisioning a module twice
- * never double-inserts.
- */
-async function seedRoleDefaults(client: PoolClient, orgId: string): Promise<void> {
-  await client.query(
-    `INSERT INTO roles (org_id, key, name, is_system)
-     SELECT $1, v.key, v.name, true
-       FROM (VALUES ${SYSTEM_ROLES.map((_, i) => `($${i * 2 + 2}, $${i * 2 + 3})`).join(", ")})
-         AS v(key, name)`,
-    [orgId, ...SYSTEM_ROLES.flatMap((r) => [r.key, r.name])],
-  );
-
-  await client.query(
-    `INSERT INTO role_permissions (org_id, role_id, object_type, action, scope)
-     SELECT r.org_id, r.id, ot.object_type, a.action, 'all'
-       FROM roles r
-       CROSS JOIN unnest($2::text[]) AS ot(object_type)
-       CROSS JOIN (VALUES ('view'), ('create'), ('edit'), ('delete'), ('export')) AS a(action)
-      WHERE r.org_id = $1
-        AND r.is_system
-        AND (
-          r.key IN ('platform_admin', 'org_admin', 'workspace_admin')
-          -- Reshaping or deleting a lead board is an administrator's call, not
-          -- a telecaller's (migration 0136 applies the same split to existing orgs).
-          OR (r.key = 'workspace_member' AND a.action IN ('view', 'create', 'edit')
-              AND ot.object_type <> 'lead_board')
-          OR (r.key = 'viewer' AND a.action = 'view')
-        )`,
-    [orgId, PermissionObjectType.options],
-  );
-}
-
-/**
- * The CRM half of provisioning: the default deal pipeline that migrations
- * 0034/0075 backfilled. Called only when the 'crm' module is being turned on
- * (createTenant's `enableCrm` flag, or `PATCH tenants/:orgId/modules`).
- *
- * Without it, an org with 'crm' enabled but never seeded gets zero CRM
- * projection from calls (apps/worker/src/pipeline/pipeline.ts's "no default
- * pipeline for org" - deals.controller.ts's resolvePipeline() throws the same
- * way on an explicit create).
- *
- * The roles and the grid are NOT here - see `seedRoleDefaults`, which every
- * tenant gets whether or not it has the CRM.
- */
-async function seedCrmDefaults(client: PoolClient, orgId: string): Promise<void> {
-  // FIND-or-create, not a bare INSERT.
-  //
-  // seedBoardDefaults (below) runs on every provisioning path and already
-  // find-or-creates the org's default pipeline, because boards.pipeline_id is
-  // NOT NULL. An unguarded INSERT here would therefore add a SECOND pipeline
-  // with is_default = true - and "exactly one default per org" is only
-  // app-enforced (0034 says so), so nothing in the database would stop it. The
-  // same collision is reachable without boards at all: migration 0075 seeds a
-  // pipeline for every org, so enabling 'crm' on a tenant created before this
-  // change would double up too.
-  //
-  // One pipeline, shared by the board and the CRM, is also the correct
-  // outcome: the board's deal_stage_key bridge points at that pipeline's
-  // stages, and a second competing default is exactly the split B2's bug is.
-  await client.query(
-    `INSERT INTO deal_pipelines (org_id, name, stages, is_default)
-     SELECT $1, 'Sales Pipeline', $2::jsonb, true
-      WHERE NOT EXISTS (
-        SELECT 1 FROM deal_pipelines p WHERE p.org_id = $1 AND p.status = 'active')`,
-    [orgId, JSON.stringify(DEFAULT_PIPELINE_STAGES)],
-  );
-}
-
-/**
- * Give an org the editable board every other org has (migration 0075).
- *
- * Delegates to the `seed_default_board(uuid)` SQL function rather than
- * reimplementing it here, and that is deliberate: 0075's own backfill calls
- * the SAME function for the orgs that already existed, so a CRM provisioned
- * from the admin dashboard today is structurally identical to one that
- * predates the migration. A TypeScript copy of that SQL would drift the first
- * time either side was edited, and the failure mode is a tenant whose board
- * quietly differs from every other tenant's - invisible until someone tries to
- * reshape it.
- *
- * Idempotent by CONSTRUCTION, not by convention (unlike seedCrmDefaults): the
- * function returns the existing default board untouched if there is one, so
- * every caller may invoke it unconditionally.
- *
- * Runs for EVERY tenant, not only CRM ones. `/owner/board` is the leads board
- * and every org has leads; `enabled_modules` is what gates CRM access, not the
- * presence of seeded rows - the same reasoning updateModules already applies
- * when it declines to delete anything on module removal.
- */
-async function seedBoardDefaults(client: PoolClient, orgId: string): Promise<void> {
-  await client.query(`SELECT seed_default_board($1)`, [orgId]);
-}
 
 /**
  * Each pipeline stage as the state machine expresses it: the status a call sits
@@ -260,99 +132,35 @@ export class AdminController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;
 
-    const rawToken = randomBytes(32).toString("base64url");
-    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-
-    // An explicit `modules` list wins over the `enableCrm` shorthand; 'aura' is
-    // forced in either way, because every tenant created here is given an
-    // instance, a workspace and devices, so an org without it would be
-    // describing itself falsely from its first second.
-    const modules: OrgModule[] = p.modules
-      ? Array.from(new Set<OrgModule>(["aura", ...p.modules]))
-      : p.enableCrm
-        ? ["aura", "crm"]
-        : ["aura"];
-
-    const whatsappProvider = p.whatsappProvider ?? "none";
-
     const client = await this.db.adminPool().connect();
     try {
       await client.query("BEGIN");
 
-      const {
-        rows: [org],
-      } = await client.query(
-        `INSERT INTO organizations (name, consent_policy, retention_days, region,
-                                    enabled_modules, whatsapp_provider)
-         VALUES ($1,
-                 COALESCE($2, 'tone'),
-                 COALESCE($3, 90),
-                 COALESCE($4, 'ap-south-1'),
-                 $5, $6)
-         RETURNING id, name, status, consent_policy, retention_days, region,
-                   enabled_modules, whatsapp_provider, created_at`,
-        [
-          p.name,
-          p.consentPolicy ?? null,
-          p.retentionDays ?? null,
-          p.region ?? null,
-          modules,
-          whatsappProvider,
-        ],
-      );
-
-      // Board first: it find-or-creates the org's one default pipeline, which
-      // seedCrmDefaults then reuses rather than competing with.
-      await seedBoardDefaults(client, org.id);
-      // Unconditional: the permission grid is not a CRM thing. See
-      // seedRoleDefaults - an org without it 403s on every gated route and
-      // cannot be repaired from its own console.
-      await seedRoleDefaults(client, org.id);
-      if (modules.includes("crm")) await seedCrmDefaults(client, org.id);
-
-      const {
-        rows: [workspace],
-      } = await client.query(
-        `INSERT INTO workspaces (org_id, name) VALUES ($1, $2) RETURNING id, name`,
-        [org.id, p.workspaceName],
-      );
-
-      const {
-        rows: [instance],
-      } = await client.query(
-        `INSERT INTO instances (org_id, workspace_id, name)
-         VALUES ($1, $2, $3)
-         RETURNING id, name, config_version, created_at`,
-        [org.id, workspace.id, p.name],
-      );
-
-      const {
-        rows: [token],
-      } = await client.query(
-        `INSERT INTO enrollment_tokens (org_id, instance_id, token_hash, expires_at, max_uses)
-         VALUES ($1, $2, $3, now() + make_interval(mins => $4), $5)
-         RETURNING id, expires_at, max_uses`,
-        [org.id, instance.id, tokenHash, p.tokenTtlMinutes, p.tokenMaxUses],
-      );
-
-      await client.query(
-        `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
-         VALUES ($1, $4, $2, 'tenant.create', 'organization', $3)`,
-        [org.id, auditActor(req).id, org.id, auditActor(req).type],
+      // The shared path, not a copy of it. Self-serve signup calls the same
+      // function - see provisioning.ts for why a second caller is exactly the
+      // condition under which an inline body becomes dangerous.
+      const { org, workspace, instance, enrollment } = await provisionTenant(
+        client,
+        {
+          name: p.name,
+          workspaceName: p.workspaceName,
+          modules: p.modules,
+          enableCrm: p.enableCrm,
+          consentPolicy: p.consentPolicy ?? null,
+          retentionDays: p.retentionDays ?? null,
+          region: p.region ?? null,
+          whatsappProvider: p.whatsappProvider,
+          tokenTtlMinutes: p.tokenTtlMinutes,
+          tokenMaxUses: p.tokenMaxUses,
+        },
+        auditActor(req),
       );
 
       await client.query("COMMIT");
 
       return {
         tenant: { ...org, workspace, instance },
-        enrollment: {
-          orgId: org.id,
-          instanceId: instance.id,
-          // Shown once, never retrievable again - only the hash is stored.
-          adminKey: rawToken,
-          expiresAt: token.expires_at,
-          maxUses: token.max_uses,
-        },
+        enrollment,
       };
     } catch (err) {
       await client.query("ROLLBACK");

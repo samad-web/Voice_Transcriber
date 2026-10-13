@@ -202,7 +202,50 @@ export interface CapturePlanSpec {
   aiAnalysis: boolean;
   /** Negotiated rather than self-serve: no checkout, no trial, no top-up page. */
   negotiated?: boolean;
+  /**
+   * The cadences a stranger may buy from the public checkout with no human
+   * involved. A cadence belongs here ONLY if its GST-inclusive debit clears
+   * `MANDATE_AFA_CAP_MINOR` - otherwise the customer's bank interrupts every
+   * renewal and the sale is not self-serve, it is a support ticket on a timer.
+   *
+   * Empty or absent = this plan is sales-led. `mandateCapHeadroom` is the
+   * arithmetic, and `pricing.test.ts` fails the build if a price edit ever
+   * puts a listed cadence over the line.
+   */
+  selfServePeriods?: readonly BillingPeriod[];
   prices: Record<BillingRegion, RegionPrice>;
+}
+
+/**
+ * The largest recurring debit, INCLUDING tax, that clears without the customer
+ * completing additional-factor authentication with their bank.
+ *
+ * RBI's e-mandate framework (consolidated 21 April 2026) sets this at ₹15,000
+ * for ordinary merchants. The ₹1,00,000 ceiling that also circulates applies
+ * only to insurance premiums, mutual-fund subscriptions and credit-card bills -
+ * software does not qualify, and assuming otherwise is the most expensive
+ * mistake available on this file.
+ *
+ * INR minor units. It is deliberately not per-region: AE is not sellable yet,
+ * and inventing a UAE equivalent would be inventing a regulator's rule.
+ */
+export const MANDATE_AFA_CAP_MINOR = 1_500_000;
+
+/**
+ * What one debit of this plan/cadence leaves under the AFA cap, in minor units.
+ * Negative means the bank will interrupt every renewal.
+ *
+ * Tax is applied the same way `quoteSubscription` applies it - once, on the
+ * whole amount - so this answers the question the bank actually asks, which is
+ * about the total it is asked to move, not the list price.
+ */
+export function mandateCapHeadroom(
+  plan: CapturePlanSpec,
+  region: BillingRegion,
+  period: BillingPeriod,
+): number {
+  const net = planPriceMinor(plan, region, period);
+  return MANDATE_AFA_CAP_MINOR - (net + taxOn(net, region));
 }
 
 /**
@@ -214,14 +257,39 @@ export interface CapturePlanSpec {
  * the per-hour cost is zero. Starter and Growth add transcription and analysis.
  * Enterprise is where every meter becomes a negotiated number.
  *
- * ── GROWTH: ₹19,999 FOR 200 HOURS ───────────────────────────────────────────
+ * ── GROWTH: ₹12,699 FOR 185 HOURS ───────────────────────────────────────────
  *
- * Settled by the project owner, 2026-10-12. Growth is the only tier that sells
- * speaker separation, which means Sarvam diarized at ₹45 an audio-hour -
- * ₹10,800 at the 200-hour cap. At the price list's original ₹14,999 that left
- * 28% margin, which is not a tier to sell. The two ways out gave identical 46%
- * margin at the cap: raise the price to ₹19,999 and keep 200 hours, or hold
- * ₹14,999 and cut to 150. The price was raised.
+ * Re-cut by the project owner on 2026-10-13 so the tier can be sold WITHOUT a
+ * human. Growth is the only tier that sells speaker separation, which means
+ * Sarvam diarized at ₹45 an audio-hour - an effective ₹54 once the pipeline's
+ * own overhead is counted, which is the figure the 2026-10-12 analysis used.
+ *
+ * The binding constraint is no longer margin, it is the bank. RBI's e-mandate
+ * framework clears a recurring debit WITHOUT the customer re-authenticating
+ * only up to ₹15,000, and the ₹1,00,000 carve-out covers insurance, mutual
+ * funds and credit-card bills - not software. The debit is GST-INCLUSIVE, so
+ * the ceiling on the list price is ₹15,000 / 1.18 = ₹12,711. That is why this
+ * is ₹12,699 and not the ₹14,999 it reads like it should be: ₹14,999 debits
+ * ₹17,699 and would hand every customer a bank authentication link every
+ * single renewal. See [[rbi-15k-mandate-ceiling]] and `mandateCapHeadroom`.
+ *
+ * At ₹12,699 the hours follow from the margin the owner accepted (~20%):
+ * 185 hours costs ₹9,990 and leaves 21.3%. The previous shape - ₹19,999 for
+ * 200 hours at 46% - was the right answer when a human closed every sale and
+ * the debit size did not matter. It is the wrong answer for a tier that has to
+ * renew by itself.
+ *
+ * ── WHY ANNUAL CADENCE ONLY, SELF-SERVE ─────────────────────────────────────
+ *
+ * Monthly billing adds `MONTHLY_UPLIFT_BP` (20%), so Growth billed monthly is
+ * ₹15,239 ex-GST = ₹17,982 debited, which is back over the cap. Growth is
+ * therefore self-serve on the ANNUAL cadence only (₹14,985 debited, monthly).
+ * Record and Starter clear on both cadences and are self-serve on both.
+ *
+ * Note that "annual billing" here is a twelve-month commitment at a discounted
+ * MONTHLY rate - `planPriceMinor` returns one month on either cadence. It is
+ * not a lump sum, which is what makes an annual Growth subscription fit under
+ * a ₹15,000 mandate at all.
  *
  * The UAE column is left at the published AED 899. It is not sellable (see the
  * header), so there is nothing to re-derive yet, and inventing a figure the
@@ -247,6 +315,8 @@ export const CAPTURE_PLANS: Record<CapturePlanKey, CapturePlanSpec> = {
     storageCapGb: 5,
     speakerSeparation: false,
     aiAnalysis: false,
+    // Both cadences clear the cap easily (₹1,179 and ₹1,415 debited).
+    selfServePeriods: ["annual", "monthly"],
     prices: {
       IN: { currency: "INR", annualMonthlyMinor: 99_900, sellable: true },
       AE: { currency: "AED", annualMonthlyMinor: 9_900, sellable: false },
@@ -263,6 +333,8 @@ export const CAPTURE_PLANS: Record<CapturePlanKey, CapturePlanSpec> = {
     storageCapGb: 5,
     speakerSeparation: false,
     aiAnalysis: true,
+    // ₹7,079 and ₹8,495 debited - both well under ₹15,000.
+    selfServePeriods: ["annual", "monthly"],
     prices: {
       IN: { currency: "INR", annualMonthlyMinor: 599_900, sellable: true },
       AE: { currency: "AED", annualMonthlyMinor: 39_900, sellable: false },
@@ -271,16 +343,19 @@ export const CAPTURE_PLANS: Record<CapturePlanKey, CapturePlanSpec> = {
   capture_growth: {
     key: "capture_growth",
     name: "Growth",
-    blurb: "Four handsets, 200 hours, and who talked how much on every call.",
+    blurb: "Four handsets, 185 hours, and who talked how much on every call.",
     sort: 3,
     handsets: 4,
-    transcriptionHours: 200,
+    transcriptionHours: 185,
     audioRetentionDays: 90,
     storageCapGb: 15,
     speakerSeparation: true,
     aiAnalysis: true,
+    // ANNUAL ONLY. Monthly adds the 20% uplift -> ₹17,982 debited, over the
+    // cap. See the tier note above.
+    selfServePeriods: ["annual"],
     prices: {
-      IN: { currency: "INR", annualMonthlyMinor: 1_999_900, sellable: true },
+      IN: { currency: "INR", annualMonthlyMinor: 1_269_900, sellable: true },
       AE: { currency: "AED", annualMonthlyMinor: 89_900, sellable: false },
     },
   },

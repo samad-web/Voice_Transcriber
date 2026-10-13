@@ -29,7 +29,8 @@ import {
  *
  * Doc 10 §6 said not to publish tiers until billing could enforce them. It
  * can now: migration 0197 seeds the plans, `Entitlements.check()` enforces
- * the four meters, and the owner settled Growth at ₹19,999 on 2026-10-12.
+ * the four meters, and Growth was re-cut to ₹12,699/185h on 2026-10-13 so its
+ * debit clears the ₹15,000 e-mandate ceiling - see pricing.ts.
  *
  * ── INDIA ONLY, DELIBERATELY ──────────────────────────────────────────────
  *
@@ -81,7 +82,7 @@ export interface PlanRow {
 }
 
 function money(minor: number): string {
-  // `whole: true` - the price list has no paise in it, and "₹19,999.00" on a
+  // `whole: true` - the price list has no paise in it, and "₹12,699.00" on a
   // marketing page reads like a bank statement.
   return formatMoney(minor, { currency: "INR", whole: true });
 }

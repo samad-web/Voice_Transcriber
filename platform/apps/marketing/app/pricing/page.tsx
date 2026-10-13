@@ -15,7 +15,8 @@ import { BRAND, LEGAL_ENTITY, SITE_URL, startHref } from "@/lib/site";
  * from an SMB, who simply closes the tab. The same section said not to
  * publish tiers until billing could enforce them - and that is now true
  * (migration 0197 seeds the plans, `Entitlements.check()` enforces the four
- * meters, and the owner settled Growth at ₹19,999 on 2026-10-12), so the
+ * meters, and Growth was re-cut to ₹12,699 on 2026-10-13 to clear the RBI
+ * auto-debit ceiling), so the
  * block is lifted.
  *
  * ── EVERY NUMBER COMES FROM @aura/shared ──────────────────────────────────
@@ -42,7 +43,7 @@ export const metadata: Metadata = pageMetadata({
   title: "Pricing",
   description:
     "What Auratel costs: four plans from ₹999 a month for recording alone to " +
-    "₹19,999 for 200 transcription hours with speaker separation. Per month, " +
+    "₹12,699 for 185 transcription hours with speaker separation. Per month, " +
     "excluding GST, with every included limit stated.",
   path: "/pricing",
 });

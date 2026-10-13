@@ -49,6 +49,19 @@ const MIGRATION = migrationPath("0192_insights_plans.sql");
  */
 const MIGRATION_0197 = migrationPath("0197_capture_plans_and_billing.sql");
 
+/**
+ * Migrations that RESTATE a plan's seed blob, newest last.
+ *
+ * 0197 restated all eight plans. A later migration may restate one of them -
+ * 0199 does, to re-cut Growth under the RBI auto-debit ceiling. The drift check
+ * must read the LAST word on each plan, or it pins a superseded number forever
+ * and reports drift against a value nothing uses any more.
+ */
+const SEED_RESTATEMENTS = [
+  MIGRATION_0197,
+  migrationPath("0199_growth_mandate_reprice.sql"),
+];
+
 describe("entitlement catalogue", () => {
   it("has one spec per key, and no key without a spec", () => {
     const keys = ENTITLEMENTS.map((e) => e.key);
@@ -227,11 +240,18 @@ describe("migration 0197's seed", () => {
 
   function blobFor(plan: PlanKey): Record<string, unknown> {
     const marker = `-- PLAN_SEED_${plan.toUpperCase()}`;
-    const from = sql.indexOf(marker);
-    expect([plan, from >= 0]).toEqual([plan, true]);
-    const open = sql.indexOf("'{", from);
-    const close = sql.indexOf("}'::jsonb", open);
-    return JSON.parse(sql.slice(open + 1, close + 1));
+    // Last restatement wins - see SEED_RESTATEMENTS.
+    let found: string | null = null;
+    for (const file of SEED_RESTATEMENTS) {
+      const text = readFileSync(file, "utf8");
+      const from = text.indexOf(marker);
+      if (from < 0) continue;
+      const open = text.indexOf("'{", from);
+      const close = text.indexOf("}'::jsonb", open);
+      found = text.slice(open + 1, close + 1);
+    }
+    expect([plan, found !== null]).toEqual([plan, true]);
+    return JSON.parse(found as string);
   }
 
   it("matches PLAN_SEED exactly, for all eight plans and all twenty-seven keys", () => {

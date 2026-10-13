@@ -645,7 +645,7 @@ export const PLAN_SEED: Record<PlanKey, Record<EntitlementKey, EntitlementValue>
     paired_handsets: { limit: 4 },
     crm: { enabled: true },
     ai_features: { enabled: true },
-    transcription_hours_monthly: { limit: 200, per: "month" },
+    transcription_hours_monthly: { limit: 185, per: "month" },
     audio_retention_days: { days: 90 },
     storage_cap_gb: { limit: 15 },
     speaker_separation: { enabled: true },
