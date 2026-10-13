@@ -891,6 +891,14 @@ const CROSS_TENANT = [
   "GET /auth/invites/preview",
   "POST /auth/invites/prepare",
   "POST /auth/invites/accept",
+  // Set a password for an invited address (self-serve, for buyers with no
+  // Google account). Classified here with its siblings because it trusts
+  // the same thing they do: the 256-bit single-use invite token, which was
+  // mailed to the address it names. It CREATES a login and stops - it does
+  // not accept the invite - and it refuses outright if that address already
+  // has one, because setting a password on an existing account from a link
+  // would be takeover.
+  "POST /auth/invites/set-password",
   "POST /auth/identity/link",
   "GET /auth/me",
   "POST /admin/tenants",
@@ -2625,7 +2633,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 832 routes, partitioned 714 tenant / 57 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
+  it("has 833 routes, partitioned 715 tenant / 57 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2868,8 +2876,8 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // row, and the status the return page polls. They are the only unguarded
     // routes in the tree that can lead to a row in `organizations`, and they
     // get there only via a signature the platform verified.
-    expect(ROUTES).toHaveLength(832);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(832);
+    expect(ROUTES).toHaveLength(833);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(833);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2972,10 +2980,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(832); // = ROUTES.length: every route in exactly one class
+    ).toBe(833); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 756 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 757 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -3047,7 +3055,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // ours, and the signature over the raw bytes is what stands in for one.
     // 756: plus offboarding's two (0198). Both arrive on the console's admin
     // key with a user header, like every other route on this controller.
-    expect(principalRoutes).toHaveLength(756);
+    expect(principalRoutes).toHaveLength(757);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

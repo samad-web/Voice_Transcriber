@@ -31,6 +31,9 @@ export type InviteRefusal =
   | "email_mismatch"
   | "unlinked_login"
   | "other_login"
+  // The address already has a login, so a password cannot be SET from a
+  // link - that would be takeover. They sign in with the one they have.
+  | "already_registered"
   | "not_configured";
 
 export function refuse(

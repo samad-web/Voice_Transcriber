@@ -280,6 +280,66 @@ export class InvitesService {
    * Accept. `accessToken` is the Supabase session the OAuth callback has just
    * received; everything about who this is comes from GoTrue's answer to it.
    */
+  /**
+   * Create an email+password login for an invite, so a buyer without a Google
+   * account is not stranded.
+   *
+   * ── WHY THIS EXISTS ──────────────────────────────────────────────────────
+   *
+   * `/invite/[token]` offered Google and nothing else, and its fallback text
+   * read "Let whoever invited you know". For an operator-issued invite that is
+   * fine - there IS somebody. For a self-serve purchase there is not: the buyer
+   * has paid, has no account, has no Google account, and the whole promise was
+   * that they would never need to contact us. That is the one dead end the
+   * self-serve flow cannot have.
+   *
+   * ── WHY IT IS SAFE TO SET A PASSWORD FROM A LINK ─────────────────────────
+   *
+   * The invite token IS the proof of email ownership: it was mailed to that
+   * address, it is 256 bits, stored only as a SHA-256 hash, single-use and
+   * expiring. Accepting it with a password is exactly as strong as accepting it
+   * with Google - in both cases what is being trusted is that the person
+   * holding the link is the person who received the mail. This is the standard
+   * set-password-from-an-emailed-link flow, and `email_confirm: true` is
+   * correct for the same reason.
+   *
+   * ── WHAT IT DELIBERATELY DOES NOT DO ─────────────────────────────────────
+   *
+   * It does not accept the invite. It creates the login and stops, leaving the
+   * caller to sign in normally and then POST to `invites/accept` with a real
+   * access token - the SAME path Google takes. Every rule about binding
+   * `sso_subject`, re-pointing a stale one, refusing a pre-registered operator
+   * and locking the row under a double click lives in `accept`, and a second
+   * copy of that reasoning here is how the two drift until one of them lets
+   * somebody into the wrong workspace.
+   *
+   * It also refuses outright when a login already exists for the address.
+   * Setting a password on an existing account from a link would be account
+   * takeover: anyone who could get an invite issued to an address could seize
+   * the account already using it. Those people already have a password, so the
+   * honest answer is "sign in with it".
+   */
+  async setPasswordForInvite(token: string, password: string): Promise<{ email: string }> {
+    if (!this.supabase.configured) {
+      refuse(503, "not_configured", "Sign-in is not configured on this platform yet.");
+    }
+    const found = await this.findByToken(token);
+    if (!found) refuse(404, "invalid", "This invite link isn't valid.");
+    assertInvitePending(found);
+
+    const existing = await this.supabase.findUserByEmail(found.email);
+    if (existing) {
+      refuse(
+        409,
+        "already_registered",
+        `${found.email} already has a sign-in. Sign in with it, then open this link again.`,
+      );
+    }
+
+    await this.supabase.createUser(found.email, password, { invited: true });
+    return { email: found.email };
+  }
+
   async accept(
     token: string,
     accessToken: string,

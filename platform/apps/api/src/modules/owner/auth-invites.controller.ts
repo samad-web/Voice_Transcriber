@@ -87,6 +87,36 @@ export class AuthInvitesController {
     return { kind: "org" as const, ...result };
   }
 
+  /**
+   * Set a password for an invited address, for people with no Google account.
+   *
+   * Creates the login and STOPS - the caller then signs in normally and posts
+   * to `invites/accept` exactly as the Google path does, so all the membership
+   * and identity-binding rules stay in one place. See
+   * `InvitesService.setPasswordForInvite`.
+   *
+   * Operator invites are deliberately excluded: becoming platform staff is not
+   * something to do from a password box, and every superadmin already has a
+   * Google account because that is how they were invited.
+   */
+  @Post("invites/set-password")
+  async setPassword(@Body() body: unknown) {
+    const parsed = z
+      .object({
+        token: Token,
+        // 12 is above GoTrue's default 6. Someone who never signs in again
+        // after today still owns a workspace with call recordings in it, so the
+        // floor is set here rather than inherited.
+        password: z.string().min(12).max(200),
+      })
+      .safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    if (await this.operatorInvites.knows(parsed.data.token)) {
+      throw new BadRequestException("this invite must be accepted with Google");
+    }
+    return this.invites.setPasswordForInvite(parsed.data.token, parsed.data.password);
+  }
+
   /** Back from Google with no invite: map to an existing user, never create one. */
   @Post("identity/link")
   async link(@Body() body: unknown) {

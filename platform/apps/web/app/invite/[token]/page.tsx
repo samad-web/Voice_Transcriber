@@ -5,6 +5,7 @@ import { API_URL, crossTenantHeaders } from "@/lib/server-api";
 import { googleSignInEnabled } from "@/lib/supabase/google";
 import { authErrorMessage } from "../../login/auth-errors";
 import { GoogleButton } from "../../login/google-button";
+import { SetPasswordForm } from "./set-password-form";
 
 // The token is a credential: keep the page out of search indexes, and keep its
 // URL out of the Referer header of anything the page links to.
@@ -183,13 +184,20 @@ export default async function InvitePage({
                   Choose the Google account for <span className="font-medium text-text">{preview.email}</span>. Any
                   other account is turned away, and the link works once.
                 </p>
+                <div className="flex items-center gap-3 py-1">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-xs text-text-muted">or</span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
               </>
-            ) : (
-              <p className="rounded-md border border-warning bg-warning-subtle p-3 text-sm leading-relaxed text-warning-text">
-                Google sign-in isn&apos;t switched on for this platform yet, so this invite can&apos;t be accepted.
-                Let whoever invited you know.
-              </p>
-            )}
+            ) : null}
+            {/* Always offered, with or without Google.
+
+                Someone who bought this workspace themselves has nobody to ask
+                if Google does not suit them - no account, no inviter, and by
+                design no support queue. A password is the path that does not
+                depend on them already having an account somewhere else. */}
+            <SetPasswordForm token={token} email={preview.email} />
           </>
         ) : (
           <>
