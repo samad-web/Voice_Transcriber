@@ -87,6 +87,10 @@ export type BrandingPreset = z.infer<typeof BrandingPreset>;
 export const Branding = z.object({
   logoUrl: AssetUrl.nullish(),
   faviconUrl: AssetUrl.nullish(),
+  /** Stored and still uploadable, but rendered NOWHERE since it was taken out
+   *  of the owner console layout: it appeared on every page rather than one,
+   *  `object-cover` cropped it to a 128px strip, and it pushed every screen
+   *  down by that much. Kept so no tenant's saved image is destroyed. */
   bannerUrl: AssetUrl.nullish(),
   /** Shown in the sidebar/mobile nav in place of the full logo once it is
    *  collapsed to an icon rail - see sidebar.tsx. Falls back to `logoUrl`,

@@ -105,7 +105,7 @@ const IMAGES = [
     key: "bannerUrl",
     kind: "banner",
     label: "Banner",
-    hint: "A wide image for the top of the console. Optional.",
+    hint: "Saved, but no longer shown. It used to sit across the top of every console page, where it cropped badly and pushed each page down.",
   },
   {
     key: "loginBackgroundUrl",
@@ -136,7 +136,9 @@ function paletteOf(form: BrandingView): Record<PaletteKey, string | null> {
  * ── WHY THESE FIELDS ─────────────────────────────────────────────────────────
  *
  * Five images (logo, favicon, collapsed-sidebar icon, banner, sign-in
- * background - the last stored but not yet rendered, see branding.ts) and six
+ * background - the last TWO are stored but rendered nowhere: the sign-in
+ * background because every workspace still signs in at one shared page, the
+ * banner because it was removed from the console layout, see branding.ts) and six
  * colours (primary/secondary, their hover states, text, and the app
  * background), plus saved palettes an admin can switch between in one click.
  * `secondaryColor`, `browserTitle` etc. keep their original names - see

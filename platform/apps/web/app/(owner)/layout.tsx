@@ -314,27 +314,21 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           callIntelEnabled={callIntelEnabled}
           entitlement={entitlement}
         />
-        {/* Above the tenant's own banner and above the page: it is the first
-            thing a new client should read, and the last thing they should have
-            to scroll for. */}
+        {/* The first thing a new client should read, and the last thing they
+            should have to scroll for. */}
         {setup && showSetupBanner ? (
           <SetupGate setup={setup} canDismiss={owner.membership.ownerRole === "owner"} />
         ) : null}
-        {branding.bannerUrl ? (
-          // Decorative, and `print-hide`: a tenant's banner is console chrome,
-          // not part of a report somebody is sending to their client - the same
-          // reasoning the rails carry that class for.
-          //
-          // A bare <img> rather than next/image because the host is arbitrary
-          // and tenant-supplied; see the note in @aura/ui's Logo. Capped in
-          // height so a tall image cannot push the whole console below the fold.
-          <img
-            src={branding.bannerUrl}
-            alt=""
-            aria-hidden="true"
-            className="print-hide max-h-32 w-full rounded-xl border border-border object-cover"
-          />
-        ) : null}
+        {/* The tenant banner used to be drawn here, above the section tabs. It
+            is deliberately NOT rendered any more: it sat on every console page
+            rather than one, `object-cover` cropped whatever was uploaded into a
+            128px-tall strip, and it pushed the actual work of the page down by
+            that much on every single screen.
+
+            `branding.bannerUrl` is still stored and still uploadable - nothing
+            a tenant saved was destroyed, and bringing it back is this block
+            again. The Banner hint on /owner/branding says it is not shown, the
+            same way `loginBackgroundUrl` has always been honest about it. */}
         {/* The section's pages as tabs - the rail's second level. Drawn here
             rather than per page so it stays put while the next tab loads. */}
         <ConsoleSectionTabs
