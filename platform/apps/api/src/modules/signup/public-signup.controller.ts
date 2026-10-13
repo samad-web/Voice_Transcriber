@@ -7,7 +7,11 @@ import {
   CAPTURE_PLANS,
   CAPTURE_PLAN_ORDER,
   CapturePlanKey,
+  GST_STATES,
+  GSTIN_PROBLEM_TEXT,
+  gstinProblem,
   mandateCapHeadroom,
+  normaliseGstin,
   planPriceMinor,
 } from "@aura/shared";
 import { DbService } from "../../db/db.service";
@@ -141,11 +145,14 @@ export class PublicSignupController {
     }
 
     if (p.gstin) {
-      // The first two digits of a GSTIN are the state code. A mismatch means
-      // one of the two fields is wrong, and guessing which would put the wrong
-      // place of supply on a tax invoice.
-      const stateCode = p.gstin.slice(0, 2);
-      if (!/^\d{2}$/.test(stateCode)) throw new BadRequestException("that GSTIN looks wrong");
+      // The real validator, checksum and all - not a regex. A GSTIN whose state
+      // code disagrees with the selected state means one of the two fields is
+      // wrong, and guessing which would put the wrong place of supply on a tax
+      // invoice. `gstinProblem` already distinguishes format, checksum and
+      // state, and `GSTIN_PROBLEM_TEXT` already words each one.
+      const stateCode = GST_STATES.find((s) => s.name === p.billingState)?.code ?? null;
+      const problem = gstinProblem(normaliseGstin(p.gstin), stateCode);
+      if (problem) throw new BadRequestException(GSTIN_PROBLEM_TEXT[problem]);
     }
 
     // Computed here, never taken from the request.

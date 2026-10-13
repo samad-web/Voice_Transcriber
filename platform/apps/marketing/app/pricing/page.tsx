@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BreadcrumbSchema } from "@/components/breadcrumbs";
 import { JsonLd } from "@/components/json-ld";
 import { ADDON_ROWS, GST_NOTE, HOW_TO_BUY, LIMITS, PLANS } from "@/lib/content/pricing";
+import { CAPTURE_PLANS } from "@aura/shared";
 import { pageMetadata } from "@/lib/metadata";
 import { BRAND, LEGAL_ENTITY, SITE_URL, startHref } from "@/lib/site";
 
@@ -183,13 +184,23 @@ function Plans() {
                 ))}
               </ul>
 
+              {/* A plan that can be bought online gets a buy button; one that
+                  cannot still books a call. `selfServePeriods` is the test,
+                  not `negotiated` - Growth is sellable and not negotiated, but
+                  only on the annual cadence, because its monthly debit exceeds
+                  the ceiling a bank will clear without interrupting the
+                  customer every month. */}
               <div className="mt-6">
                 <Link
-                  href={CTA}
+                  href={(CAPTURE_PLANS[p.key]?.selfServePeriods ?? []).length > 0 ? "/signup" : CTA}
                   className="mk-cta w-full justify-center"
                   style={{ padding: "0.75rem 1.25rem", fontSize: "0.9375rem" }}
                 >
-                  {p.negotiated ? "Talk to us" : "Get set up"}
+                  {p.negotiated
+                    ? "Talk to us"
+                    : (CAPTURE_PLANS[p.key]?.selfServePeriods ?? []).length > 0
+                      ? "Start now"
+                      : "Get set up"}
                 </Link>
               </div>
             </div>
