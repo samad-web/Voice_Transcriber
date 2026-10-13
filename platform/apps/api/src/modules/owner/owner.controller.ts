@@ -656,7 +656,9 @@ export class OwnerController {
                   c.last_call_at,
                   COALESCE(l.leads, 0)         AS leads,
                   COALESCE(l.won, 0)           AS won,
-                  COALESCE(l.pipeline_value, 0)::float AS pipeline_value
+                  COALESCE(l.pipeline_value, 0)::float AS pipeline_value,
+                  COALESCE(cw.won_value, 0)::float AS won_value,
+                  COALESCE(cw.closed_won, 0)   AS closed_won
              FROM devices d
              LEFT JOIN (
                SELECT device_id, telecaller_id,
@@ -684,6 +686,34 @@ export class OwnerController {
                 WHERE created_at >= (SELECT cur FROM w) AND created_at < (SELECT fin FROM w)
                 GROUP BY telecaller_device_id
              ) l ON l.telecaller_device_id = d.id
+             /*
+              * Revenue won per handset, for the CEO dashboard's attribution
+              * donut (Build docs/46).
+              *
+              * A SEPARATE join from l above, and the predicate is the reason.
+              * l is a COHORT: records CREATED in the window, and its won
+              * column counts how many of those have since been won. This one
+              * is CLOSES: records that moved into a terminal stage INSIDE the
+              * window, whenever they arrived - the exact predicate
+              * recordSummarySql uses for closed_won_value, which is what the
+              * page prints as "Revenue won".
+              *
+              * They have to match, because the donut divides that KPI into
+              * slices and labels the remainder "Unattributed". On the cohort
+              * predicate a deal opened in August and won in October would be
+              * in the KPI's numerator and in nobody's slice, so the handset
+              * that actually closed it would show as unattributed revenue.
+              */
+             LEFT JOIN (
+               SELECT telecaller_device_id,
+                      count(*)::int AS closed_won,
+                      COALESCE(sum(value_num), 0) AS won_value
+                 FROM leads
+                WHERE status = 'won'
+                  AND stage_changed_at >= (SELECT cur FROM w)
+                  AND stage_changed_at < (SELECT fin FROM w)
+                GROUP BY telecaller_device_id
+             ) cw ON cw.telecaller_device_id = d.id
             -- Same amnesty as the wiped exclusion: a removed handset (0087)
             -- only disappears from the leaderboard once it has nothing in
             -- this window either, so its historical rows in the totals above
@@ -878,7 +908,9 @@ export class OwnerController {
                   c.last_call_at,
                   COALESCE(dl.deals, 0)        AS leads,
                   COALESCE(dl.won, 0)          AS won,
-                  COALESCE(dl.pipeline_value, 0)::float AS pipeline_value
+                  COALESCE(dl.pipeline_value, 0)::float AS pipeline_value,
+                  COALESCE(dw.won_value, 0)::float AS won_value,
+                  COALESCE(dw.closed_won, 0)   AS closed_won
              FROM devices d
              LEFT JOIN (
                SELECT device_id, telecaller_id,
@@ -900,6 +932,21 @@ export class OwnerController {
                 WHERE created_at >= (SELECT cur FROM w) AND created_at < (SELECT fin FROM w)
                 GROUP BY telecaller_id
              ) dl ON dl.telecaller_id = d.telecaller_id
+             -- Closes IN the window, per telecaller - the same split
+             -- overview() grows above, and for the same reason: the
+             -- attribution donut slices closed.won_value, so it must be cut
+             -- on the predicate that produced it. Joined on telecaller_id
+             -- rather than the device, matching dl.
+             LEFT JOIN (
+               SELECT telecaller_id,
+                      count(*)::int AS closed_won,
+                      COALESCE(sum(amount), 0) AS won_value
+                 FROM deals
+                WHERE status = 'won'
+                  AND stage_changed_at >= (SELECT cur FROM w)
+                  AND stage_changed_at < (SELECT fin FROM w)
+                GROUP BY telecaller_id
+             ) dw ON dw.telecaller_id = d.telecaller_id
             -- Same amnesty as the wiped exclusion, and for the same reason
             -- as overview()'s identical clause above.
             WHERE (d.status <> 'wiped' OR COALESCE(c.calls, 0) > 0 OR COALESCE(dl.deals, 0) > 0)

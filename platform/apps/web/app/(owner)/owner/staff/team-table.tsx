@@ -22,6 +22,7 @@ import {
 import { useDraftState } from "@/lib/use-server-state";
 import { PhonePairFields, usePhoneErrors } from "@/components/phone-pair-fields";
 import { removeTeamMemberAction, resetTeamPasswordAction, setTeamMemberAction } from "./actions";
+import { OffboardDialog } from "./offboard-dialog";
 import {
   assignStaffRoleAction,
   setStaffProfileAction,
@@ -56,7 +57,17 @@ export function TeamTable({
 }) {
   return (
     <Card className="overflow-hidden p-0">
-      <div tabIndex={0} role="region" aria-label="Team" className="overflow-x-auto">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label="Team"
+        // Below `md` each person draws as a labelled card (theme.css). Four of
+        // the five columns are CONTROLS - a role picker, an identity picker, a
+        // switch - and a control nobody can scroll to is a control they do not
+        // have.
+        data-stacked="true"
+        className="overflow-x-auto"
+      >
         <table className="w-full min-w-[720px] border-collapse text-left text-sm">
           <thead className="bg-bg-subtle">
             <tr>
@@ -84,6 +95,11 @@ export function TeamTable({
                 roles={roles}
                 canEdit={canEdit}
                 isSelf={member.userId === selfUserId}
+                // The whole roster, for the handover dialog's recipient picker
+                // (0198). Passed down rather than re-fetched: the page already
+                // has it, and a second read could disagree with the row the
+                // owner is looking at.
+                colleagues={members}
               />
             ))}
           </tbody>
@@ -99,12 +115,14 @@ function Row({
   roles,
   canEdit,
   isSelf,
+  colleagues,
 }: {
   member: TeamMember;
   telecallers: TeamTelecaller[];
   roles: TeamRole[];
   canEdit: boolean;
   isSelf: boolean;
+  colleagues: TeamMember[];
 }) {
   const [role, setRole] = useDraftState<OwnerRole>(member.ownerRole);
   const [telecallerId, setTelecallerId] = useDraftState(member.telecallerId ?? "");
@@ -141,7 +159,7 @@ function Row({
 
   return (
     <tr className="align-top transition-colors duration-150 ease-out hover:bg-surface-hover">
-      <td className="px-4 py-3">
+      <td className="px-4 py-3" data-label="Person">
         <span className="block font-medium text-text">{member.name || member.email}</span>
         <span className="text-xs text-text-muted">{member.email}</span>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -149,6 +167,13 @@ function Row({
           {/* Suspension is announced on the row, not signalled by the row being
               absent - see TeamTab for why a suspended colleague stays listed. */}
           {member.status === "suspended" ? <StatusChip tone="danger">suspended</StatusChip> : null}
+          {/* 0198: their desk takes no new routed leads. Worth its own chip
+              rather than being inferred from the suspension, because the two
+              can differ - an offboarded person may still be active while their
+              replacement is set up, and a reinstated one is un-archived. */}
+          {member.telecallerStatus === "archived" ? (
+            <StatusChip tone="outline">desk archived</StatusChip>
+          ) : null}
           {member.staffCode ? <StatusChip tone="outline">{member.staffCode}</StatusChip> : null}
         </div>
         {member.jobTitle || member.phone || member.whatsapp ? (
@@ -166,7 +191,7 @@ function Row({
         {canEdit ? <StaffDetails member={member} /> : null}
       </td>
 
-      <td className="px-4 py-3">
+      <td className="px-4 py-3" data-label="Role">
         {canEdit ? (
           <>
             <Select
@@ -199,7 +224,7 @@ function Row({
         )}
       </td>
 
-      <td className="px-4 py-3">
+      <td className="px-4 py-3" data-label="Telecaller identity">
         {canEdit ? (
           <Select
             aria-label={`Telecaller identity for ${member.email}`}
@@ -241,7 +266,7 @@ function Row({
         ) : null}
       </td>
 
-      <td className="px-4 py-3">
+      <td className="px-4 py-3" data-label="Permissions">
         {canEdit ? (
           <PermissionRole member={member} roles={roles} />
         ) : (
@@ -254,18 +279,28 @@ function Row({
       </td>
 
       <td className="px-4 py-3 align-top whitespace-nowrap">
-        {canEdit ? <RowActions member={member} isSelf={isSelf} /> : null}
+        {canEdit ? (
+          <RowActions member={member} isSelf={isSelf} colleagues={colleagues} />
+        ) : null}
       </td>
     </tr>
   );
 }
 
 /**
- * The two destructive-ish actions, kept off the main row controls.
+ * The destructive-ish actions, kept off the main row controls.
  *
  * Removal asks first. Everything else on this page is a reversible edit - set
  * the persona back and the change is undone - but revoking access deletes the
  * membership and, if it was their last one, the login itself.
+ *
+ * ── AND SINCE 0198, THE HANDOVER SITS BESIDE THEM ─────────────────────────
+ *
+ * Three buttons that do three different things to the same departure, in the
+ * order somebody actually needs them: hand the work over, stop the login, and
+ * only then delete it. Removal now refuses outright while there is open work,
+ * so the first button is not advice - it is the step before the third one is
+ * allowed at all.
  *
  * These used `window.confirm`, justified here by "this table is not inside a
  * ConfirmProvider". That was simply untrue: the provider is mounted at
@@ -280,10 +315,19 @@ function Row({
  * and `DELETE /v1/owner/team/:id` both carry `@RequireOwnerRole("owner")`, and
  * the API refuses the last owner and self-removal on its own.
  */
-function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean }) {
+function RowActions({
+  member,
+  isSelf,
+  colleagues,
+}: {
+  member: TeamMember;
+  isSelf: boolean;
+  colleagues: TeamMember[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [password, setPassword] = useState<string | null>(null);
+  const [offboarding, setOffboarding] = useState(false);
   const alert = useAlert();
   const confirm = useConfirm();
 
@@ -323,9 +367,18 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
         // to suspend is how they learn to type it without reading.
         !(await confirm({
           title: `Suspend ${member.email}?`,
+          // Rewritten for 0198. The old copy - "every lead, call and follow-up
+          // stays assigned to them" - was accurate and was the bug: it
+          // described doing nothing about the work as though it were a
+          // feature. Suspension now also stops their phone and takes their
+          // desk out of the lead rotation, and the sentence has to say so,
+          // because an owner suspending somebody for three months' leave needs
+          // to know their handset will need re-pairing.
           body:
-            "They stop being able to sign in. Every lead, call and follow-up stays assigned " +
-            "to them, and you can reinstate them at any time.",
+            "They stop being able to sign in, their handsets are logged out, and their desk " +
+            "stops receiving new routed leads. Everything already assigned to them stays " +
+            "theirs - use Hand over work to move it. Reinstating undoes all of this except " +
+            "the handset, which has to be paired again.",
           confirmLabel: "Suspend",
           tone: "danger",
           requireTyped: false,
@@ -355,7 +408,8 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
           title: `Remove ${member.email} from this workspace?`,
           body:
             "Their login is deleted and cannot be restored - suspend them instead if this " +
-            "might be temporary.",
+            "might be temporary. If they still hold leads, call-backs or tasks this will be " +
+            "refused: hand their work over first.",
           confirmLabel: "Remove",
           tone: "danger",
         }))
@@ -383,6 +437,20 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
         </Button>
         {/* Self-suspension and self-removal are both refused by the API; not
             offering either button is the kinder half of the same rule. */}
+        {/* First in the row, because it is first in the sequence: the work
+            moves, then the login stops, then it is deleted. Offered for an
+            active colleague too - a desk can be handed over on a transfer
+            between floors without anybody leaving. */}
+        {isSelf ? null : (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setOffboarding(true)}
+            disabled={pending}
+          >
+            Hand over work
+          </Button>
+        )}
         {isSelf ? null : (
           <Button type="button" variant="secondary" onClick={toggleStatus} disabled={pending}>
             {member.status === "suspended" ? "Reinstate" : "Suspend"}
@@ -394,6 +462,12 @@ function RowActions({ member, isSelf }: { member: TeamMember; isSelf: boolean })
           </Button>
         )}
       </div>
+      <OffboardDialog
+        member={member}
+        colleagues={colleagues}
+        open={offboarding}
+        onClose={() => setOffboarding(false)}
+      />
       {password ? (
         <div className="max-w-xs space-y-1">
           <code className="block rounded-md border border-border bg-surface px-2 py-1 font-mono text-xs text-text">

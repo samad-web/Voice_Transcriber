@@ -143,7 +143,7 @@ export default async function QuotationsPage({
         )
       ) : (
         <>
-          <Table caption="Quotations">
+          <Table caption="Quotations" stacked>
             <TableHead>
               <tr>
                 <TableHeaderCell>Number</TableHeaderCell>
@@ -156,7 +156,7 @@ export default async function QuotationsPage({
             <TableBody>
               {data.quotations.map((quotation) => (
                 <TableRow key={quotation.id}>
-                  <TableCell>
+                  <TableCell label="Number">
                     <Link
                       href={`/owner/quotations/${quotation.id}`}
                       className="block font-medium text-text hover:underline"
@@ -164,7 +164,7 @@ export default async function QuotationsPage({
                       {quotation.quotation_number}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell label="For" className="text-text-muted">
                     <CustomerCell
                       accountId={quotation.account_id}
                       accountName={quotation.account_name}
@@ -172,13 +172,13 @@ export default async function QuotationsPage({
                       contactName={quotation.contact_name}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="Status">
                     <StatusChip tone={statusTone(quotation.status)}>{quotation.status}</StatusChip>
                   </TableCell>
-                  <TableCell className="tabular-nums text-text-muted">
+                  <TableCell label="Total" className="tabular-nums text-text-muted">
                     {formatMoney(quotation.total, quotation.currency)}
                   </TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell label="Valid until" className="text-text-muted">
                     {/* A calendar date (DATE column): no zone, or it slips a day west of UTC. */}
                     {quotation.valid_until ? formatDateKey(quotation.valid_until.slice(0, 10)) : "-"}
                   </TableCell>

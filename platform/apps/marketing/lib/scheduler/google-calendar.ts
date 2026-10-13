@@ -150,9 +150,9 @@ export class GoogleCalendarScheduler implements Scheduler {
     const wantsMeet = Boolean(this.config.impersonateSubject);
 
     const body = {
-      summary: `Aura intro call, ${submission.name}`,
+      summary: `Auratel intro call, ${submission.name}`,
       description: [
-        `Booked from the Aura funnel.`,
+        `Booked from the Auratel funnel.`,
         ``,
         `Name:     ${submission.name}`,
         `Email:    ${submission.email}`,

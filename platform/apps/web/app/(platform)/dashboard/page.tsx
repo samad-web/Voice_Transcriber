@@ -177,7 +177,7 @@ export default async function DashboardPage({
 
           {/* Headline row: what an operator needs to know first - is the
               platform being used, is it healthy, and is it winning business. */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
             <StatCard
               label="Active Users"
               value={activeUsers ? activeUsers.last24h.toLocaleString() : "-"}
@@ -231,7 +231,7 @@ export default async function DashboardPage({
 
           {/* Demoted, not deleted: still useful, just not the first thing an
               operator needs - see StatCard's own note on `tone="plain"`. */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-5">
             <StatCard
               tone="plain"
               label="Calls"
@@ -266,7 +266,8 @@ export default async function DashboardPage({
                 By tenant
               </span>
             </div>
-            <div className="overflow-x-auto">
+            {/* Below `md` each tenant draws as a labelled card (theme.css). */}
+            <div data-stacked="true" className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left border-collapse">
                 <thead>
                   <tr className="bg-bg-subtle border-b-2 border-border font-mono text-[10px] text-text font-bold uppercase tracking-wider">
@@ -280,7 +281,7 @@ export default async function DashboardPage({
                 <tbody className="divide-y-2 divide-border text-sm text-text">
                   {fleet.byTenant.map((t) => (
                     <tr key={t.id} className="hover:bg-surface-hover">
-                      <td className="py-3.5 px-5">
+                      <td className="py-3.5 px-5" data-label="Tenant">
                         <Link
                           href={`/instances/${t.id}/calls`}
                           className="font-display font-bold text-text hover:underline"
@@ -291,8 +292,8 @@ export default async function DashboardPage({
                           <StatusChip tone="muted">{t.status}</StatusChip>
                         ) : null}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-xs font-bold">{t.calls}</td>
-                      <td className="py-3.5 px-4 font-mono text-xs">
+                      <td className="py-3.5 px-4 font-mono text-xs font-bold" data-label="Calls">{t.calls}</td>
+                      <td className="py-3.5 px-4 font-mono text-xs" data-label="Failed">
                         {/* Failed is an ERROR, which is orange in this console -
                             red means a missed call (@aura/ui's state.tsx). */}
                         {t.failed > 0 ? (
@@ -301,10 +302,10 @@ export default async function DashboardPage({
                           <span className="text-text-muted">0</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-xs">
+                      <td className="py-3.5 px-4 font-mono text-xs" data-label="Minutes">
                         {Math.round(t.total_seconds / 60)}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-xs text-text-muted">
+                      <td className="py-3.5 px-4 font-mono text-xs text-text-muted" data-label="Last call">
                         {t.last_call_at ? <LocalTime iso={t.last_call_at} mode="date" /> : "-"}
                       </td>
                     </tr>
@@ -330,7 +331,7 @@ export default async function DashboardPage({
 
         {data ? (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
               <StatCard
                 label="Capture Success"
                 value={`${successRate}%`}

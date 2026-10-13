@@ -57,6 +57,7 @@ export default async function InstanceAuditPage({ params }: { params: Promise<{ 
           tabIndex={0}
           role="region"
           aria-label="Audit ledger"
+          data-stacked="true"
           className="max-h-[70vh] overflow-auto"
         >
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">
@@ -72,18 +73,18 @@ export default async function InstanceAuditPage({ params }: { params: Promise<{ 
             <TableBody>
               {auditEntries.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="py-2.5 font-mono text-xs font-medium text-text">
+                  <TableCell className="py-2.5 font-mono text-xs font-medium text-text" label="Action">
                     {e.action}
                   </TableCell>
-                  <TableCell className="py-2.5 font-mono text-xs text-text-muted">
+                  <TableCell className="py-2.5 font-mono text-xs text-text-muted" label="Actor">
                     {e.actor_type}:{e.actor_id.slice(0, 12)}
                   </TableCell>
-                  <TableCell className="py-2.5">
+                  <TableCell className="py-2.5" label="Target">
                     <StatusChip tone={e.actor_type === "system" ? "muted" : "solid"}>
                       {e.target_type ?? "-"}
                     </StatusChip>
                   </TableCell>
-                  <TableCell className="py-2.5">
+                  <TableCell className="py-2.5" label="When">
                     <LocalTime iso={e.created_at} className="text-xs text-text-muted tabular-nums" />
                   </TableCell>
                 </TableRow>

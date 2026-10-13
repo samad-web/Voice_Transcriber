@@ -27,6 +27,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.view.ActionMode
+import com.voicetranscriber.callrecorder.platform.ActivationStore
 import com.voicetranscriber.callrecorder.platform.TelecallerProfile
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -36,6 +37,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.voicetranscriber.callrecorder.R
 import com.voicetranscriber.callrecorder.attendance.AttendanceActivity
+import com.voicetranscriber.callrecorder.attendance.AttendanceController
 import com.voicetranscriber.callrecorder.attendance.AttendanceStore
 import com.voicetranscriber.callrecorder.capture.CaptureSettings
 import com.voicetranscriber.callrecorder.databinding.ActivityMainBinding
@@ -105,6 +107,19 @@ class MainActivity : AppCompatActivity() {
 
         // Telecaller greeting - tap the header to set/change the name.
         binding.greetingHeader.setOnClickListener { showProfileDialog() }
+        // The card opens the full screen; the button does the one thing without
+        // leaving home. Both re-render, because starting a shift changes what
+        // the card itself should say.
+        binding.shiftCard.setOnClickListener {
+            startActivity(Intent(this, AttendanceActivity::class.java))
+        }
+        binding.btnHomeStartShift.setOnClickListener {
+            val app = applicationContext
+            lifecycleScope.launch {
+                withContext(Dispatchers.Default) { AttendanceController.startShift(app) }
+                renderShiftCard()
+            }
+        }
         renderGreeting()
         if (!profile.hasName) showProfileDialog() // first run: ask who this handset belongs to
 
@@ -119,10 +134,21 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.recordings.collect { list ->
-                    adapter.submitList(list)
+                    // An owner who has not granted library access (0196) gets no
+                    // list at all - not a greyed-out one. The rows carry the
+                    // customer's name and number, so "visible but inert" would
+                    // still be a disclosure.
+                    val allowed = ActivationStore.recordingsAccess(this@MainActivity)
+                    adapter.submitList(if (allowed) list else emptyList())
                     val empty = list.isEmpty()
-                    binding.emptyState.visibility = if (empty) View.VISIBLE else View.GONE
-                    binding.recordings.visibility = if (empty) View.GONE else View.VISIBLE
+                    binding.emptyState.visibility = if (!allowed || empty) View.VISIBLE else View.GONE
+                    binding.recordings.visibility = if (!allowed || empty) View.GONE else View.VISIBLE
+                    binding.emptyTitle.setText(
+                        if (allowed) R.string.empty_title else R.string.recordings_locked_title,
+                    )
+                    binding.emptySubtitle.setText(
+                        if (allowed) R.string.empty_subtitle else R.string.recordings_locked_subtitle,
+                    )
                 }
             }
         }
@@ -148,6 +174,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         renderGreeting() // keep the time-of-day greeting current
         invalidateOptionsMenu() // the Attendance item follows the latest config
+        renderShiftCard() // and so does the shift card beneath the greeting
+        enforceLibraryGate() // a withdrawal that landed while this screen was open
         // Phone alerts (platform 0150): opening the app collects anything a push missed.
         if (com.voicetranscriber.callrecorder.platform.ActivationStore.isActivated(this)) {
             com.voicetranscriber.callrecorder.alerts.AlertSyncWorker.enqueue(this)
@@ -180,6 +208,51 @@ class MainActivity : AppCompatActivity() {
                     .onFailure { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)) }
             }
             .show()
+    }
+
+    /**
+     * The shift card on the home screen.
+     *
+     * Starting a shift is the first thing a telecaller does each day, and until
+     * they do it nothing is tracked - so the CTA belongs where they already
+     * land, not behind the Attendance toolbar item. The card mirrors the
+     * Attendance screen's own state rather than keeping a second copy of the
+     * rules: same `AttendanceController`, same `Ui`.
+     *
+     * Hidden outright when `AttendanceStore.config` is null, which is what the
+     * device config sends when the workspace has attendance off or this phone
+     * is not bound to a telecaller. The same "hide, never grey out" rule the
+     * leave and break buttons already follow (doc 33 §6.1).
+     */
+    private fun renderShiftCard() {
+        if (AttendanceStore.config(this) == null) {
+            binding.shiftCard.visibility = View.GONE
+            return
+        }
+        lifecycleScope.launch {
+            val ui = withContext(Dispatchers.Default) {
+                AttendanceController.currentUi(applicationContext)
+            }
+            if (!ui.enabled) {
+                binding.shiftCard.visibility = View.GONE
+                return@launch
+            }
+            binding.shiftCard.visibility = View.VISIBLE
+            // Before the disclosure is accepted there is no shift state worth
+            // showing, and starting one from here would skip the consent gate -
+            // so the card becomes a signpost to it instead.
+            if (ui.noticeNeeded) {
+                binding.shiftTitle.setText(R.string.home_shift_notice_title)
+                binding.shiftDetail.setText(R.string.home_shift_notice_detail)
+                binding.shiftDetail.visibility = View.VISIBLE
+                binding.btnHomeStartShift.visibility = View.GONE
+                return@launch
+            }
+            binding.shiftTitle.text = ui.title
+            binding.shiftDetail.text = ui.detail
+            binding.shiftDetail.visibility = if (ui.detail.isBlank()) View.GONE else View.VISIBLE
+            binding.btnHomeStartShift.visibility = if (ui.canStart) View.VISIBLE else View.GONE
+        }
     }
 
     /** Reminder and prompt notifications reach the Attendance screen through LockActivity. */
@@ -282,7 +355,37 @@ class MainActivity : AppCompatActivity() {
     // ---- multi-select (contextual action bar) ------------------------------
 
     /** Long-press a row: open the selection action bar and select that row. */
+    /**
+     * The library gate (migration 0196). Checked in every entry point that
+     * reads, changes, shares or deletes a recording - not only where the list
+     * is drawn - so a row left on screen from before a withdrawal, or a
+     * notification tap, cannot act on one either.
+     */
+    private fun libraryAllowed(): Boolean = ActivationStore.recordingsAccess(this)
+
+    /**
+     * Apply a withdrawal that arrived from a config sync while this screen was
+     * already open.
+     *
+     * The list observer alone is not enough: it fires when the RECORDINGS
+     * change, and an owner revoking access changes no recording. Without this,
+     * a rep left holding the screen would keep a populated list - and a playing
+     * file - until something unrelated happened to emit.
+     */
+    private fun enforceLibraryGate() {
+        if (libraryAllowed()) return
+        stopPlayback()
+        binding.playerPanel.visibility = View.GONE
+        actionMode?.finish()
+        adapter.submitList(emptyList())
+        binding.recordings.visibility = View.GONE
+        binding.emptyState.visibility = View.VISIBLE
+        binding.emptyTitle.setText(R.string.recordings_locked_title)
+        binding.emptySubtitle.setText(R.string.recordings_locked_subtitle)
+    }
+
     private fun enterSelection(item: RecordingEntity) {
+        if (!libraryAllowed()) return
         if (actionMode == null) {
             adapter.setSelectionMode(true)
             actionMode = startSupportActionMode(selectionCallback)
@@ -481,11 +584,13 @@ class MainActivity : AppCompatActivity() {
     // ---- row actions -------------------------------------------------------
 
     private fun deleteRecording(item: RecordingEntity) {
+        if (!libraryAllowed()) return
         if (playingId == item.id) stopPlayback()
         viewModel.delete(item)
     }
 
     private fun editRecording(item: RecordingEntity) {
+        if (!libraryAllowed()) return
         val pad = (16 * resources.displayMetrics.density).toInt()
         val nameField = EditText(this).apply {
             hint = getString(R.string.edit_name_hint)
@@ -517,6 +622,7 @@ class MainActivity : AppCompatActivity() {
      * or a status may have changed while the menu was open.
      */
     private fun escalateRecording(item: RecordingEntity) {
+        if (!libraryAllowed()) return
         val state = EscalationStore.current(this)
         val config = state.config ?: return
         val callId = item.remoteCallId
@@ -532,6 +638,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun shareRecording(item: RecordingEntity) {
+        if (!libraryAllowed()) return
         val file = File(item.filePath)
         if (!file.exists()) {
             Toast.makeText(this, R.string.file_missing, Toast.LENGTH_SHORT).show()
@@ -552,6 +659,7 @@ class MainActivity : AppCompatActivity() {
     // ---- playback ----------------------------------------------------------
 
     private fun togglePlayback(item: RecordingEntity) {
+        if (!libraryAllowed()) return
         if (playingId == item.id) { stopPlayback(); return }
         stopPlayback()
 

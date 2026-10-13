@@ -151,7 +151,7 @@ export default async function InstanceCallsPage({
         Back to {org.name}
       </Link>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <StatCard
           label="Calls"
           value={stats?.total ?? 0}

@@ -28,7 +28,7 @@ export function Integrations() {
         id="integrations-heading"
         eyebrow="Integrations"
         title={`${CONNECTOR_COUNT} CRM connectors, mapped to your field names`}
-        lead="Aura writes into the system you already use. You choose which of your fields each piece of the call lands in, nothing is forced into someone else's schema."
+        lead="Auratel writes into the system you already use. You choose which of your fields each piece of the call lands in, nothing is forced into someone else's schema."
       />
 
       <div className="mt-10">

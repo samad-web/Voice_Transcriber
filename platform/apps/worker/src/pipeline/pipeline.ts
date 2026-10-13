@@ -1,8 +1,8 @@
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { type PoolClient, withOrgContext } from "@aura/db";
+import { getAdminPool, readEffectiveLimits, type PoolClient, withOrgContext } from "@aura/db";
 import { analyzeTranscript } from "@aura/llm";
 import { type PipelineMessage, publishEnrich } from "@aura/queue";
-import { ExtractionSchema } from "@aura/shared";
+import { ExtractionSchema, QUOTA_WARN_AT, readQuota } from "@aura/shared";
 import { recordReprocessOutcome } from "./call-issue-followup";
 import { type AsrResult, transcribe } from "./asr";
 import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
@@ -882,6 +882,78 @@ export async function analyzeCall({ callId, orgId }: PipelineMessage): Promise<v
 }
 
 /**
+ * Tell the owners their transcription hours are running out (0197).
+ *
+ * ── THE SAME SHAPE AS THE STORAGE WARNING, DELIBERATELY ─────────────────────
+ *
+ * `storage-usage.ts` already warns owners at 80% and 100% of their storage
+ * quota, once per threshold, through a `dedupe_key` that carries the threshold
+ * and the day. This is the hours meter's half of the published "what happens
+ * at each limit" table, and copying that shape is the point: two meters that
+ * warn in two different ways are two things an owner has to learn.
+ *
+ * ── WHY IT IS FIRE-AND-FORGET ───────────────────────────────────────────────
+ *
+ * The caller does not await it. This runs on the hot path of every call once a
+ * tenant is past 80%, and the thing it must never do is delay or fail a
+ * recording: a notification that did not send is a nuisance, a call that did
+ * not transcribe because the bell failed is a refund. The caller catches and
+ * logs instead.
+ *
+ * ── AND WHY THE BODY DOES NOT READ LIKE AN ERROR ────────────────────────────
+ *
+ * Because nothing is wrong. At the ceiling the call is still recorded, stored,
+ * listed and playable; only transcription and analysis are skipped, and the
+ * call is left in TRANSCRIPTION_OFF, which is REPROCESSABLE - so a top-up or
+ * the next month's reset picks it up and transcribes it after the fact.
+ * Nothing is lost by running out of hours except time, and an owner told
+ * "transcription failed" opens a support ticket about a product that is
+ * working as sold.
+ */
+async function warnOwnersAboutHours(
+  orgId: string,
+  limitMinutes: number,
+  usedMinutes: number,
+): Promise<void> {
+  // 100 before 80, so a tenant that jumped both in one call is told the one
+  // that matters. `Math.floor` on the fraction would read 0.999 as 0.
+  const level = usedMinutes >= limitMinutes ? 100 : usedMinutes / limitMinutes >= QUOTA_WARN_AT ? 80 : null;
+  if (level === null) return;
+
+  const usedHours = Math.round(usedMinutes / 60);
+  const limitHours = Math.round(limitMinutes / 60);
+  const title =
+    level === 100
+      ? `Transcription hours used up: ${usedHours} of ${limitHours}`
+      : `Transcription is ${level}% used: ${usedHours} of ${limitHours} hours`;
+
+  const { rowCount } = await getAdminPool().query(
+    `INSERT INTO notifications (org_id, user_id, kind, title, body, link_path, dedupe_key)
+     SELECT m.org_id, m.user_id, 'transcription_quota', $2, $3, '/owner/account/plan',
+            'transcription_quota:' || $4 || ':' || to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM')
+       FROM memberships m
+      -- Owners only - the persona that talks to the account manager. COALESCE
+      -- because a null persona IS the owner persona (resolveOwnerRole, 0153),
+      -- and the operator console's member writer never sets that column.
+      WHERE m.org_id = $1 AND COALESCE(m.owner_role, 'owner') = 'owner' AND m.status = 'active'
+     -- The dedupe key carries the threshold and the MONTH, not the day: an org
+     -- sitting at 85% hears about it once for the month rather than once a day,
+     -- and the next month's reset earns a fresh warning because the key moves.
+     ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
+    [
+      orgId,
+      title,
+      level === 100
+        ? "Calls are still being recorded and kept - only transcription and analysis are paused, " +
+          "and they will be picked up automatically after a top-up or on the 1st. Add hours from your plan page."
+        : "Calls are transcribing normally. Add hours from your plan page if you expect to go over.",
+      String(level),
+    ],
+  );
+  if ((rowCount ?? 0) > 0) announce(orgId, "notification", "created");
+}
+
+/**
  * Pipeline stages (design doc §6.2). Each stage advances the Postgres state
  * machine under an optimistic status check, so replays are idempotent and the
  * queue is only a wake-up signal. Terminal states: COMPLETE or FAILED_{STAGE}.
@@ -957,7 +1029,27 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
    * aggregate on the hot path of every call, and the overwhelming majority of
    * instances have no budget and should pay nothing for the feature.
    */
-  if (orgRow?.asr_monthly_minutes_budget != null) {
+  // ── THE EFFECTIVE CEILING: THE PLAN, PLUS WHAT THEY TOPPED UP ─────────────
+  //
+  // Since 0197 the ceiling is no longer only `asr_monthly_minutes_budget`. A
+  // capture plan includes a number of hours (100 on Starter, 200 on Growth),
+  // and an hour pack bought this month adds to it. `readEffectiveLimits`
+  // resolves all of that - the plan's entitlement, the grants ledger for THIS
+  // UTC month, and the operator's hand-set column, which still wins when it is
+  // set because that is how a negotiated Enterprise hour count is expressed.
+  //
+  // It is resolved HERE, at read time, rather than written into a column at
+  // purchase time. A column holding "the ceiling including this month's
+  // top-ups" would be stale on the first of every month and would need a sweep
+  // to correct it - a sweep that, if it were ever late, would hand a customer
+  // either hours they had not bought or a refusal after they had paid. This
+  // cannot be late.
+  //
+  // The admin pool, because `plans` and `plan_entitlements` are revoked from
+  // `aura_app`: a statement inside `withOrgContext` may not join them.
+  const planLimits = await readEffectiveLimits(getAdminPool(), orgId);
+
+  if (planLimits.transcriptionMinutes != null) {
     const used = await withOrgContext(orgId, async (client) => {
       const {
         rows: [usage],
@@ -969,16 +1061,32 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
             -- The platform's UTC month, said explicitly: withOrgContext now runs
             -- on the org's clock (Build docs/30), and the budget month is a
             -- billing contract, not a reporting view. plan-usage.controller.ts
-            -- reads the same window for its meter.
+            -- and the owner's billing overview read the same window.
+            --
+            -- It is a KNOWN divergence from the customer's own calendar: a
+            -- floor in Dubai sees its allowance reset partway through their
+            -- evening, and a contract starting on the 15th still resets on the
+            -- 1st. The price list says "per calendar month" and means it;
+            -- aligning the window to the billing date is an open decision, not
+            -- something half-done here.
             AND occurred_at >= date_trunc('month', now(), 'UTC')`,
         [orgId],
       );
       return Number(usage?.minutes ?? 0);
     });
 
-    if (used >= orgRow.asr_monthly_minutes_budget) {
+    // One reading, shared with the warning below, so the bell and the refusal
+    // cannot disagree about where 80% and 100% are.
+    const reading = readQuota(planLimits.transcriptionMinutes, used);
+    if (reading.state === "warning" || reading.state === "grace" || reading.state === "blocked") {
+      void warnOwnersAboutHours(orgId, planLimits.transcriptionMinutes, used).catch((err) =>
+        console.error(`call ${callId}: transcription quota warning for org ${orgId}:`, err),
+      );
+    }
+
+    if (used >= planLimits.transcriptionMinutes) {
       if (await advance("UPLOADED", "TRANSCRIPTION_OFF")) {
-        const budget = orgRow.asr_monthly_minutes_budget;
+        const budget = planLimits.transcriptionMinutes;
         await withOrgContext(orgId, async (client) => {
           await client.query(
             `UPDATE calls
@@ -1120,7 +1228,22 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
         // is what makes this survive a worker restart: the provider is
         // already transcribing (and billing) this audio, so losing the id
         // would mean paying twice.
-        const diarize = orgRow?.asr_diarization === true;
+        // ── SPEAKER SEPARATION IS A PAID TIER, CHECKED HERE TOO ───────────
+        //
+        // The plan-apply path already clamps `asr_diarization` to false for a
+        // plan that does not sell it (0197, `applyPlanMeters`), so this `&&`
+        // is the second lock rather than the first. It is worth having: the
+        // tenancy PATCH route can write that column, so a tenant who toggled
+        // it back on between plan applications would otherwise be spending
+        // Growth money on Starter. Sarvam diarized is ₹45 an audio-hour
+        // against ₹30 plain, and it is the ONLY provider that charges a real
+        // premium - which is precisely why this is the one ASR option a plan
+        // gates.
+        //
+        // What a tenant without it loses is the speaker LABELS and the
+        // talk-time ratios, not the words: Sarvam uses the same transcription
+        // model either way.
+        const diarize = orgRow?.asr_diarization === true && planLimits.speakerSeparation;
         const jobId = await startSarvamAsrJob(audio, callId, {
           language: orgRow?.asr_language,
           mode: orgRow?.asr_mode,

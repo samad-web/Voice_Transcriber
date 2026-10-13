@@ -7,7 +7,7 @@ import { pageMetadata } from "@/lib/metadata";
 import { WA_MESSAGES } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
-  title: "How Aura handles your data",
+  title: "How Auratel handles your data",
   description:
     "Tenant isolation enforced by Postgres row-level security, per-organisation " +
     "retention, cascading erasure with a signed receipt, an org-scoped audit log, " +
@@ -91,7 +91,7 @@ export default function SecurityPage() {
         <div className="max-w-3xl">
           <p className="text-sm font-medium text-accent-text">Your data</p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight text-text text-balance sm:text-5xl">
-            How Aura handles your data
+            How Auratel handles your data
           </h1>
           <p className="mt-6 text-xl text-text-muted text-pretty">
             You are considering letting software listen to conversations with your
@@ -114,7 +114,7 @@ export default function SecurityPage() {
             until it is a headline.
           </p>
           <p>
-            Aura does it a level lower. Every table that holds your data carries a
+            Auratel does it a level lower. Every table that holds your data carries a
             Postgres row-level security policy keyed to your organisation, and the
             policies are set to <strong>force</strong>, meaning they apply even to the
             table&rsquo;s owner. The application connects as a database role created
@@ -138,7 +138,7 @@ export default function SecurityPage() {
         />
         <Prose className="mt-6">
           <p>
-            The Aura app uploads over TLS and nothing else. The release build ships a
+            The Auratel app uploads over TLS and nothing else. The release build ships a
             network policy that refuses plaintext HTTP outright, so a
             misconfigured network cannot downgrade it. Uploads go to storage through a
             short-lived signed URL issued for that one file.
@@ -332,7 +332,7 @@ export default function SecurityPage() {
             <TextLink href="/consent">
               how call-recording consent works in India
             </TextLink>{" "}
-            for what Aura enforces and what remains your responsibility.
+            for what Auratel enforces and what remains your responsibility.
           </p>
         </Prose>
       </Section>

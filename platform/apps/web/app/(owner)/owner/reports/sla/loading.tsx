@@ -29,7 +29,7 @@ function SectionHeading({ noteW }: { noteW: string }) {
  */
 function StatCards({ count, grid }: { count: number; grid: string }) {
   return (
-    <div className={`grid gap-3 ${grid}`}>
+    <div className={`grid grid-cols-2 gap-3 ${grid}`}>
       {Array.from({ length: count }, (_, i) => (
         <Card key={i}>
           <div className="flex h-4 items-center">
@@ -100,13 +100,13 @@ export default function SlaReportsLoading() {
       <DateRangeSummarySkeleton />
 
       <SectionHeading noteW="w-80" />
-      <StatCards count={4} grid="sm:grid-cols-2 xl:grid-cols-4" />
+      <StatCards count={4} grid="xl:grid-cols-4" />
       <ReportCard labelW="w-32" columns={["text", "num", "num"]} rows={5} />
       <ReportCard labelW="w-28" hint={2} columns={["primary", "num", "num", "num", "num", "num"]} />
       <ReportCard labelW="w-44" hint={2} columns={["primary", "text", "text", "num"]} />
 
       <SectionHeading noteW="w-64" />
-      <StatCards count={4} grid="sm:grid-cols-2 xl:grid-cols-4" />
+      <StatCards count={4} grid="xl:grid-cols-4" />
       <ReportCard labelW="w-24" hint={1} columns={["primary", "num", "num", "num", "num"]} />
       <ReportCard labelW="w-24" columns={["primary", "text", "date", "num", "num"]} />
 

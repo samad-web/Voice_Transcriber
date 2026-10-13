@@ -104,7 +104,7 @@ export function StateColumns({
                     </div>
                   ) : null}
                   <span
-                    className={`pointer-events-none invisible absolute bottom-full z-10 mb-1 w-max rounded-md border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted shadow-md group-hover:visible ${align}`}
+                    className={`pointer-events-none invisible pointer-coarse:hidden absolute bottom-full z-10 mb-1 w-max rounded-md border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted shadow-md group-hover:visible ${align}`}
                   >
                     <span className="block font-medium text-text">{c.title}</span>
                     {STACK.map((s) => (

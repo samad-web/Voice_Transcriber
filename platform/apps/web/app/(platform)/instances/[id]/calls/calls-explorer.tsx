@@ -376,7 +376,16 @@ export function CallsExplorer({
           horizontal scroll of a wide log is reachable without a mouse
           (WCAG 2.1.1), and a caption naming the table. Cells and rows are the
           real primitives. */}
-      <div tabIndex={0} role="region" aria-label="Call log" className="overflow-x-auto">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label="Call log"
+        // Below `md` each call draws as a labelled card (theme.css). Nine
+        // columns at a 1180px minimum is three phone widths, and Consent and
+        // Pipeline - the two an operator opens this log for - are last.
+        data-stacked="true"
+        className="overflow-x-auto"
+      >
         <table
           className={`w-full ${showInstance ? "min-w-[1180px]" : "min-w-[1050px]"} border-collapse text-left text-sm`}
         >
@@ -402,7 +411,7 @@ export function CallsExplorer({
           <TableBody>
             {calls.map((c) => (
               <TableRow key={c.id} onClick={() => openDrawer(c.id)} className="cursor-pointer">
-                <TableCell>
+                <TableCell label="Call">
                   <div className="flex items-center gap-2.5">
                     <div
                       // Direction is carried by the icon's shape as well as the
@@ -458,7 +467,7 @@ export function CallsExplorer({
                 {/* Date over time, both tabular so the column scans down the
                     page. Previously this was a 10px caption under the caller
                     name - present, but not something you could read a log by. */}
-                <TableCell className="whitespace-nowrap">
+                <TableCell label="Date and time" className="whitespace-nowrap">
                   <LocalTime
                     iso={c.started_at}
                     mode="date"
@@ -471,13 +480,13 @@ export function CallsExplorer({
                   />
                 </TableCell>
                 {showInstance ? (
-                  <TableCell className="text-xs">{c.instance_name ?? "-"}</TableCell>
+                  <TableCell label="Instance" className="text-xs">{c.instance_name ?? "-"}</TableCell>
                 ) : null}
-                <TableCell className="text-xs">{c.device_label ?? "-"}</TableCell>
-                <TableCell className="text-xs tabular-nums">
+                <TableCell label="Device" className="text-xs">{c.device_label ?? "-"}</TableCell>
+                <TableCell label="Duration" className="text-xs tabular-nums">
                   {formatDuration(c.duration_s)}
                 </TableCell>
-                <TableCell>
+                <TableCell label="Recording">
                   {c.has_recording ? (
                     <InlineRecordingPlayer
                       callId={c.id}
@@ -495,13 +504,13 @@ export function CallsExplorer({
                     <span className="text-xs text-text-subtle">-</span>
                   )}
                 </TableCell>
-                <TableCell className="text-xs text-text-muted">
+                <TableCell label="Source" className="text-xs text-text-muted">
                   {c.audio_source_used ?? "-"}
                 </TableCell>
-                <TableCell className="text-xs text-text-muted">
+                <TableCell label="Consent" className="text-xs text-text-muted">
                   {humanize(c.consent_status)}
                 </TableCell>
-                <TableCell>
+                <TableCell label="Pipeline">
                   <StatusChip tone={statusTone(c.status)}>{humanize(c.status)}</StatusChip>
                 </TableCell>
               </TableRow>

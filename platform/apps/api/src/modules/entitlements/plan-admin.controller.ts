@@ -10,7 +10,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
-import { PLAN_MODULES, PLAN_ORDER, type PlanKey } from "@aura/shared";
+import { ALL_PLAN_KEYS, PLAN_MODULES, type PlanKey } from "@aura/shared";
+import { assignPlanToOrg } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import { OperatorOnlyGuard } from "../../common/operator-only.guard";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
@@ -18,7 +19,13 @@ import { DbService } from "../../db/db.service";
 import { EntitlementsService } from "./entitlements.service";
 
 const ApplyPlanBody = z.object({
-  planKey: z.enum(PLAN_ORDER as [PlanKey, ...PlanKey[]]),
+  // EVERY plan, not just the Insights four: since 0197 the catalogue holds the
+  // capture family too, and an operator putting a tenant on Record or Growth
+  // comes through this same route. `ALL_PLAN_KEYS` rather than a hand-written
+  // list, so a plan added to the catalogue is assignable without a second edit
+  // here - which is how `capture_enterprise` would otherwise have been
+  // unassignable while looking present everywhere else.
+  planKey: z.enum(ALL_PLAN_KEYS as [PlanKey, ...PlanKey[]]),
   /** The open request this resolves, if it came from one. */
   requestId: z.string().uuid().optional(),
   note: z.string().trim().max(2000).optional(),
@@ -142,37 +149,31 @@ export class PlanAdminController {
       );
       if (!org) throw new NotFoundException("no such organization");
 
-      // The subscription. A trial in flight is CLEARED by an explicit plan
-      // assignment: the operator applying a plan is the authoritative answer,
-      // and leaving a trial running on top of it would silently keep the
-      // tenant on the trial's tier until it expired.
-      await client.query(
-        `INSERT INTO org_subscriptions (org_id, plan_id, status)
-              VALUES ($1, $2, 'active')
-         ON CONFLICT (org_id) DO UPDATE SET
-           plan_id         = EXCLUDED.plan_id,
-           status          = 'active',
-           trial_plan_id   = NULL,
-           trial_ends_at   = NULL,
-           pending_plan_id = NULL,
-           updated_at      = now()`,
-        [orgId, plan.id],
-      );
+      // The subscription, the module set AND the meters, in this one
+      // transaction - see `assignPlanToOrg` in @aura/db for why all three or
+      // none, and why it is shared with the worker's trial-revert and
+      // downgrade sweeps rather than written twice.
+      //
+      // Since 0197 this does more than it used to. A capture plan also
+      // RESOLVES into the columns that already enforce it: `retention_days`
+      // (the audio clock), `storage_quota_bytes`, `transcription_enabled` and
+      // `asr_diarization`. Applying `record` to a tenant therefore switches
+      // transcription off, which is exactly what that tier sells - and what
+      // makes it nearly free for us to run.
+      //
+      // `data_retention_days` is the one thing it will not narrow. A plan's
+      // 60-day audio window must never reach the full purge: that would delete
+      // a paying customer's transcripts, leads and deals, which is not a bug
+      // but a refund.
+      const limits = await assignPlanToOrg(client, {
+        orgId,
+        planId: plan.id,
+        planKey,
+        modules,
+      });
 
-      // And the resolved state. `aura` is preserved unconditionally because
-      // every tenant has an instance and a workspace - org-modules.ts says
-      // there is no "no-Aura" tenant - and `wasi` is preserved because it is
-      // configured by hand on the Wasi side and no plan knows about it. A
-      // plan assignment that silently unpaired a client's WhatsApp number
-      // would be a very bad afternoon.
       const preserved = org.enabled_modules.filter((m) => m === "aura" || m === "wasi");
       const next = [...new Set([...preserved, ...modules])].sort();
-
-      await client.query(
-        `UPDATE organizations SET plan_key = $2, enabled_modules = $3, updated_at = now()
-          WHERE id = $1`,
-        [orgId, planKey, next],
-      );
 
       if (requestId) {
         await client.query(
@@ -212,13 +213,25 @@ export class PlanAdminController {
             modulesBefore: org.enabled_modules,
             requestId: requestId ?? null,
             note: note ?? null,
+            // The resolved meters, in the audit row. An operator asking "why
+            // did this tenant stop transcribing in October" gets the answer
+            // from the plan change itself rather than from four columns whose
+            // history nothing records.
+            meters: {
+              handsets: limits.handsets,
+              transcriptionHours: limits.transcriptionHours,
+              audioRetentionDays: limits.audioRetentionDays,
+              storageCapBytes: limits.storageCapBytes,
+              speakerSeparation: limits.speakerSeparation,
+              transcriptionAllowed: limits.transcriptionAllowed,
+            },
           }),
         ],
       );
 
       await client.query("COMMIT");
       this.entitlements.invalidate(orgId);
-      return { orgId, planKey, enabledModules: next };
+      return { orgId, planKey, enabledModules: next, meters: limits };
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;

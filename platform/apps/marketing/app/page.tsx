@@ -5,9 +5,9 @@ import { pageMetadata } from "@/lib/metadata";
 import { BRAND, LEGAL_ENTITY, SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Aura: every call, accounted for",
+  title: "Auratel: every call, accounted for",
   description:
-    "Aura records your telecallers' calls, transcribes them in Tamil and English, " +
+    "Auratel records your telecallers' calls, transcribes them in Tamil and English, " +
     "and turns every conversation into a lead with the details already filled in.",
   path: "/",
 });

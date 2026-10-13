@@ -133,7 +133,7 @@ export default async function ImportHistoryPage() {
         />
       ) : (
         <Card>
-          <Table caption="Imports, most recent first">
+          <Table caption="Imports, most recent first" stacked>
             <TableHead>
               <TableRow>
                 <TableHeaderCell>File</TableHeaderCell>
@@ -147,14 +147,14 @@ export default async function ImportHistoryPage() {
             <TableBody>
               {jobs.map((job) => (
                 <TableRow key={job.id}>
-                  <TableCell>
+                  <TableCell label="File">
                     <div className="font-medium text-text">{job.file_name ?? "Pasted rows"}</div>
                     <div className="text-xs text-text-muted">
                       {job.sheet_name ? `${job.sheet_name} · ` : ""}
                       {formatDateTime(job.created_at, zone)}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="What">
                     <div>{IMPORT_ENTITY_LABELS[job.entity] ?? job.entity}</div>
                     <div className="text-xs text-text-muted">
                       {job.source
@@ -168,7 +168,7 @@ export default async function ImportHistoryPage() {
                       {job.date_order ? ` · dates read ${job.date_order}` : ""}
                     </div>
                   </TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell className="tabular-nums" label="Result">
                     <div>
                       {job.inserted_count} imported
                       {job.updated_count > 0 ? `, ${job.updated_count} updated` : ""}
@@ -179,7 +179,7 @@ export default async function ImportHistoryPage() {
                       {job.failed_count > 0 ? ` · ${job.failed_count} failed` : ""}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="Status">
                     <StatusChip tone={tone(job.status)}>{label(job.status)}</StatusChip>
                     {job.rolled_back_at ? (
                       <div className="text-xs text-text-muted">
@@ -187,8 +187,8 @@ export default async function ImportHistoryPage() {
                       </div>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-text-muted">{job.created_by_name ?? "—"}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-text-muted" label="Who">{job.created_by_name ?? "—"}</TableCell>
+                  <TableCell label="Undo">
                     {job.status === "done" && job.inserted_count > 0 ? (
                       <RollbackButton
                         jobId={job.id}

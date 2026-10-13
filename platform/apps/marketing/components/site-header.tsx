@@ -3,6 +3,7 @@ import { Logo } from "@/components/brand/logo";
 import { BRAND, CONSOLE_LOGIN_URL, NAV } from "@/lib/site";
 import { ButtonLink } from "./ui/button";
 import { HeaderCta } from "./header-cta";
+import { ThemeSwitch } from "./theme-switch";
 
 /**
  * Sticky header.
@@ -66,6 +67,17 @@ export function SiteHeader() {
         <a href={CONSOLE_LOGIN_URL} className="mk-nav-link ml-auto hidden sm:inline-flex">
           Log in
         </a>
+
+        {/* `ml-auto sm:ml-1`, and both halves are load-bearing. Below `sm` the
+            "Log in" link above is `hidden`, so its own `ml-auto` pushes
+            nothing and this element has to do it instead; from `sm` up that
+            link is doing the pushing, so this just needs a gap beside it.
+            Shown at every width on purpose - a visitor whose phone is in dark
+            mode is the one most likely to want the switch, and that is most
+            of this site's traffic. */}
+        <span className="ml-auto sm:ml-1">
+          <ThemeSwitch />
+        </span>
 
         <HeaderCta />
       </div>

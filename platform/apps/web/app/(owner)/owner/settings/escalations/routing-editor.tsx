@@ -126,7 +126,13 @@ export function EscalationRouting({ initial }: { initial: Settings }) {
             description="Invite them from Team & permissions, and they can be made seniors here."
           />
         ) : (
-          <Card className="overflow-x-auto p-0">
+          <Card
+            // Below `md` each row draws as a labelled card (theme.css): the
+            // switch and the picker are the point of these tables, and at a
+            // 28rem/40rem minimum they do not fit a phone at all.
+            data-stacked="true"
+            className="overflow-x-auto p-0"
+          >
             <table className="w-full min-w-[28rem] text-sm">
               <thead>
                 <tr className="border-b border-border bg-bg-subtle text-left">
@@ -138,9 +144,9 @@ export function EscalationRouting({ initial }: { initial: Settings }) {
               <tbody>
                 {eligible.map((m) => (
                   <tr key={m.membershipId} className="border-b border-border/60 last:border-0">
-                    <td className="px-4 py-3 font-medium text-text">{m.name}</td>
-                    <td className="px-3 py-3 text-text-muted">{roleLabel(m.ownerRole)}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-3 font-medium text-text" data-label="Person">{m.name}</td>
+                    <td className="px-3 py-3 text-text-muted" data-label="Role">{roleLabel(m.ownerRole)}</td>
+                    <td className="px-3 py-3" data-label="Can receive escalations">
                       <Toggle
                         on={m.senior}
                         label={`${m.name} can receive escalations`}
@@ -173,7 +179,13 @@ export function EscalationRouting({ initial }: { initial: Settings }) {
             description="Telecallers appear here once a phone is paired for them on the Phones page."
           />
         ) : (
-          <Card className="overflow-x-auto p-0">
+          <Card
+            // Below `md` each row draws as a labelled card (theme.css): the
+            // switch and the picker are the point of these tables, and at a
+            // 28rem/40rem minimum they do not fit a phone at all.
+            data-stacked="true"
+            className="overflow-x-auto p-0"
+          >
             <table className="w-full min-w-[40rem] text-sm">
               <thead>
                 <tr className="border-b border-border bg-bg-subtle text-left">
@@ -192,8 +204,8 @@ export function EscalationRouting({ initial }: { initial: Settings }) {
                     !recipients.some((r) => r.membershipId === t.escalateToMembershipId);
                   return (
                     <tr key={t.telecallerId} className="border-b border-border/60 align-top last:border-0">
-                      <td className="px-4 py-3 font-medium text-text">{t.name}</td>
-                      <td className="px-3 py-3">
+                      <td className="px-4 py-3 font-medium text-text" data-label="Telecaller">{t.name}</td>
+                      <td className="px-3 py-3" data-label="Escalates to">
                         <Select
                           size="sm"
                           aria-label={`Who ${t.name} escalates to`}
@@ -214,7 +226,7 @@ export function EscalationRouting({ initial }: { initial: Settings }) {
                           ))}
                         </Select>
                       </td>
-                      <td className="px-3 py-3 text-text">
+                      <td className="px-3 py-3 text-text" data-label="Reaches now">
                         {t.effectiveRecipientName ?? ESCALATION_POOL_LABEL}
                       </td>
                     </tr>

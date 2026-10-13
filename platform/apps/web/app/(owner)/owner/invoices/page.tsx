@@ -153,7 +153,7 @@ export default async function InvoicesPage({
         )
       ) : (
         <>
-          <Table caption="Invoices">
+          <Table caption="Invoices" stacked>
             <TableHead>
               <tr>
                 <TableHeaderCell>Number</TableHeaderCell>
@@ -167,7 +167,7 @@ export default async function InvoicesPage({
             <TableBody>
               {data.invoices.map((invoice) => (
                 <TableRow key={invoice.id}>
-                  <TableCell>
+                  <TableCell label="Number">
                     <Link
                       href={`/owner/invoices/${invoice.id}`}
                       className="block font-medium text-text hover:underline"
@@ -175,7 +175,7 @@ export default async function InvoicesPage({
                       {invoice.invoice_number}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell label="For" className="text-text-muted">
                     <CustomerCell
                       accountId={invoice.account_id}
                       accountName={invoice.account_name}
@@ -183,16 +183,16 @@ export default async function InvoicesPage({
                       contactName={invoice.contact_name}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="Status">
                     <StatusChip tone={statusTone(invoice.status)}>{invoice.status}</StatusChip>
                   </TableCell>
-                  <TableCell className="tabular-nums text-text-muted">
+                  <TableCell label="Total" className="tabular-nums text-text-muted">
                     {formatMoney(invoice.total, invoice.currency)}
                   </TableCell>
-                  <TableCell className="tabular-nums text-text-muted">
+                  <TableCell label="Amount paid" className="tabular-nums text-text-muted">
                     {formatMoney(invoice.amount_paid, invoice.currency)}
                   </TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell label="Due date" className="text-text-muted">
                     {/* A calendar date (DATE column): no zone, or it slips a day west of UTC. */}
                     {invoice.due_date ? formatDateKey(invoice.due_date.slice(0, 10)) : "-"}
                   </TableCell>

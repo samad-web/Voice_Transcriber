@@ -44,7 +44,7 @@ export const CONSOLE_URL = "https://aura.sirahagents.com/admin";
  */
 export const CONSOLE_LOGIN_URL = `${CONSOLE_URL}/login`;
 
-export const BRAND = "Aura";
+export const BRAND = "Auratel";
 export const BRAND_LINE = "Every call, accounted for.";
 export const LEGAL_ENTITY = "Sirah Digital";
 
@@ -79,12 +79,12 @@ export function whatsappHref(message: string): string | null {
 
 /** Pre-filled openers, one per placement, so replies arrive with context. */
 export const WA_MESSAGES = {
-  hero: "Hi, I read about Aura and I'd like to know if it works for my team.",
+  hero: "Hi, I read about Auratel and I'd like to know if it works for my team.",
   customCrm:
     "Hi, I saw the custom CRM section on your site. Here's how we sell today:",
-  compatibility: "Hi, I want to check whether Aura works on my team's phones.",
-  pricing: "Hi, I'd like to understand Aura's pricing for my team.",
-  footer: "Hi, I have a question about Aura.",
+  compatibility: "Hi, I want to check whether Auratel works on my team's phones.",
+  pricing: "Hi, I'd like to understand Auratel's pricing for my team.",
+  footer: "Hi, I have a question about Auratel.",
 } as const;
 
 /**
@@ -143,7 +143,31 @@ export const FUNNEL_LIVE = false;
  * Restoring nav is one line: put the entries back. Every href must resolve to
  * an id in components/landing.tsx.
  */
-export const NAV: ReadonlyArray<{ href: string; label: string }> = [];
+/**
+ * RESTORED 2026-10-13, at the owner's instruction, after being empty since
+ * 2026-08-08.
+ *
+ * The 2026-08-08 reasoning is left above because it was correct for what the
+ * site was then: one landing page with one job, where every nav link is an
+ * invitation to do something other than that job. The site is no longer that.
+ * There are now four pages a stranger has a real reason to want - what the
+ * product does, what it costs, whether their handsets work, and what happens
+ * to their recordings - and with no nav the only route to any of them was the
+ * footer or a search result. An empty nav stops being focus and starts being
+ * a dead end once the site has somewhere to go.
+ *
+ * Four items, not seven. Every href is a real page, never an in-page anchor:
+ * the anchors were what made the old nav scroll people to the footer when the
+ * homepage was cut, and a nav that lies about where it goes is worse than no
+ * nav at all. These are also the four pages carrying breadcrumbs, so the
+ * header, the crumb trail and the sitemap all describe the same structure.
+ */
+export const NAV: ReadonlyArray<{ href: string; label: string }> = [
+  { href: "/call-tracking-dashboard", label: "What it does" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/compatibility", label: "Phones" },
+  { href: "/security", label: "Your data" },
+];
 
 /* ────────────────────────────────────────────────────────────────────────────
    The handset app.

@@ -333,11 +333,17 @@ export class TasksController {
         owner_role: string | null;
         self_tasks: boolean | null;
       }>(
+        // `m.status = 'active'` (0198): a suspended colleague was offered in
+        // this picker like anybody else, so the obvious way to deal with a
+        // task somebody left behind was to hand it straight back to the person
+        // who cannot sign in. The roster SHOWS them - reinstating is done from
+        // there - but nothing may be given to them. `invites.service.ts` has
+        // joined this way since 0137; this picker never did.
         `SELECT u.id AS user_id, u.name, u.email, m.owner_role,
                 (SELECT owner_self_tasks FROM organizations WHERE id = $1) AS self_tasks
            FROM memberships m
            JOIN users u ON u.id = m.user_id
-          WHERE m.org_id = $1
+          WHERE m.org_id = $1 AND m.status = 'active'
           ORDER BY u.email`,
         [orgId],
       );

@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.IBinder
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.voicetranscriber.callrecorder.App
 import com.voicetranscriber.callrecorder.R
@@ -199,7 +200,8 @@ class RecordingService : Service() {
         val n = NotificationCompat.Builder(this, App.CHANNEL_RECORDING)
             .setContentTitle(getString(R.string.record_failed_title))
             .setContentText(reason ?: getString(R.string.record_failed_text))
-            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(this, R.color.brand_mid))
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(NOTIF_FAIL_ID, n)
@@ -209,7 +211,8 @@ class RecordingService : Service() {
         NotificationCompat.Builder(this, App.CHANNEL_RECORDING)
             .setContentTitle(getString(R.string.recording_title))
             .setContentText(getString(R.string.recording_text, callee))
-            .setSmallIcon(android.R.drawable.presence_audio_online)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(this, R.color.brand_mid))
             .setOngoing(true) // transparency: user always sees recording is active
             .build()
 

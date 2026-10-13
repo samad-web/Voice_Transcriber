@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   ForbiddenException,
@@ -11,6 +12,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -28,6 +30,7 @@ import { OrgId, TenantGuard } from "../../common/tenant.guard";
 import { consolePhone, orgPhoneCountry } from "../../common/console-phone";
 import { DbService } from "../../db/db.service";
 import { OwnerAccountsService } from "./owner-accounts.service";
+import { OffboardService, type DeviceDisposition } from "./offboard.service";
 
 /**
  * Which permission role this person holds. `null` clears it, returning them to
@@ -37,6 +40,36 @@ import { OwnerAccountsService } from "./owner-accounts.service";
  */
 const AssignRoleBody = z.object({
   roleId: z.string().uuid().nullable(),
+});
+
+/**
+ * Handing over a departing person's desk (migration 0198).
+ *
+ * `handoverTo` is nullable rather than required, and the service - not this
+ * schema - decides whether null is acceptable: it is, for somebody with
+ * nothing outstanding, and it never is for somebody holding open work. Making
+ * the field required here would block the first case; making it optional with
+ * a silent default would recreate the second. The refusal lives where the
+ * counts are.
+ *
+ * `devices` defaults to `logout` because that is the reversible one. See
+ * `OffboardService.disposeDevices` for why the fleet is changed by naming
+ * handsets rather than by a guard on the device token.
+ */
+const OffboardBody = z.object({
+  handoverTo: z.string().uuid().nullable().optional(),
+  devices: z.enum(["logout", "remove", "keep"]).optional(),
+  archiveTelecaller: z.boolean().optional(),
+  /** Compute and return the manifest, change nothing. The dialog's preview. */
+  dryRun: z.boolean().optional(),
+});
+
+/** `?force=true` on DELETE - leave the work where it is. See `remove()`. */
+const RemoveQuery = z.object({
+  force: z
+    .enum(["true", "false", "1", "0"])
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
 });
 
 const UpdateMemberBody = z.object({
@@ -129,6 +162,7 @@ export class OwnerTeamController {
   constructor(
     private readonly db: DbService,
     private readonly accounts: OwnerAccountsService,
+    private readonly offboard: OffboardService,
   ) {}
 
   /**
@@ -160,12 +194,22 @@ export class OwnerTeamController {
                 m.suspended_at AS "suspendedAt",
                 m.role_id AS "roleId", r.name AS "roleName", r.key AS "roleKey",
                 m.can_pair_devices AS "canPairDevices",
-                t.id AS "telecallerId", t.display_name AS "telecallerName"
+                t.id AS "telecallerId", t.display_name AS "telecallerName",
+                -- 0198 archives the desk of anybody suspended, so the status
+                -- comes back with it. The join used to filter on 'active',
+                -- which from the moment archiving existed would have rendered
+                -- a suspended colleague as having no desk at all - and the
+                -- repair somebody would reach for, re-binding them to a second
+                -- identity, is the one thing that must not happen: their calls
+                -- and leads all hang off the first one.
+                t.status AS "telecallerStatus"
            FROM memberships m
            JOIN users u ON u.id = m.user_id
            LEFT JOIN roles r ON r.id = m.role_id
+           -- Unfiltered, and safe: telecallers_org_user (0017) is unique per
+           -- (org_id, user_id), so this can match at most one row either way.
            LEFT JOIN telecallers t
-             ON t.org_id = m.org_id AND t.user_id = m.user_id AND t.status = 'active'
+             ON t.org_id = m.org_id AND t.user_id = m.user_id
           WHERE m.org_id = $1
           ORDER BY u.id, (m.scope_type = 'org') DESC, m.id`,
         [orgId],
@@ -437,26 +481,137 @@ export class OwnerTeamController {
   }
 
   /**
+   * What this person still holds - the offboarding preview (migration 0198).
+   *
+   * A GET, so opening the dialog cannot change anything, and so a manager may
+   * read it: "what is on Priya's desk" is a question about running a floor.
+   * Acting on it is owner-only, like every other write on this controller.
+   */
+  @Get(":userId/offboard")
+  @RequireOwnerRole("owner", "manager")
+  async offboardPreview(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+  ) {
+    return this.db.withOrg(orgId, (client) => this.offboard.manifest(client, orgId, userId));
+  }
+
+  /**
+   * Hand their work over, stop their handsets, archive their desk.
+   *
+   * ── WHY THIS IS NOT PART OF SUSPEND OR REMOVE ─────────────────────────────
+   *
+   * Because it needs a decision that only a person can make - who gets the
+   * work - and neither of those routes has anywhere to put one. Suspension is
+   * reversible and sometimes means "three months' leave", where moving a
+   * hundred leads would be wrong; removal is irreversible and always means
+   * moving them. One route with a `mode` flag would have made both of those
+   * cases read like the other.
+   *
+   * What suspend and reinstate DO now do on their own is the half that needs
+   * no decision: archiving and un-archiving the telecaller identity, and
+   * logging the handsets out. See `setStatus`.
+   *
+   * ── IT IS SAFE TO RUN TWICE ───────────────────────────────────────────────
+   *
+   * Every write is "where the column still points at the person leaving", so
+   * a second call moves nothing and reports zeroes. That matters because the
+   * console runs it immediately before a removal, and a retry after a network
+   * blip must not be a second handover.
+   */
+  @Post(":userId/offboard")
+  @RequireOwnerRole("owner")
+  async offboardMember(
+    @OrgId() orgId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @Body() body: unknown,
+    @Req() req: PrincipalRequest,
+  ) {
+    const parsed = OffboardBody.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const input = parsed.data;
+
+    // Offboarding YOURSELF is refused for the same reason suspending yourself
+    // is: an owner who means to leave promotes a colleague and has them do it.
+    // Unlike those two, this one would also be quietly destructive - it hands
+    // away the desk of the person pressing the button.
+    if (req.principal?.userId === userId) {
+      throw new ForbiddenException(
+        "you cannot offboard yourself - ask another Owner to do it",
+      );
+    }
+
+    return this.db.withOrg(orgId, async (client) => {
+      if (input.dryRun) return this.offboard.manifest(client, orgId, userId);
+      return this.offboard.execute(client, orgId, req, {
+        userId,
+        handoverTo: input.handoverTo ?? null,
+        devices: (input.devices ?? "logout") as DeviceDisposition,
+        archiveTelecaller: input.archiveTelecaller ?? true,
+      });
+    });
+  }
+
+  /**
    * Remove somebody's access to this workspace.
    *
-   * Two refusals, and they protect different things. The LAST OWNER check
-   * stops the workspace being left with nobody who can administer it - the
-   * same guard the persona edit uses. The SELF check stops an owner removing
-   * their own access by misreading which row they were on; it is a usability
-   * guard rather than a security one, since an owner who genuinely wants out
-   * can promote a colleague and have them do it.
+   * Three refusals now, and they protect different things. The LAST OWNER
+   * check stops the workspace being left with nobody who can administer it -
+   * the same guard the persona edit uses. The SELF check stops an owner
+   * removing their own access by misreading which row they were on; it is a
+   * usability guard rather than a security one, since an owner who genuinely
+   * wants out can promote a colleague and have them do it.
+   *
+   * ── AND THE OUTSTANDING-WORK CHECK (migration 0198) ───────────────────────
+   *
+   * The third one is new, and it is the whole point of 0198. Removing
+   * somebody used to be a one-click way to leave a hundred leads, a dozen
+   * call-backs and a live handset attached to an account that no longer
+   * exists. Nothing on any screen said so, and the person who clicked had no
+   * way to find out afterwards.
+   *
+   * So: 409 with the counts, naming the offboard route. `?force=true` is the
+   * escape hatch for the case this must not block - a login created by
+   * mistake, an invite accepted by the wrong person, anybody who never held
+   * anything - and it stays available for an owner who has read the counts and
+   * means it. A refusal with no way past it would just get worked around by
+   * suspending and walking away, which is the state we started in.
    */
   @Delete(":userId")
   @RequireOwnerRole("owner")
   async remove(
     @OrgId() orgId: string,
     @Param("userId", ParseUUIDPipe) userId: string,
+    @Query() query: unknown,
     @Req() req: PrincipalRequest,
   ) {
     if (req.principal?.userId === userId) {
       throw new ForbiddenException(
         "you cannot remove your own access - ask another Owner to do it",
       );
+    }
+
+    const force = RemoveQuery.safeParse(query ?? {});
+    if (!force.success) throw new BadRequestException(force.error.issues);
+    if (!force.data.force) {
+      const manifest = await this.db.withOrg(orgId, (client) =>
+        this.offboard.manifest(client, orgId, userId),
+      );
+      if (manifest.total > 0 || manifest.devices.length > 0) {
+        const held = [
+          manifest.work.leads && `${manifest.work.leads} leads`,
+          manifest.work.callbacks && `${manifest.work.callbacks} open call-backs`,
+          manifest.work.tasks && `${manifest.work.tasks} open tasks`,
+          manifest.work.dealsOwned + manifest.work.dealsDesk &&
+            `${manifest.work.dealsOwned + manifest.work.dealsDesk} deals`,
+          manifest.devices.length && `${manifest.devices.length} live handsets`,
+        ].filter(Boolean);
+        throw new ConflictException(
+          `${manifest.member.email} still holds ${held.join(", ")}. Hand their work over ` +
+            "first (POST .../offboard), or pass ?force=true to remove them and leave it " +
+            "assigned to a login that will no longer exist.",
+        );
+      }
     }
 
     const {
@@ -734,6 +889,36 @@ export class OwnerTeamController {
         [userId, orgId, status, actorId],
       );
 
+      // ── The two things suspension always meant and never did (0198) ──────
+      //
+      // Both are symmetric, both are reversible, and neither needs anybody to
+      // decide anything - which is exactly why they belong here rather than in
+      // the offboard route.
+      //
+      // ARCHIVING THE DESK is the expensive half. `telecallers.status` has had
+      // 'archived' since 0017 and every reader honours it - lead routing joins
+      // on it, capacity balancing joins on it, the pickers join on it - and
+      // until now no code anywhere wrote it. So a suspended rep's identity
+      // stayed `active` and round-robin went on handing them new leads that
+      // nobody would ever call. Reinstating sets it back.
+      //
+      // LOGGING OUT THE HANDSETS stops the other silent half: device auth is a
+      // separate axis from membership, so the phone of somebody who cannot
+      // sign in goes on recording and uploading. Not restored on reinstate, on
+      // purpose - re-pairing is one scan and it is a deliberate act, whereas
+      // silently re-arming a recorder on somebody's phone is not a thing this
+      // route should be able to do.
+      const telecallerArchived = await this.offboard.setTelecallerArchived(
+        client,
+        orgId,
+        userId,
+        status === "suspended",
+      );
+      const handsets =
+        status === "suspended"
+          ? await this.offboard.logOutHandsets(client, orgId, userId)
+          : [];
+
       await client.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
          VALUES ($1, 'user', $2, $3, 'user', $4, $5::jsonb)`,
@@ -742,11 +927,15 @@ export class OwnerTeamController {
           actorId ?? "unknown",
           status === "suspended" ? "owner.team.suspend" : "owner.team.reinstate",
           userId,
-          JSON.stringify({ previousStatus: target.status }),
+          JSON.stringify({
+            previousStatus: target.status,
+            telecallerArchived,
+            handsetsLoggedOut: handsets.map((d) => ({ id: d.id, label: d.label })),
+          }),
         ],
       );
 
-      return { status };
+      return { status, telecallerArchived, handsetsLoggedOut: handsets.length };
     });
   }
 

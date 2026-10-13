@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
  * Next renders `app/layout.tsx` around every route, and it emits the site
  * header, the footer and the skip link. On this route all three are wrong: the
  * page is a tenant's form, not ours, and in the `<script>`/`<iframe>` embed it
- * is drawn inside somebody else's page - where an Aura header and a footer
+ * is drawn inside somebody else's page - where an Auratel header and a footer
  * full of our marketing links would be an advert we inserted into a customer's
  * site without asking.
  *

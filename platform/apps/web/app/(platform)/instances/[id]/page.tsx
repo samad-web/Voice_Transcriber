@@ -117,6 +117,7 @@ export default async function InstanceOverviewPage({
                 tabIndex={0}
                 role="region"
                 aria-label={`Recent calls, ${inst.name}`}
+                data-stacked="true"
                 className={SCROLLER}
               >
                 <table className="w-full min-w-[560px] border-collapse text-left text-sm">
@@ -132,7 +133,7 @@ export default async function InstanceOverviewPage({
                   <TableBody>
                     {calls.map((c) => (
                       <TableRow key={c.id}>
-                        <TableCell className="py-2.5">
+                        <TableCell className="py-2.5" label="Call">
                           <span className="block text-sm font-medium text-text">
                             {callLabel(c)}
                           </span>
@@ -141,11 +142,11 @@ export default async function InstanceOverviewPage({
                             className="text-xs text-text-muted tabular-nums"
                           />
                         </TableCell>
-                        <TableCell className="py-2.5 text-xs">{c.device_label ?? "-"}</TableCell>
-                        <TableCell className="py-2.5 text-right text-xs tabular-nums">
+                        <TableCell className="py-2.5 text-xs" label="Device">{c.device_label ?? "-"}</TableCell>
+                        <TableCell className="py-2.5 text-right text-xs tabular-nums" label="Duration">
                           {formatDuration(c.duration_s)}
                         </TableCell>
-                        <TableCell className="py-2.5">
+                        <TableCell className="py-2.5" label="Status">
                           <StatusChip tone={CALL_TONE(c.status)}>{c.status}</StatusChip>
                         </TableCell>
                       </TableRow>

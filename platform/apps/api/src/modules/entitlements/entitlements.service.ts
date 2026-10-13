@@ -480,6 +480,18 @@ export class EntitlementsService {
       // table on the same page lists it for every plan, which is where a cap
       // belongs. Enforcement is unaffected - that goes through `quota()`.
       if (key === "api_rate_per_min") continue;
+      // The capture family's two monthly meters (0197), excluded here for the
+      // same reason and with the same consequence. This is the API-only tier's
+      // usage page: it has no handset audio to measure, so both would render
+      // as a bar frozen at "0 of 200 hours" that could never move - which
+      // reads as a broken meter rather than as a limit that does not apply.
+      //
+      // Enforcement is unaffected. The hours ceiling is read by the worker
+      // through `readEffectiveLimits`, the storage ceiling by the hourly
+      // sweep, and a capture tenant sees both properly metered on
+      // `GET /owner/billing/overview`, which counts them from `usage_events`
+      // and `org_storage_usage` rather than from `usage_meters`.
+      if (key === "transcription_hours_monthly" || key === "storage_cap_gb") continue;
       const value = plan.values.get(key) as QuotaValue;
       const used = recounted[key] ?? 0;
       meters.push({

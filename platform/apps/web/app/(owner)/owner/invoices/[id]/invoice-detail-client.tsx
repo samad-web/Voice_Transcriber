@@ -384,7 +384,7 @@ export function InvoiceDetail({
             <p className="mt-3 text-sm text-text-muted">No payment attempts yet.</p>
           ) : (
             <div className="mt-3">
-              <Table caption="Payment history">
+              <Table caption="Payment history" stacked>
                 <TableHead>
                   <tr>
                     <TableHeaderCell>Provider</TableHeaderCell>
@@ -397,17 +397,17 @@ export function InvoiceDetail({
                 <TableBody>
                   {payments.map((payment) => (
                     <TableRow key={payment.id}>
-                      <TableCell className="text-text-muted">{payment.provider}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-text-muted" label="Provider">{payment.provider}</TableCell>
+                      <TableCell label="Status">
                         <StatusChip tone={paymentTone(payment.status)}>{payment.status}</StatusChip>
                       </TableCell>
-                      <TableCell className="tabular-nums text-text-muted">
+                      <TableCell className="tabular-nums text-text-muted" label="Amount">
                         {formatMoney(payment.amount, payment.currency)}
                       </TableCell>
-                      <TableCell className="text-text-muted">
+                      <TableCell className="text-text-muted" label="Created">
                         <Time iso={payment.created_at} mode="datetime" />
                       </TableCell>
-                      <TableCell className="text-text-muted">
+                      <TableCell className="text-text-muted" label="Captured">
                         {payment.captured_at ? <Time iso={payment.captured_at} mode="datetime" /> : "-"}
                       </TableCell>
                     </TableRow>

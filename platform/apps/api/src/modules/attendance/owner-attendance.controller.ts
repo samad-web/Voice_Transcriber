@@ -460,6 +460,7 @@ export class OwnerAttendanceController {
                      CASE WHEN rm.id IS NULL THEN NULL
                           ELSE COALESCE(NULLIF(btrim(ru.name), ''), ru.email) END AS "reportsToName",
                      t.app_leave_requests AS "appLeaveRequests", t.app_break_booking AS "appBreakBooking",
+                     t.app_recordings_access AS "appRecordingsAccess",
                      d.id AS "deviceId", d.label AS "deviceLabel", d.app_version AS "appVersion",
                      d.last_seen_at AS "lastSeenAt",
                      g.p90 AS "p90Gap"
@@ -509,6 +510,7 @@ export class OwnerAttendanceController {
           reportsToName: p.reportsToName ?? null,
           appLeaveRequests: p.appLeaveRequests === true,
           appBreakBooking: p.appBreakBooking === true,
+          appRecordingsAccess: p.appRecordingsAccess === true,
           device: hasDevice
             ? {
                 id: p.deviceId,
@@ -581,7 +583,8 @@ export class OwnerAttendanceController {
         `UPDATE telecallers
             SET reports_to_membership_id = CASE WHEN $2 THEN $3::uuid ELSE reports_to_membership_id END,
                 app_leave_requests = COALESCE($4, app_leave_requests),
-                app_break_booking = COALESCE($5, app_break_booking)
+                app_break_booking = COALESCE($5, app_break_booking),
+                app_recordings_access = COALESCE($6, app_recordings_access)
           WHERE id = ANY($1::uuid[])`,
         [
           ids,
@@ -589,6 +592,7 @@ export class OwnerAttendanceController {
           input.reportsToMembershipId ?? null,
           input.appLeaveRequests ?? null,
           input.appBreakBooking ?? null,
+          input.appRecordingsAccess ?? null,
         ],
       );
 
@@ -609,6 +613,7 @@ export class OwnerAttendanceController {
         reportsToMembershipId: input.reportsToMembershipId,
         appLeaveRequests: input.appLeaveRequests,
         appBreakBooking: input.appBreakBooking,
+        appRecordingsAccess: input.appRecordingsAccess,
       });
       return { updated: rowCount ?? 0, tokens: await this.attendance.deviceTokens(client, { telecallerIds: ids }) };
     });

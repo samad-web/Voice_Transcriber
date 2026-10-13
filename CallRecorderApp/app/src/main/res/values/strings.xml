@@ -12,7 +12,7 @@
     <string name="unknown_caller">Unknown</string>
     <string name="enable_accessibility">Enable call detection (Accessibility)</string>
     <string name="accessibility_desc">Detects when a call screen is open so recording can start, and reads the other party\'s name shown on screen.</string>
-    <string name="consent_notice">Recording phone or app calls may be regulated where you live. Many places require that you inform - or get consent from - everyone on the call. You are responsible for using this app lawfully. A persistent notification is shown while recording.</string>
+    <string name="consent_notice">Say it on the call. Tell the other person the call is being recorded, and wait for them to agree, before the conversation goes further. Auratel does not announce it for you and does not record whether they agreed. Recording calls is regulated, the duty to get consent belongs to you and your employer, and you are responsible for using this app lawfully. A persistent notification is shown while recording.</string>
     <string name="recordings_header">Recordings</string>
     <string name="recording_in_progress">recording…</string>
     <string name="play_pause">Play or pause</string>
@@ -152,6 +152,12 @@
     <string name="att_channel_reminder">Shift reminders</string>
     <string name="att_channel_reminder_desc">Shift start, breaks, shift end, and decisions on your leave and breaks.</string>
     <string name="att_start_shift">Start shift</string>
+    <!-- Home-screen shift card, shown before the attendance disclosure is accepted. -->
+    <!-- Recordings library, when the owner has not granted this telecaller access (0196). -->
+    <string name="recordings_locked_title">Recordings are not available</string>
+    <string name="recordings_locked_subtitle">Your workspace has not given this phone access to call recordings. Calls are still recorded and uploaded as normal.</string>
+    <string name="home_shift_notice_title">Attendance</string>
+    <string name="home_shift_notice_detail">Open Attendance to read what is recorded before your first shift.</string>
     <string name="att_end_shift">End shift</string>
     <string name="att_start_break">Start break</string>
     <string name="att_back_to_dialling">Back to dialling</string>

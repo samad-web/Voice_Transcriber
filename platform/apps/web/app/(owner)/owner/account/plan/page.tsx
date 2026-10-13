@@ -16,6 +16,7 @@ import { ownerTry, requireOwnerRoles } from "@/lib/owner-context";
 // "To change your plan, contact your account manager" - linked when the
 // deployment names a support contact, plain text otherwise.
 import { supportHref } from "@/lib/support-contact";
+import { CapturePlans, type BillingOverview } from "./capture-plans-client";
 
 export const metadata: Metadata = { title: "Plan & usage" };
 
@@ -42,12 +43,25 @@ function monthLabel(start: string): string {
  */
 export default async function PlanUsagePage() {
   await requireOwnerRoles(accountPageRoles("plan"));
-  const result = await ownerTry<{ usage: PlanUsage | null }>("/v1/owner/plan-usage");
+  // Two reads, in parallel. `plan-usage` is doc 27's storage and month cards;
+  // `billing/overview` is the capture price list, the four plan meters and the
+  // checkout (0197). Separate endpoints because the first predates plans
+  // entirely and is read by the account menu, and Promise.all because serial
+  // reads would be two round trips to Seoul for one screen
+  // (DB_LATENCY_MIGRATION.md: ~125ms each).
+  const [result, billing] = await Promise.all([
+    ownerTry<{ usage: PlanUsage | null }>("/v1/owner/plan-usage"),
+    ownerTry<BillingOverview>("/v1/owner/billing/overview"),
+  ]);
 
   if (!result.ok || !result.data.usage) {
     return (
       <>
         <PageHeader title="Plan & usage" context="Account" />
+        {/* The price list does not depend on the usage read, so a failure
+            there must not take the plans down with it: an owner who came here
+            to upgrade can still do it. */}
+        {billing.ok ? <CapturePlans overview={billing.data} /> : null}
         {!result.ok ? <LoadFailure what="your plan and usage" failure={result} /> : null}
       </>
     );
@@ -65,8 +79,13 @@ export default async function PlanUsagePage() {
     <>
       <PageHeader title="Plan & usage" context="Account" />
 
+      {/* The capture price list, the four meters and the checkout (0197).
+          Above the module/storage cards, because "what am I on and what would
+          it cost to change" is the question an owner opens this page with. */}
+      {billing.ok ? <CapturePlans overview={billing.data} /> : null}
+
       <Card className="space-y-3">
-        <h2 className="text-base font-semibold text-text">Your plan</h2>
+        <h2 className="text-base font-semibold text-text">Your modules</h2>
         <div className="flex flex-wrap gap-2">
           {modules.map((m) => (
             <StatusChip key={m.id} tone="muted">
@@ -148,7 +167,7 @@ export default async function PlanUsagePage() {
 
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-text">This month · {monthLabel(usage.month.start)}</h2>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-5 lg:grid-cols-3">
           <StatCard
             label="Calls captured"
             value={usage.month.calls.toLocaleString("en-IN")}

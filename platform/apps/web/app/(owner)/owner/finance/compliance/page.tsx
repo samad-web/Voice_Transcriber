@@ -264,7 +264,7 @@ export default async function CompliancePage({
         />
       ) : (
         <Card>
-          <Table caption={`Compliance filings for ${data.window.label}`}>
+          <Table caption={`Compliance filings for ${data.window.label}`} stacked>
             <TableHead>
               <TableRow>
                 <TableHeaderCell>Filing</TableHeaderCell>
@@ -280,7 +280,7 @@ export default async function CompliancePage({
                 const item = itemByCode.get(filing.itemCode);
                 return (
                   <TableRow key={filing.id}>
-                    <TableCell>
+                    <TableCell label="Filing">
                       <div className="font-medium text-text">{filing.name}</div>
                       <div className="text-xs text-text-muted">
                         {filing.authority}
@@ -288,8 +288,8 @@ export default async function CompliancePage({
                         {item ? ` · ${FREQUENCY_LABELS[item.frequency]}` : ""}
                       </div>
                     </TableCell>
-                    <TableCell>{filing.period.label}</TableCell>
-                    <TableCell>
+                    <TableCell label="Period">{filing.period.label}</TableCell>
+                    <TableCell label="Due">
                       <div>{formatDateKey(filing.dueOn)}</div>
                       <div className="text-xs text-text-muted">
                         {/* The relative phrase, which is the number people act
@@ -307,7 +307,7 @@ export default async function CompliancePage({
                         {filing.dueOnOverridden ? " · moved by hand" : ""}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Status">
                       {/* A back-filled period reads as "Before you started",
                           not as a red Overdue. Seeding the calendar mid-year
                           generates the months before it existed, and almost
@@ -333,10 +333,10 @@ export default async function CompliancePage({
                         <div className="text-xs text-text-muted">{filing.waivedReason}</div>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-text-muted">
+                    <TableCell className="text-text-muted" label="Owner">
                       {filing.assignee?.name ?? "—"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Proof">
                       {filing.document ? (
                         <Link
                           href="/owner/finance/documents"

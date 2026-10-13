@@ -13,7 +13,7 @@
  *
  * ── WHY A ROUTE HANDLER AND NOT A PAGE ──────────────────────────────────────
  *
- * A page would render inside the site's root layout: Aura's own header and
+ * A page would render inside the site's root layout: Auratel's own header and
  * footer, and the Meta Pixel, GTM and Clarity tags. None of that belongs in
  * front of somebody else's customer - least of all trackers they never agreed
  * to, on a payment confirmation. A route handler returns this document and

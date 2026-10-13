@@ -713,8 +713,34 @@ export class OwnerCallsController {
       }
       const {
         rows: [rec],
-      } = await client.query(`SELECT s3_key FROM recordings WHERE call_id = $1`, [callId]);
-      if (!rec) throw new NotFoundException("no recording for this call");
+        // `expired_at IS NULL` (0197): the audio-retention sweep deletes the
+        // object and keeps the row, so a presign without this clause signs a
+        // URL for an object that is not there. The reader gets a 404 from S3
+        // and blames the player; this gives them the real reason instead.
+      } = await client.query(
+        `SELECT s3_key FROM recordings WHERE call_id = $1 AND expired_at IS NULL`,
+        [callId],
+      );
+      if (!rec) {
+        // Told apart deliberately. "Your plan keeps audio for N days and this
+        // call is older" is a different message from "there is no recording",
+        // and conflating them turns a working retention policy into a bug
+        // report.
+        const {
+          rows: [aged],
+        } = await client.query<{ expired_at: Date }>(
+          `SELECT expired_at FROM recordings
+            WHERE call_id = $1 AND expired_at IS NOT NULL`,
+          [callId],
+        );
+        if (aged) {
+          throw new NotFoundException(
+            "This recording has passed your plan's audio-retention window and has been deleted. " +
+              "The transcript and everything derived from it are still here.",
+          );
+        }
+        throw new NotFoundException("no recording for this call");
+      }
 
       // Default expiry (30 min), not the 300s this used to pass - the signature
       // has to cover the whole listen, not the click that started it. Same

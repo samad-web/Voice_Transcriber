@@ -21,6 +21,20 @@ interface QueryClient {
 /**
  * Delete expired calls - but only the ones whose audio is really gone.
  *
+ * ── THIS IS THE DATA CLOCK, NOT THE AUDIO CLOCK (0197) ────────────────────
+ *
+ * Until 0197 one `retention_days` governed everything, and when it expired
+ * this function deleted the audio, the transcript, the AI analysis and the
+ * call row together. Wiring a plan's "60 days on Starter" to that column would
+ * have quietly deleted a paying customer's CRM history - which is not a bug,
+ * it is a refund, a reputation and possibly a compliance problem.
+ *
+ * So there are two clocks now and this one is the FULL PURGE, driven by
+ * `organizations.data_retention_days`: off the price list, defaulting to 90
+ * days or more, only ever changed per customer on request. The plan lever is
+ * `retention_days`, it deletes the recording FILE and nothing else, and it is
+ * `expireAudio` below.
+ *
  * This used to swallow a failed S3 delete (`.catch(() => undefined)`) and
  * delete the rows anyway. The object then stayed in the bucket with no row
  * pointing at it: invisible in the console, never retried, still paid for, and
@@ -64,27 +78,136 @@ export async function reapCalls(
 }
 
 /**
- * Retention reaper (§2.6): enforces each org's retention_days across S3 +
- * Postgres. Org list is read via the admin pool (cross-tenant by nature);
- * each org's sweep runs inside its own RLS context. Runs on an interval in
- * dev (REAPER_INTERVAL_MS); production wants a scheduled job + metrics.
+ * The AUDIO clock (0197): delete the recording file, keep everything else.
+ *
+ * ── WHAT A CUSTOMER AT THEIR RETENTION LIMIT ACTUALLY LOSES ───────────────
+ *
+ * The ability to replay the call. That is all. The transcript, the AI
+ * analysis, the extracted lead, the deal it became and every CRM record stay
+ * exactly where they were, and the call reads "recording expired" rather than
+ * offering a player that plays nothing. A customer at day 90 on Starter still
+ * has their whole history and simply cannot listen to it.
+ *
+ * This is the lever the price list sells - "audio kept for 30 / 60 / 90 / 180
+ * days" - and the one an operator raises with the retention add-on.
+ *
+ * ── WHY THE ROW IS KEPT AND ONLY STAMPED ──────────────────────────────────
+ *
+ * `expired_at` is set and `s3_key` is left intact, rather than deleting the
+ * `recordings` row. Three reasons, and the third is the one that bites:
+ *
+ *   * the key is the record of WHAT was removed and from where, which is the
+ *     first thing anybody asks after a complaint;
+ *   * a reader whose player is missing gets an explanation instead of an
+ *     absence, because `HAS_RECORDING` can tell "never had audio" from "the
+ *     audio aged out";
+ *   * `calls` is NOT deleted here, so a deleted `recordings` row would make
+ *     the call indistinguishable from one that failed to upload - and
+ *     `retry.ts` would try to collect audio for it forever.
+ *
+ * A FAILED S3 delete keeps the row unstamped and retries next run, exactly as
+ * the purge below does: an object still in the bucket with a row that claims
+ * it is gone is an object nobody will ever pay attention to again, and we are
+ * still paying for it.
+ */
+export async function expireAudio(
+  client: QueryClient,
+  orgId: string,
+  expired: Array<{ id: string; recording_id: string; s3_key: string }>,
+  deleteObject: (key: string) => Promise<unknown>,
+  /**
+   * What the audit row calls it. The storage-cap sweep evicts audio by exactly
+   * this mechanism and reuses this function, but the two are different events
+   * to anybody reading the log afterwards: one is the plan working as sold,
+   * the other is a tenant over their ceiling. Same deletion, different story.
+   */
+  action: "retention.audio_expired" | "retention.storage_evicted" = "retention.audio_expired",
+): Promise<{ expired: number; kept: number }> {
+  let done = 0;
+  let kept = 0;
+  for (const row of expired) {
+    try {
+      await deleteObject(row.s3_key);
+    } catch (err) {
+      kept++;
+      console.warn(`reaper: kept audio for call ${row.id} - the object could not be deleted:`, err);
+      continue;
+    }
+    await client.query(
+      "UPDATE recordings SET expired_at = now(), updated_at = now() WHERE id = $1",
+      [row.recording_id],
+    );
+    await client.query(
+      `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id)
+       VALUES ($1, 'system', 'reaper', $3, 'call', $2)`,
+      [orgId, row.id, action],
+    );
+    done++;
+  }
+  return { expired: done, kept };
+}
+
+/**
+ * Retention reaper (§2.6). Two clocks since 0197: `retention_days` expires the
+ * AUDIO FILE, `data_retention_days` purges the records. Org list is read via
+ * the admin pool (cross-tenant by nature); each org's sweep runs inside its
+ * own RLS context. Runs on an interval in dev (REAPER_INTERVAL_MS); production
+ * wants a scheduled job + metrics.
  */
 export async function reapExpired(): Promise<number> {
   const { rows: orgs } = await getAdminPool().query(
-    "SELECT id, retention_days, qualification_retention_days FROM organizations WHERE status = 'active'",
+    `SELECT id, retention_days, data_retention_days, qualification_retention_days
+       FROM organizations WHERE status = 'active'`,
   );
 
   let reaped = 0;
   let kept = 0;
+  let audioExpired = 0;
   for (const org of orgs) {
     let removed = 0;
     reaped += await withOrgContext(org.id, async (client) => {
-      const { rows: expired } = await client.query(
-        `SELECT c.id, r.s3_key FROM calls c
-           LEFT JOIN recordings r ON r.call_id = c.id
+      // ── PASS 1: the AUDIO clock. Deletes the file, keeps the call ─────────
+      //
+      // Runs first and on its own window, which for every plan is at or below
+      // the data window - so by the time pass 2 looks at a call its audio is
+      // usually already gone and there is nothing left in the bucket to
+      // delete. The purge still handles a key it finds, because an operator
+      // can set the two clocks in either order by hand.
+      //
+      // `expired_at IS NULL` is what makes this idempotent: a call whose audio
+      // went last night is not re-selected, so the bucket is not asked to
+      // delete the same key every hour forever.
+      const { rows: agedAudio } = await client.query(
+        `SELECT c.id, r.id AS recording_id, r.s3_key
+           FROM calls c
+           JOIN recordings r ON r.call_id = c.id
           WHERE c.started_at < now() - make_interval(days => $1)
+            AND r.expired_at IS NULL
+            AND r.s3_key IS NOT NULL
           LIMIT 500`,
         [org.retention_days],
+      );
+      const audio = await expireAudio(client, org.id, agedAudio, (key) =>
+        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key })),
+      );
+      audioExpired += audio.expired;
+      kept += audio.kept;
+
+      // ── PASS 2: the DATA clock. The full purge ────────────────────────────
+      //
+      // `data_retention_days`, NOT `retention_days`. This is the line 0197
+      // exists to draw: a plan's audio window must never reach a customer's
+      // transcripts, leads, deals and contacts. COALESCE to 90 for safety -
+      // the column is NOT NULL with a default, so this can only matter if
+      // somebody adds a row around the schema, and the fail-safe direction for
+      // a purge window is the longer one.
+      const purgeDays = org.data_retention_days ?? 90;
+      const { rows: expired } = await client.query(
+        `SELECT c.id, r.s3_key FROM calls c
+           LEFT JOIN recordings r ON r.call_id = c.id AND r.expired_at IS NULL
+          WHERE c.started_at < now() - make_interval(days => $1)
+          LIMIT 500`,
+        [purgeDays],
       );
       const calls = await reapCalls(client, org.id, expired, (key) =>
         s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key })),
@@ -99,7 +222,7 @@ export async function reapExpired(): Promise<number> {
       const dormant = await client.query(
         `DELETE FROM leads WHERE last_activity_at < now() - make_interval(days => $1)
          RETURNING id`,
-        [org.retention_days],
+        [purgeDays],
       );
       if ((dormant.rowCount ?? 0) > 0) {
         await client.query(
@@ -117,7 +240,7 @@ export async function reapExpired(): Promise<number> {
       const dormantDeals = await client.query(
         `DELETE FROM deals WHERE last_activity_at < now() - make_interval(days => $1)
          RETURNING id`,
-        [org.retention_days],
+        [purgeDays],
       );
       if ((dormantDeals.rowCount ?? 0) > 0) {
         await client.query(
@@ -181,7 +304,7 @@ export async function reapExpired(): Promise<number> {
             )
             AND NOT EXISTS (SELECT 1 FROM tasks WHERE contact_id = c.id AND deal_id IS NULL)
          RETURNING c.id`,
-        [org.retention_days],
+        [purgeDays],
       );
       if ((dormantContacts.rowCount ?? 0) > 0) {
         await client.query(
@@ -202,8 +325,9 @@ export async function reapExpired(): Promise<number> {
     // may have open; without this they would linger until the next navigation.
     if (removed > 0) announce(org.id, "lead", "deleted");
   }
-  if (reaped > 0) console.log(`reaper: removed ${reaped} expired call(s)`);
-  if (kept > 0) console.warn(`reaper: kept ${kept} expired call(s) whose recording could not be deleted; retrying next run`);
+  if (audioExpired > 0) console.log(`reaper: expired the audio on ${audioExpired} call(s), records kept`);
+  if (reaped > 0) console.log(`reaper: removed ${reaped} call(s) past the data-retention window`);
+  if (kept > 0) console.warn(`reaper: kept ${kept} recording(s) that could not be deleted from the bucket; retrying next run`);
 
   // A person's sign-in history (0127) on its own, platform-wide clock. Not a
   // tenant setting: the table is keyed on the person, not the org.

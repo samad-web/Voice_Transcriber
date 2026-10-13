@@ -34,9 +34,9 @@ import { APP_DOWNLOAD_URL } from "@/lib/site";
  * page.
  */
 export const metadata: Metadata = pageMetadata({
-  title: "Install the Aura app",
+  title: "Install the Auratel app",
   description:
-    "Download the Aura call-recording app for Android, and the two settings a new handset needs before it will capture anything.",
+    "Download the Auratel call-recording app for Android, and the two settings a new handset needs before it will capture anything.",
   path: "/app",
   noIndex: true,
 });
@@ -59,7 +59,7 @@ export default async function AppDownloadPage() {
     <Container className="pt-12 sm:pt-16 pb-20">
       <div className="max-w-3xl">
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-text text-balance">
-          Install the Aura app
+          Install the Auratel app
         </h1>
         <p className="mt-4 text-lg text-text-muted text-pretty">
           For Android handsets on your call floor. Open this page on the phone itself - the download
@@ -118,7 +118,7 @@ export default async function AppDownloadPage() {
             on the first install; updates after that are handled by the app itself.
           </p>
           <p>
-            If the phone already has an older Aura build signed with a different key, uninstall it
+            If the phone already has an older Auratel build signed with a different key, uninstall it
             first - Android refuses to replace an app whose signature does not match, and the error
             it shows does not say so.
           </p>
@@ -126,12 +126,12 @@ export default async function AppDownloadPage() {
           <h2>After you install</h2>
           <p>
             The app does nothing until it is activated. Open it and enter the{" "}
-            <strong>activation key</strong> for the handset, issued from the Aura console. Until
+            <strong>activation key</strong> for the handset, issued from the Auratel console. Until
             then it records nothing, uploads nothing and belongs to no account, which is why this
             download can be public.
           </p>
           <p>
-            Then turn on automatic call recording in the phone&rsquo;s own Phone app. Aura reads the
+            Then turn on automatic call recording in the phone&rsquo;s own Phone app. Auratel reads the
             recordings the handset writes; it does not record the call itself, so a phone with that
             setting off produces no files and there is nothing to collect.{" "}
             <TextLink href="/compatibility">

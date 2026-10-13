@@ -132,9 +132,10 @@ export async function TeamTab({
         </p>
       ) : (
         <p className="text-sm leading-relaxed text-text-muted">
-          Changes take effect the next time that person loads a page. Suspending somebody stops them
-          signing in and leaves every lead, call and follow-up still assigned to them; removing them
-          deletes the login for good.
+          Changes take effect the next time that person loads a page. Suspending somebody stops
+          them signing in, logs their handsets out and takes their desk out of the lead rotation -
+          but what is already assigned to them stays theirs until you hand it over. Removing them
+          deletes the login for good, and is refused while they still hold open work.
         </p>
       )}
     </>

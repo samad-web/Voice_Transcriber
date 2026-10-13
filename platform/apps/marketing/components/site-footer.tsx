@@ -32,11 +32,27 @@ import { Container } from "./ui/layout";
  * notice from nowhere has a compliance problem, not a tidier nav.
  */
 
-const LIVE = [
+const TRUST = [
   { href: "/compatibility", label: "Phone compatibility" },
   { href: "/security", label: "How we handle your data" },
   { href: "/consent", label: "Call recording and consent" },
 ];
+
+/**
+ * Whatever the restored nav (2026-10-13) does not already cover.
+ *
+ * Without this filter the footer lists /compatibility and /security twice,
+ * once in each column, under two different labels - "Phones" from NAV beside
+ * "Phone compatibility" here. Two links to one page with two names in one
+ * footer reads as a mistake, and it is.
+ *
+ * Derived rather than hand-pruned so the guarantee survives a nav change: if
+ * /security ever comes back out of NAV, this column picks it up again on its
+ * own. The compliance point the column exists for - that a product recording
+ * customer calls must link its data-handling notice from somewhere - is
+ * satisfied either way, which is the only thing that must stay true.
+ */
+const LIVE = TRUST.filter((t) => !NAV.some((n) => n.href === t.href));
 
 /**
  * The legal documents that are actually publishable.
@@ -74,6 +90,10 @@ export function SiteFooter() {
           {/* Rendered only when there is something in it. NAV is currently
               empty by design (see lib/site.ts), and a "Product" heading with no
               links under it looks like a rendering fault rather than a choice. */}
+          {/* The same NAV the header renders, so the two can never describe
+              different sites. Still guarded on length: NAV was empty between
+              2026-08-08 and 2026-10-13, and a "Product" heading with nothing
+              under it reads as a rendering fault rather than as a choice. */}
           {NAV.length > 0 ? (
             <nav aria-label="Product">
               <h2 className="text-sm font-semibold text-text">Product</h2>

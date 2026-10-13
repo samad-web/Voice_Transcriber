@@ -11,9 +11,29 @@ import { deltaText, type Delta } from "@/lib/dashboard-charts";
  * readers get the table twin instead of ninety tab stops across a plot.
  */
 
-/** The tooltip box. Value first and strong, label second (dataviz interaction rule). */
+/**
+ * The tooltip box. Value first and strong, label second (dataviz interaction rule).
+ *
+ * ── WHY IT IS DISPLAY:NONE ON A TOUCH SCREEN ────────────────────────────────
+ *
+ * `invisible` hides a box but still LAYS IT OUT, and these are absolutely
+ * positioned, `w-max`, and anchored to marks near the right-hand edge of a
+ * chart. On a 390px phone that pushed the document 47px wider than the
+ * viewport - so every page carrying a chart panned sideways, and nothing on
+ * screen explained why. Measured, not guessed: the auditor named the hidden
+ * tooltip as the widest element past the fold.
+ *
+ * A coarse pointer cannot hover, so the tooltip could never have been shown
+ * there anyway: `pointer-coarse:hidden` costs that reader nothing and removes
+ * the box from layout entirely. The table twin is how a touch reader gets the
+ * same numbers, which is why every chart has one.
+ *
+ * The viewport clamp is for the other case - a narrow DESKTOP window, where
+ * the pointer is fine and `edgeAlign` has already opened the box inward but
+ * 16rem still does not fit.
+ */
 export const TOOLTIP_BOX =
-  "pointer-events-none invisible absolute z-20 w-max max-w-[16rem] rounded-md border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted shadow-md";
+  "pointer-events-none invisible pointer-coarse:hidden absolute z-20 w-max max-w-[min(16rem,calc(100vw-2rem))] rounded-md border border-border bg-surface px-3 py-2 text-left text-xs text-text-muted shadow-md";
 
 /** The box, shown while its nearest `group` is hovered. A mark inside a hoverable ROW uses a named group instead. */
 export const TOOLTIP = `${TOOLTIP_BOX} group-hover:visible`;

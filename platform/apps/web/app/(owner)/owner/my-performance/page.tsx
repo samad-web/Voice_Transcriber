@@ -265,7 +265,7 @@ export default async function MyPerformancePage({
           The filled KPI band: what you did. Four tiles, because a fifth pushes
           the row below it off the fold on a laptop and the argument of this page
           is that the bands are read together. */}
-      <section aria-label="Output" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Output" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="Calls"
           value={card.calls}
@@ -316,7 +316,7 @@ export default async function MyPerformancePage({
 
           `tone="plain"` like the quality row below: the kit reserves the fill for
           one headline band, and two filled bands compete for the same glance. */}
-      <section aria-label="Pipeline and follow-ups" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Pipeline and follow-ups" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           tone="plain"
           label="Lead conversion"
@@ -378,7 +378,7 @@ export default async function MyPerformancePage({
       {/* ── QUALITY ─────────────────────────────────────────────────────────
           `tone="plain"` throughout: a second filled band would compete with the
           one above, and stat-card.tsx reserves the fill for the headline row. */}
-      <section aria-label="Quality" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Quality" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           tone="plain"
           label="Quality score"

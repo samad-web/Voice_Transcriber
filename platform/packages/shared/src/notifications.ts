@@ -325,6 +325,41 @@ export const NotificationKind = z.enum([
    * not learn that their work is being measured from a bell.
    */
   "agent_alert",
+  /**
+   * This month's transcription allowance crossed 80% or 100% (migration 0197,
+   * the published price list's "what happens at each limit").
+   *
+   * The same shape and the same audience as `storage_quota` above: owners
+   * only, once per threshold crossed, never anywhere outside Aura. And like
+   * that one, it has no teeth of its own - hitting the ceiling refuses nothing.
+   * The call is still recorded, stored, listed and playable; only transcription
+   * and analysis are skipped, and the call stays reprocessable, so a top-up or
+   * the next month's reset transcribes it after the fact.
+   *
+   * Which is why the body must not read like an error. Nothing was lost by
+   * running out of hours except time, and an owner told "transcription failed"
+   * opens a support ticket about a product that is working.
+   */
+  "transcription_quota",
+  /**
+   * A COLLEAGUE LEFT AND THEIR DESK IS NOW YOURS (migration 0198).
+   *
+   * Written once per offboarding, with the totals in the body - "112 leads, 9
+   * call-backs and 3 tasks moved to you from Priya" - and never once per
+   * record. A hundred and twelve rows from one owner's click is how a person
+   * learns to clear the bell without reading it.
+   *
+   * Its own kind rather than `lead_assigned` because that kind is one a rep
+   * may reasonably put on digest, and a handover held until 9am tomorrow is
+   * the message that most needed to arrive now. One lead arriving is routine;
+   * inheriting somebody's whole desk is not.
+   *
+   * Not "needs action": the records are already theirs. The task seats in the
+   * same handover ARE pending, because 0135 made being given work something a
+   * person may decline - so those arrive as `task_assigned` and this one only
+   * says what happened.
+   */
+  "work_handover",
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 

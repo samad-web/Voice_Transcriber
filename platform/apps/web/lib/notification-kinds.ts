@@ -282,6 +282,33 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     needsAction: false,
   },
 
+  // ── The transcription allowance (migration 0197) ──
+  transcription_quota: {
+    label: "Transcription hours",
+    description: "You've used 80 % or 100 % of this month's included transcription hours.",
+    icon: "hourglass",
+    // NOT an action, and the description deliberately does not say "failed".
+    // Reaching the ceiling refuses nothing: the call is still recorded, stored
+    // and playable, only transcription and analysis pause, and the call stays
+    // reprocessable - so a top-up or the next month's reset picks it up. An
+    // owner shown "Needs action" here would open a ticket about a product
+    // working exactly as sold.
+    needsAction: false,
+  },
+
+  // ── Somebody left (migration 0198) ──
+
+  work_handover: {
+    label: "Work handed to you",
+    description: "A colleague left or was suspended and their leads, call-backs and tasks moved to you.",
+    icon: "arrow-right-left",
+    // The records are already theirs - there is nothing in the console to
+    // accept. The task seats in the same handover arrive separately as
+    // `task_assigned` and those ARE answerable, because 0135 made being given
+    // work something a person may decline.
+    needsAction: false,
+  },
+
   // ── The transcript assistant's three (migrations 0184-0187) ──
 
   callback_due: {

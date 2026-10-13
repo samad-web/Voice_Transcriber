@@ -8,7 +8,7 @@ import { CONSOLE_URL, SITE_URL } from "@/lib/site";
 export const metadata: Metadata = pageMetadata({
   title: "Privacy policy",
   description:
-    "How Aura handles personal data: what the enquiry form collects, the single " +
+    "How Auratel handles personal data: what the enquiry form collects, the single " +
     "cookie the site sets, where customer call recordings are stored, and the " +
     "rights you have under India's DPDP Act.",
   path: "/privacy",
@@ -71,7 +71,7 @@ export default function PrivacyPage() {
         applies to you.
       </p>
       <p>
-        <strong>If your employer uses Aura</strong>, and Aura is processing recordings of calls
+        <strong>If your employer uses Auratel</strong>, and Auratel is processing recordings of calls
         between your company and its customers, then your company decides why and how that data
         is used. Your company is the Data Fiduciary; we act only on its instructions and are the
         Data Processor. Part B applies, and it is deliberately narrow: we do not decide what
@@ -79,14 +79,14 @@ export default function PrivacyPage() {
         not authorised.
       </p>
       <p>
-        If you are an individual who was recorded on a call with a business that uses Aura, your
+        If you are an individual who was recorded on a call with a business that uses Auratel, your
         rights are against that business, not against us. We will tell you who they are and
         forward your request to them. See §10.
       </p>
 
       <h2 id="who-we-are">2. Who we are</h2>
       <p>
-        {name}, operating as <strong>Aura</strong>.
+        {name}, operating as <strong>Auratel</strong>.
       </p>
       <ul>
         <li>
@@ -167,7 +167,7 @@ export default function PrivacyPage() {
             ],
             ["Your WhatsApp number, if different", "To reply on the channel you chose"],
             ["Your country", "To interpret your phone number correctly"],
-            ["The type of business you run", "To judge whether Aura actually suits you"],
+            ["The type of business you run", "To judge whether Auratel actually suits you"],
             ["How many people make calls", "The same"],
             ["Your monthly budget range", "To tell you honestly and early if we are not a fit"],
             ["Where you are in your decision", "To pitch the conversation at the right level"],
@@ -271,11 +271,11 @@ export default function PrivacyPage() {
         You can ask us to delete your enquiry at any time before then. See §10.
       </p>
 
-      <h2 id="part-b">Part B: if your company uses Aura</h2>
+      <h2 id="part-b">Part B: if your company uses Auratel</h2>
 
       <h3 id="our-role">6. Our role, stated narrowly</h3>
       <p>
-        When your company uses Aura, we process the following on its instructions and for no
+        When your company uses Auratel, we process the following on its instructions and for no
         other purpose:
       </p>
       <ul>
@@ -317,7 +317,7 @@ export default function PrivacyPage() {
         Where you connect an email, calendar or spreadsheet account, or a messaging channel such
         as WhatsApp, that connection runs on your own account with that provider. If your
         organisation has not registered its own app with Google or Microsoft, the connection uses
-        Aura&rsquo;s own registered app to complete the sign-in; either way, it is your
+        Auratel&rsquo;s own registered app to complete the sign-in; either way, it is your
         organisation&rsquo;s account, and only the access it grants, that gets used - not ours.
         Messages sent or received over WhatsApp necessarily also pass through WhatsApp&rsquo;s own
         network, operated by Meta, the same as they would if you used WhatsApp directly; if your
@@ -380,7 +380,7 @@ export default function PrivacyPage() {
 
       <Candid title="Your data moved: Seoul to Mumbai, September 2026.">
         <p>
-          Until 24 September 2026, the database behind Aura ran on managed infrastructure in
+          Until 24 September 2026, the database behind Auratel ran on managed infrastructure in
           Seoul, South Korea. It now runs on our own servers in Mumbai, India, alongside the rest
           of the application. We are telling you here, rather than only updating the table above,
           because a customer who checked this page before that date deserves to know it changed
@@ -522,7 +522,7 @@ export default function PrivacyPage() {
 
       <h3 id="children">12. Children</h3>
       <p>
-        Aura is a business product, sold to businesses, and is not directed at children. We do not
+        Auratel is a business product, sold to businesses, and is not directed at children. We do not
         knowingly collect personal data from anyone under 18. If you believe a child&rsquo;s data
         has reached us, write to <a href={`mailto:${privacyEmail}`}>{privacyEmail}</a> and we will
         delete it.

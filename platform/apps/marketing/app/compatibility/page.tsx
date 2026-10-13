@@ -3,15 +3,16 @@ import { Container, Section, SectionHeading } from "@/components/ui/layout";
 import { ComparisonTable, FAQAccordion, Prose, Verdict } from "@/components/ui/content";
 import { WhatsAppCta } from "@/components/ui/whatsapp-cta";
 import { TextLink } from "@/components/ui/button";
+import { BreadcrumbSchema } from "@/components/breadcrumbs";
 import { JsonLd } from "@/components/json-ld";
 import { OEM_MATRIX, STATUS_LABEL } from "@/lib/content/compatibility";
 import { pageMetadata } from "@/lib/metadata";
-import { SITE_URL, WA_MESSAGES } from "@/lib/site";
+import { WA_MESSAGES } from "@/lib/site";
 
 export const metadata: Metadata = pageMetadata({
   title: "Which phones record calls automatically",
   description:
-    "A hardware-verified list of which Android handsets Aura can capture calls from: " +
+    "A hardware-verified list of which Android handsets Auratel can capture calls from: " +
     "Samsung, Xiaomi, Redmi, POCO, Realme, Oppo, Vivo and OnePlus work. Pixel, Motorola " +
     "and Nokia use the Google Dialer and cannot be used. Here is exactly why.",
   path: "/compatibility",
@@ -37,18 +38,18 @@ export const metadata: Metadata = pageMetadata({
 const PAGE_FAQ = [
   {
     q: "Does a Pixel record phone calls?",
-    a: "The Google Dialer on Pixel, Motorola and Nokia handsets can record calls, but it keeps the files in the dialer's own private app storage. Android does not let any other application read that directory, so no third-party tool, Aura included, can ingest those recordings. This is confirmed on hardware and it is not a permission you can grant.",
+    a: "The Google Dialer on Pixel, Motorola and Nokia handsets can record calls, but it keeps the files in the dialer's own private app storage. Android does not let any other application read that directory, so no third-party tool, Auratel included, can ingest those recordings. This is confirmed on hardware and it is not a permission you can grant.",
   },
   {
     q: "Where does Samsung save call recordings?",
-    a: "In Recordings/Call/ on internal storage, once 'Auto record calls' is switched on in the Phone app's settings. That folder is readable, which is why Samsung handsets are the most reliable choice for Aura.",
+    a: "In Recordings/Call/ on internal storage, once 'Auto record calls' is switched on in the Phone app's settings. That folder is readable, which is why Samsung handsets are the most reliable choice for Auratel.",
   },
   {
     q: "Do I have to turn anything on?",
-    a: "Yes, one setting per handset. Open the Phone app, go to its call-recording settings, and set automatic recording to all calls. Without it the phone never writes a file and there is nothing for Aura to pick up. It takes about a minute.",
+    a: "Yes, one setting per handset. Open the Phone app, go to its call-recording settings, and set automatic recording to all calls. Without it the phone never writes a file and there is nothing for Auratel to pick up. It takes about a minute.",
   },
   {
-    q: "Can Aura record WhatsApp calls?",
+    q: "Can Auratel record WhatsApp calls?",
     a: "No. During a WhatsApp, Telegram or Signal call, Android gives the messaging app exclusive use of the microphone; every other app receives silence. This is an operating-system restriction, confirmed on hardware. We capture the metadata of those calls, not the audio.",
   },
   {
@@ -71,33 +72,35 @@ export default function CompatibilityPage() {
           })),
         }}
       />
-      <JsonLd
-        data={{
-          "@context": "https://schema.org",
-          "@type": "BreadcrumbList",
-          itemListElement: [
-            { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-            {
-              "@type": "ListItem",
-              position: 2,
-              name: "Phone compatibility",
-              item: `${SITE_URL}/compatibility`,
-            },
-          ],
-        }}
-      />
+      {/* Structured data only. The visible trail this page briefly carried was
+          removed on 2026-10-13; see components/breadcrumbs.tsx for why the
+          markup is kept and what makes that defensible here. */}
+      <BreadcrumbSchema current={{ label: "Phone compatibility", href: "/compatibility" }} />
 
       <Container className="pt-12 sm:pt-16">
         <div className="max-w-3xl">
           <p className="text-sm font-medium text-accent-text">Compatibility</p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight text-text text-balance sm:text-5xl">
-            Which phones can Aura record calls from?
+            Which phones can Auratel record calls from?
           </h1>
           <p className="mt-6 text-xl text-text-muted text-pretty">
-            Aura does not record calls itself. It reads the recordings your handset&rsquo;s
+            Auratel does not record calls itself. It reads the recordings your handset&rsquo;s
             own dialer already makes, which means whether it works is decided by the
             phone&rsquo;s manufacturer, not by us. This is the whole list, tested on real
             devices.
+          </p>
+          {/* The one internal link on this page, and it points at the pillar
+              page on purpose. This is the highest-intent organic entry on the
+              site (doc 10 §9): somebody who arrives here is checking whether
+              their handsets qualify, which means they have not yet read what
+              the product does with a qualifying call. */}
+          <p className="mt-4 text-lg text-text-muted">
+            If your handsets are on the supported list, the next question is what Auratel
+            does with the calls they record:{" "}
+            <TextLink href="/call-tracking-dashboard">
+              every call in one call tracking dashboard
+            </TextLink>
+            .
           </p>
         </div>
       </Container>
@@ -139,11 +142,11 @@ export default function CompatibilityPage() {
             records a call, it writes the audio into its own private application
             directory. Android&rsquo;s storage sandbox prevents every other installed app
             from reading another app&rsquo;s private directory. There is no permission
-            that grants it, no setting that opens it, and no version of Aura that gets
+            that grants it, no setting that opens it, and no version of Auratel that gets
             around it. We confirmed this on hardware rather than reading it somewhere.
           </p>
           <p>
-            On those phones Aura falls back to recording its own microphone, which
+            On those phones Auratel falls back to recording its own microphone, which
             captures the telecaller&rsquo;s side of the conversation only. You would get a
             transcript, and it would be half a conversation, enough to mislead a
             report and not enough to trust one. We do not recommend it, and we would
@@ -151,7 +154,7 @@ export default function CompatibilityPage() {
           </p>
           <p>
             <strong>
-              If your team is on Pixel, Motorola or Nokia handsets, Aura is not the
+              If your team is on Pixel, Motorola or Nokia handsets, Auratel is not the
               right product for you today.
             </strong>{" "}
             A Samsung or Xiaomi handset is inexpensive relative to what this changes,
@@ -179,7 +182,7 @@ export default function CompatibilityPage() {
               on; without it the phone writes no file.
             </li>
             <li>
-              The Aura app installed and enrolled against your workspace, with
+              The Auratel app installed and enrolled against your workspace, with
               all-files access granted so it can read the dialer&rsquo;s recording folder.
             </li>
             <li>

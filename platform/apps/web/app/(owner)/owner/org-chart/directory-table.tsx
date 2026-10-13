@@ -160,7 +160,7 @@ export function DirectoryTable({ asOf, nodes, parents, onOpen }: DirectoryTableP
         {/* The kit requires a caption and keeps it for screen readers unless
             `captionVisible` - which is right here: the heading above the table
             already says what it is, and a second visible one would be noise. */}
-        <Table caption={`Every position on the chart as of ${asOf}`}>
+        <Table caption={`Every position on the chart as of ${asOf}`} stacked>
           <TableHead>
             <TableRow>
               {header("title", "Position")}
@@ -175,7 +175,7 @@ export function DirectoryTable({ asOf, nodes, parents, onOpen }: DirectoryTableP
               const managerId = parents.get(node.id);
               return (
                 <TableRow key={node.id}>
-                  <TableCell>
+                  <TableCell label="Position">
                     <button
                       type="button"
                       onClick={() => onOpen(node.id)}
@@ -187,7 +187,7 @@ export function DirectoryTable({ asOf, nodes, parents, onOpen }: DirectoryTableP
                       <span className="block text-xs text-text-muted">{node.teamName}</span>
                     ) : null}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="Who">
                     {node.holder ? (
                       <>
                         <span className="text-text">{node.holder.name ?? node.holder.email}</span>
@@ -201,8 +201,8 @@ export function DirectoryTable({ asOf, nodes, parents, onOpen }: DirectoryTableP
                       <span className="text-text-muted">—</span>
                     )}
                   </TableCell>
-                  <TableCell>{node.departmentName ?? <span className="text-text-muted">—</span>}</TableCell>
-                  <TableCell>
+                  <TableCell label="Department">{node.departmentName ?? <span className="text-text-muted">—</span>}</TableCell>
+                  <TableCell label="Reports to">
                     {managerId ? (
                       <button
                         type="button"
@@ -215,7 +215,7 @@ export function DirectoryTable({ asOf, nodes, parents, onOpen }: DirectoryTableP
                       <span className="text-text-muted">Top of the chart</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="Status">
                     <StatusChip tone={node.status === "vacant" ? "outline" : "muted"}>
                       {POSITION_STATUS_LABELS[node.status]}
                     </StatusChip>

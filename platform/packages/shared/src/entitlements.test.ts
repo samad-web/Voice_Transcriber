@@ -2,10 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ALL_PLAN_KEYS,
   ENTITLEMENTS,
   EntitlementKey,
   PLAN_MODULES,
   PLAN_ORDER,
+  PLAN_ORDER_BY_FAMILY,
   PLAN_SEED,
   QUOTA_GRACE_BAND,
   type HardValue,
@@ -38,6 +40,14 @@ function migrationPath(name: string): string {
 }
 
 const MIGRATION = migrationPath("0192_insights_plans.sql");
+/**
+ * 0197 RESTATES the whole table - all eight plans, all twenty-seven keys -
+ * because it adds four keys that every pre-existing plan needs too. So it, not
+ * 0192, is the file the full drift check reads; 0192's own check below is
+ * narrowed to the twenty-three keys it declares, which is what it pinned on
+ * the day it ran.
+ */
+const MIGRATION_0197 = migrationPath("0197_capture_plans_and_billing.sql");
 
 describe("entitlement catalogue", () => {
   it("has one spec per key, and no key without a spec", () => {
@@ -52,7 +62,7 @@ describe("entitlement catalogue", () => {
     // an absence, and those two must never be the same value. A plan that
     // simply forgot `outgoing_webhooks` would grant them to everybody or to
     // nobody, depending on which way the service happened to fail.
-    for (const plan of PLAN_ORDER) {
+    for (const plan of ALL_PLAN_KEYS) {
       expect([plan, Object.keys(PLAN_SEED[plan]).sort()]).toEqual([
         plan,
         [...EntitlementKey.options].sort(),
@@ -61,7 +71,7 @@ describe("entitlement catalogue", () => {
   });
 
   it("shapes every seeded value to match its declared limit type", () => {
-    for (const plan of PLAN_ORDER) {
+    for (const plan of ALL_PLAN_KEYS) {
       for (const spec of ENTITLEMENTS) {
         const value = PLAN_SEED[plan][spec.key] as Record<string, unknown>;
         const label = `${plan}.${spec.key}`;
@@ -83,7 +93,7 @@ describe("entitlement catalogue", () => {
   it("only declares variants that some plan actually uses", () => {
     for (const spec of ENTITLEMENTS) {
       if (!spec.variants) continue;
-      for (const plan of PLAN_ORDER) {
+      for (const plan of ALL_PLAN_KEYS) {
         const value = PLAN_SEED[plan][spec.key] as HardValue;
         if (!value.enabled || !value.variant) continue;
         expect([spec.key, value.variant, spec.variants]).toEqual([
@@ -99,11 +109,16 @@ describe("entitlement catalogue", () => {
     // Not a style rule: the whole upsell premise is "upgrading unlocks things",
     // and the Compare-plans page renders "You'd unlock: ..." by diffing two
     // seeds. One row pointing the wrong way turns that into "you'd lose".
-    for (let i = 1; i < PLAN_ORDER.length; i += 1) {
-      const lower = PLAN_SEED[PLAN_ORDER[i - 1]];
-      const upper = PLAN_SEED[PLAN_ORDER[i]];
+    // Per FAMILY, because the two rails are different products: `record` is
+    // not a cheaper `starter`, and comparing across them would assert that a
+    // capture plan must include everything the API tier does.
+    const rails = [PLAN_ORDER_BY_FAMILY.insights, PLAN_ORDER_BY_FAMILY.capture];
+    for (const rail of rails) {
+    for (let i = 1; i < rail.length; i += 1) {
+      const lower = PLAN_SEED[rail[i - 1]];
+      const upper = PLAN_SEED[rail[i]];
       for (const spec of ENTITLEMENTS) {
-        const label = `${PLAN_ORDER[i - 1]} -> ${PLAN_ORDER[i]}: ${spec.key}`;
+        const label = `${rail[i - 1]} -> ${rail[i]}: ${spec.key}`;
         if (spec.limitType === "quota") {
           const a = (lower[spec.key] as QuotaValue).limit;
           const b = (upper[spec.key] as QuotaValue).limit;
@@ -125,11 +140,12 @@ describe("entitlement catalogue", () => {
         }
       }
     }
+    }
   });
 
   it("resolves every plan to modules that exist", () => {
     const known = new Set<string>(ORG_MODULES.map((m) => m.id));
-    for (const plan of PLAN_ORDER) {
+    for (const plan of ALL_PLAN_KEYS) {
       for (const module of PLAN_MODULES[plan]) {
         expect([plan, module, known.has(module)]).toEqual([plan, module, true]);
       }
@@ -173,23 +189,87 @@ describe("migration 0192's seed", () => {
     return JSON.parse(sql.slice(open + 1, close + 1));
   }
 
-  it("matches PLAN_SEED exactly, for every plan and every key", () => {
+  it("matches PLAN_SEED on the twenty-three keys it declares", () => {
     // The drift check the §4 MUST implies. A migration cannot import
     // TypeScript - the same constraint 0093 has for feature/module pairs - so
     // the two are compared here rather than hoped to agree. The numbers are
     // editable in production afterwards; what this pins is the DAY ONE state.
+    //
+    // NARROWED to 0192's own keys, because 0197 added four more to every plan
+    // and restates the table in full. Comparing 0192's blob against the whole
+    // of PLAN_SEED would fail for a reason that is not drift - 0192 cannot
+    // know about a key written seven migrations later - and the way to keep
+    // this check meaningful is to compare it against what it actually
+    // declared. The FULL table is checked against 0197 below.
     for (const plan of PLAN_ORDER) {
+      const blob = blobFor(plan);
+      const expected = Object.fromEntries(
+        Object.keys(blob).map((key) => [key, PLAN_SEED[plan][key as keyof (typeof PLAN_SEED)[typeof plan]]]),
+      );
+      expect([plan, blob]).toEqual([plan, expected]);
+    }
+  });
+
+  it("declares the same limit type as the catalogue for the keys it names", () => {
+    const from = sql.indexOf("-- ENTITLEMENT_LIMIT_TYPES");
+    const to = sql.indexOf("-- PLAN_SEED_STARTER");
+    const pairs = [...sql.slice(from, to).matchAll(/\('([a-z_]+)',\s*'(hard|quota|window)'\)/g)];
+    const fromSql = Object.fromEntries(pairs.map((m) => [m[1], m[2]]));
+    const fromCode = Object.fromEntries(
+      ENTITLEMENTS.filter((e) => e.key in fromSql).map((e) => [e.key, e.limitType]),
+    );
+    expect(fromSql).toEqual(fromCode);
+  });
+});
+
+describe("migration 0197's seed", () => {
+  const sql = readFileSync(MIGRATION_0197, "utf8");
+
+  function blobFor(plan: PlanKey): Record<string, unknown> {
+    const marker = `-- PLAN_SEED_${plan.toUpperCase()}`;
+    const from = sql.indexOf(marker);
+    expect([plan, from >= 0]).toEqual([plan, true]);
+    const open = sql.indexOf("'{", from);
+    const close = sql.indexOf("}'::jsonb", open);
+    return JSON.parse(sql.slice(open + 1, close + 1));
+  }
+
+  it("matches PLAN_SEED exactly, for all eight plans and all twenty-seven keys", () => {
+    // 0197 restates the WHOLE table, which is what makes this the file the
+    // full drift check reads. It has to: it adds four keys that every
+    // pre-existing plan needs as well, and a plan missing a key is how
+    // `check()` ends up deciding between "unlimited" and "denied" from an
+    // absence.
+    for (const plan of ALL_PLAN_KEYS) {
       expect([plan, blobFor(plan)]).toEqual([plan, PLAN_SEED[plan]]);
     }
   });
 
   it("declares the same limit type for every key as the catalogue does", () => {
-    const from = sql.indexOf("-- ENTITLEMENT_LIMIT_TYPES");
+    const from = sql.indexOf("-- ENTITLEMENT_LIMIT_TYPES_0197");
     const to = sql.indexOf("-- PLAN_SEED_STARTER");
-    const pairs = [...sql.slice(from, to).matchAll(/\('([a-z_]+)',\s*'(hard|quota|window)'\)/g)];
+    const pairs = [
+      ...sql.slice(from, to).matchAll(/\('([a-z_]+)',\s*'(hard|quota|window|sweep)'\)/g),
+    ];
     const fromSql = Object.fromEntries(pairs.map((m) => [m[1], m[2]]));
     const fromCode = Object.fromEntries(ENTITLEMENTS.map((e) => [e.key, e.limitType]));
     expect(fromSql).toEqual(fromCode);
+  });
+
+  it("prices every capture plan in both regions", () => {
+    // The price block, read back. A capture plan with no price row renders a
+    // tier with no number on the Compare-plans page and gives the checkout
+    // route nothing to charge - the migration asserts it too, but only on a
+    // database somebody actually ran it against.
+    const block = sql
+      .slice(sql.indexOf("-- PLAN_PRICES"), sql.indexOf("-- PLAN_PRICES_END"))
+      .replace(/\s+/g, " ");
+    for (const plan of PLAN_ORDER_BY_FAMILY.capture) {
+      for (const region of ["IN", "AE"]) {
+        const row = `('${plan}', '${region}',`;
+        expect([row, block.includes(row)]).toEqual([row, true]);
+      }
+    }
   });
 });
 

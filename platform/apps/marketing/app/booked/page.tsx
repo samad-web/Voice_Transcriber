@@ -4,7 +4,7 @@ import { BookingConfirmed, ReachOutScreen } from "./outcome";
 
 export const metadata: Metadata = {
   title: "Your call is booked",
-  description: "Confirmation of your booked Aura intro call.",
+  description: "Confirmation of your booked Auratel intro call.",
   // A conversion screen, not content. `app/robots.ts` already disallows
   // `/start`; this page carries its own noindex rather than reaching into that
   // file, which is not this partition's to edit. Adding `/booked` to the

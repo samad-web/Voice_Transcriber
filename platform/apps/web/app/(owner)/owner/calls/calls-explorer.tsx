@@ -496,7 +496,16 @@ export function CallsExplorer({
             {range ? ` for ${formatReportRange(range.from, range.to)}` : ""}.
           </p>
         ) : (
-          <div tabIndex={0} role="region" aria-label="Calls" className="overflow-x-auto">
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Calls"
+            // Below `md` each call draws as a labelled card (theme.css): on a
+            // phone the AI read and the Lead are the two columns a person came
+            // for, and they are the two furthest behind the scroll.
+            data-stacked="true"
+            className="overflow-x-auto"
+          >
             <table
               className={`w-full ${canListen ? "min-w-[1080px]" : "min-w-[900px]"} border-collapse text-left text-sm`}
             >
@@ -537,14 +546,14 @@ export function CallsExplorer({
                         honoured as a containing block across browsers, and
                         the first cell's box is flush with the row's edge
                         anyway. */}
-                    <TableCell className="relative">
+                    <TableCell label="When" className="relative">
                       <StateRule state={callState(call)} />
                       <span className="block text-text">{relativeTime(call.started_at, zone)}</span>
                       <span className="text-xs text-text-muted">
                         <Time iso={call.started_at} mode="datetime" />
                       </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Contact">
                       <span className="block font-medium text-text">{contact(call)}</span>
                       {/* Which call in the run this is. Only on a repeat: a
                           "1st call" chip on every first-time row would be
@@ -585,7 +594,7 @@ export function CallsExplorer({
                         </span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell label="Length" className="text-right tabular-nums">
                       {/* "0m" on a call nobody answered reads as a very short
                           conversation; there was none. */}
                       {callState(call) === "missed" ? (
@@ -595,7 +604,7 @@ export function CallsExplorer({
                       )}
                     </TableCell>
                     {canListen ? (
-                      <TableCell>
+                      <TableCell label="Recording">
                         {call.has_recording ? (
                           <InlineRecordingPlayer
                             callId={call.id}
@@ -612,10 +621,10 @@ export function CallsExplorer({
                         )}
                       </TableCell>
                     ) : null}
-                    <TableCell>
+                    <TableCell label="Telecaller">
                       {call.telecaller ?? <span className="text-text-subtle">-</span>}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="The AI read">
                       {call.sentiment || call.outcome || call.quality_score !== null ? (
                         <CallReadChips
                           sentiment={call.sentiment}
@@ -634,7 +643,7 @@ export function CallsExplorer({
                         <ReadPending status={call.status} />
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Lead">
                       {call.lead_id ? (
                         <Link
                           href={`/owner/leads?focus=${call.lead_id}`}

@@ -99,13 +99,27 @@ object ActivationStore {
         recordingEnabled: Boolean,
         configVersion: Int,
         appLockPasswordHash: String?,
+        recordingsAccess: Boolean = true,
     ) {
         prefs(context).edit()
             .putBoolean("recording_enabled", recordingEnabled)
             .putInt("config_version", configVersion)
             .putString("app_lock_password_hash", appLockPasswordHash)
+            .putBoolean("recordings_access", recordingsAccess)
             .apply()
     }
+
+    /**
+     * May the holder of this phone open, rename, share or delete its recordings
+     * (migration 0196)? Read on every render of the library, so a withdrawal
+     * takes effect on the next config sync without a reinstall.
+     *
+     * Defaults TRUE for a handset that has never synced a server carrying the
+     * field - the same reasoning as PlatformApi.DeviceConfig.recordingsAccess:
+     * silence is not a denial.
+     */
+    fun recordingsAccess(context: Context): Boolean =
+        prefs(context).getBoolean("recordings_access", true)
 
     fun statusSummary(context: Context): String {
         val p = prefs(context)

@@ -62,7 +62,10 @@ export default async function InstancesPage() {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
+          {/* Below `md` each tenant draws as a labelled card (theme.css):
+              seven columns at an 880px minimum is more than twice a phone,
+              and Status - the one an operator is checking - is last. */}
+          <div data-stacked="true" className="overflow-x-auto">
             <table className="w-full min-w-[880px] text-left border-collapse">
               <thead>
                 <tr className="bg-bg-subtle border-b-2 border-border-strong font-mono text-[10px] text-text font-bold uppercase tracking-wider">
@@ -78,7 +81,7 @@ export default async function InstancesPage() {
               <tbody className="divide-y-2 divide-border text-sm">
                 {data.tenants.map((tenant) => (
                   <tr key={tenant.id} className="hover:bg-surface-hover">
-                    <td className="py-4 px-5">
+                    <td className="py-4 px-5" data-label="Company">
                       <Link
                         href={`/instances/${tenant.id}`}
                         className="font-display font-bold text-text block hover:underline"
@@ -87,8 +90,8 @@ export default async function InstancesPage() {
                       </Link>
                       <span className="text-[10px] font-mono text-text-muted">{tenant.id}</span>
                     </td>
-                    <td className="py-4 px-4 font-mono text-xs">{tenant.device_count}</td>
-                    <td className="py-4 px-4 font-mono text-xs">
+                    <td className="py-4 px-4 font-mono text-xs" data-label="Devices">{tenant.device_count}</td>
+                    <td className="py-4 px-4 font-mono text-xs" data-label="Calls">
                       {tenant.call_count > 0 ? (
                         <Link
                           href={`/instances/${tenant.id}/calls`}
@@ -100,14 +103,14 @@ export default async function InstancesPage() {
                         <span className="text-text-muted">0</span>
                       )}
                     </td>
-                    <td className="py-4 px-4 font-mono text-xs">
+                    <td className="py-4 px-4 font-mono text-xs" data-label="Consent Policy">
                       {tenant.consent_policy.replace(/_/g, " ")}
                     </td>
-                    <td className="py-4 px-4 font-mono text-xs">{tenant.retention_days}d</td>
-                    <td className="py-4 px-4 font-mono text-xs">
+                    <td className="py-4 px-4 font-mono text-xs" data-label="Retention">{tenant.retention_days}d</td>
+                    <td className="py-4 px-4 font-mono text-xs" data-label="Created">
                       {new Date(tenant.created_at).toLocaleDateString()}
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-4 px-4" data-label="Status">
                       <StatusChip tone={STATUS_TONE[tenant.status]}>{tenant.status}</StatusChip>
                     </td>
                   </tr>

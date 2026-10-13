@@ -7,14 +7,14 @@ import { DPA_READY, required } from "@/lib/legal";
 export const metadata: Metadata = pageMetadata({
   title: "Data processing agreement",
   description:
-    "Aura's obligations when processing your customers' call data: roles under " +
+    "Auratel's obligations when processing your customers' call data: roles under " +
     "India's DPDP Act, the sub-processors, where the data is held, and how " +
     "deletion works.",
   path: "/dpa",
 });
 
 /**
- * /dpa - Aura's processor obligations. Forms part of the terms.
+ * /dpa - Auratel's processor obligations. Forms part of the terms.
  *
  * 404s until `DPA_READY`. See lib/legal.ts.
  *
@@ -55,7 +55,7 @@ export default function DpaPage() {
     >
       <p>
         This Data Processing Agreement (&ldquo;<strong>DPA</strong>&rdquo;) forms part of the{" "}
-        <a href="/terms">terms of service</a> between {name} (&ldquo;<strong>Aura</strong>&rdquo;,
+        <a href="/terms">terms of service</a> between {name} (&ldquo;<strong>Auratel</strong>&rdquo;,
         &ldquo;<strong>Processor</strong>&rdquo;) and the Customer (&ldquo;you&rdquo;, &ldquo;
         <strong>Data Fiduciary</strong>&rdquo;).
       </p>
@@ -67,7 +67,7 @@ export default function DpaPage() {
       <h2 id="which-law">1. Which law this is written for</h2>
       <p>
         This DPA is drafted for the <strong>Digital Personal Data Protection Act, 2023
-        (India)</strong>, under which you are the Data Fiduciary and Aura is a Data Processor
+        (India)</strong>, under which you are the Data Fiduciary and Auratel is a Data Processor
         processing personal data on your behalf under §8(2).
       </p>
       <p>
@@ -109,7 +109,7 @@ export default function DpaPage() {
             <td>
               <strong>Subject matter</strong>
             </td>
-            <td>Provision of the Aura call intelligence service</td>
+            <td>Provision of the Auratel call intelligence service</td>
           </tr>
           <tr>
             <td>
@@ -344,7 +344,7 @@ export default function DpaPage() {
 
       <h2 id="annex-b">Annex B: technical and organisational measures</h2>
       <p>
-        Stated as mechanisms rather than adjectives. Aura holds{" "}
+        Stated as mechanisms rather than adjectives. Auratel holds{" "}
         <strong>no security certification</strong>, no SOC 2, no ISO 27001, and does not claim
         one.
       </p>

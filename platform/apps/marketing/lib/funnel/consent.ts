@@ -23,12 +23,46 @@
  * stored string precisely so two records with different wording are
  * distinguishable without a schema migration or a git archaeology session.
  *
- * Aura sells itself on data protection. Its own lead form must not be its
+ * Auratel sells itself on data protection. Its own lead form must not be its
  * weakest artefact.
  */
 
-/** Bump on ANY edit to CONTACT_CONSENT_TEXT below. Date + ordinal. */
-export const CONSENT_VERSION = "2026-08-07.1";
+/**
+ * ── 2026-10-13: THE BOX IS NOW PRE-TICKED, BY THE OWNER'S DECISION ──────────
+ *
+ * It was unticked from 2026-08-07 for the reason stated above: a pre-ticked box
+ * is not a clear affirmative act, so under the DPDP Act and the GDPR it is not
+ * consent. The owner was shown that argument, and the friction-free alternative
+ * (drop the checkbox and show a notice instead, since replying to an enquiry
+ * somebody just submitted fulfils their own request rather than needing their
+ * permission), and chose to pre-tick it. That is their call to make.
+ *
+ * What this file does about it is keep the RECORD honest, which is the part
+ * that is not a matter of preference. Two things:
+ *
+ *   1. The version is bumped, so a `LIKE '[2026-08-07.1]%'` finds the records
+ *      captured when a human had to tick the box, and nothing after.
+ *   2. The default state is written INTO the stored evidence string. Without
+ *      that, a row captured today is indistinguishable from one where somebody
+ *      deliberately ticked, and anybody reading the table in two years would
+ *      draw a false conclusion from it. The wording is unchanged; what changed
+ *      is what a tick means, and the record has to say so.
+ *
+ * If this is ever revisited, the honest option is still the one on the table:
+ * no checkbox, a notice, and `CONSENT_SUPPORTING_TEXT` doing the work.
+ */
+
+/** Bump on ANY edit to CONTACT_CONSENT_TEXT or to CONTACT_CONSENT_DEFAULT. */
+export const CONSENT_VERSION = "2026-10-13.1";
+
+/**
+ * Whether the box arrives already ticked.
+ *
+ * Read by the form for its initial state and by `consentEvidence()` for the
+ * stored record, so the two cannot disagree: the thing that decides what the
+ * visitor sees is the same thing that describes it afterwards.
+ */
+export const CONTACT_CONSENT_DEFAULT = true;
 
 /**
  * The exact sentence beside the required, unticked checkbox.
@@ -58,5 +92,6 @@ export const WHATSAPP_SAME_QUESTION = "Is your WhatsApp number the same as this 
  * every record captured under a given wording.
  */
 export function consentEvidence(): string {
-  return `[${CONSENT_VERSION}] ${CONTACT_CONSENT_TEXT}`;
+  const state = CONTACT_CONSENT_DEFAULT ? "pre-ticked" : "unticked";
+  return `[${CONSENT_VERSION} ${state}] ${CONTACT_CONSENT_TEXT}`;
 }

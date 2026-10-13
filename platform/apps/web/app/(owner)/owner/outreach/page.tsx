@@ -32,7 +32,7 @@ export default async function OutreachPage() {
         <LoadFailure what="outreach cadences" failure={result} />
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:max-w-xs">
+          <div className="grid grid-cols-2 gap-4 sm:max-w-xs">
             <StatCard
               label="Due now"
               value={result.data.due.length}

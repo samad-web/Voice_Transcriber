@@ -52,7 +52,7 @@ function Hero() {
           </h1>
 
           <p className="mk-lede mt-5 sm:mt-6">
-            Aura writes down every call your telecallers make, in Tamil and English, and
+            Auratel writes down every call your telecallers make, in Tamil and English, and
             tells you what they add up to: which days convert, which people convert, and
             which objection keeps ending the conversation.
           </p>
@@ -75,11 +75,14 @@ function Hero() {
                 this reverses the other risks a stranger is actually weighing:
                 effort, commitment, and being sold to. */}
             <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm" style={{ color: "var(--mk-muted)" }}>
-              {[
-                "Nothing to install",
-                "No obligation",
-                "We'll tell you honestly if it isn't a fit",
-              ].map((t) => (
+              {/* "Nothing to install" came out on 2026-10-13. It was written
+                  about the enquiry rather than the product, but it does not
+                  read that way under a hero selling a handset app: Auratel
+                  runs on an APK that goes on every telecaller's phone, and a
+                  buyer who took that bullet at face value would find out at
+                  setup. The two that remain are about this conversation and
+                  are true of it. */}
+              {["No obligation", "We'll tell you honestly if it isn't a fit"].map((t) => (
                 <li key={t} className="flex items-center gap-2">
                   <span
                     className="h-1.5 w-1.5 rounded-full"
@@ -109,7 +112,7 @@ const VISUAL_ALT =
   "“20,000 bricks venum, Perundurai site-ku. Rate enna irukku?”, then the same " +
   "exchange in English, while the panel underneath stays unchanged: quantity 20,000 " +
   "units, product interlock brick, site Perundurai, rate ₹32 per unit, value ₹6,40,000, " +
-  "next step advance by Friday. Aura extracts the same details from either language.";
+  "next step advance by Friday. Auratel extracts the same details from either language.";
 
 /**
  * The product's own sequence - a live call becoming a CRM row.
@@ -411,7 +414,7 @@ function FinalCta() {
           className="mx-auto mt-5 max-w-xl text-[1.0625rem] leading-relaxed"
           style={{ color: "rgb(255 255 255 / 0.92)" }}
         >
-          Tell us how your team sells today. We&rsquo;ll come back with what Aura would have
+          Tell us how your team sells today. We&rsquo;ll come back with what Auratel would have
           pulled out of a week of your calls, the objections, the commitments, and who
           on your team is actually converting.
         </p>

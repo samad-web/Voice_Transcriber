@@ -114,7 +114,7 @@ export function DealsTable({
 
   return (
     <>
-      <Table caption="Deals">
+      <Table caption="Deals" stacked>
         <TableHead>
           <tr>
             <TableHeaderCell className="w-10">
@@ -154,7 +154,7 @@ export function DealsTable({
                     className="h-4 w-4 cursor-pointer accent-accent"
                   />
                 </TableCell>
-                <TableCell className="min-w-[12rem]">
+                <TableCell className="min-w-[12rem]" label="Deal">
                   <button
                     type="button"
                     onClick={() => setOpen(deal)}
@@ -167,14 +167,16 @@ export function DealsTable({
                   </span>
                   {/* Repeated here below `sm`: on a phone the Last activity
                       column is off-screen behind the table's own scroll, and a
-                      flag nobody scrolls to is not a flag. */}
+                      flag nobody scrolls to is not a flag. `data-stacked-hide`
+                      drops the repeat in a card, where that column is right
+                      there and the flag would otherwise print twice. */}
                   {stale !== null ? (
-                    <span className="mt-1 flex sm:hidden">
+                    <span data-stacked-hide className="mt-1 flex sm:hidden">
                       <StaleFlag days={stale} />
                     </span>
                   ) : null}
                 </TableCell>
-                <TableCell>
+                <TableCell label="Stage">
                   <span
                     className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
                       // The board's neutral weights (kanban-board.tsx): a stage
@@ -189,17 +191,17 @@ export function DealsTable({
                     {stageLabel(deal.stage)}
                   </span>
                 </TableCell>
-                <TableCell className="text-right font-medium tabular-nums">
+                <TableCell className="text-right font-medium tabular-nums" label="Value">
                   {deal.amount === null ? <span className="text-text-muted">-</span> : formatValue(deal.amount)}
                 </TableCell>
-                <TableCell className="hidden whitespace-nowrap text-text-muted md:table-cell">{deal.owner_name ?? "-"}</TableCell>
-                <TableCell className="hidden xl:table-cell">
+                <TableCell className="hidden whitespace-nowrap text-text-muted md:table-cell" label="Owner">{deal.owner_name ?? "-"}</TableCell>
+                <TableCell className="hidden xl:table-cell" label="Tags">
                   <TagChips tags={deal.tags} />
                 </TableCell>
-                <TableCell className="hidden max-w-[18rem] truncate text-text-muted lg:table-cell">
+                <TableCell className="hidden max-w-[18rem] truncate text-text-muted lg:table-cell" label="Next action">
                   {deal.next_action ?? "-"}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-text-muted tabular-nums">
+                <TableCell className="whitespace-nowrap text-text-muted tabular-nums" label="Last activity">
                   <span className="flex items-center gap-2">
                     {relativeTime(deal.last_activity_at, zone)}
                     {stale !== null ? <StaleFlag days={stale} /> : null}

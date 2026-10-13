@@ -206,7 +206,7 @@ export default async function ExpensesPage({
         />
       ) : (
         <Card className="overflow-hidden p-0">
-          <Table caption="Expenses this month, newest first">
+          <Table caption="Expenses this month, newest first" stacked>
             <TableHead>
               <TableRow>
                 <TableHeaderCell>Date</TableHeaderCell>
@@ -220,8 +220,8 @@ export default async function ExpensesPage({
             <TableBody>
               {list.data.expenses.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="tabular-nums text-text-muted">{e.incurredOn}</TableCell>
-                  <TableCell>
+                  <TableCell className="tabular-nums text-text-muted" label="Date">{e.incurredOn}</TableCell>
+                  <TableCell label="Category">
                     {EXPENSE_CATEGORY_LABELS[e.category as ExpenseCategory] ?? e.category}
                     {e.marketingSourceName ? (
                       <span className="block text-xs text-text-muted">
@@ -229,8 +229,8 @@ export default async function ExpensesPage({
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-text-muted">{e.vendor ?? "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-text-muted" label="Vendor">{e.vendor ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums" label="Cost">
                     {money(e.netCost, e.currency)}
                     {e.tax > 0 ? (
                       <span className="block text-xs text-text-muted">
@@ -238,11 +238,11 @@ export default async function ExpensesPage({
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-xs text-text-muted">
+                  <TableCell className="text-xs text-text-muted" label="Kind">
                     {e.isFixed ? "Fixed" : "Variable"}
                     {e.recurs ? <span className="block">{e.recurs}</span> : null}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="State">
                     {/* StatusChip for the reason the dues page records:
                         `StateChip` carries the console's CALL vocabulary and
                         appends it for screen readers, so "approved" would

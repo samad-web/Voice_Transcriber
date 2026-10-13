@@ -8,7 +8,7 @@ import { CONSOLE_URL } from "@/lib/site";
 export const metadata: Metadata = pageMetadata({
   title: "Terms of service",
   description:
-    "The agreement between Aura and the businesses that use it: who carries the " +
+    "The agreement between Auratel and the businesses that use it: who carries the " +
     "legal responsibility for recording a call, what the service does and does not " +
     "promise, and who owns the data.",
   path: "/terms",
@@ -26,7 +26,7 @@ export const metadata: Metadata = pageMetadata({
  * 99.9% and no credit regime that could pay for breaching it, and an uptime
  * promise you cannot measure is a breach of contract waiting to be found.
  *
- * It does NOT soften §5. Aura's output comes from speech recognition and
+ * It does NOT soften §5. Auratel's output comes from speech recognition and
  * language models, which are wrong sometimes and confidently wrong
  * occasionally. A terms page that buries that in a warranty disclaimer, while
  * the marketing page implies the extraction is reliable, is the gap that turns
@@ -49,7 +49,7 @@ export default function TermsPage() {
     >
       <h2 id="parties">1. Who this agreement is between</h2>
       <p>
-        These terms are between {name} (&ldquo;<strong>Aura</strong>&rdquo;, &ldquo;we&rdquo;,
+        These terms are between {name} (&ldquo;<strong>Auratel</strong>&rdquo;, &ldquo;we&rdquo;,
         &ldquo;us&rdquo;) and the business that subscribes to the service (&ldquo;you&rdquo;,
         &ldquo;<strong>Customer</strong>&rdquo;).
       </p>
@@ -58,7 +58,7 @@ export default function TermsPage() {
         authority to bind it. If you do not, do not accept them.
       </p>
       <p>
-        These terms cover the Aura call intelligence service: the Android capture application,
+        These terms cover the Auratel call intelligence service: the Android capture application,
         the upload and processing pipeline, the web console at{" "}
         <a href={CONSOLE_URL}>{CONSOLE_URL.replace(/^https?:\/\//, "")}</a>, and the APIs
         (together, the &ldquo;<strong>Service</strong>&rdquo;).
@@ -66,7 +66,7 @@ export default function TermsPage() {
 
       <h2 id="recording-responsibility">2. The single most important thing in this document</h2>
 
-      <Candid title="Aura records telephone calls. The legal responsibility for that recording is yours, not ours.">
+      <Candid title="Auratel records telephone calls. The legal responsibility for that recording is yours, not ours.">
         <p>You are responsible for:</p>
       </Candid>
 
@@ -120,7 +120,7 @@ export default function TermsPage() {
 
       <h2 id="no-promises">5. What the Service does not promise</h2>
       <p>
-        Aura transcribes speech and extracts structured information using automated systems,
+        Auratel transcribes speech and extracts structured information using automated systems,
         including third-party speech recognition and language models.
       </p>
 
@@ -136,7 +136,7 @@ export default function TermsPage() {
       <ul>
         <li>
           <strong>
-            Do not use Aura&rsquo;s output as the sole basis for a decision that matters
+            Do not use Auratel&rsquo;s output as the sole basis for a decision that matters
           </strong>{" "}
           without checking it against the recording. It is a tool for finding things in your
           calls, not a system of record for what was legally agreed.

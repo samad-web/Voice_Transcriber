@@ -27,6 +27,8 @@ const ALLOWLIST: Record<string, string> = {
     "counts replies per person for the scorecard; no thread, peer or message text is selected",
   "modules/tenancy/erasure.controller.ts":
     "erasure must reach every thread about the person being erased, private or not - it deletes, it does not display",
+  "modules/owner/offboard.service.ts":
+    "a handover moves only `private_to_user_id IS NULL` threads, which is STRICTER than the helper - `visibleThread` would admit the leaver's own private chats, and those are exactly what must not change hands (0125)",
 };
 
 const QUERIES_CONVERSATIONS = /\b(FROM|JOIN|UPDATE|INTO)\s+(conversations|conversation_messages)\b/;

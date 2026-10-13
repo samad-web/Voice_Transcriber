@@ -12,7 +12,7 @@ export function FinalCta() {
       </h2>
       <CTABanner
         title="Tell us how your team sells today."
-        body="Five minutes on WhatsApp is enough for us to tell you whether Aura fits, whether your phones are compatible, and roughly what it would cost. If it does not fit, we will say so."
+        body="Five minutes on WhatsApp is enough for us to tell you whether Auratel fits, whether your phones are compatible, and roughly what it would cost. If it does not fit, we will say so."
         waMessage={WA_MESSAGES.footer}
         secondary={{
           href: startHref("final-cta"),

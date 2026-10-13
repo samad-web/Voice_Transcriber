@@ -12,6 +12,16 @@ import { SITE_URL } from "@/lib/site";
 const ROUTES: Array<{ path: string; priority: number; changeFrequency: "monthly" | "yearly" }> = [
   { path: "/", priority: 1.0, changeFrequency: "monthly" },
   { path: "/compatibility", priority: 0.9, changeFrequency: "monthly" },
+  /* The organic-search pillar page (doc 10 §9 phase P6). Sits level with
+     /compatibility rather than below it: both are written for a stranger
+     arriving from a search result rather than for a buyer mid-evaluation,
+     which is the distinction this ordering is expressing. */
+  { path: "/call-tracking-dashboard", priority: 0.9, changeFrequency: "monthly" },
+  /* Pricing sits with the two highest-intent pages, not with the reference
+     material. "What does it cost" is the query a buyer runs immediately
+     before or after "will it work on my phones", and the page answers it with
+     real figures rather than a contact form. */
+  { path: "/pricing", priority: 0.9, changeFrequency: "monthly" },
   { path: "/security", priority: 0.8, changeFrequency: "monthly" },
   { path: "/consent", priority: 0.7, changeFrequency: "yearly" },
 ];

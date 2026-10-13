@@ -18,11 +18,11 @@ const STEPS = [
   },
   {
     title: "It uploads itself",
-    body: "Aura picks the recording up in the background and sends it over an encrypted connection when the phone has signal. Nobody presses anything.",
+    body: "Auratel picks the recording up in the background and sends it over an encrypted connection when the phone has signal. Nobody presses anything.",
   },
   {
     title: "It gets transcribed and read",
-    body: "The conversation is transcribed with speaker labels, then read against the fields you told Aura matter in your business, not a generic template.",
+    body: "The conversation is transcribed with speaker labels, then read against the fields you told Auratel matter in your business, not a generic template.",
   },
   {
     title: "It arrives where you work",

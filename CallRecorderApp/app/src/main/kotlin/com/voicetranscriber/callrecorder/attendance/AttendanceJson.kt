@@ -70,6 +70,9 @@ object AttendanceJson {
             days = days,
             noticeVersion = a.optInt("noticeVersion", 1),
             noticeText = optStr(a, "noticeText") ?: "",
+            noticeBullets = a.optJSONArray("noticeBullets")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { it.isNotBlank() } }
+            } ?: emptyList(),
         )
     }
 

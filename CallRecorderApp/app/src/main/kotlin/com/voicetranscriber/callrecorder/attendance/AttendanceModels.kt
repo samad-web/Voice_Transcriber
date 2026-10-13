@@ -140,6 +140,12 @@ data class AttendanceConfig(
     val days: List<ScheduleDay>,
     val noticeVersion: Int,
     val noticeText: String,
+    /**
+     * The disclosure as a list. Empty when the server predates it, which is why
+     * `noticeText` is still carried: the consent screen falls back to the
+     * paragraph rather than showing an empty card.
+     */
+    val noticeBullets: List<String>,
 )
 
 /** Timings the engine runs on, in milliseconds, clamped to sane ranges. */

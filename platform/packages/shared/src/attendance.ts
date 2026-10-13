@@ -40,6 +40,34 @@ export const LEAVE_ESCALATION_FLOOR_HOURS = 2;
 export const ATTENDANCE_MIN_VERSION_CODE = 10;
 /** Bump when ATTENDANCE_NOTICE_TEXT changes, so every phone asks again. */
 export const ATTENDANCE_NOTICE_VERSION = 1;
+
+/**
+ * The same disclosure as ATTENDANCE_NOTICE_TEXT, as the list the handset now
+ * renders. One line per thing that is recorded, so a telecaller can read it in
+ * the five seconds they will actually give it - a wall of text in a consent
+ * gate is a consent gate nobody reads.
+ *
+ * ── WHY THIS DOES NOT BUMP ATTENDANCE_NOTICE_VERSION ──────────────────────
+ *
+ * The version exists so a CHANGE OF MEANING re-asks every phone in the fleet.
+ * Nothing here says anything the paragraph did not already say; it is the same
+ * disclosure, set differently. Bumping would re-prompt every handset for a
+ * presentation change, which teaches people to tap through consent gates - the
+ * exact habit this screen cannot afford. Change the WORDS and you must bump.
+ *
+ * ATTENDANCE_NOTICE_TEXT is kept, unchanged and byte-for-byte, because
+ * handsets older than this build read it and must keep seeing what they
+ * acknowledged.
+ */
+export const ATTENDANCE_NOTICE_BULLETS: readonly string[] = [
+  "When your shift starts and ends, and the breaks you take",
+  "That a call happened - never what was said on it",
+  "Whether you answered a presence check",
+  "Whether the phone had network and power",
+  "Nothing outside your shift. This app never listens to the room.",
+  "You see your own timeline on the Attendance tab. Your managers see the same timeline.",
+];
+
 export const ATTENDANCE_NOTICE_TEXT =
   "Your workspace records attendance on this phone during your shift hours: when your shift starts " +
   "and ends, your breaks, call activity (not what is said), whether you answered a presence check, " +
@@ -301,6 +329,11 @@ export const PeopleUpdateInput = z.object({
   reportsToMembershipId: z.string().uuid().nullable().optional(),
   appLeaveRequests: z.boolean().optional(),
   appBreakBooking: z.boolean().optional(),
+  /**
+   * Handset library access (migration 0196): may this person open, rename
+   * or delete the recordings on their own phone. Omitted = unchanged.
+   */
+  appRecordingsAccess: z.boolean().optional(),
 });
 export type PeopleUpdateInput = z.infer<typeof PeopleUpdateInput>;
 
@@ -475,6 +508,12 @@ export const DeviceAttendanceConfig = z.object({
   days: z.array(DeviceScheduleDay),
   noticeVersion: z.number().int(),
   noticeText: z.string(),
+  /**
+   * The same disclosure as a list (ATTENDANCE_NOTICE_BULLETS). Sent beside
+   * `noticeText`, never instead of it: a handset built before this field
+   * existed reads the paragraph and must keep working.
+   */
+  noticeBullets: z.array(z.string()),
 });
 export type DeviceAttendanceConfig = z.infer<typeof DeviceAttendanceConfig>;
 

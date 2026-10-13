@@ -22,7 +22,7 @@ export function Hero() {
           </h1>
 
           <p className="mt-6 text-xl text-text-muted text-pretty">
-            Aura records your telecallers&rsquo; calls, transcribes them in Tamil, Hindi
+            Auratel records your telecallers&rsquo; calls, transcribes them in Tamil, Hindi
             and English, and turns every conversation into a qualified lead, in your
             CRM, without anyone typing a note.
           </p>

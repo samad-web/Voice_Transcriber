@@ -63,9 +63,14 @@ export async function submitContactAction(form: FormData): Promise<StepOneResult
   if (!phoneCheck.ok) errors.phone = phoneCheck.error!;
   if (!whatsappCheck.ok) errors.whatsapp = whatsappCheck.error!;
 
-  // Unticked and required (doc 16 §0.3). A pre-ticked box is not consent under
-  // the DPDP Act or the GDPR, and this product is sold on data protection - its
-  // own lead form must not be its weakest artefact.
+  // Required, and PRE-TICKED since 2026-10-13 by the owner's decision - the
+  // comment here used to say the opposite and was true until that day. The
+  // argument against (a pre-ticked box is not a clear affirmative act under the
+  // DPDP Act or the GDPR, on a product sold on data protection) is recorded in
+  // lib/funnel/consent.ts along with what the stored evidence does about it.
+  //
+  // The check stays because the box can still be UNTICKED, and an unticked box
+  // has to stop the submission here rather than only in the browser.
   if (form.get("consent") === null) {
     errors.consent = "Please confirm how we may contact you.";
   }
@@ -414,3 +419,4 @@ export async function bookSlotAction(slotId: string): Promise<BookResultPayload>
     return { ok: false, error: "We could not confirm that time. Please try again." };
   }
 }
+

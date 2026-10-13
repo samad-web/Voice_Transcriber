@@ -87,9 +87,9 @@ export interface LegalDetails {
   deletionWindowDays: number | null;
   /** How long a terminated customer can still export their data, in days. */
   exportWindowDays: number | null;
-  /** How long Aura has to forward a data-subject request to the customer. */
+  /** How long Auratel has to forward a data-subject request to the customer. */
   requestForwardingDays: number | null;
-  /** How long Aura takes to answer a rights request, in days. */
+  /** How long Auratel takes to answer a rights request, in days. */
   rightsResponseDays: number | null;
   /** Notice required to terminate, in days. */
   terminationNoticeDays: number | null;

@@ -44,7 +44,11 @@ export function TodayBoard({
 
   return (
     <>
-      <Card className="overflow-x-auto p-0">
+      {/* Below `md` each telecaller draws as a labelled card (theme.css).
+          Ten columns of shift arithmetic behind a horizontal scroll tells a
+          supervisor on a phone nothing - Break, Technical and Away, the three
+          they are checking, are the three furthest out. */}
+      <Card data-stacked="true" className="overflow-x-auto p-0">
         <table className="w-full min-w-[62rem] text-sm">
           <thead>
             <tr className="border-b border-border bg-bg-subtle text-left">
@@ -67,7 +71,7 @@ export function TodayBoard({
                 onClick={() => setOpen({ telecallerId: r.telecallerId, name: r.name, date })}
                 className="cursor-pointer border-b border-border/60 align-top last:border-0 hover:bg-surface-hover"
               >
-                <td className="px-4 py-3">
+                <td className="px-4 py-3" data-label="Telecaller">
                   {/* A real button for keyboard and screen-reader users; the
                       row's click is the pointer shortcut to the same thing. */}
                   <button
@@ -81,7 +85,7 @@ export function TodayBoard({
                     {r.name}
                   </button>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" data-label="Now">
                   <StateChip state={liveStateTone(r.liveState)}>{liveStateLabel(r.liveState)}</StateChip>
                   {r.stateSince ? (
                     <span className="mt-1 block text-xs text-text-muted">
@@ -89,7 +93,7 @@ export function TodayBoard({
                     </span>
                   ) : null}
                 </td>
-                <td className="px-3 py-3 text-text-muted">
+                <td className="px-3 py-3 text-text-muted" data-label="Shift">
                   {r.shiftStart && r.shiftEnd
                     ? `${formatTime(r.shiftStart, zone)} - ${formatTime(r.shiftEnd, zone)}`
                     : r.dayKind === "holiday"
@@ -98,11 +102,11 @@ export function TodayBoard({
                         ? "On leave"
                         : "No shift today"}
                 </td>
-                <td className="px-3 py-3 text-right text-text">{hmm(r.workedSeconds)}</td>
-                <td className="px-3 py-3 text-right text-text">{hmm(r.breakSeconds)}</td>
-                <td className="px-3 py-3 text-right text-text">{hmm(r.technicalSeconds)}</td>
-                <td className="px-3 py-3 text-right text-text">{hmm(r.awaySeconds)}</td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3 text-right text-text" data-label="Worked">{hmm(r.workedSeconds)}</td>
+                <td className="px-3 py-3 text-right text-text" data-label="Break">{hmm(r.breakSeconds)}</td>
+                <td className="px-3 py-3 text-right text-text" data-label="Technical">{hmm(r.technicalSeconds)}</td>
+                <td className="px-3 py-3 text-right text-text" data-label="Away">{hmm(r.awaySeconds)}</td>
+                <td className="px-3 py-3" data-label="Flags">
                   {r.flags && r.flags.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {r.flags.map((f) => (
@@ -115,11 +119,11 @@ export function TodayBoard({
                     <span className="text-text-muted">-</span>
                   )}
                 </td>
-                <td className="px-3 py-3 text-right text-text-muted">
+                <td className="px-3 py-3 text-right text-text-muted" data-label="Phone">
                   {r.batteryPct !== null ? `${r.batteryPct}%` : "-"}
                   {r.networkOk === false ? <span className="block text-xs">no network</span> : null}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-right" data-label="Requests">
                   {r.pendingRequests ? (
                     <StatusChip tone="muted">{r.pendingRequests} pending</StatusChip>
                   ) : (

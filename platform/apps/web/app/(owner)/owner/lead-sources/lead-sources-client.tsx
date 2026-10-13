@@ -429,7 +429,7 @@ function EventLog({ sourceId }: { sourceId: string }) {
 
   return (
     <div className="mt-4 overflow-x-auto">
-      <Table caption="Recent arrivals at this lead source">
+      <Table caption="Recent arrivals at this lead source" stacked>
         <TableHead>
           <TableRow>
             <TableHeaderCell>When</TableHeaderCell>
@@ -442,14 +442,14 @@ function EventLog({ sourceId }: { sourceId: string }) {
         <TableBody>
           {events.map((event) => (
             <TableRow key={event.id}>
-              <TableCell>
+              <TableCell label="When">
                 <Time iso={event.received_at} mode="datetime" />
               </TableCell>
-              <TableCell>
+              <TableCell label="Outcome">
                 <StatusChip tone={OUTCOME_TONE[event.outcome] ?? "muted"}>{event.outcome}</StatusChip>
               </TableCell>
-              <TableCell>{event.lead_title ?? "-"}</TableCell>
-              <TableCell className="max-w-md text-sm text-text-muted">
+              <TableCell label="Lead">{event.lead_title ?? "-"}</TableCell>
+              <TableCell className="max-w-md text-sm text-text-muted" label="Detail">
                 {event.reason ?? summarisePayload(event.payload)}
               </TableCell>
               <TableCell>

@@ -18,3 +18,18 @@ service-account*.json
 # and a tool's output — neither belongs in this repo's history.
 /ODialer.apk
 /scratch_odialer/
+
+# JVM crash dumps from Gradle/Android builds. They land next to the app module,
+# are hundreds of KB of heap state, and say nothing about the source.
+CallRecorderApp/hs_err_pid*.log
+
+# Loose screenshots dragged to the repo root during UI work. Keep them on disk
+# while a redesign is live; they are not source and the repo is public.
+/*@1x.png
+/*@2x.png
+
+# Unreferenced scratch images in Build docs (~8 MB each). The docs themselves
+# never link them, so they are someone's working material, not documentation.
+Build docs/fairytale.png
+Build docs/motu patlu.png
+Build docs/superhero.png

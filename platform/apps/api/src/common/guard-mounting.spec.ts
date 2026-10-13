@@ -56,6 +56,9 @@ import { SearchController } from "../modules/analytics/search.controller";
 import { ApiKeysController } from "../modules/auth/apikeys.controller";
 import { AuthController } from "../modules/auth/auth.controller";
 import { BillingController } from "../modules/billing/billing.controller";
+import { SubscriptionController } from "../modules/billing/subscription.controller";
+import { PlatformBillingAdminController } from "../modules/billing/platform-billing-admin.controller";
+import { PlatformBillingWebhookController } from "../modules/billing/platform-billing-webhook.controller";
 import { CallsController } from "../modules/calls/calls.controller";
 import { NotesController } from "../modules/calls/notes.controller";
 import { CallAccessController } from "../modules/call-access/call-access.controller";
@@ -599,6 +602,31 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   IngestController,
   InsightsController,
   InsightsOpsController,
+  // ── The capture price list (0197) ──
+  //
+  // `SubscriptionController` is the owner console's billing surface:
+  // AdminKeyGuard + TenantGuard + OwnerRoleGuard, owner+manager, same tier as
+  // `PlanUsageController` above. Worth saying what it does NOT do - no route
+  // on it grants a plan, an add-on or an hour. Every write creates a
+  // `billing_orders` row, and the only two things that move a tenant between
+  // tiers are a verified webhook and an operator's Apply. An owner who could
+  // settle their own order would be an owner who could grant themselves
+  // Enterprise, which with no live gateway is the whole of the plan system's
+  // integrity.
+  //
+  // `PlatformBillingWebhookController` is deliberately UNGUARDED and is listed
+  // in UNGUARDED below - Razorpay cannot present an admin key, and unlike
+  // `RazorpayWebhookController` next door there is no tenant secret to resolve
+  // first: the credentials are always the PLATFORM's, so the signature over
+  // the raw bytes is checked before anything in the payload is read.
+  SubscriptionController,
+  // The operator's half: settling a manual invoice, setting a tenant's billing
+  // region, issuing a credit. On OperatorOnlyGuard for the same reason
+  // `PlanAdminController` is - an owner who could settle their own order could
+  // grant themselves Enterprise for nothing, and with no live gateway that is
+  // the whole of the plan system's integrity.
+  PlatformBillingAdminController,
+  PlatformBillingWebhookController,
 ];
 
 // ── the four route classes, named exactly as inventory 13 §1.1/§1.2 do ───────
@@ -672,6 +700,15 @@ const UNGUARDED = [
   // org is known. Always 200, so an ignored delivery is not retried for three
   // days.
   "POST /webhooks/stripe",
+  // The PLATFORM's own Razorpay webhook (0197) - us being paid by a tenant for
+  // their plan, which is the opposite direction from /webhooks/razorpay above.
+  // Simpler than that one and safer for it: there is only one account, ours, so
+  // the signature is verified with the platform secret BEFORE a single field of
+  // the payload is read, rather than after resolving a candidate org from an
+  // untrusted id. A delivery with no x-razorpay-event-id header is refused
+  // outright because it cannot be de-duplicated, and every ignored case
+  // answers 200 so an event we dismissed is not retried for three days.
+  "POST /webhooks/platform-billing/razorpay",
   // The finance module's connector webhook (0174). A THIRD gateway endpoint on
   // the same terms as the two above, with one improvement worth stating: the
   // connector account is named in the PATH, so the org is known from the URL
@@ -806,6 +843,16 @@ const CROSS_TENANT = [
   "GET /admin/plans/catalogue",
   "POST /admin/plans/orgs/:orgId",
   "POST /admin/plans/requests/:id/decline",
+  // The capture price list's operator half (0197). Cross-tenant on the same
+  // terms: an operator naming a tenant in the path is the point. These five
+  // ARE the payment provider until there is one - an order created as `manual`
+  // completes when an operator settles it here, through the same
+  // `BillingOrdersService.settle()` the webhook calls.
+  "GET /admin/billing/orders",
+  "POST /admin/billing/orders/:id/settle",
+  "POST /admin/billing/orders/:id/cancel",
+  "POST /admin/billing/orgs/:orgId/region",
+  "POST /admin/billing/orgs/:orgId/grant",
   // The partner invite's three (0163, doc 39 §18). Cross-tenant for exactly
   // the reason the owner invite below is: at preview and accept time the
   // person belongs to nothing, and the TOKEN names the org. The difference is
@@ -946,6 +993,19 @@ const OPERATOR_ONLY_ROUTES = [
   "GET /admin/plans/catalogue",
   "POST /admin/plans/orgs/:orgId",
   "POST /admin/plans/requests/:id/decline",
+  // Billing's operator half (0197), and the five rows worth reading twice.
+  // `orders/:id/settle` GRANTS a plan or an add-on - it is the manual payment
+  // provider - so an owner who could reach it could grant themselves
+  // Enterprise for nothing. `orgs/:orgId/grant` grants entitlement with no
+  // money attached at all. And `orgs/:orgId/region` decides which price list
+  // applies AND, through the consent gate, whether that tenant's handsets may
+  // record: a tenant that could name its own region could unlock recording in
+  // a country where it is a criminal offence.
+  "GET /admin/billing/orders",
+  "POST /admin/billing/orders/:id/settle",
+  "POST /admin/billing/orders/:id/cancel",
+  "POST /admin/billing/orgs/:orgId/region",
+  "POST /admin/billing/orgs/:orgId/grant",
   "POST /instances",
   "GET /instances",
   "GET /instances/:id",
@@ -1183,6 +1243,19 @@ const OWNER_ROLE_ROUTES = [
   "POST /owner/team/:userId/suspend",
   "POST /owner/team/:userId/reinstate",
   "PUT /owner/team/:userId/role",
+  // Offboarding (migration 0198), and the two halves are gated DIFFERENTLY on
+  // purpose:
+  //
+  //   GET  .../offboard  owner-or-manager, like reading the roster. "What is
+  //                      still on Priya's desk" is a question about running a
+  //                      floor, and it is a GET - opening the dialog cannot
+  //                      change anything.
+  //   POST .../offboard  owner only. It moves a hundred leads, logs handsets
+  //                      out of the fleet and archives a telecaller identity;
+  //                      a manager who could do that could quietly hand
+  //                      themselves the whole floor's pipeline.
+  "GET /owner/team/:userId/offboard",
+  "POST /owner/team/:userId/offboard",
   // Roles & permissions, the CLIENT's half (0039's grid, owner console).
   // Mounted with OwnerRoleGuard rather than the OrgRoleGuard that gates
   // `/v1/roles`, and that is the entire reason it is a second controller:
@@ -1269,6 +1342,18 @@ const OWNER_ROLE_ROUTES = [
   "PUT /owner/business-profile",
   // Plan & usage (doc 27 §6.7): owner and manager.
   "GET /owner/plan-usage",
+  // The capture price list and its checkout (0197): owner and manager, the
+  // same pair as Plan & usage above, because a plan is the account manager's
+  // conversation. Every POST here creates a `billing_orders` row and grants
+  // nothing - see SubscriptionController's header. `auto-topup` is the one
+  // write that changes state, and what it stores is a preference plus a
+  // ceiling the owner set themselves.
+  "GET /owner/billing/overview",
+  "GET /owner/billing/quote",
+  "GET /owner/billing/orders",
+  "POST /owner/billing/checkout",
+  "POST /owner/billing/topup",
+  "PATCH /owner/billing/auto-topup",
   // The workspace clock (doc 30): owner and manager read AND write it.
   "GET /owner/time-settings",
   "PUT /owner/time-settings",
@@ -2519,7 +2604,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 778 routes, partitioned 673 tenant / 52 cross-tenant / 18 device / 22 unguarded / 1 internal / 7 portal", () => {
+  it("has 829 routes, partitioned 714 tenant / 57 cross-tenant / 18 device / 23 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2745,8 +2830,20 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // wizard, the plan page and the Integration Center. None unguarded: an
     // ingestion endpoint reachable without a credential would let anybody
     // write into any tenant's performance figures.
-    expect(ROUTES).toHaveLength(815);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(815);
+    // 827: plus the capture price list's twelve (0197). Six are the owner
+    // console's billing surface, five are the operator's half, and the
+    // twelfth is the platform's own Razorpay webhook - the only unguarded one
+    // of the twelve, because a gateway cannot present an admin key. Worth
+    // noting what the owner's six do NOT include: a route that grants a plan.
+    // Every write there creates a `billing_orders` row, and the two things
+    // that can move a tenant between tiers are an operator settling an order
+    // and a signature-verified webhook.
+    // 829: plus offboarding's two (0198) - the manifest a dialog reads and the
+    // handover it commits. Both tenant-scoped and both on the Staff
+    // controller, which is where "this person has left" belongs: it is one
+    // decision about one membership, not a new surface.
+    expect(ROUTES).toHaveLength(829);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(829);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2831,7 +2928,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // tenant-scoped like any other: ApiKeyGuard takes the org from the key row
     // and never from a header, so an integration credential is MORE tightly
     // bound to one tenant than a person's session is.
-    expect(tenantScoped).toHaveLength(706);
+    // 712: plus the owner console's six billing routes (0197). The operator's
+    // five are cross-tenant and the webhook is unguarded, so only these six
+    // land in this class - which is the right reading of them: an owner asking
+    // what their own workspace pays is a tenant-scoped question.
+    // 714: plus offboarding's two (0198), tenant-scoped like the rest of the
+    // Staff surface.
+    expect(tenantScoped).toHaveLength(714);
     // Exhaustive: every route is in exactly one class.
     // `internal` is its own class: the worker-to-API stream route carries
     // InternalStreamGuard and no tenant, so it belongs to none of the four
@@ -2843,10 +2946,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(815); // = ROUTES.length: every route in exactly one class
+    ).toBe(829); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 743 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 756 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -2912,7 +3015,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // ingestion routes are NOT principal routes: they are the only writes in
     // this API authenticated by a key rather than by a person, which is the
     // whole point of keeping them in one small file.
-    expect(principalRoutes).toHaveLength(743);
+    // 754: plus eleven of the capture price list's twelve (0197) - the owner
+    // console's six and the operator's five. The twelfth is the platform
+    // billing webhook, which is unguarded: Razorpay presents no credential of
+    // ours, and the signature over the raw bytes is what stands in for one.
+    // 756: plus offboarding's two (0198). Both arrive on the console's admin
+    // key with a user header, like every other route on this controller.
+    expect(principalRoutes).toHaveLength(756);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

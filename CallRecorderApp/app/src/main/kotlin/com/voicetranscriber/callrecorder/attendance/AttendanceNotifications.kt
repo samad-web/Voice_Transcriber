@@ -86,7 +86,8 @@ object AttendanceNotifications {
 
     fun shift(context: Context, ui: AttendanceController.Ui): Notification {
         val b = NotificationCompat.Builder(context, CHANNEL_SHIFT)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(ui.title)
             .setContentText(ui.detail)
             .setOngoing(true)
@@ -141,7 +142,8 @@ object AttendanceNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(context, CHANNEL_PROMPT)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.att_prompt_title))
             .setContentText(context.getString(R.string.att_prompt_body))
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -168,7 +170,8 @@ object AttendanceNotifications {
     fun showAway(context: Context) {
         if (!canPost(context)) return
         val n = NotificationCompat.Builder(context, CHANNEL_REMINDER)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.att_away_title))
             .setContentText(context.getString(R.string.att_away_body))
             .setOngoing(true)
@@ -186,7 +189,8 @@ object AttendanceNotifications {
     fun remind(context: Context, text: String, quiet: Boolean, action: PresenceEngine.ReminderAction) {
         if (!canPost(context)) return
         val b = NotificationCompat.Builder(context, CHANNEL_REMINDER)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.att_reminder_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -217,7 +221,8 @@ object AttendanceNotifications {
     fun showNoticeNeeded(context: Context) {
         if (!canPost(context)) return
         val n = NotificationCompat.Builder(context, CHANNEL_REMINDER)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.att_notice_notif_title))
             .setContentText(context.getString(R.string.att_notice_notif_body))
             .setAutoCancel(true)
@@ -232,7 +237,8 @@ object AttendanceNotifications {
     fun showStartFallback(context: Context, text: String) {
         if (!canPost(context)) return
         val n = NotificationCompat.Builder(context, CHANNEL_REMINDER)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.att_reminder_title))
             .setContentText(text)
             .setAutoCancel(true)
@@ -244,7 +250,8 @@ object AttendanceNotifications {
     fun decision(context: Context, requestId: String, text: String) {
         if (!canPost(context)) return
         val n = NotificationCompat.Builder(context, CHANNEL_REMINDER)
-            .setSmallIcon(R.drawable.ic_schedule)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.att_decision_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))

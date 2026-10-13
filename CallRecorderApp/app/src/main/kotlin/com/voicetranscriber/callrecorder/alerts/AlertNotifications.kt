@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.voicetranscriber.callrecorder.R
@@ -93,7 +94,8 @@ object AlertNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(context, CHANNEL_POPUP)
-            .setSmallIcon(R.drawable.ic_alert)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(title)
             .setContentText(text.lineSequence().first())
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -117,7 +119,8 @@ object AlertNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(context, CHANNEL_NOTIFY)
-            .setSmallIcon(R.drawable.ic_alert)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(alert.title)
             .setContentText(alert.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(alert.body ?: alert.title))

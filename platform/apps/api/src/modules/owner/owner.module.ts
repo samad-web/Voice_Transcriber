@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AgentsModule } from "../agents/agents.module";
+import { CallbacksModule } from "../callbacks/callbacks.module";
+import { OffboardService } from "./offboard.service";
 import { PublicApiModule } from "../public-api/public-api.module";
 import { RolesModule } from "../roles/roles.module";
 import { LeadBoardsController } from "./lead-boards.controller";
@@ -46,7 +48,11 @@ import { SupabaseAdminService } from "./supabase-admin.service";
   // AgentsModule for the call drawer's reply drafter (0121). PublicApiModule
   // for CrmIngestService: the console's "New lead" writes through the same
   // service every other door does (0136).
-  imports: [RolesModule, AgentsModule, PublicApiModule],
+  // CallbacksModule for `CallbacksService`: an offboarding hands on the
+  // call-backs a departing rep had promised, and that service is the only
+  // thing that re-plans their reminders onto the new owner's phone. Moving the
+  // column by hand would leave the popups addressed to somebody who left.
+  imports: [RolesModule, AgentsModule, PublicApiModule, CallbacksModule],
   controllers: [
     CallInsightsController,
     TelecallerProductivityController,
@@ -87,6 +93,16 @@ import { SupabaseAdminService } from "./supabase-admin.service";
   // reasoning AdminModule gives for providing SupabaseAdminService locally.
   // Importing AdminModule here instead would make the tenant-facing module
   // depend on the cross-tenant one, which is the wrong direction.
-  providers: [OwnerAccountsService, SupabaseAdminService, InvitesService, OperatorInvitesService],
+  providers: [
+    OwnerAccountsService,
+    SupabaseAdminService,
+    InvitesService,
+    OperatorInvitesService,
+    // 0198: offboarding. Provided rather than imported for the same reason
+    // `OperatorInvitesService` is - it holds no state, only queries - and it
+    // is what makes suspend, remove and the Staff dialog apply one definition
+    // of "this person has left" instead of three.
+    OffboardService,
+  ],
 })
 export class OwnerModule {}

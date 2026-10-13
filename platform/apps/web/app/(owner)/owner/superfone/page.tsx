@@ -152,7 +152,10 @@ export default async function SuperfonePage() {
       ) : (
         <Card className="space-y-2">
           <MonoLabel>Recent calls</MonoLabel>
-          <div className="overflow-x-auto">
+          {/* Below `md` each call draws as a labelled card (theme.css):
+              six columns of call detail is not readable behind a scroll on a
+              phone, and Outcome and Lead are the two that scroll away. */}
+          <div data-stacked="true" className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
               <thead>
                 <tr className="text-xs tracking-wide text-text-muted uppercase">
@@ -169,14 +172,14 @@ export default async function SuperfonePage() {
                   const p = event.payload ?? {};
                   return (
                     <tr key={event.id}>
-                      <td className="py-2 pr-3 whitespace-nowrap text-text-muted">
+                      <td className="py-2 pr-3 whitespace-nowrap text-text-muted" data-label="When">
                         <Time iso={event.received_at} mode="datetime" />
                       </td>
-                      <td className="py-2 pr-3 text-text">{str(p, "caller_phone", "from")}</td>
-                      <td className="py-2 pr-3 text-text-muted">
+                      <td className="py-2 pr-3 text-text" data-label="Caller">{str(p, "caller_phone", "from")}</td>
+                      <td className="py-2 pr-3 text-text-muted" data-label="On number">
                         {str(p, "superfone_number", "to")}
                       </td>
-                      <td className="py-2 pr-3 text-text-muted">
+                      <td className="py-2 pr-3 text-text-muted" data-label="Outcome">
                         {str(p, "outcome", "status", "call_status")}
                         {/* Aura's own verdict on the arrival, beside
                             Superfone's. `rejected` here means the payload had
@@ -186,10 +189,10 @@ export default async function SuperfonePage() {
                           <span className="ml-2 text-danger-text">not usable</span>
                         ) : null}
                       </td>
-                      <td className="py-2 pr-3 text-text-muted">
+                      <td className="py-2 pr-3 text-text-muted" data-label="Agent">
                         {str(p, "staff_name", "agent_name", "answered_by")}
                       </td>
-                      <td className="py-2">
+                      <td className="py-2" data-label="Lead">
                         {event.lead_id ? (
                           <Link
                             href={`/owner/leads?focus=${event.lead_id}`}

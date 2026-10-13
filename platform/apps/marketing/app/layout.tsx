@@ -7,6 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { MetaPixel } from "@/components/meta-pixel";
 import { GoogleTagManager } from "@/components/google-tag-manager";
 import { MicrosoftClarity } from "@/components/microsoft-clarity";
+import { ThemeScript } from "@/components/theme-script";
 import { BRAND, SITE_URL } from "@/lib/site";
 
 /**
@@ -36,7 +37,7 @@ export const metadata: Metadata = {
     template: `%s | ${BRAND}`,
   },
   description:
-    "Aura records your telecallers' calls, transcribes them in Tamil and English, " +
+    "Auratel records your telecallers' calls, transcribes them in Tamil and English, " +
     "and turns every conversation into a qualified lead in your CRM.",
   robots: { index: true, follow: true },
 };
@@ -59,6 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // owns the explicit override (doc 16 §1.6); the tokens support it already.
     <html lang="en" className={inter.variable}>
       <body className="min-h-dvh bg-bg font-sans text-lg text-text antialiased">
+        {/* FIRST in the body, before anything that paints. Applies a stored
+            light/dark choice to <html> synchronously, so a visitor who picked
+            light on a dark-mode phone never sees a frame of the dark site.
+            See components/theme-script.tsx for why it is an inline string and
+            why it leaves the attribute alone when nothing is stored. */}
+        <ThemeScript />
         <SkipLink />
         {/* The console gets this from FeedbackProvider; this app has no
             provider of its own, and the booking page's time-slot radios are

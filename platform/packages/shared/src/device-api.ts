@@ -128,6 +128,26 @@ export const DeviceConfig = z.object({
    */
   appLockPasswordHash: z.string().nullable().optional(),
   /**
+   * May the person holding this handset open, rename or delete the call
+   * recordings on it (migration 0196, `telecallers.app_recordings_access`)?
+   *
+   * `false` for a phone bound to no telecaller: there is nobody for an owner to
+   * have granted it to, so there is nothing to honour.
+   *
+   * It governs the LIBRARY, never the pipeline - a phone whose holder may not
+   * open a recording still records it and still uploads it.
+   *
+   * ── WHY THE HANDSET TREATS AN ABSENT KEY AS TRUE ──────────────────────────
+   *
+   * Deny-by-default lives in the DATABASE column, not in the client's handling
+   * of a missing field. An absent key means the server predates the concept, so
+   * that workspace's owner has no toggle to grant with either - failing closed
+   * there would strip a working capability from every phone in the fleet the
+   * moment a new APK met an old API, with no way for the customer to undo it.
+   * Present-and-false is a decision and is obeyed; absent is silence.
+   */
+  recordingsAccess: z.boolean(),
+  /**
    * Attendance (migration 0140, doc 33). OMITTED - never null - while the
    * workspace's `attendance_enabled` is off, the device is bound to no
    * telecaller, or the handset is older than ATTENDANCE_MIN_VERSION_CODE. A

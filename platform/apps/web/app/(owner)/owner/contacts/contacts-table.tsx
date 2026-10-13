@@ -43,7 +43,7 @@ export function ContactsTable({ contacts, filtered }: { contacts: Contact[]; fil
 
   return (
     <>
-      <Table caption="Contacts">
+      <Table caption="Contacts" stacked>
         <TableHead>
           <tr>
             <TableHeaderCell className="w-10">
@@ -81,26 +81,26 @@ export function ContactsTable({ contacts, filtered }: { contacts: Contact[]; fil
                     className="h-4 w-4 cursor-pointer accent-accent"
                   />
                 </TableCell>
-                <TableCell>
+                <TableCell label="Name">
                   <Link href={`/owner/contacts/${contact.id}`} className="block font-medium text-text hover:underline">
                     {contact.display_name}
                   </Link>
                   {contact.title ? <span className="text-xs text-text-muted">{contact.title}</span> : null}
                 </TableCell>
-                <TableCell className="text-text-muted">{contact.email ?? "-"}</TableCell>
-                <TableCell className="hidden text-text-muted md:table-cell">{contact.owner_name ?? "-"}</TableCell>
-                <TableCell className="hidden lg:table-cell">
+                <TableCell label="Email" className="text-text-muted">{contact.email ?? "-"}</TableCell>
+                <TableCell label="Owner" className="hidden text-text-muted md:table-cell">{contact.owner_name ?? "-"}</TableCell>
+                <TableCell label="Tags" className="hidden lg:table-cell">
                   <TagChips tags={contact.tags} />
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{contact.call_count}</TableCell>
-                <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                <TableCell label="Calls" className="text-right tabular-nums">{contact.call_count}</TableCell>
+                <TableCell label="Lead score" className="hidden text-right tabular-nums sm:table-cell">
                   {contact.lead_score > 0 ? (
                     <span className="font-medium text-text">{contact.lead_score}</span>
                   ) : (
                     <span className="text-text-muted">-</span>
                   )}
                 </TableCell>
-                <TableCell className="text-text-muted tabular-nums">{relativeTime(contact.last_activity_at, zone)}</TableCell>
+                <TableCell label="Last activity" className="text-text-muted tabular-nums">{relativeTime(contact.last_activity_at, zone)}</TableCell>
               </TableRow>
             );
           })}

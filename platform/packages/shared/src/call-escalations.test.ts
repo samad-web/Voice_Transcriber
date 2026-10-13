@@ -189,6 +189,7 @@ describe("the phone's config block", () => {
     const config = DeviceConfig.parse({
       version: 1,
       recordingEnabled: true,
+      recordingsAccess: true,
       capture: {},
       consent: { policy: "none", onFailure: "record_and_flag" },
       callEscalation: block,

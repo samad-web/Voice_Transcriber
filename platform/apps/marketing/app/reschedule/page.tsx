@@ -4,8 +4,8 @@ import { getRescheduleSession } from "@/lib/funnel/reschedule-session";
 import { RescheduleCard } from "./reschedule-card";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Move your Aura call",
-  description: "Pick a different time for the call you have booked with Aura.",
+  title: "Move your Auratel call",
+  description: "Pick a different time for the call you have booked with Auratel.",
   path: "/reschedule",
   // Nothing here is useful to a search engine and the page only means anything
   // to somebody holding a link, so it is kept out of the index alongside the

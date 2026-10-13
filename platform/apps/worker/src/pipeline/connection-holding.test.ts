@@ -119,6 +119,26 @@ vi.mock("@aura/db", () => ({
       openNow--;
     }
   },
+  // The admin pool and the plan resolution (0197). Stubbed to what a tenant on
+  // NO plan resolves to - no ceiling, nothing gated - because these tests are
+  // about stage transitions and transaction scope, not about entitlement.
+  getAdminPool: () => ({ query: async () => ({ rows: [], rowCount: 0 }) }),
+  readEffectiveLimits: async () => ({
+    planKey: null,
+    planName: null,
+    family: null,
+    region: "IN",
+    handsets: null,
+    transcriptionMinutes: null,
+    transcriptionHours: null,
+    toppedUpHours: 0,
+    audioRetentionDays: null,
+    storageCapBytes: null,
+    speakerSeparation: true,
+    aiAnalysis: true,
+    transcriptionAllowed: true,
+    recordingProhibited: false,
+  }),
 }));
 
 vi.mock("@aura/llm", () => ({ analyzeConversation, analyzeTranscript }));

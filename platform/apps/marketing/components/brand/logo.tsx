@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 /**
- * The Aura mark - the real artwork, at `public/logo.png`.
+ * The Auratel mark - the real artwork, at `public/logo.png`.
  *
  * Every call site goes through this component, so replacing the file is the
  * only step needed to change the mark everywhere.
@@ -42,7 +42,7 @@ export function Wordmark({ size = 36 }: { size?: number }) {
     <span className="inline-flex items-center gap-2.5">
       <Logo size={size} />
       <span className="mk-display text-[1.35rem] leading-none" style={{ letterSpacing: "-0.045em" }}>
-        Aura
+        Auratel
       </span>
     </span>
   );

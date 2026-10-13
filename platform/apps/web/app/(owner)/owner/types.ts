@@ -464,6 +464,18 @@ export interface Telecaller {
   leads: number;
   won: number;
   pipeline_value: number;
+  /**
+   * Revenue this handset CLOSED inside the window - the same predicate
+   * `closed.won_value` is counted on, so the attribution donut's slices and
+   * the "Revenue won" tile above it are cuts of one number (Build docs/46).
+   *
+   * Optional: an API older than that addition sends neither this nor
+   * `closed_won`, and the donut then says it cannot attribute rather than
+   * drawing every rupee as unattributed.
+   */
+  won_value?: number;
+  /** Records this handset closed as won in the window. Pairs with `won_value`. */
+  closed_won?: number;
 }
 
 /** One calendar day of the dashboard window, in the org's zone (Build docs/29 §6). */

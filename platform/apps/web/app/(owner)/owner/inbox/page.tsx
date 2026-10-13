@@ -64,7 +64,7 @@ export default async function InboxPage() {
             // why the situation arises at all. The first is the tile's
             // `context` line; the second is teaching copy and belongs beside
             // the tile, not inside it.
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,20rem)_1fr] sm:items-center">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-[minmax(0,20rem)_1fr] sm:items-center">
               <StatCard
                 label="Unclaimed"
                 value={unmatched.data.total}

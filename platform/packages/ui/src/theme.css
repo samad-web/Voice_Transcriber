@@ -256,6 +256,51 @@
    *                      every step 0.06 apart AND clear 2:1 at the light end.
    */
   --color-mark-answered: #16a34a;
+
+  /* ── Chart categorical - WHO, not what state ────────────────────────────
+   *
+   * Identity hues for the CEO dashboard's actor charts (Build docs/46): the
+   * donuts, the per-person bars and the effort-vs-yield scatter all paint the
+   * same person the same colour, so the eye can follow one telecaller across
+   * four panels without re-reading a legend.
+   *
+   * WHY THIS IS NOT THE STATE ALPHABET. `--color-outgoing`, `--color-orange`,
+   * `--color-danger` and `--color-mark-answered` each MEAN something
+   * (state.tsx): rang out, errored, nobody picked up, answered. A person is
+   * not a state. Painting the busiest telecaller in outgoing-blue would put
+   * "this is Brindha" and "this call went out" in one colour on one page.
+   *
+   * AND NOT THE LABEL TINTS either: `--color-label-*` are 50/800-class chip
+   * backgrounds, far too pale to survive as a 10px donut arc.
+   *
+   * Assigned in FIXED ORDER and never cycled - slot 1 to the busiest actor,
+   * and a person keeps their slot when a filter drops someone above them
+   * (actor-colors.ts owns that mapping). A ninth person folds into `-other`,
+   * which is also what "Unattributed" takes: a neutral, because "nobody owns
+   * this" is the absence of an identity, not a sixth one.
+   *
+   * VALIDATED, not eyeballed - dataviz scripts/validate_palette.js, light
+   * surface #FFFFFF and dark #171717:
+   *   slots 1-3 pass --pairs all in both modes (scatter, where any dot may
+   *     land beside any other): worst normal-vision dE 27.4 light / 18.1 dark.
+   *   slots 1-5 pass the adjacent pairlist in both modes (donut arcs and bar
+   *     rows, which only ever touch their neighbour).
+   * Three light slots sit under 3:1 on white, so the RELIEF RULE applies and
+   * is met: every chart spending these ships direct labels (name + value on
+   * the row, name + share in the donut legend) and a table twin.
+   *
+   * The dark column is the same five hues re-stepped for the dark surface,
+   * not a flip - so it needs real declarations in both dark blocks below.
+   */
+  --color-chart-cat-1: #2d5b99;
+  --color-chart-cat-2: #eb6834;
+  --color-chart-cat-3: #1baf7a;
+  --color-chart-cat-4: #eda100;
+  --color-chart-cat-5: #e87ba4;
+  /* "Unattributed", and the 9th actor onward. Deliberately the seq ramp's
+     lightest grey: present, countable, and obviously not a person. */
+  --color-chart-cat-other: color-mix(in oklab, var(--color-text) 28%, var(--color-surface));
+
   --color-chart-seq-1: color-mix(in oklab, var(--color-text) 34%, var(--color-surface));
   --color-chart-seq-2: color-mix(in oklab, var(--color-text) 50%, var(--color-surface));
   --color-chart-seq-3: color-mix(in oklab, var(--color-text) 66%, var(--color-surface));
@@ -444,6 +489,15 @@
     --color-outgoing-subtle: #17233f;
     --color-outgoing-text: #93c5fd; /* 8.64:1 on outgoing-subtle */
 
+    /* The actor ramp, re-stepped for #171717 - see the light block's note.
+       All five clear 3:1 on the dark surface, so the relief rule the light
+       mode leans on is slack here; the direct labels stay anyway. */
+    --color-chart-cat-1: #4d7cbd;
+    --color-chart-cat-2: #d95926;
+    --color-chart-cat-3: #199e70;
+    --color-chart-cat-4: #c98500;
+    --color-chart-cat-5: #d55181;
+
     /* Category tints, rebound. Still no red/green/blue/orange - the four
        state hues stay reserved in both modes. */
     --color-label-violet: #2a1d4a;
@@ -514,6 +568,13 @@
   --color-outgoing: #3b82f6;
   --color-outgoing-subtle: #17233f;
   --color-outgoing-text: #93c5fd;
+
+  /* Mirrors the prefers-color-scheme block above. */
+  --color-chart-cat-1: #4d7cbd;
+  --color-chart-cat-2: #d95926;
+  --color-chart-cat-3: #199e70;
+  --color-chart-cat-4: #c98500;
+  --color-chart-cat-5: #d55181;
 
   --color-label-violet: #2a1d4a;
   --color-label-violet-text: #c4b5fd;
@@ -652,4 +713,147 @@
 [data-aura-invalid] {
   border-color: var(--color-orange);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-orange) 22%, transparent);
+}
+
+/* ── Stacked tables on a phone (`<Table stacked>`) ─────────────────────────
+ *
+ * Below `md`, a row becomes a card and each labelled cell becomes one line:
+ * the column heading on the left in muted type, the value on the right.
+ *
+ * WHY CSS AND NOT TWO RENDER PATHS. The markup stays a real `<table>`, so a
+ * screen reader keeps row/column navigation and the caption keeps naming it;
+ * only the painting changes. Rendering a `<ul>` below `md` and a `<table>`
+ * above would mean two trees to keep in step, and the phone tree would be the
+ * one that silently drifted.
+ *
+ * `display: block` on table elements is what un-tables them. The header row
+ * goes away because every cell now carries its own label; a cell WITHOUT a
+ * label is hidden, which is how a checkbox or a row-actions column opts out
+ * rather than becoming a blank line.
+ *
+ * Unlayered for the same reason as the failing-field ring above: these have
+ * to beat the utilities Tailwind emits in `@layer utilities` on the very same
+ * elements (`px-4 py-3`, `whitespace-nowrap`), and layers settle before
+ * specificity ever gets a say.
+ *
+ * ── A CELL HIDDEN FOR WANT OF WIDTH COMES BACK ─────────────────────────────
+ *
+ * These rules deliberately beat `hidden md:table-cell` and friends, so a
+ * column the table dropped on a narrow screen reappears inside the card.
+ * That is not an accident of the cascade - it is the point. Those classes
+ * exist because there was no HORIZONTAL room in a table; a card has VERTICAL
+ * room instead, and the reader wanted that column or the author would not
+ * have written it at all.
+ *
+ * The consequence to know: inside a `stacked` table below `md`, `hidden` on a
+ * `<td>` does nothing. A cell that must never appear on a phone has to be
+ * left out of the markup, not merely classed away.
+ */
+@media (width < 48rem) {
+  [data-stacked="true"] {
+    overflow-x: visible;
+  }
+  [data-stacked="true"] table,
+  [data-stacked="true"] tbody,
+  [data-stacked="true"] tr,
+  [data-stacked="true"] td {
+    display: block;
+    width: auto;
+    /* Every wide table in the console carries a `min-w-[Npx]` so its columns
+       stay legible behind the horizontal scroll. Stacked there is no scroll
+       and no columns, and that min-width would push the card - and the whole
+       page - past the viewport. A card has no minimum. */
+    min-width: 0;
+  }
+  [data-stacked="true"] thead {
+    /* Not display:none - that would drop the headers from the accessibility
+       tree too, and the labels below are visual copies, not replacements. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  [data-stacked="true"] tr {
+    padding: 0.25rem 0;
+  }
+  [data-stacked="true"] tr + tr {
+    border-top: 1px solid var(--color-border);
+  }
+  [data-stacked="true"] td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.3rem 1rem;
+    text-align: right;
+    white-space: normal;
+  }
+  [data-stacked="true"] td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-align: left;
+  }
+  /* A cell the caller gave no label - a checkbox, a row-actions menu. It
+     still RENDERS (hiding it would take a control away from the phone, which
+     is a change in what the page can do, not in how it looks); it simply has
+     no label line and sits left. */
+  [data-stacked="true"] td:not([data-label]) {
+    display: block;
+    text-align: left;
+  }
+  [data-stacked="true"] td:not([data-label])::before {
+    content: none;
+  }
+  /* A cell holding more than one thing - a control AND the sentence that
+     explains it, which is how every settings table is built - cannot be laid
+     out as "label .......... value". Those are separate flex items, and
+     `space-between` shrinks the control to make room for the prose beside it:
+     on Team & permissions the role picker came out 80px wide reading "Ov".
+     Put the label on its own line above and let the cell keep its full width. */
+  [data-stacked="true"] td[data-label]:is(:has(> * + *), :has(select), :has(textarea)) {
+    display: block;
+    text-align: left;
+  }
+  [data-stacked="true"] td[data-label]:is(:has(> * + *), :has(select), :has(textarea))::before {
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  /* And the control takes the line it was given. Beside a label it was
+     clipped mid-word ("Default - All managers & ov"), and a 180px tap target
+     on a phone is a miss waiting to happen. */
+  [data-stacked="true"] td select,
+  [data-stacked="true"] td textarea,
+  [data-stacked="true"] td > div:has(> select) {
+    width: 100%;
+  }
+  /* The first labelled cell is the row's identity - give it the weight a
+     card title needs, and let it take the full width.
+
+     NOT `:first-of-type`: that means "the first td in the row" whatever its
+     label, so a leading checkbox cell (contacts, deals, leads) made the rule
+     match nothing and the card lost its title. `:not(prev ~ self)` is how you
+     say "the first one of these" when a positional pseudo-class cannot: a
+     labelled cell with no labelled cell before it. */
+  [data-stacked="true"] td[data-label]:not(td[data-label] ~ td[data-label]) {
+    display: block;
+    padding-top: 0.6rem;
+    text-align: left;
+    font-weight: 600;
+  }
+  [data-stacked="true"] td[data-label]:not(td[data-label] ~ td[data-label])::before {
+    display: none;
+  }
+  /* A value a table repeats into an earlier cell because the column it
+     belongs to sits behind the horizontal scroll. A card has no scroll and
+     shows that column outright, so the repeat would simply print twice. */
+  [data-stacked="true"] [data-stacked-hide] {
+    display: none;
+  }
+  [data-stacked="true"] tr:last-child td:last-child {
+    padding-bottom: 0.6rem;
+  }
 }

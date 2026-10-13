@@ -221,7 +221,7 @@ export default async function DocumentsPage({
         grouped.map((group) => (
           <Card key={group.group}>
             <h2 className="mb-3 text-sm font-medium text-text">{group.label}</h2>
-            <Table caption={`${group.label} documents`}>
+            <Table caption={`${group.label} documents`} stacked>
               <TableHead>
                 <TableRow>
                   <TableHeaderCell>Document</TableHeaderCell>
@@ -235,15 +235,15 @@ export default async function DocumentsPage({
               <TableBody>
                 {group.documents.map((doc) => (
                   <TableRow key={doc.id}>
-                    <TableCell>
+                    <TableCell label="Document">
                       <div className="font-medium text-text">{doc.title}</div>
                       <div className="text-xs text-text-muted">
                         {doc.category.label}
                         {doc.version > 1 ? ` · version ${doc.version}` : ""}
                       </div>
                     </TableCell>
-                    <TableCell className="text-text-muted">{doc.docNumber ?? "—"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-text-muted" label="Number">{doc.docNumber ?? "—"}</TableCell>
+                    <TableCell label="Expires">
                       {doc.expiresOn ? (
                         <>
                           <div>{formatDateKey(doc.expiresOn)}</div>
@@ -261,13 +261,13 @@ export default async function DocumentsPage({
                         <span className="text-text-muted">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Status">
                       <StatusChip tone={tone(doc.expiryStatus)}>
                         {EXPIRY_STATUS_LABELS[doc.expiryStatus]}
                       </StatusChip>
                     </TableCell>
-                    <TableCell className="text-text-muted">{doc.owner?.name ?? "—"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-text-muted" label="Owner">{doc.owner?.name ?? "—"}</TableCell>
+                    <TableCell label="File">
                       {/* The file name and size, NOT a link. A document is
                           fetched through a 300-second signed URL that the API
                           mints per request and logs - so there is no durable

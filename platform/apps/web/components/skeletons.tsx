@@ -170,12 +170,20 @@ export function SectionHeadingSkeleton({ subtitle = true }: { subtitle?: boolean
 
 /* ══ STAT TILES ═══════════════════════════════════════════════════════════════ */
 
-/** Columns the stat grid may take at `lg`. A lookup, so every class string is a literal. */
+/**
+ * Columns the stat grid may take. A lookup, so every class string is a literal.
+ *
+ * TWO UP ON A PHONE is the base, matching the pages these mirror: a stat
+ * figure is short by construction, and a column of five full-width tiles is
+ * two screens of scrolling before the reader reaches anything else. The
+ * loader has to agree with the page or the band reflows the moment the
+ * numbers arrive, which is the one thing a skeleton exists to prevent.
+ */
 const STAT_COLS = {
-  2: "sm:grid-cols-2",
-  3: "sm:grid-cols-2 lg:grid-cols-3",
-  4: "sm:grid-cols-2 lg:grid-cols-4",
-  5: "sm:grid-cols-2 lg:grid-cols-5",
+  2: "",
+  3: "lg:grid-cols-3",
+  4: "lg:grid-cols-4",
+  5: "lg:grid-cols-5",
 } as const;
 
 /**
@@ -202,7 +210,7 @@ export function StatGridSkeleton({
 }) {
   const filled = tone === "kpi";
   return (
-    <div className={join("grid grid-cols-1 gap-4 sm:gap-5", STAT_COLS[columns])}>
+    <div className={join("grid grid-cols-2 gap-4 sm:gap-5", STAT_COLS[columns])}>
       {Array.from({ length: count }, (_, i) => (
         <div
           key={i}

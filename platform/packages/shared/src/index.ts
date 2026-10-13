@@ -171,6 +171,18 @@ export * from "./agent-eval";
 // performance screens too - so it is deliberately not filed under anything
 // that reads as no-CRM-only.
 export * from "./entitlements";
+// `pricing` after `entitlements`: it imports the entitlement vocabulary to say
+// which meter an add-on raises, and nothing in `entitlements` knows a price.
+// The published price list, the tax regimes, the add-on catalogue and the
+// money arithmetic that turns them into a chargeable total
+// (`Build docs/47_PRICING_AND_COMPLIANCE.md`, migration 0197).
+export * from "./pricing";
+// `plan-effective` after both: it resolves a plan's entitlements plus the
+// add-ons bought on top into the limits every enforcement point reads. The API,
+// the worker pipeline, the reaper and the owner's plan page all come through
+// it, which is what stops four of them disagreeing about whether a 25-hour
+// top-up has landed.
+export * from "./plan-effective";
 export * from "./kpi-catalog";
 export * from "./kpi-scoring";
 export * from "./insights-settings";

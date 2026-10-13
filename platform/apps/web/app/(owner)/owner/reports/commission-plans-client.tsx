@@ -180,7 +180,7 @@ export function CommissionPlansClient({ plans, canEdit }: { plans: CommissionPla
           }
         />
       ) : (
-        <Table caption="Commission plans">
+        <Table caption="Commission plans" stacked>
           <TableHead>
             <tr>
               <TableHeaderCell>Name</TableHeaderCell>
@@ -192,7 +192,7 @@ export function CommissionPlansClient({ plans, canEdit }: { plans: CommissionPla
           <TableBody>
             {plans.map((plan) => (
               <TableRow key={plan.id}>
-                <TableCell>
+                <TableCell label="Name">
                   {canEdit ? (
                     <button
                       type="button"
@@ -205,9 +205,9 @@ export function CommissionPlansClient({ plans, canEdit }: { plans: CommissionPla
                     <span className="font-medium text-text">{plan.name}</span>
                   )}
                 </TableCell>
-                <TableCell className="text-text-muted">{METRIC_LABEL[plan.metric]}</TableCell>
-                <TableCell className="tabular-nums text-text-muted">{formatRate(plan)}</TableCell>
-                <TableCell>
+                <TableCell className="text-text-muted" label="Metric">{METRIC_LABEL[plan.metric]}</TableCell>
+                <TableCell className="tabular-nums text-text-muted" label="Rate">{formatRate(plan)}</TableCell>
+                <TableCell label="Status">
                   <StatusChip tone={plan.active ? "solid" : "outline"}>
                     {plan.active ? "active" : "inactive"}
                   </StatusChip>

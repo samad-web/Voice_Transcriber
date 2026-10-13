@@ -83,7 +83,16 @@ export function Provisioning({ tenants }: { tenants: TenantProvisioning[] }) {
           No tenants provisioned yet.
         </p>
       ) : (
-        <div tabIndex={0} role="region" aria-label="Provisioning" className="overflow-x-auto">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Provisioning"
+          // Below `md` each tenant draws as a labelled card (theme.css): the
+          // module switches are the point of this screen and they sit in the
+          // column that scrolls away first.
+          data-stacked="true"
+          className="overflow-x-auto"
+        >
           <table className="w-full min-w-[760px] border-collapse text-left text-sm">
             <caption className="sr-only">Per-tenant modules and WhatsApp provider</caption>
             <thead className="bg-bg-subtle">
@@ -104,8 +113,8 @@ export function Provisioning({ tenants }: { tenants: TenantProvisioning[] }) {
                 const provider = WHATSAPP_PROVIDERS.find((p) => p.id === t.whatsapp_provider);
                 return (
                   <tr key={t.id} className="transition-colors duration-150 hover:bg-surface-hover">
-                    <td className="px-4 py-3 align-middle font-medium text-text">{t.name}</td>
-                    <td className="px-4 py-3 align-middle">
+                    <td className="px-4 py-3 align-middle font-medium text-text" data-label="Tenant">{t.name}</td>
+                    <td className="px-4 py-3 align-middle" data-label="Modules">
                       <div className="flex flex-wrap gap-1">
                         {ORG_MODULES.filter((m) => t.enabled_modules.includes(m.id)).map((m) => (
                           <StatusChip key={m.id} tone="muted">
@@ -114,7 +123,7 @@ export function Provisioning({ tenants }: { tenants: TenantProvisioning[] }) {
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-3 align-middle">
+                    <td className="px-4 py-3 align-middle" data-label="WhatsApp">
                       {/* Neutral, always. "Which provider" is a category, not
                           one of the four states the console paints - see
                           @aura/ui's state.tsx. */}

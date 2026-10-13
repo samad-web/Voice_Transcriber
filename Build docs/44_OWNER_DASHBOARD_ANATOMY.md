@@ -10,6 +10,19 @@ design arguments behind it live in `29_CRM_DASHBOARD_VISUALISATION_REDESIGN.md`
 (charts) and `30_ORG_TIME_STANDARD_AND_TIMEZONE_PICKER.md` (clocks); this
 document is the map, not the rationale.
 
+> **PARTLY SUPERSEDED, 2026-10-12.** `/owner` was rebuilt to the CEO analytics
+> layout later the same day. **§2.1 (five hand-written persona compositions),
+> §3 (the page top to bottom) and §4 (the seven charts) no longer describe the
+> code** — read `46_CEO_ANALYTICS_DASHBOARD.md` for those.
+>
+> Everything else here is still current and doc 46 does not repeat it: §1 (where
+> things live, allowing for the new `_dashboard/ceo/` directory), §2.2 (scope is
+> applied in SQL and rendering is never the control), §2.3 (the fetch), §2.4
+> (the API-only redirect and why it sits above every other await), §2.5 (every
+> figure names its clock), §5 (the non-chart panels), §6 (the colour rules), §7
+> (the header) and §8 (the loader and its test). §9's checklist still applies in
+> full; doc 46 §6 adds four items to it.
+
 ---
 
 ## 1. Where everything lives

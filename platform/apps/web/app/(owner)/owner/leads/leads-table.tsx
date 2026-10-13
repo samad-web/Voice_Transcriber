@@ -491,6 +491,10 @@ export function LeadsTable({
             tabIndex={0}
             role="region"
             aria-label="Leads"
+            // Below `md` each row draws as a labelled card instead (theme.css):
+            // thirteen columns behind a horizontal scroll is not readable on a
+            // phone, and the Lead column scrolls out of sight first.
+            data-stacked="true"
             className="overflow-x-auto"
           >
             <table
@@ -563,11 +567,11 @@ export function LeadsTable({
                         />
                       </TableCell>
                     ) : null}
-                    <TableCell>
+                    <TableCell label="Lead">
                       <span className="block font-medium text-text">{lead.title}</span>
                       <span className="text-xs text-text-muted">{contactLabel(lead)}</span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="How warm">
                       {lead.temperature ? (
                         <TemperatureChip
                           temperature={lead.temperature}
@@ -577,7 +581,7 @@ export function LeadsTable({
                         <span className="text-xs text-text-subtle">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Project">
                       {lead.project_name ? (
                         <ProjectChip
                           name={lead.project_name}
@@ -588,7 +592,7 @@ export function LeadsTable({
                         <span className="text-xs text-text-subtle">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell label="Stage">
                       <StatusChip
                         tone={
                           lead.status === "won"
@@ -604,13 +608,13 @@ export function LeadsTable({
                         <span className="mt-0.5 block text-xs text-text-muted">{boardName(lead.board_id)}</span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell label="Value" className="text-right tabular-nums">
                       {num(lead.value_num) === null ? "-" : formatValue(lead.value_num)}
                     </TableCell>
-                    <TableCell className="text-text-muted">{lead.assigned_telecaller_name ?? "-"}</TableCell>
-                    <TableCell className="text-text-muted">{lead.telecaller ?? "-"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{lead.call_count}</TableCell>
-                    <TableCell>
+                    <TableCell label="Assigned to" className="text-text-muted">{lead.assigned_telecaller_name ?? "-"}</TableCell>
+                    <TableCell label="Handset" className="text-text-muted">{lead.telecaller ?? "-"}</TableCell>
+                    <TableCell label="Calls" className="text-right tabular-nums">{lead.call_count}</TableCell>
+                    <TableCell label="Callback">
                       {(() => {
                         const cb = leadCallbackLabel(lead);
                         if (!cb) return <span className="text-xs text-text-subtle">-</span>;
@@ -622,7 +626,7 @@ export function LeadsTable({
                       })()}
                     </TableCell>
                     {showRead ? (
-                      <TableCell>
+                      <TableCell label="Last call read">
                         {/* Renders nothing when the lead has no read yet - a
                             call that failed ASR, or one from before the module
                             was switched on. The dash keeps the column legible
@@ -637,10 +641,10 @@ export function LeadsTable({
                         )}
                       </TableCell>
                     ) : null}
-                    <TableCell className="max-w-[16rem] truncate text-text-muted">
+                    <TableCell label="Next action" className="max-w-[16rem] truncate text-text-muted">
                       {lead.next_action ?? "-"}
                     </TableCell>
-                    <TableCell className="text-text-muted tabular-nums">
+                    <TableCell label="Last activity" className="text-text-muted tabular-nums">
                       {relativeTime(lead.last_activity_at, zone)}
                     </TableCell>
                   </TableRow>

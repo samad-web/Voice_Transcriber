@@ -9,6 +9,7 @@ import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
 import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
 import { startReaper } from "./pipeline/reaper";
 import { startStorageUsageSweep } from "./pipeline/storage-usage";
+import { startStorageEviction } from "./pipeline/storage-eviction";
 import { startCrmReconcileSweep } from "./pipeline/crm-reconcile";
 import { startCallCrmIntegritySweep } from "./pipeline/call-crm-integrity";
 import { startOutboxDrain } from "./pipeline/outbox";
@@ -102,6 +103,13 @@ async function bootstrap() {
   // as one row, the nightly database estimate, and the in-app quota warnings.
   // STORAGE_USAGE_INTERVAL_MS, default 1h.
   startStorageUsageSweep();
+  // The storage cap's teeth (0197): evict the OLDEST audio for an org past its
+  // ceiling, never refuse an upload. It reads the snapshot the sweep above
+  // writes, so it starts five minutes later rather than racing it, and in
+  // practice it should almost never fire - the day window holds roughly half
+  // the gigabyte cap on every plan, so a normal account never reaches it.
+  // STORAGE_EVICTION_INTERVAL_MS, default 1h.
+  startStorageEviction();
   // A6's shadow-read burn-in check: does a lead's dual-written deal/contact
   // still agree with it? Off unless CRM_RECONCILE_ENABLED=true - see the
   // module header for why this is opt-in and why stage/status are gated

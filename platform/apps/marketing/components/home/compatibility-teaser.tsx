@@ -45,7 +45,7 @@ export function CompatibilityTeaser() {
         Pixel, Motorola and Nokia handsets use the Google Dialer, which stores its
         recordings in private app storage that Android blocks every other app from
         reading. That is confirmed on hardware. There is no setting and no future
-        version of Aura that changes it, if your team is on those phones, this
+        version of Auratel that changes it, if your team is on those phones, this
         product is not for you, and we would rather say so now.
       </p>
 

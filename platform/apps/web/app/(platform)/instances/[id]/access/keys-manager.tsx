@@ -174,7 +174,7 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
               No API keys yet - create one to authenticate this client&apos;s integrations
             </p>
           ) : (
-            <div tabIndex={0} role="region" aria-label="API keys" className="overflow-x-auto">
+            <div tabIndex={0} role="region" aria-label="API keys" data-stacked="true" className="overflow-x-auto">
               <table className="w-full min-w-[560px] border-collapse text-left text-sm">
                 <caption className="sr-only">API keys for this client</caption>
                 <TableHead>
@@ -188,7 +188,7 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
                 <TableBody>
                   {keys.map((k) => (
                     <TableRow key={k.id}>
-                      <TableCell>
+                      <TableCell label="Key">
                         <span className="block font-medium text-text">
                           {k.name}
                           {k.active === false ? (
@@ -217,10 +217,10 @@ export function ApiKeysManager({ keys, orgId }: { keys: ApiKey[]; orgId?: string
                           )}
                         </span>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-text-muted">
+                      <TableCell className="font-mono text-xs text-text-muted" label="Last used">
                         {k.last_used_at ? <LocalTime iso={k.last_used_at} /> : "never"}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-text-muted">
+                      <TableCell className="font-mono text-xs text-text-muted" label="Created">
                         <LocalTime iso={k.created_at} mode="date" />
                       </TableCell>
                       <TableCell className="text-right">

@@ -55,6 +55,7 @@ object ActivationManager {
             val config = PlatformApi.fetchConfig(baseUrl, token, AppVersion.current(context))
             ActivationStore.saveConfig(
                 context, config.recordingEnabled, config.version, config.appLockPasswordHash,
+                recordingsAccess = config.recordingsAccess,
             )
             // Attendance (doc 33): store the block, re-arm the shift alarm, start or
             // stop the shift service, and look for request decisions. An ABSENT block
@@ -81,6 +82,11 @@ object ActivationManager {
                     recordingEnabled = false,
                     configVersion = 0,
                     appLockPasswordHash = ActivationStore.appLockPasswordHash(context),
+                    // Passed back unchanged, for the reason saveConfig's header
+                    // gives about the app-lock hash: a transient auth failure
+                    // must not silently re-grant library access an owner
+                    // withdrew (nor withdraw one they granted).
+                    recordingsAccess = ActivationStore.recordingsAccess(context),
                 )
                 // A revoked device tracks nobody's attendance either.
                 AttendanceController.onConfig(context, null, null)

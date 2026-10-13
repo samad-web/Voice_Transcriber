@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.voicetranscriber.callrecorder.R
@@ -131,7 +132,8 @@ object ConnectivityWatch {
             context, 91, panel, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_wifi_off)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.offline_title))
             .setContentText(context.getString(R.string.offline_body))
             .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.offline_body)))

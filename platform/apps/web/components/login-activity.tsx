@@ -131,7 +131,7 @@ export async function LoginActivity({
   return (
     <>
       {header}
-      <Table caption="Sign-in history">
+      <Table caption="Sign-in history" stacked>
         <TableHead>
           <tr>
             <TableHeaderCell>When</TableHeaderCell>
@@ -144,12 +144,12 @@ export async function LoginActivity({
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.id}>
-              <TableCell className="whitespace-nowrap">
+              <TableCell className="whitespace-nowrap" label="When">
                 <time dateTime={row.createdAt} title={exact.format(new Date(row.createdAt))}>
                   {relative(row.createdAt, now)}
                 </time>
               </TableCell>
-              <TableCell>
+              <TableCell label="Event">
                 <span className="flex flex-wrap items-center gap-2">
                   {row.kind === "sign_in_failed" ? (
                     <StatusChip tone="danger">{AUTH_EVENT_LABELS[row.kind]}</StatusChip>
@@ -161,9 +161,9 @@ export async function LoginActivity({
                   ) : null}
                 </span>
               </TableCell>
-              <TableCell className="whitespace-nowrap text-text-muted">{describeUserAgent(row.userAgent)}</TableCell>
-              <TableCell className="whitespace-nowrap font-mono text-xs text-text-muted">{row.ip ?? "—"}</TableCell>
-              <TableCell className="text-text-muted">{describeAuthEventWhere(row.console, row.orgName)}</TableCell>
+              <TableCell className="whitespace-nowrap text-text-muted" label="Device">{describeUserAgent(row.userAgent)}</TableCell>
+              <TableCell className="whitespace-nowrap font-mono text-xs text-text-muted" label="IP">{row.ip ?? "—"}</TableCell>
+              <TableCell className="text-text-muted" label="Where">{describeAuthEventWhere(row.console, row.orgName)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -1,6 +1,7 @@
 import {
   ATTENDANCE_HEARTBEAT_SECONDS,
   ATTENDANCE_MIN_VERSION_CODE,
+  ATTENDANCE_NOTICE_BULLETS,
   ATTENDANCE_NOTICE_TEXT,
   ATTENDANCE_NOTICE_VERSION,
   type DeviceAttendanceConfig,
@@ -95,6 +96,10 @@ export function buildAttendanceBlock(input: AttendanceBlockInput): DeviceAttenda
     days: days.map(toDeviceScheduleDay),
     noticeVersion: ATTENDANCE_NOTICE_VERSION,
     noticeText: ATTENDANCE_NOTICE_TEXT,
+    // Both, always. The paragraph is what pre-list handsets render; the list is
+    // what this build renders. See ATTENDANCE_NOTICE_BULLETS on why neither
+    // bumps the version.
+    noticeBullets: [...ATTENDANCE_NOTICE_BULLETS],
   };
   return { ...body, scheduleVersion: stableHash31(JSON.stringify(body)) };
 }

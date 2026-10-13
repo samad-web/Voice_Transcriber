@@ -60,7 +60,7 @@ export const OEM_MATRIX: OemRow[] = [
     brand: "Pixel / Motorola / Nokia (Google Dialer)",
     status: "unsupported",
     path: "Private app storage, unreadable",
-    note: "Confirmed on hardware. The Google Dialer keeps its recordings in internal app storage that Android blocks every other app from reading. There is no setting, no permission and no version of Aura that changes this.",
+    note: "Confirmed on hardware. The Google Dialer keeps its recordings in internal app storage that Android blocks every other app from reading. There is no setting, no permission and no version of Auratel that changes this.",
   },
 ];
 

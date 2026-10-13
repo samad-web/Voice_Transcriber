@@ -162,7 +162,7 @@ export default async function PerformancePage({
           both money and sit next to each other on purpose: one is banked and
           one is hoped for, and a page that shows only the second is how a
           quarter gets called early. */}
-      <section aria-label="Headline" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Headline" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           label="New leads"
           value={data.sales.leadsCreated}
@@ -218,7 +218,7 @@ export default async function PerformancePage({
       {/* ── VELOCITY AND CONVERSION ─────────────────────────────────────────
           `tone="plain"`: a second filled band would compete with the one above,
           and the kit reserves the fill for the headline row. */}
-      <section aria-label="Velocity" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Velocity" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           tone="plain"
           label="Lead to win"

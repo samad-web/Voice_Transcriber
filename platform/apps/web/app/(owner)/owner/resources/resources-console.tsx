@@ -181,7 +181,7 @@ export function ResourcesConsole({
         />
       ) : (
         <Card>
-          <Table caption="Everything this workspace books time or stock against">
+          <Table caption="Everything this workspace books time or stock against" stacked>
             <TableHead>
               <TableRow>
                 <TableHeaderCell>Code</TableHeaderCell>
@@ -256,18 +256,18 @@ function ResourceRow({
   return (
     <>
       <TableRow>
-        <TableCell className="font-medium text-text">{row.code}</TableCell>
-        <TableCell>{row.name}</TableCell>
-        <TableCell className="text-text-muted">{row.resourceType}</TableCell>
-        <TableCell className="text-right tabular-nums">
+        <TableCell label="Code" className="font-medium text-text">{row.code}</TableCell>
+        <TableCell label="Name">{row.name}</TableCell>
+        <TableCell label="Type" className="text-text-muted">{row.resourceType}</TableCell>
+        <TableCell label="Booked" className="text-right tabular-nums">
           {/* The fact, not half of it. "3" alone reads as a problem on a batch
               of 40 and as sold out on a single room. */}
           {row.bookedCount} of {row.capacity}
         </TableCell>
-        <TableCell>
+        <TableCell label="Status">
           <StatusChip tone={STATUS_TONE[row.status] ?? "outline"}>{row.status}</StatusChip>
         </TableCell>
-        <TableCell className="text-text-muted">{holdLabel ?? "—"}</TableCell>
+        <TableCell label="Hold" className="text-text-muted">{holdLabel ?? "—"}</TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-2">
             {row.heldUntil ? (

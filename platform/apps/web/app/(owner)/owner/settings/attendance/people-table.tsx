@@ -17,6 +17,7 @@ type Patch = {
   reportsToMembershipId?: string | null;
   appLeaveRequests?: boolean;
   appBreakBooking?: boolean;
+  appRecordingsAccess?: boolean;
 };
 
 function approverLabel(a: Approver): string {
@@ -186,7 +187,11 @@ export function PeopleTable({
         </Card>
       ) : null}
 
-      <Card className="overflow-x-auto p-0">
+      {/* Below `md` each person draws as a labelled card (theme.css). Five
+          of the seven cells are CONTROLS - a shift picker, a manager picker,
+          three switches - and a switch nobody can scroll to is a switch they
+          do not have. */}
+      <Card data-stacked="true" className="overflow-x-auto p-0">
         <table className="w-full min-w-[60rem] text-sm">
           <thead>
             <tr className="border-b border-border bg-bg-subtle text-left">
@@ -204,6 +209,7 @@ export function PeopleTable({
               <th className="px-3 py-2.5 text-xs font-medium text-text-muted">Reports to</th>
               <th className="px-3 py-2.5 text-xs font-medium text-text-muted">Apply for leave in the app</th>
               <th className="px-3 py-2.5 text-xs font-medium text-text-muted">Book breaks in the app</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-text-muted">Recordings on their phone</th>
             </tr>
           </thead>
           <tbody>
@@ -218,7 +224,7 @@ export function PeopleTable({
                     className="mt-0.5 h-4 w-4 cursor-pointer accent-accent"
                   />
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" data-label="Telecaller">
                   <p className="font-medium text-text">{p.name}</p>
                   <p className="text-xs text-text-muted">
                     {p.device
@@ -236,7 +242,7 @@ export function PeopleTable({
                     </p>
                   ) : null}
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" data-label="Shift pattern">
                   <Select
                     size="sm"
                     aria-label={`Shift pattern for ${p.name}`}
@@ -258,7 +264,7 @@ export function PeopleTable({
                     ))}
                   </Select>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" data-label="Reports to">
                   <Select
                     size="sm"
                     aria-label={`Who ${p.name} reports to`}
@@ -282,7 +288,7 @@ export function PeopleTable({
                     ))}
                   </Select>
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" data-label="Apply for leave in the app">
                   <Toggle
                     on={p.appLeaveRequests}
                     label={`Apply for leave in the app, for ${p.name}`}
@@ -292,13 +298,30 @@ export function PeopleTable({
                     }
                   />
                 </td>
-                <td className="px-3 py-3">
+                <td className="px-3 py-3" data-label="Book breaks in the app">
                   <Toggle
                     on={p.appBreakBooking}
                     label={`Book breaks in the app, for ${p.name}`}
                     disabled={pending}
                     onChange={(next) =>
                       apply([p.telecallerId], { appBreakBooking: next }, next ? "Break booking on" : "Break booking off")
+                    }
+                  />
+                </td>
+                {/* Migration 0196. OFF by default: a telecaller cannot open,
+                    rename or delete the recordings on their own handset until
+                    somebody here says so. Capture and upload are unaffected. */}
+                <td className="px-3 py-3" data-label="Recordings on their phone">
+                  <Toggle
+                    on={p.appRecordingsAccess}
+                    label={`Open recordings on the phone, for ${p.name}`}
+                    disabled={pending}
+                    onChange={(next) =>
+                      apply(
+                        [p.telecallerId],
+                        { appRecordingsAccess: next },
+                        next ? "Recordings visible on their phone" : "Recordings hidden on their phone",
+                      )
                     }
                   />
                 </td>

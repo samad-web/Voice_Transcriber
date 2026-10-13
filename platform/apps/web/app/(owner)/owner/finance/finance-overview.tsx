@@ -199,7 +199,7 @@ export function FinanceOverview({ data }: { data: FinanceOverviewData }) {
       </p>
 
       {/* ── THE HEADLINE BAND ─────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Drill data={data} metric="collected">
           <StatCard
             label="Collected"
@@ -250,7 +250,7 @@ export function FinanceOverview({ data }: { data: FinanceOverviewData }) {
       </div>
 
       {/* ── CASH, FEES AND WHAT THEY COST ─────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Drill data={data} metric="runway">
           <StatCard
             label="Runway"

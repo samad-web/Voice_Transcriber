@@ -104,6 +104,7 @@ export default async function InstanceDevicesPage({
                 tabIndex={0}
                 role="region"
                 aria-label={`Devices, ${inst.name}`}
+                data-stacked="true"
                 className={SCROLLER}
               >
                 {/* Was min-w-[1200px] across eight columns, which forced a
@@ -131,7 +132,7 @@ export default async function InstanceDevicesPage({
                       const tone = health?.needsAttention ? "danger" : HEALTH_TONE[staleness];
                       return (
                         <TableRow key={device.id}>
-                          <TableCell className="py-2.5">
+                          <TableCell className="py-2.5" label="Device">
                             <span className="block text-sm font-medium text-text">
                               {device.label ?? "Unlabeled device"}
                             </span>
@@ -141,7 +142,7 @@ export default async function InstanceDevicesPage({
                               className="-ml-1.5 mt-0.5 max-w-[24ch] text-text-muted"
                             />
                           </TableCell>
-                          <TableCell className="py-2.5">
+                          <TableCell className="py-2.5" label="Telecaller">
                             <TelecallerForm
                               orgId={orgId}
                               deviceId={device.id}
@@ -149,7 +150,7 @@ export default async function InstanceDevicesPage({
                               externalId={device.telecaller_external_id}
                             />
                           </TableCell>
-                          <TableCell className="py-2.5">
+                          <TableCell className="py-2.5" label="Capability">
                             <StatusChip tone={device.capture_capability ? "muted" : "outline"}>
                               {device.capture_capability ?? "unprobed"}
                             </StatusChip>
@@ -157,10 +158,10 @@ export default async function InstanceDevicesPage({
                           <TableCell
                             className="max-w-[14ch] truncate py-2.5 font-mono text-xs text-text-muted"
                             title={device.fingerprint ?? undefined}
-                          >
+                           label="Fingerprint">
                             {device.fingerprint ?? "-"}
                           </TableCell>
-                          <TableCell className="py-2.5">
+                          <TableCell className="py-2.5" label="Last seen">
                             {device.last_seen_at ? (
                               <>
                                 <LocalTime
@@ -178,7 +179,7 @@ export default async function InstanceDevicesPage({
                               <span className="text-xs text-text-muted">-</span>
                             )}
                           </TableCell>
-                          <TableCell className="py-2.5">
+                          <TableCell className="py-2.5" label="State">
                             <div className="flex flex-col items-start gap-1">
                               <StatusChip tone={DEVICE_TONE[device.status]}>
                                 {device.status}
@@ -241,6 +242,7 @@ export default async function InstanceDevicesPage({
                     tabIndex={0}
                     role="region"
                     aria-label={`Enrollment keys, ${inst.name}`}
+                    data-stacked="true"
                     className={SCROLLER}
                   >
                     <table className="w-full min-w-[560px] border-collapse text-left text-sm">
@@ -256,22 +258,22 @@ export default async function InstanceDevicesPage({
                       <TableBody>
                         {keys.map((key) => (
                           <TableRow key={key.id}>
-                            <TableCell className="py-2.5">
+                            <TableCell className="py-2.5" label="Issued">
                               <LocalTime
                                 iso={key.created_at}
                                 className="text-xs text-text tabular-nums"
                               />
                             </TableCell>
-                            <TableCell className="py-2.5">
+                            <TableCell className="py-2.5" label="Expires">
                               <LocalTime
                                 iso={key.expires_at}
                                 className="text-xs text-text-muted tabular-nums"
                               />
                             </TableCell>
-                            <TableCell className="py-2.5 text-right font-mono text-xs tabular-nums">
+                            <TableCell className="py-2.5 text-right font-mono text-xs tabular-nums" label="Uses">
                               {key.use_count}/{key.max_uses}
                             </TableCell>
-                            <TableCell className="py-2.5">
+                            <TableCell className="py-2.5" label="Status">
                               <StatusChip tone={KEY_TONE[key.status]}>{key.status}</StatusChip>
                             </TableCell>
                           </TableRow>

@@ -12,7 +12,7 @@ import { CTABanner } from "../ui/cta-banner";
  * grid and immediately before pricing, so the two read as one offer with two
  * doors rather than as two products. Do not move it.
  *
- * WHY IT EXISTS. Aura's connector catalogue answers "we push leads into your
+ * WHY IT EXISTS. Auratel's connector catalogue answers "we push leads into your
  * CRM". It has no answer at all for "I don't have a CRM" - which, for brick,
  * interiors, real-estate and building-materials SMBs in Tamil Nadu, is the
  * majority. Today that visitor reaches pricing, realises the product assumes a
@@ -50,7 +50,7 @@ export function CustomCrm() {
             Already have a CRM
           </h3>
           <p className="mt-4 text-lg text-text-muted">
-            Aura pushes every qualified call straight into it, {CONNECTOR_COUNT}{" "}
+            Auratel pushes every qualified call straight into it, {CONNECTOR_COUNT}{" "}
             connectors, your field names, your pipeline stages.
           </p>
           <p className="mt-4 text-base text-text-muted">
@@ -83,7 +83,7 @@ export function CustomCrm() {
             follow-up date. Whatever your calls are already about.
           </p>
           <p className="mt-3 text-base text-text-muted">
-            Aura feeds it automatically. Every qualified call becomes a record, with
+            Auratel feeds it automatically. Every qualified call becomes a record, with
             the details already filled in, in Tamil or English. Nobody types anything.
           </p>
 

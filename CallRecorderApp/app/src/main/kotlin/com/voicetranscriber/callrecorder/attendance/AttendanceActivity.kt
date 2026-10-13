@@ -5,14 +5,15 @@ import android.content.ActivityNotFoundException
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.BulletSpan
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +24,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
+import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.timepicker.MaterialTimePicker
 import com.google.android.material.timepicker.TimeFormat
@@ -118,7 +121,7 @@ class AttendanceActivity : AppCompatActivity() {
         binding.offText.visibility = if (enabled) View.GONE else View.VISIBLE
         val notice = enabled && AttendanceController.noticeNeeded(this)
         binding.noticeCard.visibility = if (notice) View.VISIBLE else View.GONE
-        if (notice) binding.noticeText.text = cfg?.noticeText
+        if (notice) binding.noticeText.text = noticeBody(cfg)
         val tracking = enabled && !notice
         binding.statusCard.visibility = if (tracking) View.VISIBLE else View.GONE
         binding.timelineCard.visibility = if (tracking) View.VISIBLE else View.GONE
@@ -136,6 +139,35 @@ class AttendanceActivity : AppCompatActivity() {
         renderSchedule()
         renderTimeline()
         renderRequests()
+    }
+
+    /**
+     * The consent disclosure, as a bulleted list when the server sends one.
+     *
+     * Falls back to the paragraph (`noticeText`) when `noticeBullets` is empty,
+     * which is what an API older than this build sends. The screen must never
+     * be blank here - it is the gate in front of attendance tracking, and a
+     * blank gate is one somebody taps through without reading.
+     *
+     * `BulletSpan(gapWidth)` rather than the three-argument overload: the
+     * radius parameter is API 28 and this app ships to API 26.
+     */
+    private fun noticeBody(cfg: AttendanceConfig?): CharSequence {
+        val bullets = cfg?.noticeBullets.orEmpty()
+        if (bullets.isEmpty()) return cfg?.noticeText.orEmpty()
+        val gap = (10 * resources.displayMetrics.density).toInt()
+        val out = SpannableStringBuilder()
+        bullets.forEachIndexed { index, line ->
+            val start = out.length
+            out.append(line)
+            // Trailing newline INSIDE the spanned range on every line but the
+            // last: a BulletSpan draws its dot for the paragraph it covers, and
+            // a range that stops short of the break loses the following line's
+            // indent.
+            if (index < bullets.lastIndex) out.append("\n\n")
+            out.setSpan(BulletSpan(gap), start, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return out
     }
 
     private fun renderState(ui: AttendanceController.Ui) {
@@ -398,12 +430,19 @@ class AttendanceActivity : AppCompatActivity() {
             addView(fullDay); addView(morning); addView(afternoon)
             check(fullDay.id)
         }
-        val typeSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@AttendanceActivity, android.R.layout.simple_spinner_dropdown_item,
-                LeaveType.entries.map { it.label },
-            )
-        }
+        // A Material exposed-dropdown menu rather than a bare Spinner: it is the
+        // platform's own menu primitive (so the list, its touch targets and
+        // TalkBack behaviour are the OS's), and unlike `simple_spinner_dropdown_item`
+        // it inherits the app's theme instead of AOSP's.
+        val typeField = layoutInflater.inflate(R.layout.view_dropdown_field, null) as TextInputLayout
+        typeField.setHint(R.string.att_leave_type)
+        val typeInput = typeField.findViewById<MaterialAutoCompleteTextView>(R.id.dropdownInput)
+        typeInput.setSimpleItems(LeaveType.entries.map { it.label }.toTypedArray())
+        // Index, not the displayed label: the label is user-facing text and
+        // matching on it would break the moment one is translated.
+        var typeIndex = 0
+        typeInput.setText(LeaveType.entries[0].label, false)
+        typeInput.setOnItemClickListener { _, _, position, _ -> typeIndex = position }
         val reason = EditText(this).apply {
             setHint(R.string.att_reason_optional)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
@@ -456,7 +495,7 @@ class AttendanceActivity : AppCompatActivity() {
             addView(datesButton)
             addView(dayPart)
             addView(TextView(this@AttendanceActivity).apply { setText(R.string.att_leave_type) })
-            addView(typeSpinner)
+            addView(typeField)
             addView(reason)
             addView(warning)
             addView(
@@ -485,7 +524,7 @@ class AttendanceActivity : AppCompatActivity() {
                     afternoon.id -> "pm"
                     else -> null
                 }
-                val type = LeaveType.entries[typeSpinner.selectedItemPosition.coerceAtLeast(0)]
+                val type = LeaveType.entries[typeIndex.coerceIn(0, LeaveType.entries.lastIndex)]
                 val body = AttendanceRequests.leaveBody(
                     type, r.first.toString(), r.second.toString(), half, reason.text?.toString(),
                 )

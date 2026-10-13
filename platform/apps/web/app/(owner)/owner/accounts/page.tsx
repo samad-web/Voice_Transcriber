@@ -101,7 +101,7 @@ export default async function AccountsPage({
         )
       ) : (
         <>
-          <Table caption="Accounts">
+          <Table caption="Accounts" stacked>
             <TableHead>
               <tr>
                 <TableHeaderCell>Name</TableHeaderCell>
@@ -113,7 +113,7 @@ export default async function AccountsPage({
             <TableBody>
               {data.accounts.map((account) => (
                 <TableRow key={account.id}>
-                  <TableCell>
+                  <TableCell label="Name">
                     <Link
                       href={`/owner/accounts/${account.id}`}
                       className="block font-medium text-text hover:underline"
@@ -121,15 +121,15 @@ export default async function AccountsPage({
                       {account.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-text-muted">{account.domain ?? "-"}</TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell label="Domain" className="text-text-muted">{account.domain ?? "-"}</TableCell>
+                  <TableCell label="Phone" className="text-text-muted">
                     {account.phone_prefix
                       ? `${account.phone_prefix}…`
                       : account.phone_last3
                         ? `…${account.phone_last3}`
                         : "-"}
                   </TableCell>
-                  <TableCell className="text-text-muted tabular-nums">
+                  <TableCell label="Last activity" className="text-text-muted tabular-nums">
                     {relativeTime(account.last_activity_at, zone)}
                   </TableCell>
                 </TableRow>

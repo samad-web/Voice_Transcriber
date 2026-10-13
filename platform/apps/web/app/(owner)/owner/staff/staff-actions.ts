@@ -5,6 +5,7 @@ import { StaffStatus } from "@aura/shared";
 import { API_URL } from "@/lib/server-api";
 import { getOwner } from "@/lib/owner-context";
 import { errorText, ownerHeaders, type ActionResult } from "../actions";
+import type { OffboardManifest, OffboardResult } from "./types";
 
 /**
  * The staff-record writes: employment details, suspension, permission role.
@@ -103,6 +104,77 @@ export async function setStaffStatusAction(userId: string, status: string): Prom
   // navigation.
   revalidatePath("/owner");
   return {};
+}
+
+/**
+ * What is still on somebody's desk - the offboarding dialog's preview (0198).
+ *
+ * Owner-or-manager on the API, so this one does NOT go through `ownerOnly`:
+ * reading it changes nothing, and a manager who can see the roster can see
+ * what is on it. Committing the handover below is owner-only.
+ */
+export async function offboardPreviewAction(
+  userId: string,
+): Promise<ActionResult & { manifest?: OffboardManifest }> {
+  const headers = await ownerHeaders();
+  if (!headers) return { error: "Not signed in as an instance owner" };
+
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/team/${userId}/offboard`, {
+      headers,
+      cache: "no-store",
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    return { manifest: (await res.json()) as OffboardManifest };
+  } catch {
+    return { error: "The platform API did not answer." };
+  }
+}
+
+/**
+ * Hand their work over, stop their handsets, archive their desk.
+ *
+ * `handoverTo` is sent as the API expects it - null when there is nothing to
+ * move - and the API refuses null when there is. The dialog will not let
+ * somebody get that far, but the refusal lives there rather than here, because
+ * a server action is a public endpoint and this check is a courtesy.
+ */
+export async function offboardAction(
+  userId: string,
+  input: { handoverTo: string | null; devices: "logout" | "remove" | "keep" },
+): Promise<ActionResult & { result?: OffboardResult }> {
+  const gate = await ownerOnly();
+  if ("error" in gate) return gate;
+
+  try {
+    const res = await fetch(`${API_URL}/v1/owner/team/${userId}/offboard`, {
+      method: "POST",
+      headers: gate.headers,
+      cache: "no-store",
+      body: JSON.stringify({
+        handoverTo: input.handoverTo,
+        devices: input.devices,
+        archiveTelecaller: true,
+      }),
+    });
+    if (!res.ok) return { error: await errorText(res) };
+    const result = (await res.json()) as OffboardResult;
+
+    // Everything the handover touched: the leads board, the recipient's task
+    // list, the fleet, and the roster the dialog sits on.
+    for (const path of [
+      "/owner/staff",
+      "/owner/leads",
+      "/owner/tasks",
+      "/owner/devices",
+      "/owner",
+    ]) {
+      revalidatePath(path);
+    }
+    return { result };
+  } catch {
+    return { error: "The platform API did not answer." };
+  }
 }
 
 /** Assign the permission role whose grid applies (0039's `memberships.role_id`). */

@@ -92,7 +92,7 @@ export default async function UsagePage({ params }: { params: Promise<{ id: stri
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
             <StatCard
               label="Calls Processed"
               value={n(usage.metrics.calls)}
@@ -150,7 +150,11 @@ export default async function UsagePage({ params }: { params: Promise<{ id: stri
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div
+                  // Below `md` each invoice draws as a labelled card (theme.css).
+                  data-stacked="true"
+                  className="overflow-x-auto"
+                >
                   <table className="w-full min-w-[420px] text-left border-collapse">
                     <thead>
                       <tr className="bg-bg-subtle border-b-2 border-border-strong font-mono text-[10px] text-text font-bold uppercase tracking-wider">
@@ -163,7 +167,7 @@ export default async function UsagePage({ params }: { params: Promise<{ id: stri
                     <tbody className="divide-y-2 divide-border text-sm">
                       {billing.invoices.map((inv) => (
                         <tr key={inv.id} className="hover:bg-surface-hover">
-                          <td className="py-3 px-4 font-mono text-xs font-bold">
+                          <td className="py-3 px-4 font-mono text-xs font-bold" data-label="Invoice">
                             {inv.hosted_invoice_url ? (
                               <a
                                 href={inv.hosted_invoice_url}
@@ -177,17 +181,17 @@ export default async function UsagePage({ params }: { params: Promise<{ id: stri
                               (inv.number ?? inv.id.slice(0, 10))
                             )}
                           </td>
-                          <td className="py-3 px-4 font-mono text-[11px]">
+                          <td className="py-3 px-4 font-mono text-[11px]" data-label="Period">
                             {inv.period_start
                               ? new Date(inv.period_start).toLocaleDateString()
                               : "-"}
                           </td>
-                          <td className="py-3 px-4 font-mono text-xs font-bold">
+                          <td className="py-3 px-4 font-mono text-xs font-bold" data-label="Amount">
                             {inv.amount_due != null
                               ? `${(inv.amount_due / 100).toFixed(2)} ${(inv.currency ?? "usd").toUpperCase()}`
                               : "-"}
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-3 px-4 text-right" data-label="Status">
                             <StatusChip tone={inv.status === "paid" ? "solid" : "muted"}>
                               {inv.status ?? "draft"}
                             </StatusChip>

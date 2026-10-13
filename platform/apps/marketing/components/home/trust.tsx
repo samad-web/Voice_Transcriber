@@ -78,7 +78,7 @@ export function Trust() {
 
       <div className="mt-8 flex flex-wrap gap-3">
         <ButtonLink href="/security" variant="secondary">
-          How Aura handles your data
+          How Auratel handles your data
         </ButtonLink>
         <ButtonLink href="/consent" variant="ghost">
           Call recording and consent in India

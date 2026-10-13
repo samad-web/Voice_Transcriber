@@ -44,7 +44,8 @@ object UpdateNotification {
         )
 
         val notification = NotificationCompat.Builder(context, App.CHANNEL_UPDATES)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_stat_auratel)
+            .setColor(ContextCompat.getColor(context, R.color.brand_mid))
             .setContentTitle(context.getString(R.string.update_ready_title, versionName))
             .setContentText(notes ?: context.getString(R.string.update_ready_body))
             .setStyle(

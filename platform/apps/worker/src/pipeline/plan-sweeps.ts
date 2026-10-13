@@ -1,4 +1,4 @@
-import { getAdminPool } from "@aura/db";
+import { applyPlanModules, getAdminPool, resolveAndApplyPlanMeters } from "@aura/db";
 import { PLAN_MODULES, type PlanKey } from "@aura/shared";
 
 /**
@@ -25,6 +25,24 @@ import { PLAN_MODULES, type PlanKey } from "@aura/shared";
  * `enabled_modules` back to the paid plan's set. Without it, a tenant who
  * trialled Platform would keep `crm` in `enabled_modules` forever, and
  * `CrmPermissionsGuard` reads that column rather than the subscription.
+ *
+ * ── AND SINCE 0197, THE METERS TOO ──────────────────────────────────────────
+ *
+ * A capture plan also resolves into four columns that enforce it:
+ * `retention_days` (the audio clock), `storage_quota_bytes`,
+ * `transcription_enabled` and `asr_diarization`. Those are the same kind of
+ * resolved state `enabled_modules` is, and they have the same failure mode -
+ * a predicate cannot narrow them, so a tenant whose trial of Growth ended
+ * would keep 90-day audio retention and speaker separation until somebody
+ * noticed. `resolveAndApplyPlanMeters` is what puts them back, and it is
+ * shared with the API's apply path so the two cannot resolve a plan
+ * differently.
+ *
+ * It still deletes nothing. Narrowing `retention_days` from 90 to 30 does not
+ * delete anything by itself - the reaper will expire audio older than the new
+ * window on its next run, which is what a downgrade MEANS - and
+ * `data_retention_days` is never narrowed at all, so no transcript, lead, deal
+ * or contact is touched by a tier change.
  */
 
 /** A trial that has expired reverts to the plan underneath it. */
@@ -41,7 +59,7 @@ export async function revertExpiredTrials(): Promise<number> {
 
   for (const row of rows) {
     try {
-      await applyPlanModules(row.org_id, row.plan_key as PlanKey);
+      await applyModules(row.org_id, row.plan_key as PlanKey);
       await pool.query(
         `UPDATE org_subscriptions
             SET trial_plan_id = NULL, trial_ends_at = NULL,
@@ -49,6 +67,12 @@ export async function revertExpiredTrials(): Promise<number> {
           WHERE org_id = $1`,
         [row.org_id],
       );
+      // The meters AFTER the trial is cleared, not before. They are resolved
+      // from the subscription row, and `EFFECTIVE_LIMITS_SQL` prefers a live
+      // trial plan over the paid one - so resolving first would write the
+      // TRIAL tier's retention and transcription limits and leave the tenant
+      // on them after the trial had ended.
+      await resolveAndApplyPlanMeters(pool, row.org_id);
       await pool.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
               VALUES ($1, 'system', $1, 'plan.trial_reverted', 'organization', $1, $2::jsonb)`,
@@ -95,13 +119,17 @@ export async function applyPendingDowngrades(): Promise<number> {
 
   for (const row of rows) {
     try {
-      await applyPlanModules(row.org_id, row.to_key as PlanKey);
+      await applyModules(row.org_id, row.to_key as PlanKey);
       await pool.query(
         `UPDATE org_subscriptions
             SET plan_id = $2, pending_plan_id = NULL, status = 'active', updated_at = now()
           WHERE org_id = $1`,
         [row.org_id, row.to_id],
       );
+      // After the new plan_id lands, for the same reason as the trial revert
+      // above: the meters are read back from the subscription, so resolving
+      // them first would re-apply the plan being left.
+      await resolveAndApplyPlanMeters(pool, row.org_id);
       await pool.query(
         `INSERT INTO audit_log (org_id, actor_type, actor_id, action, target_type, target_id, meta)
               VALUES ($1, 'system', $1, 'plan.downgrade_applied', 'organization', $1, $2::jsonb)`,
@@ -115,31 +143,27 @@ export async function applyPendingDowngrades(): Promise<number> {
 }
 
 /**
- * Reconcile `enabled_modules` to a plan's set.
+ * Reconcile `enabled_modules` AND the four capture meters to a plan's set.
  *
- * `aura` and `wasi` are preserved unconditionally, exactly as the operator's
- * apply path does: every tenant has an instance and a workspace, and Wasi is
- * configured by hand on the Wasi side with no plan aware of it. A sweep that
- * unpaired a client's WhatsApp number at 3am because their trial ended would
- * be a very bad morning.
+ * The module write itself lives in `@aura/db`'s `applyPlanModules` since 0197,
+ * shared with the API's apply path: `aura` and `wasi` are preserved
+ * unconditionally there, because every tenant has an instance and a workspace
+ * and Wasi is configured by hand on the Wasi side with no plan aware of it. A
+ * sweep that unpaired a client's WhatsApp number at 3am because their trial
+ * ended would be a very bad morning.
+ *
+ * The METERS are deliberately NOT done here. Each caller resolves them itself,
+ * after it has written the new `plan_id` and cleared any trial, because they
+ * are read back FROM the subscription row: resolving them inside this helper -
+ * which runs before those writes - would re-apply the plan the tenant is
+ * leaving. That is a one-line mistake with a quiet symptom (a trial's
+ * retention window surviving the trial), which is why it is written down here
+ * rather than left to the call sites to remember.
  */
-async function applyPlanModules(orgId: string, planKey: PlanKey): Promise<void> {
+async function applyModules(orgId: string, planKey: PlanKey): Promise<void> {
   const modules = PLAN_MODULES[planKey];
   if (!modules) throw new Error(`no module set for plan ${planKey}`);
-  await getAdminPool().query(
-    `UPDATE organizations o
-        SET plan_key = $2,
-            enabled_modules = (
-              SELECT array_agg(DISTINCT m ORDER BY m)
-                FROM unnest(
-                  ARRAY(SELECT x FROM unnest(o.enabled_modules) x WHERE x IN ('aura', 'wasi'))
-                  || $3::text[]
-                ) m
-            ),
-            updated_at = now()
-      WHERE o.id = $1`,
-    [orgId, planKey, modules],
-  );
+  await applyPlanModules(getAdminPool(), orgId, planKey, modules);
 }
 
 export function startPlanSweep(): NodeJS.Timeout {

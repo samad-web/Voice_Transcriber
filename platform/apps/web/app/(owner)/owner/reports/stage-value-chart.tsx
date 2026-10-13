@@ -61,7 +61,7 @@ export function StageValueChart({ rows, pipelineId }: { rows: StageValueRow[]; p
                 </span>
                 <span
                   role="tooltip"
-                  className="pointer-events-none invisible absolute top-full left-[8.5rem] z-10 mt-1 w-max max-w-[16rem] rounded-md border border-border bg-surface px-3 py-2 text-xs text-text-muted shadow-md group-hover:visible group-focus-visible:visible"
+                  className="pointer-events-none invisible pointer-coarse:hidden absolute top-full left-[8.5rem] z-10 mt-1 w-max max-w-[min(16rem,calc(100vw-2rem))] rounded-md border border-border bg-surface px-3 py-2 text-xs text-text-muted shadow-md group-hover:visible group-focus-visible:visible"
                 >
                   <span className="block text-sm font-semibold text-text">{formatValue(row.amount)}</span>
                   <span className="block">

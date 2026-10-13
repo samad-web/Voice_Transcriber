@@ -161,7 +161,7 @@ export const NAV_ITEMS: NavItem[] = [
  * routes are not in their nav and the layout redirects them away besides.
  */
 export const OWNER_NAV_ITEMS: NavItem[] = [
-  { href: "/owner", label: "Dashboard", icon: Activity, title: "Dashboard", context: "Instance" },
+  { href: "/owner", label: "Dashboard", icon: Activity, title: "Dashboard", context: "CEO analytics" },
   {
     href: "/owner/board",
     label: "Lead board",

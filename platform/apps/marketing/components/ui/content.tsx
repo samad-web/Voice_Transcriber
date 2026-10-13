@@ -53,7 +53,7 @@ export function StepFlow({
 /* ── LogoGrid ──────────────────────────────────────────────────────────────
    Doc 10 §15 bans invented logo walls, and there are no licensed vendor marks
    in this repository, so this renders NAMES, not logos. It is a catalogue of
-   software Aura connects to - not a claim that any of them endorse Aura, which
+   software Auratel connects to - not a claim that any of them endorse Auratel, which
    is exactly what a grid of borrowed logos would imply.
 
    `note` marks the four OAuth-pending providers honestly (doc 10 §3 row 10). */

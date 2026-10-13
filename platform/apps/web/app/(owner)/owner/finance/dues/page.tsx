@@ -152,7 +152,7 @@ export default async function DuesPage({
         />
       ) : (
         <Card className="overflow-hidden p-0">
-          <Table caption="Instalments still owed, oldest due date first">
+          <Table caption="Instalments still owed, oldest due date first" stacked>
             <TableHead>
               <TableRow>
                 <TableHeaderCell>Customer</TableHeaderCell>
@@ -166,7 +166,7 @@ export default async function DuesPage({
             <TableBody>
               {data.items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell>
+                  <TableCell label="Customer">
                     <span className="block text-text">{item.customerName ?? item.dealName}</span>
                     {/* Only when it adds something. A deal is very often named
                         after the person, and printing both rendered as
@@ -175,8 +175,8 @@ export default async function DuesPage({
                       <span className="block text-xs text-text-muted">{item.dealName}</span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-text-muted">#{item.position}</TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell label="Instalment" className="text-text-muted">#{item.position}</TableCell>
+                  <TableCell label="Due" className="tabular-nums">
                     {item.dueDate}
                     {item.daysLate > 0 ? (
                       <span className="block text-xs text-text-muted">
@@ -184,7 +184,7 @@ export default async function DuesPage({
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell label="Owed" className="text-right tabular-nums">
                     {money(item.outstanding, item.currency)}
                     {item.paid > 0 ? (
                       <span className="block text-xs text-text-muted">
@@ -192,7 +192,7 @@ export default async function DuesPage({
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="State">
                     {/* ── StatusChip, NOT StateChip ──────────────────────
                         `StateChip` is for the console's four CALL states, and
                         it appends the tone's meaning for screen readers when a
@@ -220,7 +220,7 @@ export default async function DuesPage({
                           : "Open"}
                     </StatusChip>
                   </TableCell>
-                  <TableCell className="tabular-nums text-text-muted">
+                  <TableCell label="Promised" className="tabular-nums text-text-muted">
                     {item.promisedOn ?? "—"}
                   </TableCell>
                 </TableRow>

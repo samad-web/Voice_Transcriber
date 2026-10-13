@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A Material exposed-dropdown menu, for dialogs that are built in code.
+
+  It exists as a layout rather than as a `Spinner` constructed inline because
+  the exposed-dropdown look comes entirely from the TextInputLayout STYLE, and a
+  style cannot be applied to a view created with a plain constructor - which is
+  how the leave dialog ended up with `android.R.layout.simple_spinner_dropdown_item`,
+  the one AOSP widget on the screen that ignores the app's theme.
+
+  Inflated, filled with `setSimpleItems(...)` and read back by its click
+  listener. `inputType="none"` plus `focusable=false` is what makes it a menu
+  rather than an editable field: tapping it opens the list and the keyboard
+  never appears.
+-->
+<com.google.android.material.textfield.TextInputLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/dropdownField"
+    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <com.google.android.material.textfield.MaterialAutoCompleteTextView
+        android:id="@+id/dropdownInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:focusable="false"
+        android:inputType="none" />
+</com.google.android.material.textfield.TextInputLayout>

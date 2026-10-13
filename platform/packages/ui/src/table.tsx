@@ -25,15 +25,38 @@ import { cx } from "./cx";
  * The wrapper scrolls horizontally on its own (`overflow-x-auto`) so a wide
  * table never makes the whole page scroll sideways on a phone, and is
  * `tabIndex={0}` so a keyboard user can actually reach that scroll.
+ *
+ * ── `stacked`: ONE CARD PER ROW ON A PHONE ──────────────────────────────────
+ *
+ * Sideways scrolling keeps a wide table from breaking the page, but it is a
+ * poor way to READ one on a phone: the reader loses the identifying column
+ * the moment they scroll to the column they wanted, and has to shuttle back
+ * and forth to pair a value with a row.
+ *
+ * `stacked` turns each row into a card below `md`, one labelled line per
+ * cell. It needs each `TableCell` to carry a `label` - the column's own
+ * heading - because a bare column of values with the header row gone is
+ * unreadable. A cell with no `label` still renders, just without a label
+ * line: that is how a checkbox or a row-actions menu opts out of the card
+ * without the phone losing the control.
+ *
+ * It is OPT-IN rather than the default for two reasons: a table whose cells
+ * have no labels would silently render as an unlabelled list, and some
+ * tables (a dense numeric matrix, a timesheet) genuinely read better as a
+ * grid you scroll. The markup stays a real `<table>` either way - the
+ * stacking is CSS, so a screen reader keeps its table semantics.
  */
 export function Table({
   caption,
   captionVisible = false,
+  stacked = false,
   children,
   className = "",
 }: {
   caption: string;
   captionVisible?: boolean;
+  /** Below `md`, draw each row as a labelled card. Cells need a `label`. */
+  stacked?: boolean;
   children: ReactNode;
   className?: string;
 }) {
@@ -46,6 +69,7 @@ export function Table({
       role="region"
       aria-label={caption}
       className={cx("overflow-x-auto rounded-xl border border-border", className)}
+      data-stacked={stacked ? "true" : undefined}
     >
       <table className="w-full border-collapse text-sm">
         <caption
@@ -124,11 +148,24 @@ export function TableHeaderCell({
 
 export function TableCell({
   children,
+  label,
   className = "",
   ...rest
-}: TdHTMLAttributes<HTMLTableCellElement>) {
+}: TdHTMLAttributes<HTMLTableCellElement> & {
+  /**
+   * The column's heading, repeated on the cell so a stacked card can show it.
+   * Only read when the enclosing `Table` has `stacked`; it costs an attribute
+   * otherwise. A cell with no label still renders when stacked, just without
+   * a label line - that is how a checkbox or an actions column opts out.
+   */
+  label?: string;
+}) {
   return (
-    <td className={cx("px-4 py-3 align-middle text-text", className)} {...rest}>
+    <td
+      data-label={label}
+      className={cx("px-4 py-3 align-middle text-text", className)}
+      {...rest}
+    >
       {children}
     </td>
   );

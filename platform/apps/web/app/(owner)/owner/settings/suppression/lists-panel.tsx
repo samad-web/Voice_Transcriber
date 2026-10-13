@@ -186,7 +186,7 @@ export function SuppressionLists({ initial, can }: { initial: DncList[]; can: Dn
           }
         />
       ) : (
-        <Table caption="Do-not-call lists">
+        <Table caption="Do-not-call lists" stacked>
           <TableHead>
             <TableRow>
               <TableHeaderCell>List</TableHeaderCell>
@@ -205,18 +205,18 @@ export function SuppressionLists({ initial, can }: { initial: DncList[]; can: Dn
               const active = list.status === "active";
               return (
                 <TableRow key={list.id}>
-                  <TableCell className="font-medium">{list.name}</TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell className="font-medium" label="List">{list.name}</TableCell>
+                  <TableCell className="text-text-muted" label="Kind">
                     {KIND_LABEL[list.kind] ?? list.kind}
                   </TableCell>
-                  <TableCell className="tabular-nums">{list.entryCount.toLocaleString()}</TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell className="tabular-nums" label="Numbers">{list.entryCount.toLocaleString()}</TableCell>
+                  <TableCell className="text-text-muted" label="Added by">
                     {list.uploadedByName ?? "Not recorded"}
                   </TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell className="text-text-muted" label="Added">
                     <LocalTime iso={list.createdAt} mode="date" />
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="In force">
                     {active ? (
                       <StatusChip tone="solid">In force</StatusChip>
                     ) : (

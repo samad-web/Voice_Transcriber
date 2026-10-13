@@ -14,7 +14,7 @@ const OUTCOMES = [
   },
   {
     title: "Your fields, not ours",
-    body: "Tell Aura what matters in your business (brick type, site location, quotation status) and it pulls exactly that from every call.",
+    body: "Tell Auratel what matters in your business (brick type, site location, quotation status) and it pulls exactly that from every call.",
   },
   {
     title: "No more manual entry",

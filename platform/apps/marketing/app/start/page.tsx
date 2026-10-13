@@ -3,9 +3,9 @@ import { pageMetadata } from "@/lib/metadata";
 import { FunnelForm } from "./funnel-form";
 
 export const metadata: Metadata = pageMetadata({
-  title: "Get started with Aura",
+  title: "Get started with Auratel",
   description:
-    "Tell us how your team sells today and we'll show you what Aura would have picked up " +
+    "Tell us how your team sells today and we'll show you what Auratel would have picked up " +
     "from last week's calls.",
   path: "/start",
 });
@@ -71,14 +71,19 @@ function StartPageBody({
             Find out what your calls have been saying.
           </h1>
           <p className="mk-lede mt-3 sm:mt-5">
-            We&rsquo;ll come back to you with what Aura would have picked up from a
+            We&rsquo;ll come back to you with what Auratel would have picked up from a
             week of your team&rsquo;s calls, and we&rsquo;ll tell you honestly if it isn&rsquo;t
             a fit.
           </p>
 
           <ul className="mt-5 space-y-3 sm:mt-9 sm:space-y-4">
+            {/* "Nothing to install" was the first of these and came out on
+                2026-10-13. Its own supporting line gave the game away - it had
+                to explain that it meant nothing to install TO HAVE THIS
+                CONVERSATION, because the product itself is an app that goes on
+                every telecaller's handset. A reassurance that needs a footnote
+                to stop being a false claim is not a reassurance. */}
             {[
-              ["Nothing to install", "There is nothing to set up to have this conversation."],
               ["Your details stay with us", "We don't sell or share them. Ever."],
               ["A real person replies", "Not a sequence of automated emails."],
             ].map(([t, d]) => (

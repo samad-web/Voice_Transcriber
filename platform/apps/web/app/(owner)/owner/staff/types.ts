@@ -16,6 +16,15 @@ export interface TeamMember {
    *  personas read their records through it (owner-scope.ts). */
   telecallerId: string | null;
   telecallerName: string | null;
+  /**
+   * `active` | `archived` (0198). Archived means the desk takes no new routed
+   * leads - which is what suspension now does to it, and what offboarding
+   * does on the way out. Shown rather than hidden: a roster that rendered a
+   * suspended colleague as having no identity at all invites somebody to bind
+   * them a second one, and every call and lead they ever had hangs off the
+   * first.
+   */
+  telecallerStatus: "active" | "archived" | null;
 
   // ── The staff record (migration 0102) ──
   status: StaffStatus;
@@ -29,6 +38,69 @@ export interface TeamMember {
   roleId: string | null;
   roleName: string | null;
   roleKey: string | null;
+}
+
+/**
+ * What somebody still holds - `GET /v1/owner/team/:userId/offboard` (0198).
+ *
+ * Counts, not records. The dialog's job is to let an owner decide where a
+ * departing colleague's desk goes, and a hundred and twelve lead titles would
+ * bury the one number that decision turns on.
+ */
+export interface OffboardWork {
+  leads: number;
+  dealsOwned: number;
+  dealsDesk: number;
+  contacts: number;
+  accounts: number;
+  callbacks: number;
+  tasks: number;
+  taskSeats: number;
+  conversations: number;
+}
+
+export interface OffboardDevice {
+  id: string;
+  label: string | null;
+  status: string;
+  calls: number;
+}
+
+/** A routing rule they are a target of. `othersActive: 0` is the warning. */
+export interface OffboardRule {
+  id: string;
+  name: string;
+  status: string;
+  othersActive: number;
+}
+
+export interface OffboardManifest {
+  member: {
+    userId: string;
+    email: string;
+    name: string | null;
+    ownerRole: string | null;
+    status: string;
+    telecallerId: string | null;
+    telecallerName: string | null;
+    telecallerStatus: string | null;
+  };
+  devices: OffboardDevice[];
+  work: OffboardWork;
+  rules: OffboardRule[];
+  unreadNotifications: number;
+  /** Leads are assigned to a telecaller identity, so the recipient needs one. */
+  needsTelecallerRecipient: boolean;
+  total: number;
+}
+
+export interface OffboardResult {
+  manifest: OffboardManifest;
+  moved: OffboardWork;
+  devices: Array<OffboardDevice & { outcome: string }>;
+  telecallerArchived: boolean;
+  notificationsCleared: number;
+  recipient: { userId: string; email: string; telecallerId: string | null } | null;
 }
 
 /** A role a member can be moved to - the picker on the Team tab. */

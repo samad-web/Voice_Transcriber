@@ -87,6 +87,8 @@ export interface AttendancePerson {
   reportsToName: string | null;
   appLeaveRequests: boolean;
   appBreakBooking: boolean;
+  /** Migration 0196: may they open the recordings on their own handset. */
+  appRecordingsAccess: boolean;
   device: { id: string; label: string | null; appVersionCode: number | null; lastSeenAt: string | null } | null;
   needsAppUpdate: boolean;
   suggestedSilenceMinutes: number | null;

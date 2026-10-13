@@ -1,0 +1,182 @@
+import { donutArcs, sliceShare, type ActorSlice } from "@/lib/ceo-dashboard";
+import { ChartTable, Insight, TD, TD_NUM, TH, TH_NUM } from "../chart-parts";
+import type { ActorPalette } from "./actor-colors";
+import { BandHeading, Panel, PanelEmpty, PanelHead } from "./panel";
+
+/**
+ * Four donuts: who closed the revenue, who made the leads, who dialled, who
+ * was on the phone (Build docs/46).
+ *
+ * ── WHY A DONUT, WHICH IS USUALLY THE WRONG ANSWER ──────────────────────────
+ *
+ * A pie is a bad chart for comparing magnitudes and a worse one past five
+ * categories, and the honest default for "who did what" is a bar chart - which
+ * is exactly what the band under this one is. This band asks a different
+ * question: not "how do these people rank" but "is this business carried by
+ * one person". That is a part-to-WHOLE reading, the whole is meaningful (it is
+ * the KPI above it), the answer is usually a single dominant share, and five
+ * categories is the cap. Those are the conditions under which a donut is the
+ * right form, and the centre hole is what makes it one - it holds the total,
+ * so each card states its own denominator.
+ *
+ * ── ONE LEGEND FOR FOUR CHARTS ──────────────────────────────────────────────
+ *
+ * The colour-to-person mapping is fixed across the whole band (actor-colors.ts)
+ * so it can be stated once, above all four. Four legends saying the same four
+ * names is three legends of noise, and worse, it invites the reader to check
+ * whether they agree.
+ *
+ * Each card still direct-labels every slice with its name and share, which is
+ * what satisfies the contrast relief rule for the lighter hues - and means the
+ * donut never has to be read by colour alone.
+ */
+
+export interface DriverCard {
+  key: string;
+  title: string;
+  /** The hole's figure and its unit - "389" / "calls". */
+  centre: string;
+  centreUnit: string;
+  slices: ActorSlice[];
+  /** False where the API cannot break this measure down at all. */
+  attributable: boolean;
+  /** Formats a slice's raw value for the table twin. */
+  format: (value: number) => string;
+  insight: string | null;
+}
+
+const R = 42;
+const C = 2 * Math.PI * R;
+
+export function WhoDrives({
+  cards,
+  palette,
+  legend,
+  clock,
+}: {
+  cards: readonly DriverCard[];
+  palette: ActorPalette;
+  /** The roster, in slot order - the band's one shared key. */
+  legend: readonly { id: string; name: string }[];
+  clock: string;
+}) {
+  return (
+    <section aria-labelledby="who-drives" className="space-y-4">
+      <BandHeading
+        right={
+          <ul className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {legend.map((a) => (
+              <li key={a.id} className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+                <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-[2px] ${palette.classesOf(a.id).fill}`} />
+                {a.name}
+              </li>
+            ))}
+            <li className="inline-flex items-center gap-1.5 text-xs text-text-muted">
+              <span aria-hidden="true" className="h-2.5 w-2.5 rounded-[2px] bg-chart-cat-other" />
+              Unattributed
+            </li>
+          </ul>
+        }
+      >
+        <span id="who-drives">Who drives the business</span>
+      </BandHeading>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((card) => (
+          <Panel key={card.key}>
+            <PanelHead title={card.title} clock={clock} />
+            {!card.attributable ? (
+              <PanelEmpty>This view cannot attribute {card.title.toLowerCase()} yet.</PanelEmpty>
+            ) : card.slices.length === 0 ? (
+              <PanelEmpty>Nothing in this window.</PanelEmpty>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                  <Donut card={card} palette={palette} />
+                  <ul className="min-w-[8rem] flex-1 space-y-1">
+                    {card.slices.map((s) => (
+                      <li key={s.id} className="flex items-baseline gap-2 text-xs">
+                        <span
+                          aria-hidden="true"
+                          className={`h-2.5 w-2.5 shrink-0 translate-y-0.5 rounded-[2px] ${
+                            s.unattributed ? "bg-chart-cat-other" : palette.classesOf(s.id).fill
+                          }`}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-text">{s.name}</span>
+                        <span className="shrink-0 font-medium text-text tabular-nums">
+                          {sliceShare(s.fraction)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {card.insight ? <Insight>{card.insight}</Insight> : null}
+              </>
+            )}
+
+            {card.slices.length > 0 ? (
+              <ChartTable>
+                <table className="w-full border-collapse">
+                  <caption className="sr-only">{card.title} by person</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className={TH}>Who</th>
+                      <th scope="col" className={TH_NUM}>{card.title}</th>
+                      <th scope="col" className={TH_NUM}>Share</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {card.slices.map((s) => (
+                      <tr key={s.id}>
+                        <th scope="row" className={`${TD} font-normal`}>{s.name}</th>
+                        <td className={TD_NUM}>{card.format(s.value)}</td>
+                        <td className={TD_NUM}>{sliceShare(s.fraction)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ChartTable>
+            ) : null}
+          </Panel>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The ring. An SVG rather than conic-gradient CSS, because the 2px gap between
+ * arcs has to be a real gap in the stroke - a gradient's hard colour stop
+ * leaves two arcs touching, and two adjacent slices then read as one.
+ *
+ * `aria-hidden`: the legend beside it names every slice with its share, and
+ * the table twin carries the values, so a screen reader gets the data twice
+ * already and does not need ninety path elements.
+ */
+function Donut({ card, palette }: { card: DriverCard; palette: ActorPalette }) {
+  const arcs = donutArcs(card.slices, C, 2);
+  return (
+    <div className="relative h-24 w-24 shrink-0">
+      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="50" cy="50" r={R} fill="none" className="stroke-border" strokeWidth={11} />
+        {arcs.map((a) => (
+          <circle
+            key={a.id}
+            cx="50"
+            cy="50"
+            r={R}
+            fill="none"
+            stroke={a.unattributed ? "var(--color-chart-cat-other)" : palette.varOf(a.id)}
+            strokeWidth={11}
+            strokeDasharray={a.dash}
+            strokeDashoffset={a.offset}
+          />
+        ))}
+      </svg>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-base font-semibold text-text tabular-nums">{card.centre}</span>
+        <span className="text-[10px] text-text-muted">{card.centreUnit}</span>
+      </div>
+    </div>
+  );
+}

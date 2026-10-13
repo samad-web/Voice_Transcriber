@@ -36,6 +36,13 @@ export * from "./feature-gates";
 // render, and doc 35 §4.2 only holds if both get the answer from one function.
 export * from "./people-visibility";
 
+// Resolving a capture plan into the columns that already enforce it (0197).
+// Here for the same reason as the rollup above: the API applies a plan when an
+// operator clicks Apply or a webhook settles an order, and the WORKER applies
+// one when a trial expires or a downgrade lands. Two processes, one
+// definition - see its header for what it must never narrow.
+export * from "./capture-plan";
+
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "postgres", "db"]);
 
 /**

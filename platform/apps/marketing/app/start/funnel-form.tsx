@@ -27,6 +27,7 @@ import {
 } from "@aura/shared";
 import {
   CONSENT_SUPPORTING_TEXT,
+  CONTACT_CONSENT_DEFAULT,
   CONTACT_CONSENT_TEXT,
   WHATSAPP_SAME_QUESTION,
 } from "@/lib/funnel/consent";
@@ -52,7 +53,30 @@ import {
  * tells a colour-blind visitor nothing, and tells a screen reader less.
  */
 
-type Step = "contact" | "qualify" | "done";
+/**
+ * CONTACT FIRST, then the questions, then a time.
+ *
+ * Two changes on 2026-10-13, in that order, and the second reverses half of
+ * the first. The funnel briefly ran questions -> slot -> contact, copying
+ * 3d.sirahagents.com. The owner saw it and asked for the name and contact
+ * details back at the start, which is the right call for this product: taking
+ * them on screen one means somebody who abandons at the questions is still a
+ * real enquiry with a phone number, and /continue/<token> has somebody to nudge
+ * again. Under the slot-first order an abandoner left no row at all.
+ *
+ * What was KEPT from the slot-first build, because it was an improvement
+ * independent of the ordering:
+ *
+ *   · the diary is its own step rather than an afterthought on the
+ *     confirmation screen, so it gets a heading and the full width of the card;
+ *   · the confirmation screen confirms a booking instead of asking for one;
+ *   · an empty diary offers a way past instead of rendering nothing.
+ *
+ * So the server actions are the original three again - capture on step 1,
+ * qualify on step 2, claim a slot on step 3 - each one holding the signed
+ * session cookie the next one needs.
+ */
+type Step = "contact" | "qualify" | "slot" | "done";
 type Outcome = "qualified" | "triage" | "disqualified";
 
 /**
@@ -95,6 +119,7 @@ type Values = {
   digitalPresence: string;
 };
 
+
 const EMPTY: Values = {
   salutation: "",
   name: "",
@@ -103,7 +128,11 @@ const EMPTY: Values = {
   whatsappSame: true,
   whatsapp: "",
   email: "",
-  consent: false,
+  // Pre-ticked from 2026-10-13, by the owner's decision. The default lives in
+  // lib/funnel/consent.ts rather than here, because the same constant is what
+  // writes "pre-ticked" into the stored consent evidence - if this were a bare
+  // `true` the record and the form could drift apart silently.
+  consent: CONTACT_CONSENT_DEFAULT,
   businessType: "",
   businessTypeOther: "",
   businessTypeOtherText: "",
@@ -293,6 +322,20 @@ export function FunnelForm({
   const [pending, start] = useTransition();
   const [values, setValues] = useState<Values>(EMPTY);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The booking, once one lands.
+   *
+   * There is no separate "selected slot" state: clicking a time books it, so a
+   * slot is either claimed - and then this holds the labels the confirmation
+   * screen prints - or it never existed. Nothing is held in between, which is
+   * why two people can click the same time and `bookSlot` settles it in the
+   * database rather than in the browser.
+   */
+  const [booked, setBooked] = useState<{
+    dayLabel: string;
+    timeLabel: string;
+    meetingUrl: string | null;
+  } | null>(null);
 
   /**
    * Land at the top of the page.
@@ -349,6 +392,13 @@ export function FunnelForm({
   const hasCrm = values.hasCrm;
   const crmChoice = values.crmName;
 
+  /**
+   * Step 1. The details, captured before anything else is asked.
+   *
+   * This is the screen that makes an abandoner reachable: once it lands, the
+   * row exists and somebody can follow up by hand even if the visitor never
+   * reaches the questions.
+   */
   function onContact(form: FormData) {
     const found = checkContact(values);
     if (Object.keys(found).length > 0) {
@@ -370,6 +420,8 @@ export function FunnelForm({
     });
   }
 
+  /** Step 2. The verdict is computed here but not shown: it changes the
+   *  wording on the confirmation screen and nothing the visitor sees now. */
   function onQualify(form: FormData) {
     const found = checkQualify(values);
     if (Object.keys(found).length > 0) {
@@ -380,17 +432,71 @@ export function FunnelForm({
       const res = await submitQualificationAction(form);
       if (res.ok) {
         setOutcome(res.outcome ?? "disqualified");
-        setStep("done");
-        // WhatsApp is no longer opened here. The slot picker lives on the
-        // screen this used to navigate away from - the handoff now happens
-        // once a visitor actually books a time, in SlotPicker below.
+        setErrors({});
+        setStep("slot");
       } else {
         setErrors({ form: res.error ?? "Something went wrong. Please try again." });
       }
     });
   }
 
-  if (step === "done") return <Outcome outcome={outcome ?? "disqualified"} name={values.name} />;
+  /**
+   * Step 3. Claim the time, or finish without one.
+   *
+   * Booking happens the moment a time is clicked, as it did before the slot
+   * became its own step: the session cookie from step 1 is what ties the slot
+   * to their row, so there is nothing to defer it for.
+   */
+  function onPickSlot(picked: OpenSlot | null) {
+    if (!picked) {
+      // No time taken, by choice or because the diary was empty. Their details
+      // and answers are already saved, so this is a complete enquiry.
+
+      setBooked(null);
+      setErrors({});
+      setStep("done");
+      return;
+    }
+
+    start(async () => {
+      const res = await bookSlotAction(picked.id);
+      if (res.ok) {
+
+        setErrors({});
+        setBooked({
+          dayLabel: res.dayLabel!,
+          timeLabel: res.timeLabel!,
+          meetingUrl: res.meetingUrl ?? null,
+        });
+        // The conversion, fired only once a slot is actually claimed. Not on
+        // reaching the picker and not on an enquiry taken without a time: the
+        // ad account would learn to buy near-misses. A no-op when the pixel is
+        // unconfigured.
+        trackLead();
+        setStep("done");
+        return;
+      }
+
+      if (res.sessionExpired) {
+        // Terminal for this page: the cookie tying a booking to their details
+        // is gone, so every time here would fail identically. Their enquiry is
+        // saved, so this is the end of the booking rather than the end of the
+        // lead.
+        setErrors({
+          form:
+            "Your session expired before we could book that time. Your details are saved and the team can still see your enquiry.",
+        });
+        return;
+      }
+
+      // Someone else took it. The picker refreshes itself on this error.
+      setErrors({ form: res.error ?? "That time is no longer available. Please pick another." });
+    });
+  }
+
+  if (step === "done") {
+    return <Outcome outcome={outcome ?? "disqualified"} name={values.name} booked={booked} />;
+  }
 
   return (
     // scroll-mt clears the 64px sticky header, so scrollIntoView lands the top
@@ -415,7 +521,9 @@ export function FunnelForm({
         </p>
       ) : null}
 
-      {step === "contact" ? (
+      {step === "slot" ? (
+        <SlotStep onPick={onPickSlot} pending={pending} reloadOn={errors.form ?? ""} />
+      ) : step === "contact" ? (
         <form action={onContact} className="space-y-5" noValidate>
           <h2 className="mk-display text-2xl">Let&rsquo;s start with how to reach you.</h2>
 
@@ -571,7 +679,10 @@ export function FunnelForm({
             />
           </Field>
 
-          {/* Unticked and required. */}
+          {/* Pre-ticked and still required: a visitor who unticks it cannot
+              continue, which is the behaviour that was there before and is why
+              the validation at `!v.consent` is unchanged. See
+              lib/funnel/consent.ts for the decision and what it costs. */}
           <div>
             <label className="flex items-start gap-3 text-sm">
               <input
@@ -843,7 +954,7 @@ export function FunnelForm({
           </Field>
 
           <button type="submit" className="mk-cta w-full justify-center" disabled={pending}>
-            {pending ? "Submitting…" : "Submit"}
+            {pending ? "Submitting…" : "See available times"}
           </button>
         </form>
       )}
@@ -851,27 +962,51 @@ export function FunnelForm({
   );
 }
 
-/* ── Outcome screens ──────────────────────────────────────────────────────
-   Three, not two - the wording still differs by outcome even though all three
-   are now offered a slot. And no decoy calendar: when the scheduler is
-   unconfigured the visitor sees the contact screen, never a slot that is not
-   real (doc 16 §0.4). That rule is absolute. */
+/* ── The confirmation screen ──────────────────────────────────────────────
+   The diary used to be ON this screen, because the booking happened after the
+   outcome was known. In the slot-first order the time is already claimed by
+   the time anyone gets here, so this screen confirms rather than asks.
 
-function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
+   The wording still differs by outcome. All three are real and all three are
+   kept: somebody who did not qualify has still just given us their details and
+   booked a call, and telling them "thanks, we'll be in touch" when a time is
+   in their calendar would read as a brush-off of a meeting we intend to keep.*/
+
+function Outcome({
+  outcome,
+  name,
+  booked,
+}: {
+  outcome: Outcome;
+  name: string;
+  booked: { dayLabel: string; timeLabel: string; meetingUrl: string | null } | null;
+}) {
   const copy = {
     qualified: {
-      h: "Thanks, let's book a time.",
-      p: "Pick a slot below and we'll walk through what your calls are saying.",
+      h: booked ? "You're booked." : "Thanks, we've got your details.",
+      p: booked
+        ? "We'll walk through what your calls are saying, and what Auratel would have pulled out of a week of them."
+        : "We'll come back to you with times that suit, and with what Auratel would have pulled out of a week of your calls.",
     },
     triage: {
-      h: "Thanks, we'll answer that properly.",
-      p: "You asked about a custom build. Pick a time below and someone who can actually scope it will take the call.",
+      h: booked ? "You're booked, and we'll answer that properly." : "Thanks, we'll answer that properly.",
+      p: "You asked about a custom build, so someone who can actually scope it will take the call.",
     },
     disqualified: {
-      h: "Thanks for sharing your details.",
-      p: "Pick a time below if you'd like to talk it through, and we'll take it from there.",
+      h: booked ? "You're booked." : "Thanks for sharing your details.",
+      p: "We'll talk it through and tell you honestly whether Auratel is the right fit. If it isn't, we'll say so.",
     },
   }[outcome];
+
+  /* The WhatsApp handoff, which used to fire automatically the instant a slot
+     was claimed by redirecting the tab. It is a LINK now rather than a
+     redirect: the booking is already confirmed on this screen, and navigating
+     a visitor away from their own confirmation the moment it renders means the
+     one screen that tells them what they just agreed to is the one screen they
+     never read. Absent entirely when WhatsApp is unconfigured. */
+  const waHref = booked
+    ? whatsappHref(slotBookedMessage(name, booked.dayLabel, booked.timeLabel))
+    : null;
 
   return (
     <div className="mk-card p-7 text-center sm:p-9">
@@ -888,57 +1023,100 @@ function Outcome({ outcome, name }: { outcome: Outcome; name: string }) {
         {copy.p}
       </p>
 
-      {/* EVERY outcome is offered the diary, since 2026-08-10 (owner's
-          instruction). It used to be qualified-only, on the reasoning that
-          "tell me more" belonged with a human rather than on a sales call -
-          but nothing was ever queued for the other two paths, so in practice
-          a disqualified enquirer was told "we'll be in touch" and then heard
-          nothing at all. A slot they can choose themselves is a better answer
-          than a promise the system does not keep.
+      {booked ? (
+        <div
+          className="mt-7 rounded-2xl p-5 text-left"
+          style={{ background: "var(--mk-ground)", border: "1px solid var(--mk-line)" }}
+        >
+          <p className="text-sm font-semibold">
+            {booked.dayLabel} at {booked.timeLabel}
+          </p>
+          <p className="mt-1 text-sm" style={{ color: "var(--mk-muted)" }}>
+            We&rsquo;ll send a confirmation to the details you gave us.
+          </p>
 
-          The picker still renders nothing when there is no real availability,
-          which is the rule that has not moved: a time that cannot be honoured
-          must never appear (doc 16 §0.4). */}
-      <SlotPicker name={name} />
+          {/* Shown only when Google actually returned a link. A "Join" button
+              that goes nowhere is worse than not offering one, and the link is
+              genuinely absent whenever the calendar is unconfigured. */}
+          {booked.meetingUrl ? (
+            <p className="mt-3 text-sm">
+              <a
+                href={booked.meetingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold underline underline-offset-2"
+              >
+                Join on Google Meet
+              </a>{" "}
+              <span style={{ color: "var(--mk-muted)" }}>
+                (the same link is in your calendar invite)
+              </span>
+            </p>
+          ) : null}
+
+          {waHref ? (
+            <p className="mt-3 text-sm">
+              <a href={waHref} className="font-semibold underline underline-offset-2">
+                Message us on WhatsApp
+              </a>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
+
 /**
- * The slot picker - where availability actually gets chosen.
+ * The diary, as a step of its own.
  *
- * Renders NOTHING until it knows there are real slots. The list is fetched after
- * the outcome screen paints, and while it is loading, and if it comes back
- * empty, the screen shows only "we'll be in touch". Doc 16 §0.4: a time that is
- * not genuinely bookable must never appear, so the honest fallback is the
- * default state and the calendar is what has to prove itself.
+ * ── IT SELECTS, IT DOES NOT BOOK ──────────────────────────────────────────
  *
- * Booking a slot is also what now sends someone to WhatsApp - see the
- * `bookSlotAction` success handler below. The message carries their name and
- * the time they just claimed, so the reply on WhatsApp already has enough
- * context.
+ * This used to live on the confirmation screen and claim a slot the moment a
+ * time was clicked, because by then the visitor already had a submission row
+ * and a session cookie to attach it to. In the slot-first order neither exists
+ * yet, so clicking a time only chooses it; `submitBookingAction` claims it
+ * after the contact step. Nothing is held in the meantime, which is why the
+ * contact screen says "holding" rather than "reserved" and why the taken-slot
+ * path exists at all.
+ *
+ * ── AN EMPTY DIARY MUST NOT COST A LEAD ───────────────────────────────────
+ *
+ * Doc 16 §0.4 says a time that is not genuinely bookable must never appear, so
+ * an empty or failed fetch shows no calendar. In the old order that was the
+ * end of it: the enquiry was already saved and the picker simply rendered
+ * nothing. Here the picker stands BETWEEN the visitor and the only screen that
+ * captures them, so rendering nothing would silently end the funnel for
+ * everyone whenever the calendar was empty or the scheduler was down. It
+ * offers a way past instead, and the enquiry is taken without a time.
  */
-function SlotPicker({ name }: { name: string }) {
+function SlotStep({
+  onPick,
+  pending,
+  reloadOn,
+}: {
+  onPick: (slot: OpenSlot | null) => void;
+  pending: boolean;
+  /**
+   * Re-fetches the list whenever this value changes.
+   *
+   * The caller passes its form-level error, so losing a race for a time
+   * refreshes the diary: whatever went is gone, and leaving the button on
+   * screen invites a second failure on the same slot. A failed refresh keeps
+   * the current list rather than clearing it, because being told one time is
+   * taken and then watching every other button vanish turns a small correction
+   * into a dead end.
+   */
+  reloadOn: string;
+}) {
   const [slots, setSlots] = useState<OpenSlot[] | null>(null);
-  const [booked, setBooked] = useState<{
-    dayLabel: string;
-    timeLabel: string;
-    meetingUrl: string | null;
-    waHref: string | null;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  /** Terminal: the session cookie is gone and no slot on this page can work. */
-  const [expired, setExpired] = useState(false);
-  const [pending, start] = useTransition();
 
   useEffect(() => {
     let live = true;
-    // An unhandled rejection here left `slots` null with no record anywhere, so
-    // a server action failing in production was indistinguishable from a
-    // genuinely empty calendar - the same screen, a completely different
-    // problem. An empty list is the RIGHT outcome for the visitor (this
-    // component renders nothing without slots, so they fall back to "we'll be
-    // in touch"), but it has to be reached deliberately and logged.
+    // An unhandled rejection here would leave `slots` null forever, which now
+    // renders a spinner rather than an empty calendar - so it is caught, the
+    // list is set to empty, and the "no times" branch below takes over.
     listOpenSlotsAction()
       .then((r) => {
         if (live) setSlots(r.slots);
@@ -950,92 +1128,51 @@ function SlotPicker({ name }: { name: string }) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [reloadOn]);
 
-  if (booked) {
+  if (slots === null) {
     return (
-      <div
-        className="mt-7 rounded-2xl p-5"
-        style={{ background: "var(--mk-ground)", border: "1px solid var(--mk-line)" }}
-      >
-        <p className="text-sm font-semibold">
-          You&rsquo;re booked for {booked.dayLabel} at {booked.timeLabel}.
+      <div className="py-6">
+        <h2 className="mk-display text-2xl">Finding open times…</h2>
+        <p className="mt-3 text-sm" style={{ color: "var(--mk-muted)" }}>
+          One moment.
         </p>
-        <p className="mt-1 text-sm" style={{ color: "var(--mk-muted)" }}>
-          We&rsquo;ll send a confirmation to the details you gave us.
-        </p>
-
-        {/* Shown only when Google actually returned a link. Rendering a "Join"
-            button that goes nowhere is worse than not offering one, and the
-            link is genuinely absent whenever the calendar is unconfigured. */}
-        {booked.meetingUrl ? (
-          <p className="mt-3 text-sm">
-            <a
-              href={booked.meetingUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold underline underline-offset-2"
-            >
-              Join on Google Meet
-            </a>{" "}
-            <span style={{ color: "var(--mk-muted)" }}>
-              (the same link is in your calendar invite)
-            </span>
-          </p>
-        ) : null}
-
-        {/* The automatic redirect below usually gets here first. This is the
-            fallback for when it does not - WhatsApp not installed, an in-app
-            browser refusing the scheme, a desktop visitor needing a QR scan -
-            so the visitor is never left with nothing to click. Absent
-            entirely when WhatsApp itself is unconfigured. */}
-        {booked.waHref ? (
-          <p className="mt-3 text-sm">
-            <a href={booked.waHref} className="font-semibold underline underline-offset-2">
-              Open WhatsApp
-            </a>
-          </p>
-        ) : null}
       </div>
     );
   }
 
-  if (!slots || slots.length === 0) return null;
+  if (slots.length === 0) {
+    return (
+      <div className="py-2">
+        <h2 className="mk-display text-2xl">No times are open just now.</h2>
+        <p className="mt-3 text-[0.9375rem]" style={{ color: "var(--mk-muted)" }}>
+          Leave us your details and we will come back with times that suit you. Nothing is
+          lost by carrying on.
+        </p>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => onPick(null)}
+          className="mk-cta mt-6 w-full justify-center"
+        >
+          Continue
+        </button>
+      </div>
+    );
+  }
 
   // Grouped by day so a list of times reads as a diary rather than a queue.
   const days = [...new Set(slots.map((s) => s.dayLabel))];
 
   return (
-    <div className="mt-7 text-left">
-      <p className="mb-3 text-sm font-semibold">Or pick a time now</p>
+    <div>
+      <h2 className="mk-display text-2xl">Pick a time that suits you.</h2>
+      <p className="mt-3 text-sm" style={{ color: "var(--mk-muted)" }}>
+        {slots[0]!.durationMinutes} minutes, on a call. Times are India Standard Time.
+      </p>
 
-      {error ? (
-        <p role="alert" className="mb-3 rounded-xl px-4 py-3 text-sm" style={alertStyle}>
-          {error}
-        </p>
-      ) : null}
-
-      {/* A dead end otherwise: the visitor is told their session expired and
-          left staring at buttons that will each fail identically. Their answers
-          are already saved - step 1 and step 2 both landed - so starting again
-          costs them the form, not the enquiry, and somebody will still see it.*/}
-      {expired ? (
-        <div
-          className="mt-4 rounded-xl border p-4 text-sm"
-          style={{ borderColor: "var(--mk-line)" }}
-        >
-          <p style={{ color: "var(--mk-ink)" }}>
-            Your session expired before we could book that time. Your details are saved and the team
-            can still see your enquiry.
-          </p>
-          <a href="/start" className="mk-cta mk-cta-sm mt-3 inline-flex">
-            Start again to pick a time
-          </a>
-        </div>
-      ) : null}
-
-      {!expired &&
-        days.map((day) => (
+      <div className="mt-6">
+        {days.map((day) => (
           <div key={day} className="mb-4">
             <p
               className="mb-2 text-xs font-semibold uppercase tracking-widest"
@@ -1051,59 +1188,7 @@ function SlotPicker({ name }: { name: string }) {
                     key={s.id}
                     type="button"
                     disabled={pending}
-                    onClick={() =>
-                      start(async () => {
-                        const res = await bookSlotAction(s.id);
-                        if (res.ok) {
-                          setError(null);
-                          const dayLabel = res.dayLabel!;
-                          const timeLabel = res.timeLabel!;
-                          const wa = whatsappHref(slotBookedMessage(name, dayLabel, timeLabel));
-                          setBooked({
-                            dayLabel,
-                            timeLabel,
-                            meetingUrl: res.meetingUrl ?? null,
-                            waHref: wa,
-                          });
-                          // The conversion, fired only once the slot is actually
-                          // claimed. Not on reaching the picker and not on the
-                          // /booked page: the first only means somebody
-                          // qualified, and the second is reachable by typing the
-                          // URL. Counting either would teach the ad account to
-                          // buy near-misses. Safe to call when the pixel is
-                          // unconfigured - it is a no-op.
-                          trackLead();
-                          // Same tab, not window.open: a popup that did not come
-                          // from a click is blocked by every mobile browser, and
-                          // this click is one render removed from the one that
-                          // triggered it (the state update above runs first).
-                          if (wa) window.location.href = wa;
-                        } else if (res.sessionExpired) {
-                          // Terminal for this page: the cookie that ties a booking
-                          // to their details is gone, so EVERY slot here will fail
-                          // the same way. Re-fetching the list would only offer a
-                          // fresh set of buttons that cannot work either.
-                          setExpired(true);
-                          setError(res.error ?? "Your session expired.");
-                        } else {
-                          setError(res.error ?? "That time is no longer available.");
-                          // Re-fetch: whatever went is gone, and showing it again
-                          // invites a second failure on the same button.
-                          //
-                          // A failed re-fetch KEEPS the current list rather than
-                          // clearing it. They have just been told that one time
-                          // is taken; wiping every remaining button on top of
-                          // that turns a small correction into a dead end, and
-                          // the other times are probably still bookable.
-                          try {
-                            const refreshed = await listOpenSlotsAction();
-                            setSlots(refreshed.slots);
-                          } catch (err) {
-                            console.error("[funnel] could not refresh open slots", err);
-                          }
-                        }
-                      })
-                    }
+                    onClick={() => onPick(s)}
                     className="flex min-h-11 w-full items-center justify-center rounded-xl border text-sm font-medium transition-colors disabled:opacity-60"
                     style={{ borderColor: "var(--mk-line)", color: "var(--brand-mid)" }}
                   >
@@ -1113,22 +1198,44 @@ function SlotPicker({ name }: { name: string }) {
             </div>
           </div>
         ))}
+      </div>
 
-      <p className="mt-1 text-xs" style={{ color: "var(--mk-muted)" }}>
-        {slots[0]!.durationMinutes} minutes. Times shown in India Standard Time.
-      </p>
+      {/* The way past for somebody who wants to talk but not at any of these
+          times. Quiet, because picking one is the thing we want. */}
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => onPick(null)}
+        className="mt-2 text-sm underline underline-offset-4"
+        style={{ color: "var(--mk-muted)" }}
+      >
+        None of these work for me
+      </button>
     </div>
   );
 }
 
 /* ── Pieces ───────────────────────────────────────────────────────────────── */
 
+/**
+ * Three steps now, in the order they are actually walked.
+ *
+ * `done` is deliberately absent: the confirmation screen replaces the whole
+ * card, so a progress bar above it would be counting a journey that has
+ * finished.
+ */
+const STEP_ORDER = ["contact", "qualify", "slot"] as const;
+
 function Progress({ step }: { step: Step }) {
+  const current = STEP_ORDER.indexOf(step as (typeof STEP_ORDER)[number]);
   return (
     <div className="mb-7 flex items-center gap-3">
-      {(["contact", "qualify"] as const).map((s, i) => {
+      {STEP_ORDER.map((s, i) => {
         const active = s === step;
-        const done = step === "qualify" && s === "contact";
+        // Everything before the current step, rather than one hard-coded
+        // pairing - with three steps the old `step === "qualify"` test would
+        // have left step 1 unmarked for the whole second half of the form.
+        const done = current > i;
         return (
           <div key={s} className="flex flex-1 items-center gap-3">
             <span
@@ -1153,7 +1260,7 @@ function Progress({ step }: { step: Step }) {
         className="text-xs font-semibold uppercase tracking-widest"
         style={{ color: "var(--mk-muted)" }}
       >
-        Step {step === "contact" ? 1 : 2} of 2
+        Step {current + 1} of {STEP_ORDER.length}
       </span>
     </div>
   );

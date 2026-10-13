@@ -148,7 +148,10 @@ export function ExportsCentre({ initialJobs }: { initialJobs: ExportJobRow[] }) 
   return (
     <Card className="space-y-4">
       {error ? <ErrorBanner>{error}</ErrorBanner> : null}
-      <div className="overflow-x-auto">
+      {/* Below `md` each job draws as a labelled card (theme.css). The
+          download sits in the last cell, unlabelled, so it stays a button
+          rather than becoming a labelled line. */}
+      <div data-stacked="true" className="overflow-x-auto">
         <table className="w-full min-w-[46rem] text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
@@ -174,21 +177,21 @@ export function ExportsCentre({ initialJobs }: { initialJobs: ExportJobRow[] }) 
                     : "border-b border-line"
                 }
               >
-                <td className="py-3 pr-4 align-top">
+                <td className="py-3 pr-4 align-top" data-label="What">
                   <div className="font-medium text-text">{whatLabel(job)}</div>
                   <div className="text-xs text-muted">{job.format.toUpperCase()}</div>
                 </td>
-                <td className="py-3 pr-4 align-top text-muted">{job.requested_by_name ?? "-"}</td>
-                <td className="py-3 pr-4 align-top tabular-nums text-muted">
+                <td className="py-3 pr-4 align-top text-muted" data-label="Who">{job.requested_by_name ?? "-"}</td>
+                <td className="py-3 pr-4 align-top tabular-nums text-muted" data-label="Rows">
                   {rowsLabel(job)}
                 </td>
-                <td className="py-3 pr-4 align-top tabular-nums text-muted">
+                <td className="py-3 pr-4 align-top tabular-nums text-muted" data-label="Size">
                   {Number(job.bytes_written) > 0 ? formatBytes(Number(job.bytes_written)) : "-"}
                 </td>
-                <td className="py-3 pr-4 align-top">
+                <td className="py-3 pr-4 align-top" data-label="Status">
                   <StatusCell job={job} />
                 </td>
-                <td className="py-3 pr-4 align-top text-muted">
+                <td className="py-3 pr-4 align-top text-muted" data-label="Available until">
                   {/* The workspace's clock, not the machine's: `LocalTime`
                       renders in the org's zone so two colleagues read the same
                       expiry off the same row, and the first paint matches the

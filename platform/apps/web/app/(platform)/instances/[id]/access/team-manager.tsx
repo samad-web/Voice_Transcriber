@@ -225,6 +225,7 @@ export function TeamManager({
               tabIndex={0}
               role="region"
               aria-label="Members"
+              data-stacked="true"
               className="overflow-x-auto"
             >
               <table className="w-full min-w-[640px] border-collapse text-left text-sm">
@@ -241,11 +242,11 @@ export function TeamManager({
                 <TableBody>
                   {members.map((m) => (
                     <TableRow key={m.userId}>
-                      <TableCell>
+                      <TableCell label="Member">
                         <span className="block font-medium text-text">{m.name ?? "Unnamed"}</span>
                         <span className="font-mono text-xs text-text-muted">{m.email}</span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell label="Role">
                         <div className="flex flex-col items-start gap-1.5">
                           <StatusChip tone={roleTone(m.role)}>{m.role}</StatusChip>
                           <Select
@@ -264,7 +265,7 @@ export function TeamManager({
                           </Select>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell label="CRM Role">
                         {/* Which permission grid this member is enforced against
                             on the CRM routes. Separate from the column beside it:
                             that one is the legacy tenant role every other guard
@@ -287,7 +288,7 @@ export function TeamManager({
                           ))}
                         </Select>
                       </TableCell>
-                      <TableCell>
+                      <TableCell label="Permissions">
                         <div className="flex flex-wrap gap-1.5">
                           <button
                             type="button"

@@ -150,6 +150,43 @@ const NON_TENANT_TABLES = new Set([
   //                     does, through the admin pool.
   "plans",
   "plan_entitlements",
+  // plan_prices, plan_addons, plan_addon_prices
+  //                     0197. The same answer as `plans` above, for the same
+  //                     reason: one row for "Growth in India", shared by every
+  //                     Indian tenant on Growth, and one row for "25
+  //                     transcription hours". A price is a commercial
+  //                     commitment the platform publishes, not a tenant's
+  //                     property, and an org_id on it would have nothing to
+  //                     put in it.
+  //
+  //                     The three tables that DO belong to a tenant -
+  //                     org_plan_addons, org_addon_grants, billing_orders -
+  //                     carry org_isolation and partner_wall and are checked
+  //                     by every assertion below.
+  //
+  //                     `aura_app` is REVOKED on all three. A price is
+  //                     resolved on the admin pool, narrowed by the plan and
+  //                     the region, and the only writer is the operator
+  //                     console. A tenant that could read the catalogue could
+  //                     read what every OTHER region is charged, which is
+  //                     commercially sensitive and belongs to nobody but us.
+  "plan_prices",
+  "plan_addons",
+  "plan_addon_prices",
+  // billing_webhook_events
+  //                     0197. A provider delivery arrives before anything is
+  //                     known about which tenant it concerns - the order id
+  //                     inside the payload is what resolves that - so there is
+  //                     no org_id to scope it by at the moment it is written.
+  //                     Exactly the answer `payment_webhook_events` (0060)
+  //                     gives one entry above, and the two are deliberately
+  //                     separate tables: that one is the TENANT's gateway
+  //                     collecting from their customers, this one is the
+  //                     platform collecting from the tenant.
+  //
+  //                     RLS FORCED with no policy; `aura_app` and all three
+  //                     Supabase API roles revoked; admin pool only.
+  "billing_webhook_events",
 ]);
 
 /**

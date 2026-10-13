@@ -152,7 +152,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
           }
         />
       ) : (
-        <Table caption="Products">
+        <Table caption="Products" stacked>
           <TableHead>
             <tr>
               <TableHeaderCell>Name</TableHeaderCell>
@@ -165,7 +165,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
           <TableBody>
             {products.map((product) => (
               <TableRow key={product.id}>
-                <TableCell>
+                <TableCell label="Name">
                   <button
                     type="button"
                     onClick={() => openEdit(product)}
@@ -174,14 +174,14 @@ export function ProductsClient({ products }: { products: Product[] }) {
                     {product.name}
                   </button>
                 </TableCell>
-                <TableCell className="text-text-muted">{product.sku ?? "-"}</TableCell>
-                <TableCell className="tabular-nums text-text-muted">
+                <TableCell className="text-text-muted" label="SKU">{product.sku ?? "-"}</TableCell>
+                <TableCell className="tabular-nums text-text-muted" label="Price">
                   {formatMoney(product.unit_price, product.currency)}
                 </TableCell>
-                <TableCell className="tabular-nums text-text-muted">
+                <TableCell className="tabular-nums text-text-muted" label="Tax">
                   {Number(product.tax_rate)}%
                 </TableCell>
-                <TableCell>
+                <TableCell label="Status">
                   <StatusChip tone={product.status === "active" ? "solid" : "outline"}>
                     {product.status}
                   </StatusChip>

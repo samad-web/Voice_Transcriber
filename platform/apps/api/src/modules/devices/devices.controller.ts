@@ -31,6 +31,7 @@ import {
   DeviceRegisterResponse,
   judgeSecretRecovery,
 } from "@aura/shared";
+import { readEffectiveLimits } from "@aura/db";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { DeviceAuthGuard, type DeviceRequest } from "../../common/device-auth.guard";
@@ -321,6 +322,52 @@ export class DevicesController {
           recovered: true,
           telecallerName: device.telecaller_name,
         };
+      }
+
+      // ── THE HANDSET CAP: THE ONE LIMIT THAT REFUSES ANYTHING ─────────────
+      //
+      // Reached only for a NEW phone. The `returning` branch above has already
+      // returned, which is exactly the published behaviour: "re-pairing the
+      // same phone does not consume a slot." A hardware swap, a reinstall and
+      // a recovered handset all land on their old row and cost nothing.
+      //
+      // This is the only one of the four meters that refuses, and it refuses
+      // an ADMINISTRATIVE action rather than a call - which is the right place
+      // for a hard stop. It is visible, it is immediate, the person scanning
+      // the QR code understands it, and it is undone by spending money. A call
+      // is never refused: a recording we decline is lost for good, the handset
+      // retries it forever, and the customer loses the one thing they pay us
+      // to keep.
+      //
+      // The COUNT runs on the tenant client inside this transaction, so two
+      // phones scanning the same code at once cannot both see the last free
+      // slot. The LIMIT comes from the admin pool, because `plans` is revoked
+      // from `aura_app` - a plan is not a tenant's data and a statement inside
+      // `withOrg` may not join it.
+      //
+      // `status = 'active' AND removed_at IS NULL` is the same predicate the
+      // owner's plan page counts with. If those two ever disagree the page
+      // tells somebody they have room and this route then refuses them.
+      const limits = await readEffectiveLimits(admin, token.org_id);
+      if (limits.handsets !== null) {
+        const {
+          rows: [paired],
+        } = await client.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM devices
+            WHERE status = 'active' AND removed_at IS NULL`,
+        );
+        const used = paired?.n ?? 0;
+        if (used >= limits.handsets) {
+          // The message IS the upsell, and it names the number the owner sees
+          // on their own plan page. The add-on is offered rather than just the
+          // refusal, because "2 of 2 handsets used" with no next step is a
+          // dead end for somebody standing in front of a phone they need to
+          // put into service today.
+          throw new ConflictException(
+            `${used} of ${limits.handsets} handsets used. Add an extra handset to your plan, ` +
+              "or remove a phone you no longer use, and scan again.",
+          );
+        }
       }
 
       // `enrollment_token_id` (0124) is what lets the owner console's pairing
@@ -716,12 +763,17 @@ export class DevicesController {
       const {
         rows: [row],
       } = await client.query(
+        // LEFT JOIN, and COALESCE to false: a handset bound to no telecaller
+        // has nobody an owner could have granted library access to (0196).
         `SELECT d.status AS device_status, i.config_version,
                 o.status AS org_status, o.consent_policy, o.on_consent_failure,
-                o.app_lock_password_hash
+                o.app_lock_password_hash,
+                COALESCE(t.app_recordings_access, false) AS recordings_access
            FROM devices d
            JOIN instances i ON i.id = d.instance_id
            JOIN organizations o ON o.id = d.org_id
+           LEFT JOIN telecallers t
+             ON t.id = d.telecaller_id AND t.status = 'active'
           WHERE d.id = $1`,
         [deviceId],
       );
@@ -774,6 +826,11 @@ export class DevicesController {
           policy: row.consent_policy,
           onFailure: row.on_consent_failure,
         },
+        // Always sent, never omitted: unlike the attendance and escalation
+        // blocks, an absent key here means "server too old to have the
+        // concept", and the handset reads that as permitted. See
+        // DeviceConfig.recordingsAccess.
+        recordingsAccess: row.recordings_access === true,
         // Spread-or-nothing rather than an explicit null: an absent key is the
         // one shape Android's optString handles correctly. See the schema
         // comment in packages/shared/src/device-api.ts.

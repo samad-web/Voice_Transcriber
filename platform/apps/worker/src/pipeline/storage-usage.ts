@@ -23,6 +23,13 @@ import { announce } from "./realtime";
  * call-create time, before any audio does, and counting AWAITING_AUDIO or
  * FAILED_UPLOAD rows would report bytes that were never stored.
  *
+ * `expired_at IS NULL` joined it in 0197, and is just as load-bearing: the
+ * audio-retention sweep deletes the OBJECT and keeps the row (with its
+ * `s3_key`, as the record of what went). Without this clause a tenant's meter
+ * would climb forever and never fall when their retention window did its job -
+ * so an account sitting comfortably inside its cap would be told it was full,
+ * and the eviction below would run every hour deleting nothing.
+ *
  * ── THE QUOTA WARNS AND NEVER BLOCKS ──────────────────────────────────────
  *
  * At 80 % and 100 % of an operator-set quota, each OWNER gets one in-app
@@ -99,7 +106,7 @@ export const STORAGE_SWEEP_SQL = `INSERT INTO org_storage_usage (org_id, recordi
        LEFT JOIN (
          SELECT org_id, sum(bytes)::bigint AS bytes, count(*)::int AS n, min(uploaded_at) AS oldest
            FROM recordings
-          WHERE uploaded_at IS NOT NULL
+          WHERE uploaded_at IS NOT NULL AND expired_at IS NULL
           GROUP BY org_id
        ) r ON r.org_id = o.id
      ON CONFLICT (org_id) DO UPDATE SET

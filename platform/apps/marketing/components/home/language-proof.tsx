@@ -19,7 +19,7 @@ import { Placeholder } from "../ui/placeholder";
 const CLAIMS = [
   {
     title: "Code-switching, not just translation",
-    body: "Real sales calls start in Tamil, quote a price in English and finish in Tamil. Aura transcribes the sentence as it was actually spoken instead of forcing it into one language.",
+    body: "Real sales calls start in Tamil, quote a price in English and finish in Tamil. Auratel transcribes the sentence as it was actually spoken instead of forcing it into one language.",
   },
   {
     title: "Speaker labels that survive the switch",

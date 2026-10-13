@@ -140,7 +140,7 @@ export default async function PaymentsPage({
         />
       ) : (
         <Card className="overflow-hidden p-0">
-          <Table caption="Every payment received, newest first">
+          <Table caption="Every payment received, newest first" stacked>
             <TableHead>
               <TableRow>
                 <TableHeaderCell>Received</TableHeaderCell>
@@ -154,19 +154,19 @@ export default async function PaymentsPage({
             <TableBody>
               {payments.data.payments.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="tabular-nums text-text-muted">
+                  <TableCell className="tabular-nums text-text-muted" label="Received">
                     {p.receivedAt.slice(0, 10)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="Customer">
                     {p.customerName ?? p.dealName ?? (
                       <span className="text-text-muted">Not identified</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-text-muted">
+                  <TableCell className="text-text-muted" label="How">
                     {PAYMENT_METHOD_LABELS[p.method as PaymentMethod] ?? p.method}
                     <span className="block text-xs">{p.source.replace("_", " ")}</span>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-right tabular-nums" label="Amount">
                     {money(p.amount, p.currency)}
                     {p.fee > 0 ? (
                       <span className="block text-xs text-text-muted">
@@ -174,7 +174,7 @@ export default async function PaymentsPage({
                       </span>
                     ) : null}
                   </TableCell>
-                  <TableCell>
+                  <TableCell label="State">
                     {/* StatusChip, for the reason the dues page records: a
                         payment status is not one of the console's four CALL
                         states, and `StateChip` would announce it with the
@@ -201,7 +201,7 @@ export default async function PaymentsPage({
                       <span className="mt-1 block text-xs text-text-muted">{p.reversalReason}</span>
                     ) : null}
                   </TableCell>
-                  <TableCell className="text-xs text-text-muted">
+                  <TableCell className="text-xs text-text-muted" label="Linked">
                     {/* Not a link: the matching queue is an API surface with
                         no console page yet, and a link to a route that does
                         not exist is a 404 somebody finds by clicking. The

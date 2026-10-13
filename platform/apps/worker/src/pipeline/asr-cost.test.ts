@@ -73,6 +73,36 @@ function fakeClient() {
 
 vi.mock("@aura/db", () => ({
   withOrgContext: (_orgId: string, fn: (client: unknown) => Promise<unknown>) => fn(fakeClient()),
+  // The admin pool, for the plan resolution and the quota notification (0197).
+  // Both are narrow enough to stub: the notification is fire-and-forget and the
+  // resolution is replaced outright below.
+  getAdminPool: () => ({ query: async () => ({ rows: [], rowCount: 0 }) }),
+  // ── THE EFFECTIVE CEILING, DERIVED FROM THE SAME ORG ROW ─────────────────
+  //
+  // Since 0197 the pipeline asks `readEffectiveLimits` for the transcription
+  // ceiling and the speaker-separation grant rather than reading
+  // `asr_monthly_minutes_budget` directly. These tests are about the
+  // INSTANCE's decision, so the stub resolves exactly what a tenant on NO
+  // plan resolves to: the operator's own column wins, and nothing is gated.
+  // That keeps every assertion below about the column the test is setting.
+  readEffectiveLimits: async () => ({
+    planKey: null,
+    planName: null,
+    family: null,
+    region: "IN",
+    handsets: null,
+    transcriptionMinutes:
+      (orgSettings as { asr_monthly_minutes_budget?: number | null }).asr_monthly_minutes_budget ??
+      null,
+    transcriptionHours: null,
+    toppedUpHours: 0,
+    audioRetentionDays: null,
+    storageCapBytes: null,
+    speakerSeparation: true,
+    aiAnalysis: true,
+    transcriptionAllowed: true,
+    recordingProhibited: false,
+  }),
 }));
 
 vi.mock("@aws-sdk/client-s3", () => ({

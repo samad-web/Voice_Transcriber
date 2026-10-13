@@ -119,6 +119,20 @@ object PlatformApi {
         val callEscalation: EscalationConfig? = null,
         /** The raw block, stored as-is so it can be re-parsed offline. */
         val callEscalationJson: String? = null,
+        /**
+         * May the holder of this phone open, rename or delete the recordings on
+         * it (migration 0196)? The owner grants it per telecaller.
+         *
+         * DEFAULTS TO TRUE, and that is not the same choice the attendance and
+         * escalation blocks make. Those are additive: absent means a feature
+         * this workspace never had, so absent reads as off. This one WITHDRAWS
+         * something every handset has always done, so absent has to mean "the
+         * server is too old to have an opinion" - an old API has no toggle for
+         * the owner to have used, and failing closed there would strip the
+         * library from every phone in the fleet with no way for the customer to
+         * restore it. Deny-by-default lives in the database column instead.
+         */
+        val recordingsAccess: Boolean = true,
     )
 
     /**
@@ -160,6 +174,11 @@ object PlatformApi {
             callEscalation = callEscalation,
             callEscalationJson =
                 if (callEscalation != null) response.optJSONObject(EscalationJson.CONFIG_KEY)?.toString() else null,
+            // `true` as the fallback is the documented contract, not an
+            // oversight - see DeviceConfig.recordingsAccess. optBoolean returns
+            // the fallback for an absent key AND for a non-boolean value, which
+            // is the behaviour wanted on both counts.
+            recordingsAccess = response.optBoolean("recordingsAccess", true),
         )
     }
 
