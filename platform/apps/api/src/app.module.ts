@@ -18,6 +18,7 @@ import { AgentsModule } from "./modules/agents/agents.module";
 import { CrmModule } from "./modules/crm/crm.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { BillingModule } from "./modules/billing/billing.module";
+import { SignupModule } from "./modules/signup/signup.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { OwnerModule } from "./modules/owner/owner.module";
@@ -100,6 +101,7 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     CrmModule,
     AnalyticsModule,
     BillingModule,
+    SignupModule,
     AdminModule,
     LeadsModule,
     OwnerModule,

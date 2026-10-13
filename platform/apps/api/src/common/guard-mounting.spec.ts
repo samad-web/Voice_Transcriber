@@ -185,6 +185,7 @@ import { ResourcesController } from "../modules/resources/resources.controller";
 import { DncController } from "../modules/suppression/dnc.controller";
 import { NumbersController } from "../modules/suppression/numbers.controller";
 import { PublicFormsController } from "../modules/web-forms/public-forms.controller";
+import { PublicSignupController } from "../modules/signup/public-signup.controller";
 import { WebFormsController } from "../modules/web-forms/web-forms.controller";
 import { AdvisorController } from "../modules/finance/advisor.controller";
 import { ComplianceController } from "../modules/finance/compliance.controller";
@@ -527,6 +528,13 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   // UNGUARDED below and its slug is not a credential but a public address.
   WebFormsController,
   PublicFormsController,
+  // 0200: self-serve signup. UNGUARDED by design and listed in UNGUARDED
+  // below - it is the public pricing page's checkout, so a caller has no
+  // credential of ours by definition. It is the ONLY unguarded controller that
+  // can lead to a row in `organizations`, which is why it creates nothing but
+  // an `org_signups` row: that row grants no capability, and only a signature
+  // we verified promotes it into a tenant.
+  PublicSignupController,
   // 0165/0166 (doc 39 P6): two of the four vertical primitives. `resource` is
   // whole-org (no owner column); `appointment` is the one new object with an
   // owner, so it is scoped on `assigned_user_id` and NOT in
@@ -664,6 +672,19 @@ export const CONTROLLERS: Array<Type<unknown>> = [
 const INTERNAL = ["GET /internal/events"];
 
 const UNGUARDED = [
+  // Self-serve signup (0200). A stranger buying from the public price list has
+  // no credential of ours, so these cannot be guarded; what makes it safe is
+  // what they can reach, not who they are. `plans` is the published price list.
+  // `checkout` computes the amount HERE from that list - never from the request
+  // - and writes one `org_signups` row, which carries no capability and is
+  // thrown away if the payment never lands. `:claimRef/state` returns a status
+  // and nothing else: the ref travels in a URL and lands in browser history, so
+  // it must not be worth stealing, and the actual claim is still an org_invites
+  // token with its own hash, expiry and single use. Throttled to 60/min, a
+  // tenth of PublicFormsController, because a human buys once.
+  "GET /signup/plans",
+  "POST /signup/checkout",
+  "GET /signup/:claimRef/state",
   "GET /health",
   // An org's uploaded logo / favicon / banner. Public by nature: the same
   // values already render in a bare <img> for anyone loading the console, and
@@ -2604,7 +2625,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 829 routes, partitioned 714 tenant / 57 cross-tenant / 18 device / 23 unguarded / 1 internal / 7 portal", () => {
+  it("has 832 routes, partitioned 714 tenant / 57 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2842,8 +2863,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // handover it commits. Both tenant-scoped and both on the Staff
     // controller, which is where "this person has left" belongs: it is one
     // decision about one membership, not a new surface.
-    expect(ROUTES).toHaveLength(829);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(829);
+    // 832: plus self-serve signup's three (0200), all UNGUARDED - the public
+    // price list, the checkout that writes one capability-free `org_signups`
+    // row, and the status the return page polls. They are the only unguarded
+    // routes in the tree that can lead to a row in `organizations`, and they
+    // get there only via a signature the platform verified.
+    expect(ROUTES).toHaveLength(832);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(832);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2946,7 +2972,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(829); // = ROUTES.length: every route in exactly one class
+    ).toBe(832); // = ROUTES.length: every route in exactly one class
   });
 
   it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 756 principal routes", () => {

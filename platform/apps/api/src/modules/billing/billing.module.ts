@@ -1,3 +1,4 @@
+import { SignupModule } from "../signup/signup.module";
 import { Module } from "@nestjs/common";
 import { BillingController } from "./billing.controller";
 import { BillingOrdersService } from "./billing-orders.service";
@@ -29,6 +30,12 @@ import { SubscriptionController } from "./subscription.controller";
     PlatformBillingAdminController,
     PlatformBillingWebhookController,
   ],
+  // SignupModule, for `SignupService`: the platform webhook is where a
+  // self-serve payment becomes a tenant, so the controller that verifies the
+  // signature is also the one that has to provision. The dependency points this
+  // way round because signup knows nothing about billing orders, while billing
+  // has to know a payment might belong to someone who is not a tenant yet.
+  imports: [SignupModule],
   providers: [BillingOrdersService],
   exports: [BillingOrdersService],
 })

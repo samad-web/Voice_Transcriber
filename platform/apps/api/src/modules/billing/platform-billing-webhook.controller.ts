@@ -3,6 +3,7 @@ import type { RawBodyRequest } from "@nestjs/common";
 import type { Request } from "express";
 import { DbService } from "../../db/db.service";
 import { BillingOrdersService } from "./billing-orders.service";
+import { SignupService } from "../signup/signup.service";
 import {
   parsePlatformCapture,
   platformEventId,
@@ -52,6 +53,7 @@ export class PlatformBillingWebhookController {
   constructor(
     private readonly db: DbService,
     private readonly orders: BillingOrdersService,
+    private readonly signups: SignupService,
   ) {}
 
   @Post("razorpay")
@@ -102,6 +104,49 @@ export class PlatformBillingWebhookController {
     const eventRowId = claim.rows[0].id;
 
     if (!capture) return { ok: true };
+
+    // A SELF-SERVE signup has no tenant yet, so it has no `billing_orders` row
+    // to find - the order belongs to an org that does not exist until this
+    // webhook creates it. Check that table first, and if the payment is a
+    // signup's, promote it into a tenant and stop here. `billing_orders` is
+    // written by the provisioning transaction itself, once there is an org to
+    // hang it on.
+    const {
+      rows: [signup],
+    } = await admin.query<{ id: string; status: string }>(
+      `SELECT id, status FROM org_signups
+        WHERE provider = 'razorpay' AND provider_order_id = $1`,
+      [capture.providerOrderId],
+    );
+    if (signup) {
+      await admin.query(
+        `UPDATE org_signups
+            SET status = CASE WHEN status = 'provisioned' THEN status ELSE 'paid' END,
+                provider_payment_id = $2,
+                paid_at = COALESCE(paid_at, now()),
+                updated_at = now()
+          WHERE id = $1`,
+        [signup.id, capture.paymentId],
+      );
+      try {
+        await this.signups.provisionFromSignup(signup.id);
+        await admin.query(`UPDATE billing_webhook_events SET applied_at = now() WHERE id = $1`, [
+          eventRowId,
+        ]);
+      } catch (err) {
+        // Recorded, not rethrown, and still a 200: Razorpay retries for 24
+        // hours and then DISABLES the endpoint, which would take down
+        // provisioning for every later customer too. The row stays 'failed'
+        // and the reconciliation sweep is what actually retries it.
+        await admin
+          .query(`UPDATE billing_webhook_events SET error = $2 WHERE id = $1`, [
+            eventRowId,
+            err instanceof Error ? err.message : String(err),
+          ])
+          .catch(() => undefined);
+      }
+      return { ok: true };
+    }
 
     const {
       rows: [order],

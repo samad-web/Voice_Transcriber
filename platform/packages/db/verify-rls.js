@@ -115,6 +115,25 @@ const NON_TENANT_TABLES = new Set([
   //                     against a real Postgres rather than read: all four hold
   //                     no SELECT and no INSERT.
   "platform_operator_invites",
+  // org_signups        0200. A stranger part-way through buying, which by
+  //                     definition predates the tenant it may become - an
+  //                     org_id here would be a fiction for every row that
+  //                     matters, because the whole point of the row is to exist
+  //                     BEFORE provisioning. The column that eventually points
+  //                     at the tenant is `provisioned_org_id`, deliberately NOT
+  //                     named org_id: every org_id in this database is a tenant
+  //                     boundary and this one is a RESULT. It is NULL for every
+  //                     row that has not become a tenant, which is most of
+  //                     them, so isolating on it would be a policy that never
+  //                     fires on a table no RLS-bound role can reach anyway.
+  //
+  //                     The boundary is that nobody but the admin pool may read
+  //                     it at all: 0200 REVOKEs it from `aura_app` and from all
+  //                     three Supabase API roles, REVOKE-before-GRANT as 0089,
+  //                     0145 and 0197 do. `anon` is the public browser key and
+  //                     this table holds an email, a phone and an amount for
+  //                     every abandoned checkout.
+  "org_signups",
   // auth_events         0127. A PERSON's sign-in history, which spans every
   //                     workspace they belong to - and platform operators, who
   //                     belong to none, have one too. The boundary is the
