@@ -22,6 +22,7 @@ import {
 import { useDraftState } from "@/lib/use-server-state";
 import { PhonePairFields, usePhoneErrors } from "@/components/phone-pair-fields";
 import { removeTeamMemberAction, resetTeamPasswordAction, setTeamMemberAction } from "./actions";
+import { Toggle } from "../settings/attendance/toggle";
 import { OffboardDialog } from "./offboard-dialog";
 import {
   assignStaffRoleAction,
@@ -68,10 +69,10 @@ export function TeamTable({
         data-stacked="true"
         className="overflow-x-auto"
       >
-        <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[840px] border-collapse text-left text-sm">
           <thead className="bg-bg-subtle">
             <tr>
-              {["Person", "Role", "Telecaller identity", "Permissions", "", ""].map(
+              {["Person", "Role", "Telecaller identity", "Permissions", "Can pair a phone", "", ""].map(
                 (heading, i) => (
                   <th
                     // Two trailing unlabelled columns (status, actions), so the
@@ -130,7 +131,11 @@ function Row({
   const alert = useAlert();
   const toast = useToast();
 
-  const save = (update: { ownerRole?: OwnerRole; telecallerId?: string | null }) => {
+  const save = (update: {
+    ownerRole?: OwnerRole;
+    telecallerId?: string | null;
+    canPairDevices?: boolean;
+  }) => {
     startTransition(async () => {
       const result = await setTeamMemberAction(member.userId, update);
       if (result.error) {
@@ -271,6 +276,28 @@ function Row({
           <PermissionRole member={member} roles={roles} />
         ) : (
           <span className="text-text-muted">{member.roleName ?? "Default for their tier"}</span>
+        )}
+      </td>
+
+      {/* `memberships.can_pair_devices` (0107). Restored here after it was lost
+          in the move from /owner/team into Staff: the API supported it the
+          whole time, so the column was grantable by nobody for weeks while
+          /owner/devices kept reading the result and disabling the button.
+
+          Inert for an owner, and shown as such rather than hidden - an empty
+          cell reads as "off", and somebody would try to switch it on. */}
+      <td className="px-4 py-3" data-label="Can pair a phone">
+        {member.ownerRole === "owner" ? (
+          <span className="text-xs text-text-muted">Always</span>
+        ) : canEdit ? (
+          <Toggle
+            on={member.canPairDevices}
+            label={`Pair a handset, for ${member.name ?? member.email}`}
+            disabled={pending}
+            onChange={(next) => save({ canPairDevices: next })}
+          />
+        ) : (
+          <span className="text-text-muted">{member.canPairDevices ? "Yes" : "No"}</span>
         )}
       </td>
 

@@ -33,7 +33,7 @@ import type { IssuedInvite } from "./types";
  */
 export async function setTeamMemberAction(
   userId: string,
-  update: { ownerRole?: string; telecallerId?: string | null },
+  update: { ownerRole?: string; telecallerId?: string | null; canPairDevices?: boolean },
 ): Promise<ActionResult> {
   const owner = await getOwner();
   if (!owner) return { error: "Not signed in as an instance owner" };
@@ -44,13 +44,19 @@ export async function setTeamMemberAction(
   // Parsed rather than forwarded: an unrecognised persona should be refused
   // here with a readable message, not sent on to trip a zod error in the API
   // and come back as an issue array.
-  const body: { ownerRole?: string; telecallerId?: string | null } = {};
+  const body: { ownerRole?: string; telecallerId?: string | null; canPairDevices?: boolean } = {};
   if (update.ownerRole !== undefined) {
     const parsed = OwnerRole.safeParse(update.ownerRole);
     if (!parsed.success) return { error: `"${update.ownerRole}" is not a role` };
     body.ownerRole = parsed.data;
   }
   if (update.telecallerId !== undefined) body.telecallerId = update.telecallerId || null;
+  // Handing someone this lets them add a DEVICE to the workspace, which is
+  // why the API gates it on `@RequireOwnerRole("owner")` and audits both
+  // directions as member.pairing_grant / member.pairing_revoke. Passed
+  // straight through: it is a boolean, and the API is the thing that
+  // decides whether this caller may set it.
+  if (update.canPairDevices !== undefined) body.canPairDevices = update.canPairDevices;
   if (Object.keys(body).length === 0) return { error: "Nothing to change" };
 
   const headers = await ownerHeaders();

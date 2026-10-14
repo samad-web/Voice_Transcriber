@@ -12,6 +12,16 @@ export interface TeamMember {
   ownerRole: OwnerRole;
   recordingsListen: boolean;
   recordingsExport: boolean;
+  /**
+   * May this colleague pair a handset (`memberships.can_pair_devices`,
+   * migration 0107)? `/owner/devices` reads it to enable or disable the
+   * pair button.
+   *
+   * Inert for an owner: `canPairDevices()` in @aura/shared returns true for
+   * that persona whatever the column says, so a workspace can never reach a
+   * state where nobody is able to add a phone.
+   */
+  canPairDevices: boolean;
   /** The `telecallers` row this login resolves to, if any. Own-scoped
    *  personas read their records through it (owner-scope.ts). */
   telecallerId: string | null;
