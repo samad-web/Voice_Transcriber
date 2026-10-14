@@ -3,6 +3,7 @@ import {
   activeCallers,
   bucketByGrain,
   donutArcs,
+  donutWedges,
   driverSlices,
   effortPlot,
   forecast,
@@ -182,6 +183,68 @@ describe("donutArcs", () => {
   it("keeps a hairline for a slice smaller than the gap", () => {
     const [tiny] = donutArcs([{ id: "a", name: "A", value: 1, fraction: 0.005 }], 100, 2);
     expect(Number(tiny!.dash.split(" ")[0])).toBeGreaterThan(0);
+  });
+});
+
+describe("donutWedges", () => {
+  /**
+   * The hit areas behind the donut's tooltips. Bad arc maths here renders
+   * SILENTLY wrong - the wedges are transparent, so a path that is a
+   * quarter-turn off or inside-out looks identical and simply shows the wrong
+   * slice's tooltip, or none.
+   */
+  const half = [
+    { id: "a", name: "A", value: 1, fraction: 0.5 },
+    { id: "b", name: "B", value: 1, fraction: 0.5 },
+  ];
+
+  it("gives every slice its own wedge, in order", () => {
+    const wedges = donutWedges(half);
+    expect(wedges.map((w) => w.id)).toEqual(["a", "b"]);
+    for (const w of wedges) expect(w.d).toMatch(/^M [\d.]+ [\d.]+ A /);
+  });
+
+  it("starts the first wedge at the ring's own start, so it sits over its arc", () => {
+    // The ring draws from 3 o'clock and is rotated -90deg by CSS; the wedges
+    // carry the same rotation, so wedge 0 must begin at angle 0 in the same
+    // unrotated frame - (50 + outer, 50). A wedge that started elsewhere would
+    // name the wrong slice while looking perfectly fine.
+    const [first] = donutWedges(half, 33, 50);
+    expect(first!.d.startsWith("M 100.000 50.000")).toBe(true);
+  });
+
+  it("closes the path back to the inner radius, so the centre is not a hit area", () => {
+    // The hole holds the total. A wedge reaching the middle would mean
+    // hovering the number shows one arbitrary slice's tooltip.
+    const [w] = donutWedges([{ id: "a", name: "A", value: 1, fraction: 0.25 }], 33, 50);
+    expect(w!.d).toContain("A 33 33");
+    expect(w!.d.endsWith("Z")).toBe(true);
+  });
+
+  it("sets the large-arc flag past a half turn, and not before", () => {
+    // Without it, a 60% slice draws the 40% wedge instead - the complement -
+    // and two slices then claim each other's tooltips.
+    const [small] = donutWedges([{ id: "a", name: "A", value: 1, fraction: 0.4 }]);
+    const [big] = donutWedges([{ id: "a", name: "A", value: 1, fraction: 0.6 }]);
+    expect(small!.d).toMatch(/A 50 50 0 0 1/);
+    expect(big!.d).toMatch(/A 50 50 0 1 1/);
+  });
+
+  it("does not collapse a single 100% slice into nothing", () => {
+    // An arc between two IDENTICAL points draws nothing, so a lone full-circle
+    // slice would have no hit area at all - which is precisely the Revenue
+    // donut on a tenant whose deals carry no telecaller.
+    const [whole] = donutWedges([{ id: "a", name: "A", value: 1, fraction: 1 }]);
+    const start = whole!.d.match(/^M ([\d.]+) ([\d.]+)/)!;
+    const end = whole!.d.match(/A 50 50 0 1 1 ([\d.]+) ([\d.]+)/)!;
+    expect(`${start[1]},${start[2]}`).not.toBe(`${end[1]},${end[2]}`);
+  });
+
+  it("runs the wedges end to end, like the arcs they cover", () => {
+    const wedges = donutWedges(half, 33, 50);
+    // The second wedge starts where the first ends: half a turn round, which
+    // in the unrotated frame is 9 o'clock.
+    expect(wedges[1]!.d.startsWith("M 0.000 50.000")).toBe(true);
   });
 });
 

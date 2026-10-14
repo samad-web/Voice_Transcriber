@@ -242,6 +242,70 @@ export function donutArcs(slices: readonly ActorSlice[], circumference: number, 
   });
 }
 
+/**
+ * A HIT AREA PER DONUT SLICE.
+ *
+ * ── WHY THE ARC CANNOT BE ITS OWN HIT AREA ──────────────────────────────────
+ *
+ * The ring is drawn as five overlapping `<circle>` elements differing only in
+ * `stroke-dasharray`/`offset`, which is the cheapest way to draw a donut and
+ * the worst way to hover one: every circle covers the whole ring, so the
+ * topmost one would answer for every slice. And the house tooltip is an HTML
+ * box (`TOOLTIP` in chart-parts.tsx) shown by `group-hover`, which needs to be
+ * a DESCENDANT of whatever is hovered - and SVG cannot contain HTML.
+ *
+ * So each slice gets a real wedge: an annulus sector path, in its own
+ * transparent SVG stacked over the ring, inside an HTML wrapper that also
+ * holds the tooltip. CSS only, no chart library, no client JavaScript - the
+ * same contract every other chart on this dashboard keeps (docs/29 P6).
+ *
+ * ── THE BAND IS WIDER THAN THE RING, DELIBERATELY ───────────────────────────
+ *
+ * The drawn ring is 11 units of a 100 viewBox on a 96px card - about 10 real
+ * pixels. Asking somebody to land a pointer inside 10px to read a label is a
+ * chart that technically has tooltips. The hit band is wider on both sides, so
+ * the pointer finds the slice it is obviously over.
+ *
+ * It deliberately does NOT reach the centre: the hole holds the total, and a
+ * hit area covering it would mean hovering the number shows one arbitrary
+ * slice's tooltip.
+ */
+export interface DonutWedge extends ActorSlice {
+  /** An annulus-sector path in the same 100x100 viewBox the ring uses. */
+  d: string;
+}
+
+export function donutWedges(
+  slices: readonly ActorSlice[],
+  inner = 33,
+  outer = 50,
+): DonutWedge[] {
+  const out: DonutWedge[] = [];
+  let from = 0;
+  for (const s of slices) {
+    const to = from + s.fraction;
+    // A single 100% slice would start and end at the same point, and an arc
+    // between two identical points draws nothing - so a full ring stops a
+    // hair short. Visually identical for something transparent.
+    const sweep = Math.min(s.fraction, 0.9995);
+    const a0 = from * 2 * Math.PI;
+    const a1 = (from + sweep) * 2 * Math.PI;
+    const large = sweep > 0.5 ? 1 : 0;
+    const at = (r: number, a: number) =>
+      `${(50 + r * Math.cos(a)).toFixed(3)} ${(50 + r * Math.sin(a)).toFixed(3)}`;
+    out.push({
+      ...s,
+      d:
+        `M ${at(outer, a0)} ` +
+        `A ${outer} ${outer} 0 ${large} 1 ${at(outer, a1)} ` +
+        `L ${at(inner, a1)} ` +
+        `A ${inner} ${inner} 0 ${large} 0 ${at(inner, a0)} Z`,
+    });
+    from = to;
+  }
+  return out;
+}
+
 // ── effort vs yield ──────────────────────────────────────────────────────────
 
 export interface EffortPoint {

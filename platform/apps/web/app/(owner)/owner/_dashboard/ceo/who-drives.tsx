@@ -1,5 +1,5 @@
-import { donutArcs, sliceShare, type ActorSlice } from "@/lib/ceo-dashboard";
-import { ChartTable, Insight, TD, TD_NUM, TH, TH_NUM } from "../chart-parts";
+import { donutArcs, donutWedges, sliceShare, type ActorSlice } from "@/lib/ceo-dashboard";
+import { ChartTable, edgeAlign, Insight, TD, TD_NUM, TH, TH_NUM, TOOLTIP } from "../chart-parts";
 import type { ActorPalette } from "./actor-colors";
 import { BandHeading, Panel, PanelEmpty, PanelHead } from "./panel";
 
@@ -155,9 +155,24 @@ export function WhoDrives({
  */
 function Donut({ card, palette }: { card: DriverCard; palette: ActorPalette }) {
   const arcs = donutArcs(card.slices, C, 2);
+  const wedges = donutWedges(card.slices);
   return (
     <div className="relative h-24 w-24 shrink-0">
       <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
+        {/*
+          The empty track, in the theme's own `--color-border`. Checked rather
+          than assumed when the 100%-unattributed Revenue donut looked like an
+          empty chart: the track is #e5e5e5 and `--color-chart-cat-other` is
+          28% of the text colour, which is several steps darker - so the two
+          are distinguishable and the apparent emptiness was the slice itself
+          covering the whole ring, exactly as it should. The tooltips below are
+          what resolve that reading, not a colour change.
+
+          `stroke-border-subtle` was the first attempt and is NOT a token this
+          theme defines - Tailwind emits no rule for it and the track would
+          have rendered invisible, which is the same trap actor-colors.ts
+          carries a warning about.
+        */}
         <circle cx="50" cy="50" r={R} fill="none" className="stroke-border" strokeWidth={11} />
         {arcs.map((a) => (
           <circle
@@ -173,6 +188,53 @@ function Donut({ card, palette }: { card: DriverCard; palette: ActorPalette }) {
           />
         ))}
       </svg>
+
+      {/*
+        ── ONE HOVERABLE WEDGE PER SLICE ──────────────────────────────────────
+
+        Stacked over the ring, each in its own transparent SVG inside an HTML
+        `group` - because the house tooltip (`TOOLTIP`, chart-parts.tsx) is an
+        HTML box shown by `group-hover`, and SVG cannot contain HTML. The ring
+        itself cannot be the hit area: its arcs are five overlapping circles
+        that each cover the whole ring, so the topmost would answer for every
+        slice.
+
+        `-rotate-90` matches the ring exactly, so a wedge sits over the arc it
+        names rather than a quarter-turn away.
+      */}
+      {wedges.map((w, i) => (
+        <span key={w.id} className="group absolute inset-0 block">
+          <svg
+            viewBox="0 0 100 100"
+            className="h-full w-full -rotate-90"
+            aria-hidden="true"
+          >
+            <path d={w.d} fill="transparent" />
+          </svg>
+          <span
+            className={`${TOOLTIP} bottom-full mb-1 ${edgeAlign(i, wedges.length)}`}
+          >
+            {/*
+              Value first and strong, label second - the dataviz interaction
+              rule the rest of this dashboard follows. The share is the thing
+              the donut is FOR, so it leads; the raw value answers the
+              follow-up question without a second hover.
+            */}
+            <span className="block font-medium text-text">
+              {w.name} &middot; {sliceShare(w.fraction)}
+            </span>
+            <span className="block tabular-nums">
+              {card.format(w.value)} {card.centreUnit}
+            </span>
+            {w.unattributed ? (
+              <span className="mt-1 block text-text-subtle">
+                No handset or owner on these - not a person.
+              </span>
+            ) : null}
+          </span>
+        </span>
+      ))}
+
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-base font-semibold text-text tabular-nums">{card.centre}</span>
         <span className="text-[10px] text-text-muted">{card.centreUnit}</span>
